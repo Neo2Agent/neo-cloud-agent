@@ -25,18 +25,28 @@ import {
   listRuns,
   mintRunGitToken,
   openRunDraftPr,
+  recoverLiveWorkers,
   restoreArchivedRun,
   saveRunSession,
+  startWorkerLeaseWatch,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
 import { getConfig } from "../config.js";
 import { getObjectStore } from "../objects/store.js";
+import {
+  apiAuthEnabled,
+  cookieHeader,
+  matchApiToken,
+  resolveApiToken,
+  verifyApiToken,
+  verifyWorkerJwt,
+} from "../security/auth.js";
 import { listEnvironments } from "../env/store.js";
 import { serveWebFile } from "./static.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "Last-Event-ID, Content-Type",
+  "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization",
   "access-control-allow-methods": "GET, POST, OPTIONS",
 } as const;
 
@@ -70,6 +80,8 @@ function notFound(res: ServerResponse): void {
 }
 
 export function createApiServer() {
+  void recoverLiveWorkers();
+  startWorkerLeaseWatch();
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://control-plane.local");
     const path = url.pathname;
@@ -92,7 +104,42 @@ export function createApiServer() {
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           objectStore: getObjectStore().kind,
+          authRequired: apiAuthEnabled(),
         });
+        return;
+      }
+
+      if (method === "POST" && path === "/v1/auth") {
+        const expected = resolveApiToken();
+        if (!expected) {
+          send(res, 200, { ok: true, authRequired: false });
+          return;
+        }
+        const body = (await readJson(req)) as { token?: string };
+        const token = (body.token ?? "").trim();
+        if (!matchApiToken(token)) {
+          send(res, 401, { error: "unauthorized" });
+          return;
+        }
+        const json = JSON.stringify({ ok: true, authRequired: true });
+        res.writeHead(200, {
+          ...CORS,
+          "content-type": "application/json; charset=utf-8",
+          "content-length": Buffer.byteLength(json),
+          "set-cookie": cookieHeader(token),
+        });
+        res.end(json);
+        return;
+      }
+
+      if (path.startsWith("/internal/")) {
+        const runId = /^\/internal\/runs\/([^/]+)/.exec(path)?.[1];
+        if (runId && !verifyWorkerJwt(req, runId)) {
+          send(res, 401, { error: "unauthorized" });
+          return;
+        }
+      } else if (path.startsWith("/v1/") && !verifyApiToken(req, url)) {
+        send(res, 401, { error: "unauthorized" });
         return;
       }
 

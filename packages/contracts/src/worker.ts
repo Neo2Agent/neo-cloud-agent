@@ -50,6 +50,7 @@ export interface RuntimeHandle {
   id: string;
   runtime: RuntimeKind;
   ip: string | null;
+  pid?: number | null;
 }
 
 export interface ExecutionRuntime {

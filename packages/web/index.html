@@ -68,6 +68,15 @@
         </form>
       </main>
     </div>
+    <div class="auth-gate" id="auth-gate" hidden>
+      <form class="auth-card" id="auth-form">
+        <h2>输入访问令牌</h2>
+        <p>控制面已开启鉴权。把 <code>CONTROL_PLANE_TOKEN</code> 填在下面，多个设备用同一条令牌即可订阅同一条流。</p>
+        <input id="auth-token" name="token" type="password" autocomplete="current-password" placeholder="neo_…" required />
+        <p class="auth-error" id="auth-error" hidden></p>
+        <button type="submit">进入</button>
+      </form>
+    </div>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

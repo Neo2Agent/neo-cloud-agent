@@ -134,6 +134,16 @@ export class DockerRuntime implements ExecutionRuntime {
     return { id: `docker-${spec.runId}-from-${snapshotId}`, runtime: "docker", ip: null };
   }
 
+  async adopt(runId: string, lease: { handleId?: string; container?: string | null } | null, hooks?: RuntimeHooks): Promise<RuntimeHandle | null> {
+    const name = lease?.container || lease?.handleId || containerName(runId);
+    const inspect = await this.cli.run(["inspect", "-f", "{{.State.Running}}", name]);
+    if (inspect.code !== 0 || inspect.stdout.trim() !== "true") {
+      return null;
+    }
+    this.watchExit(name, hooks);
+    return { id: name, runtime: "docker", ip: null };
+  }
+
   async destroy(handle: RuntimeHandle): Promise<void> {
     const waiter = this.waiters.get(handle.id);
     waiter?.kill("SIGTERM");

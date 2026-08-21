@@ -758,10 +758,13 @@ P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已�
 2. Redis 热流（现在是单进程 EventEmitter 扇出；多端订阅已经按同一条 Run 流来）
 3. Postgres 里的 Run 元数据（现在仍是 `.control` JSON）
 
+控制面重启后续上 RUNNING Worker、以及对外 API 令牌鉴权已经落地。
+
 已落地的约定：
 
 - 多端流式是订阅制：Worker 只生产一次，客户端（多个标签 / 设备）都订控制面 `GET /v1/runs/:id/events`。晚到的端先拿 transcript snapshot，再带 `after` / `Last-Event-ID` 跟直播。
 - transcript / session 会再写一份到对象存储（默认 `RUNS_DIR/.objects`，可换 S3）。本地 `.control` 丢了还能从归档恢复。
 - `start` 失败默认不阻断 Agent（和 Cursor 一样，只记 `START_FAILED`）。`environment.json` 里 `startMustSucceed: true` 或 `START_MUST_SUCCEED=1` 才会让 worker 退出、Run 变 ERROR。
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
-- 控制面重启后 LIVE Run 标 ERROR；IDLE Run 保留，follow-up 会恢复 session 再拉起 worker。
+- 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
+- 对外 `/v1` 用 `CONTROL_PLANE_TOKEN`（Bearer / Cookie / `access_token`）。Worker 走 `/internal`，只带 run JWT。`/health` 和静态页不需要令牌。

@@ -21,7 +21,9 @@ const {
   listRuns,
   mintRunGitToken,
   openRunDraftPr,
+  recoverLiveWorkers,
   reloadPersistedState,
+  expireStaleWorkers,
   saveRunSession,
   takeInbound,
 } = await import("./orchestrator.js");
@@ -143,6 +145,32 @@ test("events and session backups redact runtime secrets", async () => {
   } finally {
     delete process.env.DEEPSEEK_API_KEY;
   }
+});
+
+test("live runs are reattached after a control-plane reload", async () => {
+  const run = await createRun({
+    prompt: "keep the worker",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  assert.equal(run.status, "RUNNING");
+  reloadPersistedState();
+  assert.equal(getRun(run.id)?.status, "RUNNING");
+  await recoverLiveWorkers();
+  assert.equal(getRun(run.id)?.status, "RUNNING");
+  assert.ok(listEvents(run.id).some((item) => item.title === "Reattached existing worker"));
+  assert.equal(expireStaleWorkers(Date.now() + 60_000).includes(run.id), false);
+});
+
+test("live runs without a worker heartbeat become ERROR", async () => {
+  const run = await createRun({
+    prompt: "lost worker",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  reloadPersistedState();
+  const expired = expireStaleWorkers(Date.now() + 60_000);
+  assert.ok(expired.includes(run.id));
+  assert.equal(getRun(run.id)?.status, "ERROR");
+  assert.match(getRun(run.id)?.errorMessage ?? "", /heartbeat/);
 });
 
 test("follow-up after reload resumes the worker from session backup", async () => {

@@ -6,10 +6,16 @@ function workerSecrets(extra: string[] = []): string[] {
   return secretValuesFromEnv(process.env, [config.llmGatewayJwt, ...extra].filter(Boolean));
 }
 
+function workerHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const jwt = getWorkerConfig().llmGatewayJwt;
+  return jwt ? { ...extra, authorization: `Bearer ${jwt}` } : extra;
+}
+
 export async function pullInbox(runId: string): Promise<WorkerInbound[]> {
   const config = getWorkerConfig();
   const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/inbox`, {
     method: "POST",
+    headers: workerHeaders(),
   });
   if (!response.ok) {
     throw new Error(`inbox ${response.status}`);
@@ -26,7 +32,7 @@ export async function pushEvents(runId: string, events: RunEvent[]): Promise<voi
   const secrets = workerSecrets();
   const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/events`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: workerHeaders({ "content-type": "application/json" }),
     body: JSON.stringify({ events: events.map((item) => redactRunEvent(item, secrets)) }),
   });
   if (!response.ok) {
@@ -41,7 +47,7 @@ export async function requestGitToken(
   const config = getWorkerConfig();
   const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/scm/token`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: workerHeaders({ "content-type": "application/json" }),
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -54,7 +60,7 @@ export async function requestCommit(runId: string, input: { message: string; pat
   const config = getWorkerConfig();
   const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/scm/commit`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: workerHeaders({ "content-type": "application/json" }),
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -70,7 +76,7 @@ export async function requestPullRequest(
   const config = getWorkerConfig();
   const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/scm/pull-request`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: workerHeaders({ "content-type": "application/json" }),
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -81,7 +87,9 @@ export async function requestPullRequest(
 
 export async function downloadSession(runId: string): Promise<Array<{ name: string; content: string }>> {
   const config = getWorkerConfig();
-  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/session`);
+  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/session`, {
+    headers: workerHeaders(),
+  });
   if (!response.ok) {
     throw new Error(`session ${response.status}`);
   }
@@ -99,7 +107,7 @@ export async function uploadSession(runId: string, files: Array<{ name: string; 
   const secrets = workerSecrets();
   const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/session`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: workerHeaders({ "content-type": "application/json" }),
     body: JSON.stringify({
       files: files.map((file) => ({ name: file.name, content: redactText(file.content, secrets) })),
     }),
@@ -116,7 +124,9 @@ export async function fetchBootstrap(runId: string): Promise<{
   model: string;
 }> {
   const config = getWorkerConfig();
-  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/bootstrap`);
+  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/bootstrap`, {
+    headers: workerHeaders(),
+  });
   if (!response.ok) {
     throw new Error(`bootstrap ${response.status}`);
   }

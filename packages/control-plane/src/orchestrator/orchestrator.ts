@@ -27,8 +27,11 @@ import {
   loadPersistedEvents,
   loadPersistedRuns,
   loadSessionFiles,
+  deleteWorkerLease,
+  loadWorkerLease,
   persistRunRecord,
   persistSessionFiles,
+  persistWorkerLease,
   restoreSessionToDir,
 } from "../store/persist.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
@@ -38,6 +41,8 @@ const followUps = new Map<string, FollowUp[]>();
 const inbound = new Map<string, WorkerInbound[]>();
 const runJwts = new Map<string, string>();
 const handles = new Map<string, RuntimeHandle>();
+const heartbeats = new Map<string, number>();
+let leaseWatch: ReturnType<typeof setInterval> | null = null;
 
 const LIVE_STATUSES = new Set<Run["status"]>([
   "NOT_YET_STARTED",
@@ -84,14 +89,6 @@ function hydrateFromDisk(): void {
     seedEvents(run.id, loadPersistedEvents(run.id));
     run.pullRequests = Array.isArray(run.pullRequests) ? run.pullRequests : [];
     run.baseBranch = run.baseBranch ?? null;
-    if (LIVE_STATUSES.has(run.status)) {
-      run.status = "ERROR";
-      run.errorMessage = "control plane restarted; worker was not recovered";
-      run.updatedAt = now();
-      inbound.set(run.id, []);
-      publish(event(run.id, "run.error", run.errorMessage));
-      flushRun(run.id);
-    }
   }
 }
 
@@ -101,8 +98,116 @@ export function reloadPersistedState(): void {
   inbound.clear();
   runJwts.clear();
   handles.clear();
+  heartbeats.clear();
   resetHistory();
   hydrateFromDisk();
+}
+
+export function workerHeartbeatTimeoutMs(): number {
+  return Number(process.env.WORKER_HEARTBEAT_TIMEOUT_MS ?? 20_000);
+}
+
+export function noteWorkerHeartbeat(runId: string, at = Date.now()): void {
+  heartbeats.set(runId, at);
+}
+
+export function isWorkerAttached(runId: string, at = Date.now()): boolean {
+  if (handles.has(runId)) {
+    return true;
+  }
+  const seen = heartbeats.get(runId);
+  return seen !== undefined && at - seen < workerHeartbeatTimeoutMs();
+}
+
+function bindWorkerExit(runId: string) {
+  return (code: number | null) => {
+    const current = runs.get(runId);
+    if (!current || current.status === "ARCHIVED" || current.status === "EXPIRED") {
+      return;
+    }
+    handles.delete(runId);
+    deleteWorkerLease(runId);
+    if (code !== 0 && current.status === "RUNNING") {
+      current.status = "ERROR";
+      current.errorMessage = `worker exited with code ${code}`;
+      current.updatedAt = now();
+      publish(event(runId, "run.error", current.errorMessage));
+      flushRun(runId);
+    }
+  };
+}
+
+export async function recoverLiveWorkers(): Promise<void> {
+  for (const run of runs.values()) {
+    if (!LIVE_STATUSES.has(run.status) || handles.has(run.id)) {
+      continue;
+    }
+    const lease = loadWorkerLease(run.id);
+    try {
+      const handle = await getRuntime().adopt(run.id, lease, { onExit: bindWorkerExit(run.id) });
+      if (handle) {
+        handles.set(run.id, handle);
+        run.workerHandle = handle.id;
+        run.errorMessage = null;
+        run.updatedAt = now();
+        noteWorkerHeartbeat(run.id);
+        persistWorkerLease({
+          runId: run.id,
+          runtime: handle.runtime,
+          handleId: handle.id,
+          pid: handle.pid ?? lease?.pid ?? null,
+          container: handle.runtime === "docker" ? handle.id : null,
+          updatedAt: now(),
+        });
+        publish(event(run.id, "run.running", "Reattached existing worker"));
+        flushRun(run.id);
+        continue;
+      }
+    } catch (error) {
+      console.error(`failed to adopt worker for ${run.id}`, error);
+    }
+    run.updatedAt = now();
+    publish(event(run.id, "run.provisioning", "Waiting for worker heartbeat"));
+    flushRun(run.id);
+  }
+  startWorkerLeaseWatch();
+}
+
+export function expireStaleWorkers(at = Date.now()): string[] {
+  const expired: string[] = [];
+  const timeout = workerHeartbeatTimeoutMs();
+  for (const run of runs.values()) {
+    if (!LIVE_STATUSES.has(run.status)) {
+      continue;
+    }
+    const handle = handles.get(run.id);
+    if (handle?.runtime === "none") {
+      continue;
+    }
+    const lastSeen = heartbeats.get(run.id) ?? Date.parse(run.updatedAt);
+    if (Number.isFinite(lastSeen) && at - lastSeen < timeout) {
+      continue;
+    }
+    run.status = "ERROR";
+    run.errorMessage = "worker heartbeat lost after control plane restart";
+    run.updatedAt = now();
+    handles.delete(run.id);
+    deleteWorkerLease(run.id);
+    publish(event(run.id, "run.error", run.errorMessage));
+    flushRun(run.id);
+    expired.push(run.id);
+  }
+  return expired;
+}
+
+export function startWorkerLeaseWatch(): void {
+  if (leaseWatch) {
+    return;
+  }
+  leaseWatch = setInterval(() => {
+    expireStaleWorkers();
+  }, 2000);
+  leaseWatch.unref();
 }
 
 export function event(runId: string, kind: RunEvent["kind"], title: string, extra?: Partial<RunEvent>): RunEvent {
@@ -309,33 +414,29 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
 
 async function attachWorker(run: Run, title: string): Promise<void> {
   const handle = await getRuntime().provision(launchSpec(run, runJwts.get(run.id) ?? mintJwtForRun(run)), {
-    onExit: (code) => {
-      const current = runs.get(run.id);
-      if (!current || current.status === "ARCHIVED" || current.status === "EXPIRED") {
-        return;
-      }
-      handles.delete(run.id);
-      if (code !== 0 && current.status === "RUNNING") {
-        current.status = "ERROR";
-        current.errorMessage = `worker exited with code ${code}`;
-        current.updatedAt = now();
-        publish(event(run.id, "run.error", current.errorMessage));
-        flushRun(run.id);
-      }
-    },
+    onExit: bindWorkerExit(run.id),
   });
   handles.set(run.id, handle);
   run.workerHandle = handle.id;
   run.status = "RUNNING";
   run.errorMessage = null;
   run.updatedAt = now();
+  noteWorkerHeartbeat(run.id);
+  persistWorkerLease({
+    runId: run.id,
+    runtime: handle.runtime,
+    handleId: handle.id,
+    pid: handle.pid ?? null,
+    container: handle.runtime === "docker" ? handle.id : null,
+    updatedAt: now(),
+  });
   publish(event(run.id, "run.running", title));
   flushRun(run.id);
 }
 
 export async function resumeRun(runId: string): Promise<Run> {
   const run = requireRun(runId);
-  if (handles.has(runId)) {
+  if (isWorkerAttached(runId)) {
     return run;
   }
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
@@ -382,6 +483,7 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
   if (!runs.has(runId)) {
     throw new Error(`run not found: ${runId}`);
   }
+  noteWorkerHeartbeat(runId);
   for (const item of events) {
     publish(event(runId, item.kind, item.title, item));
     if (item.kind === "agent.end") {
@@ -472,7 +574,7 @@ export async function enqueueFollowUp(runId: string, input: CreateFollowUpReques
     }),
   );
   flushRun(runId);
-  if (!handles.has(runId)) {
+  if (!isWorkerAttached(runId)) {
     try {
       await resumeRun(runId);
     } catch {
@@ -487,6 +589,7 @@ export function listFollowUps(runId: string): FollowUp[] {
 }
 
 export function takeInbound(runId: string): WorkerInbound[] {
+  noteWorkerHeartbeat(runId);
   const queued = inbound.get(runId) ?? [];
   inbound.set(runId, []);
   const deliveredAt = now();
@@ -513,6 +616,8 @@ export async function archiveRun(runId: string): Promise<Run> {
     await getRuntime().destroy(handle);
     handles.delete(runId);
   }
+  deleteWorkerLease(runId);
+  heartbeats.delete(runId);
   publish(event(runId, "run.archived", "Run archived"));
   flushRun(runId);
   return run;

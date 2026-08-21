@@ -7,8 +7,18 @@ import { repoRoot } from "../worker-spawn.js";
 import type { RuntimeHooks } from "./docker.js";
 import { assertNoProviderSecrets, buildWorkerEnv } from "./worker-env.js";
 
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class LocalProcessRuntime implements ExecutionRuntime {
   private readonly children = new Map<string, ChildProcess>();
+  private readonly adopted = new Map<string, { pid: number; timer: ReturnType<typeof setInterval> }>();
 
   async provision(spec: RuntimeSpec, hooks?: RuntimeHooks): Promise<RuntimeHandle> {
     mkdirSync(spec.hostWorkspaceDir, { recursive: true });
@@ -48,7 +58,25 @@ export class LocalProcessRuntime implements ExecutionRuntime {
       hooks?.onExit?.(code);
     });
     this.children.set(spec.runId, child);
-    return { id: `local-${spec.runId}`, runtime: "local", ip: null };
+    return { id: `local-${spec.runId}`, runtime: "local", ip: null, pid: child.pid ?? null };
+  }
+
+  async adopt(runId: string, lease: { handleId?: string; pid?: number | null } | null, hooks?: RuntimeHooks): Promise<RuntimeHandle | null> {
+    const pid = lease?.pid;
+    if (!pid || !alive(pid)) {
+      return null;
+    }
+    const timer = setInterval(() => {
+      if (alive(pid)) {
+        return;
+      }
+      clearInterval(timer);
+      this.children.delete(runId);
+      hooks?.onExit?.(null);
+    }, 1000);
+    timer.unref();
+    this.adopted.set(runId, { pid, timer });
+    return { id: lease?.handleId ?? `local-${runId}`, runtime: "local", ip: null, pid };
   }
 
   async snapshot(handle: RuntimeHandle): Promise<string> {
@@ -62,10 +90,20 @@ export class LocalProcessRuntime implements ExecutionRuntime {
   async destroy(handle: RuntimeHandle): Promise<void> {
     const runId = handle.id.startsWith("local-") ? handle.id.slice("local-".length) : handle.id;
     const child = this.children.get(runId);
-    if (!child) {
-      return;
+    if (child) {
+      child.kill("SIGTERM");
+      this.children.delete(runId);
     }
-    child.kill("SIGTERM");
-    this.children.delete(runId);
+    const adopted = this.adopted.get(runId);
+    if (adopted) {
+      clearInterval(adopted.timer);
+      if (alive(adopted.pid)) {
+        process.kill(adopted.pid, "SIGTERM");
+      }
+      this.adopted.delete(runId);
+    }
+    if (!child && !adopted && handle.pid && alive(handle.pid)) {
+      process.kill(handle.pid, "SIGTERM");
+    }
   }
 }

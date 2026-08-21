@@ -16,4 +16,8 @@ export class NoneRuntime implements ExecutionRuntime {
   }
 
   async destroy(_handle: RuntimeHandle): Promise<void> {}
+
+  async adopt(runId: string, lease?: { handleId?: string } | null): Promise<RuntimeHandle> {
+    return { id: lease?.handleId ?? `none-${runId}`, runtime: "none", ip: null };
+  }
 }

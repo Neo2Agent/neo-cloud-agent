@@ -1,6 +1,6 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { FollowUp, Run, RunEvent, WorkerInbound } from "@neo-cloud-agent/contracts";
+import type { FollowUp, Run, RunEvent, RuntimeKind, WorkerInbound } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 
 export type PersistedRun = {
@@ -179,7 +179,7 @@ export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[]
   const dir = controlStateDir(runsDir);
   try {
     return readdirSync(dir)
-      .filter((name) => name.endsWith(".json") && !name.endsWith(".tmp"))
+      .filter((name) => name.endsWith(".json") && !name.endsWith(".tmp") && !name.endsWith(".worker.json"))
       .map((name) => {
         try {
           return JSON.parse(readFileSync(path.join(dir, name), "utf8")) as PersistedRun;
@@ -190,5 +190,38 @@ export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[]
       .filter((item): item is PersistedRun => Boolean(item?.run?.id));
   } catch {
     return [];
+  }
+}
+
+export type WorkerLease = {
+  runId: string;
+  runtime: RuntimeKind;
+  handleId: string;
+  pid?: number | null;
+  container?: string | null;
+  updatedAt: string;
+};
+
+function workerFile(runId: string, runsDir?: string): string {
+  return path.join(controlStateDir(runsDir), `${runId}.worker.json`);
+}
+
+export function persistWorkerLease(lease: WorkerLease, runsDir?: string): void {
+  writeJsonAtomic(workerFile(lease.runId, runsDir), lease);
+}
+
+export function loadWorkerLease(runId: string, runsDir?: string): WorkerLease | null {
+  try {
+    return JSON.parse(readFileSync(workerFile(runId, runsDir), "utf8")) as WorkerLease;
+  } catch {
+    return null;
+  }
+}
+
+export function deleteWorkerLease(runId: string, runsDir?: string): void {
+  try {
+    rmSync(workerFile(runId, runsDir), { force: true });
+  } catch {
+    // ignore
   }
 }

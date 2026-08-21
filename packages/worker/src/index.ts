@@ -87,7 +87,14 @@ async function main(): Promise<void> {
 
   try {
     while (running) {
-      const messages = await pullInbox(config.runId);
+      let messages;
+      try {
+        messages = await pullInbox(config.runId);
+      } catch (error: unknown) {
+        console.error("inbox unavailable, retrying", error);
+        await sleep(config.pollMs);
+        continue;
+      }
       for (const message of messages) {
         console.log(`[worker ${config.runId}] ${describeDispatch(message)}`);
         const next = await dispatchInbound(session, message);

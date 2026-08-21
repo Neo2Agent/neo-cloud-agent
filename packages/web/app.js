@@ -9,6 +9,12 @@ const prLinkEl = document.getElementById("pr-link");
 const healthEl = document.getElementById("health");
 const runTitleEl = document.getElementById("run-title");
 const runLabelEl = document.getElementById("run-label");
+const authGateEl = document.getElementById("auth-gate");
+const authFormEl = document.getElementById("auth-form");
+const authTokenEl = document.getElementById("auth-token");
+const authErrorEl = document.getElementById("auth-error");
+
+const TOKEN_KEY = "neo.apiToken";
 
 const state = {
   runId: null,
@@ -18,7 +24,42 @@ const state = {
   assistant: null,
   lastEventId: null,
   healthText: "检测服务…",
+  token: localStorage.getItem(TOKEN_KEY) || "",
+  authRequired: false,
 };
+
+function apiHeaders(json) {
+  const headers = {};
+  if (json) headers["content-type"] = "application/json";
+  if (state.token) headers.authorization = `Bearer ${state.token}`;
+  return headers;
+}
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    credentials: "same-origin",
+    headers: { ...apiHeaders(Boolean(options.body)), ...options.headers },
+  });
+  if (response.status === 401 && state.authRequired) {
+    showAuthGate("访问令牌无效");
+    throw new Error("unauthorized");
+  }
+  return response;
+}
+
+function showAuthGate(message) {
+  authGateEl.hidden = false;
+  authErrorEl.hidden = !message;
+  authErrorEl.textContent = message || "";
+  authTokenEl.value = state.token;
+  authTokenEl.focus();
+}
+
+function hideAuthGate() {
+  authGateEl.hidden = true;
+  authErrorEl.hidden = true;
+}
 
 const STATUS_LABELS = {
   idle: "就绪",
@@ -226,7 +267,10 @@ function closeStream() {
 
 function listen(runId, after) {
   closeStream();
-  const query = after ? `?after=${encodeURIComponent(after)}` : "";
+  const params = new URLSearchParams();
+  if (after) params.set("after", after);
+  if (state.token) params.set("access_token", state.token);
+  const query = params.toString() ? `?${params}` : "";
   state.source = new EventSource(`/v1/runs/${runId}/events${query}`);
   state.source.onopen = () => {
     if (state.healthText) healthEl.textContent = state.healthText;
@@ -242,14 +286,14 @@ function listen(runId, after) {
 }
 
 async function refreshRuns() {
-  const response = await fetch("/v1/runs");
+  const response = await api("/v1/runs");
   const body = await response.json();
   state.runs = body.runs ?? [];
   renderRuns();
 }
 
 async function openRun(runId) {
-  const run = await (await fetch(`/v1/runs/${runId}`)).json();
+  const run = await (await api(`/v1/runs/${runId}`)).json();
   state.runId = run.id;
   state.events.clear();
   state.assistant = null;
@@ -260,7 +304,7 @@ async function openRun(runId) {
   runLabelEl.textContent = run.branchName ? run.branchName : shortId(run.id);
   showPullRequest(run);
   renderRuns();
-  const transcript = await (await fetch(`/v1/runs/${run.id}/transcript`)).json();
+  const transcript = await (await api(`/v1/runs/${run.id}/transcript`)).json();
   if (transcript.snapshot) applySnapshot(transcript.snapshot);
   listen(run.id, transcript.snapshot?.lastEventId ?? state.lastEventId);
   history.replaceState(null, "", `/#/runs/${run.id}`);
@@ -288,9 +332,8 @@ async function sendMessage(text) {
   if (!state.runId) {
     addBubble("user", text, `local-${Date.now()}`);
     const created = await (
-      await fetch("/v1/runs", {
+      await api("/v1/runs", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: text, repoUrls, source: "web" }),
       })
     ).json();
@@ -301,9 +344,8 @@ async function sendMessage(text) {
   }
   addBubble("user", text, `local-${Date.now()}`);
   const follow = await (
-    await fetch(`/v1/runs/${state.runId}/follow-ups`, {
+    await api(`/v1/runs/${state.runId}/follow-ups`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
       body: JSON.stringify({ text }),
     })
   ).json();
@@ -338,7 +380,7 @@ runListEl.addEventListener("click", (event) => {
 
 abortEl.addEventListener("click", async () => {
   if (!state.runId) return;
-  await fetch(`/v1/runs/${state.runId}/abort`, { method: "POST" });
+  await api(`/v1/runs/${state.runId}/abort`, { method: "POST" });
 });
 
 openPrEl.addEventListener("click", async () => {
@@ -346,9 +388,8 @@ openPrEl.addEventListener("click", async () => {
   openPrEl.disabled = true;
   try {
     const created = await (
-      await fetch(`/v1/runs/${state.runId}/pull-request`, {
+      await api(`/v1/runs/${state.runId}/pull-request`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify({ title: runTitleEl.textContent || "Agent changes" }),
       })
     ).json();
@@ -361,19 +402,62 @@ openPrEl.addEventListener("click", async () => {
   }
 });
 
+async function applyAuth(token) {
+  state.token = token;
+  localStorage.setItem(TOKEN_KEY, token);
+  const response = await fetch("/v1/auth", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!response.ok) {
+    localStorage.removeItem(TOKEN_KEY);
+    state.token = "";
+    throw new Error("unauthorized");
+  }
+  hideAuthGate();
+}
+
+authFormEl.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await applyAuth(authTokenEl.value.trim());
+    await refreshRuns();
+    const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
+    if (match?.[1]) await openRun(match[1]);
+  } catch {
+    showAuthGate("访问令牌无效");
+  }
+});
+
 async function boot() {
   try {
     const health = await (await fetch("/health")).json();
+    state.authRequired = health.authRequired === true;
     if (!health.ok) {
       state.healthText = "控制面异常";
     } else if (health.defaultModel) {
       const runtime = health.workerRuntime ? ` · ${health.workerRuntime}` : "";
       const store = health.objectStore ? ` · ${health.objectStore}` : "";
-      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}`;
+      const auth = state.authRequired ? " · 需令牌" : "";
+      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${auth}`;
     } else {
       state.healthText = "控制面在线";
     }
     healthEl.textContent = state.healthText;
+    if (state.authRequired) {
+      if (!state.token) {
+        showAuthGate();
+        return;
+      }
+      try {
+        await applyAuth(state.token);
+      } catch {
+        showAuthGate("访问令牌无效");
+        return;
+      }
+    }
   } catch {
     state.healthText = "控制面不可达";
     healthEl.textContent = state.healthText;
