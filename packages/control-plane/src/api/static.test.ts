@@ -9,6 +9,9 @@ test("serves the chat index and rejects path traversal", () => {
   assert.ok(index);
   assert.equal(path.basename(index), "index.html");
   assert.match(readFileSync(index, "utf8"), /Neo Cloud Agent/);
+  const css = resolveWebFile("/styles.css");
+  assert.ok(css);
+  assert.match(readFileSync(css, "utf8"), /--bg: #ffffff/);
   assert.equal(resolveWebFile("/../package.json"), null);
   assert.equal(resolveWebFile("/no-such-file"), null);
 });

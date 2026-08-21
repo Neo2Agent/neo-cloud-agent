@@ -81,6 +81,7 @@ pnpm dev
 pnpm test                 # 单测 + 进程内 mock e2e（clone + worker + IDLE）
 pnpm test:e2e             # 打已经在跑的 :8080（mock 即可）
 E2E_EXPECT_README=1 pnpm test:e2e:live   # 真模型：加 README 并跑 test.sh
+pnpm build:worker-image && pnpm test:docker   # 容器里跑同一条 mock turn
 ```
 
 Docker worker（控制面仍在宿主机时）：

@@ -3,31 +3,36 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { close, listen, waitForRun } from "./helpers.js";
+import { close, dockerAvailable, dockerImageExists, listen, waitForRun } from "./helpers.js";
 
-test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
-  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-e2e-"));
-  process.env.WORKER_RUNTIME = "local";
-  process.env.SPAWN_LOCAL_WORKER = "1";
+const image = process.env.WORKER_IMAGE ?? "neo-cloud-agent-worker:dev";
+
+test("docker worker mock turn: clone toy repo inside a container", { skip: !dockerAvailable() || !dockerImageExists(image) }, async (t) => {
+  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-dock-e2e-"));
+  process.env.WORKER_RUNTIME = "docker";
+  process.env.SPAWN_LOCAL_WORKER = "0";
   process.env.LLM_UPSTREAM = "mock";
   process.env.LLM_GATEWAY_JWT_SECRET = "e2e-secret";
   process.env.RUNS_DIR = runsDir;
   process.env.HOST_RUNS_DIR = runsDir;
-  delete process.env.WORKER_CONTROL_PLANE_URL;
-  delete process.env.WORKER_LLM_GATEWAY_URL;
+  process.env.WORKER_IMAGE = image;
+  process.env.WORKER_MEMORY_MIB = "1024";
+  delete process.env.WORKER_COMMAND;
 
   const { createGatewayServer } = await import("../../../llm-gateway/src/server.js");
   const { createApiServer } = await import("../api/server.js");
 
   const gateway = createGatewayServer();
-  const gatewayPort = await listen(gateway);
+  const gatewayPort = await listen(gateway, "0.0.0.0");
   process.env.LLM_GATEWAY_URL = `http://127.0.0.1:${gatewayPort}`;
   process.env.LLM_GATEWAY_PORT = String(gatewayPort);
+  process.env.WORKER_LLM_GATEWAY_URL = `http://host.docker.internal:${gatewayPort}`;
 
   const api = createApiServer();
-  const apiPort = await listen(api);
+  const apiPort = await listen(api, "0.0.0.0");
   process.env.CONTROL_PLANE_URL = `http://127.0.0.1:${apiPort}`;
   process.env.CONTROL_PLANE_PORT = String(apiPort);
+  process.env.WORKER_CONTROL_PLANE_URL = `http://host.docker.internal:${apiPort}`;
   t.after(async () => {
     await close(api);
     await close(gateway);
@@ -48,9 +53,10 @@ test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
   assert.equal(run.status, "RUNNING", run.errorMessage ?? "");
   assert.ok(existsSync(path.join(runsDir, run.id, "hello.txt")));
 
-  const result = await waitForRun(`http://127.0.0.1:${apiPort}`, run.id, 60_000);
+  const result = await waitForRun(`http://127.0.0.1:${apiPort}`, run.id, 90_000);
   assert.notEqual(result.status, "ERROR", result.errorMessage ?? result.kinds.join(","));
   assert.ok(result.kinds.includes("scm.clone_succeeded"));
+  assert.ok(result.kinds.includes("run.running"));
   assert.ok(result.kinds.includes("agent.start"));
   assert.ok(result.kinds.includes("agent.end"));
   assert.equal(result.status, "IDLE");

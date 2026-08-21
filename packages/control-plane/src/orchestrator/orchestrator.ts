@@ -58,14 +58,30 @@ export function mintJwtForRun(run: Run): string {
   return token;
 }
 
+function workerCommand(): string[] | undefined {
+  const raw = process.env.WORKER_COMMAND;
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+      return parsed;
+    }
+  } catch {
+    // fall through to whitespace split
+  }
+  return raw.split(/\s+/).filter(Boolean);
+}
+
 function launchSpec(run: Run, jwt: string): RuntimeSpec {
   const config = getConfig();
   return {
     runId: run.id,
     image: config.workerImage,
     snapshotId: null,
-    cpu: 2,
-    memoryMiB: 4096,
+    cpu: Number(process.env.WORKER_CPUS ?? 2),
+    memoryMiB: Number(process.env.WORKER_MEMORY_MIB ?? 2048),
     diskGiB: 40,
     egress: { mode: "allow_all", domains: [] },
     jwt,
@@ -76,6 +92,7 @@ function launchSpec(run: Run, jwt: string): RuntimeSpec {
     controlPlaneUrl: config.workerControlPlaneUrl,
     llmGatewayUrl: config.workerLlmGatewayUrl,
     dockerNetwork: config.dockerNetwork,
+    command: workerCommand(),
   };
 }
 

@@ -1,17 +1,17 @@
 :root {
-  --bg: #12140f;
-  --bg-2: #1a1d15;
-  --panel: #22261b;
-  --line: #353a2b;
-  --text: #ece7d5;
-  --muted: #9a9480;
-  --gold: #d4a017;
-  --gold-2: #f0c45a;
-  --user: #2b271c;
-  --ok: #8fbf6a;
-  --err: #e07a5f;
-  --run: #7eb6d6;
-  --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  --bg: #ffffff;
+  --bg-2: #f6f7f9;
+  --panel: #ffffff;
+  --line: #e4e7ec;
+  --text: #1b1f24;
+  --muted: #667085;
+  --accent: #2563eb;
+  --accent-2: #1d4ed8;
+  --user: #eef4ff;
+  --ok: #067647;
+  --err: #b42318;
+  --run: #175cd3;
+  --shadow: 0 10px 30px rgba(16, 24, 40, 0.06);
 }
 
 * {
@@ -22,9 +22,7 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(212, 160, 23, 0.08), transparent 50%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: "Source Sans 3", "Segoe UI", sans-serif;
 }
@@ -47,7 +45,7 @@ textarea {
   gap: 16px;
   padding: 22px 18px;
   border-right: 1px solid var(--line);
-  background: rgba(18, 20, 15, 0.92);
+  background: var(--bg-2);
 }
 
 .brand {
@@ -60,7 +58,8 @@ textarea {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  border: 2px solid var(--gold);
+  background: var(--bg);
+  border: 2px solid var(--accent);
   box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 9px var(--text);
 }
 
@@ -82,8 +81,8 @@ textarea {
 button[type="submit"] {
   border: 0;
   border-radius: 12px;
-  background: var(--gold);
-  color: #1a1404;
+  background: var(--accent);
+  color: #ffffff;
   font-weight: 700;
   padding: 11px 14px;
   cursor: pointer;
@@ -91,7 +90,7 @@ button[type="submit"] {
 
 .new-chat:hover,
 button[type="submit"]:hover {
-  background: var(--gold-2);
+  background: var(--accent-2);
 }
 
 .run-list {
@@ -107,7 +106,7 @@ button[type="submit"]:hover {
   width: 100%;
   text-align: left;
   border: 1px solid var(--line);
-  background: transparent;
+  background: var(--bg);
   color: var(--text);
   border-radius: 12px;
   padding: 10px 12px;
@@ -115,7 +114,7 @@ button[type="submit"]:hover {
 }
 
 .run-item.active {
-  border-color: var(--gold);
+  border-color: #bfd3ff;
   background: var(--user);
 }
 
@@ -152,6 +151,7 @@ button[type="submit"]:hover {
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-width: 0;
+  background: var(--bg);
 }
 
 .topbar {
@@ -187,22 +187,26 @@ h1 {
   padding: 5px 10px;
   font-size: 12px;
   border: 1px solid var(--line);
+  background: var(--bg-2);
 }
 
 .status[data-state="RUNNING"],
 .status[data-state="PROVISIONING"] {
   color: var(--run);
-  border-color: #35586a;
+  border-color: #b2ddff;
+  background: #eff8ff;
 }
 
 .status[data-state="IDLE"] {
   color: var(--ok);
-  border-color: #3d5a2e;
+  border-color: #abefc6;
+  background: #ecfdf3;
 }
 
 .status[data-state="ERROR"] {
   color: var(--err);
-  border-color: #7a3d30;
+  border-color: #fecdca;
+  background: #fef3f2;
 }
 
 .ghost {
@@ -230,6 +234,16 @@ h1 {
   font-weight: 560;
 }
 
+.empty code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: var(--text);
+}
+
 .bubble {
   max-width: 760px;
   border-radius: 18px;
@@ -241,7 +255,7 @@ h1 {
 .bubble.user {
   align-self: flex-end;
   background: var(--user);
-  border: 1px solid #4a4128;
+  border: 1px solid #d5e2ff;
 }
 
 .bubble.assistant {
@@ -262,17 +276,18 @@ h1 {
 .tool {
   margin-top: 10px;
   border-radius: 10px;
-  background: #181c16;
-  border: 1px solid #2f3a2a;
+  background: #ffffff;
+  border: 1px solid var(--line);
   padding: 8px 10px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 12px;
-  color: #c9d6b8;
+  color: #344054;
 }
 
 .tool.err {
-  color: #e7b0a3;
-  border-color: #7a3d30;
+  color: var(--err);
+  border-color: #fecdca;
+  background: #fef3f2;
 }
 
 .setup {
@@ -308,10 +323,16 @@ input,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
-  background: var(--bg);
+  background: #ffffff;
   color: var(--text);
   border-radius: 10px;
   padding: 10px 12px;
+}
+
+input:focus,
+textarea:focus {
+  outline: 2px solid #d5e2ff;
+  border-color: #84adff;
 }
 
 textarea {
