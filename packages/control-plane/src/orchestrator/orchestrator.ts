@@ -330,7 +330,7 @@ function launchSpec(run: Run, jwt: string): RuntimeSpec {
     snapshotId: run.buildId ? `snap_${run.buildId}` : null,
     cpu: Number(process.env.WORKER_CPUS ?? 2),
     memoryMiB: Number(process.env.WORKER_MEMORY_MIB ?? 2048),
-    diskGiB: 40,
+    diskGiB: Number(process.env.WORKER_DISK_GIB ?? 40),
     egress: { mode: egress.mode, domains: egress.domains ?? [] },
     jwt,
     model: run.model,

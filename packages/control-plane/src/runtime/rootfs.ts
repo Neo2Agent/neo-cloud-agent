@@ -1,11 +1,39 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getConfig } from "../config.js";
 
-function firecrackerDir(): string {
+export const PRODUCTION_ROOTFS_MIN_BYTES = 100 * 1024 * 1024;
+
+export function firecrackerDir(): string {
   return fileURLToPath(new URL("../../../../infra/firecracker", import.meta.url));
+}
+
+export function firecrackerAssetsDir(): string {
+  const configured = (process.env.FIRECRACKER_ASSETS ?? "").trim();
+  if (configured) {
+    return path.resolve(configured);
+  }
+  return path.join(firecrackerDir(), ".assets");
+}
+
+export function productionFirecrackerPaths(): { bin: string; kernel: string; rootfs: string } {
+  const dir = firecrackerAssetsDir();
+  return {
+    bin: (process.env.FIRECRACKER_BIN ?? "").trim() || path.join(dir, "firecracker"),
+    kernel: (process.env.FIRECRACKER_KERNEL ?? "").trim() || path.join(dir, "vmlinux"),
+    rootfs: (process.env.FIRECRACKER_ROOTFS ?? "").trim() || path.join(dir, "rootfs.ext4"),
+  };
+}
+
+export function isProductionRootfs(file = productionFirecrackerPaths().rootfs): boolean {
+  try {
+    const st = statSync(file);
+    return st.isFile() && st.size >= PRODUCTION_ROOTFS_MIN_BYTES;
+  } catch {
+    return false;
+  }
 }
 
 export function rootfsOverlayFiles(): Array<{ dest: string; mode: number; source?: string; contents?: string }> {
@@ -52,10 +80,15 @@ export async function packRootfsImage(overlayDir: string, imagePath: string, siz
   return result.code === 0;
 }
 
+/** Tiny overlay image for unit tests / operator fallback. Never builds the 1GiB+ worker rootfs. */
 export async function ensureFirecrackerRootfs(): Promise<string | null> {
   const configured = (process.env.FIRECRACKER_ROOTFS ?? "").trim();
   if (configured && existsSync(configured)) {
     return configured;
+  }
+  const production = productionFirecrackerPaths().rootfs;
+  if (isProductionRootfs(production)) {
+    return production;
   }
   const overlay = path.join(getConfig().runsDir, ".firecracker", "overlay");
   materializeRootfsOverlay(overlay);

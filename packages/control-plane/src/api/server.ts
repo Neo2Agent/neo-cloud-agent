@@ -53,6 +53,7 @@ import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBui
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
 import { serveWebFile } from "./static.js";
+import { guestFacingBootstrap } from "../runtime/firecracker.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -326,7 +327,13 @@ export function createApiServer() {
 
       const bootstrapMatch = /^\/internal\/runs\/([^/]+)\/bootstrap$/.exec(path);
       if (bootstrapMatch && method === "GET") {
-        send(res, 200, getBootstrap(bootstrapMatch[1] ?? ""));
+        const runId = bootstrapMatch[1] ?? "";
+        const bootstrap = getBootstrap(runId);
+        if (getConfig().workerRuntime === "firecracker") {
+          send(res, 200, guestFacingBootstrap(runId, bootstrap, getConfig().workerControlPlaneUrl));
+          return;
+        }
+        send(res, 200, bootstrap);
         return;
       }
 

@@ -1,13 +1,20 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, mkdirSync, openSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { access, open, unlink } from "node:fs/promises";
 import http from "node:http";
+import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import type { ExecutionRuntime, RuntimeHandle, RuntimeSpec } from "@neo-cloud-agent/contracts";
 import type { WorkerLease } from "../store/persist.js";
 import type { RuntimeHooks } from "./docker.js";
-import { ensureFirecrackerRootfs } from "./rootfs.js";
+import {
+  ensureFirecrackerRootfs,
+  firecrackerAssetsDir,
+  isProductionRootfs,
+  productionFirecrackerPaths,
+} from "./rootfs.js";
+import { copyWorkspaceTree } from "../scm/workspace.js";
 
 export type FirecrackerHttp = (
   socketPath: string,
@@ -44,6 +51,12 @@ export type TapPlan = {
   guestMac: string;
 };
 
+type ChildState = {
+  stop: () => void;
+  tap?: TapPlan;
+  privileged: boolean;
+};
+
 function hash16(value: string): number {
   const digest = createHash("sha256").update(value).digest();
   return digest.readUInt16BE(0);
@@ -65,6 +78,45 @@ export function tapPlan(runId: string): TapPlan {
 
 export function guestCid(runId: string): number {
   return 100 + (hash16(runId) % 20_000);
+}
+
+export function rewriteUrlHost(url: string, host: string): string {
+  if (!url || url.startsWith("file://") || url.startsWith("/") || url.startsWith(".")) {
+    return url;
+  }
+  try {
+    const parsed = new URL(url);
+    parsed.hostname = host;
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return url;
+  }
+}
+
+export function withTapReachableUrls(spec: RuntimeSpec, hostIp: string): RuntimeSpec {
+  const controlPlaneUrl = rewriteUrlHost(spec.controlPlaneUrl, hostIp);
+  const llmGatewayUrl = rewriteUrlHost(spec.llmGatewayUrl, hostIp);
+  const domains = [...new Set([...(spec.egress.domains ?? []), hostIp])];
+  return {
+    ...spec,
+    controlPlaneUrl,
+    llmGatewayUrl,
+    egress: { ...spec.egress, domains },
+  };
+}
+
+export function guestFacingBootstrap<T extends { llmGatewayUrl?: string; workspaceDir?: string }>(
+  runId: string,
+  bootstrap: T,
+  controlPlaneUrl?: string,
+): T & { llmGatewayUrl: string; workspaceDir: string; controlPlaneUrl?: string } {
+  const tap = tapPlan(runId);
+  return {
+    ...bootstrap,
+    workspaceDir: "/workspace",
+    llmGatewayUrl: rewriteUrlHost(bootstrap.llmGatewayUrl ?? "", tap.hostIp),
+    ...(controlPlaneUrl ? { controlPlaneUrl: rewriteUrlHost(controlPlaneUrl, tap.hostIp) } : {}),
+  };
 }
 
 export function firecrackerPaths(spec: RuntimeSpec): {
@@ -120,6 +172,9 @@ export function buildFirecrackerCalls(
     "reboot=k",
     "panic=1",
     "pci=off",
+    "nomodules",
+    "root=/dev/vda",
+    "ro",
     "init=/sbin/init",
     `neo_run_id=${spec.runId}`,
   ];
@@ -197,7 +252,7 @@ export function requestUnix(
   });
 }
 
-async function waitForPath(file: string, timeoutMs = 5000): Promise<void> {
+async function waitForPath(file: string, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (existsSync(file)) {
@@ -208,16 +263,51 @@ async function waitForPath(file: string, timeoutMs = 5000): Promise<void> {
   throw new Error(`firecracker api socket not ready: ${file}`);
 }
 
-function spawnFirecracker(bin: string, args: string[]): Promise<{ pid: number | null; stop: () => void; child: ChildProcess }> {
+function canOpenKvm(): boolean {
+  try {
+    const fd = openSync("/dev/kvm", "r+");
+    closeSync(fd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function spawnFirecracker(
+  bin: string,
+  args: string[],
+  logFile: string,
+): Promise<{ pid: number | null; stop: () => void; privileged: boolean; child: ChildProcess }> {
+  mkdirSync(path.dirname(logFile), { recursive: true });
+  const privileged = !canOpenKvm();
+  const command = privileged ? "sudo" : bin;
+  const commandArgs = privileged ? ["-n", bin, ...args] : args;
+  const logFd = openSync(logFile, "a");
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
-    child.once("error", reject);
-    const stop = () => {
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill("SIGTERM");
+    const child = spawn(command, commandArgs, { stdio: ["ignore", logFd, logFd] });
+    child.once("error", (error) => {
+      try {
+        closeSync(logFd);
+      } catch {
+        // already closed
       }
+      reject(error);
+    });
+    const stop = () => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+      }
+      if (privileged && child.pid) {
+        spawn("sudo", ["-n", "kill", "-TERM", String(child.pid)], { stdio: "ignore" });
+        return;
+      }
+      child.kill("SIGTERM");
     };
-    resolve({ pid: child.pid ?? null, stop, child });
+    if (child.spawnfile) {
+      resolve({ pid: child.pid ?? null, stop, privileged, child });
+      return;
+    }
+    child.once("spawn", () => resolve({ pid: child.pid ?? null, stop, privileged, child }));
   });
 }
 
@@ -248,10 +338,21 @@ async function ensureSparseFile(file: string, sizeGiB: number): Promise<void> {
 }
 
 async function packWorkspaceImage(srcDir: string, destImg: string, sizeGiB: number, run: FirecrackerProcessRunner): Promise<void> {
-  await ensureSparseFile(destImg, sizeGiB);
-  const mkfs = await run("mkfs.ext4", ["-F", "-d", srcDir, destImg]).catch(() => ({ code: 1, stdout: "", stderr: "mkfs.ext4 missing" }));
-  if (mkfs.code !== 0) {
-    console.warn(`firecracker workspace image is sparse-only (${mkfs.stderr.trim() || "mkfs.ext4 failed"}); guest needs a rootfs that can mount it`);
+  const staging = path.join(tmpdir(), `neo-fc-ws-${createHash("sha256").update(destImg).digest("hex").slice(0, 16)}`);
+  rmSync(staging, { recursive: true, force: true });
+  try {
+    await copyWorkspaceTree(srcDir, staging);
+    await ensureSparseFile(destImg, sizeGiB);
+    const mkfs = await run("mkfs.ext4", ["-F", "-d", staging, destImg]).catch(() => ({
+      code: 1,
+      stdout: "",
+      stderr: "mkfs.ext4 missing",
+    }));
+    if (mkfs.code !== 0) {
+      console.warn(`firecracker workspace image is sparse-only (${mkfs.stderr.trim() || "mkfs.ext4 failed"}); guest needs a rootfs that can mount it`);
+    }
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
   }
 }
 
@@ -264,8 +365,23 @@ function alive(pid: number): boolean {
   }
 }
 
+export function resolveFirecrackerBin(explicit?: string): string {
+  if (explicit?.trim()) {
+    return explicit.trim();
+  }
+  const env = (process.env.FIRECRACKER_BIN ?? "").trim();
+  if (env) {
+    return env;
+  }
+  const asset = path.join(firecrackerAssetsDir(), "firecracker");
+  if (existsSync(asset)) {
+    return asset;
+  }
+  return "firecracker";
+}
+
 export class FirecrackerRuntime implements ExecutionRuntime {
-  private readonly children = new Map<string, { stop: () => void; tap?: TapPlan }>();
+  private readonly children = new Map<string, ChildState>();
   private readonly options: FirecrackerOptions;
 
   constructor(options: FirecrackerOptions = {}) {
@@ -273,41 +389,51 @@ export class FirecrackerRuntime implements ExecutionRuntime {
   }
 
   async provision(spec: RuntimeSpec, hooks?: RuntimeHooks): Promise<RuntimeHandle> {
-    const kernel = this.options.kernel || process.env.FIRECRACKER_KERNEL || "";
-    let rootfs = this.options.rootfs || process.env.FIRECRACKER_ROOTFS || "";
-    if (!rootfs) {
+    const assets = productionFirecrackerPaths();
+    const kernel = this.options.kernel || assets.kernel;
+    let rootfs = this.options.rootfs || assets.rootfs;
+    if (!rootfs || !existsSync(rootfs)) {
       const packed = await ensureFirecrackerRootfs();
       if (packed && existsSync(packed) && statSync(packed).isFile()) {
         rootfs = packed;
       }
     }
-    const bin = this.options.bin || process.env.FIRECRACKER_BIN || "firecracker";
-    if (!kernel || !rootfs) {
+    const bin = resolveFirecrackerBin(this.options.bin);
+    if (!kernel || !rootfs || !existsSync(kernel) || !existsSync(rootfs)) {
       throw new Error("FIRECRACKER_KERNEL and FIRECRACKER_ROOTFS are required for WORKER_RUNTIME=firecracker");
     }
     await access(kernel);
     await access(rootfs);
-    writeRunBootstrap(spec);
-    const paths = firecrackerPaths(spec);
+
+    const net = this.options.net ?? (process.env.FIRECRACKER_NET === "none" ? "none" : "tap");
+    const tap = net === "tap" ? tapPlan(spec.runId) : null;
+    const guestSpec = tap ? withTapReachableUrls(spec, tap.hostIp) : spec;
+    mkdirSync(guestSpec.hostWorkspaceDir, { recursive: true });
+    writeRunBootstrap(guestSpec);
+
+    const paths = firecrackerPaths(guestSpec);
     mkdirSync(paths.runDir, { recursive: true });
     if (existsSync(paths.sock)) {
       await unlink(paths.sock).catch(() => undefined);
     }
     const run = this.options.runCommand ?? runCommand;
-    await packWorkspaceImage(spec.hostWorkspaceDir, paths.workspaceImg, spec.diskGiB || 8, run);
+    await packWorkspaceImage(guestSpec.hostWorkspaceDir, paths.workspaceImg, guestSpec.diskGiB || 8, run);
 
-    const net = this.options.net ?? (process.env.FIRECRACKER_NET === "none" ? "none" : "tap");
-    const tap = net === "tap" ? tapPlan(spec.runId) : null;
     if (tap) {
-      await this.setupTap(tap, spec.controlPlaneUrl, run);
+      await this.setupTap(tap, run);
     }
 
     const spawned =
-      (await this.options.spawnProcess?.(bin, ["--api-sock", paths.sock, "--id", spec.runId.slice(0, 8)], paths.sock)) ??
-      (await spawnFirecracker(bin, ["--api-sock", paths.sock, "--id", spec.runId.slice(0, 8)]));
+      (await this.options.spawnProcess?.(bin, ["--api-sock", paths.sock, "--id", guestSpec.runId.slice(0, 8)], paths.sock)) ??
+      (await spawnFirecracker(bin, ["--api-sock", paths.sock, "--id", guestSpec.runId.slice(0, 8)], paths.log));
     await (this.options.waitForSocket ?? waitForPath)(paths.sock);
+    await this.ensureSocketWritable(paths.sock, run);
     const request = this.options.request ?? requestUnix;
-    const calls = buildFirecrackerCalls(spec, { kernel, rootfs, workspaceImg: paths.workspaceImg, vsock: paths.vsock }, tap);
+    const calls = buildFirecrackerCalls(
+      guestSpec,
+      { kernel, rootfs, workspaceImg: paths.workspaceImg, vsock: paths.vsock },
+      tap,
+    );
     for (const call of calls) {
       const result = await request(paths.sock, call.method, call.path, call.body);
       if (result.status >= 300) {
@@ -315,15 +441,21 @@ export class FirecrackerRuntime implements ExecutionRuntime {
         throw new Error(`firecracker ${call.method} ${call.path} failed: ${result.status} ${result.text}`.trim());
       }
     }
-    this.children.set(spec.runId, { stop: spawned.stop, tap: tap ?? undefined });
-    hooks?.onLog?.(`firecracker ${spec.runId} cid=${guestCid(spec.runId)} ip=${tap?.guestIp ?? "none"}\n`);
+    this.children.set(guestSpec.runId, {
+      stop: spawned.stop,
+      tap: tap ?? undefined,
+      privileged: !canOpenKvm(),
+    });
+    hooks?.onLog?.(
+      `firecracker ${guestSpec.runId} cid=${guestCid(guestSpec.runId)} ip=${tap?.guestIp ?? "none"} rootfs=${isProductionRootfs(rootfs) ? "production" : "overlay"}\n`,
+    );
     return {
-      id: `fc-${spec.runId}`,
+      id: `fc-${guestSpec.runId}`,
       runtime: "firecracker",
       ip: tap?.guestIp ?? null,
       pid: spawned.pid,
       socket: paths.sock,
-      cid: guestCid(spec.runId),
+      cid: guestCid(guestSpec.runId),
     };
   }
 
@@ -350,7 +482,7 @@ export class FirecrackerRuntime implements ExecutionRuntime {
       try {
         process.kill(handle.pid, "SIGTERM");
       } catch {
-        // gone
+        spawn("sudo", ["-n", "kill", "-TERM", String(handle.pid)], { stdio: "ignore" });
       }
     }
     if (child?.tap) {
@@ -374,6 +506,7 @@ export class FirecrackerRuntime implements ExecutionRuntime {
     }, 1000);
     timer.unref();
     this.children.set(runId, {
+      privileged: false,
       stop: () => {
         clearInterval(timer);
         try {
@@ -393,27 +526,74 @@ export class FirecrackerRuntime implements ExecutionRuntime {
     };
   }
 
-  private async setupTap(tap: TapPlan, controlPlaneUrl: string, run: FirecrackerProcessRunner): Promise<void> {
-    const commands: Array<[string, string[]]> = [
-      ["ip", ["tuntap", "add", "dev", tap.name, "mode", "tap"]],
-      ["ip", ["addr", "add", `${tap.hostIp}/${tap.prefix}`, "dev", tap.name]],
-      ["ip", ["link", "set", tap.name, "up"]],
+  private async runNet(
+    run: FirecrackerProcessRunner,
+    command: string,
+    args: string[],
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    const direct = await run(command, args).catch((error) => ({
+      code: 127,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+    }));
+    if (direct.code === 0 || /exists|file exists/i.test(direct.stderr + direct.stdout)) {
+      return direct;
+    }
+    return run("sudo", ["-n", command, ...args]).catch((error) => ({
+      code: 127,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+    }));
+  }
+
+  private async setupTap(tap: TapPlan, run: FirecrackerProcessRunner): Promise<void> {
+    const user = process.env.SUDO_USER || process.env.USER || userInfo().username;
+    const addTap = await this.runNet(run, "ip", ["tuntap", "add", "dev", tap.name, "mode", "tap", "user", user]);
+    if (addTap.code !== 0 && !/exists|file exists/i.test(addTap.stderr + addTap.stdout)) {
+      const retry = await this.runNet(run, "ip", ["tuntap", "add", "dev", tap.name, "mode", "tap"]);
+      if (retry.code !== 0 && !/exists|file exists/i.test(retry.stderr + retry.stdout)) {
+        throw new Error(`failed to configure tap ${tap.name}: ${retry.stderr || retry.stdout || `exit ${retry.code}`}`);
+      }
+    }
+    const commands: string[][] = [
+      ["addr", "add", `${tap.hostIp}/${tap.prefix}`, "dev", tap.name],
+      ["link", "set", tap.name, "up"],
     ];
-    for (const [command, args] of commands) {
-      const result = await run(command, args);
-      if (result.code !== 0 && !/exists|file exists/i.test(result.stderr)) {
+    for (const args of commands) {
+      const result = await this.runNet(run, "ip", args);
+      if (result.code !== 0 && !/exists|file exists/i.test(result.stderr + result.stdout)) {
         throw new Error(`failed to configure tap ${tap.name}: ${result.stderr || result.stdout || `exit ${result.code}`}`);
       }
     }
-    void controlPlaneUrl;
+    await this.runNet(run, "iptables", ["-I", "INPUT", "1", "-i", tap.name, "-j", "ACCEPT"]).catch(() => undefined);
   }
 
   private async teardownTap(tap: TapPlan): Promise<void> {
     const run = this.options.runCommand ?? runCommand;
-    await run("ip", ["link", "delete", tap.name]).catch(() => undefined);
+    await this.runNet(run, "ip", ["link", "delete", tap.name]);
+  }
+
+  private async ensureSocketWritable(sock: string, run: FirecrackerProcessRunner): Promise<void> {
+    try {
+      await access(sock, constants.R_OK | constants.W_OK);
+    } catch {
+      const result = await run("sudo", ["-n", "chmod", "666", sock]).catch(() => ({
+        code: 1,
+        stdout: "",
+        stderr: "chmod failed",
+      }));
+      if (result.code !== 0) {
+        try {
+          await access(sock, constants.R_OK);
+        } catch {
+          throw new Error(`firecracker api socket not writable: ${sock}`);
+        }
+      }
+    }
   }
 }
 
-export function firecrackerAvailable(bin = process.env.FIRECRACKER_BIN ?? "firecracker"): boolean {
-  return existsSync("/dev/kvm") && (bin.includes("/") ? existsSync(bin) : true);
+export function firecrackerAvailable(bin = resolveFirecrackerBin()): boolean {
+  const resolved = bin.includes("/") ? existsSync(bin) : true;
+  return existsSync("/dev/kvm") && resolved;
 }

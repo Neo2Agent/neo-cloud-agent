@@ -8,7 +8,14 @@ import test from "node:test";
 
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-rootfs-"));
 
-const { ensureFirecrackerRootfs, materializeRootfsOverlay, packRootfsImage, rootfsOverlayFiles } = await import("./rootfs.js");
+const {
+  ensureFirecrackerRootfs,
+  isProductionRootfs,
+  materializeRootfsOverlay,
+  packRootfsImage,
+  productionFirecrackerPaths,
+  rootfsOverlayFiles,
+} = await import("./rootfs.js");
 
 const boot = fileURLToPath(new URL("../../../../infra/firecracker/boot.sh", import.meta.url));
 
@@ -18,8 +25,16 @@ test("rootfs overlay writes guest PID 1 and the worker start helper", () => {
   assert.deepEqual(written.sort(), ["opt/neo/boot.sh", "opt/neo/worker/start.sh", "sbin/init"].sort());
   assert.equal(statSync(path.join(dest, "sbin/init")).mode & 0o111, 0o111);
   assert.match(readFileSync(path.join(dest, "opt/neo/boot.sh"), "utf8"), /run-bootstrap\.json/);
+  assert.match(readFileSync(path.join(dest, "opt/neo/worker/start.sh"), "utf8"), /tsx/);
   assert.match(readFileSync(path.join(dest, "sbin/init"), "utf8"), /\/opt\/neo\/boot\.sh/);
   assert.equal(rootfsOverlayFiles().length, 3);
+});
+
+test("production rootfs helper rejects the tiny overlay image", () => {
+  const tiny = path.join(process.env.RUNS_DIR ?? tmpdir(), "tiny.ext4");
+  writeFileSync(tiny, "overlay");
+  assert.equal(isProductionRootfs(tiny), false);
+  assert.match(productionFirecrackerPaths().rootfs, /rootfs\.ext4$/);
 });
 
 test("boot.sh in dry-run starts a workspace worker entry", () => {

@@ -16,6 +16,9 @@
     "test:e2e": "tsx scripts/e2e-http.ts",
     "test:e2e:live": "E2E_EXPECT_README=1 tsx scripts/e2e-http.ts",
     "test:docker": "tsx --test packages/control-plane/src/e2e/docker-turn.test.ts",
+    "test:firecracker": "FIRECRACKER_E2E=1 tsx --test packages/control-plane/src/e2e/firecracker-turn.test.ts",
+    "fc:assets": "bash infra/firecracker/fetch-assets.sh",
+    "fc:rootfs": "bash infra/firecracker/build-rootfs.sh",
     "build:worker-image": "docker build -f infra/Dockerfile.worker -t neo-cloud-agent-worker:dev ."
   },
   "devDependencies": {

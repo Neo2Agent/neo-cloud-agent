@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { RuntimeSpec } from "@neo-cloud-agent/contracts";
-import { buildFirecrackerCalls, FirecrackerRuntime, tapPlan, writeRunBootstrap } from "./firecracker.js";
+import {
+  buildFirecrackerCalls,
+  FirecrackerRuntime,
+  guestFacingBootstrap,
+  rewriteUrlHost,
+  tapPlan,
+  withTapReachableUrls,
+} from "./firecracker.js";
 
 function spec(runId: string, workspace: string): RuntimeSpec {
   return {
@@ -23,6 +30,32 @@ function spec(runId: string, workspace: string): RuntimeSpec {
     llmGatewayUrl: "http://172.16.0.1:8081",
   };
 }
+
+test("rewriteUrlHost swaps only the hostname", () => {
+  assert.equal(rewriteUrlHost("http://127.0.0.1:8080", "172.16.1.1"), "http://172.16.1.1:8080");
+  assert.equal(rewriteUrlHost("http://127.0.0.1:8081/v1", "172.16.1.1"), "http://172.16.1.1:8081/v1");
+  assert.equal(rewriteUrlHost("file:///workspace", "172.16.1.1"), "file:///workspace");
+});
+
+test("tap-reachable spec keeps the gateway and control plane on the tap host", () => {
+  const tap = tapPlan("run-fc-1");
+  const guest = withTapReachableUrls(spec("run-fc-1", "/tmp/ws"), tap.hostIp);
+  assert.equal(guest.controlPlaneUrl, `http://${tap.hostIp}:8080`);
+  assert.equal(guest.llmGatewayUrl, `http://${tap.hostIp}:8081`);
+  assert.ok(guest.egress.domains.includes(tap.hostIp));
+});
+
+test("guest-facing bootstrap uses the workspace mount and tap host", () => {
+  const tap = tapPlan("run-fc-boot");
+  const guest = guestFacingBootstrap(
+    "run-fc-boot",
+    { llmGatewayUrl: "http://127.0.0.1:8081", workspaceDir: "/host/runs/run-fc-boot" },
+    "http://127.0.0.1:8080",
+  );
+  assert.equal(guest.workspaceDir, "/workspace");
+  assert.equal(guest.llmGatewayUrl, `http://${tap.hostIp}:8081`);
+  assert.equal(guest.controlPlaneUrl, `http://${tap.hostIp}:8080`);
+});
 
 test("tap plan is deterministic and stays on a /30", () => {
   const first = tapPlan("11111111-1111-1111-1111-111111111111");
@@ -81,7 +114,15 @@ test("FirecrackerRuntime.provision talks to the API and writes a bootstrap file"
   assert.equal(handle.runtime, "firecracker");
   assert.equal(handle.pid, 4242);
   assert.ok(handle.socket);
-  assert.match(writeRunBootstrap(launch), /run-bootstrap\.json$/);
+  const tap = tapPlan(launch.runId);
+  const bootstrap = JSON.parse(readFileSync(path.join(root, "ws", ".neo", "run-bootstrap.json"), "utf8")) as {
+    controlPlaneUrl: string;
+    llmGatewayUrl: string;
+    egress: { domains: string[] };
+  };
+  assert.equal(bootstrap.controlPlaneUrl, `http://${tap.hostIp}:8080`);
+  assert.equal(bootstrap.llmGatewayUrl, `http://${tap.hostIp}:8081`);
+  assert.ok(bootstrap.egress.domains.includes(tap.hostIp));
   assert.equal(calls.some((item) => item.startsWith("ip tuntap")), true);
   assert.equal(calls.includes("PUT /actions"), true);
   await runtime.destroy(handle);

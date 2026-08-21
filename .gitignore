@@ -7,3 +7,4 @@ dist/
 !.env.example
 .pnpm-store/
 **/.neo/runs/
+infra/firecracker/.assets/
