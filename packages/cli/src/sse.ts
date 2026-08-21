@@ -1,4 +1,7 @@
+import http from "node:http";
+import https from "node:https";
 import type { RunEvent } from "@neo-cloud-agent/contracts";
+import { CliError, EXIT_ERROR, EXIT_NETWORK, EXIT_USAGE } from "./errors.js";
 
 export interface SseFrame {
   id?: string;
@@ -52,4 +55,66 @@ export async function* readSseEvents(response: Response): AsyncGenerator<RunEven
   } finally {
     reader.releaseLock();
   }
+}
+
+/** Node http.get — fetch() + undici can stall on same-process event-stream bodies. */
+export function streamSse(
+  url: string,
+  headers: Record<string, string>,
+  onEvent: (event: RunEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const transport = parsed.protocol === "https:" ? https : http;
+    const req = transport.request(
+      parsed,
+      {
+        method: "GET",
+        headers: { accept: "text/event-stream", ...headers },
+      },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        if (status >= 400) {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+          response.on("end", () => {
+            const text = Buffer.concat(chunks).toString("utf8");
+            let message = response.statusMessage ?? `http ${status}`;
+            try {
+              message = (JSON.parse(text) as { error?: string }).error ?? message;
+            } catch {
+              // keep status text
+            }
+            reject(new CliError(message, status === 401 ? EXIT_USAGE : EXIT_ERROR, status));
+          });
+          return;
+        }
+        let buffer = "";
+        response.on("data", (chunk) => {
+          buffer += String(chunk);
+          const parsedChunk = parseSseChunk(buffer);
+          buffer = parsedChunk.rest;
+          for (const frame of parsedChunk.frames) {
+            onEvent(JSON.parse(frame.data ?? "{}") as RunEvent);
+          }
+        });
+        response.on("end", () => resolve());
+        response.on("error", reject);
+      },
+    );
+    req.on("error", (error) => {
+      reject(new CliError(`cannot reach ${parsed.origin}: ${error.message}`, EXIT_NETWORK));
+    });
+    const abort = () => {
+      req.destroy();
+      resolve();
+    };
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener("abort", abort, { once: true });
+    req.end();
+  });
 }

@@ -8,7 +8,7 @@ export interface Writer {
 export interface CliIo {
   out: Writer;
   err: Writer;
-  stdin: NodeJS.ReadStream;
+  stdin: NodeJS.ReadableStream;
   env: NodeJS.ProcessEnv;
   cwd: string;
   now: () => number;

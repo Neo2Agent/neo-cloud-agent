@@ -11,7 +11,7 @@ import type {
   TranscriptSnapshot,
 } from "@neo-cloud-agent/contracts";
 import { CliError, EXIT_ERROR, EXIT_NETWORK, EXIT_USAGE } from "./errors.js";
-import { readSseEvents } from "./sse.js";
+import { streamSse } from "./sse.js";
 
 export interface ControlPlaneClientOptions {
   url: string;
@@ -183,31 +183,20 @@ export class ControlPlaneClient {
     return this.request("GET", "/v1/vms");
   }
 
-  async *events(id: string, options?: { after?: string | null; signal?: AbortSignal }): AsyncGenerator<RunEvent> {
-    let response: Response;
-    try {
-      response = await this.fetchImpl(`${this.url}/v1/runs/${id}/events`, {
-        headers: this.headers(false, {
-          accept: "text/event-stream",
-          ...(options?.after ? { "Last-Event-ID": options.after } : {}),
-        }),
-        signal: options?.signal,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "network_error";
-      throw new CliError(`cannot reach ${this.url}: ${message}`, EXIT_NETWORK);
-    }
-    if (!response.ok) {
-      const text = await response.text();
-      let err = response.statusText;
-      try {
-        err = (JSON.parse(text) as { error?: string }).error ?? err;
-      } catch {
-        // keep status text
-      }
-      const code = response.status === 401 ? EXIT_USAGE : EXIT_ERROR;
-      throw new CliError(err || `http ${response.status}`, code, response.status);
-    }
-    yield* readSseEvents(response);
+  streamEvents(
+    id: string,
+    onEvent: (event: RunEvent) => void,
+    options?: { after?: string | null; signal?: AbortSignal },
+  ): Promise<void> {
+    const query = options?.after ? `?after=${encodeURIComponent(options.after)}` : "";
+    return streamSse(
+      `${this.url}/v1/runs/${id}/events${query}`,
+      this.headers(false, {
+        accept: "text/event-stream",
+        ...(options?.after ? { "Last-Event-ID": options.after } : {}),
+      }),
+      onEvent,
+      options?.signal,
+    );
   }
 }

@@ -19,15 +19,20 @@ export function question(io: CliIo, prompt: string): Promise<string> {
   });
 }
 
+function asTty(input: NodeJS.ReadableStream): NodeJS.ReadStream | null {
+  const stream = input as NodeJS.ReadStream;
+  return typeof stream.setRawMode === "function" ? stream : null;
+}
+
 export function readHidden(io: CliIo, prompt: string): Promise<string> {
-  const input = io.stdin;
-  if (typeof input.setRawMode !== "function" || !io.isStdinTty) {
+  const tty = asTty(io.stdin);
+  if (!tty || !io.isStdinTty) {
     return question(io, prompt);
   }
   io.out.write(prompt);
-  input.setRawMode(true);
-  input.resume();
-  input.setEncoding("utf8");
+  tty.setRawMode(true);
+  tty.resume();
+  tty.setEncoding("utf8");
   let value = "";
   return new Promise((resolve, reject) => {
     const onData = (chunk: string | Buffer) => {
@@ -54,12 +59,10 @@ export function readHidden(io: CliIo, prompt: string): Promise<string> {
       }
     };
     const cleanup = () => {
-      input.off("data", onData);
-      if (typeof input.setRawMode === "function") {
-        input.setRawMode(false);
-      }
+      tty.off("data", onData);
+      tty.setRawMode(false);
     };
-    input.on("data", onData);
+    tty.on("data", onData);
   });
 }
 

@@ -34,8 +34,8 @@ function requireArg(args: string[], label: string): string {
   return value;
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && (error.name === "AbortError" || /aborted/i.test(error.message));
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function resolveRepoUrls(client: ControlPlaneClient, flags: CliFlags, cwd: string): Promise<string[]> {
@@ -102,42 +102,59 @@ async function waitForTurn(
     return finish(subtypeFor(run.status), run.errorMessage ?? undefined);
   }
 
-  while (io.now() < startedAt + timeoutMs) {
-    const remaining = startedAt + timeoutMs - io.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), remaining);
-    try {
-      for await (const event of client.events(run.id, { after: lastId, signal: controller.signal })) {
-        if (seen.has(event.id)) {
-          continue;
-        }
-        seen.add(event.id);
-        collected.push(event);
-        lastId = event.id;
-        formatter.event(event);
-        if (event.kind === "run.idle" || event.kind === "run.error" || event.kind === "run.archived") {
-          latest = await client.getRun(run.id);
-          clearTimeout(timer);
-          return finish(subtypeFor(latest.status), latest.errorMessage ?? undefined);
-        }
-      }
-    } catch (error) {
-      if (!isAbortError(error)) {
-        writeLine(io.err, `event stream interrupted, retrying`);
-      }
-    } finally {
-      clearTimeout(timer);
+  const consume = (event: RunEvent) => {
+    if (seen.has(event.id)) {
+      return;
     }
+    seen.add(event.id);
+    collected.push(event);
+    lastId = event.id;
+    formatter.event(event);
+  };
 
-    latest = await client.getRun(run.id);
-    if (TERMINAL.has(latest.status)) {
-      return finish(subtypeFor(latest.status), latest.errorMessage ?? undefined);
+  const controller = new AbortController();
+  const streaming = (async () => {
+    while (!controller.signal.aborted && io.now() < startedAt + timeoutMs) {
+      try {
+        await client.streamEvents(run.id, consume, { after: lastId, signal: controller.signal });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (error instanceof CliError && error.status === 401) {
+          throw error;
+        }
+        writeLine(io.err, "event stream interrupted, retrying");
+      }
+      if (!controller.signal.aborted) {
+        await sleep(400);
+      }
     }
-    await new Promise((resolve) => setTimeout(resolve, 400));
+  })();
+
+  try {
+    while (io.now() < startedAt + timeoutMs) {
+      latest = await client.getRun(run.id);
+      if (TERMINAL.has(latest.status)) {
+        break;
+      }
+      await sleep(250);
+    }
+    if (!TERMINAL.has(latest.status)) {
+      latest = await client.getRun(run.id);
+    }
+    const transcript = await client.transcript(run.id);
+    for (const event of transcript.events) {
+      consume(event);
+    }
+    if (!TERMINAL.has(latest.status)) {
+      return finish("timeout", `timed out after ${timeoutMs}ms`);
+    }
+    return finish(subtypeFor(latest.status), latest.errorMessage ?? undefined);
+  } finally {
+    controller.abort();
+    await streaming.catch(() => undefined);
   }
-
-  latest = await client.getRun(run.id);
-  return finish("timeout", `timed out after ${timeoutMs}ms`);
 }
 
 async function replayAndMaybeWait(
