@@ -5,6 +5,7 @@ import type {
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
+  DiskCloneMethod,
   EgressPolicy,
   FollowUp,
   FollowUpDelivery,
@@ -416,8 +417,9 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
         );
         const dest = workspaceFor(run.id);
         const fromWarm = await claimWarmSlot(existing.id, dest);
+        let cloneMethod: DiskCloneMethod = "rename";
         if (!fromWarm) {
-          await restoreBuildSnapshot(existing, dest);
+          cloneMethod = (await restoreBuildSnapshot(existing, dest)).method;
         } else if (existing.snapshotPath) {
           void refillWarmPool(existing.id, existing.snapshotPath).catch((error) =>
             console.error("warm pool refill failed", error),
@@ -431,13 +433,13 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
         restoredFromBuild = true;
         publish(
           event(run.id, "scm.clone_succeeded", fromWarm ? "Warm pool workspace ready" : "Workspace restored from build", {
-            data: { buildId: existing.id, warm: fromWarm },
+            data: { buildId: existing.id, warm: fromWarm, cloneMethod },
           }),
         );
         publish(
           event(run.id, "build.used", "Using environment build snapshot", {
             category: "build",
-            data: { buildId: existing.id, fingerprint, warm: fromWarm },
+            data: { buildId: existing.id, fingerprint, warm: fromWarm, cloneMethod },
           }),
         );
         flushRun(run.id);

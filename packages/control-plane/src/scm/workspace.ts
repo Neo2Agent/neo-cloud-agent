@@ -113,6 +113,15 @@ export async function copyWorkspaceTree(src: string, dest: string): Promise<void
   }
 }
 
+/** Copy a captured snapshot as-is (install output included). No skipCopy filter. */
+export async function copyTreeAll(src: string, dest: string): Promise<void> {
+  if (!existsSync(src) || !statSync(src).isDirectory()) {
+    throw new Error(`local repo not found: ${src}`);
+  }
+  mkdirSync(path.dirname(dest), { recursive: true });
+  await cp(src, dest, { recursive: true });
+}
+
 export async function materializeRepos(
   repoUrls: string[],
   workspaceDir: string,

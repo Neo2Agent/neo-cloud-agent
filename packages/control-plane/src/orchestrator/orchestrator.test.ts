@@ -277,4 +277,6 @@ test("later runs reuse the captured environment build and skip install", async (
   assert.ok(kinds.includes("build.used"));
   assert.equal(kinds.includes("run.install_started"), false);
   assert.ok(listEvents(run.id).some((item) => item.category === "build"));
+  const used = listEvents(run.id).find((item) => item.kind === "build.used");
+  assert.ok(used?.data?.cloneMethod === "rename" || used?.data?.cloneMethod === "copy" || used?.data?.cloneMethod === "reflink");
 });

@@ -200,9 +200,9 @@ Runtime.destroy(handle)
 | --- | --- | --- |
 | 开发 / 单机 | Docker / K8s Pod + gVisor | 迭代快，隔离一般 |
 | 生产 | Firecracker 或 Cloud Hypervisor | 硬件级隔离，启动秒级 |
-| 加速 | 块设备 CoW 快照 + warm pool | 对标 Cursor Builds：新 Run fork 热机器，而不是冷装 |
+| 加速 | 块设备 CoW 快照 + warm pool | 对标 Cursor Builds：新 Run 从热快照启动，而不是冷装 |
 
-不要第一天就上 live-fork。先做「从成功 Build 的磁盘快照 boot」，再做「预热一台、clone 出多台」。接口先留好。
+不要第一天就上 live-fork。先做「从成功 Build 的磁盘快照 boot」，再做「预热一台、clone 出多台」。Clone 方法先留在合约里：`reflink`（`cp --reflink=always`）→ 工作区 `copy` / 只读 rootfs `shared` → warm slot `rename`。
 
 ### 5.2 机器里有什么
 
@@ -713,15 +713,15 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 ### P2 — 像 Cursor 的环境系统
 
 - Build 流水线 + 磁盘快照 + active/draft（控制面已落地：JIT install 后打盘，新 Run 复用；draft 永不自动激活）
-- Warm pool（已落地：成功 Build 的工作区副本；还不是 live-fork 一台正在跑的 VM）
+- Warm pool（已落地：成功 Build 的工作区副本，reflink 优先；还不是 live-fork 一台正在跑的 VM）
 - Firecracker guest init / rootfs overlay（已落地配方；生产盘仍要内核 + 烤进 worker 的 ext4）
 - Egress 三模式
 - MCP 扩展、artifacts
 
 ### P3 — 生产隔离与规模
 
-- Firecracker / Cloud Hypervisor
-- 块设备 CoW、失败 Build 不影响 fleets
+- Firecracker / Cloud Hypervisor live-fork（正在跑的 VM 热分叉）
+- 失败 Build 不影响 fleets
 - 多仓、自动化（cron / GitHub webhook）、OIDC
 - 子 Agent：用 pi 的自定义 tool 再开一个同镜像 worker（不要让 loop 回控制面）
 
@@ -761,7 +761,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数据、用户账号、以及 Environment Builds / warm pool 已经落地（没配服务时仍回退到本机文件 / 内存）。下一刀仍在本 monorepo：
 
 1. Firecracker 生产 rootfs / tap 回连已经落地（`pnpm fc:assets` / `pnpm fc:rootfs` / `pnpm test:firecracker`）。嵌套 KVM + AMX 的宿主机 `KVM_CREATE_VCPU` 会故障，live turn 需在真机或非 AMX 宿主上跑。
-2. 块设备 CoW / live-fork（现在只复制成功 Build 的工作区快照）
+2. 块设备 CoW 已落地接口：Build / 预热 / Firecracker rootfs 先 `cp --reflink=always`；文件系统不支持时工作区整树复制，生产 rootfs 只读共享原盘（不整份拷 1.5GiB）。不是 live-fork。
 3. 配额、多租户计费、组织成员
 4. Egress 从应用层升级到 VM 出站代理 / iptables
 
@@ -778,5 +778,5 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数�
 - 设了 `DATABASE_URL` 后，Run / 事件 / 用户 / Environment / Build 写入 Postgres；没配则继续用 `.control` JSON。
 - 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。
 - `WORKER_RUNTIME=firecracker` 走 Firecracker HTTP API（kernel / rootfs / tap / vsock）。开发机没配内核时继续用 local / docker。没配 `FIRECRACKER_ROOTFS` 时：若 `infra/firecracker/.assets/rootfs.ext4` 是生产盘（`pnpm fc:rootfs`）就用它，否则用 overlay 打一张小 ext4（单测路径，需要 `mkfs.ext4`）。Guest 不能用 `127.0.0.1` 回连宿主机，provision 会把控制面 / Gateway URL 改成 tap 宿主机 IP。
-- Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot，否则拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。对话页可以选环境 / 快照，或点「预热」。
+- Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot（`rename`），否则 reflink / 拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。对话页可以选环境 / 快照，或点「预热」。
 - Egress：`environment.json` 的 `egress.mode` 会进 worker（`NEO_EGRESS_*`）。`allowlist_only` 拦 clone 和不在名单里的 `fetch`；Gateway / GitHub 仍放行。

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { DiskCloneMethod } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
-import { copyWorkspaceTree } from "../scm/workspace.js";
+import { materializeSnapshot } from "../scm/clone.js";
 import { controlStateDir } from "../store/persist.js";
 
 export type WarmSlot = {
@@ -10,6 +11,7 @@ export type WarmSlot = {
   path: string;
   ready: boolean;
   claimedBy: string | null;
+  cloneMethod?: DiskCloneMethod;
 };
 
 type WarmIndex = {
@@ -82,8 +84,8 @@ export async function refillWarmPool(buildId: string, snapshotPath: string, runs
     const id = crypto.randomUUID();
     const dest = path.join(warmRoot(buildId, runsDir), id);
     rmSync(dest, { recursive: true, force: true });
-    await copyWorkspaceTree(snapshotPath, dest);
-    const slot: WarmSlot = { id, buildId, path: dest, ready: true, claimedBy: null };
+    const cloned = await materializeSnapshot(snapshotPath, dest);
+    const slot: WarmSlot = { id, buildId, path: dest, ready: true, claimedBy: null, cloneMethod: cloned.method };
     index.slots.push(slot);
     created.push(slot);
   }

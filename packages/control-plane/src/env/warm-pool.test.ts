@@ -20,6 +20,7 @@ test("warm pool copies a snapshot and claim renames a ready slot onto the dest",
   assert.equal(warmPoolSize(), 2);
   assert.equal(slots.filter((item) => item.ready).length, 2);
   assert.equal(readyWarmCount(buildId), 2);
+  assert.ok(slots.every((item) => item.cloneMethod === "copy" || item.cloneMethod === "reflink"));
 
   const dest = path.join(process.env.RUNS_DIR ?? "", "claimed");
   assert.equal(await claimWarmSlot(buildId, dest), true);

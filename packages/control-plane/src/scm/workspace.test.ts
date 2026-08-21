@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { materializeRepos, repoName, resolveRepoRef, skipCopy } from "./workspace.js";
+import { copyTreeAll, materializeRepos, repoName, resolveRepoRef, skipCopy } from "./workspace.js";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
 
@@ -50,6 +50,22 @@ test("copies a local fixture into the run workspace", async () => {
     assert.equal(readFileSync(path.join(dest, "test.sh"), "utf8").includes("README.md"), true);
     assert.match(readFileSync(path.join(dest, ".neo/environment.json"), "utf8"), /install/);
   } finally {
+    rmSync(dest, { recursive: true, force: true });
+  }
+});
+
+test("copyTreeAll keeps install output that skipCopy would drop", async () => {
+  const src = mkdtempSync(path.join(tmpdir(), "neo-tree-src-"));
+  const dest = path.join(mkdtempSync(path.join(tmpdir(), "neo-tree-dest-")), "ws");
+  mkdirSync(path.join(src, "node_modules", "pkg"), { recursive: true });
+  writeFileSync(path.join(src, "hello.txt"), "hi\n");
+  writeFileSync(path.join(src, "node_modules", "pkg", "index.js"), "ok\n");
+  try {
+    await copyTreeAll(src, dest);
+    assert.equal(readFileSync(path.join(dest, "hello.txt"), "utf8"), "hi\n");
+    assert.equal(readFileSync(path.join(dest, "node_modules", "pkg", "index.js"), "utf8"), "ok\n");
+  } finally {
+    rmSync(src, { recursive: true, force: true });
     rmSync(dest, { recursive: true, force: true });
   }
 });

@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { RuntimeSpec } from "@neo-cloud-agent/contracts";
+import { setTryReflinkForTests } from "../scm/clone.js";
 import {
   buildFirecrackerCalls,
   firecrackerHostSupported,
+  firecrackerPaths,
   FirecrackerRuntime,
   guestFacingBootstrap,
   rewriteUrlHost,
@@ -104,12 +107,15 @@ test("firecracker calls boot kernel, rootfs, workspace disk, vsock, tap, then st
 });
 
 test("FirecrackerRuntime.provision talks to the API and writes a bootstrap file", async () => {
+  setTryReflinkForTests(async () => false);
+  try {
   const root = mkdtempSync(path.join(tmpdir(), "neo-fc-"));
   const kernel = path.join(root, "vmlinux");
   const rootfs = path.join(root, "rootfs.ext4");
   writeFileSync(kernel, "k");
   writeFileSync(rootfs, "r");
   const calls: string[] = [];
+  let rootDrive: { path_on_host?: string } | undefined;
   const runtime = new FirecrackerRuntime({
     bin: "/usr/bin/false",
     kernel,
@@ -121,8 +127,11 @@ test("FirecrackerRuntime.provision talks to the API and writes a bootstrap file"
     },
     spawnProcess: async () => ({ pid: 4242, stop() {} }),
     waitForSocket: async () => undefined,
-    request: async (_sock, method, urlPath) => {
+    request: async (_sock, method, urlPath, body) => {
       calls.push(`${method} ${urlPath}`);
+      if (urlPath === "/drives/root") {
+        rootDrive = body as { path_on_host?: string };
+      }
       return { status: 204, text: "" };
     },
   });
@@ -142,5 +151,46 @@ test("FirecrackerRuntime.provision talks to the API and writes a bootstrap file"
   assert.ok(bootstrap.egress.domains.includes(tap.hostIp));
   assert.equal(calls.some((item) => item.startsWith("ip tuntap")), true);
   assert.equal(calls.includes("PUT /actions"), true);
+  assert.equal(rootDrive?.path_on_host, rootfs);
   await runtime.destroy(handle);
+  } finally {
+    setTryReflinkForTests();
+  }
+});
+
+test("FirecrackerRuntime.provision attaches a reflinked rootfs when CoW works", async () => {
+  setTryReflinkForTests(async (src, dest) => {
+    await cp(src, dest);
+    return true;
+  });
+  try {
+    const root = mkdtempSync(path.join(tmpdir(), "neo-fc-cow-"));
+    const kernel = path.join(root, "vmlinux");
+    const rootfs = path.join(root, "rootfs.ext4");
+    writeFileSync(kernel, "k");
+    writeFileSync(rootfs, "r");
+    let rootDrive: { path_on_host?: string } | undefined;
+    const runtime = new FirecrackerRuntime({
+      bin: "/usr/bin/false",
+      kernel,
+      rootfs,
+      net: "none",
+      runCommand: async () => ({ code: 0, stdout: "", stderr: "" }),
+      spawnProcess: async () => ({ pid: 7, stop() {} }),
+      waitForSocket: async () => undefined,
+      request: async (_sock, _method, urlPath, body) => {
+        if (urlPath === "/drives/root") {
+          rootDrive = body as { path_on_host?: string };
+        }
+        return { status: 204, text: "" };
+      },
+    });
+    const launch = spec("bbbbbbbb-cccc-dddd-eeee-ffffffffffff", path.join(root, "ws"));
+    const handle = await runtime.provision(launch);
+    assert.equal(rootDrive?.path_on_host, firecrackerPaths(launch).rootfsImg);
+    assert.equal(readFileSync(firecrackerPaths(launch).rootfsImg, "utf8"), "r");
+    await runtime.destroy(handle);
+  } finally {
+    setTryReflinkForTests();
+  }
 });

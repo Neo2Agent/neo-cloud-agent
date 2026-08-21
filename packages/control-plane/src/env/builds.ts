@@ -1,7 +1,8 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Build, CreateBuildRequest, Environment, EnvironmentJson } from "@neo-cloud-agent/contracts";
+import type { Build, CreateBuildRequest, DiskCloneResult, Environment, EnvironmentJson } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
+import { materializeSnapshot } from "../scm/clone.js";
 import { materializeRepos, copyWorkspaceTree } from "../scm/workspace.js";
 import { controlStateDir } from "../store/persist.js";
 import { repoRoot } from "../worker-spawn.js";
@@ -153,9 +154,9 @@ function writeEnvironmentOverlay(workspaceDir: string, config: EnvironmentJson |
   writeFileSync(dest, `${JSON.stringify(config, null, 2)}\n`);
 }
 
-export async function restoreBuildSnapshot(build: Build, dest: string, runsDir?: string): Promise<void> {
+export async function restoreBuildSnapshot(build: Build, dest: string, runsDir?: string): Promise<DiskCloneResult> {
   const src = build.snapshotPath ?? snapshotPathFor(build.id, runsDir);
-  await copyWorkspaceTree(src, dest);
+  return materializeSnapshot(src, dest);
 }
 
 export async function snapshotWorkspace(buildId: string, workspaceDir: string, runsDir?: string): Promise<string> {

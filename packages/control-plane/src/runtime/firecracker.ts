@@ -14,6 +14,7 @@ import {
   isProductionRootfs,
   productionFirecrackerPaths,
 } from "./rootfs.js";
+import { materializeDiskImage } from "../scm/clone.js";
 import { copyWorkspaceTree } from "../scm/workspace.js";
 
 export type FirecrackerHttp = (
@@ -126,6 +127,7 @@ export function firecrackerPaths(spec: RuntimeSpec): {
   log: string;
   vsock: string;
   workspaceImg: string;
+  rootfsImg: string;
   bootstrapFile: string;
 } {
   const runDir = path.join(spec.hostWorkspaceDir, ".neo", "firecracker");
@@ -135,6 +137,7 @@ export function firecrackerPaths(spec: RuntimeSpec): {
     log: path.join(runDir, "firecracker.log"),
     vsock: path.join(runDir, "vsock.sock"),
     workspaceImg: path.join(runDir, "workspace.ext4"),
+    rootfsImg: path.join(runDir, "rootfs.ext4"),
     bootstrapFile: path.join(spec.hostWorkspaceDir, ".neo", "run-bootstrap.json"),
   };
 }
@@ -422,6 +425,8 @@ export class FirecrackerRuntime implements ExecutionRuntime {
     if (existsSync(paths.sock)) {
       await unlink(paths.sock).catch(() => undefined);
     }
+    const disk = await materializeDiskImage(rootfs, paths.rootfsImg);
+    const guestRootfs = disk.dest;
     const run = this.options.runCommand ?? runCommand;
     await packWorkspaceImage(guestSpec.hostWorkspaceDir, paths.workspaceImg, guestSpec.diskGiB || 8, run);
 
@@ -443,7 +448,7 @@ export class FirecrackerRuntime implements ExecutionRuntime {
     const request = this.options.request ?? requestUnix;
     const calls = buildFirecrackerCalls(
       guestSpec,
-      { kernel, rootfs, workspaceImg: paths.workspaceImg, vsock: paths.vsock },
+      { kernel, rootfs: guestRootfs, workspaceImg: paths.workspaceImg, vsock: paths.vsock },
       tap,
     );
     for (const call of calls) {
@@ -459,7 +464,7 @@ export class FirecrackerRuntime implements ExecutionRuntime {
       privileged: !canOpenKvm(),
     });
     hooks?.onLog?.(
-      `firecracker ${guestSpec.runId} cid=${guestCid(guestSpec.runId)} ip=${tap?.guestIp ?? "none"} rootfs=${isProductionRootfs(rootfs) ? "production" : "overlay"}\n`,
+      `firecracker ${guestSpec.runId} cid=${guestCid(guestSpec.runId)} ip=${tap?.guestIp ?? "none"} rootfs=${isProductionRootfs(rootfs) ? "production" : "overlay"} clone=${disk.method}\n`,
     );
     return {
       id: `fc-${guestSpec.runId}`,

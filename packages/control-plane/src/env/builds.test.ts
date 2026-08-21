@@ -53,7 +53,9 @@ test("createEnvironmentBuild snapshots install output and seeds the warm pool", 
   assert.equal(canRestoreBuild(active), true);
 
   const dest = mkdtempSync(path.join(tmpdir(), "neo-restore-"));
-  await restoreBuildSnapshot(build, dest);
+  const restored = await restoreBuildSnapshot(build, dest);
+  assert.ok(restored.method === "copy" || restored.method === "reflink");
+  assert.equal(restored.kind, "workspace");
   assert.equal(readFileSync(path.join(dest, ".neo-installed"), "utf8").trim(), "ok");
   assert.equal(readFileSync(path.join(dest, "hello.txt"), "utf8").includes("toy repo"), true);
 });
