@@ -1,4 +1,4 @@
-import type { RunEvent, TranscriptMessage, TranscriptSnapshot, TranscriptTool } from "./events.js";
+import type { RunEvent, TranscriptBlock, TranscriptMessage, TranscriptSnapshot, TranscriptTool } from "./events.js";
 
 const SETUP_PREFIXES = [
   "scm.",
@@ -27,6 +27,7 @@ function toolKey(event: RunEvent): string {
 
 function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTool {
   assistant.tools ??= [];
+  assistant.blocks ??= [];
   const id = toolKey(event);
   const name = String(event.data?.toolName ?? "tool");
   let tool = assistant.tools.find((item) => item.id === id);
@@ -36,6 +37,7 @@ function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTo
   if (!tool) {
     tool = { id, name, status: "running" };
     assistant.tools.push(tool);
+    assistant.blocks.push({ type: "tool", tool });
   }
   tool.id = id;
   tool.name = name;
@@ -53,6 +55,34 @@ function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTo
     tool.isError = event.data?.isError === true;
   }
   return tool;
+}
+
+function appendText(assistant: TranscriptMessage, delta: string): void {
+  if (!delta) {
+    return;
+  }
+  assistant.text += delta;
+  assistant.blocks ??= [];
+  const last = assistant.blocks.at(-1);
+  if (last?.type === "text") {
+    last.text += delta;
+    return;
+  }
+  assistant.blocks.push({ type: "text", text: delta });
+}
+
+export function transcriptBlocks(message: TranscriptMessage): TranscriptBlock[] {
+  if (message.blocks && message.blocks.length > 0) {
+    return message.blocks.filter((block) => block.type !== "text" || block.text.trim().length > 0);
+  }
+  const blocks: TranscriptBlock[] = [];
+  if (message.text.trim()) {
+    blocks.push({ type: "text", text: message.text });
+  }
+  for (const tool of message.tools ?? []) {
+    blocks.push({ type: "tool", tool });
+  }
+  return blocks;
 }
 
 /** Compact catch-up view so a late subscriber does not replay every token. */
@@ -84,6 +114,7 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
         createdAt: event.createdAt,
         streaming: true,
         tools: [],
+        blocks: [],
       };
       messages.push(open.assistant);
     }
@@ -120,7 +151,7 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
       continue;
     }
     if (event.kind === "message.delta") {
-      ensureAssistant(event).text += String(event.data?.delta ?? "");
+      appendText(ensureAssistant(event), String(event.data?.delta ?? ""));
       continue;
     }
     if (event.kind === "message.end") {
@@ -139,7 +170,7 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
     }
     if (event.kind === "run.error") {
       const current = ensureAssistant(event);
-      current.text = current.text ? `${current.text}\n${event.title}` : event.title;
+      appendText(current, current.text ? `\n${event.title}` : event.title);
       continue;
     }
     if (isSetupKind(event.kind)) {

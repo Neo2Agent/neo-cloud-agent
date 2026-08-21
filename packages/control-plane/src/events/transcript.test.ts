@@ -65,6 +65,15 @@ test("tools after message.end stay on the same assistant and keep args/output", 
   const assistants = snapshot.messages.filter((item) => item.role === "assistant");
   assert.equal(assistants.length, 1);
   assert.equal(assistants[0]?.text, "Let me look. There is a README.");
+  assert.deepEqual(
+    assistants[0]?.blocks?.map((block) => block.type),
+    ["text", "tool", "text"],
+  );
+  assert.equal(assistants[0]?.blocks?.[0]?.type === "text" ? assistants[0].blocks[0].text : "", "Let me look.");
+  assert.equal(
+    assistants[0]?.blocks?.[2]?.type === "text" ? assistants[0].blocks[2].text : "",
+    " There is a README.",
+  );
   assert.deepEqual(assistants[0]?.tools, [
     {
       id: "call-1",
@@ -105,6 +114,34 @@ test("artifact uploads become setup cards with a download href", () => {
   assert.equal(snapshot.messages[0]?.kind, "artifact.uploaded");
   assert.equal(snapshot.messages[0]?.href, "/v1/runs/run-1/artifacts/notes.txt");
   assert.equal(snapshot.messages[0]?.mediaType, "text/plain");
+});
+
+test("tools that run before the final reply stay above that reply", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "research this" } }),
+    ev({ id: "a1", kind: "agent.start" }),
+    ev({
+      id: "t0",
+      kind: "tool.start",
+      data: { toolCallId: "browse-1", toolName: "neo_browse", args: { url: "https://example.com" } },
+    }),
+    ev({
+      id: "t1",
+      kind: "tool.end",
+      data: { toolCallId: "browse-1", toolName: "neo_browse", output: "Example Domain", isError: false },
+    }),
+    ev({ id: "m1", kind: "message.start" }),
+    ev({ id: "d1", kind: "message.delta", data: { delta: "According to the page, this is example.com." } }),
+    ev({ id: "e1", kind: "message.end" }),
+    ev({ id: "z1", kind: "agent.end" }),
+  ]);
+  const blocks = snapshot.messages.find((item) => item.role === "assistant")?.blocks ?? [];
+  assert.deepEqual(
+    blocks.map((block) => block.type),
+    ["tool", "text"],
+  );
+  assert.equal(blocks[0]?.type === "tool" ? blocks[0].tool.name : "", "neo_browse");
+  assert.equal(blocks[1]?.type === "text" ? blocks[1].text : "", "According to the page, this is example.com.");
 });
 
 test("empty assistant turns without tools are dropped", () => {

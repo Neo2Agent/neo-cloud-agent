@@ -56,12 +56,13 @@ export type {
   RunEventCategory,
   RunEventKind,
   RunEventLevel,
+  TranscriptBlock,
   TranscriptMessage,
   TranscriptRole,
   TranscriptSnapshot,
   TranscriptTool,
 } from "./events.js";
-export { buildTranscriptSnapshot, isSetupKind } from "./transcript.js";
+export { buildTranscriptSnapshot, isSetupKind, transcriptBlocks } from "./transcript.js";
 
 export type {
   ExecutionRuntime,

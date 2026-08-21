@@ -73,6 +73,10 @@ export type TranscriptTool = {
   status?: "running" | "done";
 };
 
+export type TranscriptBlock =
+  | { type: "text"; text: string }
+  | { type: "tool"; tool: TranscriptTool };
+
 /** Compact catch-up view so a late subscriber does not replay every token. */
 export interface TranscriptMessage {
   id: string;
@@ -83,6 +87,8 @@ export interface TranscriptMessage {
   kind?: string;
   level?: RunEventLevel;
   tools?: TranscriptTool[];
+  /** Chronological text/tool segments so tools can sit between model replies. */
+  blocks?: TranscriptBlock[];
   href?: string;
   mediaType?: string;
   images?: Array<{ mediaType: string; data: string }>;
