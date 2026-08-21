@@ -17,6 +17,7 @@ import { mintRunToken, redactText } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 import { findInstallTargets, runInstallCommand } from "../env/install.js";
 import { publish, resetHistory, seedEvents } from "../events/bus.js";
+import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
 import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
 import { materializeRepos } from "../scm/workspace.js";
@@ -402,6 +403,34 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
         flushRun(runId);
       }
     }
+    if (item.kind === "run.start_started") {
+      const run = runs.get(runId);
+      if (run) {
+        run.setupStatus = "START_STARTED";
+        run.updatedAt = now();
+        flushRun(runId);
+      }
+    }
+    if (item.kind === "run.start_succeeded") {
+      const run = runs.get(runId);
+      if (run) {
+        run.setupStatus = "START_SUCCEEDED";
+        run.updatedAt = now();
+        flushRun(runId);
+      }
+    }
+    if (item.kind === "run.start_failed") {
+      const run = runs.get(runId);
+      if (run) {
+        run.setupStatus = "START_FAILED";
+        run.updatedAt = now();
+        if (item.data?.fatal === true) {
+          failRun(run, item.detail || item.title || "Environment start failed");
+        } else {
+          flushRun(runId);
+        }
+      }
+    }
   }
 }
 
@@ -579,7 +608,37 @@ export function saveRunSession(runId: string, files: Array<{ name: string; conte
     runId,
     files.map((file) => ({ name: file.name, content: redactText(file.content, secrets) })),
   );
+  scheduleArchive(runId);
   return { files: written };
+}
+
+export async function restoreArchivedRun(runId: string) {
+  if (runs.has(runId)) {
+    return runs.get(runId);
+  }
+  const restored = await restoreArchivedArtifacts(runId);
+  if (!restored?.record?.run?.id) {
+    return undefined;
+  }
+  const run = restored.record.run;
+  run.pullRequests = Array.isArray(run.pullRequests) ? run.pullRequests : [];
+  run.baseBranch = run.baseBranch ?? null;
+  if (LIVE_STATUSES.has(run.status)) {
+    run.status = "ERROR";
+    run.errorMessage = run.errorMessage ?? "control plane restarted; worker was not recovered";
+    run.updatedAt = now();
+  }
+  runs.set(run.id, run);
+  followUps.set(run.id, restored.record.followUps ?? []);
+  inbound.set(run.id, restored.record.inbound ?? []);
+  seedEvents(run.id, restored.events);
+  persistRunRecord({
+    version: 1,
+    run,
+    followUps: followUps.get(run.id) ?? [],
+    inbound: inbound.get(run.id) ?? [],
+  });
+  return run;
 }
 
 export function getRunSession(runId: string, options?: { includeContent?: boolean }) {

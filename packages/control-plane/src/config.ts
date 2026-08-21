@@ -51,5 +51,16 @@ export function getConfig() {
       (kind === "docker" ? `http://host.docker.internal:${gatewayPort}` : llmGatewayUrl)
     ).replace(/\/$/, ""),
     dockerNetwork: process.env.DOCKER_NETWORK || null,
+    objectStore: (process.env.OBJECT_STORE === "s3" || process.env.OBJECT_STORE === "none" || process.env.OBJECT_STORE === "memory"
+      ? process.env.OBJECT_STORE
+      : "fs") as "fs" | "s3" | "memory" | "none",
+    s3: {
+      bucket: process.env.S3_BUCKET ?? "",
+      region: process.env.S3_REGION ?? "us-east-1",
+      endpoint: (process.env.S3_ENDPOINT ?? "").replace(/\/$/, ""),
+      accessKey: process.env.S3_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID ?? "",
+      secretKey: process.env.S3_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY ?? "",
+      prefix: (process.env.S3_PREFIX ?? "").replace(/^\/+|\/+$/g, ""),
+    },
   };
 }

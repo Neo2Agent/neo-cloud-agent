@@ -12,6 +12,7 @@ export type TerminalHandle = {
 export type BootResult = {
   events: RunEvent[];
   terminals: TerminalHandle[];
+  fatal: boolean;
 };
 
 function bootEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -79,10 +80,15 @@ function startTimeoutMs(): number {
   return Number(process.env.START_TIMEOUT_MS ?? 60_000);
 }
 
+function startMustSucceed(plan: { config: { startMustSucceed?: boolean } }): boolean {
+  return plan.config.startMustSucceed === true || process.env.START_MUST_SUCCEED === "1";
+}
+
 export async function runWorkspaceBoot(input: { runId: string; workspaceDir: string }): Promise<BootResult> {
   const events: RunEvent[] = [];
   const terminals: TerminalHandle[] = [];
   const logDir = path.join(input.workspaceDir, ".neo", "logs");
+  let fatal = false;
 
   for (const plan of findBootPlans(input.workspaceDir)) {
     if (plan.start) {
@@ -91,13 +97,33 @@ export async function runWorkspaceBoot(input: { runId: string; workspaceDir: str
         const result = await runCommand(plan.cwd, plan.start, startTimeoutMs());
         if (result.code !== 0) {
           const detail = (result.stderr || result.stdout || `start exited ${result.code}`).trim().slice(-2000);
-          events.push(event(input.runId, "run.start_failed", "Environment start failed", { detail }));
+          const must = startMustSucceed(plan);
+          events.push(
+            event(input.runId, "run.start_failed", "Environment start failed", {
+              detail,
+              data: { fatal: must },
+            }),
+          );
+          if (must) {
+            fatal = true;
+            break;
+          }
         } else {
           events.push(event(input.runId, "run.start_succeeded", "Environment start finished"));
         }
       } catch (error) {
         const detail = error instanceof Error ? error.message : "environment start failed";
-        events.push(event(input.runId, "run.start_failed", "Environment start failed", { detail }));
+        const must = startMustSucceed(plan);
+        events.push(
+          event(input.runId, "run.start_failed", "Environment start failed", {
+            detail,
+            data: { fatal: must },
+          }),
+        );
+        if (must) {
+          fatal = true;
+          break;
+        }
       }
     }
 
@@ -143,7 +169,7 @@ export async function runWorkspaceBoot(input: { runId: string; workspaceDir: str
     }
   }
 
-  return { events, terminals };
+  return { events, terminals, fatal };
 }
 
 export function stopTerminals(handles: TerminalHandle[]): void {

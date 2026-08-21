@@ -182,6 +182,29 @@ test("follow-up after reload resumes the worker from session backup", async () =
   assert.ok(listEvents(run.id).some((item) => item.title === "Resuming worker from session backup"));
 });
 
+test("fatal start failure marks the run ERROR", async () => {
+  const run = await createRun({
+    prompt: "start must succeed",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  ingestEvents(run.id, [
+    {
+      id: "start-fail-1",
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_setup",
+      level: "error",
+      kind: "run.start_failed",
+      title: "Environment start failed",
+      detail: "exit 7",
+      data: { fatal: true },
+    },
+  ]);
+  assert.equal(getRun(run.id)?.status, "ERROR");
+  assert.equal(getRun(run.id)?.setupStatus, "START_FAILED");
+  assert.match(getRun(run.id)?.errorMessage ?? "", /start|exit 7/i);
+});
+
 test("createRun fails when the local repo path does not exist", async () => {
   const run = await createRun({
     prompt: "nope",

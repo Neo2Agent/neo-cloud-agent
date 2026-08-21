@@ -7,7 +7,9 @@ import type {
   CreateRunRequest,
   RunEvent,
 } from "@neo-cloud-agent/contracts";
-import { listEvents, subscribe } from "../events/bus.js";
+import { listEvents } from "../events/bus.js";
+import { attachEventStream } from "../events/stream.js";
+import { buildTranscriptSnapshot } from "../events/transcript.js";
 import {
   abortRun,
   archiveRun,
@@ -23,12 +25,24 @@ import {
   listRuns,
   mintRunGitToken,
   openRunDraftPr,
+  restoreArchivedRun,
   saveRunSession,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
 import { getConfig } from "../config.js";
+import { getObjectStore } from "../objects/store.js";
 import { listEnvironments } from "../env/store.js";
 import { serveWebFile } from "./static.js";
+
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "Last-Event-ID, Content-Type",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+} as const;
+
+async function requireRun(runId: string) {
+  return getRun(runId) ?? (await restoreArchivedRun(runId));
+}
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -44,6 +58,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 function send(res: ServerResponse, status: number, body: unknown): void {
   const json = JSON.stringify(body);
   res.writeHead(status, {
+    ...CORS,
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(json),
   });
@@ -61,6 +76,12 @@ export function createApiServer() {
     const method = req.method ?? "GET";
 
     try {
+      if (method === "OPTIONS") {
+        res.writeHead(204, CORS);
+        res.end();
+        return;
+      }
+
       if (method === "GET" && path === "/health") {
         const config = getConfig();
         send(res, 200, {
@@ -70,6 +91,7 @@ export function createApiServer() {
           llmUpstream: config.llmUpstream,
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
+          objectStore: getObjectStore().kind,
         });
         return;
       }
@@ -91,7 +113,7 @@ export function createApiServer() {
 
       const runMatch = /^\/v1\/runs\/([^/]+)$/.exec(path);
       if (runMatch && method === "GET") {
-        const run = getRun(runMatch[1] ?? "");
+        const run = await requireRun(runMatch[1] ?? "");
         if (!run) {
           notFound(res);
           return;
@@ -135,22 +157,11 @@ export function createApiServer() {
       const eventsMatch = /^\/v1\/runs\/([^/]+)\/events$/.exec(path);
       if (eventsMatch && method === "GET") {
         const runId = eventsMatch[1] ?? "";
-        if (!getRun(runId)) {
+        if (!(await requireRun(runId))) {
           notFound(res);
           return;
         }
-        res.writeHead(200, {
-          "content-type": "text/event-stream",
-          "cache-control": "no-cache",
-          connection: "keep-alive",
-        });
-        for (const item of listEvents(runId)) {
-          res.write(`data: ${JSON.stringify(item)}\n\n`);
-        }
-        const unsubscribe = subscribe(runId, (item) => {
-          res.write(`data: ${JSON.stringify(item)}\n\n`);
-        });
-        req.on("close", unsubscribe);
+        attachEventStream(req, res, runId, url);
         return;
       }
 
@@ -199,11 +210,12 @@ export function createApiServer() {
       const transcriptMatch = /^\/v1\/runs\/([^/]+)\/transcript$/.exec(path);
       if (transcriptMatch && method === "GET") {
         const runId = transcriptMatch[1] ?? "";
-        if (!getRun(runId)) {
+        if (!(await requireRun(runId))) {
           notFound(res);
           return;
         }
-        send(res, 200, { events: listEvents(runId) });
+        const events = listEvents(runId);
+        send(res, 200, { events, snapshot: buildTranscriptSnapshot(runId, events) });
         return;
       }
 

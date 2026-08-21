@@ -38,7 +38,16 @@ export {
   secretValuesFromEnv,
 } from "./redact.js";
 
-export type { RunEvent, RunEventCategory, RunEventKind, RunEventLevel } from "./events.js";
+export type {
+  RunEvent,
+  RunEventCategory,
+  RunEventKind,
+  RunEventLevel,
+  TranscriptMessage,
+  TranscriptRole,
+  TranscriptSnapshot,
+  TranscriptTool,
+} from "./events.js";
 
 export type {
   ExecutionRuntime,

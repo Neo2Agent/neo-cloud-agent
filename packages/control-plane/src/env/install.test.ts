@@ -11,11 +11,13 @@ test("parseEnvironmentJson keeps install/start and drops unknown fields", () => 
     install: "echo hi",
     start: "pnpm dev",
     extra: true,
+    startMustSucceed: true,
     terminals: [{ name: "web", command: "pnpm dev" }, { name: 1 }],
     egress: { mode: "allow_all", domains: ["example.com", 3] },
   });
   assert.equal(config.install, "echo hi");
   assert.equal(config.start, "pnpm dev");
+  assert.equal(config.startMustSucceed, true);
   assert.deepEqual(config.terminals, [{ name: "web", command: "pnpm dev" }]);
   assert.deepEqual(config.egress, { mode: "allow_all", domains: ["example.com"] });
   assert.equal("extra" in config, false);

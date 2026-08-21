@@ -18,6 +18,8 @@ export interface EnvironmentJson {
   snapshot?: string;
   install?: string;
   start?: string;
+  /** When true, a failed `start` blocks the agent (default: continue, Cursor-like). */
+  startMustSucceed?: boolean;
   terminals?: TerminalSpec[];
   repos?: string[];
   egress?: EgressPolicy;
@@ -32,6 +34,7 @@ export function parseEnvironmentJson(raw: unknown): EnvironmentJson {
   if (typeof input.snapshot === "string") config.snapshot = input.snapshot;
   if (typeof input.install === "string") config.install = input.install;
   if (typeof input.start === "string") config.start = input.start;
+  if (input.startMustSucceed === true) config.startMustSucceed = true;
   if (Array.isArray(input.repos) && input.repos.every((item) => typeof item === "string")) {
     config.repos = input.repos;
   }

@@ -16,6 +16,8 @@ const state = {
   events: new Map(),
   source: null,
   assistant: null,
+  lastEventId: null,
+  healthText: "检测服务…",
 };
 
 const STATUS_LABELS = {
@@ -72,7 +74,7 @@ function emptyState() {
   transcriptEl.innerHTML = `
     <div class="empty">
       <h2>从一条任务开始</h2>
-      <p>仓库填 <code>fixtures/toy-repo</code>，让 Agent 加 README 并跑 <code>sh test.sh</code>。第一条消息会创建 Run，后续消息作为跟进。刷新页面会保留已有对话。</p>
+      <p>仓库填 <code>fixtures/toy-repo</code>，让 Agent 加 README 并跑 <code>sh test.sh</code>。第一条消息会创建 Run，后续消息作为跟进。多个标签或设备打开同一条 Run，会订阅控制面同一条事件流。</p>
     </div>
   `;
 }
@@ -117,8 +119,34 @@ function addSetupLine(event) {
   if (empty) empty.remove();
   const line = document.createElement("p");
   line.className = event.level === "error" || String(event.kind).endsWith("_failed") ? "setup err" : "setup";
-  line.textContent = event.detail ? `${event.title}：${event.detail}` : event.title;
+  line.dataset.id = event.id ?? "";
+  line.textContent = event.detail ? `${event.title}：${event.detail}` : event.title || event.text || "";
   transcriptEl.appendChild(line);
+}
+
+function applySnapshot(snapshot) {
+  for (const message of snapshot.messages ?? []) {
+    state.events.set(message.id, message);
+    if (message.role === "user") {
+      addBubble("user", message.text, message.id);
+      continue;
+    }
+    if (message.role === "assistant") {
+      const node = addBubble("assistant", message.text, message.id);
+      for (const tool of message.tools ?? []) {
+        const el = document.createElement("div");
+        el.className = tool.isError ? "tool err" : "tool";
+        el.textContent = tool.isError ? `✗ ${tool.name}` : `✓ ${tool.name}`;
+        node.appendChild(el);
+      }
+      if (message.streaming) state.assistant = node;
+      continue;
+    }
+    if (message.role === "setup") {
+      addSetupLine(message);
+    }
+  }
+  state.lastEventId = snapshot.lastEventId ?? null;
 }
 
 function applyEvent(event) {
@@ -196,11 +224,17 @@ function closeStream() {
   state.source = null;
 }
 
-function listen(runId) {
+function listen(runId, after) {
   closeStream();
-  state.source = new EventSource(`/v1/runs/${runId}/events`);
+  const query = after ? `?after=${encodeURIComponent(after)}` : "";
+  state.source = new EventSource(`/v1/runs/${runId}/events${query}`);
+  state.source.onopen = () => {
+    if (state.healthText) healthEl.textContent = state.healthText;
+  };
   state.source.onmessage = (message) => {
-    applyEvent(JSON.parse(message.data));
+    const event = JSON.parse(message.data);
+    state.lastEventId = event.id ?? state.lastEventId;
+    applyEvent(event);
   };
   state.source.onerror = () => {
     healthEl.textContent = "事件流已断开，正在重试";
@@ -226,7 +260,9 @@ async function openRun(runId) {
   runLabelEl.textContent = run.branchName ? run.branchName : shortId(run.id);
   showPullRequest(run);
   renderRuns();
-  listen(run.id);
+  const transcript = await (await fetch(`/v1/runs/${run.id}/transcript`)).json();
+  if (transcript.snapshot) applySnapshot(transcript.snapshot);
+  listen(run.id, transcript.snapshot?.lastEventId ?? state.lastEventId);
   history.replaceState(null, "", `/#/runs/${run.id}`);
 }
 
@@ -234,6 +270,7 @@ function resetComposer() {
   state.runId = null;
   state.events.clear();
   state.assistant = null;
+  state.lastEventId = null;
   closeStream();
   emptyState();
   setStatus("idle");
@@ -328,15 +365,18 @@ async function boot() {
   try {
     const health = await (await fetch("/health")).json();
     if (!health.ok) {
-      healthEl.textContent = "控制面异常";
+      state.healthText = "控制面异常";
     } else if (health.defaultModel) {
       const runtime = health.workerRuntime ? ` · ${health.workerRuntime}` : "";
-      healthEl.textContent = `控制面在线 · ${health.defaultModel}${runtime}`;
+      const store = health.objectStore ? ` · ${health.objectStore}` : "";
+      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}`;
     } else {
-      healthEl.textContent = "控制面在线";
+      state.healthText = "控制面在线";
     }
+    healthEl.textContent = state.healthText;
   } catch {
-    healthEl.textContent = "控制面不可达";
+    state.healthText = "控制面不可达";
+    healthEl.textContent = state.healthText;
   }
   await refreshRuns();
   const match = /^#\/runs\/([^/]+)$/.exec(location.hash);

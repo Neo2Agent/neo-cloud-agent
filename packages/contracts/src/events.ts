@@ -52,6 +52,34 @@ export interface RunEvent {
   kind: RunEventKind;
   title: string;
   detail?: string;
+  /** Monotonic per-run sequence assigned by the control plane. */
+  seq?: number;
   /** Opaque payload for UI (token deltas, tool args, etc.). */
   data?: Record<string, unknown>;
+}
+
+export type TranscriptRole = "user" | "assistant" | "setup";
+
+export type TranscriptTool = {
+  name: string;
+  isError?: boolean;
+};
+
+/** Compact catch-up view so a late subscriber does not replay every token. */
+export interface TranscriptMessage {
+  id: string;
+  role: TranscriptRole;
+  text: string;
+  createdAt: string;
+  streaming?: boolean;
+  kind?: string;
+  level?: RunEventLevel;
+  tools?: TranscriptTool[];
+}
+
+export interface TranscriptSnapshot {
+  runId: string;
+  seq: number;
+  lastEventId: string | null;
+  messages: TranscriptMessage[];
 }

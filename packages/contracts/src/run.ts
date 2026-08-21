@@ -14,6 +14,9 @@ export type SetupStatus =
   | "INSTALL_STARTED"
   | "INSTALL_SUCCEEDED"
   | "INSTALL_FAILED"
+  | "START_STARTED"
+  | "START_SUCCEEDED"
+  | "START_FAILED"
   | null;
 
 export type RunSource =

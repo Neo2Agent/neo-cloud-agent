@@ -42,6 +42,11 @@ async function main(): Promise<void> {
   if (boot.events.length > 0) {
     await pushEvents(config.runId, boot.events);
   }
+  if (boot.fatal) {
+    stopTerminals(boot.terminals);
+    process.exitCode = 2;
+    return;
+  }
 
   try {
     restoreSessionFiles(config.sessionDir, await downloadSession(config.runId));

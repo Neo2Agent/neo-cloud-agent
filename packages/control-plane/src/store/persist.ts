@@ -160,6 +160,21 @@ export function restoreSessionToDir(runId: string, destDir: string, runsDir?: st
   return restored;
 }
 
+export function loadPersistedRun(runId: string, runsDir?: string): PersistedRun | null {
+  try {
+    return JSON.parse(readFileSync(runFile(runId, runsDir), "utf8")) as PersistedRun;
+  } catch {
+    return null;
+  }
+}
+
+export function replacePersistedEvents(runId: string, events: RunEvent[], runsDir?: string): void {
+  const file = eventsFile(runId, runsDir);
+  mkdirSync(path.dirname(file), { recursive: true });
+  const body = events.length === 0 ? "" : `${events.map((item) => JSON.stringify(item)).join("\n")}\n`;
+  writeFileSync(file, body);
+}
+
 export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[] {
   const dir = controlStateDir(runsDir);
   try {

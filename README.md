@@ -42,7 +42,7 @@ pnpm dev                 # control-plane :8080 + llm-gateway :8081
 # 打开 http://localhost:8080 对话
 ```
 
-默认 `WORKER_RUNTIME=local`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。设 `WORKER_RUNTIME=docker`（或 `SPAWN_LOCAL_WORKER=0`）则 `docker run` 一张 worker 镜像，工作区 bind-mount 进容器；容器里只有 run JWT，没有 Provider Key。`repoUrls` 会在 spawn 前落到 Run 工作区：本地目录直接拷贝，`github.com/org/repo` 或 HTTPS 地址则 `git clone --depth 1`。工作区里的 `.neo/environment.json`（或 `.cursor/environment.json`）若有 `install`，会在起 worker 前执行；`start` / `terminals` 在 worker 冷启动时跑，不进 install。工具输出和 session JSONL 备份会把运行时密钥打成 `[REDACTED]`。落地后控制面会建 `neo/<slug>-<id>` 分支。受控 commit 和草稿 PR 走控制面（`POST /v1/runs/:id/commit`、`POST /v1/runs/:id/pull-request`）；worker 只能申请短寿命 `neo.git.*` token。push / 开 GitHub PR 时控制面优先用 GitHub App 安装令牌（`GITHUB_APP_ID`、`GITHUB_APP_PRIVATE_KEY`、`GITHUB_APP_INSTALLATION_ID`），没配 App 再回退 `SCM_PUSH_TOKEN` / `GITHUB_TOKEN`；私钥和 PAT 都不会进 VM。没有 GitHub 远程时会记一条 `local://pr/...`。Run 和事件落在 `.neo/runs/.control`，刷新页面或重启控制面不会丢掉对话列表。IDLE Run 在控制面重启后还能接着聊：follow-up 会从 session 备份恢复 JSONL 并重新拉起 worker（Docker 里 worker 启动时会下载备份，因为容器内 `SESSION_DIR` 不在工作区 bind-mount 上）。仓库根目录的 `.env` 会被两个控制面进程自动加载（已有环境变量优先）。没配 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` 时 gateway 用 mock。
+默认 `WORKER_RUNTIME=local`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。设 `WORKER_RUNTIME=docker`（或 `SPAWN_LOCAL_WORKER=0`）则 `docker run` 一张 worker 镜像，工作区 bind-mount 进容器；容器里只有 run JWT，没有 Provider Key。`repoUrls` 会在 spawn 前落到 Run 工作区：本地目录直接拷贝，`github.com/org/repo` 或 HTTPS 地址则 `git clone --depth 1`。工作区里的 `.neo/environment.json`（或 `.cursor/environment.json`）若有 `install`，会在起 worker 前执行；`start` / `terminals` 在 worker 冷启动时跑，不进 install。工具输出和 session JSONL 备份会把运行时密钥打成 `[REDACTED]`。落地后控制面会建 `neo/<slug>-<id>` 分支。受控 commit 和草稿 PR 走控制面（`POST /v1/runs/:id/commit`、`POST /v1/runs/:id/pull-request`）；worker 只能申请短寿命 `neo.git.*` token。push / 开 GitHub PR 时控制面优先用 GitHub App 安装令牌（`GITHUB_APP_ID`、`GITHUB_APP_PRIVATE_KEY`、`GITHUB_APP_INSTALLATION_ID`），没配 App 再回退 `SCM_PUSH_TOKEN` / `GITHUB_TOKEN`；私钥和 PAT 都不会进 VM。没有 GitHub 远程时会记一条 `local://pr/...`。Run 和事件落在 `.neo/runs/.control`，刷新页面或重启控制面不会丢掉对话列表。IDLE Run 在控制面重启后还能接着聊：follow-up 会从 session 备份恢复 JSONL 并重新拉起 worker（Docker 里 worker 启动时会下载备份，因为容器内 `SESSION_DIR` 不在工作区 bind-mount 上）。多个标签或设备打开同一条 Run，都订阅控制面同一条 SSE：先拉压缩 transcript，再跟直播 token。事件和 session 会再归档到对象存储（默认 `.neo/runs/.objects`，设 `OBJECT_STORE=s3` 可走 S3/R2/MinIO）。`start` 失败默认不挡住 Agent；要挡住就在 `.neo/environment.json` 写 `"startMustSucceed": true`。仓库根目录的 `.env` 会被两个控制面进程自动加载（已有环境变量优先）。没配 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` 时 gateway 用 mock。
 
 ```bash
 curl -s localhost:8080/health
@@ -77,6 +77,14 @@ GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVA
 # 没配 App 时的回退
 # SCM_PUSH_TOKEN=ghp_...
 # GITHUB_TOKEN=ghp_...
+
+# 对象存储（默认写在 RUNS_DIR/.objects）
+# OBJECT_STORE=s3
+# S3_BUCKET=neo-transcripts
+# S3_REGION=us-east-1
+# S3_ENDPOINT=https://s3.amazonaws.com
+# S3_ACCESS_KEY_ID=...
+# S3_SECRET_ACCESS_KEY=...
 ```
 
 也可以接其它 OpenAI 兼容上游：
