@@ -12,6 +12,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-coding-agent": "^0.84.2",
     "@neo-cloud-agent/contracts": "workspace:*",
     "@neo-cloud-agent/extensions": "workspace:*"
   }

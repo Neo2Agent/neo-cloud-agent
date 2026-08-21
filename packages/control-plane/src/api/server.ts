@@ -1,12 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { CreateFollowUpRequest, CreateRunRequest } from "@neo-cloud-agent/contracts";
+import type { CreateFollowUpRequest, CreateRunRequest, RunEvent } from "@neo-cloud-agent/contracts";
 import { listEvents, subscribe } from "../events/bus.js";
 import {
   abortRun,
   archiveRun,
   createRun,
   enqueueFollowUp,
+  getBootstrap,
   getRun,
+  ingestEvents,
   listFollowUps,
   listRuns,
   takeInbound,
@@ -132,6 +134,32 @@ export function createApiServer() {
       const inboxMatch = /^\/internal\/runs\/([^/]+)\/inbox$/.exec(path);
       if (inboxMatch && method === "POST") {
         send(res, 200, { messages: takeInbound(inboxMatch[1] ?? "") });
+        return;
+      }
+
+      const bootstrapMatch = /^\/internal\/runs\/([^/]+)\/bootstrap$/.exec(path);
+      if (bootstrapMatch && method === "GET") {
+        send(res, 200, getBootstrap(bootstrapMatch[1] ?? ""));
+        return;
+      }
+
+      const ingestMatch = /^\/internal\/runs\/([^/]+)\/events$/.exec(path);
+      if (ingestMatch && method === "POST") {
+        const runId = ingestMatch[1] ?? "";
+        const body = (await readJson(req)) as { events?: RunEvent[] };
+        ingestEvents(runId, body.events ?? []);
+        send(res, 202, { ok: true });
+        return;
+      }
+
+      const transcriptMatch = /^\/v1\/runs\/([^/]+)\/transcript$/.exec(path);
+      if (transcriptMatch && method === "GET") {
+        const runId = transcriptMatch[1] ?? "";
+        if (!getRun(runId)) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, { events: listEvents(runId) });
         return;
       }
 

@@ -4,14 +4,15 @@
   "description": "Cloud agent control plane and VM worker, with pi-agent as the in-VM kernel.",
   "packageManager": "pnpm@10.33.3",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19"
   },
   "scripts": {
     "dev": "pnpm --parallel --filter @neo-cloud-agent/control-plane --filter @neo-cloud-agent/llm-gateway dev",
     "dev:control-plane": "pnpm --filter @neo-cloud-agent/control-plane dev",
     "dev:gateway": "pnpm --filter @neo-cloud-agent/llm-gateway dev",
     "dev:worker": "pnpm --filter @neo-cloud-agent/worker dev",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test packages/**/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.17.0",

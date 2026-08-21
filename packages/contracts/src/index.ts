@@ -36,3 +36,4 @@ export type {
 export { deliveryForPi } from "./worker.js";
 
 export type { LlmRunTokenClaims, ModelRoute, Usage } from "./llm.js";
+export { mintRunToken, verifyRunToken } from "./jwt.js";

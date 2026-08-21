@@ -7,33 +7,54 @@ import type {
   RunEvent,
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
-import { config } from "../config.js";
+import { mintRunToken } from "@neo-cloud-agent/contracts";
+import { getConfig } from "../config.js";
 import { publish } from "../events/bus.js";
 import { DockerRuntime } from "../runtime/docker.js";
+import { spawnLocalWorker, stopLocalWorker, workspaceFor } from "../worker-spawn.js";
 
 const runs = new Map<string, Run>();
 const followUps = new Map<string, FollowUp[]>();
 const inbound = new Map<string, WorkerInbound[]>();
+const runJwts = new Map<string, string>();
 const runtime = new DockerRuntime();
 
 function now(): string {
   return new Date().toISOString();
 }
 
-function event(runId: string, kind: RunEvent["kind"], title: string, extra?: Partial<RunEvent>): RunEvent {
+export function event(runId: string, kind: RunEvent["kind"], title: string, extra?: Partial<RunEvent>): RunEvent {
   return {
-    id: crypto.randomUUID(),
+    id: extra?.id ?? crypto.randomUUID(),
     runId,
-    createdAt: now(),
-    category: kind.startsWith("run.install") ? "agent_setup" : kind.startsWith("run.") ? "agent_setup" : "agent_run",
-    level: kind === "run.error" ? "error" : "info",
+    createdAt: extra?.createdAt ?? now(),
+    category:
+      extra?.category ??
+      (kind.startsWith("run.install") || kind.startsWith("run.") ? "agent_setup" : "agent_run"),
+    level: extra?.level ?? (kind === "run.error" ? "error" : "info"),
     kind,
     title,
-    ...extra,
+    detail: extra?.detail,
+    data: extra?.data,
   };
 }
 
+export function mintJwtForRun(run: Run): string {
+  const config = getConfig();
+  const token = mintRunToken(config.jwtSecret, {
+    sub: run.userId,
+    runId: run.id,
+    orgId: run.orgId,
+    model: run.model,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60,
+    jti: crypto.randomUUID(),
+  });
+  runJwts.set(run.id, token);
+  return token;
+}
+
 export async function createRun(input: CreateRunRequest): Promise<Run> {
+  const config = getConfig();
   const createdAt = now();
   const run: Run = {
     id: crypto.randomUUID(),
@@ -60,6 +81,7 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
   followUps.set(run.id, []);
   inbound.set(run.id, [{ type: "prompt", text: input.prompt, images: input.images }]);
   publish(event(run.id, "run.provisioning", "Provisioning worker"));
+  mintJwtForRun(run);
 
   const handle = await runtime.provision({
     runId: run.id,
@@ -73,7 +95,23 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
   run.workerHandle = handle.id;
   run.status = "RUNNING";
   run.updatedAt = now();
-  publish(event(run.id, "run.running", "Worker provisioned (P0 stub: no container start yet)"));
+  publish(event(run.id, "run.running", config.spawnLocalWorker ? "Spawning local worker" : "Worker handle reserved"));
+
+  if (config.spawnLocalWorker) {
+    const child = spawnLocalWorker(run, runJwts.get(run.id) ?? mintJwtForRun(run));
+    child.once("exit", (code) => {
+      const current = runs.get(run.id);
+      if (!current || current.status === "ARCHIVED" || current.status === "EXPIRED") {
+        return;
+      }
+      if (code !== 0 && current.status === "RUNNING") {
+        current.status = "ERROR";
+        current.errorMessage = `worker exited with code ${code}`;
+        current.updatedAt = now();
+        publish(event(run.id, "run.error", current.errorMessage));
+      }
+    });
+  }
   return run;
 }
 
@@ -83,6 +121,46 @@ export function getRun(id: string): Run | undefined {
 
 export function listRuns(): Run[] {
   return [...runs.values()];
+}
+
+export function getBootstrap(runId: string) {
+  const run = runs.get(runId);
+  if (!run) {
+    throw new Error(`run not found: ${runId}`);
+  }
+  const config = getConfig();
+  return {
+    run,
+    jwt: runJwts.get(runId) ?? mintJwtForRun(run),
+    llmGatewayUrl: config.llmGatewayUrl,
+    workspaceDir: workspaceFor(runId),
+  };
+}
+
+export function ingestEvents(runId: string, events: RunEvent[]): void {
+  if (!runs.has(runId)) {
+    throw new Error(`run not found: ${runId}`);
+  }
+  for (const item of events) {
+    publish(event(runId, item.kind, item.title, item));
+    if (item.kind === "agent.end") {
+      const run = runs.get(runId);
+      if (run && run.status === "RUNNING") {
+        run.status = "IDLE";
+        run.idleAt = now();
+        run.updatedAt = now();
+        publish(event(runId, "run.idle", "Agent turn finished"));
+      }
+    }
+    if (item.kind === "agent.start") {
+      const run = runs.get(runId);
+      if (run) {
+        run.status = "RUNNING";
+        run.idleAt = null;
+        run.updatedAt = now();
+      }
+    }
+  }
 }
 
 export function enqueueFollowUp(runId: string, input: CreateFollowUpRequest): FollowUp {
@@ -123,6 +201,13 @@ export function listFollowUps(runId: string): FollowUp[] {
 export function takeInbound(runId: string): WorkerInbound[] {
   const queued = inbound.get(runId) ?? [];
   inbound.set(runId, []);
+  const deliveredAt = now();
+  for (const item of followUps.get(runId) ?? []) {
+    if (item.status === "queued") {
+      item.status = "delivered";
+      item.deliveredAt = deliveredAt;
+    }
+  }
   return queued;
 }
 
@@ -134,6 +219,7 @@ export function archiveRun(runId: string): Run {
   run.status = "ARCHIVED";
   run.updatedAt = now();
   inbound.get(runId)?.push({ type: "shutdown", reason: "archived" });
+  stopLocalWorker(runId);
   publish(event(runId, "run.archived", "Run archived"));
   return run;
 }

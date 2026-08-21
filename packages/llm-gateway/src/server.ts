@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { verifyRunToken } from "./auth.js";
-import { proxyCompletion } from "./proxy.js";
+import { getConfig } from "./config.js";
+import { proxyChatCompletions, type ChatCompletionBody } from "./proxy.js";
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -30,6 +31,32 @@ function bearer(req: IncomingMessage): string | undefined {
   return header.slice("Bearer ".length);
 }
 
+async function writePayload(
+  res: ServerResponse,
+  status: number,
+  headers: Record<string, string>,
+  payload: string | ReadableStream<Uint8Array>,
+): Promise<void> {
+  res.writeHead(status, headers);
+  if (typeof payload === "string") {
+    res.end(payload);
+    return;
+  }
+  const reader = payload.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      res.write(value);
+    }
+  } finally {
+    reader.releaseLock();
+    res.end();
+  }
+}
+
 export function createGatewayServer() {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://llm-gateway.local");
@@ -38,7 +65,8 @@ export function createGatewayServer() {
 
     try {
       if (method === "GET" && path === "/health") {
-        send(res, 200, { ok: true, service: "llm-gateway" });
+        const config = getConfig();
+        send(res, 200, { ok: true, service: "llm-gateway", upstream: config.upstream });
         return;
       }
 
@@ -48,13 +76,10 @@ export function createGatewayServer() {
           send(res, 401, { error: "missing_run_jwt" });
           return;
         }
-        const claims = verifyRunToken(token);
-        const body = (await readJson(req)) as { model?: string; messages?: unknown[] };
-        const result = await proxyCompletion({
-          model: body.model ?? claims.model,
-          messages: body.messages ?? [],
-        });
-        send(res, 200, { ...result, runId: claims.runId });
+        verifyRunToken(token);
+        const body = (await readJson(req)) as ChatCompletionBody;
+        const result = await proxyChatCompletions(body);
+        await writePayload(res, result.status, result.headers, result.payload);
         return;
       }
 

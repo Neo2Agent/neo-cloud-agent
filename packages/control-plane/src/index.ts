@@ -1,12 +1,13 @@
 import { createApiServer } from "./api/server.js";
-import { config } from "./config.js";
+import { getConfig } from "./config.js";
 import { startScheduler } from "./scheduler/scheduler.js";
 
+const config = getConfig();
 const scheduler = startScheduler();
 const server = createApiServer();
 
 server.listen(config.port, () => {
-  console.log(`control-plane listening on :${config.port}`);
+  console.log(`control-plane listening on :${config.port} spawnLocalWorker=${config.spawnLocalWorker}`);
 });
 
 const shutdown = () => {

@@ -33,25 +33,39 @@ flowchart LR
 
 Node 22+，用 pnpm：
 
+需要 **Node 22.19+**（pi-coding-agent 的 engines）。用 pnpm：
+
 ```bash
 pnpm install
 pnpm typecheck
+pnpm test
 pnpm dev                 # control-plane :8080 + llm-gateway :8081
 ```
+
+默认 `SPAWN_LOCAL_WORKER=1`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。没配 `OPENAI_API_KEY` 时 gateway 用 mock。
 
 ```bash
 curl -s localhost:8080/health
 curl -s -X POST localhost:8080/v1/runs \
   -H 'content-type: application/json' \
-  -d '{"prompt":"add a README and run tests","repoUrls":["github.com/acme/toy"]}'
+  -d '{"prompt":"list files in the workspace","repoUrls":["github.com/acme/toy"]}'
+# 然后看 SSE / transcript
+curl -s localhost:8080/v1/runs/<id>/transcript
 ```
 
-Worker 不是常驻服务。有 Run 之后再起：
+接真实 OpenAI 兼容上游：
+
+```bash
+export OPENAI_API_KEY=sk-...
+export LLM_UPSTREAM=openai
+export LLM_UPSTREAM_MODEL=gpt-4o-mini
+pnpm dev
+```
+
+Worker 也可以不由 control-plane 拉起，手动挂到一个 Run：
 
 ```bash
 RUN_ID=<id> pnpm dev:worker
-# 或
-docker compose -f infra/docker-compose.yml --profile worker up --build
 ```
 
 ## 不要做的五件事

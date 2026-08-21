@@ -8,9 +8,13 @@ services:
       - "8080:8080"
     environment:
       CONTROL_PLANE_PORT: "8080"
+      CONTROL_PLANE_URL: http://control-plane:8080
+      LLM_GATEWAY_URL: http://llm-gateway:8081
+      LLM_GATEWAY_JWT_SECRET: dev-only-change-me
       DEFAULT_ORG_ID: org_local
       DEFAULT_USER_ID: user_local
       WORKER_IMAGE: neo-cloud-agent-worker:dev
+      SPAWN_LOCAL_WORKER: "0"
     depends_on:
       - llm-gateway
 
@@ -23,6 +27,10 @@ services:
     environment:
       LLM_GATEWAY_PORT: "8081"
       LLM_GATEWAY_JWT_SECRET: dev-only-change-me
+      LLM_UPSTREAM: ${LLM_UPSTREAM:-}
+      LLM_UPSTREAM_BASE_URL: ${LLM_UPSTREAM_BASE_URL:-https://api.openai.com/v1}
+      LLM_UPSTREAM_MODEL: ${LLM_UPSTREAM_MODEL:-gpt-4o-mini}
+      LLM_UPSTREAM_API_KEY: ${LLM_UPSTREAM_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
 
