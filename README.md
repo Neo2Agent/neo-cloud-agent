@@ -18,15 +18,18 @@ flowchart LR
   GW --> Provider
 ```
 
-## 仓库
+## 仓库与服务
 
-| 路径 | 状态 |
-| --- | --- |
-| `docs/architecture.md` | 架构蓝图 |
-| `packages/contracts` | Run / Event / Env / Worker / LLM 合约 |
-| `packages/api` | 未实现（P0） |
-| `packages/llm-gateway` | 未实现（P0） |
-| `packages/worker` | 未实现（P0） |
+**一个 monorepo，两个控制面进程，一张 worker 镜像。** 不要按模块开仓库。细节见 [docs/architecture.md §14](docs/architecture.md#14-服务进程仓库三件不同的事)。
+
+| 部署物 | 形态 | 状态 |
+| --- | --- | --- |
+| `packages/contracts` | 库，不是服务 | 已有类型 |
+| `packages/control-plane` | 1 个进程（api + 编排 + SCM + 事件） | 未实现 |
+| `packages/llm-gateway` | 1 个进程（唯一持有模型密钥） | 未实现 |
+| `packages/worker` | VM / 任务容器镜像，不是集群服务 | 未实现 |
+
+P0 不要再拆 `env-service`、`scm-service`、`orchestrator` 成独立 Deployment 或独立 Git 仓库。 |
 
 ## 不要做的五件事
 

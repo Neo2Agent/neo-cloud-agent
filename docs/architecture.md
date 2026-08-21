@@ -126,21 +126,23 @@ sequenceDiagram
 
 ## 4. 控制面
 
-控制面是一组无状态服务 + 有状态存储，建议 K8s Deployment + 托管 Postgres / Redis / 对象存储。
+控制面是 **少数几个无状态进程** + 托管存储（Postgres / Redis / 对象存储）。职责可以很多，Deployment 不要很多。
 
-### 4.1 服务
+### 4.1 职责（先当模块，不要当仓库）
 
-| 服务 | 职责 |
-| --- | --- |
-| `api` | 对外 REST / SSE。创建 Run、跟进、取消、拉 transcript、artifacts |
-| `orchestrator` | Run 状态机；向 VM 调度器下发 provision / stop / snapshot |
-| `env-service` | Environment 版本、`environment.json`、密钥绑定、egress 策略 |
-| `build-service` | 后台 Build：clone + `install` + 打盘；维护 active / draft 快照 |
-| `llm-gateway` | 模型代理，OpenAI-compatible + 原生 Anthropic 透传 |
-| `scm-service` | GitHub App / GitLab；短寿命 clone/push token；开 PR |
-| `event-service` | 把 VM 上报的 AgentEvent 写成 RunEvent，SSE / WS 推给客户端 |
-| `artifact-service` | 截图、录屏、日志、diff 上传到对象存储 |
-| `scheduler` | 空闲回收、过期、warm pool 补货、定时 Build |
+下表是控制面内部的职责边界。P0 除 LLM Gateway 外都进同一个 `control-plane` 进程；拆进程和拆仓库的规则见 [§14](#14-服务进程仓库三件不同的事)。
+
+| 职责 | 干什么 | P0 部署在 |
+| --- | --- | --- |
+| `api` | 对外 REST / SSE。创建 Run、跟进、取消、拉 transcript、artifacts | `control-plane` 模块 |
+| `orchestrator` | Run 状态机；向 VM 调度器下发 provision / stop / snapshot | `control-plane` 模块 |
+| `env` | Environment 版本、`environment.json`、密钥绑定、egress 策略 | `control-plane` 模块 |
+| `build` | 后台 Build：clone + `install` + 打盘；维护 active / draft 快照 | P0 不做；P2 先当模块 |
+| `llm-gateway` | 模型代理，OpenAI-compatible + 原生 Anthropic 透传 | **独立进程** |
+| `scm` | GitHub App / GitLab；短寿命 clone/push token；开 PR | `control-plane` 模块 |
+| `events` | 把 VM 上报的 AgentEvent 写成 RunEvent，SSE / WS 推给客户端 | `control-plane` 模块 |
+| `artifacts` | 签上传 URL；文件直传对象存储 | `control-plane` 模块 |
+| `scheduler` | 空闲回收、过期、warm pool 补货、定时 Build | `control-plane` 模块 |
 
 ### 4.2 Run 状态机
 
@@ -561,25 +563,120 @@ Worker.Prompt / Steer / FollowUp / Abort / SetModel / Shutdown
 
 ---
 
-## 14. 仓库怎么拆
+## 14. 服务、进程、仓库：三件不同的事
 
-本仓库作为 **控制面 + 合约 + worker** 的 monorepo 即可，不必一上来拆十个 repo。
+**模块 ≠ 进程 ≠ 仓库。** 上一节列的 `env-service` / `scm-service` 是职责边界，不是「开 8 个 GitHub repo、8 个 Deployment」。
+
+| 概念 | 数量（P0） | 数量（成熟期） | 是什么 |
+| --- | --- | --- | --- |
+| Git 仓库 | **1** | 1，偶尔 2 | 代码怎么管 |
+| 可部署进程 | **2 + worker 镜像** | 3～4 + worker 镜像 | 运行时怎么扩 |
+| 逻辑模块 | 4～6 个 package | 8～10 个 package | 代码怎么分层 |
+
+### 14.1 用一个 monorepo
+
+就用本仓库 `neo-cloud-agent`。pnpm / npm workspaces 管 package。
+
+理由：
+
+1. **合约会一起变。** `RunEvent`、Worker RPC、LLM JWT 一改，api / gateway / worker 必须同 PR 升级，多仓会先出现协议漂移。
+2. **worker 不是独立产品。** 它随控制面版本发布，打进 VM 镜像；单独仓库只会让「控制面 v12 配 worker v7」成为常态。
+3. **pi 本身就是 monorepo。** 你们的差异化在编排，不在再发明一套跨仓发布。
+
+不要为「微服务干净」拆仓。以后只有两类东西才值得考虑第二个仓库：
+
+| 第二个仓 | 何时才拆 | 为什么 |
+| --- | --- | --- |
+| `neo-vm-images` | 镜像构建（Packer / Firecracker rootfs）把应用 CI 拖到 30 分钟以上 | 构建节奏和权限与应用不同 |
+| 公开 extension 注册表 | 第三方要独立发 pi package | 那是生态，不是内核 |
+
+**永远不要拆出去的：** `packages/contracts`。它是协议，不是服务。
+
+### 14.2 可部署进程只要这些
+
+控制面里的「服务」先当 **同一个进程里的模块**。真正需要单独进程的，只有密钥边界和重活。
 
 ```
-neo-cloud-agent/
-  docs/architecture.md          ← 本文
-  packages/contracts/           ← 跨进程类型（Run、Event、Env、Worker RPC）
-  packages/api/                 ← 对外 HTTP
-  packages/orchestrator/
-  packages/llm-gateway/
-  packages/scm/
-  packages/worker/              ← 跑在 VM 里，嵌入 pi
-  packages/extensions/          ← neo-git / neo-pr / neo-mcp / …
-  infra/                        ← Packer/Firecracker 镜像、Terraform
-  .neo/environment.json         ← 你们自己吃自己的狗粮
+P0（先上这 3 个部署物）
+
+  ┌─────────────────────────────┐
+  │  control-plane  (1 进程)    │  api + orchestrator + env + events
+  │                             │  + scm + artifacts + scheduler（都是模块）
+  └──────────────┬──────────────┘
+                 │
+  ┌──────────────┴──────────────┐
+  │  llm-gateway  (1 进程)      │  唯一持有 Provider Key；独立扩缩、独立审计
+  └─────────────────────────────┘
+
+  ┌─────────────────────────────┐
+  │  worker 镜像                │  不是集群里的长驻服务
+  │  neo-worker + pi + 扩展     │  每个 Run 起一份，随 VM 生灭
+  └─────────────────────────────┘
 ```
 
-第一期只需要真正写起来的是：`contracts`、`api`、`llm-gateway`、`worker`、一个 Docker Runtime。其余可以先是接口空壳。
+| 部署物 | 为什么独立 | 为什么不要再拆 |
+| --- | --- | --- |
+| `control-plane` | 对外 API、状态机、调度 | env / scm / event 此时是函数调用，不是网络 hop |
+| `llm-gateway` | **密钥隔离** + 按 token 扩缩 + 审计面单独 | 这是唯一值得 P0 就拆进程的服务 |
+| `worker` 镜像 | 跑在不可信 VM，攻击面不同 | 每个 Run 一份，不要做成集群 Deployment |
+
+P2 以后，**最多再拆 1 个进程**：
+
+| 部署物 | 何时拆出去 | 信号 |
+| --- | --- | --- |
+| `build-worker` | Build 开始抢 control-plane CPU / 磁盘 | `install` 跑十几分钟、队列堵了创建 Run |
+
+再往后才考虑把 webhook 量大的 `scm-ingress` 或对象上传的 `artifact-service` 拆出去。那是流量问题，不是架构正确性问题。
+
+**不要做成独立进程的：** Postgres、Redis、对象存储用托管。egress proxy / git proxy 是基础设施（Envoy / squid / 自建小代理），不是业务仓库。
+
+### 14.3 monorepo 目录（模块，不是服务）
+
+```
+neo-cloud-agent/                  ← 唯一应用仓库
+  docs/
+  packages/
+    contracts/                    类型与协议（被所有进程 import）
+    control-plane/                打成一个二进制 / 一个容器
+      src/api/
+      src/orchestrator/
+      src/env/
+      src/scm/
+      src/events/
+      src/runtime/                Docker 先，Firecracker 后
+    llm-gateway/                  打成第二个容器
+    worker/                       打进 VM / 任务容器镜像
+    extensions/                   打进同一张 worker 镜像
+  infra/                          compose、helm、镜像配方（先放这里）
+  .neo/environment.json
+```
+
+P0 只写四个 package：`contracts`、`control-plane`、`llm-gateway`、`worker`。`orchestrator` / `scm` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
+
+### 14.4 和「微服务清单」的对照
+
+| 架构里的职责 | P0 落在哪 | 以后 |
+| --- | --- | --- |
+| api | `control-plane` 模块 | 仍在这里 |
+| orchestrator | `control-plane` 模块 | 仍在这里 |
+| env-service | `control-plane` 模块 | 仍在这里 |
+| event-service | `control-plane` + Redis | 仍在这里 |
+| scm-service | `control-plane` 模块 | webhook 爆炸再拆 ingress |
+| artifact-service | `control-plane` 签 URL，上传直传对象存储 | 几乎永远不必成服务 |
+| scheduler | `control-plane` 里的 cron 协程 | 仍在这里 |
+| build-service | P0 不做；P2 先当模块 | 变重再拆 `build-worker` |
+| llm-gateway | **独立进程** | 一直独立 |
+| neo-worker | **镜像，不是服务** | 一直是镜像 |
+
+### 14.5 版本怎么发
+
+一个 git SHA 产出三件东西，一起打 tag（例如 `2026.08.21+2e5ceab`）：
+
+1. `control-plane` 镜像
+2. `llm-gateway` 镜像
+3. `worker` 镜像（或 Firecracker rootfs）
+
+Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最新、worker 随便」组合上线。合约变更必须同版本滚动。
 
 ---
 
@@ -589,10 +686,11 @@ neo-cloud-agent/
 
 ### P0 — 能跑通一个任务
 
+- 仍是 **1 个仓库**；只发 **2 个控制面容器 + 1 张 worker 镜像**
 - Docker Runtime，一容器 = 一 Run
 - `packages/worker` 嵌入 `createAgentSession`
-- LLM Gateway（先只接一个 Provider，JWT 鉴权）
-- `POST /v1/runs` + SSE 事件
+- `packages/llm-gateway`（先只接一个 Provider，JWT 鉴权）
+- `packages/control-plane`：`POST /v1/runs` + SSE
 - 手工 mount 一个 git repo，不做 PR
 
 验收：对一个玩具仓库说「加个 README 并跑测试」，UI 能流式看到 bash / edit。
@@ -652,10 +750,10 @@ neo-cloud-agent/
 
 ## 18. 建议的下一步实现顺序
 
-合约已经放在 `packages/contracts`。下一刀代码建议是：
+合约已经放在 `packages/contracts`。下一刀代码建议是（仍在本 monorepo）：
 
-1. `packages/llm-gateway`：JWT + 单一 Provider 的流式代理
-2. `packages/worker`：上述 `createAgentSession` 骨架 + 事件上报
-3. `packages/api` + 一个 `docker compose`：本地起 Run，SSE 看输出
+1. `packages/llm-gateway`：JWT + 单一 Provider 的流式代理（独立进程）
+2. `packages/worker`：上述 `createAgentSession` 骨架 + 事件上报（打进任务镜像）
+3. `packages/control-plane` + `docker compose`：一个进程对外 `POST /v1/runs`，SSE 看输出
 
-这三块通了，后面换 Firecracker 只换 Runtime，不换 Agent。
+这三块通了，后面换 Firecracker 只换 Runtime，不换 Agent，也不拆仓。
