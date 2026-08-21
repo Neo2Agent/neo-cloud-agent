@@ -19,6 +19,10 @@ export { createCloudTools, CLOUD_TOOL_NAMES } from "./tools.js";
 export { createGitCommitTool, executeGitCommit } from "./neo-git.js";
 export { createPullRequestTool, executeOpenPullRequest } from "./neo-pr.js";
 export { createDiagnosticsTool, executeDiagnostics } from "./neo-diag.js";
+export { createArtifactTool, executeArtifactUpload } from "./neo-artifact.js";
+export { createBrowserTool, executeBrowse } from "./neo-browser.js";
+export { createMcpCallTool, createMcpListTool, executeMcpCall, executeMcpList, listWorkspaceMcpServers } from "./neo-mcp.js";
+export { extractPageText } from "./html-text.js";
 export { neoArtifact, neoBrowser, neoDiag, neoGit, neoMcp, neoPr };
 
 export function loadCloudExtensions(): CloudExtension[] {

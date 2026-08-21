@@ -45,6 +45,17 @@ function clipOutput(text: string): string {
   return `${text.slice(0, TOOL_OUTPUT_LIMIT)}\n… (${text.length - TOOL_OUTPUT_LIMIT} more bytes)`;
 }
 
+function collectDetails(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const details = (value as { details?: unknown }).details;
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return undefined;
+  }
+  return details as Record<string, unknown>;
+}
+
 function toolPayload(event: LooseAgentEvent, output?: string): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     toolName: event.toolName,
@@ -53,6 +64,10 @@ function toolPayload(event: LooseAgentEvent, output?: string): Record<string, un
   };
   if (output) {
     payload.output = clipOutput(output);
+  }
+  const details = collectDetails(event.result) ?? collectDetails(event.partialResult);
+  if (details) {
+    payload.details = details;
   }
   return payload;
 }

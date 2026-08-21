@@ -51,3 +51,72 @@ export function toolTitle(tool: TranscriptTool): string {
   const previewText = toolArgPreview(tool.args);
   return previewText ? `${mark} ${tool.name} · ${previewText}` : `${mark} ${tool.name}`;
 }
+
+export type DiffLine = { type: "add" | "del" | "ctx"; text: string };
+
+const DIFF_LIMIT = 80;
+
+function recordArgs(args: unknown): Record<string, unknown> {
+  return args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+}
+
+export function parseUnifiedDiff(diff: string): DiffLine[] {
+  const lines: DiffLine[] = [];
+  for (const line of diff.replace(/\r\n/g, "\n").split("\n")) {
+    if (!line || line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) {
+      continue;
+    }
+    if (line.startsWith("+")) {
+      lines.push({ type: "add", text: line.slice(1) });
+    } else if (line.startsWith("-")) {
+      lines.push({ type: "del", text: line.slice(1) });
+    } else {
+      lines.push({ type: "ctx", text: line.startsWith(" ") ? line.slice(1) : line });
+    }
+    if (lines.length >= DIFF_LIMIT) {
+      break;
+    }
+  }
+  return lines;
+}
+
+export function fileToolDiff(tool: TranscriptTool): { path: string; lines: DiffLine[] } | null {
+  const args = recordArgs(tool.args);
+  const path = typeof args.path === "string" ? args.path : "";
+  const detailsDiff = typeof tool.details?.diff === "string" ? tool.details.diff : typeof tool.details?.patch === "string" ? tool.details.patch : "";
+  if (detailsDiff) {
+    const lines = parseUnifiedDiff(detailsDiff);
+    return lines.length > 0 ? { path, lines } : null;
+  }
+  if (tool.name === "edit") {
+    const edits = Array.isArray(args.edits)
+      ? args.edits
+      : args.oldText != null || args.newText != null
+        ? [{ oldText: args.oldText, newText: args.newText }]
+        : [];
+    const lines: DiffLine[] = [];
+    for (const edit of edits) {
+      if (!edit || typeof edit !== "object") continue;
+      const rec = edit as Record<string, unknown>;
+      if (typeof rec.oldText === "string") {
+        for (const line of rec.oldText.split("\n")) {
+          lines.push({ type: "del", text: line });
+        }
+      }
+      if (typeof rec.newText === "string") {
+        for (const line of rec.newText.split("\n")) {
+          lines.push({ type: "add", text: line });
+        }
+      }
+      if (lines.length >= DIFF_LIMIT) break;
+    }
+    return lines.length > 0 ? { path, lines: lines.slice(0, DIFF_LIMIT) } : null;
+  }
+  if (tool.name === "write" && typeof args.content === "string") {
+    return {
+      path,
+      lines: args.content.split("\n").slice(0, DIFF_LIMIT).map((text) => ({ type: "add" as const, text })),
+    };
+  }
+  return null;
+}

@@ -68,6 +68,7 @@ import { actorCanAccessRun, type Actor } from "../security/actor.js";
 import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBuildLogs } from "../env/builds.js";
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
+import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
 import { serveWebFile } from "./static.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
 import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
@@ -505,6 +506,84 @@ export function createApiServer() {
         }
         const body = (await readJson(req)) as CreatePullRequestRequest;
         send(res, 201, await openRunDraftPr(runId, body));
+        return;
+      }
+
+      const artifactsMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/artifacts$/.exec(path);
+      if (artifactsMatch && method === "GET") {
+        const runId = artifactsMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, { artifacts: await listRunArtifacts(runId) });
+        return;
+      }
+      if (artifactsMatch && method === "POST") {
+        const runId = artifactsMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        const body = (await readJson(req)) as {
+          name?: string;
+          content?: string;
+          contentType?: string;
+          encoding?: "utf8" | "base64";
+        };
+        if (!body.name || typeof body.content !== "string") {
+          send(res, 400, { error: "name and content are required" });
+          return;
+        }
+        try {
+          send(res, 201, await putRunArtifact(runId, {
+            name: body.name,
+            content: body.content,
+            contentType: body.contentType,
+            encoding: body.encoding,
+          }));
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "upload failed" });
+        }
+        return;
+      }
+
+      const artifactFileMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
+      if (artifactFileMatch && method === "GET") {
+        const runId = artifactFileMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        try {
+          const file = await readRunArtifact(runId, decodeURIComponent(artifactFileMatch[2] ?? ""));
+          if (!file) {
+            notFound(res);
+            return;
+          }
+          res.writeHead(200, {
+            ...CORS,
+            "content-type": file.artifact.contentType,
+            "content-length": file.body.length,
+            "cache-control": "private, max-age=60",
+            "content-disposition": `inline; filename="${file.artifact.name}"`,
+          });
+          res.end(file.body);
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "invalid artifact" });
+        }
         return;
       }
 

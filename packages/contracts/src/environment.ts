@@ -10,6 +10,19 @@ export interface TerminalSpec {
   command: string;
 }
 
+export type McpTransport = "stdio" | "http";
+
+/** MCP server started from environment.json. Tokens come from env / headers, not the VM's git credentials. */
+export interface McpServerSpec {
+  name: string;
+  transport: McpTransport;
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+}
+
 /**
  * Durable environment config. `install` must terminate.
  * `start` / `terminals` run on every VM boot.
@@ -23,6 +36,7 @@ export interface EnvironmentJson {
   terminals?: TerminalSpec[];
   repos?: string[];
   egress?: EgressPolicy;
+  mcp?: McpServerSpec[];
 }
 
 export function parseEnvironmentJson(raw: unknown): EnvironmentJson {
@@ -50,6 +64,38 @@ export function parseEnvironmentJson(raw: unknown): EnvironmentJson {
     if (terminals.length > 0) {
       config.terminals = terminals;
     }
+  }
+  if (Array.isArray(input.mcp)) {
+    const mcp: McpServerSpec[] = [];
+    for (const item of input.mcp) {
+      if (!item || typeof item !== "object") continue;
+      const server = item as Record<string, unknown>;
+      if (typeof server.name !== "string" || !server.name.trim()) continue;
+      const transport = server.transport === "http" || server.transport === "stdio" ? server.transport : undefined;
+      if (!transport) continue;
+      const spec: McpServerSpec = { name: server.name.trim(), transport };
+      if (typeof server.command === "string") spec.command = server.command;
+      if (typeof server.url === "string") spec.url = server.url;
+      if (Array.isArray(server.args) && server.args.every((value) => typeof value === "string")) {
+        spec.args = server.args;
+      }
+      if (server.env && typeof server.env === "object" && !Array.isArray(server.env)) {
+        const env: Record<string, string> = {};
+        for (const [key, value] of Object.entries(server.env as Record<string, unknown>)) {
+          if (typeof value === "string") env[key] = value;
+        }
+        if (Object.keys(env).length > 0) spec.env = env;
+      }
+      if (server.headers && typeof server.headers === "object" && !Array.isArray(server.headers)) {
+        const headers: Record<string, string> = {};
+        for (const [key, value] of Object.entries(server.headers as Record<string, unknown>)) {
+          if (typeof value === "string") headers[key] = value;
+        }
+        if (Object.keys(headers).length > 0) spec.headers = headers;
+      }
+      mcp.push(spec);
+    }
+    if (mcp.length > 0) config.mcp = mcp;
   }
   if (input.egress && typeof input.egress === "object" && !Array.isArray(input.egress)) {
     const egress = input.egress as Record<string, unknown>;

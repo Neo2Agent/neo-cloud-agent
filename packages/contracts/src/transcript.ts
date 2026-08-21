@@ -1,6 +1,6 @@
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot, TranscriptTool } from "./events.js";
 
-const SETUP_PREFIXES = ["scm.", "run.install", "run.start", "run.terminal", "build.", "egress."];
+const SETUP_PREFIXES = ["scm.", "run.install", "run.start", "run.terminal", "build.", "egress.", "artifact.", "mcp."];
 
 export function isSetupKind(kind: string): boolean {
   return SETUP_PREFIXES.some((prefix) => kind.startsWith(prefix));
@@ -33,6 +33,9 @@ function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTo
   }
   if (typeof event.data?.output === "string") {
     tool.output = event.data.output;
+  }
+  if (event.data?.details && typeof event.data.details === "object") {
+    tool.details = event.data.details as Record<string, unknown>;
   }
   if (event.kind === "tool.end") {
     tool.status = "done";
@@ -126,6 +129,8 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
         createdAt: event.createdAt,
         kind: event.kind,
         level: event.level,
+        href: typeof event.data?.url === "string" ? event.data.url : undefined,
+        mediaType: typeof event.data?.contentType === "string" ? event.data.contentType : undefined,
       });
     }
   }

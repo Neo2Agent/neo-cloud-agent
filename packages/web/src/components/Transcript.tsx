@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { toolArgPreview } from "../format";
+import { fileToolDiff, toolArgPreview } from "../format";
+import { MarkdownBody } from "../markdown";
 
 type Props = {
   messages: TranscriptMessage[];
@@ -17,16 +18,55 @@ function toolMark(tool: TranscriptTool): string {
 function ToolCard({ tool }: { tool: TranscriptTool }) {
   const running = tool.status === "running";
   const preview = toolArgPreview(tool.args);
+  const diff = fileToolDiff(tool);
+  const preRef = useRef<HTMLPreElement>(null);
+
+  useLayoutEffect(() => {
+    if (!running || !preRef.current) return;
+    preRef.current.scrollTop = preRef.current.scrollHeight;
+  }, [running, tool.output]);
+
   return (
-    <details className={tool.isError ? "tool err" : "tool"} open={running || Boolean(tool.output) || Boolean(preview)}>
+    <details
+      className={tool.isError ? "tool err" : running ? "tool run" : "tool"}
+      open={running || Boolean(tool.output) || Boolean(preview) || Boolean(diff)}
+    >
       <summary>
         <span>
           {toolMark(tool)} {tool.name}
         </span>
         {preview ? <span className="cmd">{preview}</span> : null}
       </summary>
-      {tool.output ? <pre>{tool.output}</pre> : running ? <pre>执行中…</pre> : null}
+      {diff ? (
+        <pre className="tool-diff">
+          {diff.lines.map((line, index) => (
+            <span key={index} className={`diff-${line.type}`}>
+              {line.type === "add" ? "+" : line.type === "del" ? "-" : " "}
+              {line.text}
+              {"\n"}
+            </span>
+          ))}
+        </pre>
+      ) : null}
+      {tool.output ? <pre ref={preRef}>{tool.output}</pre> : running && !diff ? <pre ref={preRef}>执行中…</pre> : null}
     </details>
+  );
+}
+
+function ArtifactCard({ message }: { message: TranscriptMessage }) {
+  const href = message.href;
+  const image = Boolean(href && message.mediaType?.startsWith("image/"));
+  return (
+    <article className="artifact">
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer">
+          {message.text}
+        </a>
+      ) : (
+        <span>{message.text}</span>
+      )}
+      {image && href ? <img src={href} alt="" /> : null}
+    </article>
   );
 }
 
@@ -83,6 +123,9 @@ export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
         </div>
       ) : (
         messages.map((message) => {
+          if (message.kind === "artifact.uploaded") {
+            return <ArtifactCard key={message.id} message={message} />;
+          }
           if (message.role === "setup") {
             return (
               <p key={message.id} className={message.level === "error" || String(message.kind).endsWith("_failed") ? "setup err" : "setup"}>
@@ -104,7 +147,7 @@ export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
           return (
             <article key={message.id} className="bubble assistant">
               <span className="who">Agent</span>
-              {message.text ? <div className="body">{message.text}</div> : null}
+              {message.text ? <MarkdownBody text={message.text} className="body" /> : null}
               {(message.tools ?? []).map((tool, index) => (
                 <ToolCard key={tool.id ?? `${tool.name}-${index}`} tool={tool} />
               ))}

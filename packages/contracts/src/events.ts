@@ -41,7 +41,8 @@ export type RunEventKind =
   | "scm.pr_failed"
   | "mcp.auth_error"
   | "egress.denied"
-  | "build.used";
+  | "build.used"
+  | "artifact.uploaded";
 
 export interface RunEvent {
   id: string;
@@ -66,6 +67,7 @@ export type TranscriptTool = {
   isError?: boolean;
   args?: unknown;
   output?: string;
+  details?: Record<string, unknown>;
   status?: "running" | "done";
 };
 
@@ -79,6 +81,8 @@ export interface TranscriptMessage {
   kind?: string;
   level?: RunEventLevel;
   tools?: TranscriptTool[];
+  href?: string;
+  mediaType?: string;
 }
 
 export interface TranscriptSnapshot {

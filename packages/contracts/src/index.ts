@@ -26,6 +26,8 @@ export type {
   EgressPolicy,
   Environment,
   EnvironmentJson,
+  McpServerSpec,
+  McpTransport,
   SecretKind,
   SecretRef,
   TerminalSpec,

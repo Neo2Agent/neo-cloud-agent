@@ -376,6 +376,53 @@ h1 {
   border: 1px solid var(--line);
 }
 
+.md {
+  white-space: normal;
+}
+
+.md-p,
+.md-h,
+.md-list {
+  margin: 0 0 8px;
+}
+
+.md-h {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.md-list {
+  padding-left: 1.2em;
+}
+
+.md-pre,
+.tool-diff {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.md code,
+.md-pre code {
+  font-family: inherit;
+}
+
+.md :not(pre) > code {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
 .who {
   display: block;
   margin-bottom: 6px;
@@ -424,6 +471,10 @@ h1 {
   max-width: 100%;
 }
 
+.tool.run {
+  border-color: #bfdbfe;
+}
+
 .tool pre {
   margin: 8px 0 0;
   white-space: pre-wrap;
@@ -433,6 +484,58 @@ h1 {
   background: var(--bg-2);
   border-radius: 6px;
   padding: 8px;
+}
+
+.tool-diff {
+  margin-top: 8px;
+}
+
+.diff-add {
+  display: block;
+  color: var(--ok);
+  background: #ecfdf3;
+}
+
+.diff-del {
+  display: block;
+  color: var(--err);
+  background: #fef3f2;
+}
+
+.diff-ctx {
+  display: block;
+  color: var(--muted);
+}
+
+.artifact {
+  align-self: flex-start;
+  max-width: 520px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.artifact a {
+  color: var(--accent);
+}
+
+.artifact img {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.sidebar-toggle,
+.sidebar-close {
+  width: auto;
+}
+
+.sidebar-backdrop {
+  display: none;
 }
 
 .setup {
@@ -641,10 +744,35 @@ textarea {
   padding: 0;
 }
 
+.sidebar-closed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sidebar-closed .sidebar {
+  display: none;
+}
+
 @media (max-width: 860px) {
   .app {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .app:not(.sidebar-closed) .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 24, 39, 0.28);
+    z-index: 8;
+  }
+
+  .app:not(.sidebar-closed) .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(320px, 88vw);
+    z-index: 9;
+    border-right: 1px solid var(--line);
+    box-shadow: var(--shadow);
   }
 
   .sidebar {
@@ -655,7 +783,8 @@ textarea {
   }
 
   .run-list {
-    max-height: 88px;
+    max-height: none;
+    flex: 1;
   }
 
   .topbar {

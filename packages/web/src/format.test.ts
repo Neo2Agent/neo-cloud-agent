@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { fileToolDiff, parseUnifiedDiff, toolArgPreview } from "./format.js";
+
+test("toolArgPreview prefers command and path", () => {
+  assert.equal(toolArgPreview({ command: "ls -la" }), "ls -la");
+  assert.equal(toolArgPreview({ path: "src/app.ts" }), "src/app.ts");
+});
+
+test("fileToolDiff renders edit old/new text", () => {
+  const diff = fileToolDiff({
+    name: "edit",
+    args: { path: "README.md", edits: [{ oldText: "hello", newText: "world" }] },
+  });
+  assert.equal(diff?.path, "README.md");
+  assert.deepEqual(diff?.lines, [
+    { type: "del", text: "hello" },
+    { type: "add", text: "world" },
+  ]);
+});
+
+test("fileToolDiff prefers persisted unified diff details", () => {
+  const diff = fileToolDiff({
+    name: "edit",
+    args: { path: "a.ts" },
+    details: { diff: "--- a\n+++ b\n@@\n-old\n+new\n" },
+  });
+  assert.deepEqual(
+    diff?.lines.map((line) => `${line.type}:${line.text}`),
+    ["del:old", "add:new"],
+  );
+  assert.ok(parseUnifiedDiff("+ok\n").length === 1);
+});

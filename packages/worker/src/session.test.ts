@@ -16,6 +16,9 @@ test("session tools include filesystem tools plus neo-git, neo-pr, and neo-diag"
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_git_commit/);
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_pr_open/);
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_diag/);
+  assert.match(CLOUD_SYSTEM_PROMPT, /neo_artifact_upload/);
+  assert.match(CLOUD_SYSTEM_PROMPT, /neo_browse/);
+  assert.match(CLOUD_SYSTEM_PROMPT, /neo_mcp_list/);
   assert.match(CLOUD_SYSTEM_PROMPT, /Do not `git commit`/);
 });
 

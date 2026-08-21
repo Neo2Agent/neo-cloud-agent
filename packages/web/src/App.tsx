@@ -84,6 +84,13 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [llm, setLlm] = useState<LlmSettings>({ configured: false, upstream: "deepseek", model: null });
   const [llmKey, setLlmKey] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const saved = window.localStorage.getItem("neo.sidebar");
+    if (saved === "0") return false;
+    if (saved === "1") return true;
+    return window.innerWidth >= 860;
+  });
   const sourceRef = useRef<EventSource | null>(null);
   const tokenRef = useRef(token);
   tokenRef.current = token;
@@ -433,9 +440,18 @@ export function App() {
     setShownFrom((value) => Math.max(0, value - HISTORY_PAGE));
   };
 
+  const toggleSidebar = () => {
+    setSidebarOpen((value) => {
+      const next = !value;
+      window.localStorage.setItem("neo.sidebar", next ? "1" : "0");
+      return next;
+    });
+  };
+
   return (
     <>
-      <div className="app">
+      <div className={sidebarOpen ? "app" : "app sidebar-closed"}>
+        {sidebarOpen ? <div className="sidebar-backdrop" id="sidebar-backdrop" onClick={toggleSidebar} /> : null}
         <Sidebar
           runs={runs}
           currentRunId={runId}
@@ -445,8 +461,18 @@ export function App() {
           authed={Boolean(userEmail)}
           authBusy={authBusy}
           health={healthText}
+          onClose={toggleSidebar}
           onNewChat={resetComposer}
-          onOpenRun={(id) => void openRun(id)}
+          onOpenRun={(id) => {
+            setSidebarOpen((open) => {
+              if (window.innerWidth < 860 && open) {
+                window.localStorage.setItem("neo.sidebar", "0");
+                return false;
+              }
+              return open;
+            });
+            void openRun(id);
+          }}
           onLogin={() => {
             setAuthOpen(true);
             if (!bootstrapLogin && !defaultAdmin) return;
@@ -472,6 +498,9 @@ export function App() {
         <main className="main">
           <header className="topbar">
             <div>
+              <button className="ghost sidebar-toggle" id="sidebar-toggle" type="button" onClick={toggleSidebar}>
+                {sidebarOpen ? "收起侧栏" : "对话列表"}
+              </button>
               <p className="eyebrow" id="run-label">
                 {currentRun
                   ? currentRun.buildId

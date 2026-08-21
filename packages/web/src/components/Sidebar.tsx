@@ -20,6 +20,7 @@ type Props = {
   onOpenRun: (id: string) => void;
   onLogin: () => void;
   onLogout: () => void;
+  onClose?: () => void;
 };
 
 export function Sidebar({
@@ -35,6 +36,7 @@ export function Sidebar({
   onOpenRun,
   onLogin,
   onLogout,
+  onClose,
 }: Props) {
   const items = [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   return (
@@ -48,6 +50,11 @@ export function Sidebar({
           <span>Cloud Agent</span>
         </div>
       </div>
+      {onClose ? (
+        <button className="ghost sidebar-close" id="sidebar-close" type="button" onClick={onClose}>
+          收起
+        </button>
+      ) : null}
       <button className="new-chat" id="new-chat" type="button" onClick={onNewChat}>
         新对话
       </button>

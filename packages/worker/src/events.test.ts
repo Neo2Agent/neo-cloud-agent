@@ -29,6 +29,14 @@ test("maps pi session events to RunEvents", () => {
   assert.equal(done[0]?.data?.toolCallId, "call-1");
   assert.equal(done[0]?.data?.output, "README.md\n");
   assert.deepEqual(done[0]?.data?.args, { command: "ls" });
+  const edited = toRunEvents("run1", {
+    type: "tool_execution_end",
+    toolCallId: "edit-1",
+    toolName: "edit",
+    args: { path: "README.md", edits: [{ oldText: "a", newText: "b" }] },
+    result: { content: [{ type: "text", text: "ok" }], details: { diff: "-a\n+b\n" } },
+  });
+  assert.deepEqual(edited[0]?.data?.details, { diff: "-a\n+b\n" });
 
   const update = toRunEvents("run1", {
     type: "tool_execution_update",

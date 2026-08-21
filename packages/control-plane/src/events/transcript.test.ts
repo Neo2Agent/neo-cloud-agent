@@ -93,6 +93,20 @@ test("two bash calls without toolCallId stay as separate tools", () => {
   assert.equal(tools[1]?.args && (tools[1].args as { command?: string }).command, "ls");
 });
 
+test("artifact uploads become setup cards with a download href", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({
+      id: "a1",
+      kind: "artifact.uploaded",
+      title: "已上传 notes.txt",
+      data: { url: "/v1/runs/run-1/artifacts/notes.txt", contentType: "text/plain" },
+    }),
+  ]);
+  assert.equal(snapshot.messages[0]?.kind, "artifact.uploaded");
+  assert.equal(snapshot.messages[0]?.href, "/v1/runs/run-1/artifacts/notes.txt");
+  assert.equal(snapshot.messages[0]?.mediaType, "text/plain");
+});
+
 test("empty assistant turns without tools are dropped", () => {
   const snapshot = buildTranscriptSnapshot("run-1", [
     ev({ id: "a1", kind: "agent.start" }),

@@ -149,6 +149,104 @@ test("neo_diag merges control-plane events with local setup logs", async () => {
   assert.match(result.content, /allowlist_only/);
 });
 
+test("neo_artifact_upload posts a workspace file to the control plane", async () => {
+  const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-art-"));
+  writeFileSync(path.join(workspaceDir, "notes.txt"), "hello artifact\n");
+  const tool = createCloudTools(
+    ctx(
+      mockFetch({
+        "/internal/runs/run_1/artifacts": {
+          status: 201,
+          body: { name: "notes.txt", url: "/v1/runs/run_1/artifacts/notes.txt", contentType: "text/plain", sizeBytes: 15 },
+        },
+      }),
+      workspaceDir,
+    ),
+  ).find((item) => item.name === "neo_artifact_upload");
+  const result = await tool!.execute({ path: "notes.txt" });
+  assert.equal(result.isError, undefined);
+  assert.match(result.content, /notes\.txt/);
+  assert.equal(result.details?.url, "/v1/runs/run_1/artifacts/notes.txt");
+});
+
+test("neo_artifact_upload rejects a path outside the workspace", async () => {
+  const tool = createCloudTools(ctx(mockFetch({}))).find((item) => item.name === "neo_artifact_upload");
+  const result = await tool!.execute({ path: "../secret" });
+  assert.equal(result.isError, true);
+  assert.match(result.content, /escapes/i);
+});
+
+test("neo_browse extracts title and text after an egress check", async () => {
+  const tool = createCloudTools(
+    ctx(async (input) => {
+      const url = String(input);
+      if (url.includes("egress-check")) {
+        return new Response(JSON.stringify({ allow: true }), { status: 200 });
+      }
+      return new Response("<html><title>Docs</title><p>Hello <b>world</b></p></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    }),
+  ).find((item) => item.name === "neo_browse");
+  const result = await tool!.execute({ url: "https://example.com/docs" });
+  assert.equal(result.isError, undefined);
+  assert.match(result.content, /Docs/);
+  assert.match(result.content, /Hello world/);
+});
+
+test("neo_browse honors an egress denial", async () => {
+  const tool = createCloudTools(
+    ctx(
+      mockFetch({
+        "/internal/runs/run_1/egress-check": { body: { allow: false, reason: "blocked evil.test" } },
+      }),
+    ),
+  ).find((item) => item.name === "neo_browse");
+  const result = await tool!.execute({ url: "https://evil.test" });
+  assert.equal(result.isError, true);
+  assert.match(result.content, /blocked evil.test/);
+});
+
+test("neo_mcp_list and neo_mcp_call talk to an HTTP MCP server", async () => {
+  const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-mcp-"));
+  mkdirSync(path.join(workspaceDir, ".neo"), { recursive: true });
+  writeFileSync(
+    path.join(workspaceDir, ".neo/environment.json"),
+    JSON.stringify({
+      mcp: [{ name: "docs", transport: "http", url: "https://mcp.example/rpc" }],
+    }),
+  );
+  const fetchImpl: CloudToolFetch = async (input, init) => {
+    const url = String(input);
+    if (!url.includes("mcp.example")) {
+      return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 });
+    }
+    const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+    if (body.method === "initialize") {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05" } }));
+    }
+    if (body.method === "tools/list") {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 2, result: { tools: [{ name: "search", description: "Find docs" }] } }));
+    }
+    if (body.method === "tools/call") {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 3, result: { content: [{ type: "text", text: "found it" }] } }));
+    }
+    return new Response(JSON.stringify({ error: body.method }), { status: 400 });
+  };
+  const tools = createCloudTools(ctx(fetchImpl, workspaceDir));
+  const listed = await tools.find((item) => item.name === "neo_mcp_list")!.execute({});
+  assert.match(listed.content, /docs/);
+  assert.match(listed.content, /search/);
+  const called = await tools.find((item) => item.name === "neo_mcp_call")!.execute({
+    server: "docs",
+    tool: "search",
+    arguments: { q: "agent" },
+  });
+  assert.equal(called.isError, undefined);
+  assert.match(called.content, /found it/);
+});
+
 test("neo_diag falls back to local logs when the control plane is down", async () => {
   const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-diag-local-"));
   mkdirSync(path.join(workspaceDir, ".neo", "logs"), { recursive: true });

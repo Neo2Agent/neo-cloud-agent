@@ -14,12 +14,24 @@ test("parseEnvironmentJson keeps install/start and drops unknown fields", () => 
     startMustSucceed: true,
     terminals: [{ name: "web", command: "pnpm dev" }, { name: 1 }],
     egress: { mode: "allow_all", domains: ["example.com", 3] },
+    mcp: [
+      { name: "docs", transport: "http", url: "https://mcp.example/rpc", headers: { authorization: "Bearer ${TOKEN}" } },
+      { name: 1 },
+    ],
   });
   assert.equal(config.install, "echo hi");
   assert.equal(config.start, "pnpm dev");
   assert.equal(config.startMustSucceed, true);
   assert.deepEqual(config.terminals, [{ name: "web", command: "pnpm dev" }]);
   assert.deepEqual(config.egress, { mode: "allow_all", domains: ["example.com"] });
+  assert.deepEqual(config.mcp, [
+    {
+      name: "docs",
+      transport: "http",
+      url: "https://mcp.example/rpc",
+      headers: { authorization: "Bearer ${TOKEN}" },
+    },
+  ]);
   assert.equal("extra" in config, false);
 });
 
