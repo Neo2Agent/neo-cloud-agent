@@ -2,7 +2,7 @@
 
 对标 [Cursor Cloud Agent](https://cursor.com/docs/cloud-agent) 的云端 Agent 服务：LLM 推理在云端网关，任务在隔离 VM 里执行，Agent 内核使用 [pi-agent](https://github.com/earendil-works/pi)。
 
-**设计见 [docs/architecture.md](docs/architecture.md)。**
+**设计见 [docs/architecture.md](docs/architecture.md)。** 腾讯云轻量（北京 `62.234.211.200`）的部署和日常更新见 [.cursor/skills/tencent-lighthouse-deploy/SKILL.md](.cursor/skills/tencent-lighthouse-deploy/SKILL.md)。
 
 ## 怎么拆
 

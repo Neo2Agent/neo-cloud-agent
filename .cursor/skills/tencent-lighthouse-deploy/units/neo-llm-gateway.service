@@ -1,0 +1,17 @@
+[Unit]
+Description=Neo Cloud Agent LLM Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/neo-cloud-agent
+EnvironmentFile=/home/ubuntu/neo-cloud-agent/.env
+Environment=PATH=/usr/bin:/usr/local/bin
+ExecStart=/usr/bin/pnpm --filter @neo-cloud-agent/llm-gateway start
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
