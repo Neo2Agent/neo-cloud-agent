@@ -62,7 +62,12 @@ const state = {
   builds: [],
   llm: { configured: false, upstream: "mock", model: null },
   vms: { total: 0, busy: 0, backend: "none", slots: [] },
+  history: [],
+  historyShownFrom: 0,
+  loadingOlder: false,
 };
+
+const HISTORY_PAGE = 40;
 
 function apiHeaders(json) {
   const headers = {};
@@ -368,7 +373,58 @@ function renderRuns() {
     .join("");
 }
 
-function addBubble(role, text, id) {
+function nearTranscriptBottom() {
+  return transcriptEl.scrollHeight - transcriptEl.scrollTop - transcriptEl.clientHeight < 96;
+}
+
+function scrollTranscript(force) {
+  if (force || nearTranscriptBottom()) {
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  }
+}
+
+function firstHistoryNode() {
+  return [...transcriptEl.children].find((node) => node.id !== "history-more" && !node.classList.contains("empty"));
+}
+
+function placeHistoryNode(node, prepend) {
+  if (!prepend) {
+    transcriptEl.appendChild(node);
+    return;
+  }
+  const first = firstHistoryNode();
+  if (first) transcriptEl.insertBefore(node, first);
+  else transcriptEl.appendChild(node);
+}
+
+function ensureHistoryMore() {
+  let el = document.getElementById("history-more");
+  if (el) return el;
+  el = document.createElement("div");
+  el.id = "history-more";
+  el.className = "history-more";
+  const button = document.createElement("button");
+  button.id = "load-older";
+  button.type = "button";
+  button.textContent = "加载更早的消息";
+  button.addEventListener("click", () => void loadOlder());
+  el.appendChild(button);
+  return el;
+}
+
+function syncHistoryMore() {
+  const remaining = state.historyShownFrom;
+  const el = ensureHistoryMore();
+  if (remaining > 0) {
+    el.hidden = false;
+    el.querySelector("button").textContent = `加载更早的消息（还有 ${remaining} 条）`;
+    if (transcriptEl.firstElementChild !== el) transcriptEl.prepend(el);
+    return;
+  }
+  el.hidden = true;
+}
+
+function addBubble(role, text, id, options = {}) {
   const empty = transcriptEl.querySelector(".empty");
   if (empty) empty.remove();
   const node = document.createElement("article");
@@ -376,8 +432,8 @@ function addBubble(role, text, id) {
   node.dataset.id = id;
   node.innerHTML = `<span class="who">${role === "user" ? "你" : "Agent"}</span><div class="body"></div>`;
   node.querySelector(".body").textContent = text;
-  transcriptEl.appendChild(node);
-  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  placeHistoryNode(node, options.prepend);
+  if (!options.prepend && options.scroll !== false) scrollTranscript(options.forceScroll);
   return node;
 }
 
@@ -389,39 +445,68 @@ function ensureAssistant() {
   return state.assistant;
 }
 
-function addSetupLine(event) {
+function addSetupLine(event, options = {}) {
   const empty = transcriptEl.querySelector(".empty");
   if (empty) empty.remove();
   const line = document.createElement("p");
   line.className = event.level === "error" || String(event.kind).endsWith("_failed") ? "setup err" : "setup";
   line.dataset.id = event.id ?? "";
   line.textContent = event.detail ? `${event.title}：${event.detail}` : event.title || event.text || "";
-  transcriptEl.appendChild(line);
+  placeHistoryNode(line, options.prepend);
+}
+
+function paintHistoryMessage(message, options = {}) {
+  if (message.role === "user") {
+    addBubble("user", message.text, message.id, options);
+    return;
+  }
+  if (message.role === "assistant") {
+    const node = addBubble("assistant", message.text, message.id, options);
+    for (const tool of message.tools ?? []) {
+      const el = document.createElement("div");
+      el.className = tool.isError ? "tool err" : "tool";
+      el.textContent = tool.isError ? `✗ ${tool.name}` : `✓ ${tool.name}`;
+      node.appendChild(el);
+    }
+    if (message.streaming) state.assistant = node;
+    return;
+  }
+  if (message.role === "setup") {
+    addSetupLine(message, options);
+  }
 }
 
 function applySnapshot(snapshot) {
-  for (const message of snapshot.messages ?? []) {
-    state.events.set(message.id, message);
-    if (message.role === "user") {
-      addBubble("user", message.text, message.id);
-      continue;
-    }
-    if (message.role === "assistant") {
-      const node = addBubble("assistant", message.text, message.id);
-      for (const tool of message.tools ?? []) {
-        const el = document.createElement("div");
-        el.className = tool.isError ? "tool err" : "tool";
-        el.textContent = tool.isError ? `✗ ${tool.name}` : `✓ ${tool.name}`;
-        node.appendChild(el);
-      }
-      if (message.streaming) state.assistant = node;
-      continue;
-    }
-    if (message.role === "setup") {
-      addSetupLine(message);
-    }
+  const messages = snapshot.messages ?? [];
+  state.history = messages;
+  for (const message of messages) {
+    if (message.id) state.events.set(message.id, message);
   }
+  const start = Math.max(0, messages.length - HISTORY_PAGE);
+  state.historyShownFrom = start;
+  for (const message of messages.slice(start)) {
+    paintHistoryMessage(message, { scroll: false });
+  }
+  syncHistoryMore();
   state.lastEventId = snapshot.lastEventId ?? null;
+  scrollTranscript(true);
+}
+
+function loadOlder() {
+  if (state.loadingOlder || state.historyShownFrom <= 0) return;
+  state.loadingOlder = true;
+  const end = state.historyShownFrom;
+  const start = Math.max(0, end - HISTORY_PAGE);
+  const batch = state.history.slice(start, end);
+  const previousHeight = transcriptEl.scrollHeight;
+  const previousTop = transcriptEl.scrollTop;
+  for (const message of batch) {
+    paintHistoryMessage(message, { prepend: true, scroll: false });
+  }
+  state.historyShownFrom = start;
+  syncHistoryMore();
+  transcriptEl.scrollTop = previousTop + (transcriptEl.scrollHeight - previousHeight);
+  state.loadingOlder = false;
 }
 
 function applyEvent(event) {
@@ -432,7 +517,7 @@ function applyEvent(event) {
     const text = String(event.data?.text ?? "");
     const lastUser = [...transcriptEl.querySelectorAll(".bubble.user")].at(-1);
     if (!lastUser || lastUser.querySelector(".body")?.textContent !== text) {
-      addBubble("user", text, event.id);
+      addBubble("user", text, event.id, { forceScroll: nearTranscriptBottom() });
     }
     return;
   }
@@ -440,7 +525,7 @@ function applyEvent(event) {
   if (event.kind === "message.delta") {
     const node = ensureAssistant();
     node.querySelector(".body").textContent += String(event.data?.delta ?? "");
-    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    scrollTranscript();
     return;
   }
 
@@ -547,6 +632,8 @@ async function openRun(runId) {
   else state.runs.unshift(run);
   state.events.clear();
   state.assistant = null;
+  state.history = [];
+  state.historyShownFrom = 0;
   transcriptEl.innerHTML = "";
   runTitleEl.textContent = preview(run.prompt);
   setStatus(run.status);
@@ -573,6 +660,8 @@ function resetComposer() {
   state.events.clear();
   state.assistant = null;
   state.lastEventId = null;
+  state.history = [];
+  state.historyShownFrom = 0;
   closeStream();
   emptyState();
   setStatus("idle");
@@ -660,7 +749,7 @@ async function sendMessage(text) {
   const repo = repoEl.value.trim();
   const repoUrls = repo ? [repo] : [];
   if (!state.runId) {
-    addBubble("user", text, `local-${Date.now()}`);
+    addBubble("user", text, `local-${Date.now()}`, { forceScroll: true });
     const created = await (
       await api("/v1/runs", {
         method: "POST",
@@ -678,7 +767,7 @@ async function sendMessage(text) {
     await openRun(created.id);
     return;
   }
-  addBubble("user", text, `local-${Date.now()}`);
+  addBubble("user", text, `local-${Date.now()}`, { forceScroll: true });
   const follow = await (
     await api(`/v1/runs/${state.runId}/follow-ups`, {
       method: "POST",
@@ -705,6 +794,10 @@ promptEl.addEventListener("keydown", (event) => {
     event.preventDefault();
     document.getElementById("composer").requestSubmit();
   }
+});
+
+transcriptEl.addEventListener("scroll", () => {
+  if (transcriptEl.scrollTop < 48) void loadOlder();
 });
 
 document.getElementById("new-chat").addEventListener("click", resetComposer);

@@ -28,6 +28,10 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /color-scheme: light/);
   assert.match(cssText, /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/);
   assert.match(cssText, /\.auth-gate:not\(\[hidden\]\)/);
+  assert.match(cssText, /\.app\s*\{[^}]*overflow:\s*hidden/);
+  assert.match(cssText, /\.transcript\s*\{[^}]*min-height:\s*0/);
+  assert.match(cssText, /\.transcript\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(cssText, /\.composer\s*\{[^}]*flex-shrink:\s*0/);
   const app = resolveWebFile("/app.js");
   assert.ok(app);
   const appText = readFileSync(app, "utf8");
@@ -38,6 +42,9 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /slotLabel/);
   assert.match(appText, /vmSlots/);
   assert.match(appText, /toggle-settings|toggleSettingsEl/);
+  assert.match(appText, /HISTORY_PAGE/);
+  assert.match(appText, /loadOlder/);
+  assert.match(appText, /scrollTranscript/);
   assert.doesNotMatch(readFileSync(index, "utf8"), /Fraunces/);
   assert.doesNotMatch(readFileSync(css, "utf8"), /#0b0[0-9a-f]{3}\b/);
   assert.equal(resolveWebFile("/../package.json"), null);
