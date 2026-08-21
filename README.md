@@ -42,7 +42,7 @@ pnpm dev                 # control-plane :8080 + llm-gateway :8081
 # 打开 http://localhost:8080 对话
 ```
 
-默认 `SPAWN_LOCAL_WORKER=1`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。没配 `OPENAI_API_KEY` 时 gateway 用 mock。
+默认 `SPAWN_LOCAL_WORKER=1`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。仓库根目录的 `.env` 会被两个控制面进程自动加载（已有环境变量优先）。没配 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` 时 gateway 用 mock。
 
 ```bash
 curl -s localhost:8080/health
@@ -53,7 +53,20 @@ curl -s -X POST localhost:8080/v1/runs \
 curl -s localhost:8080/v1/runs/<id>/transcript
 ```
 
-接真实 OpenAI 兼容上游：
+接 DeepSeek（推荐，OpenAI 兼容）：把 key 写进仓库根目录 `.env`（已 gitignore），不要提交。
+
+```bash
+# .env
+LLM_UPSTREAM=deepseek
+LLM_UPSTREAM_BASE_URL=https://api.deepseek.com/v1
+LLM_UPSTREAM_MODEL=deepseek-chat
+DEFAULT_MODEL=neo/deepseek
+DEEPSEEK_API_KEY=sk-...
+```
+
+`neo/deepseek`、`neo/ds`、`ds` 会路由到 `deepseek-chat`；要推理模型把 `LLM_UPSTREAM_MODEL` 改成 `deepseek-reasoner`，或直接请求 `deepseek-reasoner`。
+
+也可以接其它 OpenAI 兼容上游：
 
 ```bash
 export OPENAI_API_KEY=sk-...

@@ -51,7 +51,7 @@ export function buildMockCompletion(model: string, text: string) {
 }
 
 const MOCK_TEXT =
-  "Mock gateway response. Set OPENAI_API_KEY or LLM_UPSTREAM=openai to use a real provider.";
+  "Mock gateway response. Set DEEPSEEK_API_KEY or OPENAI_API_KEY, or LLM_UPSTREAM=deepseek|openai.";
 
 export async function proxyChatCompletions(body: ChatCompletionBody): Promise<{
   status: number;
@@ -76,7 +76,7 @@ export async function proxyChatCompletions(body: ChatCompletionBody): Promise<{
   }
 
   if (!config.upstreamApiKey) {
-    throw new Error("openai upstream is selected but no API key is configured");
+    throw new Error(`${config.upstream} upstream is selected but no API key is configured`);
   }
 
   const response = await fetch(`${config.upstreamBaseUrl}/chat/completions`, {

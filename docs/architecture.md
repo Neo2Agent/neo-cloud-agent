@@ -366,7 +366,7 @@ pi-ai streamSimple
 必须具备：
 
 1. **Run-scoped JWT**：`runId`、`orgId`、`model`、过期时间；VM 重启就轮换
-2. **模型目录**：对外稳定 id（`neo/sonnet`），对内映射到 Claude / GPT / 自建
+2. **模型目录**：对外稳定 id（`neo/deepseek`、`neo/sonnet`），对内映射到 DeepSeek / Claude / GPT / 自建
 3. **Prompt cache**：把 pi 的 `sessionId` 映射到 Anthropic cache / OpenAI cached input
 4. **用量**：input / output / cache read-write，按 Run 聚合
 5. **审计**：可选存 prompt/response（隐私模式关闭）；隐私模式只存 token 计数

@@ -13,6 +13,7 @@ import {
   listRuns,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
+import { getConfig } from "../config.js";
 import { listEnvironments } from "../env/store.js";
 import { serveWebFile } from "./static.js";
 
@@ -48,7 +49,14 @@ export function createApiServer() {
 
     try {
       if (method === "GET" && path === "/health") {
-        send(res, 200, { ok: true, service: "control-plane" });
+        const config = getConfig();
+        send(res, 200, {
+          ok: true,
+          service: "control-plane",
+          defaultModel: config.defaultModel,
+          llmUpstream: config.llmUpstream,
+          spawnLocalWorker: config.spawnLocalWorker,
+        });
         return;
       }
 

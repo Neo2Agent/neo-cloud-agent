@@ -242,7 +242,13 @@ abortEl.addEventListener("click", async () => {
 async function boot() {
   try {
     const health = await (await fetch("/health")).json();
-    healthEl.textContent = health.ok ? "控制面在线" : "控制面异常";
+    if (!health.ok) {
+      healthEl.textContent = "控制面异常";
+    } else if (health.defaultModel) {
+      healthEl.textContent = `控制面在线 · ${health.defaultModel}`;
+    } else {
+      healthEl.textContent = "控制面在线";
+    }
   } catch {
     healthEl.textContent = "控制面不可达";
   }

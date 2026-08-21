@@ -66,7 +66,12 @@ export function createGatewayServer() {
     try {
       if (method === "GET" && path === "/health") {
         const config = getConfig();
-        send(res, 200, { ok: true, service: "llm-gateway", upstream: config.upstream });
+        send(res, 200, {
+          ok: true,
+          service: "llm-gateway",
+          upstream: config.upstream,
+          upstreamModel: config.upstreamModel,
+        });
         return;
       }
 
