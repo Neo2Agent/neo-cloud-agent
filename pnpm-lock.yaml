@@ -48,6 +48,9 @@ importers:
       '@neo-cloud-agent/extensions':
         specifier: workspace:*
         version: link:../extensions
+      tsx:
+        specifier: ^4.20.5
+        version: 4.23.12
 
 packages:
 

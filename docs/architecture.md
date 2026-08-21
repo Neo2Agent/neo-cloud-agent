@@ -687,7 +687,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 ### P0 — 能跑通一个任务
 
 - 仍是 **1 个仓库**；只发 **2 个控制面容器 + 1 张 worker 镜像**
-- Docker Runtime，一容器 = 一 Run
+- Docker Runtime：一容器 = 一 Run（`WORKER_RUNTIME=docker`）；开发可切 `local` 本机进程
 - `packages/worker` 嵌入 `createAgentSession`
 - `packages/llm-gateway`（先只接一个 Provider，JWT 鉴权）
 - `packages/control-plane`：`POST /v1/runs` + SSE，并托管 `packages/web` 对话页
@@ -754,9 +754,9 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已经通了。下一刀仍在本 monorepo：
 
-1. 真 Docker Runtime：`SPAWN_LOCAL_WORKER=0` 时按 Run 起 worker 容器
-2. P1 SCM：短寿命 token、受控 commit、draft PR
-3. 读 `.neo/environment.json` 并跑 `install`
-4. Run / 事件持久化，重启不丢对话
+1. P1 SCM：短寿命 token、受控 commit、draft PR
+2. 读 `.neo/environment.json` 并跑 `install`
+3. Run / 事件持久化，重启不丢对话
+4. 在有 Docker 的机器上跑 `WORKER_RUNTIME=docker` 的整镜像 e2e
 
 换 Firecracker 只换 Runtime，不换 Agent，也不拆仓。

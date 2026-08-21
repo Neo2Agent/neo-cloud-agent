@@ -55,6 +55,7 @@ export function createApiServer() {
           service: "control-plane",
           defaultModel: config.defaultModel,
           llmUpstream: config.llmUpstream,
+          workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
         });
         return;
@@ -114,7 +115,7 @@ export function createApiServer() {
 
       const archiveMatch = /^\/v1\/runs\/([^/]+)\/archive$/.exec(path);
       if (archiveMatch && method === "POST") {
-        send(res, 200, archiveRun(archiveMatch[1] ?? ""));
+        send(res, 200, await archiveRun(archiveMatch[1] ?? ""));
         return;
       }
 

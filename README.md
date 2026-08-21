@@ -42,7 +42,7 @@ pnpm dev                 # control-plane :8080 + llm-gateway :8081
 # 打开 http://localhost:8080 对话
 ```
 
-默认 `SPAWN_LOCAL_WORKER=1`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。`repoUrls` 会在 spawn 前落到 Run 工作区：本地目录直接拷贝，`github.com/org/repo` 或 HTTPS 地址则 `git clone --depth 1`。仓库根目录的 `.env` 会被两个控制面进程自动加载（已有环境变量优先）。没配 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` 时 gateway 用 mock。
+默认 `WORKER_RUNTIME=local`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。设 `WORKER_RUNTIME=docker`（或 `SPAWN_LOCAL_WORKER=0`）则 `docker run` 一张 worker 镜像，工作区 bind-mount 进容器；容器里只有 run JWT，没有 Provider Key。`repoUrls` 会在 spawn 前落到 Run 工作区：本地目录直接拷贝，`github.com/org/repo` 或 HTTPS 地址则 `git clone --depth 1`。仓库根目录的 `.env` 会被两个控制面进程自动加载（已有环境变量优先）。没配 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` 时 gateway 用 mock。
 
 ```bash
 curl -s localhost:8080/health
@@ -72,6 +72,24 @@ DEEPSEEK_API_KEY=sk-...
 export OPENAI_API_KEY=sk-...
 export LLM_UPSTREAM=openai
 export LLM_UPSTREAM_MODEL=gpt-4o-mini
+pnpm dev
+```
+
+自动化测试：
+
+```bash
+pnpm test                 # 单测 + 进程内 mock e2e（clone + worker + IDLE）
+pnpm test:e2e             # 打已经在跑的 :8080（mock 即可）
+E2E_EXPECT_README=1 pnpm test:e2e:live   # 真模型：加 README 并跑 test.sh
+```
+
+Docker worker（控制面仍在宿主机时）：
+
+```bash
+docker compose -f infra/docker-compose.yml --profile worker build worker
+export WORKER_RUNTIME=docker
+export WORKER_IMAGE=neo-cloud-agent-worker:dev
+# Linux 上 worker 通过 host.docker.internal 回连 :8080 / :8081
 pnpm dev
 ```
 

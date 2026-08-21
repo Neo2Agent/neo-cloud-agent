@@ -12,7 +12,9 @@
     "dev:gateway": "pnpm --filter @neo-cloud-agent/llm-gateway dev",
     "dev:worker": "pnpm --filter @neo-cloud-agent/worker dev",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test packages/**/*.test.ts"
+    "test": "tsx --test packages/**/*.test.ts",
+    "test:e2e": "tsx scripts/e2e-http.ts",
+    "test:e2e:live": "E2E_EXPECT_README=1 tsx scripts/e2e-http.ts"
   },
   "devDependencies": {
     "@types/node": "^22.17.0",

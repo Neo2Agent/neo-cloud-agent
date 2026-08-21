@@ -7,7 +7,7 @@ const scheduler = startScheduler();
 const server = createApiServer();
 
 server.listen(config.port, () => {
-  console.log(`control-plane listening on :${config.port} spawnLocalWorker=${config.spawnLocalWorker}`);
+  console.log(`control-plane listening on :${config.port} workerRuntime=${config.workerRuntime}`);
 });
 
 const shutdown = () => {

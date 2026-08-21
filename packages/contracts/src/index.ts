@@ -29,6 +29,7 @@ export type { RunEvent, RunEventCategory, RunEventKind, RunEventLevel } from "./
 export type {
   ExecutionRuntime,
   RuntimeHandle,
+  RuntimeKind,
   RuntimeSpec,
   WorkerInbound,
   WorkerOutbound,

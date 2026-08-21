@@ -5,20 +5,22 @@ import type {
   FollowUpDelivery,
   Run,
   RunEvent,
+  RuntimeHandle,
+  RuntimeSpec,
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
 import { mintRunToken } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 import { publish } from "../events/bus.js";
-import { DockerRuntime } from "../runtime/docker.js";
+import { getRuntime } from "../runtime/factory.js";
 import { materializeRepos } from "../scm/workspace.js";
-import { repoRoot, spawnLocalWorker, stopLocalWorker, workspaceFor } from "../worker-spawn.js";
+import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 
 const runs = new Map<string, Run>();
 const followUps = new Map<string, FollowUp[]>();
 const inbound = new Map<string, WorkerInbound[]>();
 const runJwts = new Map<string, string>();
-const runtime = new DockerRuntime();
+const handles = new Map<string, RuntimeHandle>();
 
 function now(): string {
   return new Date().toISOString();
@@ -54,6 +56,34 @@ export function mintJwtForRun(run: Run): string {
   });
   runJwts.set(run.id, token);
   return token;
+}
+
+function launchSpec(run: Run, jwt: string): RuntimeSpec {
+  const config = getConfig();
+  return {
+    runId: run.id,
+    image: config.workerImage,
+    snapshotId: null,
+    cpu: 2,
+    memoryMiB: 4096,
+    diskGiB: 40,
+    egress: { mode: "allow_all", domains: [] },
+    jwt,
+    model: run.model,
+    hostWorkspaceDir: workspaceFor(run.id),
+    hostWorkspaceBind: hostWorkspaceFor(run.id),
+    workspaceMount: config.workerWorkspaceMount,
+    controlPlaneUrl: config.workerControlPlaneUrl,
+    llmGatewayUrl: config.workerLlmGatewayUrl,
+    dockerNetwork: config.dockerNetwork,
+  };
+}
+
+function runningTitle(): string {
+  const kind = getConfig().workerRuntime;
+  if (kind === "local") return "Spawning local worker";
+  if (kind === "docker") return "Starting Docker worker";
+  return "Worker handle reserved";
 }
 
 export async function createRun(input: CreateRunRequest): Promise<Run> {
@@ -118,34 +148,33 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
     return run;
   }
 
-  const handle = await runtime.provision({
-    runId: run.id,
-    image: config.workerImage,
-    snapshotId: null,
-    cpu: 2,
-    memoryMiB: 4096,
-    diskGiB: 40,
-    egress: { mode: "allow_all", domains: [] },
-  });
-  run.workerHandle = handle.id;
-  run.status = "RUNNING";
-  run.updatedAt = now();
-  publish(event(run.id, "run.running", config.spawnLocalWorker ? "Spawning local worker" : "Worker handle reserved"));
-
-  if (config.spawnLocalWorker) {
-    const child = spawnLocalWorker(run, runJwts.get(run.id) ?? mintJwtForRun(run));
-    child.once("exit", (code) => {
-      const current = runs.get(run.id);
-      if (!current || current.status === "ARCHIVED" || current.status === "EXPIRED") {
-        return;
-      }
-      if (code !== 0 && current.status === "RUNNING") {
-        current.status = "ERROR";
-        current.errorMessage = `worker exited with code ${code}`;
-        current.updatedAt = now();
-        publish(event(run.id, "run.error", current.errorMessage));
-      }
+  try {
+    const handle = await getRuntime().provision(launchSpec(run, runJwts.get(run.id) ?? mintJwtForRun(run)), {
+      onExit: (code) => {
+        const current = runs.get(run.id);
+        if (!current || current.status === "ARCHIVED" || current.status === "EXPIRED") {
+          return;
+        }
+        if (code !== 0 && current.status === "RUNNING") {
+          current.status = "ERROR";
+          current.errorMessage = `worker exited with code ${code}`;
+          current.updatedAt = now();
+          publish(event(run.id, "run.error", current.errorMessage));
+        }
+      },
     });
+    handles.set(run.id, handle);
+    run.workerHandle = handle.id;
+    run.status = "RUNNING";
+    run.updatedAt = now();
+    publish(event(run.id, "run.running", runningTitle()));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "worker provision failed";
+    run.status = "ERROR";
+    run.errorMessage = message;
+    run.updatedAt = now();
+    publish(event(run.id, "run.error", message));
+    return run;
   }
   return run;
 }
@@ -167,8 +196,8 @@ export function getBootstrap(runId: string) {
   return {
     run,
     jwt: runJwts.get(runId) ?? mintJwtForRun(run),
-    llmGatewayUrl: config.llmGatewayUrl,
-    workspaceDir: workspaceFor(runId),
+    llmGatewayUrl: config.workerLlmGatewayUrl,
+    workspaceDir: config.workerRuntime === "docker" ? config.workerWorkspaceMount : workspaceFor(runId),
   };
 }
 
@@ -252,7 +281,7 @@ export function takeInbound(runId: string): WorkerInbound[] {
   return queued;
 }
 
-export function archiveRun(runId: string): Run {
+export async function archiveRun(runId: string): Promise<Run> {
   const run = runs.get(runId);
   if (!run) {
     throw new Error(`run not found: ${runId}`);
@@ -260,7 +289,11 @@ export function archiveRun(runId: string): Run {
   run.status = "ARCHIVED";
   run.updatedAt = now();
   inbound.get(runId)?.push({ type: "shutdown", reason: "archived" });
-  stopLocalWorker(runId);
+  const handle = handles.get(runId);
+  if (handle) {
+    await getRuntime().destroy(handle);
+    handles.delete(runId);
+  }
   publish(event(runId, "run.archived", "Run archived"));
   return run;
 }

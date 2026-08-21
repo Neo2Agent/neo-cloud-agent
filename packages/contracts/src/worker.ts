@@ -20,6 +20,8 @@ export type WorkerOutbound =
   | { type: "open_pull_request"; repoUrl: string; branch: string; title: string; body: string }
   | { type: "upload_artifact"; name: string; contentType: string; sizeBytes: number };
 
+export type RuntimeKind = "local" | "docker" | "none" | "firecracker" | "cloud-hypervisor";
+
 export interface RuntimeSpec {
   runId: string;
   image: string;
@@ -31,11 +33,22 @@ export interface RuntimeSpec {
     mode: "allow_all" | "default_plus_allowlist" | "allowlist_only";
     domains: string[];
   };
+  jwt: string;
+  model: string;
+  hostWorkspaceDir: string;
+  workspaceMount: string;
+  controlPlaneUrl: string;
+  llmGatewayUrl: string;
+  /** Host path bind-mounted into the worker when using Docker. */
+  hostWorkspaceBind?: string;
+  dockerNetwork?: string | null;
+  /** Override the image CMD (tests / stub workers). */
+  command?: string[];
 }
 
 export interface RuntimeHandle {
   id: string;
-  runtime: "docker" | "firecracker" | "cloud-hypervisor";
+  runtime: RuntimeKind;
   ip: string | null;
 }
 

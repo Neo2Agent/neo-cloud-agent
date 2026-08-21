@@ -1,4 +1,4 @@
-# Local topology: two control-plane processes. Worker is a per-run image, not a replica.
+# Local topology: two control-plane processes. Worker is a per-run container, not a replica.
 services:
   control-plane:
     build:
@@ -14,9 +14,23 @@ services:
       DEFAULT_ORG_ID: org_local
       DEFAULT_USER_ID: user_local
       WORKER_IMAGE: neo-cloud-agent-worker:dev
+      WORKER_RUNTIME: docker
       SPAWN_LOCAL_WORKER: "0"
+      WORKER_CONTROL_PLANE_URL: http://control-plane:8080
+      WORKER_LLM_GATEWAY_URL: http://llm-gateway:8081
+      WORKER_WORKSPACE_MOUNT: /workspace
+      DOCKER_NETWORK: neo-cloud-agent
+      RUNS_DIR: /app/.neo/runs
+      HOST_RUNS_DIR: ${HOST_RUNS_DIR:-/var/tmp/neo-runs}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOST_RUNS_DIR:-/var/tmp/neo-runs}:/app/.neo/runs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - llm-gateway
+    networks:
+      - neo
 
   llm-gateway:
     build:
@@ -34,8 +48,11 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    networks:
+      - neo
 
   worker:
+    image: neo-cloud-agent-worker:dev
     build:
       context: ..
       dockerfile: infra/Dockerfile.worker
@@ -47,5 +64,9 @@ services:
       LLM_GATEWAY_JWT: ${LLM_GATEWAY_JWT:-}
       WORKSPACE_DIR: /workspace
       SESSION_DIR: /var/neo/sessions
-    volumes:
-      - ..:/workspace
+    networks:
+      - neo
+
+networks:
+  neo:
+    name: neo-cloud-agent

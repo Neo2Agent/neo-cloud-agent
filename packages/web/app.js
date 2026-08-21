@@ -265,7 +265,8 @@ async function boot() {
     if (!health.ok) {
       healthEl.textContent = "控制面异常";
     } else if (health.defaultModel) {
-      healthEl.textContent = `控制面在线 · ${health.defaultModel}`;
+      const runtime = health.workerRuntime ? ` · ${health.workerRuntime}` : "";
+      healthEl.textContent = `控制面在线 · ${health.defaultModel}${runtime}`;
     } else {
       healthEl.textContent = "控制面在线";
     }

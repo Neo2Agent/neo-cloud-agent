@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+process.env.WORKER_RUNTIME = "none";
 process.env.SPAWN_LOCAL_WORKER = "0";
 process.env.LLM_GATEWAY_JWT_SECRET = "test-secret";
+process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-orch-"));
+delete process.env.WORKER_WORKSPACE_MOUNT;
 
 const { createRun, getBootstrap, takeInbound } = await import("./orchestrator.js");
 const { listEvents } = await import("../events/bus.js");
