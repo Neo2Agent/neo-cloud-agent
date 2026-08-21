@@ -11,11 +11,16 @@ S3="${FIRECRACKER_S3:-https://s3.amazonaws.com/spec.ccfc.min}"
 
 mkdir -p "$ASSETS"
 
-s3_list() {
+s3_tags() {
   local query="$1"
+  local tag="$2"
   curl -fsSL "${S3}?list-type=2&${query}" \
     | tr '<' '\n' \
-    | sed -n 's/^Key>//p; s/^Prefix>//p'
+    | sed -n "s/^${tag}>//p"
+}
+
+pick_kernel_key() {
+  s3_tags "$1" Key | grep -E '/vmlinux-[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true
 }
 
 download() {
@@ -47,16 +52,23 @@ fi
 
 if [ ! -f "$ASSETS/vmlinux" ]; then
   kernel_key=""
-  versioned="firecracker-ci/${FC_VERSION#v}/${ARCH}/vmlinux-5.10"
-  kernel_key="$(s3_list "prefix=${versioned}" | grep '/vmlinux-5\.10' | sort -V | tail -n 1 || true)"
-  if [ -z "$kernel_key" ]; then
-    prefix="$(s3_list "prefix=firecracker-ci/&delimiter=/" | grep -E '^firecracker-ci/[0-9]{8}-' | sort | tail -n 1 || true)"
-    if [ -n "$prefix" ]; then
-      kernel_key="$(s3_list "prefix=${prefix}${ARCH}/vmlinux-" | grep '/vmlinux-' | sort -V | tail -n 1 || true)"
+  prefix="$(s3_tags "prefix=firecracker-ci/&delimiter=/" Prefix | grep -E '^firecracker-ci/[0-9]{8}-' | sort | tail -n 1 || true)"
+  if [ -n "$prefix" ]; then
+    kernel_key="$(pick_kernel_key "prefix=${prefix}${ARCH}/vmlinux-5.10")"
+    if [ -z "$kernel_key" ]; then
+      kernel_key="$(pick_kernel_key "prefix=${prefix}${ARCH}/vmlinux-")"
     fi
   fi
+  fc_mm="${FC_VERSION#v}"
+  fc_mm="${fc_mm%.*}"
   if [ -z "$kernel_key" ]; then
-    kernel_key="$(s3_list "prefix=firecracker-ci/v1.11/${ARCH}/vmlinux-5.10" | grep '/vmlinux-5\.10' | sort -V | tail -n 1 || true)"
+    kernel_key="$(pick_kernel_key "prefix=firecracker-ci/v${fc_mm}/${ARCH}/vmlinux-5.10")"
+  fi
+  if [ -z "$kernel_key" ]; then
+    kernel_key="$(pick_kernel_key "prefix=firecracker-ci/v1.15/${ARCH}/vmlinux-5.10")"
+  fi
+  if [ -z "$kernel_key" ]; then
+    kernel_key="$(pick_kernel_key "prefix=firecracker-ci/v1.11/${ARCH}/vmlinux-5.10")"
   fi
   if [ -z "$kernel_key" ]; then
     echo "could not list a Firecracker CI vmlinux from $S3" >&2

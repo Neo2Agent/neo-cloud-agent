@@ -4,12 +4,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { archiveRun, close, listen, waitForRun } from "./helpers.js";
-import { firecrackerAvailable, resolveFirecrackerBin } from "../runtime/firecracker.js";
+import { firecrackerAvailable, firecrackerHostSupported, resolveFirecrackerBin } from "../runtime/firecracker.js";
 import { isProductionRootfs, productionFirecrackerPaths } from "../runtime/rootfs.js";
 
 function liveReady(): { ready: boolean; reason: string } {
   const paths = productionFirecrackerPaths();
   const bin = resolveFirecrackerBin();
+  const host = firecrackerHostSupported();
+  if (!host.ok) {
+    return { ready: false, reason: host.reason };
+  }
   if (!existsSync("/dev/kvm")) {
     return { ready: false, reason: "no /dev/kvm" };
   }

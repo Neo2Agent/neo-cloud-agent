@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, mkdirSync, openSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { access, open, unlink } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir, userInfo } from "node:os";
@@ -64,13 +64,14 @@ function hash16(value: string): number {
 
 export function tapPlan(runId: string): TapPlan {
   const n = hash16(runId);
-  const block = 16 + (n % 200);
+  const block = 16 + (n % 16);
+  const third = Math.floor(n / 16) % 256;
   const host = 1 + ((n >> 8) % 2) * 4;
   const hex = runId.replaceAll("-", "").slice(0, 8).padEnd(8, "0");
   return {
     name: `nca${hex}`.slice(0, 15),
-    hostIp: `172.${block}.${Math.floor(n / 256) % 200}.${host}`,
-    guestIp: `172.${block}.${Math.floor(n / 256) % 200}.${host + 1}`,
+    hostIp: `172.${block}.${third}.${host}`,
+    guestIp: `172.${block}.${third}.${host + 1}`,
     prefix: 30,
     guestMac: `AA:FC:${hex.slice(0, 2)}:${hex.slice(2, 4)}:${hex.slice(4, 6)}:${hex.slice(6, 8)}`.toUpperCase(),
   };
@@ -224,6 +225,7 @@ export function requestUnix(
   method: string,
   urlPath: string,
   body?: unknown,
+  timeoutMs = 8_000,
 ): Promise<{ status: number; text: string }> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? "" : JSON.stringify(body);
@@ -244,6 +246,10 @@ export function requestUnix(
         res.on("end", () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8") }));
       },
     );
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error(`firecracker api timeout ${method} ${urlPath}`));
+    });
     req.on("error", reject);
     if (payload) {
       req.write(payload);
@@ -425,7 +431,13 @@ export class FirecrackerRuntime implements ExecutionRuntime {
 
     const spawned =
       (await this.options.spawnProcess?.(bin, ["--api-sock", paths.sock, "--id", guestSpec.runId.slice(0, 8)], paths.sock)) ??
-      (await spawnFirecracker(bin, ["--api-sock", paths.sock, "--id", guestSpec.runId.slice(0, 8)], paths.log));
+      (await spawnFirecracker(bin, ["--no-seccomp", "--api-sock", paths.sock, "--id", guestSpec.runId.slice(0, 8)], paths.log));
+    const child = "child" in spawned ? (spawned.child as ChildProcess | undefined) : undefined;
+    const childExit = new Promise<never>((_, reject) => {
+      child?.once("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+        reject(new Error(`firecracker exited during provision (${code ?? signal ?? "unknown"})`));
+      });
+    });
     await (this.options.waitForSocket ?? waitForPath)(paths.sock);
     await this.ensureSocketWritable(paths.sock, run);
     const request = this.options.request ?? requestUnix;
@@ -435,7 +447,7 @@ export class FirecrackerRuntime implements ExecutionRuntime {
       tap,
     );
     for (const call of calls) {
-      const result = await request(paths.sock, call.method, call.path, call.body);
+      const result = await Promise.race([request(paths.sock, call.method, call.path, call.body), childExit]);
       if (result.status >= 300) {
         spawned.stop();
         throw new Error(`firecracker ${call.method} ${call.path} failed: ${result.status} ${result.text}`.trim());
@@ -472,7 +484,8 @@ export class FirecrackerRuntime implements ExecutionRuntime {
     const child = this.children.get(runId);
     if (handle.socket) {
       try {
-        await (this.options.request ?? requestUnix)(handle.socket, "PUT", "/actions", { action_type: "SendCtrlAltDel" });
+        const request = this.options.request ?? ((sock, method, urlPath, body) => requestUnix(sock, method, urlPath, body, 800));
+        await request(handle.socket, "PUT", "/actions", { action_type: "SendCtrlAltDel" });
       } catch {
         // process may already be gone
       }
@@ -596,4 +609,23 @@ export class FirecrackerRuntime implements ExecutionRuntime {
 export function firecrackerAvailable(bin = resolveFirecrackerBin()): boolean {
   const resolved = bin.includes("/") ? existsSync(bin) : true;
   return existsSync("/dev/kvm") && resolved;
+}
+
+/** Nested KVM on AMX hosts faults in KVM_CREATE_VCPU; skip live boots unless forced. */
+export function firecrackerHostSupported(): { ok: boolean; reason: string } {
+  if (process.env.FIRECRACKER_FORCE === "1") {
+    return { ok: true, reason: "" };
+  }
+  try {
+    const cpu = readFileSync("/proc/cpuinfo", "utf8");
+    if (/\bhypervisor\b/.test(cpu) && /\bamx_tile\b/.test(cpu)) {
+      return {
+        ok: false,
+        reason: "nested KVM + AMX: KVM_CREATE_VCPU faults on this host (set FIRECRACKER_FORCE=1 to try anyway)",
+      };
+    }
+  } catch {
+    // keep going
+  }
+  return { ok: true, reason: "" };
 }

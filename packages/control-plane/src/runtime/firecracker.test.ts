@@ -6,6 +6,7 @@ import test from "node:test";
 import type { RuntimeSpec } from "@neo-cloud-agent/contracts";
 import {
   buildFirecrackerCalls,
+  firecrackerHostSupported,
   FirecrackerRuntime,
   guestFacingBootstrap,
   rewriteUrlHost,
@@ -30,6 +31,20 @@ function spec(runId: string, workspace: string): RuntimeSpec {
     llmGatewayUrl: "http://172.16.0.1:8081",
   };
 }
+
+test("FIRECRACKER_FORCE bypasses the nested AMX host skip", () => {
+  const previous = process.env.FIRECRACKER_FORCE;
+  process.env.FIRECRACKER_FORCE = "1";
+  try {
+    assert.equal(firecrackerHostSupported().ok, true);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.FIRECRACKER_FORCE;
+    } else {
+      process.env.FIRECRACKER_FORCE = previous;
+    }
+  }
+});
 
 test("rewriteUrlHost swaps only the hostname", () => {
   assert.equal(rewriteUrlHost("http://127.0.0.1:8080", "172.16.1.1"), "http://172.16.1.1:8080");
@@ -64,6 +79,8 @@ test("tap plan is deterministic and stays on a /30", () => {
   assert.match(first.name, /^nca/);
   assert.equal(first.prefix, 30);
   assert.match(first.guestMac, /^AA:FC:/);
+  const second = Number(first.hostIp.split(".")[1]);
+  assert.ok(second >= 16 && second <= 31, first.hostIp);
 });
 
 test("firecracker calls boot kernel, rootfs, workspace disk, vsock, tap, then start", () => {

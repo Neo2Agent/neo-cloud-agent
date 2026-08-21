@@ -760,7 +760,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数据、用户账号、以及 Environment Builds / warm pool 已经落地（没配服务时仍回退到本机文件 / 内存）。下一刀仍在本 monorepo：
 
-1. Firecracker 生产 rootfs 与真机 tap boot（`pnpm fc:assets` / `pnpm fc:rootfs` / `pnpm test:firecracker`）
+1. Firecracker 生产 rootfs / tap 回连已经落地（`pnpm fc:assets` / `pnpm fc:rootfs` / `pnpm test:firecracker`）。嵌套 KVM + AMX 的宿主机 `KVM_CREATE_VCPU` 会故障，live turn 需在真机或非 AMX 宿主上跑。
 2. 块设备 CoW / live-fork（现在只复制成功 Build 的工作区快照）
 3. 配额、多租户计费、组织成员
 4. Egress 从应用层升级到 VM 出站代理 / iptables
