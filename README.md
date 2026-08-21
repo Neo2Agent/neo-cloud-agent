@@ -59,12 +59,12 @@ curl -s localhost:8080/v1/runs/<id>/transcript
 # .env
 LLM_UPSTREAM=deepseek
 LLM_UPSTREAM_BASE_URL=https://api.deepseek.com/v1
-LLM_UPSTREAM_MODEL=deepseek-chat
+LLM_UPSTREAM_MODEL=deepseek-v4-flash
 DEFAULT_MODEL=neo/deepseek
 DEEPSEEK_API_KEY=sk-...
 ```
 
-`neo/deepseek`、`neo/ds`、`ds` 会路由到 `deepseek-chat`；要推理模型把 `LLM_UPSTREAM_MODEL` 改成 `deepseek-reasoner`，或直接请求 `deepseek-reasoner`。
+`neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` 都会路由到便宜的 `deepseek-v4-flash`。要更强的模型把设置里的型号改成 `deepseek-v4-pro`，或直接请求 `deepseek-v4-pro`。
 
 接 GitHub 远程（只放控制面，不要进 worker）：
 

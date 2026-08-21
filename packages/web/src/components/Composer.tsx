@@ -1,4 +1,5 @@
-import type { FormEvent, KeyboardEvent } from "react";
+import type { ClipboardEvent, FormEvent, KeyboardEvent } from "react";
+import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 
 export type LlmSettings = {
   configured: boolean;
@@ -19,13 +20,16 @@ type Props = {
   settingsOpen: boolean;
   llm: LlmSettings;
   llmKey: string;
+  images: ImageRef[];
   vmHint: string;
   onPrompt: (value: string) => void;
   onRepo: (value: string) => void;
   onEnv: (value: string) => void;
   onBuild: (value: string) => void;
   onLlmUpstream: (value: string) => void;
+  onLlmModel: (value: string) => void;
   onLlmKey: (value: string) => void;
+  onImages: (images: ImageRef[]) => void;
   onSaveLlm: () => void;
   onWarm: () => void;
   onSend: () => void;
@@ -41,18 +45,22 @@ export function Composer({
   settingsOpen,
   llm,
   llmKey,
+  images,
   vmHint,
   onPrompt,
   onRepo,
   onEnv,
   onBuild,
   onLlmUpstream,
+  onLlmModel,
   onLlmKey,
+  onImages,
   onSaveLlm,
   onWarm,
   onSend,
 }: Props) {
   const envBuilds = builds.filter((item) => item.status === "SUCCEEDED" && (!envId || item.envId === envId));
+  const deepseek = llm.upstream !== "openai";
   return (
     <form
       className="composer"
@@ -117,6 +125,18 @@ export function Composer({
               <option value="openai">OpenAI</option>
             </select>
           </label>
+          <label hidden={!deepseek}>
+            <span>DeepSeek 型号</span>
+            <select
+              id="llm-model"
+              name="llm-model"
+              value={/pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash"}
+              onChange={(event) => onLlmModel(event.target.value)}
+            >
+              <option value="deepseek-v4-flash">Flash（便宜）</option>
+              <option value="deepseek-v4-pro">Pro</option>
+            </select>
+          </label>
           <label>
             <span>API Key</span>
             <input
@@ -136,23 +156,46 @@ export function Composer({
             />
           </label>
           <button className="ghost" id="save-llm" type="button" onClick={onSaveLlm}>
-            保存 Key
+            保存
           </button>
         </div>
         <p className="hint" id="llm-status">
           {llm.configured
-            ? `已配置 ${llm.upstream === "openai" ? "OpenAI" : "DeepSeek"}，对话走真实模型。`
+            ? `已配置 ${deepseek ? (/pro/i.test(llm.model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash") : "OpenAI"}，对话走真实模型。`
             : "未配置 API Key，当前是 mock 回复。"}
         </p>
       </div>
+      {images.length > 0 ? (
+        <div className="image-row" id="image-previews">
+          {images.map((image, index) => (
+            <button
+              key={`${image.mediaType}-${index}`}
+              type="button"
+              className="image-chip"
+              onClick={() => onImages(images.filter((_, item) => item !== index))}
+            >
+              <img src={`data:${image.mediaType};base64,${image.data}`} alt="" />
+              去掉
+            </button>
+          ))}
+        </div>
+      ) : null}
       <textarea
         id="prompt"
         name="prompt"
         rows={3}
-        placeholder="描述任务。Enter 发送，Shift+Enter 换行。"
-        required
+        placeholder="描述任务。Enter 发送，Shift+Enter 换行。可直接粘贴图片。"
+        required={images.length === 0}
         value={prompt}
         onChange={(event) => onPrompt(event.target.value)}
+        onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
+          const files = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
+          if (files.length === 0) return;
+          event.preventDefault();
+          void Promise.all(files.slice(0, 4).map(readImageRef)).then((next) => {
+            onImages([...images, ...next].slice(0, 4));
+          });
+        }}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
@@ -170,4 +213,20 @@ export function Composer({
       </div>
     </form>
   );
+}
+
+function readImageRef(file: File): Promise<ImageRef> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("read image failed"));
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const comma = result.indexOf(",");
+      resolve({
+        mediaType: file.type || "image/png",
+        data: comma >= 0 ? result.slice(comma + 1) : result,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
 }

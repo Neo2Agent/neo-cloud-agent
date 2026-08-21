@@ -287,6 +287,11 @@ h1 {
   background: #ecfdf3;
 }
 
+.status[data-state="NOT_YET_STARTED"],
+.status[data-state="ARCHIVED"] {
+  color: var(--muted);
+}
+
 .status[data-state="ERROR"] {
   color: var(--err);
   border-color: #fecdca;
@@ -577,6 +582,101 @@ h1 {
   font-size: 13px;
 }
 
+.workspace-col {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.file-tree,
+.diff-panel {
+  flex: 0 1 auto;
+  max-height: 34%;
+  overflow: auto;
+  margin: 0 28px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-2);
+}
+
+.file-tree-bar,
+.diff-panel strong {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.file-tree ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.file-tree li button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.file-view,
+.diff-stat {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.image-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.image-chip {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.image-chip img,
+.user-image {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.md-caret {
+  display: inline-block;
+  width: 6px;
+  height: 1em;
+  margin-left: 2px;
+  background: var(--accent);
+  animation: md-blink 1s steps(1) infinite;
+}
+
+@keyframes md-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 .env-row {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
@@ -584,6 +684,11 @@ h1 {
   align-items: end;
   margin-bottom: 10px;
   font-size: 13px;
+}
+
+.llm-row {
+  grid-template-columns: 1fr 1fr 1fr auto;
+  margin-top: 2px;
 }
 
 .env-row label {
@@ -607,10 +712,6 @@ h1 {
 .env-row .ghost {
   height: 38px;
   padding-inline: 12px;
-}
-
-.llm-row {
-  margin-top: 2px;
 }
 
 #llm-status {

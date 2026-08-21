@@ -1,9 +1,23 @@
 import type { ReactNode } from "react";
 
-type Props = { text: string; className?: string };
+type Props = { text: string; className?: string; streaming?: boolean };
 
-export function MarkdownBody({ text, className }: Props) {
-  return <div className={className ? `md ${className}` : "md"}>{renderBlocks(text)}</div>;
+export function prepareMarkdown(text: string, streaming?: boolean): string {
+  if (!streaming) {
+    return text;
+  }
+  const fence = "```";
+  const fences = text.match(new RegExp(`^${fence}`, "gm"))?.length ?? 0;
+  return fences % 2 === 1 ? `${text}\n${fence}\n` : text;
+}
+
+export function MarkdownBody({ text, className, streaming }: Props) {
+  return (
+    <div className={className ? `md ${className}` : "md"}>
+      {renderBlocks(prepareMarkdown(text, streaming))}
+      {streaming ? <span className="md-caret" aria-hidden="true" /> : null}
+    </div>
+  );
 }
 
 function renderBlocks(source: string): ReactNode[] {

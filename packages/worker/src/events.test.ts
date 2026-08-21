@@ -49,6 +49,16 @@ test("maps pi session events to RunEvents", () => {
   assert.equal(update[0]?.data?.output, "README");
 });
 
+test("maps token usage on agent_end", () => {
+  const events = toRunEvents("run1", {
+    type: "agent_end",
+    usage: { input: 12, output: 4 },
+  });
+  assert.equal(events[0]?.kind, "agent.end");
+  assert.equal(events[1]?.kind, "llm.usage");
+  assert.deepEqual(events[1]?.data, { promptTokens: 12, completionTokens: 4, totalTokens: 16 });
+});
+
 test("ignores unknown or empty deltas", () => {
   assert.deepEqual(toRunEvents("run1", { type: "queue_update" }), []);
   assert.deepEqual(

@@ -8,6 +8,8 @@ export interface LooseAgentEvent {
   isError?: boolean;
   result?: unknown;
   partialResult?: unknown;
+  usage?: unknown;
+  tokenUsage?: unknown;
   assistantMessageEvent?: {
     type?: string;
     delta?: string;
@@ -90,8 +92,14 @@ export function toRunEvents(runId: string, event: LooseAgentEvent): RunEvent[] {
   switch (event.type) {
     case "agent_start":
       return [makeEvent(runId, "agent.start", "Agent turn started")];
-    case "agent_end":
-      return [makeEvent(runId, "agent.end", "Agent turn finished")];
+    case "agent_end": {
+      const events = [makeEvent(runId, "agent.end", "Agent turn finished")];
+      const usage = collectUsage(event);
+      if (usage) {
+        events.push(makeEvent(runId, "llm.usage", "Token usage", usage));
+      }
+      return events;
+    }
     case "message_start":
       return [makeEvent(runId, "message.start", "Assistant message started")];
     case "message_update": {
@@ -126,7 +134,26 @@ export function toRunEvents(runId: string, event: LooseAgentEvent): RunEvent[] {
           isError: event.isError === true,
         }),
       ];
-    default:
-      return [];
+    default: {
+      const usage = collectUsage(event);
+      return usage ? [makeEvent(runId, "llm.usage", "Token usage", usage)] : [];
+    }
   }
+}
+
+function collectUsage(event: LooseAgentEvent): Record<string, number> | undefined {
+  const raw = event.usage ?? event.tokenUsage;
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const promptTokens = Number(record.input ?? record.inputTokens ?? record.promptTokens ?? record.prompt_tokens ?? 0);
+  const completionTokens = Number(
+    record.output ?? record.outputTokens ?? record.completionTokens ?? record.completion_tokens ?? 0,
+  );
+  const totalTokens = Number(record.total ?? record.totalTokens ?? record.total_tokens ?? promptTokens + completionTokens);
+  if (!promptTokens && !completionTokens && !totalTokens) {
+    return undefined;
+  }
+  return { promptTokens, completionTokens, totalTokens };
 }

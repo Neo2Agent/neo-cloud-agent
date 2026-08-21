@@ -137,7 +137,19 @@ export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
             return (
               <article key={message.id} className="bubble user">
                 <span className="who">你</span>
-                <div className="body">{message.text}</div>
+                {message.text ? <div className="body">{message.text}</div> : null}
+                {message.images?.length ? (
+                  <div className="image-row">
+                    {message.images.map((image, index) => (
+                      <img
+                        key={`${message.id}-${index}`}
+                        className="user-image"
+                        src={`data:${image.mediaType};base64,${image.data}`}
+                        alt=""
+                      />
+                    ))}
+                  </div>
+                ) : null}
               </article>
             );
           }
@@ -147,7 +159,7 @@ export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
           return (
             <article key={message.id} className="bubble assistant">
               <span className="who">Agent</span>
-              {message.text ? <MarkdownBody text={message.text} className="body" /> : null}
+              {message.text ? <MarkdownBody text={message.text} className="body" streaming={message.streaming} /> : null}
               {(message.tools ?? []).map((tool, index) => (
                 <ToolCard key={tool.id ?? `${tool.name}-${index}`} tool={tool} />
               ))}

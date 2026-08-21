@@ -68,7 +68,7 @@ services:
       LLM_GATEWAY_JWT_SECRET: dev-only-change-me
       LLM_UPSTREAM: ${LLM_UPSTREAM:-deepseek}
       LLM_UPSTREAM_BASE_URL: ${LLM_UPSTREAM_BASE_URL:-https://api.deepseek.com/v1}
-      LLM_UPSTREAM_MODEL: ${LLM_UPSTREAM_MODEL:-deepseek-chat}
+      LLM_UPSTREAM_MODEL: ${LLM_UPSTREAM_MODEL:-deepseek-v4-flash}
       LLM_UPSTREAM_API_KEY: ${LLM_UPSTREAM_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

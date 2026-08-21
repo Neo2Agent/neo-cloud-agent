@@ -12,13 +12,14 @@ test("rewrites public model ids to the upstream fallback", () => {
   assert.equal(resolveUpstreamModel("unknown-model", "gpt-4o-mini"), "gpt-4o-mini");
 });
 
-test("maps DeepSeek public ids to deepseek-chat or reasoner", () => {
-  assert.equal(resolveUpstreamModel("neo/deepseek", "deepseek-chat"), "deepseek-chat");
-  assert.equal(resolveUpstreamModel("neo/ds", "deepseek-chat"), "deepseek-chat");
-  assert.equal(resolveUpstreamModel("ds", "deepseek-chat"), "deepseek-chat");
-  assert.equal(resolveUpstreamModel("deepseek", "deepseek-chat"), "deepseek-chat");
-  assert.equal(resolveUpstreamModel("deepseek-chat", "gpt-4o-mini"), "deepseek-chat");
-  assert.equal(resolveUpstreamModel("deepseek-reasoner", "deepseek-chat"), "deepseek-reasoner");
+test("maps DeepSeek public ids and retired aliases to v4-flash", () => {
+  assert.equal(resolveUpstreamModel("neo/deepseek", "deepseek-v4-flash"), "deepseek-v4-flash");
+  assert.equal(resolveUpstreamModel("neo/ds", "deepseek-chat"), "deepseek-v4-flash");
+  assert.equal(resolveUpstreamModel("ds", "deepseek-chat"), "deepseek-v4-flash");
+  assert.equal(resolveUpstreamModel("deepseek", "deepseek-chat"), "deepseek-v4-flash");
+  assert.equal(resolveUpstreamModel("deepseek-chat", "gpt-4o-mini"), "deepseek-v4-flash");
+  assert.equal(resolveUpstreamModel("deepseek-reasoner", "deepseek-chat"), "deepseek-v4-flash");
+  assert.equal(resolveUpstreamModel("deepseek-v4-pro", "deepseek-v4-flash"), "deepseek-v4-pro");
 });
 
 test("mock SSE is OpenAI-compatible", () => {

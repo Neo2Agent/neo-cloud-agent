@@ -42,6 +42,8 @@ import {
   startWorkerLeaseWatch,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
+import { listWorkspacePath } from "../workspace-fs.js";
+import { workspaceFor } from "../worker-spawn.js";
 import {
   AccountError,
   bootstrapEmail,
@@ -168,6 +170,7 @@ export function createApiServer() {
           service: "control-plane",
           defaultModel: config.defaultModel,
           llmUpstream: llm.configured ? llm.upstream : (config.llmUpstream ?? "mock"),
+          llmModel: llm.model,
           llmConfigured: llm.configured,
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
@@ -600,6 +603,28 @@ export function createApiServer() {
           return;
         }
         send(res, 201, mintRunGitToken(runId, body));
+        return;
+      }
+
+      const fsMatch = /^\/v1\/runs\/([^/]+)\/fs$/.exec(path);
+      if (fsMatch && method === "GET") {
+        const runId = fsMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        try {
+          send(
+            res,
+            200,
+            listWorkspacePath(workspaceFor(runId), url.searchParams.get("path") ?? "", {
+              content: url.searchParams.get("content") === "1",
+            }),
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "fs failed";
+          send(res, message.includes("not found") ? 404 : 400, { error: message });
+        }
         return;
       }
 

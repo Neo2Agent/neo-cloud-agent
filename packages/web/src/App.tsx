@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildTranscriptSnapshot } from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson, readToken, writeToken } from "./api";
 import { AuthGate } from "./components/AuthGate";
 import { Composer, type BuildOption, type EnvOption, type LlmSettings } from "./components/Composer";
+import { DiffPanel } from "./components/DiffPanel";
+import { FileTree } from "./components/FileTree";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
-import { preview, shortId, slotLabel, STATUS_LABELS } from "./format";
+import { formatUsage, modelLabel, preview, shortId, slotLabel, STATUS_LABELS } from "./format";
 
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
 const HISTORY_PAGE = 40;
@@ -28,6 +30,7 @@ type Health = {
   defaultAdmin?: boolean;
   llmConfigured?: boolean;
   llmUpstream?: string;
+  llmModel?: string | null;
   workerRuntime?: string;
   vmSlots?: VmSummary;
 };
@@ -37,11 +40,7 @@ type PullRequest = { url?: string; draft?: boolean };
 function formatHealth(health: Health | null, vms: VmSummary): string {
   if (!health?.ok) return "控制面异常";
   const provider = health.llmConfigured
-    ? health.llmUpstream === "openai"
-      ? "OpenAI"
-      : health.llmUpstream === "deepseek"
-        ? "DeepSeek"
-        : String(health.llmUpstream || "LLM")
+    ? modelLabel(health.llmUpstream, health.llmModel)
     : "未配置 Key";
   const total = vms.total || health.vmSlots?.total || 0;
   const busy = vms.busy ?? health.vmSlots?.busy ?? 0;
@@ -76,6 +75,13 @@ export function App() {
   const [authPassword, setAuthPassword] = useState("123456");
   const [authToken, setAuthToken] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [images, setImages] = useState<ImageRef[]>([]);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState("");
+  const [diffStat, setDiffStat] = useState("");
+  const [diffPatch, setDiffPatch] = useState("");
   const [repo, setRepo] = useState("");
   const [envId, setEnvId] = useState("");
   const [buildId, setBuildId] = useState("");
@@ -147,8 +153,26 @@ export function App() {
           setCurrentRun((run) => (run ? { ...run, status: event.kind === "run.provisioning" ? "PROVISIONING" : "RUNNING" } : run));
         }
         if (event.kind === "run.idle") setCurrentRun((run) => (run ? { ...run, status: "IDLE" } : run));
+        if (event.kind === "run.queued") setCurrentRun((run) => (run ? { ...run, status: "NOT_YET_STARTED" } : run));
         if (event.kind === "run.archived") setCurrentRun((run) => (run ? { ...run, status: "ARCHIVED" } : run));
         if (event.kind === "run.error") setCurrentRun((run) => (run ? { ...run, status: "ERROR" } : run));
+        if (event.kind === "llm.usage") {
+          setCurrentRun((run) => {
+            if (!run) return run;
+            const promptTokens = Number(event.data?.promptTokens ?? 0);
+            const completionTokens = Number(event.data?.completionTokens ?? 0);
+            const totalTokens = Number(event.data?.totalTokens ?? promptTokens + completionTokens);
+            const prev = run.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+            return {
+              ...run,
+              usage: {
+                promptTokens: prev.promptTokens + promptTokens,
+                completionTokens: prev.completionTokens + completionTokens,
+                totalTokens: prev.totalTokens + totalTokens,
+              },
+            };
+          });
+        }
       };
       source.onerror = () => {
         setHealthText("事件流已断开，正在重试");
@@ -219,6 +243,12 @@ export function App() {
     setEvents([]);
     setShownFrom(0);
     setPrompt("");
+    setImages([]);
+    setFilesOpen(false);
+    setDiffOpen(false);
+    setDiffStat("");
+    setDiffPatch("");
+    setDiffError("");
     setEnvId("");
     setBuildId("");
     history.replaceState(null, "", "/");
@@ -304,16 +334,28 @@ export function App() {
 
   const sendMessage = useCallback(async () => {
     const text = prompt.trim();
-    if (!text) return;
+    if (!text && images.length === 0) return;
+    const attached = images;
     setPrompt("");
+    setImages([]);
     const repoUrls = repo.trim() ? [repo.trim()] : [];
+    const model =
+      llm.upstream === "openai" ? "gpt-4o-mini" : /pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash";
     const buildPayload = buildId === "cold" ? { reuseBuild: false } : buildId ? { buildId, reuseBuild: true } : { reuseBuild: true };
     try {
       if (!runId) {
         const created = await readJson<Run & { error?: string }>(
           await api(tokenRef.current, "/v1/runs", {
             method: "POST",
-            body: JSON.stringify({ prompt: text, repoUrls, source: "web", envId: envId || undefined, ...buildPayload }),
+            body: JSON.stringify({
+              prompt: text || "（图片）",
+              repoUrls,
+              source: "web",
+              envId: envId || undefined,
+              model,
+              images: attached.length ? attached : undefined,
+              ...buildPayload,
+            }),
           }),
         );
         if (created.error) throw new Error(created.error);
@@ -324,7 +366,7 @@ export function App() {
       const follow = await readJson<{ error?: string }>(
         await api(tokenRef.current, `/v1/runs/${runId}/follow-ups`, {
           method: "POST",
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text: text || "（图片）", images: attached.length ? attached : undefined }),
         }),
       );
       if (follow.error) throw new Error(follow.error);
@@ -342,7 +384,7 @@ export function App() {
         },
       ]);
     }
-  }, [buildId, envId, openRun, prompt, repo, runId]);
+  }, [buildId, envId, images, llm.model, llm.upstream, openRun, prompt, repo, runId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -433,7 +475,7 @@ export function App() {
       ? `当前对话占用 ${slotLabel(currentSlot)}（${currentSlot}，${vms.backend === "loop" ? "loop 挂载" : vms.backend}）`
       : Math.max(0, (vms.total || vms.slots.length) - vms.busy) > 0
         ? `${Math.max(0, (vms.total || vms.slots.length) - vms.busy)}/${vms.total || vms.slots.length} 个 VM 空闲，发送后占用其中一个（${vms.backend === "loop" ? "loop 挂载" : vms.backend}）。`
-        : `${vms.total || vms.slots.length} 个 VM 都在忙。打开已有对话，或等槽位释放。`;
+        : `${vms.total || vms.slots.length} 个 VM 都在忙。新对话会排队，有空闲槽再自动开始。`;
 
   const loadOlder = () => {
     if (shownFrom <= 0) return;
@@ -517,6 +559,78 @@ export function App() {
               <span className="status" id="status" data-state={currentRun?.status ?? "idle"}>
                 {STATUS_LABELS[currentRun?.status ?? "idle"] ?? currentRun?.status ?? "就绪"}
               </span>
+              {formatUsage(currentRun?.usage) ? (
+                <span className="vm-badge" id="usage-badge">
+                  {formatUsage(currentRun?.usage)}
+                </span>
+              ) : null}
+              <button
+                className="ghost"
+                id="toggle-files"
+                type="button"
+                hidden={!runId}
+                aria-expanded={filesOpen}
+                onClick={() => setFilesOpen((value) => !value)}
+              >
+                {filesOpen ? "收起文件" : "文件树"}
+              </button>
+              <button
+                className="ghost"
+                id="toggle-diff"
+                type="button"
+                hidden={!runId}
+                aria-expanded={diffOpen}
+                onClick={() => {
+                  setDiffOpen((value) => !value);
+                  if (!diffOpen && runId) {
+                    setDiffLoading(true);
+                    setDiffError("");
+                    void (async () => {
+                      const response = await api(token, `/v1/runs/${runId}/diff`);
+                      const body = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
+                      if (!response.ok) throw new Error(body.error || "读取 diff 失败");
+                      setDiffStat(body.stat ?? "");
+                      setDiffPatch(body.patch ?? "");
+                    })()
+                      .catch((error) => setDiffError(error instanceof Error ? error.message : "读取 diff 失败"))
+                      .finally(() => setDiffLoading(false));
+                  }
+                }}
+              >
+                {diffOpen ? "收起 Diff" : "Diff"}
+              </button>
+              <button
+                className="ghost"
+                id="archive-run"
+                type="button"
+                hidden={!runId || currentRun?.status === "ARCHIVED"}
+                onClick={() => {
+                  if (!runId || !window.confirm("归档后会释放 VM。确定？")) return;
+                  void (async () => {
+                    const archived = await readJson<Run & { error?: string }>(
+                      await api(token, `/v1/runs/${runId}/archive`, { method: "POST" }),
+                    );
+                    if (archived.error) throw new Error(archived.error);
+                    setCurrentRun(archived);
+                    setRuns((prev) => prev.map((item) => (item.id === archived.id ? { ...item, ...archived } : item)));
+                  })().catch((error) => {
+                    setEvents((prev) => [
+                      ...prev,
+                      {
+                        id: `err-${Date.now()}`,
+                        runId,
+                        createdAt: new Date().toISOString(),
+                        category: "agent_run",
+                        level: "error",
+                        kind: "run.error",
+                        title: error instanceof Error ? error.message : "归档失败",
+                      },
+                    ]);
+                  });
+                }}
+              >
+                归档
+              </button>
               <button
                 className="ghost"
                 id="toggle-settings"
@@ -579,12 +693,16 @@ export function App() {
               </button>
             </div>
           </header>
-          <Transcript
-            messages={visibleMessages as TranscriptMessage[]}
-            remaining={remaining}
-            empty={!runId && snapshot.messages.length === 0}
-            onLoadOlder={loadOlder}
-          />
+          <div className="workspace-col">
+            <FileTree token={token} runId={runId} open={filesOpen} />
+            <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
+            <Transcript
+              messages={visibleMessages as TranscriptMessage[]}
+              remaining={remaining}
+              empty={!runId && snapshot.messages.length === 0}
+              onLoadOlder={loadOlder}
+            />
+          </div>
           <Composer
             prompt={prompt}
             repo={repo}
@@ -595,19 +713,33 @@ export function App() {
             settingsOpen={settingsOpen}
             llm={llm}
             llmKey={llmKey}
+            images={images}
             vmHint={vmHint}
             onPrompt={setPrompt}
             onRepo={setRepo}
             onEnv={setEnvId}
             onBuild={setBuildId}
-            onLlmUpstream={(value) => setLlm((prev) => ({ ...prev, upstream: value }))}
+            onLlmUpstream={(value) =>
+              setLlm((prev) => ({
+                ...prev,
+                upstream: value,
+                model: value === "openai" ? "gpt-4o-mini" : /pro/i.test(prev.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash",
+              }))
+            }
+            onLlmModel={(value) => setLlm((prev) => ({ ...prev, model: value }))}
             onLlmKey={setLlmKey}
+            onImages={setImages}
             onSaveLlm={() => {
               void (async () => {
                 if (!llmKey && !llm.configured) return;
                 const payload: Record<string, string> = {
                   upstream: llm.upstream || "deepseek",
-                  model: llm.upstream === "openai" ? "gpt-4o-mini" : "deepseek-chat",
+                  model:
+                    llm.upstream === "openai"
+                      ? "gpt-4o-mini"
+                      : /pro/i.test(llm.model ?? "")
+                        ? "deepseek-v4-pro"
+                        : "deepseek-v4-flash",
                 };
                 if (llmKey) payload.apiKey = llmKey;
                 const saved = await readJson<LlmSettings & { error?: string }>(

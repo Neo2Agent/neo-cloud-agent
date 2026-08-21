@@ -34,6 +34,7 @@ import { resolveEgressPolicy } from "../egress/resolve.js";
 import { listEvents, publish, resetHistory, seedEvents } from "../events/bus.js";
 import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
+import { persistRunWorkspace } from "../runtime/persist-workspace.js";
 import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
 import { materializeRepos, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
@@ -60,6 +61,8 @@ const runJwts = new Map<string, string>();
 const handles = new Map<string, RuntimeHandle>();
 const heartbeats = new Map<string, number>();
 const runEgress = new Map<string, EgressPolicy>();
+const releasingIdle = new Set<string>();
+let startingQueued = false;
 let leaseWatch: ReturnType<typeof setInterval> | null = null;
 
 const LIVE_STATUSES = new Set<Run["status"]>([
@@ -122,6 +125,8 @@ export function reloadPersistedState(): void {
   handles.clear();
   heartbeats.clear();
   runEgress.clear();
+  releasingIdle.clear();
+  startingQueued = false;
   resetHistory();
   hydrateFromDisk();
 }
@@ -150,6 +155,15 @@ function bindWorkerExit(runId: string) {
     }
     handles.delete(runId);
     deleteWorkerLease(runId);
+    heartbeats.delete(runId);
+    if (releasingIdle.has(runId) || current.status === "IDLE") {
+      current.workerHandle = null;
+      current.vmSlotId = null;
+      current.updatedAt = now();
+      flushRun(runId);
+      void tryStartQueued();
+      return;
+    }
     if (code !== 0 && current.status === "RUNNING") {
       current.status = "ERROR";
       current.errorMessage = `worker exited with code ${code}`;
@@ -157,6 +171,7 @@ function bindWorkerExit(runId: string) {
       publish(event(runId, "run.error", current.errorMessage));
       flushRun(runId);
     }
+    void tryStartQueued();
   };
 }
 
@@ -226,12 +241,134 @@ export function expireStaleWorkers(at = Date.now()): string[] {
   return expired;
 }
 
+export function workerIdleReleaseMs(): number {
+  const raw = process.env.WORKER_IDLE_RELEASE_MS;
+  if (raw === "0") {
+    return 0;
+  }
+  const n = Number(raw ?? 15 * 60_000);
+  return Number.isFinite(n) && n >= 0 ? n : 15 * 60_000;
+}
+
+function isSlotBusyError(error: unknown): boolean {
+  return error instanceof Error && /all VM slots are busy/i.test(error.message);
+}
+
+function queueRun(run: Run, title = "Waiting for a free VM slot"): void {
+  run.status = "NOT_YET_STARTED";
+  run.workerHandle = null;
+  run.vmSlotId = null;
+  run.updatedAt = now();
+  publish(event(run.id, "run.queued", title));
+  flushRun(run.id);
+}
+
+export async function tryStartQueued(): Promise<string | null> {
+  if (startingQueued) {
+    return null;
+  }
+  startingQueued = true;
+  try {
+    const waiting = [...runs.values()]
+      .filter((run) => run.status === "NOT_YET_STARTED" && !handles.has(run.id))
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    let started: string | null = null;
+    for (const run of waiting) {
+      try {
+        run.status = "PROVISIONING";
+        run.updatedAt = now();
+        publish(event(run.id, "run.provisioning", runningTitle()));
+        flushRun(run.id);
+        await attachWorker(run, runningTitle());
+        started = run.id;
+      } catch (error) {
+        if (isSlotBusyError(error)) {
+          queueRun(run);
+          break;
+        }
+        const message = error instanceof Error ? error.message : "worker provision failed";
+        failRun(run, message);
+      }
+    }
+    return started;
+  } finally {
+    startingQueued = false;
+  }
+}
+
+export async function releaseIdleWorker(runId: string): Promise<boolean> {
+  const run = runs.get(runId);
+  if (!run || run.status !== "IDLE" || !handles.has(runId)) {
+    return false;
+  }
+  const pending = inbound.get(runId) ?? [];
+  if (pending.some((item) => item.type !== "shutdown")) {
+    return false;
+  }
+  releasingIdle.add(runId);
+  try {
+    await persistRunWorkspace(runId).catch((error) => {
+      console.error(`failed to persist idle workspace for ${runId}`, error);
+    });
+    inbound.get(runId)?.push({ type: "shutdown", reason: "idle" });
+    const handle = handles.get(runId);
+    if (handle) {
+      await getRuntime().destroy(handle);
+    }
+    handles.delete(runId);
+    deleteWorkerLease(runId);
+    heartbeats.delete(runId);
+    run.workerHandle = null;
+    run.vmSlotId = null;
+    run.updatedAt = now();
+    publish(event(runId, "run.idle", "Released idle VM slot"));
+    flushRun(runId);
+  } finally {
+    releasingIdle.delete(runId);
+  }
+  const leftover = inbound.get(runId) ?? [];
+  if (leftover.some((item) => item.type !== "shutdown")) {
+    try {
+      await resumeRun(runId);
+    } catch (error) {
+      if (isSlotBusyError(error)) {
+        queueRun(run);
+      }
+    }
+  } else {
+    await tryStartQueued();
+  }
+  return true;
+}
+
+export async function expireIdleWorkers(at = Date.now()): Promise<string[]> {
+  const ttl = workerIdleReleaseMs();
+  if (ttl === 0) {
+    return [];
+  }
+  const released: string[] = [];
+  for (const run of runs.values()) {
+    if (run.status !== "IDLE" || !handles.has(run.id) || !run.idleAt) {
+      continue;
+    }
+    const idleAt = Date.parse(run.idleAt);
+    if (!Number.isFinite(idleAt) || at - idleAt < ttl) {
+      continue;
+    }
+    if (await releaseIdleWorker(run.id)) {
+      released.push(run.id);
+    }
+  }
+  return released;
+}
+
 export function startWorkerLeaseWatch(): void {
   if (leaseWatch) {
     return;
   }
   leaseWatch = setInterval(() => {
     expireStaleWorkers();
+    void expireIdleWorkers();
   }, 2000);
   leaseWatch.unref();
 }
@@ -383,6 +520,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     idleAt: null,
     expiresAt: null,
     errorMessage: null,
+    usage: null,
   };
   runs.set(run.id, run);
   followUps.set(run.id, []);
@@ -391,7 +529,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   publish(
     event(run.id, "user.message", "User message", {
       category: "agent_run",
-      data: { text: input.prompt, source: run.source },
+      data: { text: input.prompt, source: run.source, images: input.images },
     }),
   );
   mintJwtForRun(run);
@@ -551,6 +689,10 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   try {
     await attachWorker(run, runningTitle());
   } catch (error) {
+    if (isSlotBusyError(error)) {
+      queueRun(run, "All VM slots are busy");
+      return run;
+    }
     const message = error instanceof Error ? error.message : "worker provision failed";
     failRun(run, message);
     return run;
@@ -599,6 +741,10 @@ export async function resumeRun(runId: string): Promise<Run> {
   try {
     await attachWorker(run, "Resuming worker");
   } catch (error) {
+    if (isSlotBusyError(error)) {
+      queueRun(run, "All VM slots are busy");
+      return run;
+    }
     const message = error instanceof Error ? error.message : "worker provision failed";
     failRun(run, message);
     throw error;
@@ -665,6 +811,22 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
   noteWorkerHeartbeat(runId);
   for (const item of events) {
     publish(event(runId, item.kind, item.title, item));
+    if (item.kind === "llm.usage") {
+      const run = runs.get(runId);
+      if (run) {
+        const promptTokens = Number(item.data?.promptTokens ?? 0);
+        const completionTokens = Number(item.data?.completionTokens ?? 0);
+        const totalTokens = Number(item.data?.totalTokens ?? promptTokens + completionTokens);
+        const prev = run.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+        run.usage = {
+          promptTokens: prev.promptTokens + (Number.isFinite(promptTokens) ? promptTokens : 0),
+          completionTokens: prev.completionTokens + (Number.isFinite(completionTokens) ? completionTokens : 0),
+          totalTokens: prev.totalTokens + (Number.isFinite(totalTokens) ? totalTokens : 0),
+        };
+        run.updatedAt = now();
+        flushRun(runId);
+      }
+    }
     if (item.kind === "agent.end") {
       const run = runs.get(runId);
       if (run && run.status === "RUNNING") {
@@ -749,7 +911,7 @@ export async function enqueueFollowUp(runId: string, input: CreateFollowUpReques
   publish(
     event(runId, "user.message", "User message", {
       category: "agent_run",
-      data: { text: input.text, followUpId: item.id, delivery },
+      data: { text: input.text, followUpId: item.id, delivery, images: input.images },
     }),
   );
   flushRun(runId);
@@ -757,7 +919,7 @@ export async function enqueueFollowUp(runId: string, input: CreateFollowUpReques
     try {
       await resumeRun(runId);
     } catch {
-      // follow-up stays queued; resumeRun already marked the run ERROR
+      // follow-up stays queued; resumeRun queued or marked ERROR
     }
   }
   return item;
@@ -790,6 +952,9 @@ export async function archiveRun(runId: string): Promise<Run> {
   run.status = "ARCHIVED";
   run.updatedAt = now();
   inbound.get(runId)?.push({ type: "shutdown", reason: "archived" });
+  await persistRunWorkspace(runId).catch((error) => {
+    console.error(`failed to persist workspace before archive ${runId}`, error);
+  });
   const handle = handles.get(runId);
   if (handle) {
     await getRuntime().destroy(handle);
@@ -797,8 +962,11 @@ export async function archiveRun(runId: string): Promise<Run> {
   }
   deleteWorkerLease(runId);
   heartbeats.delete(runId);
+  run.workerHandle = null;
+  run.vmSlotId = null;
   publish(event(runId, "run.archived", "Run archived"));
   flushRun(runId);
+  void tryStartQueued();
   return run;
 }
 

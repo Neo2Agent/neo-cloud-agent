@@ -6,6 +6,7 @@ import { copyWorkspaceTree } from "../scm/workspace.js";
 import type { RuntimeHooks } from "./docker.js";
 import { firecrackerReady, FirecrackerRuntime } from "./firecracker.js";
 import { LocalProcessRuntime } from "./local.js";
+import { persistRunWorkspace } from "./persist-workspace.js";
 import { claimVmSlot, releaseVmSlot, type VmSlot } from "./vm-slots.js";
 
 function wipeMount(dir: string): void {
@@ -23,6 +24,15 @@ function wipeMount(dir: string): void {
 
 function preferKvm(): boolean {
   return firecrackerReady();
+}
+
+async function persistAndRelease(runId: string): Promise<void> {
+  try {
+    await persistRunWorkspace(runId);
+  } catch (error) {
+    console.error(`failed to persist VM workspace for ${runId}`, error);
+  }
+  await releaseVmSlot(runId);
 }
 
 export class VmSlotRuntime implements ExecutionRuntime {
@@ -50,9 +60,10 @@ export class VmSlotRuntime implements ExecutionRuntime {
         {
           onLog: hooks?.onLog,
           onExit: (code) => {
-            void releaseVmSlot(spec.runId);
-            this.slots.delete(spec.runId);
-            hooks?.onExit?.(code);
+            void persistAndRelease(spec.runId).then(() => {
+              this.slots.delete(spec.runId);
+              hooks?.onExit?.(code);
+            });
           },
         },
       );
@@ -76,9 +87,10 @@ export class VmSlotRuntime implements ExecutionRuntime {
     const handle = await this.local.adopt(runId, lease, {
       onLog: hooks?.onLog,
       onExit: (code) => {
-        void releaseVmSlot(runId);
-        this.slots.delete(runId);
-        hooks?.onExit?.(code);
+        void persistAndRelease(runId).then(() => {
+          this.slots.delete(runId);
+          hooks?.onExit?.(code);
+        });
       },
     });
     if (!handle) {
@@ -104,7 +116,7 @@ export class VmSlotRuntime implements ExecutionRuntime {
         await this.local.destroy({ ...handle, id: `local-${runId}` });
       }
     } finally {
-      await releaseVmSlot(runId);
+      await persistAndRelease(runId);
       this.slots.delete(runId);
     }
   }

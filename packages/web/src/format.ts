@@ -2,7 +2,7 @@ import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
 
 export const STATUS_LABELS: Record<string, string> = {
   idle: "就绪",
-  NOT_YET_STARTED: "未开始",
+  NOT_YET_STARTED: "排队中",
   PROVISIONING: "准备中",
   INSTALLING: "安装中",
   RUNNING: "运行中",
@@ -12,6 +12,21 @@ export const STATUS_LABELS: Record<string, string> = {
   ARCHIVED: "已归档",
   EXPIRED: "已过期",
 };
+
+export function modelLabel(upstream?: string | null, model?: string | null): string {
+  if (upstream === "openai") return "OpenAI";
+  if (upstream === "deepseek" || /deepseek/i.test(model ?? "")) {
+    return /pro/i.test(model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash";
+  }
+  return upstream || "LLM";
+}
+
+export function formatUsage(usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null): string {
+  if (!usage) return "";
+  const total = usage.totalTokens || (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0);
+  if (!total) return "";
+  return `${total} tok`;
+}
 
 export function shortId(id: string): string {
   return id.slice(0, 8);

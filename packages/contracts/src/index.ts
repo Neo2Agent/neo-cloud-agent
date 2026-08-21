@@ -77,7 +77,11 @@ export type { LlmRunTokenClaims, ModelRoute, Usage } from "./llm.js";
 export { mintRunToken, verifyRunToken } from "./jwt.js";
 export type { LlmSettings, LlmSettingsRequest, LlmUpstreamMode, PublicLlmSettings } from "./llm-settings.js";
 export {
+  DEEPSEEK_FLASH_MODEL,
+  DEEPSEEK_PRO_MODEL,
+  canonicalizeLlmModel,
   defaultLlmModel,
+  isDeepseekProModel,
   llmSettingsFile,
   parseLlmSettingsRequest,
   resolveLlmSettingsRoot,

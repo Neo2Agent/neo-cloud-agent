@@ -15,8 +15,10 @@ export type RunEventKind =
   | "run.terminal_failed"
   | "run.running"
   | "run.idle"
+  | "run.queued"
   | "run.error"
   | "run.archived"
+  | "llm.usage"
   | "agent.start"
   | "agent.end"
   | "message.start"
@@ -83,6 +85,7 @@ export interface TranscriptMessage {
   tools?: TranscriptTool[];
   href?: string;
   mediaType?: string;
+  images?: Array<{ mediaType: string; data: string }>;
 }
 
 export interface TranscriptSnapshot {

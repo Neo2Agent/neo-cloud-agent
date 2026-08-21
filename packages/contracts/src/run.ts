@@ -51,6 +51,11 @@ export interface Run {
   idleAt: string | null;
   expiresAt: string | null;
   errorMessage: string | null;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  } | null;
 }
 
 export interface PullRequestRef {

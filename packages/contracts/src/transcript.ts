@@ -1,6 +1,17 @@
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot, TranscriptTool } from "./events.js";
 
-const SETUP_PREFIXES = ["scm.", "run.install", "run.start", "run.terminal", "build.", "egress.", "artifact.", "mcp."];
+const SETUP_PREFIXES = [
+  "scm.",
+  "run.install",
+  "run.start",
+  "run.terminal",
+  "run.queued",
+  "build.",
+  "egress.",
+  "artifact.",
+  "mcp.",
+  "llm.",
+];
 
 export function isSetupKind(kind: string): boolean {
   return SETUP_PREFIXES.some((prefix) => kind.startsWith(prefix));
@@ -82,11 +93,21 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
   for (const event of events) {
     if (event.kind === "user.message") {
       finishAssistant();
+      const images = Array.isArray(event.data?.images)
+        ? event.data.images.filter(
+            (item): item is { mediaType: string; data: string } =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof (item as { mediaType?: unknown }).mediaType === "string" &&
+              typeof (item as { data?: unknown }).data === "string",
+          )
+        : undefined;
       messages.push({
         id: event.id,
         role: "user",
         text: String(event.data?.text ?? ""),
         createdAt: event.createdAt,
+        images: images?.length ? images : undefined,
       });
       continue;
     }

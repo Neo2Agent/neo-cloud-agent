@@ -122,6 +122,20 @@ export async function copyTreeAll(src: string, dest: string): Promise<void> {
   await cp(src, dest, { recursive: true });
 }
 
+/** Copy children of a mounted VM slot back onto the host run dir. */
+export async function persistWorkspaceTree(src: string, dest: string): Promise<void> {
+  if (!existsSync(src) || !statSync(src).isDirectory()) {
+    return;
+  }
+  mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    if (entry.name === "lost+found") {
+      continue;
+    }
+    await cp(path.join(src, entry.name), path.join(dest, entry.name), { recursive: true, force: true });
+  }
+}
+
 export async function materializeRepos(
   repoUrls: string[],
   workspaceDir: string,

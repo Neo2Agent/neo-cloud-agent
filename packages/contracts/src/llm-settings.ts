@@ -3,6 +3,24 @@ import path from "node:path";
 
 export type LlmUpstreamMode = "mock" | "openai" | "deepseek";
 
+export const DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash";
+export const DEEPSEEK_PRO_MODEL = "deepseek-v4-pro";
+
+const DEEPSEEK_FLASH_ALIASES = new Set([
+  "",
+  "deepseek-chat",
+  "deepseek-reasoner",
+  "deepseek",
+  "ds",
+  "neo/deepseek",
+  "neo/ds",
+  "neo-deepseek",
+  "deepseek-v4-flash",
+  "deepseek-flash",
+]);
+
+const DEEPSEEK_PRO_ALIASES = new Set(["deepseek-v4-pro", "deepseek-pro"]);
+
 export interface LlmSettings {
   upstream: LlmUpstreamMode;
   apiKey: string;
@@ -70,12 +88,31 @@ function parseEnv(text: string): Record<string, string> {
 
 export function defaultLlmModel(upstream: LlmUpstreamMode): string {
   if (upstream === "deepseek") {
-    return "deepseek-chat";
+    return DEEPSEEK_FLASH_MODEL;
   }
   if (upstream === "openai") {
     return "gpt-4o-mini";
   }
   return "mock";
+}
+
+/** Map retired DeepSeek aliases onto the current official ids. */
+export function canonicalizeLlmModel(upstream: LlmUpstreamMode, model?: string | null): string {
+  const requested = (model ?? "").trim();
+  if (upstream === "deepseek") {
+    if (DEEPSEEK_PRO_ALIASES.has(requested)) {
+      return DEEPSEEK_PRO_MODEL;
+    }
+    if (DEEPSEEK_FLASH_ALIASES.has(requested) || !requested) {
+      return DEEPSEEK_FLASH_MODEL;
+    }
+    return requested;
+  }
+  return requested || defaultLlmModel(upstream);
+}
+
+export function isDeepseekProModel(model?: string | null): boolean {
+  return canonicalizeLlmModel("deepseek", model) === DEEPSEEK_PRO_MODEL;
 }
 
 function parseUpstream(value: string | undefined): LlmUpstreamMode | undefined {
@@ -113,7 +150,9 @@ export function readLlmSettings(root?: string): LlmSettings | null {
       parsed.LLM_UPSTREAM_API_KEY ||
       parsed.LLM_API_KEY ||
       "";
-    const model = parsed.LLM_UPSTREAM_MODEL || undefined;
+    const model = parsed.LLM_UPSTREAM_MODEL
+      ? canonicalizeLlmModel(upstream, parsed.LLM_UPSTREAM_MODEL)
+      : undefined;
     if (!apiKey && upstream === "mock" && !model) {
       return null;
     }
@@ -128,7 +167,10 @@ export function writeLlmSettings(settings: LlmSettingsRequest, root?: string): P
   const merged: LlmSettings = {
     upstream: settings.upstream,
     apiKey: settings.apiKey || existing?.apiKey || "",
-    model: settings.model || existing?.model || defaultLlmModel(settings.upstream),
+    model: canonicalizeLlmModel(
+      settings.upstream,
+      settings.model || existing?.model || defaultLlmModel(settings.upstream),
+    ),
   };
   if (merged.upstream !== "mock" && !merged.apiKey) {
     throw new Error("apiKey is required");
@@ -156,6 +198,10 @@ export function publicLlmSettings(settings: LlmSettings | null): PublicLlmSettin
   return {
     configured: Boolean(settings.apiKey) && settings.upstream !== "mock",
     upstream: settings.apiKey ? settings.upstream : "mock",
-    model: settings.model ?? (settings.apiKey ? defaultLlmModel(settings.upstream) : null),
+    model: settings.model
+      ? canonicalizeLlmModel(settings.upstream, settings.model)
+      : settings.apiKey
+        ? defaultLlmModel(settings.upstream)
+        : null,
   };
 }

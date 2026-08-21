@@ -1,4 +1,4 @@
-import { readLlmSettings, type LlmUpstreamMode } from "@neo-cloud-agent/contracts";
+import { canonicalizeLlmModel, DEEPSEEK_FLASH_MODEL, readLlmSettings, type LlmUpstreamMode } from "@neo-cloud-agent/contracts";
 import { loadRootEnv } from "./env.js";
 
 loadRootEnv();
@@ -7,7 +7,7 @@ export type UpstreamMode = LlmUpstreamMode;
 
 const PRESETS: Record<Exclude<UpstreamMode, "mock">, { baseUrl: string; model: string }> = {
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
-  deepseek: { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  deepseek: { baseUrl: "https://api.deepseek.com/v1", model: DEEPSEEK_FLASH_MODEL },
 };
 
 export function getConfig(settingsRoot?: string) {
@@ -37,7 +37,10 @@ export function getConfig(settingsRoot?: string) {
       "",
     ),
     upstreamApiKey: apiKey,
-    upstreamModel: usingSaved ? saved?.model || preset.model : process.env.LLM_UPSTREAM_MODEL || preset.model,
+    upstreamModel: canonicalizeLlmModel(
+      upstream,
+      usingSaved ? saved?.model || preset.model : process.env.LLM_UPSTREAM_MODEL || preset.model,
+    ),
     configured: upstream !== "mock" && Boolean(apiKey),
   };
 }

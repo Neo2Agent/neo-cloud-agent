@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fileToolDiff, parseUnifiedDiff, toolArgPreview } from "./format.js";
+import { fileToolDiff, formatUsage, modelLabel, parseUnifiedDiff, toolArgPreview } from "./format.js";
+
+test("modelLabel distinguishes DeepSeek Flash and Pro", () => {
+  assert.equal(modelLabel("deepseek", "deepseek-v4-flash"), "DeepSeek Flash");
+  assert.equal(modelLabel("deepseek", "deepseek-v4-pro"), "DeepSeek Pro");
+  assert.equal(formatUsage({ promptTokens: 10, completionTokens: 5, totalTokens: 15 }), "15 tok");
+});
 
 test("toolArgPreview prefers command and path", () => {
   assert.equal(toolArgPreview({ command: "ls -la" }), "ls -la");

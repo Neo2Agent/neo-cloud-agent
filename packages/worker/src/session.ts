@@ -12,6 +12,7 @@ import {
 import { deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
 import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { getWorkerConfig } from "./config.js";
+import { materializeInboundImages } from "./images.js";
 
 export interface OpenSessionInput {
   cwd: string;
@@ -63,7 +64,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
         name: input.modelId,
         api: "openai-completions",
         reasoning: false,
-        input: ["text"],
+        input: ["text", "image"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 128000,
         maxTokens: 8192,
@@ -121,16 +122,22 @@ export async function dispatchInbound(session: AgentSession, message: WorkerInbo
   }
 
   const method = deliveryForPi(message.type);
+  const text = promptText(message);
   if (session.isStreaming) {
     if (method === "steer") {
-      await session.steer(message.text);
+      await session.steer(text);
     } else {
-      await session.followUp(message.text);
+      await session.followUp(text);
     }
     return "continue";
   }
-  await session.prompt(message.text);
+  await session.prompt(text);
   return "continue";
+}
+
+function promptText(message: Extract<WorkerInbound, { text: string }>): string {
+  const attached = materializeInboundImages(getWorkerConfig().workspaceDir, message.images);
+  return attached.note ? `${message.text}\n\n${attached.note}` : message.text;
 }
 
 export function describeDispatch(message: WorkerInbound): string {

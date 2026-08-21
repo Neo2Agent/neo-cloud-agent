@@ -26,7 +26,7 @@ test("deepseek preset uses official base URL and chat model", () => {
     const config = getConfig();
     assert.equal(config.upstream, "deepseek");
     assert.equal(config.upstreamBaseUrl, "https://api.deepseek.com/v1");
-    assert.equal(config.upstreamModel, "deepseek-chat");
+    assert.equal(config.upstreamModel, "deepseek-v4-flash");
     assert.equal(config.upstreamApiKey, "sk-test-deepseek");
     assert.equal(config.configured, true);
   } finally {
@@ -62,7 +62,7 @@ test("saved settings file wins over LLM_UPSTREAM=mock", () => {
     const config = getConfig(root);
     assert.equal(config.upstream, "deepseek");
     assert.equal(config.upstreamApiKey, "sk-from-file");
-    assert.equal(config.upstreamModel, "deepseek-chat");
+    assert.equal(config.upstreamModel, "deepseek-v4-flash");
     assert.equal(config.upstreamBaseUrl, "https://api.deepseek.com/v1");
     assert.equal(config.configured, true);
   } finally {

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { copyTreeAll, materializeRepos, repoName, resolveRepoRef, skipCopy } from "./workspace.js";
+import { copyTreeAll, materializeRepos, persistWorkspaceTree, repoName, resolveRepoRef, skipCopy } from "./workspace.js";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
 
@@ -53,6 +53,18 @@ test("copies a local fixture into the run workspace", async () => {
   } finally {
     rmSync(dest, { recursive: true, force: true });
   }
+});
+
+test("persistWorkspaceTree copies slot children and skips lost+found", async () => {
+  const src = mkdtempSync(path.join(tmpdir(), "neo-persist-src-"));
+  const dest = mkdtempSync(path.join(tmpdir(), "neo-persist-dest-"));
+  mkdirSync(path.join(src, "lost+found"), { recursive: true });
+  writeFileSync(path.join(src, "lost+found", "x"), "nope\n");
+  writeFileSync(path.join(src, "AGENT.md"), "from slot\n");
+  writeFileSync(path.join(dest, "AGENT.md"), "stale\n");
+  await persistWorkspaceTree(src, dest);
+  assert.equal(readFileSync(path.join(dest, "AGENT.md"), "utf8"), "from slot\n");
+  assert.equal(existsSync(path.join(dest, "lost+found")), false);
 });
 
 test("copyTreeAll keeps install output that skipCopy would drop", async () => {

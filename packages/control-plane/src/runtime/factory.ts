@@ -18,8 +18,16 @@ const docker = new DockerRuntime();
 const none = new NoneRuntime();
 const firecracker = new FirecrackerRuntime();
 const vm = new VmSlotRuntime();
+let override: AgentRuntime | undefined;
+
+export function setRuntimeForTests(next?: AgentRuntime): void {
+  override = next;
+}
 
 export function getRuntime(kind: WorkerRuntimeKind = workerRuntimeKind()): AgentRuntime {
+  if (override) {
+    return override;
+  }
   if (kind === "docker") {
     return docker;
   }
