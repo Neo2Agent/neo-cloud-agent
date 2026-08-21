@@ -61,8 +61,12 @@ export interface RunEvent {
 export type TranscriptRole = "user" | "assistant" | "setup";
 
 export type TranscriptTool = {
+  id?: string;
   name: string;
   isError?: boolean;
+  args?: unknown;
+  output?: string;
+  status?: "running" | "done";
 };
 
 /** Compact catch-up view so a late subscriber does not replay every token. */

@@ -1,0 +1,118 @@
+import type { Run } from "@neo-cloud-agent/contracts/run";
+import { preview, slotLabel, STATUS_LABELS } from "../format";
+
+export type VmSlotView = {
+  id: string;
+  status: string;
+  runId: string | null;
+};
+
+type Props = {
+  runs: Run[];
+  currentRunId: string | null;
+  slots: VmSlotView[];
+  backend: string;
+  userEmail: string;
+  authed: boolean;
+  authBusy: boolean;
+  health: string;
+  onNewChat: () => void;
+  onOpenRun: (id: string) => void;
+  onLogin: () => void;
+  onLogout: () => void;
+};
+
+export function Sidebar({
+  runs,
+  currentRunId,
+  slots,
+  backend,
+  userEmail,
+  authed,
+  authBusy,
+  health,
+  onNewChat,
+  onOpenRun,
+  onLogin,
+  onLogout,
+}: Props) {
+  const items = [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <span className="mark" aria-hidden="true">
+          N
+        </span>
+        <div>
+          <strong>Neo</strong>
+          <span>Cloud Agent</span>
+        </div>
+      </div>
+      <button className="new-chat" id="new-chat" type="button" onClick={onNewChat}>
+        新对话
+      </button>
+      <section className="vm-block">
+        <p className="eyebrow">虚拟机</p>
+        <div className="vm-rail" id="vm-rail" aria-label="VM 槽">
+          {slots.length === 0 ? (
+            <p className="hint">{backend === "none" ? "当前未启用 VM" : "VM 槽还在初始化"}</p>
+          ) : (
+            slots.map((slot) => {
+              const occupant = items.find((run) => run.id === slot.runId || run.vmSlotId === slot.id);
+              const busy = slot.status === "busy" || Boolean(slot.runId);
+              const current = Boolean(currentRunId && (slot.runId === currentRunId || occupant?.id === currentRunId));
+              const title = occupant ? preview(occupant.prompt) : busy ? slot.runId?.slice(0, 8) : "空闲";
+              return (
+                <article
+                  key={slot.id}
+                  className="vm-slot"
+                  data-busy={String(busy)}
+                  data-current={String(current)}
+                  data-open={occupant?.id || slot.runId || undefined}
+                  onClick={() => {
+                    const id = occupant?.id || slot.runId;
+                    if (id) onOpenRun(id);
+                  }}
+                >
+                  <strong>{slotLabel(slot.id)}</strong>
+                  <small>
+                    {busy ? "占用" : "空闲"} · {title}
+                  </small>
+                </article>
+              );
+            })
+          )}
+        </div>
+      </section>
+      <div className="run-list" id="run-list">
+        {items.map((run) => (
+          <button
+            key={run.id}
+            className={`run-item${run.id === currentRunId ? " active" : ""}`}
+            data-id={run.id}
+            type="button"
+            onClick={() => onOpenRun(run.id)}
+          >
+            <strong>{preview(run.prompt)}</strong>
+            <small>
+              {STATUS_LABELS[run.status] ?? run.status}
+              {run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
+            </small>
+          </button>
+        ))}
+      </div>
+      <footer className="sidebar-foot">
+        <div className="account" id="account">
+          <span id="account-email">{userEmail || (authBusy ? "登录中…" : "未登录")}</span>
+          <button type="button" id="login" hidden={authed} onClick={onLogin}>
+            登录
+          </button>
+          <button type="button" id="logout" hidden={!authed} onClick={onLogout}>
+            退出
+          </button>
+        </div>
+        <span id="health">{health}</span>
+      </footer>
+    </aside>
+  );
+}

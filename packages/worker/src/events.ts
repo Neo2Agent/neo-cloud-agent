@@ -2,13 +2,59 @@ import type { RunEvent, RunEventKind } from "@neo-cloud-agent/contracts";
 
 export interface LooseAgentEvent {
   type: string;
+  toolCallId?: string;
   toolName?: string;
   args?: unknown;
   isError?: boolean;
+  result?: unknown;
+  partialResult?: unknown;
   assistantMessageEvent?: {
     type?: string;
     delta?: string;
   };
+}
+
+const TOOL_OUTPUT_LIMIT = 8000;
+
+function collectText(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(collectText).filter(Boolean).join("");
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.text === "string") {
+      return record.text;
+    }
+    if (record.content !== undefined) {
+      return collectText(record.content);
+    }
+  }
+  return "";
+}
+
+function clipOutput(text: string): string {
+  if (text.length <= TOOL_OUTPUT_LIMIT) {
+    return text;
+  }
+  return `${text.slice(0, TOOL_OUTPUT_LIMIT)}\n… (${text.length - TOOL_OUTPUT_LIMIT} more bytes)`;
+}
+
+function toolPayload(event: LooseAgentEvent, output?: string): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    toolName: event.toolName,
+    toolCallId: event.toolCallId,
+    args: event.args,
+  };
+  if (output) {
+    payload.output = clipOutput(output);
+  }
+  return payload;
 }
 
 function makeEvent(runId: string, kind: RunEventKind, title: string, data?: Record<string, unknown>): RunEvent {
@@ -47,17 +93,21 @@ export function toRunEvents(runId: string, event: LooseAgentEvent): RunEvent[] {
       return [makeEvent(runId, "message.end", "Assistant message completed")];
     case "tool_execution_start":
       return [
-        makeEvent(runId, "tool.start", `Tool ${event.toolName ?? "unknown"}`, {
-          toolName: event.toolName,
-          args: event.args,
-        }),
+        makeEvent(runId, "tool.start", `Tool ${event.toolName ?? "unknown"}`, toolPayload(event)),
       ];
     case "tool_execution_update":
-      return [makeEvent(runId, "tool.update", `Tool ${event.toolName ?? "unknown"}`, { toolName: event.toolName })];
+      return [
+        makeEvent(
+          runId,
+          "tool.update",
+          `Tool ${event.toolName ?? "unknown"}`,
+          toolPayload(event, collectText(event.partialResult)),
+        ),
+      ];
     case "tool_execution_end":
       return [
         makeEvent(runId, "tool.end", `Tool ${event.toolName ?? "unknown"} finished`, {
-          toolName: event.toolName,
+          ...toolPayload(event, collectText(event.result)),
           isError: event.isError === true,
         }),
       ];

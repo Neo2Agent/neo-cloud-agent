@@ -59,6 +59,7 @@ export type {
   TranscriptSnapshot,
   TranscriptTool,
 } from "./events.js";
+export { buildTranscriptSnapshot, isSetupKind } from "./transcript.js";
 
 export type {
   ExecutionRuntime,

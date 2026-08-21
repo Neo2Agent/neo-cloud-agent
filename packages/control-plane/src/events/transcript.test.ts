@@ -34,8 +34,57 @@ test("snapshot collapses token deltas for late subscribers", () => {
   assert.equal(user?.text, "hello");
   assert.equal(assistant?.text, "Hello");
   assert.equal(assistant?.streaming, false);
-  assert.deepEqual(assistant?.tools, [{ name: "bash", isError: false }]);
+  assert.equal(assistant?.tools?.[0]?.name, "bash");
+  assert.equal(assistant?.tools?.[0]?.isError, false);
+  assert.equal(assistant?.tools?.[0]?.status, "done");
   assert.equal(setup?.text, "Workspace ready");
+});
+
+test("tools after message.end stay on the same assistant and keep args/output", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "ls" } }),
+    ev({ id: "a1", kind: "agent.start" }),
+    ev({ id: "m1", kind: "message.start" }),
+    ev({ id: "d1", kind: "message.delta", data: { delta: "Let me look." } }),
+    ev({ id: "e1", kind: "message.end" }),
+    ev({
+      id: "t0",
+      kind: "tool.start",
+      data: { toolCallId: "call-1", toolName: "bash", args: { command: "ls -la" } },
+    }),
+    ev({
+      id: "t1",
+      kind: "tool.end",
+      data: { toolCallId: "call-1", toolName: "bash", output: "README.md\n", isError: false },
+    }),
+    ev({ id: "m2", kind: "message.start" }),
+    ev({ id: "d2", kind: "message.delta", data: { delta: " There is a README." } }),
+    ev({ id: "e2", kind: "message.end" }),
+    ev({ id: "z1", kind: "agent.end" }),
+  ]);
+  const assistants = snapshot.messages.filter((item) => item.role === "assistant");
+  assert.equal(assistants.length, 1);
+  assert.equal(assistants[0]?.text, "Let me look. There is a README.");
+  assert.deepEqual(assistants[0]?.tools, [
+    {
+      id: "call-1",
+      name: "bash",
+      args: { command: "ls -la" },
+      output: "README.md\n",
+      status: "done",
+      isError: false,
+    },
+  ]);
+});
+
+test("empty assistant turns without tools are dropped", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "a1", kind: "agent.start" }),
+    ev({ id: "m1", kind: "message.start" }),
+    ev({ id: "e1", kind: "message.end" }),
+    ev({ id: "z1", kind: "agent.end" }),
+  ]);
+  assert.equal(snapshot.messages.length, 0);
 });
 
 test("in-progress assistant stays streaming so another client can tail", () => {

@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./transcript": "./src/transcript.ts",
+    "./events": "./src/events.ts",
+    "./run": "./src/run.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

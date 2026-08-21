@@ -16,6 +16,29 @@ test("maps pi session events to RunEvents", () => {
   const tool = toRunEvents("run1", { type: "tool_execution_start", toolName: "bash", args: { command: "ls" } });
   assert.equal(tool[0]?.kind, "tool.start");
   assert.equal(tool[0]?.data?.toolName, "bash");
+
+  const done = toRunEvents("run1", {
+    type: "tool_execution_end",
+    toolCallId: "call-1",
+    toolName: "bash",
+    args: { command: "ls" },
+    isError: false,
+    result: { content: [{ type: "text", text: "README.md\n" }] },
+  });
+  assert.equal(done[0]?.kind, "tool.end");
+  assert.equal(done[0]?.data?.toolCallId, "call-1");
+  assert.equal(done[0]?.data?.output, "README.md\n");
+  assert.deepEqual(done[0]?.data?.args, { command: "ls" });
+
+  const update = toRunEvents("run1", {
+    type: "tool_execution_update",
+    toolCallId: "call-1",
+    toolName: "bash",
+    args: { command: "ls" },
+    partialResult: { content: [{ type: "text", text: "README" }] },
+  });
+  assert.equal(update[0]?.kind, "tool.update");
+  assert.equal(update[0]?.data?.output, "README");
 });
 
 test("ignores unknown or empty deltas", () => {
