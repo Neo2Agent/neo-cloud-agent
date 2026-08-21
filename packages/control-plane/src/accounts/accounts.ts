@@ -2,7 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 import { getConfig } from "../config.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { getAccountStore } from "./store.js";
-import { isValidEmail, normalizeEmail, toPublicUser, type PublicUser, type SessionRecord } from "./types.js";
+import { isValidEmail, isValidLogin, normalizeEmail, toPublicUser, type PublicUser, type SessionRecord } from "./types.js";
+
+export const DEFAULT_ADMIN_LOGIN = "admin";
+export const DEFAULT_ADMIN_PASSWORD = "123456";
 
 export const SESSION_COOKIE = "neo_session";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -32,37 +35,80 @@ export class AccountError extends Error {
   }
 }
 
-export function bootstrapEmail(): string | null {
-  const email = normalizeEmail(process.env.BOOTSTRAP_EMAIL ?? "");
-  const password = process.env.BOOTSTRAP_PASSWORD ?? "";
-  return isValidEmail(email) && password.length >= 8 ? email : null;
+export function defaultAdminEnabled(): boolean {
+  return process.env.DEFAULT_ADMIN !== "0" && process.env.DEFAULT_ADMIN !== "false";
 }
 
-/** Create BOOTSTRAP_EMAIL / BOOTSTRAP_PASSWORD on first boot. Existing email is left alone. */
-export async function ensureBootstrapAccount(): Promise<PublicUser | null> {
-  const email = bootstrapEmail();
+export function bootstrapPassword(): string {
+  const explicit = process.env.BOOTSTRAP_PASSWORD ?? "";
+  if (explicit) {
+    return explicit;
+  }
+  return defaultAdminEnabled() ? DEFAULT_ADMIN_PASSWORD : "";
+}
+
+export function bootstrapEmail(): string | null {
+  const login = normalizeEmail(process.env.BOOTSTRAP_EMAIL ?? "");
   const password = process.env.BOOTSTRAP_PASSWORD ?? "";
-  if (!email) {
+  if (login && isValidLogin(login) && password.length >= 6) {
+    return login;
+  }
+  if (!defaultAdminEnabled()) {
     return null;
   }
-  const existing = await getAccountStore().findUserByEmail(email);
+  return DEFAULT_ADMIN_LOGIN;
+}
+
+async function upsertLoginAccount(login: string, password: string): Promise<PublicUser> {
+  const existing = await getAccountStore().findUserByEmail(login);
   if (existing) {
     return toPublicUser(existing);
   }
-  const created = await registerAccount({ email, password });
-  console.log(`bootstrap account created: ${created.user.email}`);
-  return created.user;
+  const user = await getAccountStore().createUser({
+    id: crypto.randomUUID(),
+    email: login,
+    passwordHash: hashPassword(password),
+    orgId: getConfig().orgId,
+    createdAt: new Date().toISOString(),
+  });
+  if (login === DEFAULT_ADMIN_LOGIN) {
+    console.log("default admin account ready: admin");
+  } else {
+    console.log(`bootstrap account created: ${login}`);
+  }
+  return toPublicUser(user);
 }
 
-/** Sign in as the bootstrap user without sending the password to the browser. */
+/** Always seed `admin` / `123456` unless DEFAULT_ADMIN=0. */
+export async function ensureDefaultAdmin(): Promise<PublicUser | null> {
+  if (!defaultAdminEnabled()) {
+    return null;
+  }
+  const password = process.env.DEFAULT_ADMIN_PASSWORD ?? DEFAULT_ADMIN_PASSWORD;
+  const user = await upsertLoginAccount(DEFAULT_ADMIN_LOGIN, password);
+  return user;
+}
+
+/** Create BOOTSTRAP_EMAIL / BOOTSTRAP_PASSWORD on first boot. Existing login is left alone. */
+export async function ensureBootstrapAccount(): Promise<PublicUser | null> {
+  const login = bootstrapEmail();
+  const password = bootstrapPassword();
+  if (!login || password.length < 6) {
+    return null;
+  }
+  return upsertLoginAccount(login, password);
+}
+
+/** Sign in as the bootstrap / default admin user without sending the password to the browser. */
 export async function loginBootstrapAccount(): Promise<{ user: PublicUser; token: string }> {
-  const email = bootstrapEmail();
-  const password = process.env.BOOTSTRAP_PASSWORD ?? "";
-  if (!email) {
+  const login = bootstrapEmail();
+  const password = bootstrapPassword();
+  if (!login) {
     throw new AccountError("bootstrap account is not configured", 404);
   }
+  await ensureDefaultAdmin();
   await ensureBootstrapAccount();
-  return loginAccount({ email, password });
+  return loginAccount({ email: login, password });
 }
 
 export async function registerAccount(input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {
@@ -91,11 +137,14 @@ export async function registerAccount(input: { email?: string; password?: string
 }
 
 export async function loginAccount(input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {
-  const email = normalizeEmail(input.email ?? "");
+  const login = normalizeEmail(input.email ?? "");
   const password = input.password ?? "";
-  const user = await getAccountStore().findUserByEmail(email);
+  if (!isValidLogin(login)) {
+    throw new AccountError("invalid account or password", 401);
+  }
+  const user = await getAccountStore().findUserByEmail(login);
   if (!user || !verifyPassword(password, user.passwordHash)) {
-    throw new AccountError("invalid email or password", 401);
+    throw new AccountError("invalid account or password", 401);
   }
   const token = await issueSession(user.id);
   return { user: toPublicUser(user), token };

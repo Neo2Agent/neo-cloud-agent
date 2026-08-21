@@ -11,7 +11,14 @@ process.env.BOOTSTRAP_EMAIL = "neo@example.com";
 process.env.BOOTSTRAP_PASSWORD = "password1";
 delete process.env.DATABASE_URL;
 
-const { bootstrapEmail, ensureBootstrapAccount, loginAccount, loginBootstrapAccount } = await import("./accounts.js");
+const {
+  bootstrapEmail,
+  DEFAULT_ADMIN_LOGIN,
+  ensureBootstrapAccount,
+  ensureDefaultAdmin,
+  loginAccount,
+  loginBootstrapAccount,
+} = await import("./accounts.js");
 
 test("ensureBootstrapAccount creates the env user once", async () => {
   const first = await ensureBootstrapAccount();
@@ -29,13 +36,19 @@ test("loginBootstrapAccount signs in without a client password", async () => {
   assert.equal(bootstrapEmail(), "neo@example.com");
 });
 
-test("ensureBootstrapAccount no-ops without env", async () => {
+test("default admin admin/123456 can log in", async () => {
   const previousEmail = process.env.BOOTSTRAP_EMAIL;
   const previousPassword = process.env.BOOTSTRAP_PASSWORD;
   delete process.env.BOOTSTRAP_EMAIL;
   delete process.env.BOOTSTRAP_PASSWORD;
   try {
-    assert.equal(await ensureBootstrapAccount(), null);
+    const admin = await ensureDefaultAdmin();
+    assert.equal(admin?.email, DEFAULT_ADMIN_LOGIN);
+    assert.equal(bootstrapEmail(), "admin");
+    const session = await loginAccount({ email: "Admin", password: "123456" });
+    assert.equal(session.user.email, "admin");
+    const auto = await loginBootstrapAccount();
+    assert.equal(auto.user.email, "admin");
   } finally {
     process.env.BOOTSTRAP_EMAIL = previousEmail;
     process.env.BOOTSTRAP_PASSWORD = previousPassword;

@@ -161,6 +161,7 @@ export function createApiServer() {
           accountsRequired: accountsRequired(),
           bootstrapEmail: bootstrapEmail(),
           bootstrapLogin: Boolean(bootstrapEmail()),
+          defaultAdmin: bootstrapEmail() === "admin",
           warmPoolReady: readyWarmCount(),
           builds: listBuilds().filter((item) => item.status === "SUCCEEDED" && !item.draft).length,
           ...platformInfo(),

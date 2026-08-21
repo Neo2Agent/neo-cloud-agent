@@ -45,6 +45,7 @@ const state = {
   accountsRequired: false,
   bootstrapEmail: "",
   bootstrapLogin: false,
+  defaultAdmin: false,
   user: null,
   authMode: "login",
   environments: [],
@@ -84,6 +85,9 @@ function showAuthGate(message) {
     if (state.bootstrapEmail && !authEmailEl.value) {
       authEmailEl.value = state.bootstrapEmail;
     }
+    if (state.defaultAdmin && !authPasswordEl.value) {
+      authPasswordEl.value = "123456";
+    }
     authEmailEl.focus();
   }
 }
@@ -105,7 +109,7 @@ function setAuthMode(mode) {
   authCopyEl.textContent =
     mode === "token"
       ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
-      : "用邮箱登录后，多个设备可以订阅你自己的对话流。";
+      : "默认管理员账号 admin，密码 123456。";
   authSubmitEl.textContent = mode === "register" ? "创建账号" : "进入";
 }
 
@@ -699,7 +703,9 @@ async function boot() {
     healthEl.textContent = state.healthText;
     state.bootstrapEmail = typeof health.bootstrapEmail === "string" ? health.bootstrapEmail : "";
     state.bootstrapLogin = health.bootstrapLogin === true;
+    state.defaultAdmin = health.defaultAdmin === true;
     if (state.bootstrapEmail) authEmailEl.value = state.bootstrapEmail;
+    if (state.defaultAdmin) authPasswordEl.value = "123456";
     renderAccount();
     if (state.token) {
       try {

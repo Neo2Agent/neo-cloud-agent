@@ -41,3 +41,8 @@ export function normalizeEmail(email: string): string {
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
+
+/** Local admin usernames like `admin`, or a normal email. */
+export function isValidLogin(login: string): boolean {
+  return isValidEmail(login) || /^[a-z][a-z0-9._-]{1,31}$/.test(login);
+}

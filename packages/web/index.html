@@ -92,15 +92,15 @@
     <div class="auth-gate" id="auth-gate" hidden>
       <form class="auth-card" id="auth-form">
         <h2 id="auth-title">登录</h2>
-        <p id="auth-copy">用邮箱登录后，多个设备可以订阅你自己的对话流。</p>
+        <p id="auth-copy">默认管理员账号 admin，密码 123456。</p>
         <div class="auth-tabs" id="auth-tabs">
           <button type="button" data-mode="login" class="active">登录</button>
           <button type="button" data-mode="register">注册</button>
           <button type="button" data-mode="token">服务令牌</button>
         </div>
         <div id="auth-user-fields">
-          <input id="auth-email" name="email" type="email" autocomplete="username" placeholder="邮箱" />
-          <input id="auth-password" name="password" type="password" autocomplete="current-password" placeholder="密码（至少 8 位）" />
+          <input id="auth-email" name="email" type="text" autocomplete="username" placeholder="账号（admin 或邮箱）" />
+          <input id="auth-password" name="password" type="password" autocomplete="current-password" placeholder="密码" />
         </div>
         <input id="auth-token" name="token" type="password" autocomplete="current-password" placeholder="neo_…" hidden />
         <p class="auth-error" id="auth-error" hidden></p>

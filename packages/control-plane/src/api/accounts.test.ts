@@ -97,9 +97,11 @@ test("POST /v1/auth/bootstrap signs in the env account", async (t) => {
   const health = (await (await fetch(`${base}/health`)).json()) as {
     bootstrapEmail: string | null;
     bootstrapLogin: boolean;
+    defaultAdmin: boolean;
   };
   assert.equal(health.bootstrapEmail, "neo@example.com");
   assert.equal(health.bootstrapLogin, true);
+  assert.equal(health.defaultAdmin, false);
   const response = await fetch(`${base}/v1/auth/bootstrap`, { method: "POST" });
   assert.equal(response.status, 200);
   const body = (await response.json()) as { token: string; user: { email: string } };
