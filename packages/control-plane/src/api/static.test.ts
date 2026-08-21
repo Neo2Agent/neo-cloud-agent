@@ -71,7 +71,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /vm-rail/);
   assert.match(appText, /vm-badge/);
   assert.match(appText, /sidebar-toggle/);
-  assert.match(appText, /neo_browse|neo-browse|已上传/);
+  assert.match(appText, /tool-diff|diff-add/);
+  assert.match(appText, /artifact/);
   assert.match(appText, /settings-panel/);
   assert.match(appText, /auth-email/);
   assert.match(appText, /novalidate|noValidate/);
