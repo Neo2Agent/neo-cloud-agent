@@ -1,0 +1,39 @@
+export type RunEventCategory = "build" | "agent_setup" | "agent_run";
+
+export type RunEventLevel = "info" | "warn" | "error";
+
+export type RunEventKind =
+  | "run.provisioning"
+  | "run.install_started"
+  | "run.install_succeeded"
+  | "run.install_failed"
+  | "run.running"
+  | "run.idle"
+  | "run.error"
+  | "run.archived"
+  | "agent.start"
+  | "agent.end"
+  | "message.start"
+  | "message.delta"
+  | "message.end"
+  | "tool.start"
+  | "tool.update"
+  | "tool.end"
+  | "followup.queued"
+  | "followup.delivered"
+  | "mcp.auth_error"
+  | "egress.denied"
+  | "build.used";
+
+export interface RunEvent {
+  id: string;
+  runId: string;
+  createdAt: string;
+  category: RunEventCategory;
+  level: RunEventLevel;
+  kind: RunEventKind;
+  title: string;
+  detail?: string;
+  /** Opaque payload for UI (token deltas, tool args, etc.). */
+  data?: Record<string, unknown>;
+}

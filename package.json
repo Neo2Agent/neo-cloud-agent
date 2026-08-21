@@ -1,0 +1,8 @@
+{
+  "name": "neo-cloud-agent",
+  "private": true,
+  "description": "Cloud agent control plane and VM worker, with pi-agent as the in-VM kernel.",
+  "workspaces": [
+    "packages/*"
+  ]
+}
