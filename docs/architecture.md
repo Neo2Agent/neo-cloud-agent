@@ -691,7 +691,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 - `packages/worker` 嵌入 `createAgentSession`
 - `packages/llm-gateway`（先只接一个 Provider，JWT 鉴权）
 - `packages/control-plane`：`POST /v1/runs` + SSE，并托管 `packages/web` 对话页
-- 手工 mount 一个 git repo，不做 PR
+- 控制面把 `repoUrls` 落到 Run 工作区（本地目录拷贝，或公开 git clone）；不做 PR
 
 验收：对一个玩具仓库说「加个 README 并跑测试」，UI 能流式看到 bash / edit。
 
@@ -752,8 +752,11 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 合约已经放在 `packages/contracts`。下一刀代码建议是（仍在本 monorepo）：
 
-1. `packages/llm-gateway`：JWT + 单一 Provider 的流式代理（独立进程）
-2. `packages/worker`：上述 `createAgentSession` 骨架 + 事件上报（打进任务镜像）
-3. `packages/control-plane` + `docker compose`：一个进程对外 `POST /v1/runs`，SSE 看输出
+P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已经通了。下一刀仍在本 monorepo：
 
-这三块通了，后面换 Firecracker 只换 Runtime，不换 Agent，也不拆仓。
+1. 真 Docker Runtime：`SPAWN_LOCAL_WORKER=0` 时按 Run 起 worker 容器
+2. P1 SCM：短寿命 token、受控 commit、draft PR
+3. 读 `.neo/environment.json` 并跑 `install`
+4. Run / 事件持久化，重启不丢对话
+
+换 Firecracker 只换 Runtime，不换 Agent，也不拆仓。

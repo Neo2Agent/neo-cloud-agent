@@ -42,13 +42,13 @@ pnpm dev                 # control-plane :8080 + llm-gateway :8081
 # 打开 http://localhost:8080 对话
 ```
 
-默认 `SPAWN_LOCAL_WORKER=1`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。仓库根目录的 `.env` 会被两个控制面进程自动加载（已有环境变量优先）。没配 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` 时 gateway 用 mock。
+默认 `SPAWN_LOCAL_WORKER=1`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。`repoUrls` 会在 spawn 前落到 Run 工作区：本地目录直接拷贝，`github.com/org/repo` 或 HTTPS 地址则 `git clone --depth 1`。仓库根目录的 `.env` 会被两个控制面进程自动加载（已有环境变量优先）。没配 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` 时 gateway 用 mock。
 
 ```bash
 curl -s localhost:8080/health
 curl -s -X POST localhost:8080/v1/runs \
   -H 'content-type: application/json' \
-  -d '{"prompt":"list files in the workspace","repoUrls":["github.com/acme/toy"]}'
+  -d '{"prompt":"Add a README.md and run sh test.sh","repoUrls":["fixtures/toy-repo"]}'
 # 然后看 SSE / transcript
 curl -s localhost:8080/v1/runs/<id>/transcript
 ```

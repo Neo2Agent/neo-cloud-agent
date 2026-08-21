@@ -22,6 +22,9 @@ export type RunEventKind =
   | "followup.queued"
   | "followup.delivered"
   | "user.message"
+  | "scm.clone_started"
+  | "scm.clone_succeeded"
+  | "scm.clone_failed"
   | "mcp.auth_error"
   | "egress.denied"
   | "build.used";

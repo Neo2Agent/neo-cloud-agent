@@ -270,6 +270,22 @@ h1 {
   color: #c9d6b8;
 }
 
+.tool.err {
+  color: #e7b0a3;
+  border-color: #7a3d30;
+}
+
+.setup {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.setup.err {
+  color: var(--err);
+}
+
 .composer {
   margin: 0 28px 24px;
   padding: 14px;

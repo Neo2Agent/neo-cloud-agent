@@ -42,7 +42,7 @@ function emptyState() {
   transcriptEl.innerHTML = `
     <div class="empty">
       <h2>从一条任务开始</h2>
-      <p>例如：列出工作区文件，或给当前项目加一个 README。第一条消息会创建 Run，后续消息作为跟进。</p>
+      <p>仓库填 <code>fixtures/toy-repo</code>，让 Agent 加 README 并跑 <code>sh test.sh</code>。第一条消息会创建 Run，后续消息作为跟进。</p>
     </div>
   `;
 }
@@ -107,6 +107,16 @@ function applyEvent(event) {
     return;
   }
 
+  if (event.kind === "scm.clone_started" || event.kind === "scm.clone_succeeded" || event.kind === "scm.clone_failed") {
+    const empty = transcriptEl.querySelector(".empty");
+    if (empty) empty.remove();
+    const line = document.createElement("p");
+    line.className = event.kind === "scm.clone_failed" ? "setup err" : "setup";
+    line.textContent = event.detail ? `${event.title}：${event.detail}` : event.title;
+    transcriptEl.appendChild(line);
+    return;
+  }
+
   if (event.kind === "tool.start") {
     const node = ensureAssistant();
     const tool = document.createElement("div");
@@ -114,6 +124,16 @@ function applyEvent(event) {
     const name = event.data?.toolName ?? "tool";
     const args = event.data?.args ? ` ${JSON.stringify(event.data.args)}` : "";
     tool.textContent = `$ ${name}${args}`;
+    node.appendChild(tool);
+    return;
+  }
+
+  if (event.kind === "tool.end") {
+    const node = ensureAssistant();
+    const tool = document.createElement("div");
+    tool.className = event.data?.isError ? "tool err" : "tool";
+    const name = event.data?.toolName ?? "tool";
+    tool.textContent = event.data?.isError ? `✗ ${name}` : `✓ ${name}`;
     node.appendChild(tool);
     return;
   }

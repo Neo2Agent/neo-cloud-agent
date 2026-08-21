@@ -7,7 +7,7 @@ import { getConfig } from "./config.js";
 
 const children = new Map<string, ChildProcess>();
 
-function repoRoot(): string {
+export function repoRoot(): string {
   return fileURLToPath(new URL("../../..", import.meta.url));
 }
 

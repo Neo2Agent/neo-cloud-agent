@@ -30,7 +30,9 @@ function isolatedLoader(): ResourceLoader {
     getAgentsFiles: () => ({ agentsFiles: [] }),
     getSystemPrompt: () =>
       `You are Neo Cloud Agent running in an isolated workspace.
+Repositories the user attached are already in the current working directory (one repo at the root, or each repo in its own folder).
 Use the local tools (read, write, edit, bash, grep, find, ls) to complete the user's task.
+If you change the project, run its tests (for example \`sh test.sh\` or the documented test command).
 Do not ask for API keys. LLM calls already go through the cloud gateway.
 Be concise and verify your work.`,
     getSystemPromptSource: () => undefined,

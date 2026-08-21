@@ -11,7 +11,8 @@ import { mintRunToken } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 import { publish } from "../events/bus.js";
 import { DockerRuntime } from "../runtime/docker.js";
-import { spawnLocalWorker, stopLocalWorker, workspaceFor } from "../worker-spawn.js";
+import { materializeRepos } from "../scm/workspace.js";
+import { repoRoot, spawnLocalWorker, stopLocalWorker, workspaceFor } from "../worker-spawn.js";
 
 const runs = new Map<string, Run>();
 const followUps = new Map<string, FollowUp[]>();
@@ -30,7 +31,9 @@ export function event(runId: string, kind: RunEvent["kind"], title: string, extr
     createdAt: extra?.createdAt ?? now(),
     category:
       extra?.category ??
-      (kind.startsWith("run.install") || kind.startsWith("run.") ? "agent_setup" : "agent_run"),
+      (kind.startsWith("run.install") || kind.startsWith("run.") || kind.startsWith("scm.")
+        ? "agent_setup"
+        : "agent_run"),
     level: extra?.level ?? (kind === "run.error" ? "error" : "info"),
     kind,
     title,
@@ -88,6 +91,32 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
     }),
   );
   mintJwtForRun(run);
+
+  try {
+    if (run.repoUrls.length > 0) {
+      publish(
+        event(run.id, "scm.clone_started", "Preparing workspace", {
+          data: { repoUrls: run.repoUrls },
+        }),
+      );
+      const placed = await materializeRepos(run.repoUrls, workspaceFor(run.id), repoRoot());
+      publish(
+        event(run.id, "scm.clone_succeeded", "Workspace ready", {
+          data: {
+            dests: placed.map((item) => ({ name: item.ref.name, kind: item.ref.kind, source: item.ref.raw })),
+          },
+        }),
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace prepare failed";
+    run.status = "ERROR";
+    run.errorMessage = message;
+    run.updatedAt = now();
+    publish(event(run.id, "scm.clone_failed", "Workspace prepare failed", { level: "error", detail: message }));
+    publish(event(run.id, "run.error", message));
+    return run;
+  }
 
   const handle = await runtime.provision({
     runId: run.id,
