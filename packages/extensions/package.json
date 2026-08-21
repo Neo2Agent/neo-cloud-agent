@@ -1,5 +1,5 @@
 {
-  "name": "@neo-cloud-agent/contracts",
+  "name": "@neo-cloud-agent/extensions",
   "version": "0.1.0",
   "private": true,
   "type": "module",

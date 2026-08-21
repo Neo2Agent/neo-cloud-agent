@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@neo-cloud-agent/contracts": ["../contracts/src/index.ts"],
+      "@neo-cloud-agent/extensions": ["../extensions/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

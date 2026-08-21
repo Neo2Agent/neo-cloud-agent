@@ -1,5 +1,5 @@
 {
-  "name": "@neo-cloud-agent/contracts",
+  "name": "@neo-cloud-agent/llm-gateway",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,6 +7,11 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@neo-cloud-agent/contracts": "workspace:*"
   }
 }

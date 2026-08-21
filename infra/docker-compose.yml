@@ -1,0 +1,42 @@
+# Local topology: two control-plane processes. Worker is a per-run image, not a replica.
+services:
+  control-plane:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.control-plane
+    ports:
+      - "8080:8080"
+    environment:
+      CONTROL_PLANE_PORT: "8080"
+      DEFAULT_ORG_ID: org_local
+      DEFAULT_USER_ID: user_local
+      WORKER_IMAGE: neo-cloud-agent-worker:dev
+    depends_on:
+      - llm-gateway
+
+  llm-gateway:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.llm-gateway
+    ports:
+      - "8081:8081"
+    environment:
+      LLM_GATEWAY_PORT: "8081"
+      LLM_GATEWAY_JWT_SECRET: dev-only-change-me
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.worker
+    profiles: ["worker"]
+    environment:
+      RUN_ID: ${RUN_ID:-}
+      CONTROL_PLANE_URL: http://control-plane:8080
+      LLM_GATEWAY_URL: http://llm-gateway:8081
+      LLM_GATEWAY_JWT: ${LLM_GATEWAY_JWT:-}
+      WORKSPACE_DIR: /workspace
+      SESSION_DIR: /var/neo/sessions
+    volumes:
+      - ..:/workspace

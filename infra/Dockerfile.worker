@@ -1,0 +1,18 @@
+FROM node:22-bookworm-slim
+WORKDIR /opt/neo
+RUN corepack enable
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY packages/contracts/package.json packages/contracts/
+COPY packages/control-plane/package.json packages/control-plane/
+COPY packages/extensions/package.json packages/extensions/
+COPY packages/llm-gateway/package.json packages/llm-gateway/
+COPY packages/worker/package.json packages/worker/
+RUN pnpm install --frozen-lockfile --filter @neo-cloud-agent/worker...
+COPY tsconfig.base.json tsconfig.json ./
+COPY packages/contracts packages/contracts
+COPY packages/extensions packages/extensions
+COPY packages/worker packages/worker
+WORKDIR /workspace
+ENV WORKSPACE_DIR=/workspace
+ENV SESSION_DIR=/var/neo/sessions
+CMD ["pnpm", "--dir", "/opt/neo", "--filter", "@neo-cloud-agent/worker", "start"]
