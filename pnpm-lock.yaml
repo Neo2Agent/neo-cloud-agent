@@ -18,6 +18,12 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
+  packages/cli:
+    dependencies:
+      '@neo-cloud-agent/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/contracts: {}
 
   packages/control-plane:
