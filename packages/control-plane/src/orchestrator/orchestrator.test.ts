@@ -243,6 +243,27 @@ test("createRun fails when the local repo path does not exist", async () => {
   assert.ok(listEvents(run.id).some((item) => item.kind === "scm.clone_failed"));
 });
 
+test("allowlist_only blocks a remote host before clone", async () => {
+  const { createEnvironment } = await import("../env/store.js");
+  const env = createEnvironment(
+    {
+      name: "locked",
+      repoUrls: ["https://evil.example/nope.git"],
+      config: { egress: { mode: "allowlist_only", domains: ["pkgs.example"] } },
+    },
+    "org_local",
+  );
+  const run = await createRun({
+    prompt: "should not leave the allowlist",
+    repoUrls: ["https://evil.example/nope.git"],
+    envId: env.id,
+  });
+  assert.equal(run.status, "ERROR");
+  assert.match(run.errorMessage ?? "", /evil.example/);
+  assert.ok(listEvents(run.id).some((item) => item.kind === "egress.denied"));
+  assert.equal(listEvents(run.id).some((item) => item.kind === "scm.clone_started"), false);
+});
+
 test("later runs reuse the captured environment build and skip install", async () => {
   const run = await createRun({
     prompt: "reuse the snapshot",

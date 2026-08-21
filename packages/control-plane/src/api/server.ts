@@ -9,6 +9,7 @@ import type {
   CreateRunRequest,
   RunEvent,
 } from "@neo-cloud-agent/contracts";
+import { evaluateEgress } from "@neo-cloud-agent/contracts";
 import { listEvents } from "../events/bus.js";
 import { attachEventStream } from "../events/stream.js";
 import { buildTranscriptSnapshot } from "../events/transcript.js";
@@ -326,6 +327,19 @@ export function createApiServer() {
       const bootstrapMatch = /^\/internal\/runs\/([^/]+)\/bootstrap$/.exec(path);
       if (bootstrapMatch && method === "GET") {
         send(res, 200, getBootstrap(bootstrapMatch[1] ?? ""));
+        return;
+      }
+
+      const egressMatch = /^\/internal\/runs\/([^/]+)\/egress-check$/.exec(path);
+      if (egressMatch && method === "POST") {
+        const runId = egressMatch[1] ?? "";
+        const bootstrap = getBootstrap(runId);
+        const body = (await readJson(req)) as { url?: string };
+        if (!body.url) {
+          send(res, 400, { error: "url is required" });
+          return;
+        }
+        send(res, 200, evaluateEgress(bootstrap.egress, body.url));
         return;
       }
 

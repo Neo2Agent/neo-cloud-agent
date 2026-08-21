@@ -58,6 +58,22 @@
               autocomplete="off"
             />
           </label>
+          <div class="env-row">
+            <label>
+              <span>环境</span>
+              <select id="environment" name="environment">
+                <option value="">仓库默认</option>
+              </select>
+            </label>
+            <label>
+              <span>快照</span>
+              <select id="build" name="build">
+                <option value="">自动（复用 active）</option>
+                <option value="cold">冷装</option>
+              </select>
+            </label>
+            <button class="ghost" id="warm-build" type="button">预热</button>
+          </div>
           <textarea
             id="prompt"
             name="prompt"
@@ -66,7 +82,7 @@
             required
           ></textarea>
           <div class="composer-bar">
-            <p class="hint">推理走 LLM Gateway；工具在 worker / VM 里执行。</p>
+            <p class="hint">推理走 LLM Gateway；工具在 worker / VM 里执行。相同仓库会复用 Environment Build。</p>
             <button type="submit" id="send">发送</button>
           </div>
         </form>

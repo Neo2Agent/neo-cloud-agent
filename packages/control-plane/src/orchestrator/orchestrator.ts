@@ -5,6 +5,7 @@ import type {
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
+  EgressPolicy,
   FollowUp,
   FollowUpDelivery,
   Run,
@@ -13,7 +14,7 @@ import type {
   RuntimeSpec,
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
-import { mintRunToken, redactText } from "@neo-cloud-agent/contracts";
+import { evaluateEgress, mintRunToken, redactText } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 import {
   canRestoreBuild,
@@ -24,7 +25,9 @@ import {
 } from "../env/builds.js";
 import { environmentFingerprint } from "../env/fingerprint.js";
 import { findInstallTargets, runInstallCommand } from "../env/install.js";
+import { getEnvironment } from "../env/store.js";
 import { claimWarmSlot, refillWarmPool } from "../env/warm-pool.js";
+import { resolveEgressPolicy } from "../egress/resolve.js";
 import { publish, resetHistory, seedEvents } from "../events/bus.js";
 import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
@@ -53,6 +56,7 @@ const inbound = new Map<string, WorkerInbound[]>();
 const runJwts = new Map<string, string>();
 const handles = new Map<string, RuntimeHandle>();
 const heartbeats = new Map<string, number>();
+const runEgress = new Map<string, EgressPolicy>();
 let leaseWatch: ReturnType<typeof setInterval> | null = null;
 
 const LIVE_STATUSES = new Set<Run["status"]>([
@@ -114,6 +118,7 @@ export function reloadPersistedState(): void {
   runJwts.clear();
   handles.clear();
   heartbeats.clear();
+  runEgress.clear();
   resetHistory();
   hydrateFromDisk();
 }
@@ -279,8 +284,46 @@ function workerCommand(): string[] | undefined {
   return raw.split(/\s+/).filter(Boolean);
 }
 
+function egressForRun(run: Run): EgressPolicy {
+  const existing = runEgress.get(run.id);
+  if (existing) {
+    return existing;
+  }
+  const policy = resolveEgressPolicy({
+    workspaceDir: workspaceFor(run.id),
+    env: run.envId ? getEnvironment(run.envId) : undefined,
+  });
+  runEgress.set(run.id, policy);
+  return policy;
+}
+
+function rememberEgress(run: Run, workspaceDir?: string): EgressPolicy {
+  const policy = resolveEgressPolicy({
+    workspaceDir,
+    env: run.envId ? getEnvironment(run.envId) : undefined,
+  });
+  runEgress.set(run.id, policy);
+  return policy;
+}
+
+function denyEgress(run: Run, policy: EgressPolicy, target: string): boolean {
+  const decision = evaluateEgress(policy, target);
+  if (decision.allow) {
+    return false;
+  }
+  publish(
+    event(run.id, "egress.denied", `Blocked outbound host ${decision.host}`, {
+      level: "error",
+      data: { host: decision.host, mode: policy.mode, target },
+    }),
+  );
+  failRun(run, decision.reason);
+  return true;
+}
+
 function launchSpec(run: Run, jwt: string): RuntimeSpec {
   const config = getConfig();
+  const egress = egressForRun(run);
   return {
     runId: run.id,
     image: config.workerImage,
@@ -288,7 +331,7 @@ function launchSpec(run: Run, jwt: string): RuntimeSpec {
     cpu: Number(process.env.WORKER_CPUS ?? 2),
     memoryMiB: Number(process.env.WORKER_MEMORY_MIB ?? 2048),
     diskGiB: 40,
-    egress: { mode: "allow_all", domains: [] },
+    egress: { mode: egress.mode, domains: egress.domains ?? [] },
     jwt,
     model: run.model,
     hostWorkspaceDir: workspaceFor(run.id),
@@ -350,10 +393,21 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
 
   const fingerprint = environmentFingerprint({ repoUrls: run.repoUrls, ref: input.ref ?? null });
   let restoredFromBuild = false;
+  const policy = rememberEgress(run);
+  for (const url of run.repoUrls) {
+    if (denyEgress(run, policy, url)) {
+      return run;
+    }
+  }
 
   try {
     if (run.repoUrls.length > 0) {
-      const existing = input.buildId ? getBuild(input.buildId) : findActiveBuild(fingerprint);
+      const existing =
+        input.reuseBuild === false
+          ? undefined
+          : input.buildId
+            ? getBuild(input.buildId)
+            : findActiveBuild(fingerprint);
       if (canRestoreBuild(existing)) {
         publish(
           event(run.id, "scm.clone_started", "Restoring environment snapshot", {
@@ -403,6 +457,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
         );
         flushRun(run.id);
       }
+      rememberEgress(run, workspaceFor(run.id));
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "workspace prepare failed";
@@ -591,6 +646,7 @@ export function getBootstrap(runId: string) {
     jwt: runJwts.get(runId) ?? mintJwtForRun(run),
     llmGatewayUrl: config.workerLlmGatewayUrl,
     workspaceDir: config.workerRuntime === "docker" ? config.workerWorkspaceMount : workspaceFor(runId),
+    egress: egressForRun(run),
   };
 }
 

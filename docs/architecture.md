@@ -293,6 +293,8 @@ VM **没有**公网入站。出站全部经过 egress proxy：
 | default + allowlist | 系统域名（Gateway、SCM、npm 等）+ 用户名单 |
 | allowlist-only | 仅名单；Gateway / SCM 仍放行，否则 Run 无法推理或 push |
 
+控制面在 clone / 开 PR 前用同一套 `evaluateEgress` 拦远程 host；worker 给 `fetch` 加同样的守卫，并上报 `egress.denied`。这是应用层执行，还不是 VM 出站 iptables。
+
 Git 走独立 **git egress proxy**（固定出口 IP），方便客户做 IP allowlist。Artifacts 只允许精确 bucket host，禁止 `*.s3.amazonaws.com` 这种会变成数据外带通道的通配。
 
 ---
@@ -761,6 +763,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数�
 1. Firecracker 生产 rootfs（内核 + 烤进 neo-worker 的 ext4 + vsock 控制通道）
 2. 块设备 CoW / live-fork（现在只复制成功 Build 的工作区快照）
 3. 配额、多租户计费、组织成员
+4. Egress 从应用层升级到 VM 出站代理 / iptables
 
 控制面重启后续上 RUNNING Worker、以及对外 API 令牌鉴权已经落地。
 
@@ -772,7 +775,8 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数�
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
 - 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。已经挂上的 handle 以进程/容器退出为准，不会因为一次长工具调用没心跳就被标 ERROR。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
 - 对外 `/v1` 用用户 session（`POST /v1/auth/register|login`）或 `CONTROL_PLANE_TOKEN`。`ACCOUNTS_REQUIRED=1` 时必须登录。Worker 走 `/internal`，只带 run JWT。`/health` 和静态页不需要令牌。
-- 设了 `DATABASE_URL` 后，Run / 事件 / 用户写入 Postgres；没配则继续用 `.control` JSON。
+- 设了 `DATABASE_URL` 后，Run / 事件 / 用户 / Environment / Build 写入 Postgres；没配则继续用 `.control` JSON。
 - 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。
 - `WORKER_RUNTIME=firecracker` 走 Firecracker HTTP API（kernel / rootfs / tap / vsock）。开发机没配内核时继续用 local / docker。没配 `FIRECRACKER_ROOTFS` 时控制面会用 `infra/firecracker` overlay 打一张 ext4（需要 `mkfs.ext4`）。
-- Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot，否则拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。
+- Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot，否则拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。对话页可以选环境 / 快照，或点「预热」。
+- Egress：`environment.json` 的 `egress.mode` 会进 worker（`NEO_EGRESS_*`）。`allowlist_only` 拦 clone 和不在名单里的 `fetch`；Gateway / GitHub 仍放行。

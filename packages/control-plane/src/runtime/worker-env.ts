@@ -6,6 +6,8 @@ export interface WorkerEnvInput {
   workspaceDir: string;
   sessionDir: string;
   model: string;
+  egressMode?: string;
+  egressDomains?: string[];
 }
 
 const SECRET_KEYS = [
@@ -32,6 +34,8 @@ export function buildWorkerEnv(input: WorkerEnvInput): Record<string, string> {
     WORKSPACE_DIR: input.workspaceDir,
     SESSION_DIR: input.sessionDir,
     NEO_MODEL: input.model,
+    NEO_EGRESS_MODE: input.egressMode ?? "allow_all",
+    NEO_EGRESS_DOMAINS: (input.egressDomains ?? []).join(","),
   };
 }
 

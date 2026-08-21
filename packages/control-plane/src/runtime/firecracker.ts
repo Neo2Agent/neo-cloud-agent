@@ -99,6 +99,7 @@ export function writeRunBootstrap(spec: RuntimeSpec): string {
         llmGatewayUrl: spec.llmGatewayUrl,
         model: spec.model,
         workspaceDir: spec.workspaceMount,
+        egress: spec.egress,
       },
       null,
       2,

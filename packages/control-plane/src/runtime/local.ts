@@ -72,6 +72,8 @@ export class LocalProcessRuntime implements ExecutionRuntime {
       workspaceDir: spec.hostWorkspaceDir,
       sessionDir,
       model: spec.model,
+      egressMode: spec.egress.mode,
+      egressDomains: spec.egress.domains,
     });
     assertNoProviderSecrets(env);
 

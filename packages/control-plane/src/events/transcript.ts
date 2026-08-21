@@ -5,7 +5,9 @@ function isSetupKind(kind: string): boolean {
     kind.startsWith("scm.") ||
     kind.startsWith("run.install") ||
     kind.startsWith("run.start") ||
-    kind.startsWith("run.terminal")
+    kind.startsWith("run.terminal") ||
+    kind.startsWith("build.") ||
+    kind.startsWith("egress.")
   );
 }
 

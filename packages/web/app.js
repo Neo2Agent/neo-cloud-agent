@@ -23,6 +23,9 @@ const authSubmitEl = document.getElementById("auth-submit");
 const accountEl = document.getElementById("account");
 const accountEmailEl = document.getElementById("account-email");
 const logoutEl = document.getElementById("logout");
+const environmentEl = document.getElementById("environment");
+const buildEl = document.getElementById("build");
+const warmBuildEl = document.getElementById("warm-build");
 
 const TOKEN_KEY = "neo.apiToken";
 
@@ -39,6 +42,8 @@ const state = {
   accountsRequired: false,
   user: null,
   authMode: "login",
+  environments: [],
+  builds: [],
 };
 
 function apiHeaders(json) {
@@ -262,7 +267,9 @@ function applyEvent(event) {
     String(event.kind).startsWith("scm.") ||
     String(event.kind).startsWith("run.install") ||
     String(event.kind).startsWith("run.start") ||
-    String(event.kind).startsWith("run.terminal")
+    String(event.kind).startsWith("run.terminal") ||
+    String(event.kind).startsWith("build.") ||
+    String(event.kind).startsWith("egress.")
   ) {
     addSetupLine(event);
     if (event.kind === "scm.pr_opened" && event.data?.url) {
@@ -344,7 +351,13 @@ async function openRun(runId) {
   runTitleEl.textContent = preview(run.prompt);
   setStatus(run.status);
   repoEl.value = run.repoUrls?.[0] ?? "";
-  runLabelEl.textContent = run.branchName ? run.branchName : shortId(run.id);
+  environmentEl.value = run.envId ?? "";
+  buildEl.value = run.buildId ?? "";
+  runLabelEl.textContent = run.buildId
+    ? `${run.branchName ? run.branchName : shortId(run.id)} · 快照 ${shortId(run.buildId)}`
+    : run.branchName
+      ? run.branchName
+      : shortId(run.id);
   showPullRequest(run);
   renderRuns();
   const transcript = await (await api(`/v1/runs/${run.id}/transcript`)).json();
@@ -364,9 +377,54 @@ function resetComposer() {
   runLabelEl.textContent = "新对话";
   runTitleEl.textContent = "和云端 Agent 说话";
   promptEl.value = "";
+  environmentEl.value = "";
+  buildEl.value = "";
   showPullRequest(null);
   history.replaceState(null, "", "/");
   renderRuns();
+}
+
+function selectedBuildPayload() {
+  const value = buildEl.value;
+  if (value === "cold") {
+    return { reuseBuild: false };
+  }
+  if (value) {
+    return { buildId: value, reuseBuild: true };
+  }
+  return { reuseBuild: true };
+}
+
+function renderEnvOptions() {
+  const envValue = environmentEl.value;
+  const buildValue = buildEl.value;
+  environmentEl.innerHTML = `<option value="">仓库默认</option>${state.environments
+    .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || shortId(item.id))}</option>`)
+    .join("")}`;
+  environmentEl.value = state.environments.some((item) => item.id === envValue) ? envValue : "";
+  const envId = environmentEl.value;
+  const builds = state.builds.filter((item) => item.status === "SUCCEEDED" && (!envId || item.envId === envId));
+  buildEl.innerHTML = `<option value="">自动（复用 active）</option><option value="cold">冷装</option>${builds
+    .map(
+      (item) =>
+        `<option value="${escapeHtml(item.id)}">${escapeHtml(shortId(item.id))}${item.draft ? " · draft" : ""}</option>`,
+    )
+    .join("")}`;
+  buildEl.value = builds.some((item) => item.id === buildValue) || buildValue === "cold" ? buildValue : "";
+}
+
+async function refreshEnvironments() {
+  try {
+    const [envs, builds] = await Promise.all([
+      api("/v1/environments").then((item) => item.json()),
+      api("/v1/builds").then((item) => item.json()),
+    ]);
+    state.environments = envs.environments ?? [];
+    state.builds = builds.builds ?? [];
+    renderEnvOptions();
+  } catch {
+    // optional for unauthenticated health-only boot
+  }
 }
 
 async function sendMessage(text) {
@@ -377,7 +435,13 @@ async function sendMessage(text) {
     const created = await (
       await api("/v1/runs", {
         method: "POST",
-        body: JSON.stringify({ prompt: text, repoUrls, source: "web" }),
+        body: JSON.stringify({
+          prompt: text,
+          repoUrls,
+          source: "web",
+          envId: environmentEl.value || undefined,
+          ...selectedBuildPayload(),
+        }),
       })
     ).json();
     if (created.error) throw new Error(created.error);
@@ -415,6 +479,44 @@ promptEl.addEventListener("keydown", (event) => {
 });
 
 document.getElementById("new-chat").addEventListener("click", resetComposer);
+
+environmentEl.addEventListener("change", () => {
+  renderEnvOptions();
+});
+
+warmBuildEl.addEventListener("click", async () => {
+  const repo = repoEl.value.trim();
+  if (!repo) {
+    addBubble("assistant", "预热前先填仓库。", `err-${Date.now()}`);
+    return;
+  }
+  warmBuildEl.disabled = true;
+  try {
+    const created = await (
+      await api("/v1/builds", {
+        method: "POST",
+        body: JSON.stringify({
+          repoUrls: [repo],
+          envId: environmentEl.value || undefined,
+        }),
+      })
+    ).json();
+    if (created.error) throw new Error(created.error);
+    await refreshEnvironments();
+    if (created.id && created.status === "SUCCEEDED") {
+      buildEl.value = created.id;
+    }
+    addBubble(
+      "assistant",
+      created.status === "SUCCEEDED" ? `环境快照已就绪 ${shortId(created.id)}` : `预热失败：${created.failureMessage || created.status}`,
+      `build-${created.id || Date.now()}`,
+    );
+  } catch (error) {
+    addBubble("assistant", error instanceof Error ? error.message : "预热失败", `err-${Date.now()}`);
+  } finally {
+    warmBuildEl.disabled = false;
+  }
+});
 
 runListEl.addEventListener("click", (event) => {
   const button = event.target.closest("[data-id]");
@@ -504,6 +606,7 @@ authFormEl.addEventListener("submit", async (event) => {
       await applySession(body.token);
     }
     await refreshRuns();
+    await refreshEnvironments();
     const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
     if (match?.[1]) await openRun(match[1]);
     else emptyState();
@@ -538,7 +641,8 @@ async function boot() {
       const store = health.metadataStore ? ` · ${health.metadataStore}` : "";
       const bus = health.eventBus ? ` · ${health.eventBus}` : "";
       const auth = state.authRequired ? " · 需登录" : "";
-      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${bus}${auth}`;
+      const builds = typeof health.builds === "number" ? ` · ${health.builds} 快照` : "";
+      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${bus}${builds}${auth}`;
     } else {
       state.healthText = "控制面在线";
     }
@@ -562,6 +666,7 @@ async function boot() {
     healthEl.textContent = state.healthText;
   }
   await refreshRuns();
+  await refreshEnvironments();
   const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
   if (match?.[1]) {
     await openRun(match[1]);

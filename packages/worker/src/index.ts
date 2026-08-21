@@ -1,6 +1,8 @@
+import type { EgressPolicy, RunEvent } from "@neo-cloud-agent/contracts";
 import { getWorkerConfig } from "./config.js";
 import { runWorkspaceBoot, stopTerminals } from "./boot.js";
 import { downloadSession, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
+import { installEgressGuard, policyFromEnv } from "./egress.js";
 import { toRunEvents } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
@@ -30,10 +32,28 @@ async function main(): Promise<void> {
         llmGatewayUrl: config.llmGatewayUrl,
         workspaceDir: config.workspaceDir,
         model: config.model,
+        egress: config.egress,
       }
     : await fetchBootstrap(config.runId);
 
   const workspaceDir = bootstrap.workspaceDir || config.workspaceDir;
+  const egress: EgressPolicy = policyFromEnv(process.env, bootstrap.egress);
+  installEgressGuard(egress, (decision) => {
+    const event: RunEvent = {
+      id: crypto.randomUUID(),
+      runId: config.runId,
+      createdAt: new Date().toISOString(),
+      category: "agent_setup",
+      level: "error",
+      kind: "egress.denied",
+      title: `Blocked outbound host ${decision.host}`,
+      detail: decision.reason,
+      data: { host: decision.host, mode: decision.mode },
+    };
+    pushEvents(config.runId, [event]).catch((error: unknown) => {
+      console.error("failed to report egress denial", error);
+    });
+  });
   console.log(
     `worker ${config.runId} version=${config.workerVersion} model=${bootstrap.model} gateway=${bootstrap.llmGatewayUrl}`,
   );

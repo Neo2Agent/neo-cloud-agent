@@ -1,4 +1,7 @@
 import { setAccountStore } from "./accounts/store.js";
+import { importBuild, listBuilds } from "./env/builds.js";
+import { setEnvPersistHooks } from "./env/persist-hooks.js";
+import { listEnvironments, upsertEnvironment } from "./env/store.js";
 import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
 import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
 import { reloadPersistedState } from "./orchestrator/orchestrator.js";
@@ -38,6 +41,7 @@ export function resetPlatformForTests(): void {
   metadataKind = "fs";
   eventBusKind = "memory";
   setPersistHooks({});
+  setEnvPersistHooks({});
   attachHotBus(null);
 }
 
@@ -62,7 +66,16 @@ async function doStart(): Promise<void> {
         void postgres?.deleteLease(runId).catch((error) => console.error("postgres deleteLease failed", error));
       },
     });
+    setEnvPersistHooks({
+      onEnvironment: (env) => {
+        void postgres?.saveEnvironment(env).catch((error) => console.error("postgres saveEnvironment failed", error));
+      },
+      onBuild: (build) => {
+        void postgres?.saveBuild(build).catch((error) => console.error("postgres saveBuild failed", error));
+      },
+    });
     await hydrateFromPostgres(postgres);
+    await hydrateEnvFromPostgres(postgres);
     reloadPersistedState();
     console.log("control-plane metadata store: postgres");
   }
@@ -97,6 +110,29 @@ async function hydrateFromPostgres(store: PostgresMetadataStore): Promise<void> 
     const lease = await store.loadLease(record.run.id);
     if (lease) {
       persistWorkerLease(lease, undefined, { mirror: false });
+    }
+  }
+}
+
+async function hydrateEnvFromPostgres(store: PostgresMetadataStore): Promise<void> {
+  const remoteEnvs = await store.loadEnvironments();
+  if (remoteEnvs.length > 0) {
+    for (const env of remoteEnvs) {
+      upsertEnvironment(env, { mirror: false });
+    }
+  } else {
+    for (const env of listEnvironments()) {
+      await store.saveEnvironment(env);
+    }
+  }
+  const remoteBuilds = await store.loadBuilds();
+  if (remoteBuilds.length > 0) {
+    for (const build of remoteBuilds) {
+      importBuild(build);
+    }
+  } else {
+    for (const build of listBuilds()) {
+      await store.saveBuild(build);
     }
   }
 }

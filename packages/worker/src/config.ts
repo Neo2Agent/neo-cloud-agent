@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import type { EgressPolicy } from "@neo-cloud-agent/contracts";
 
 function readBootstrapFile(workspaceDir: string): Partial<{
   runId: string;
@@ -7,6 +8,7 @@ function readBootstrapFile(workspaceDir: string): Partial<{
   llmGatewayUrl: string;
   jwt: string;
   model: string;
+  egress: EgressPolicy;
 }> {
   const file = path.join(workspaceDir, ".neo", "run-bootstrap.json");
   try {
@@ -16,6 +18,7 @@ function readBootstrapFile(workspaceDir: string): Partial<{
       llmGatewayUrl?: string;
       jwt?: string;
       model?: string;
+      egress?: EgressPolicy;
     };
   } catch {
     return {};
@@ -35,5 +38,6 @@ export function getWorkerConfig() {
     workerVersion: process.env.WORKER_VERSION ?? "0.1.0",
     model: process.env.NEO_MODEL || file.model || "neo/sonnet",
     pollMs: Number(process.env.WORKER_POLL_MS ?? 400),
+    egress: file.egress,
   };
 }

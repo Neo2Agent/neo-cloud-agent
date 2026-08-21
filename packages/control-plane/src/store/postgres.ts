@@ -1,4 +1,4 @@
-import type { RunEvent } from "@neo-cloud-agent/contracts";
+import type { Build, Environment, RunEvent } from "@neo-cloud-agent/contracts";
 import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
@@ -39,6 +39,23 @@ CREATE TABLE IF NOT EXISTS worker_leases (
   lease JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS environments (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS builds (
+  id TEXT PRIMARY KEY,
+  env_id TEXT NOT NULL,
+  org_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  status TEXT NOT NULL,
+  draft BOOLEAN NOT NULL,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS builds_fingerprint ON builds (fingerprint);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -51,6 +68,10 @@ export interface PostgresMetadataStore extends AccountStore {
   saveLease(lease: WorkerLease): Promise<void>;
   loadLease(runId: string): Promise<WorkerLease | null>;
   deleteLease(runId: string): Promise<void>;
+  saveEnvironment(env: Environment): Promise<void>;
+  loadEnvironments(): Promise<Environment[]>;
+  saveBuild(build: Build): Promise<void>;
+  loadBuilds(): Promise<Build[]>;
 }
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -75,6 +96,22 @@ function asLease(value: unknown): WorkerLease | null {
   }
   const lease = value as WorkerLease;
   return lease.runId && lease.handleId ? lease : null;
+}
+
+function asEnvironment(value: unknown): Environment | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const env = value as Environment;
+  return env.id ? env : null;
+}
+
+function asBuild(value: unknown): Build | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const build = value as Build;
+  return build.id && build.envId ? build : null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -139,6 +176,51 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async deleteLease(runId) {
       await query(`DELETE FROM worker_leases WHERE run_id = $1`, [runId]);
+    },
+    async saveEnvironment(env) {
+      await query(
+        `INSERT INTO environments (id, org_id, body, updated_at)
+         VALUES ($1, $2, $3::jsonb, $4::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET
+           org_id = EXCLUDED.org_id,
+           body = EXCLUDED.body,
+           updated_at = EXCLUDED.updated_at`,
+        [env.id, env.orgId, JSON.stringify(env), env.updatedAt],
+      );
+    },
+    async loadEnvironments() {
+      const result = await query(`SELECT body FROM environments ORDER BY updated_at DESC`);
+      return result.rows
+        .map((row) => parseJson(row.body, asEnvironment))
+        .filter((item): item is Environment => Boolean(item));
+    },
+    async saveBuild(build) {
+      await query(
+        `INSERT INTO builds (id, env_id, org_id, fingerprint, status, draft, body, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET
+           env_id = EXCLUDED.env_id,
+           org_id = EXCLUDED.org_id,
+           fingerprint = EXCLUDED.fingerprint,
+           status = EXCLUDED.status,
+           draft = EXCLUDED.draft,
+           body = EXCLUDED.body,
+           updated_at = EXCLUDED.updated_at`,
+        [
+          build.id,
+          build.envId,
+          build.orgId,
+          build.fingerprint,
+          build.status,
+          build.draft,
+          JSON.stringify(build),
+          build.completedAt ?? build.createdAt,
+        ],
+      );
+    },
+    async loadBuilds() {
+      const result = await query(`SELECT body FROM builds ORDER BY updated_at DESC`);
+      return result.rows.map((row) => parseJson(row.body, asBuild)).filter((item): item is Build => Boolean(item));
     },
     async createUser(user) {
       try {

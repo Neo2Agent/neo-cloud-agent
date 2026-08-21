@@ -31,6 +31,15 @@ export type {
   TerminalSpec,
 } from "./environment.js";
 export { parseEnvironmentJson } from "./environment.js";
+export {
+  ALWAYS_EGRESS_DOMAINS,
+  DEFAULT_EGRESS_DOMAINS,
+  evaluateEgress,
+  hostnameFromTarget,
+  hostMatches,
+  mergeEgressPolicy,
+} from "./egress.js";
+export type { EgressDecision } from "./egress.js";
 
 export {
   SECRET_ENV_KEYS,

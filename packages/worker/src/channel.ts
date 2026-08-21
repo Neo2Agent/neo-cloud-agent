@@ -1,4 +1,11 @@
-import { redactRunEvent, redactText, secretValuesFromEnv, type RunEvent, type WorkerInbound } from "@neo-cloud-agent/contracts";
+import {
+  redactRunEvent,
+  redactText,
+  secretValuesFromEnv,
+  type EgressPolicy,
+  type RunEvent,
+  type WorkerInbound,
+} from "@neo-cloud-agent/contracts";
 import { getWorkerConfig } from "./config.js";
 
 function workerSecrets(extra: string[] = []): string[] {
@@ -122,6 +129,7 @@ export async function fetchBootstrap(runId: string): Promise<{
   llmGatewayUrl: string;
   workspaceDir: string;
   model: string;
+  egress?: EgressPolicy;
 }> {
   const config = getWorkerConfig();
   const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/bootstrap`, {
@@ -135,11 +143,13 @@ export async function fetchBootstrap(runId: string): Promise<{
     llmGatewayUrl: string;
     workspaceDir: string;
     run: { model: string };
+    egress?: EgressPolicy;
   };
   return {
     jwt: body.jwt,
     llmGatewayUrl: body.llmGatewayUrl,
     workspaceDir: body.workspaceDir,
     model: body.run.model,
+    egress: body.egress,
   };
 }

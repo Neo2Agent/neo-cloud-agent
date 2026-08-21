@@ -53,6 +53,8 @@ export function buildDockerRunArgs(spec: RuntimeSpec, extraHosts: string[] = ["h
     workspaceDir: spec.workspaceMount,
     sessionDir,
     model: spec.model,
+    egressMode: spec.egress.mode,
+    egressDomains: spec.egress.domains,
   });
   assertNoProviderSecrets(env);
 

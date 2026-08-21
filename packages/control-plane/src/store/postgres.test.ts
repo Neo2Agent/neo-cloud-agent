@@ -87,4 +87,34 @@ test("postgres store upserts run JSON, events, and users", async () => {
   ];
   const user = await store.findUserByEmail("ada@example.com");
   assert.equal(user?.id, "user-1");
+
+  await store.saveEnvironment({
+    id: "env-1",
+    orgId: "org_local",
+    name: "toy",
+    environmentJsonPath: null,
+    config: { repos: ["fixtures/toy-repo"] },
+    secrets: [],
+    createdAt: record.run.createdAt,
+    updatedAt: record.run.createdAt,
+  });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO environments/);
+  await store.saveBuild({
+    id: "build-1",
+    envId: "env-1",
+    envVersionId: "env-1",
+    orgId: "org_local",
+    status: "SUCCEEDED",
+    source: "manual",
+    draft: false,
+    snapshotId: "snap_build-1",
+    snapshotPath: "/tmp/snap",
+    fingerprint: "abc",
+    repoUrls: ["fixtures/toy-repo"],
+    ref: null,
+    createdAt: record.run.createdAt,
+    completedAt: record.run.createdAt,
+    failureMessage: null,
+  });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO builds/);
 });

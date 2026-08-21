@@ -87,6 +87,8 @@ export interface CreateRunRequest {
   ref?: string;
   envId?: string;
   buildId?: string;
+  /** When false, skip restoring an active build and cold-install. Default true. */
+  reuseBuild?: boolean;
   model?: string;
   source?: RunSource;
   images?: ImageRef[];

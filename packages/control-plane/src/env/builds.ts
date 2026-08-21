@@ -9,6 +9,7 @@ import { findInstallTargets, runInstallCommand } from "./install.js";
 import { environmentFingerprint } from "./fingerprint.js";
 import { getEnvironment, upsertEnvironment } from "./store.js";
 import { refillWarmPool } from "./warm-pool.js";
+import { envPersistHooks } from "./persist-hooks.js";
 
 function now(): string {
   return new Date().toISOString();
@@ -26,11 +27,18 @@ export function snapshotPathFor(buildId: string, runsDir = getConfig().runsDir):
   return path.join(runsDir, ".builds", buildId, "workspace");
 }
 
-function writeBuild(build: Build, runsDir?: string): void {
+function writeBuild(build: Build, runsDir?: string, options?: { mirror?: boolean }): void {
   mkdirSync(path.dirname(buildFile(build.id, runsDir)), { recursive: true });
   const tmp = `${buildFile(build.id, runsDir)}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(build, null, 2)}\n`);
   renameSync(tmp, buildFile(build.id, runsDir));
+  if (options?.mirror !== false) {
+    envPersistHooks().onBuild?.(build);
+  }
+}
+
+export function importBuild(build: Build, runsDir?: string): void {
+  writeBuild(build, runsDir, { mirror: false });
 }
 
 export function getBuild(id: string, runsDir?: string): Build | undefined {

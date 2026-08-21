@@ -3,6 +3,7 @@ import path from "node:path";
 import type { CreateEnvironmentRequest, Environment } from "@neo-cloud-agent/contracts";
 import { parseEnvironmentJson } from "@neo-cloud-agent/contracts";
 import { controlStateDir } from "../store/persist.js";
+import { envPersistHooks } from "./persist-hooks.js";
 
 export { parseEnvironmentJson } from "@neo-cloud-agent/contracts";
 
@@ -38,10 +39,13 @@ function ensureLoaded(): void {
   }
 }
 
-export function upsertEnvironment(env: Environment): Environment {
+export function upsertEnvironment(env: Environment, options?: { mirror?: boolean }): Environment {
   ensureLoaded();
   environments.set(env.id, env);
   persist();
+  if (options?.mirror !== false) {
+    envPersistHooks().onEnvironment?.(env);
+  }
   return env;
 }
 
