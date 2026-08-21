@@ -12,6 +12,9 @@ test("serves the chat index and rejects path traversal", () => {
   const css = resolveWebFile("/styles.css");
   assert.ok(css);
   assert.match(readFileSync(css, "utf8"), /--bg: #ffffff/);
+  assert.match(readFileSync(css, "utf8"), /color-scheme: light/);
+  assert.doesNotMatch(readFileSync(index, "utf8"), /Fraunces/);
+  assert.doesNotMatch(readFileSync(css, "utf8"), /#0b0[0-9a-f]{3}\b/);
   assert.equal(resolveWebFile("/../package.json"), null);
   assert.equal(resolveWebFile("/no-such-file"), null);
 });

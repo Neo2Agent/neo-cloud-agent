@@ -4,7 +4,17 @@ import { cp } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SKIP = new Set(["node_modules", ".git", "dist", ".pnpm-store", ".neo"]);
+const SKIP_NAMES = new Set(["node_modules", ".git", "dist", ".pnpm-store", ".control"]);
+
+/** Copy `.neo/environment.json`, but never copy run workspaces or caches. */
+export function skipCopy(from: string): boolean {
+  const parts = from.split(path.sep);
+  if (parts.some((part) => SKIP_NAMES.has(part))) {
+    return true;
+  }
+  const neo = parts.lastIndexOf(".neo");
+  return neo >= 0 && parts[neo + 1] === "runs";
+}
 
 export type RepoRef = {
   raw: string;
@@ -89,12 +99,13 @@ async function copyLocal(src: string, dest: string): Promise<void> {
     throw new Error(`local repo not found: ${src}`);
   }
   mkdirSync(dest, { recursive: true });
-  const filter = (from: string) => !SKIP.has(path.basename(from));
+  const filter = (from: string) => !skipCopy(from);
   for (const entry of readdirSync(src, { withFileTypes: true })) {
-    if (SKIP.has(entry.name)) {
+    const from = path.join(src, entry.name);
+    if (skipCopy(from)) {
       continue;
     }
-    await cp(path.join(src, entry.name), path.join(dest, entry.name), { recursive: true, filter });
+    await cp(from, path.join(dest, entry.name), { recursive: true, filter });
   }
 }
 

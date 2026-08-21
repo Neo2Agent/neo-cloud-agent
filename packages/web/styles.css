@@ -1,17 +1,18 @@
 :root {
+  color-scheme: light;
   --bg: #ffffff;
-  --bg-2: #f6f7f9;
+  --bg-2: #f7f8fa;
   --panel: #ffffff;
-  --line: #e4e7ec;
-  --text: #1b1f24;
-  --muted: #667085;
+  --line: #e8eaed;
+  --text: #111827;
+  --muted: #6b7280;
   --accent: #2563eb;
   --accent-2: #1d4ed8;
-  --user: #eef4ff;
+  --user: #eff6ff;
   --ok: #067647;
   --err: #b42318;
   --run: #175cd3;
-  --shadow: 0 10px 30px rgba(16, 24, 40, 0.06);
+  --shadow: 0 8px 24px rgba(17, 24, 39, 0.06);
 }
 
 * {
@@ -24,7 +25,7 @@ body {
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 button,
@@ -35,56 +36,58 @@ textarea {
 
 .app {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 272px 1fr;
   min-height: 100vh;
+  background: var(--bg);
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 22px 18px;
+  padding: 20px 16px;
   border-right: 1px solid var(--line);
   background: var(--bg-2);
 }
 
 .brand {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
 }
 
 .mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--bg);
-  border: 2px solid var(--accent);
-  box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 9px var(--text);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .brand strong {
   display: block;
-  font-family: Fraunces, Georgia, serif;
-  font-size: 22px;
-  line-height: 1;
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 700;
 }
 
 .brand span {
   color: var(--muted);
   font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .new-chat,
 button[type="submit"] {
   border: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--accent);
   color: #ffffff;
-  font-weight: 700;
-  padding: 11px 14px;
+  font-weight: 600;
+  padding: 10px 14px;
   cursor: pointer;
 }
 
@@ -108,13 +111,13 @@ button[type="submit"]:hover {
   border: 1px solid var(--line);
   background: var(--bg);
   color: var(--text);
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 10px 12px;
   cursor: pointer;
 }
 
 .run-item.active {
-  border-color: #bfd3ff;
+  border-color: #bfdbfe;
   background: var(--user);
 }
 
@@ -134,7 +137,7 @@ button[type="submit"]:hover {
 
 .run-item strong {
   font-size: 14px;
-  font-weight: 560;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -159,21 +162,20 @@ button[type="submit"]:hover {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  padding: 22px 28px 8px;
+  padding: 20px 28px 8px;
+  background: var(--bg);
 }
 
 .eyebrow {
   margin: 0 0 4px;
   font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 h1 {
   margin: 0;
-  font-family: Fraunces, Georgia, serif;
-  font-size: 30px;
-  font-weight: 560;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .top-actions {
@@ -191,7 +193,8 @@ h1 {
 }
 
 .status[data-state="RUNNING"],
-.status[data-state="PROVISIONING"] {
+.status[data-state="PROVISIONING"],
+.status[data-state="INSTALLING"] {
   color: var(--run);
   border-color: #b2ddff;
   background: #eff8ff;
@@ -219,6 +222,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  background: var(--bg);
 }
 
 .empty {
@@ -229,13 +233,14 @@ h1 {
 }
 
 .empty h2 {
-  font-family: Fraunces, Georgia, serif;
   color: var(--text);
-  font-weight: 560;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .empty code {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   background: var(--bg-2);
   border: 1px solid var(--line);
@@ -246,16 +251,17 @@ h1 {
 
 .bubble {
   max-width: 760px;
-  border-radius: 18px;
+  border-radius: 16px;
   padding: 14px 16px;
   line-height: 1.55;
   white-space: pre-wrap;
+  background: var(--bg);
 }
 
 .bubble.user {
   align-self: flex-end;
   background: var(--user);
-  border: 1px solid #d5e2ff;
+  border: 1px solid #dbeafe;
 }
 
 .bubble.assistant {
@@ -268,20 +274,20 @@ h1 {
   display: block;
   margin-bottom: 6px;
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .tool {
   margin-top: 10px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #ffffff;
   border: 1px solid var(--line);
   padding: 8px 10px;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #344054;
+  color: #374151;
 }
 
 .tool.err {
@@ -294,7 +300,6 @@ h1 {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
-  letter-spacing: 0.04em;
 }
 
 .setup.err {
@@ -305,7 +310,7 @@ h1 {
   margin: 0 28px 24px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 16px;
   background: var(--panel);
   box-shadow: var(--shadow);
 }
@@ -331,8 +336,8 @@ textarea {
 
 input:focus,
 textarea:focus {
-  outline: 2px solid #d5e2ff;
-  border-color: #84adff;
+  outline: 2px solid #dbeafe;
+  border-color: #93c5fd;
 }
 
 textarea {

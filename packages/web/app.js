@@ -16,6 +16,19 @@ const state = {
   assistant: null,
 };
 
+const STATUS_LABELS = {
+  idle: "就绪",
+  NOT_YET_STARTED: "未开始",
+  PROVISIONING: "准备中",
+  INSTALLING: "安装中",
+  RUNNING: "运行中",
+  IDLE: "空闲",
+  WAITING_FOR_BACKGROUND_WORK: "后台任务",
+  ERROR: "出错",
+  ARCHIVED: "已归档",
+  EXPIRED: "已过期",
+};
+
 function shortId(id) {
   return id.slice(0, 8);
 }
@@ -24,25 +37,26 @@ function preview(text) {
   return (text || "未命名任务").replace(/\s+/g, " ").slice(0, 42);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function setStatus(value) {
   statusEl.dataset.state = value;
-  const labels = {
-    idle: "就绪",
-    PROVISIONING: "准备中",
-    RUNNING: "运行中",
-    IDLE: "空闲",
-    ERROR: "出错",
-    ARCHIVED: "已归档",
-  };
-  statusEl.textContent = labels[value] ?? value;
-  abortEl.hidden = value !== "RUNNING" && value !== "PROVISIONING";
+  statusEl.textContent = STATUS_LABELS[value] ?? value;
+  abortEl.hidden = value !== "RUNNING" && value !== "PROVISIONING" && value !== "INSTALLING";
 }
 
 function emptyState() {
   transcriptEl.innerHTML = `
     <div class="empty">
       <h2>从一条任务开始</h2>
-      <p>仓库填 <code>fixtures/toy-repo</code>，让 Agent 加 README 并跑 <code>sh test.sh</code>。第一条消息会创建 Run，后续消息作为跟进。</p>
+      <p>仓库填 <code>fixtures/toy-repo</code>，让 Agent 加 README 并跑 <code>sh test.sh</code>。第一条消息会创建 Run，后续消息作为跟进。刷新页面会保留已有对话。</p>
     </div>
   `;
 }
@@ -52,9 +66,9 @@ function renderRuns() {
   runListEl.innerHTML = items
     .map(
       (run) => `
-      <button class="run-item${run.id === state.runId ? " active" : ""}" data-id="${run.id}" type="button">
-        <strong>${preview(run.prompt)}</strong>
-        <small>${run.status} · ${shortId(run.id)}</small>
+      <button class="run-item${run.id === state.runId ? " active" : ""}" data-id="${escapeHtml(run.id)}" type="button">
+        <strong>${escapeHtml(preview(run.prompt))}</strong>
+        <small>${escapeHtml(STATUS_LABELS[run.status] ?? run.status)} · ${escapeHtml(shortId(run.id))}</small>
       </button>
     `,
     )
@@ -82,6 +96,15 @@ function ensureAssistant() {
   return state.assistant;
 }
 
+function addSetupLine(event) {
+  const empty = transcriptEl.querySelector(".empty");
+  if (empty) empty.remove();
+  const line = document.createElement("p");
+  line.className = event.level === "error" || String(event.kind).endsWith("_failed") ? "setup err" : "setup";
+  line.textContent = event.detail ? `${event.title}：${event.detail}` : event.title;
+  transcriptEl.appendChild(line);
+}
+
 function applyEvent(event) {
   if (state.events.has(event.id)) return;
   state.events.set(event.id, event);
@@ -107,13 +130,15 @@ function applyEvent(event) {
     return;
   }
 
-  if (event.kind === "scm.clone_started" || event.kind === "scm.clone_succeeded" || event.kind === "scm.clone_failed") {
-    const empty = transcriptEl.querySelector(".empty");
-    if (empty) empty.remove();
-    const line = document.createElement("p");
-    line.className = event.kind === "scm.clone_failed" ? "setup err" : "setup";
-    line.textContent = event.detail ? `${event.title}：${event.detail}` : event.title;
-    transcriptEl.appendChild(line);
+  if (
+    event.kind === "scm.clone_started" ||
+    event.kind === "scm.clone_succeeded" ||
+    event.kind === "scm.clone_failed" ||
+    event.kind === "run.install_started" ||
+    event.kind === "run.install_succeeded" ||
+    event.kind === "run.install_failed"
+  ) {
+    addSetupLine(event);
     return;
   }
 
@@ -143,6 +168,7 @@ function applyEvent(event) {
     ensureAssistant().querySelector(".body").textContent += `\n${event.title}`;
   }
 
+  if (event.kind === "run.install_started") setStatus("INSTALLING");
   if (event.kind === "run.running" || event.kind === "run.provisioning") setStatus("RUNNING");
   if (event.kind === "run.idle") setStatus("IDLE");
   if (event.kind === "run.archived") setStatus("ARCHIVED");

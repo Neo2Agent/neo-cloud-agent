@@ -11,9 +11,11 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import { mintRunToken } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
-import { publish } from "../events/bus.js";
+import { findInstallTargets, runInstallCommand } from "../env/install.js";
+import { publish, resetHistory, seedEvents } from "../events/bus.js";
 import { getRuntime } from "../runtime/factory.js";
 import { materializeRepos } from "../scm/workspace.js";
+import { loadPersistedEvents, loadPersistedRuns, persistRunRecord } from "../store/persist.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 
 const runs = new Map<string, Run>();
@@ -22,8 +24,68 @@ const inbound = new Map<string, WorkerInbound[]>();
 const runJwts = new Map<string, string>();
 const handles = new Map<string, RuntimeHandle>();
 
+const LIVE_STATUSES = new Set<Run["status"]>([
+  "NOT_YET_STARTED",
+  "PROVISIONING",
+  "INSTALLING",
+  "RUNNING",
+  "WAITING_FOR_BACKGROUND_WORK",
+]);
+
 function now(): string {
   return new Date().toISOString();
+}
+
+function flushRun(runId: string): void {
+  const run = runs.get(runId);
+  if (!run) {
+    return;
+  }
+  persistRunRecord({
+    version: 1,
+    run,
+    followUps: followUps.get(runId) ?? [],
+    inbound: inbound.get(runId) ?? [],
+  });
+}
+
+function failRun(run: Run, message: string, kind: RunEvent["kind"] = "run.error", title = message): void {
+  run.status = "ERROR";
+  run.errorMessage = message;
+  run.updatedAt = now();
+  if (kind !== "run.error") {
+    publish(event(run.id, kind, title, { level: "error", detail: message }));
+  }
+  publish(event(run.id, "run.error", message));
+  flushRun(run.id);
+}
+
+function hydrateFromDisk(): void {
+  for (const record of loadPersistedRuns()) {
+    const run = record.run;
+    runs.set(run.id, run);
+    followUps.set(run.id, record.followUps ?? []);
+    inbound.set(run.id, record.inbound ?? []);
+    seedEvents(run.id, loadPersistedEvents(run.id));
+    if (LIVE_STATUSES.has(run.status)) {
+      run.status = "ERROR";
+      run.errorMessage = "control plane restarted; worker was not recovered";
+      run.updatedAt = now();
+      inbound.set(run.id, []);
+      publish(event(run.id, "run.error", run.errorMessage));
+      flushRun(run.id);
+    }
+  }
+}
+
+export function reloadPersistedState(): void {
+  runs.clear();
+  followUps.clear();
+  inbound.clear();
+  runJwts.clear();
+  handles.clear();
+  resetHistory();
+  hydrateFromDisk();
 }
 
 export function event(runId: string, kind: RunEvent["kind"], title: string, extra?: Partial<RunEvent>): RunEvent {
@@ -138,6 +200,7 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
     }),
   );
   mintJwtForRun(run);
+  flushRun(run.id);
 
   try {
     if (run.repoUrls.length > 0) {
@@ -154,14 +217,44 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
           },
         }),
       );
+      flushRun(run.id);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "workspace prepare failed";
-    run.status = "ERROR";
-    run.errorMessage = message;
-    run.updatedAt = now();
-    publish(event(run.id, "scm.clone_failed", "Workspace prepare failed", { level: "error", detail: message }));
-    publish(event(run.id, "run.error", message));
+    failRun(run, message, "scm.clone_failed", "Workspace prepare failed");
+    return run;
+  }
+
+  try {
+    const targets = findInstallTargets(workspaceFor(run.id));
+    if (targets.length > 0) {
+      run.status = "INSTALLING";
+      run.setupStatus = "INSTALL_STARTED";
+      run.updatedAt = now();
+      publish(
+        event(run.id, "run.install_started", "Running environment install", {
+          data: { files: targets.map((item) => item.file) },
+        }),
+      );
+      flushRun(run.id);
+      for (const target of targets) {
+        const result = await runInstallCommand(target.cwd, target.command);
+        if (result.code !== 0) {
+          const message = (result.stderr || result.stdout || `install exited ${result.code}`).trim().slice(-4000);
+          run.setupStatus = "INSTALL_FAILED";
+          failRun(run, message || `install exited ${result.code}`, "run.install_failed", "Environment install failed");
+          return run;
+        }
+      }
+      run.setupStatus = "INSTALL_SUCCEEDED";
+      run.updatedAt = now();
+      publish(event(run.id, "run.install_succeeded", "Environment install finished"));
+      flushRun(run.id);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "environment install failed";
+    run.setupStatus = "INSTALL_FAILED";
+    failRun(run, message, "run.install_failed", "Environment install failed");
     return run;
   }
 
@@ -177,6 +270,7 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
           current.errorMessage = `worker exited with code ${code}`;
           current.updatedAt = now();
           publish(event(run.id, "run.error", current.errorMessage));
+          flushRun(run.id);
         }
       },
     });
@@ -185,12 +279,10 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
     run.status = "RUNNING";
     run.updatedAt = now();
     publish(event(run.id, "run.running", runningTitle()));
+    flushRun(run.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "worker provision failed";
-    run.status = "ERROR";
-    run.errorMessage = message;
-    run.updatedAt = now();
-    publish(event(run.id, "run.error", message));
+    failRun(run, message);
     return run;
   }
   return run;
@@ -231,6 +323,7 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
         run.idleAt = now();
         run.updatedAt = now();
         publish(event(runId, "run.idle", "Agent turn finished"));
+        flushRun(runId);
       }
     }
     if (item.kind === "agent.start") {
@@ -239,6 +332,7 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
         run.status = "RUNNING";
         run.idleAt = null;
         run.updatedAt = now();
+        flushRun(runId);
       }
     }
   }
@@ -278,6 +372,7 @@ export function enqueueFollowUp(runId: string, input: CreateFollowUpRequest): Fo
       data: { text: input.text, followUpId: item.id, delivery },
     }),
   );
+  flushRun(runId);
   return item;
 }
 
@@ -295,6 +390,7 @@ export function takeInbound(runId: string): WorkerInbound[] {
       item.deliveredAt = deliveredAt;
     }
   }
+  flushRun(runId);
   return queued;
 }
 
@@ -312,6 +408,7 @@ export async function archiveRun(runId: string): Promise<Run> {
     handles.delete(runId);
   }
   publish(event(runId, "run.archived", "Run archived"));
+  flushRun(runId);
   return run;
 }
 
@@ -322,5 +419,8 @@ export function abortRun(runId: string): Run {
   }
   inbound.get(runId)?.push({ type: "abort" });
   run.updatedAt = now();
+  flushRun(runId);
   return run;
 }
+
+hydrateFromDisk();

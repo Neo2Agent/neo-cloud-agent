@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { materializeRepos, repoName, resolveRepoRef } from "./workspace.js";
+import { materializeRepos, repoName, resolveRepoRef, skipCopy } from "./workspace.js";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
 
@@ -21,6 +21,13 @@ test("resolves GitHub shorthand and local fixture paths", () => {
   assert.equal(repoName("https://github.com/acme/app.git"), "app");
 });
 
+test("skipCopy keeps environment.json and drops run workspaces", () => {
+  assert.equal(skipCopy("/repo/.neo/environment.json"), false);
+  assert.equal(skipCopy("/repo/.neo/runs/abc/hello.txt"), true);
+  assert.equal(skipCopy("/repo/node_modules/pkg"), true);
+  assert.equal(skipCopy("/repo/.control/run.json"), true);
+});
+
 test("copies a local fixture into the run workspace", async () => {
   const dest = mkdtempSync(path.join(tmpdir(), "neo-ws-"));
   try {
@@ -28,6 +35,7 @@ test("copies a local fixture into the run workspace", async () => {
     assert.equal(placed.length, 1);
     assert.equal(readFileSync(path.join(dest, "hello.txt"), "utf8").trim(), "hello from the toy repo");
     assert.equal(readFileSync(path.join(dest, "test.sh"), "utf8").includes("README.md"), true);
+    assert.match(readFileSync(path.join(dest, ".neo/environment.json"), "utf8"), /install/);
   } finally {
     rmSync(dest, { recursive: true, force: true });
   }

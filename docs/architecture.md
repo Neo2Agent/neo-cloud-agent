@@ -752,10 +752,10 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 合约已经放在 `packages/contracts`。下一刀代码建议是（仍在本 monorepo）：
 
-P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已经通了。下一刀仍在本 monorepo：
+P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已经通了。`install` 会在 clone 之后、worker 起来之前执行；Run 和事件写在 `RUNS_DIR/.control`，控制面重启后侧边栏还在。下一刀仍在本 monorepo：
 
 1. P1 SCM：短寿命 token、受控 commit、draft PR
-2. 读 `.neo/environment.json` 并跑 `install`
-3. Run / 事件持久化，重启不丢对话
+2. 冷启动后跑 `start` / `terminals`（不要塞进 `install`）
+3. Session JSONL 备份与 secrets 打码
 
 换 Firecracker 只换 Runtime，不换 Agent，也不拆仓。

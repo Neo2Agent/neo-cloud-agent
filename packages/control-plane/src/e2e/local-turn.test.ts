@@ -47,6 +47,7 @@ test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
   const run = (await created.json()) as { id: string; status: string; errorMessage: string | null };
   assert.equal(run.status, "RUNNING", run.errorMessage ?? "");
   assert.ok(existsSync(path.join(runsDir, run.id, "hello.txt")));
+  assert.ok(existsSync(path.join(runsDir, run.id, ".neo-installed")));
 
   const result = await waitForRun(`http://127.0.0.1:${apiPort}`, run.id, 60_000);
   assert.notEqual(result.status, "ERROR", result.errorMessage ?? result.kinds.join(","));
