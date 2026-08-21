@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  llmSettingsFile,
   parseLlmSettingsRequest,
   publicLlmSettings,
   readLlmSettings,
@@ -31,6 +32,29 @@ test("writeLlmSettings keeps the existing key when the request omits it", () => 
   assert.equal(published.upstream, "openai");
   assert.equal(readLlmSettings(root)?.apiKey, "sk-keep-me");
   assert.match(readFileSync(path.join(root, ".neo", "llm-upstream.env"), "utf8"), /OPENAI_API_KEY=sk-keep-me/);
+});
+
+test("readLlmSettings walks up from a package cwd to the workspace root", () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "neo-llm-root-"));
+  writeFileSync(path.join(workspace, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+  mkdirSync(path.join(workspace, "packages", "control-plane"), { recursive: true });
+  writeLlmSettings({ upstream: "deepseek", apiKey: "sk-workspace-root" }, workspace);
+  const previous = process.cwd();
+  const previousDir = process.env.LLM_SETTINGS_DIR;
+  delete process.env.LLM_SETTINGS_DIR;
+  try {
+    process.chdir(path.join(workspace, "packages", "control-plane"));
+    const read = readLlmSettings();
+    assert.equal(read?.apiKey, "sk-workspace-root");
+    assert.equal(path.basename(path.dirname(path.dirname(llmSettingsFile()))), path.basename(workspace));
+  } finally {
+    process.chdir(previous);
+    if (previousDir === undefined) {
+      delete process.env.LLM_SETTINGS_DIR;
+    } else {
+      process.env.LLM_SETTINGS_DIR = previousDir;
+    }
+  }
 });
 
 test("parseLlmSettingsRequest rejects a missing upstream and multiline keys", () => {

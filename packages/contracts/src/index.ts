@@ -77,6 +77,7 @@ export {
   defaultLlmModel,
   llmSettingsFile,
   parseLlmSettingsRequest,
+  resolveLlmSettingsRoot,
   publicLlmSettings,
   readLlmSettings,
   writeLlmSettings,

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export type LlmUpstreamMode = "mock" | "openai" | "deepseek";
@@ -23,7 +23,25 @@ export interface LlmSettingsRequest {
 
 const FILE_NAME = path.join(".neo", "llm-upstream.env");
 
-export function llmSettingsFile(root = process.env.LLM_SETTINGS_DIR || process.cwd()): string {
+export function resolveLlmSettingsRoot(start = process.cwd()): string {
+  if (process.env.LLM_SETTINGS_DIR) {
+    return process.env.LLM_SETTINGS_DIR;
+  }
+  let dir = path.resolve(start);
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  return path.resolve(start);
+}
+
+export function llmSettingsFile(root = resolveLlmSettingsRoot()): string {
   return path.join(root, FILE_NAME);
 }
 
