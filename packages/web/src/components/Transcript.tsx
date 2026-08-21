@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef } from "react";
-import { transcriptBlocks } from "@neo-cloud-agent/contracts/transcript";
+import { Fragment, useLayoutEffect, useRef } from "react";
+import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { fileToolDiff, toolArgPreview } from "../format";
 import { MarkdownBody } from "../markdown";
@@ -154,28 +154,36 @@ export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
               </article>
             );
           }
-          const blocks = transcriptBlocks(message);
-          if (blocks.length === 0) {
+          const groups = transcriptGroups(message);
+          if (groups.length === 0) {
             return null;
           }
           return (
-            <article key={message.id} className="bubble assistant">
-              <span className="who">Agent</span>
-              {blocks.map((block, index) => {
-                if (block.type === "tool") {
-                  return <ToolCard key={block.tool.id ?? `${block.tool.name}-${index}`} tool={block.tool} />;
+            <Fragment key={message.id}>
+              {groups.map((group, index) => {
+                if (group.type === "tools") {
+                  return (
+                    <div key={`${message.id}-tools-${index}`} className="tool-stack">
+                      <span className="who">工具</span>
+                      {group.tools.map((tool, toolIndex) => (
+                        <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
+                      ))}
+                    </div>
+                  );
                 }
-                const lastText = !blocks.slice(index + 1).some((item) => item.type === "text");
+                const lastText = !groups.slice(index + 1).some((item) => item.type === "text");
                 return (
-                  <MarkdownBody
-                    key={`text-${index}`}
-                    text={block.text}
-                    className="body"
-                    streaming={Boolean(message.streaming && lastText)}
-                  />
+                  <article key={`${message.id}-text-${index}`} className="bubble assistant">
+                    <span className="who">Agent</span>
+                    <MarkdownBody
+                      text={group.text}
+                      className="body"
+                      streaming={Boolean(message.streaming && lastText)}
+                    />
+                  </article>
                 );
               })}
-            </article>
+            </Fragment>
           );
         })
       )}

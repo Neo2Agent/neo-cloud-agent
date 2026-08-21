@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { toRunEvents } from "./events.js";
+import { stampWorkerSeq, toRunEvents } from "./events.js";
 
 test("maps pi session events to RunEvents", () => {
   const start = toRunEvents("run1", { type: "agent_start" });
@@ -57,6 +57,20 @@ test("maps token usage on agent_end", () => {
   assert.equal(events[0]?.kind, "agent.end");
   assert.equal(events[1]?.kind, "llm.usage");
   assert.deepEqual(events[1]?.data, { promptTokens: 12, completionTokens: 4, totalTokens: 16 });
+});
+
+test("stamps a monotonic workerSeq onto each event", () => {
+  const next = { value: 0 };
+  const first = stampWorkerSeq(toRunEvents("run1", { type: "agent_start" }), next);
+  const second = stampWorkerSeq(
+    toRunEvents("run1", {
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Hi" },
+    }),
+    next,
+  );
+  assert.equal(first[0]?.data?.workerSeq, 1);
+  assert.equal(second[0]?.data?.workerSeq, 2);
 });
 
 test("ignores unknown or empty deltas", () => {

@@ -47,6 +47,15 @@ export async function pushEvents(runId: string, events: RunEvent[]): Promise<voi
   }
 }
 
+let pushChain: Promise<void> = Promise.resolve();
+
+/** Keep tool/text events in emission order even when HTTP posts overlap. */
+export function enqueueEvents(runId: string, events: RunEvent[]): Promise<void> {
+  const done = pushChain.then(() => pushEvents(runId, events));
+  pushChain = done.catch(() => undefined);
+  return done;
+}
+
 export async function requestGitToken(
   runId: string,
   input: { repoUrl?: string; scope: "clone" | "push" },

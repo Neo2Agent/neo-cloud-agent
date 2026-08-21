@@ -385,9 +385,20 @@ h1 {
   white-space: normal;
 }
 
-.tool + .md,
-.md + .tool {
-  margin-top: 10px;
+.tool-stack {
+  align-self: flex-start;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-stack .who {
+  margin-bottom: 0;
+}
+
+.tool-stack .tool {
+  margin-top: 0;
 }
 
 .md-p,

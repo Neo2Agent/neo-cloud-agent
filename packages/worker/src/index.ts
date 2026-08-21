@@ -1,9 +1,9 @@
 import type { EgressPolicy, RunEvent } from "@neo-cloud-agent/contracts";
 import { getWorkerConfig } from "./config.js";
 import { runWorkspaceBoot, stopTerminals } from "./boot.js";
-import { downloadSession, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
+import { downloadSession, enqueueEvents, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
 import { installEgressGuard, policyFromEnv } from "./egress.js";
-import { toRunEvents } from "./events.js";
+import { stampWorkerSeq, toRunEvents } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
 
@@ -21,6 +21,7 @@ async function backupSession(runId: string, sessionDir: string): Promise<void> {
 
 async function main(): Promise<void> {
   const config = getWorkerConfig();
+  const workerSeq = { value: 0 };
   if (!config.runId) {
     console.log("worker image entrypoint. Set RUN_ID to attach to a control-plane run.");
     return;
@@ -50,7 +51,7 @@ async function main(): Promise<void> {
       detail: decision.reason,
       data: { host: decision.host, mode: decision.mode },
     };
-    pushEvents(config.runId, [event]).catch((error: unknown) => {
+    enqueueEvents(config.runId, stampWorkerSeq([event], workerSeq)).catch((error: unknown) => {
       console.error("failed to report egress denial", error);
     });
   });
@@ -60,7 +61,7 @@ async function main(): Promise<void> {
 
   const boot = await runWorkspaceBoot({ runId: config.runId, workspaceDir });
   if (boot.events.length > 0) {
-    await pushEvents(config.runId, boot.events);
+    await pushEvents(config.runId, stampWorkerSeq(boot.events, workerSeq));
   }
   if (boot.fatal) {
     stopTerminals(boot.terminals);
@@ -84,8 +85,8 @@ async function main(): Promise<void> {
   });
 
   const unsubscribe = session.subscribe((event) => {
-    const mapped = toRunEvents(config.runId, event);
-    pushEvents(config.runId, mapped).catch((error: unknown) => {
+    const mapped = stampWorkerSeq(toRunEvents(config.runId, event), workerSeq);
+    enqueueEvents(config.runId, mapped).catch((error: unknown) => {
       console.error("failed to push events", error);
     });
     if (mapped.some((item) => item.kind === "agent.end")) {

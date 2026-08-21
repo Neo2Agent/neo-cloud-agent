@@ -77,6 +77,11 @@ export type TranscriptBlock =
   | { type: "text"; text: string }
   | { type: "tool"; tool: TranscriptTool };
 
+/** Consecutive text or tool rows so research cards are not a footer under the reply. */
+export type TranscriptGroup =
+  | { type: "text"; text: string }
+  | { type: "tools"; tools: TranscriptTool[] };
+
 /** Compact catch-up view so a late subscriber does not replay every token. */
 export interface TranscriptMessage {
   id: string;

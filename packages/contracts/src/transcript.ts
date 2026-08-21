@@ -1,4 +1,11 @@
-import type { RunEvent, TranscriptBlock, TranscriptMessage, TranscriptSnapshot, TranscriptTool } from "./events.js";
+import type {
+  RunEvent,
+  TranscriptBlock,
+  TranscriptGroup,
+  TranscriptMessage,
+  TranscriptSnapshot,
+  TranscriptTool,
+} from "./events.js";
 
 const SETUP_PREFIXES = [
   "scm.",
@@ -23,6 +30,31 @@ function toolKey(event: RunEvent): string {
     return callId;
   }
   return event.id;
+}
+
+function workerSeq(event: RunEvent): number | null {
+  const value = event.data?.workerSeq;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** Restore emission order when HTTP ingest races or clocks stay close. */
+export function sortRunEvents(events: RunEvent[]): RunEvent[] {
+  return events
+    .map((event, index) => ({ event, index }))
+    .sort((left, right) => {
+      const leftSeq = workerSeq(left.event);
+      const rightSeq = workerSeq(right.event);
+      if (leftSeq != null && rightSeq != null && leftSeq !== rightSeq) {
+        return leftSeq - rightSeq;
+      }
+      const leftAt = Date.parse(left.event.createdAt) || 0;
+      const rightAt = Date.parse(right.event.createdAt) || 0;
+      if (leftAt !== rightAt) {
+        return leftAt - rightAt;
+      }
+      return left.index - right.index;
+    })
+    .map((item) => item.event);
 }
 
 function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTool {
@@ -71,6 +103,10 @@ function appendText(assistant: TranscriptMessage, delta: string): void {
   assistant.blocks.push({ type: "text", text: delta });
 }
 
+function hasAssistantContent(assistant: TranscriptMessage): boolean {
+  return Boolean(assistant.text.trim() || (assistant.tools && assistant.tools.length > 0));
+}
+
 export function transcriptBlocks(message: TranscriptMessage): TranscriptBlock[] {
   if (message.blocks && message.blocks.length > 0) {
     return message.blocks.filter((block) => block.type !== "text" || block.text.trim().length > 0);
@@ -85,8 +121,31 @@ export function transcriptBlocks(message: TranscriptMessage): TranscriptBlock[] 
   return blocks;
 }
 
+export function transcriptGroups(message: TranscriptMessage): TranscriptGroup[] {
+  const groups: TranscriptGroup[] = [];
+  for (const block of transcriptBlocks(message)) {
+    if (block.type === "tool") {
+      const last = groups.at(-1);
+      if (last?.type === "tools") {
+        last.tools.push(block.tool);
+      } else {
+        groups.push({ type: "tools", tools: [block.tool] });
+      }
+      continue;
+    }
+    const last = groups.at(-1);
+    if (last?.type === "text") {
+      last.text += block.text;
+    } else {
+      groups.push({ type: "text", text: block.text });
+    }
+  }
+  return groups;
+}
+
 /** Compact catch-up view so a late subscriber does not replay every token. */
 export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): TranscriptSnapshot {
+  const ordered = sortRunEvents(events);
   const messages: TranscriptMessage[] = [];
   const open: { assistant: TranscriptMessage | null } = { assistant: null };
 
@@ -96,7 +155,7 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
       return;
     }
     assistant.streaming = false;
-    if (!assistant.text && !(assistant.tools && assistant.tools.length > 0)) {
+    if (!hasAssistantContent(assistant)) {
       const index = messages.lastIndexOf(assistant);
       if (index >= 0) {
         messages.splice(index, 1);
@@ -121,7 +180,7 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
     return open.assistant;
   };
 
-  for (const event of events) {
+  for (const event of ordered) {
     if (event.kind === "user.message") {
       finishAssistant();
       const images = Array.isArray(event.data?.images)
@@ -147,16 +206,25 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
       continue;
     }
     if (event.kind === "message.start") {
+      if (open.assistant && hasAssistantContent(open.assistant)) {
+        finishAssistant();
+      }
       ensureAssistant(event).streaming = true;
       continue;
     }
     if (event.kind === "message.delta") {
+      if (open.assistant?.tools?.length && !open.assistant.streaming) {
+        finishAssistant();
+      }
       appendText(ensureAssistant(event), String(event.data?.delta ?? ""));
       continue;
     }
     if (event.kind === "message.end") {
       if (open.assistant) {
         open.assistant.streaming = false;
+        if (open.assistant.text.trim()) {
+          finishAssistant();
+        }
       }
       continue;
     }
@@ -165,6 +233,9 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
       continue;
     }
     if (event.kind === "tool.start" || event.kind === "tool.update" || event.kind === "tool.end") {
+      if (open.assistant?.text.trim() && open.assistant.streaming === false) {
+        finishAssistant();
+      }
       upsertTool(ensureAssistant(event), event);
       continue;
     }

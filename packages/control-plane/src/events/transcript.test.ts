@@ -40,7 +40,7 @@ test("snapshot collapses token deltas for late subscribers", () => {
   assert.equal(setup?.text, "Workspace ready");
 });
 
-test("tools after message.end stay on the same assistant and keep args/output", () => {
+test("tools after message.end stay between the intro and the reply", () => {
   const snapshot = buildTranscriptSnapshot("run-1", [
     ev({ id: "u1", kind: "user.message", data: { text: "ls" } }),
     ev({ id: "a1", kind: "agent.start" }),
@@ -58,23 +58,23 @@ test("tools after message.end stay on the same assistant and keep args/output", 
       data: { toolCallId: "call-1", toolName: "bash", output: "README.md\n", isError: false },
     }),
     ev({ id: "m2", kind: "message.start" }),
-    ev({ id: "d2", kind: "message.delta", data: { delta: " There is a README." } }),
+    ev({ id: "d2", kind: "message.delta", data: { delta: "There is a README." } }),
     ev({ id: "e2", kind: "message.end" }),
     ev({ id: "z1", kind: "agent.end" }),
   ]);
   const assistants = snapshot.messages.filter((item) => item.role === "assistant");
-  assert.equal(assistants.length, 1);
-  assert.equal(assistants[0]?.text, "Let me look. There is a README.");
   assert.deepEqual(
-    assistants[0]?.blocks?.map((block) => block.type),
-    ["text", "tool", "text"],
+    assistants.map((item) => ({
+      text: item.text,
+      tools: (item.tools ?? []).map((tool) => tool.name),
+    })),
+    [
+      { text: "Let me look.", tools: [] },
+      { text: "", tools: ["bash"] },
+      { text: "There is a README.", tools: [] },
+    ],
   );
-  assert.equal(assistants[0]?.blocks?.[0]?.type === "text" ? assistants[0].blocks[0].text : "", "Let me look.");
-  assert.equal(
-    assistants[0]?.blocks?.[2]?.type === "text" ? assistants[0].blocks[2].text : "",
-    " There is a README.",
-  );
-  assert.deepEqual(assistants[0]?.tools, [
+  assert.deepEqual(assistants[1]?.tools, [
     {
       id: "call-1",
       name: "bash",
@@ -135,13 +135,59 @@ test("tools that run before the final reply stay above that reply", () => {
     ev({ id: "e1", kind: "message.end" }),
     ev({ id: "z1", kind: "agent.end" }),
   ]);
-  const blocks = snapshot.messages.find((item) => item.role === "assistant")?.blocks ?? [];
+  const assistants = snapshot.messages.filter((item) => item.role === "assistant");
+  assert.equal(assistants[0]?.tools?.[0]?.name, "neo_browse");
+  assert.equal(assistants[0]?.text, "");
+  assert.equal(assistants[1]?.text, "According to the page, this is example.com.");
+  assert.equal(assistants[1]?.tools?.length ?? 0, 0);
+});
+
+test("late tool posts still sit between the intro and the reply", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "research this" } }),
+    ev({ id: "a1", kind: "agent.start", data: { workerSeq: 1 }, createdAt: "2026-08-21T00:00:01.000Z" }),
+    ev({ id: "m1", kind: "message.start", data: { workerSeq: 2 }, createdAt: "2026-08-21T00:00:02.000Z" }),
+    ev({
+      id: "d1",
+      kind: "message.delta",
+      data: { delta: "Let me check.", workerSeq: 3 },
+      createdAt: "2026-08-21T00:00:03.000Z",
+    }),
+    ev({ id: "e1", kind: "message.end", data: { workerSeq: 4 }, createdAt: "2026-08-21T00:00:04.000Z" }),
+    ev({ id: "m2", kind: "message.start", data: { workerSeq: 8 }, createdAt: "2026-08-21T00:00:08.000Z" }),
+    ev({
+      id: "d2",
+      kind: "message.delta",
+      data: { delta: "According to the page, this is example.com.", workerSeq: 9 },
+      createdAt: "2026-08-21T00:00:09.000Z",
+    }),
+    ev({ id: "e2", kind: "message.end", data: { workerSeq: 10 }, createdAt: "2026-08-21T00:00:10.000Z" }),
+    ev({
+      id: "t0",
+      kind: "tool.start",
+      data: { workerSeq: 5, toolCallId: "browse-1", toolName: "neo_browse" },
+      createdAt: "2026-08-21T00:00:05.000Z",
+    }),
+    ev({
+      id: "t1",
+      kind: "tool.end",
+      data: { workerSeq: 6, toolCallId: "browse-1", toolName: "neo_browse", output: "Example Domain" },
+      createdAt: "2026-08-21T00:00:06.000Z",
+    }),
+    ev({ id: "z1", kind: "agent.end", data: { workerSeq: 11 }, createdAt: "2026-08-21T00:00:11.000Z" }),
+  ]);
+  const assistants = snapshot.messages.filter((item) => item.role === "assistant");
   assert.deepEqual(
-    blocks.map((block) => block.type),
-    ["tool", "text"],
+    assistants.map((item) => ({
+      text: item.text,
+      tools: (item.tools ?? []).map((tool) => tool.name),
+    })),
+    [
+      { text: "Let me check.", tools: [] },
+      { text: "", tools: ["neo_browse"] },
+      { text: "According to the page, this is example.com.", tools: [] },
+    ],
   );
-  assert.equal(blocks[0]?.type === "tool" ? blocks[0].tool.name : "", "neo_browse");
-  assert.equal(blocks[1]?.type === "text" ? blocks[1].text : "", "According to the page, this is example.com.");
 });
 
 test("empty assistant turns without tools are dropped", () => {

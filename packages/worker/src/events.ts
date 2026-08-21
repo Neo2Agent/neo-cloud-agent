@@ -87,6 +87,13 @@ function makeEvent(runId: string, kind: RunEventKind, title: string, data?: Reco
   };
 }
 
+export function stampWorkerSeq(events: RunEvent[], next: { value: number }): RunEvent[] {
+  return events.map((event) => ({
+    ...event,
+    data: { ...event.data, workerSeq: ++next.value },
+  }));
+}
+
 /** Map a pi AgentSession event onto one or more control-plane RunEvents. */
 export function toRunEvents(runId: string, event: LooseAgentEvent): RunEvent[] {
   switch (event.type) {
