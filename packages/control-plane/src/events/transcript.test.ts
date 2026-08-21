@@ -77,6 +77,22 @@ test("tools after message.end stay on the same assistant and keep args/output", 
   ]);
 });
 
+test("two bash calls without toolCallId stay as separate tools", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "ls twice" } }),
+    ev({ id: "a1", kind: "agent.start" }),
+    ev({ id: "s1", kind: "tool.start", data: { toolName: "bash", args: { command: "pwd" } } }),
+    ev({ id: "e1", kind: "tool.end", data: { toolName: "bash", isError: false } }),
+    ev({ id: "s2", kind: "tool.start", data: { toolName: "bash", args: { command: "ls" } } }),
+    ev({ id: "e2", kind: "tool.end", data: { toolName: "bash", isError: false } }),
+    ev({ id: "z1", kind: "agent.end" }),
+  ]);
+  const tools = snapshot.messages.find((item) => item.role === "assistant")?.tools ?? [];
+  assert.equal(tools.length, 2);
+  assert.equal(tools[0]?.args && (tools[0].args as { command?: string }).command, "pwd");
+  assert.equal(tools[1]?.args && (tools[1].args as { command?: string }).command, "ls");
+});
+
 test("empty assistant turns without tools are dropped", () => {
   const snapshot = buildTranscriptSnapshot("run-1", [
     ev({ id: "a1", kind: "agent.start" }),

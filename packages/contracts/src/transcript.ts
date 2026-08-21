@@ -7,7 +7,11 @@ export function isSetupKind(kind: string): boolean {
 }
 
 function toolKey(event: RunEvent): string {
-  return String(event.data?.toolCallId ?? event.data?.toolName ?? event.id);
+  const callId = event.data?.toolCallId;
+  if (typeof callId === "string" && callId) {
+    return callId;
+  }
+  return event.id;
 }
 
 function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTool {
