@@ -31,8 +31,6 @@ flowchart LR
 
 ## 本地
 
-Node 22+，用 pnpm：
-
 需要 **Node 22.19+**（pi-coding-agent 的 engines）。用 pnpm：
 
 ```bash

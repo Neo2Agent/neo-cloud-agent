@@ -1,3 +1,10 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+function repoRoot(): string {
+  return fileURLToPath(new URL("../../..", import.meta.url));
+}
+
 export function getConfig() {
   return {
     port: Number(process.env.CONTROL_PLANE_PORT ?? 8080),
@@ -12,6 +19,6 @@ export function getConfig() {
       "",
     ),
     spawnLocalWorker: process.env.SPAWN_LOCAL_WORKER !== "0",
-    runsDir: process.env.RUNS_DIR ?? `${process.cwd()}/.neo/runs`,
+    runsDir: process.env.RUNS_DIR ?? path.join(repoRoot(), ".neo/runs"),
   };
 }
