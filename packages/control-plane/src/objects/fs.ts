@@ -2,9 +2,9 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import path from "node:path";
 import type { ObjectStore } from "./store.js";
 
-function walk(dir: string, prefix: string, root: string): string[] {
+function walk(dir: string, prefix: string): string[] {
   const out: string[] = [];
-  let entries: ReturnType<typeof readdirSync>;
+  let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
   } catch {
@@ -14,7 +14,7 @@ function walk(dir: string, prefix: string, root: string): string[] {
     const full = path.join(dir, entry.name);
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
-      out.push(...walk(full, rel, root));
+      out.push(...walk(full, rel));
       continue;
     }
     out.push(rel.replaceAll(path.sep, "/"));
@@ -62,7 +62,7 @@ export function createFsObjectStore(runsDir: string): ObjectStore {
       } catch {
         return [];
       }
-      return walk(dir, relative, root).sort();
+      return walk(dir, relative).sort();
     },
   };
 }
