@@ -22,6 +22,10 @@
         <button class="new-chat" id="new-chat" type="button">新对话</button>
         <div class="run-list" id="run-list"></div>
         <footer class="sidebar-foot">
+          <div class="account" id="account" hidden>
+            <span id="account-email"></span>
+            <button type="button" id="logout">退出</button>
+          </div>
           <span id="health">检测服务…</span>
           <span>pi-agent · :8080</span>
         </footer>
@@ -70,11 +74,20 @@
     </div>
     <div class="auth-gate" id="auth-gate" hidden>
       <form class="auth-card" id="auth-form">
-        <h2>输入访问令牌</h2>
-        <p>控制面已开启鉴权。把 <code>CONTROL_PLANE_TOKEN</code> 填在下面，多个设备用同一条令牌即可订阅同一条流。</p>
-        <input id="auth-token" name="token" type="password" autocomplete="current-password" placeholder="neo_…" required />
+        <h2 id="auth-title">登录</h2>
+        <p id="auth-copy">用邮箱登录后，多个设备可以订阅你自己的对话流。</p>
+        <div class="auth-tabs" id="auth-tabs">
+          <button type="button" data-mode="login" class="active">登录</button>
+          <button type="button" data-mode="register">注册</button>
+          <button type="button" data-mode="token">服务令牌</button>
+        </div>
+        <div id="auth-user-fields">
+          <input id="auth-email" name="email" type="email" autocomplete="username" placeholder="邮箱" />
+          <input id="auth-password" name="password" type="password" autocomplete="current-password" placeholder="密码（至少 8 位）" />
+        </div>
+        <input id="auth-token" name="token" type="password" autocomplete="current-password" placeholder="neo_…" hidden />
         <p class="auth-error" id="auth-error" hidden></p>
-        <button type="submit">进入</button>
+        <button type="submit" id="auth-submit">进入</button>
       </form>
     </div>
     <script type="module" src="/app.js"></script>

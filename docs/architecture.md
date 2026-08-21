@@ -752,11 +752,11 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 合约已经放在 `packages/contracts`。下一刀代码建议是（仍在本 monorepo）：
 
-P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已经通了。`install` 会在 clone 之后、worker 起来之前执行；Run 和事件写在 `RUNS_DIR/.control`，控制面重启后侧边栏还在。GitHub App、IDLE session 恢复、多端订阅流、对象存储归档、以及 `start` 失败策略已经落地。下一刀仍在本 monorepo：
+P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数据、以及邮箱用户账号已经落地（没配服务时仍回退到本机文件 / 内存）。下一刀仍在本 monorepo：
 
-1. 真隔离 Runtime（Firecracker）；只换 Runtime，不换 Agent，也不拆仓
-2. Redis 热流（现在是单进程 EventEmitter 扇出；多端订阅已经按同一条 Run 流来）
-3. Postgres 里的 Run 元数据（现在仍是 `.control` JSON）
+1. Environment Builds / warm pool（从成功 install 的盘 fork，而不是每次冷装）
+2. Firecracker 生产 rootfs（内核 + 含 worker 的盘 + vsock 控制通道）
+3. 配额、多租户计费、组织成员
 
 控制面重启后续上 RUNNING Worker、以及对外 API 令牌鉴权已经落地。
 
@@ -767,4 +767,7 @@ P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已�
 - `start` 失败默认不阻断 Agent（和 Cursor 一样，只记 `START_FAILED`）。`environment.json` 里 `startMustSucceed: true` 或 `START_MUST_SUCCEED=1` 才会让 worker 退出、Run 变 ERROR。
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
 - 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。已经挂上的 handle 以进程/容器退出为准，不会因为一次长工具调用没心跳就被标 ERROR。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
-- 对外 `/v1` 用 `CONTROL_PLANE_TOKEN`（Bearer / Cookie / `access_token`）。Worker 走 `/internal`，只带 run JWT。`/health` 和静态页不需要令牌。
+- 对外 `/v1` 用用户 session（`POST /v1/auth/register|login`）或 `CONTROL_PLANE_TOKEN`。`ACCOUNTS_REQUIRED=1` 时必须登录。Worker 走 `/internal`，只带 run JWT。`/health` 和静态页不需要令牌。
+- 设了 `DATABASE_URL` 后，Run / 事件 / 用户写入 Postgres；没配则继续用 `.control` JSON。
+- 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。
+- `WORKER_RUNTIME=firecracker` 走 Firecracker HTTP API（kernel / rootfs / tap / vsock）。开发机没配内核时继续用 local / docker。

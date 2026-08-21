@@ -1,0 +1,102 @@
+import { setAccountStore } from "./accounts/store.js";
+import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
+import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
+import { reloadPersistedState } from "./orchestrator/orchestrator.js";
+import { connectPostgres, type PostgresMetadataStore } from "./store/postgres.js";
+import { persistRunRecord, persistWorkerLease, replacePersistedEvents, setPersistHooks } from "./store/persist.js";
+
+let started: Promise<void> | null = null;
+let postgres: PostgresMetadataStore | null = null;
+let redis: RedisHotClient | null = null;
+let metadataKind: "fs" | "postgres" = "fs";
+let eventBusKind: "memory" | "redis" = "memory";
+
+export function platformInfo() {
+  return {
+    metadataStore: metadataKind,
+    eventBus: eventBusKind,
+  };
+}
+
+export function getPostgresStore(): PostgresMetadataStore | null {
+  return postgres;
+}
+
+export function getRedisClient(): RedisHotClient | null {
+  return redis;
+}
+
+export async function startPlatform(): Promise<void> {
+  started ??= doStart();
+  return started;
+}
+
+export function resetPlatformForTests(): void {
+  started = null;
+  postgres = null;
+  redis = null;
+  metadataKind = "fs";
+  eventBusKind = "memory";
+  setPersistHooks({});
+  attachHotBus(null);
+}
+
+async function doStart(): Promise<void> {
+  const databaseUrl = (process.env.DATABASE_URL ?? "").trim();
+  const redisUrl = (process.env.REDIS_URL ?? "").trim();
+  if (databaseUrl) {
+    postgres = await connectPostgres(databaseUrl);
+    metadataKind = "postgres";
+    setAccountStore(postgres);
+    setPersistHooks({
+      onRun: (record) => {
+        void postgres?.saveRun(record).catch((error) => console.error("postgres saveRun failed", error));
+      },
+      onEvent: (event) => {
+        void postgres?.saveEvent(event).catch((error) => console.error("postgres saveEvent failed", error));
+      },
+      onLease: (lease) => {
+        void postgres?.saveLease(lease).catch((error) => console.error("postgres saveLease failed", error));
+      },
+      onDeleteLease: (runId) => {
+        void postgres?.deleteLease(runId).catch((error) => console.error("postgres deleteLease failed", error));
+      },
+    });
+    await hydrateFromPostgres(postgres);
+    reloadPersistedState();
+    console.log("control-plane metadata store: postgres");
+  }
+  if (redisUrl) {
+    redis = await connectRedis(redisUrl);
+    eventBusKind = "redis";
+    attachHotBus({
+      publish(event) {
+        const payload = JSON.stringify(event);
+        void redis?.xAdd(runStreamKey(event.runId), payload).catch((error) => console.error("redis xadd failed", error));
+        void redis?.publish(runChannel(event.runId), payload).catch((error) => console.error("redis publish failed", error));
+      },
+    });
+    await redis.pSubscribe("neo:run:*", (message) => {
+      const event = parseHotEvent(message);
+      if (event) {
+        ingestRemoteEvent(event);
+      }
+    });
+    console.log("control-plane event bus: redis");
+  }
+}
+
+async function hydrateFromPostgres(store: PostgresMetadataStore): Promise<void> {
+  const records = await store.loadRuns();
+  for (const record of records) {
+    persistRunRecord(record, undefined, { mirror: false });
+    const events = await store.loadEvents(record.run.id);
+    if (events.length > 0) {
+      replacePersistedEvents(record.run.id, events);
+    }
+    const lease = await store.loadLease(record.run.id);
+    if (lease) {
+      persistWorkerLease(lease, undefined, { mirror: false });
+    }
+  }
+}

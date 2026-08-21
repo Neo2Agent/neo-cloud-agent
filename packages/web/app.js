@@ -13,6 +13,16 @@ const authGateEl = document.getElementById("auth-gate");
 const authFormEl = document.getElementById("auth-form");
 const authTokenEl = document.getElementById("auth-token");
 const authErrorEl = document.getElementById("auth-error");
+const authTitleEl = document.getElementById("auth-title");
+const authCopyEl = document.getElementById("auth-copy");
+const authTabsEl = document.getElementById("auth-tabs");
+const authUserFieldsEl = document.getElementById("auth-user-fields");
+const authEmailEl = document.getElementById("auth-email");
+const authPasswordEl = document.getElementById("auth-password");
+const authSubmitEl = document.getElementById("auth-submit");
+const accountEl = document.getElementById("account");
+const accountEmailEl = document.getElementById("account-email");
+const logoutEl = document.getElementById("logout");
 
 const TOKEN_KEY = "neo.apiToken";
 
@@ -26,6 +36,9 @@ const state = {
   healthText: "检测服务…",
   token: localStorage.getItem(TOKEN_KEY) || "",
   authRequired: false,
+  accountsRequired: false,
+  user: null,
+  authMode: "login",
 };
 
 function apiHeaders(json) {
@@ -52,13 +65,43 @@ function showAuthGate(message) {
   authGateEl.hidden = false;
   authErrorEl.hidden = !message;
   authErrorEl.textContent = message || "";
-  authTokenEl.value = state.token;
-  authTokenEl.focus();
+  setAuthMode(state.authMode || "login");
+  if (state.authMode === "token") {
+    authTokenEl.value = state.token.startsWith("neo_sess_") ? "" : state.token;
+    authTokenEl.focus();
+  } else {
+    authEmailEl.focus();
+  }
 }
 
 function hideAuthGate() {
   authGateEl.hidden = true;
   authErrorEl.hidden = true;
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode;
+  for (const button of authTabsEl.querySelectorAll("button")) {
+    button.classList.toggle("active", button.dataset.mode === mode);
+  }
+  const userMode = mode !== "token";
+  authUserFieldsEl.hidden = !userMode;
+  authTokenEl.hidden = userMode;
+  authTitleEl.textContent = mode === "register" ? "注册" : mode === "token" ? "服务令牌" : "登录";
+  authCopyEl.textContent =
+    mode === "token"
+      ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
+      : "用邮箱登录后，多个设备可以订阅你自己的对话流。";
+  authSubmitEl.textContent = mode === "register" ? "创建账号" : "进入";
+}
+
+function renderAccount() {
+  if (!state.user) {
+    accountEl.hidden = true;
+    return;
+  }
+  accountEl.hidden = false;
+  accountEmailEl.textContent = state.user.email;
 }
 
 const STATUS_LABELS = {
@@ -402,9 +445,14 @@ openPrEl.addEventListener("click", async () => {
   }
 });
 
-async function applyAuth(token) {
+function saveToken(token) {
   state.token = token;
-  localStorage.setItem(TOKEN_KEY, token);
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+async function applyServiceToken(token) {
+  saveToken(token);
   const response = await fetch("/v1/auth", {
     method: "POST",
     credentials: "same-origin",
@@ -412,51 +460,102 @@ async function applyAuth(token) {
     body: JSON.stringify({ token }),
   });
   if (!response.ok) {
-    localStorage.removeItem(TOKEN_KEY);
-    state.token = "";
+    saveToken("");
     throw new Error("unauthorized");
   }
+  state.user = null;
+  renderAccount();
   hideAuthGate();
 }
+
+async function applySession(token) {
+  saveToken(token);
+  const me = await api("/v1/me");
+  if (!me.ok) {
+    saveToken("");
+    throw new Error("unauthorized");
+  }
+  const body = await me.json();
+  state.user = body.user;
+  renderAccount();
+  hideAuthGate();
+}
+
+authTabsEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-mode]");
+  if (button) setAuthMode(button.dataset.mode);
+});
 
 authFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    await applyAuth(authTokenEl.value.trim());
+    if (state.authMode === "token") {
+      await applyServiceToken(authTokenEl.value.trim());
+    } else {
+      const path = state.authMode === "register" ? "/v1/auth/register" : "/v1/auth/login";
+      const response = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: authEmailEl.value.trim(), password: authPasswordEl.value }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "unauthorized");
+      await applySession(body.token);
+    }
     await refreshRuns();
     const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
     if (match?.[1]) await openRun(match[1]);
-  } catch {
-    showAuthGate("访问令牌无效");
+    else emptyState();
+  } catch (error) {
+    showAuthGate(error instanceof Error ? error.message : "登录失败");
   }
+});
+
+logoutEl.addEventListener("click", async () => {
+  try {
+    await api("/v1/auth/logout", { method: "POST" });
+  } catch {
+    // ignore
+  }
+  saveToken("");
+  state.user = null;
+  renderAccount();
+  state.runs = [];
+  resetComposer();
+  if (state.authRequired) showAuthGate();
 });
 
 async function boot() {
   try {
     const health = await (await fetch("/health")).json();
     state.authRequired = health.authRequired === true;
+    state.accountsRequired = health.accountsRequired === true;
     if (!health.ok) {
       state.healthText = "控制面异常";
     } else if (health.defaultModel) {
       const runtime = health.workerRuntime ? ` · ${health.workerRuntime}` : "";
-      const store = health.objectStore ? ` · ${health.objectStore}` : "";
-      const auth = state.authRequired ? " · 需令牌" : "";
-      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${auth}`;
+      const store = health.metadataStore ? ` · ${health.metadataStore}` : "";
+      const bus = health.eventBus ? ` · ${health.eventBus}` : "";
+      const auth = state.authRequired ? " · 需登录" : "";
+      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${bus}${auth}`;
     } else {
       state.healthText = "控制面在线";
     }
     healthEl.textContent = state.healthText;
-    if (state.authRequired) {
-      if (!state.token) {
-        showAuthGate();
-        return;
-      }
+    if (state.token) {
       try {
-        await applyAuth(state.token);
+        if (state.token.startsWith("neo_sess_")) await applySession(state.token);
+        else await applyServiceToken(state.token);
       } catch {
-        showAuthGate("访问令牌无效");
-        return;
+        if (state.authRequired) {
+          showAuthGate("请重新登录");
+          return;
+        }
       }
+    } else if (state.authRequired) {
+      showAuthGate();
+      return;
     }
   } catch {
     state.healthText = "控制面不可达";

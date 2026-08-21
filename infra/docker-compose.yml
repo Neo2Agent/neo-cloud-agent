@@ -22,6 +22,9 @@ services:
       DOCKER_NETWORK: neo-cloud-agent
       RUNS_DIR: /app/.neo/runs
       HOST_RUNS_DIR: ${HOST_RUNS_DIR:-/var/tmp/neo-runs}
+      DATABASE_URL: postgres://neo:neo@postgres:5432/neo
+      REDIS_URL: redis://redis:6379
+      ACCOUNTS_REQUIRED: ${ACCOUNTS_REQUIRED:-0}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOST_RUNS_DIR:-/var/tmp/neo-runs}:/app/.neo/runs
@@ -29,6 +32,28 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - llm-gateway
+      - postgres
+      - redis
+    networks:
+      - neo
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: neo
+      POSTGRES_USER: neo
+      POSTGRES_PASSWORD: neo
+    ports:
+      - "5432:5432"
+    volumes:
+      - neo-pg:/var/lib/postgresql/data
+    networks:
+      - neo
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
     networks:
       - neo
 
@@ -70,3 +95,6 @@ services:
 networks:
   neo:
     name: neo-cloud-agent
+
+volumes:
+  neo-pg:

@@ -3,8 +3,10 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import path from "node:path";
 import { verifyRunToken } from "@neo-cloud-agent/contracts";
+import { lookupSession, SESSION_COOKIE } from "../accounts/accounts.js";
 import { getConfig } from "../config.js";
 import { controlStateDir } from "../store/persist.js";
+import { defaultActor, type Actor } from "./actor.js";
 
 export const API_TOKEN_COOKIE = "neo_token";
 
@@ -19,6 +21,14 @@ function safeEqual(left: string, right: string): boolean {
 
 export function apiAuthEnabled(): boolean {
   return Boolean(configuredApiToken() || process.env.CONTROL_PLANE_AUTH === "1" || process.env.CONTROL_PLANE_AUTH === "true");
+}
+
+export function accountsRequired(): boolean {
+  return process.env.ACCOUNTS_REQUIRED === "1" || process.env.ACCOUNTS_REQUIRED === "true";
+}
+
+export function accessRequired(): boolean {
+  return apiAuthEnabled() || accountsRequired();
 }
 
 function configuredApiToken(): string | null {
@@ -78,7 +88,13 @@ export function readCookie(req: IncomingMessage, name: string): string | null {
 }
 
 export function readApiCredential(req: IncomingMessage, url: URL): string | null {
-  return readBearer(req) || readCookie(req, API_TOKEN_COOKIE) || url.searchParams.get("access_token")?.trim() || null;
+  return (
+    readBearer(req) ||
+    readCookie(req, SESSION_COOKIE) ||
+    readCookie(req, API_TOKEN_COOKIE) ||
+    url.searchParams.get("access_token")?.trim() ||
+    null
+  );
 }
 
 export function matchApiToken(token: string): boolean {
@@ -91,11 +107,40 @@ export function matchApiToken(token: string): boolean {
 
 export function verifyApiToken(req: IncomingMessage, url: URL): boolean {
   const expected = resolveApiToken();
-  if (!expected) {
+  if (!expected && !accountsRequired()) {
     return true;
   }
   const provided = readApiCredential(req, url);
-  return Boolean(provided && matchApiToken(provided));
+  if (provided?.startsWith("neo_sess_")) {
+    return true;
+  }
+  return Boolean(provided && expected && matchApiToken(provided));
+}
+
+export async function resolveActor(req: IncomingMessage, url: URL): Promise<Actor | null> {
+  const provided = readApiCredential(req, url);
+  if (provided?.startsWith("neo_sess_")) {
+    const found = await lookupSession(provided);
+    if (found) {
+      return {
+        kind: "user",
+        userId: found.user.id,
+        orgId: found.user.orgId,
+        email: found.user.email,
+        sessionId: found.session.id,
+      };
+    }
+    if (accessRequired()) {
+      return null;
+    }
+  }
+  if (provided && resolveApiToken() && matchApiToken(provided)) {
+    return defaultActor("service");
+  }
+  if (!accessRequired()) {
+    return defaultActor("anonymous");
+  }
+  return null;
 }
 
 export function verifyWorkerJwt(req: IncomingMessage, runId: string): boolean {

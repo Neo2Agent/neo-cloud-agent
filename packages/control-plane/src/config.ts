@@ -8,11 +8,11 @@ function repoRoot(): string {
   return fileURLToPath(new URL("../../..", import.meta.url));
 }
 
-export type WorkerRuntimeKind = "local" | "docker" | "none";
+export type WorkerRuntimeKind = "local" | "docker" | "none" | "firecracker";
 
 export function workerRuntimeKind(): WorkerRuntimeKind {
   const explicit = process.env.WORKER_RUNTIME;
-  if (explicit === "local" || explicit === "docker" || explicit === "none") {
+  if (explicit === "local" || explicit === "docker" || explicit === "none" || explicit === "firecracker") {
     return explicit;
   }
   return process.env.SPAWN_LOCAL_WORKER === "0" ? "docker" : "local";

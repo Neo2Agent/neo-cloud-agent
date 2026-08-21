@@ -29,14 +29,38 @@ function writeJsonAtomic(file: string, data: unknown): void {
   renameSync(tmp, file);
 }
 
-export function persistRunRecord(record: PersistedRun, runsDir?: string): void {
-  writeJsonAtomic(runFile(record.run.id, runsDir), { ...record, version: 1 });
+export type PersistHooks = {
+  onRun?: (record: PersistedRun) => void;
+  onEvent?: (event: RunEvent) => void;
+  onLease?: (lease: WorkerLease) => void;
+  onDeleteLease?: (runId: string) => void;
+};
+
+let persistHooks: PersistHooks = {};
+
+export function setPersistHooks(hooks: PersistHooks): void {
+  persistHooks = hooks;
 }
 
-export function persistEvent(event: RunEvent, runsDir?: string): void {
+export type PersistOptions = {
+  /** When false, skip the remote/Postgres mirror. Used while hydrating from Postgres. */
+  mirror?: boolean;
+};
+
+export function persistRunRecord(record: PersistedRun, runsDir?: string, options?: PersistOptions): void {
+  writeJsonAtomic(runFile(record.run.id, runsDir), { ...record, version: 1 });
+  if (options?.mirror !== false) {
+    persistHooks.onRun?.(record);
+  }
+}
+
+export function persistEvent(event: RunEvent, runsDir?: string, options?: PersistOptions): void {
   const file = eventsFile(event.runId, runsDir);
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(event)}\n`, { flag: "a" });
+  if (options?.mirror !== false) {
+    persistHooks.onEvent?.(event);
+  }
 }
 
 export function loadPersistedEvents(runId: string, runsDir?: string): RunEvent[] {
@@ -199,6 +223,8 @@ export type WorkerLease = {
   handleId: string;
   pid?: number | null;
   container?: string | null;
+  socket?: string | null;
+  cid?: number | null;
   updatedAt: string;
 };
 
@@ -206,8 +232,11 @@ function workerFile(runId: string, runsDir?: string): string {
   return path.join(controlStateDir(runsDir), `${runId}.worker.json`);
 }
 
-export function persistWorkerLease(lease: WorkerLease, runsDir?: string): void {
+export function persistWorkerLease(lease: WorkerLease, runsDir?: string, options?: PersistOptions): void {
   writeJsonAtomic(workerFile(lease.runId, runsDir), lease);
+  if (options?.mirror !== false) {
+    persistHooks.onLease?.(lease);
+  }
 }
 
 export function loadWorkerLease(runId: string, runsDir?: string): WorkerLease | null {
@@ -218,10 +247,13 @@ export function loadWorkerLease(runId: string, runsDir?: string): WorkerLease | 
   }
 }
 
-export function deleteWorkerLease(runId: string, runsDir?: string): void {
+export function deleteWorkerLease(runId: string, runsDir?: string, options?: PersistOptions): void {
   try {
     rmSync(workerFile(runId, runsDir), { force: true });
   } catch {
     // ignore
+  }
+  if (options?.mirror !== false) {
+    persistHooks.onDeleteLease?.(runId);
   }
 }

@@ -9,6 +9,30 @@ bus.setMaxListeners(0);
 
 const history = new Map<string, RunEvent[]>();
 
+export type HotPublisher = {
+  publish(event: RunEvent): void;
+};
+
+let hot: HotPublisher | null = null;
+
+export function attachHotBus(next: HotPublisher | null): void {
+  hot = next;
+}
+
+export function ingestRemoteEvent(event: RunEvent): boolean {
+  const list = history.get(event.runId) ?? [];
+  if (list.some((item) => item.id === event.id)) {
+    return false;
+  }
+  const seq = event.seq ?? (list.at(-1)?.seq ?? 0) + 1;
+  const clean = { ...event, seq };
+  list.push(clean);
+  history.set(event.runId, list);
+  bus.emit(event.runId, clean);
+  bus.emit("*", clean);
+  return true;
+}
+
 export function publish(event: RunEvent, options?: { persist?: boolean }): void {
   const list = history.get(event.runId) ?? [];
   const seq = event.seq ?? (list.at(-1)?.seq ?? 0) + 1;
@@ -21,6 +45,9 @@ export function publish(event: RunEvent, options?: { persist?: boolean }): void 
   }
   bus.emit(event.runId, clean);
   bus.emit("*", clean);
+  if (options?.persist !== false) {
+    hot?.publish(clean);
+  }
 }
 
 export function seedEvents(runId: string, events: RunEvent[]): void {

@@ -23,6 +23,7 @@ import {
   ingestEvents,
   listFollowUps,
   listRuns,
+  loadRunIntoMemory,
   mintRunGitToken,
   openRunDraftPr,
   recoverLiveWorkers,
@@ -31,16 +32,20 @@ import {
   startWorkerLeaseWatch,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
+import { AccountError, loginAccount, logoutSession, registerAccount, sessionCookieHeader, clearSessionCookieHeader } from "../accounts/accounts.js";
 import { getConfig } from "../config.js";
 import { getObjectStore } from "../objects/store.js";
+import { startPlatform, platformInfo } from "../platform.js";
 import {
-  apiAuthEnabled,
+  accessRequired,
+  accountsRequired,
   cookieHeader,
   matchApiToken,
+  resolveActor,
   resolveApiToken,
-  verifyApiToken,
   verifyWorkerJwt,
 } from "../security/auth.js";
+import { actorCanAccessRun, type Actor } from "../security/actor.js";
 import { listEnvironments } from "../env/store.js";
 import { serveWebFile } from "./static.js";
 
@@ -51,7 +56,35 @@ const CORS = {
 } as const;
 
 async function requireRun(runId: string) {
-  return getRun(runId) ?? (await restoreArchivedRun(runId));
+  return getRun(runId) ?? (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
+}
+
+function denyUnless(run: { userId: string } | null | undefined, actor: Actor, res: ServerResponse): boolean {
+  if (!run || !actorCanAccessRun(actor, run)) {
+    notFound(res);
+    return false;
+  }
+  return true;
+}
+
+function sendAuthSession(res: ServerResponse, status: number, created: { user: unknown; token: string }): void {
+  const json = JSON.stringify({ ok: true, token: created.token, user: created.user, authRequired: true });
+  res.writeHead(status, {
+    ...CORS,
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(json),
+    "set-cookie": sessionCookieHeader(created.token),
+  });
+  res.end(json);
+}
+
+function sendAccountError(res: ServerResponse, error: unknown): void {
+  if (error instanceof AccountError) {
+    send(res, error.status, { error: error.message });
+    return;
+  }
+  const message = error instanceof Error ? error.message : "account_error";
+  send(res, message.includes("already registered") ? 409 : 500, { error: message });
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -80,7 +113,11 @@ function notFound(res: ServerResponse): void {
 }
 
 export function createApiServer() {
-  void recoverLiveWorkers();
+  void startPlatform()
+    .catch((error) => {
+      console.error("platform init failed", error);
+    })
+    .then(() => recoverLiveWorkers());
   startWorkerLeaseWatch();
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://control-plane.local");
@@ -104,8 +141,51 @@ export function createApiServer() {
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           objectStore: getObjectStore().kind,
-          authRequired: apiAuthEnabled(),
+          authRequired: accessRequired(),
+          accountsEnabled: true,
+          accountsRequired: accountsRequired(),
+          ...platformInfo(),
         });
+        return;
+      }
+
+      if (method === "POST" && path === "/v1/auth/register") {
+        const body = (await readJson(req)) as { email?: string; password?: string };
+        try {
+          const created = await registerAccount(body);
+          sendAuthSession(res, 201, created);
+        } catch (error) {
+          sendAccountError(res, error);
+        }
+        return;
+      }
+
+      if (method === "POST" && path === "/v1/auth/login") {
+        const body = (await readJson(req)) as { email?: string; password?: string };
+        try {
+          const created = await loginAccount(body);
+          sendAuthSession(res, 200, created);
+        } catch (error) {
+          sendAccountError(res, error);
+        }
+        return;
+      }
+
+      if (method === "POST" && path === "/v1/auth/logout") {
+        const actor = await resolveActor(req, url);
+        const token = req.headers.authorization?.startsWith("Bearer ")
+          ? req.headers.authorization.slice("Bearer ".length).trim()
+          : null;
+        await logoutSession(token);
+        const json = JSON.stringify({ ok: true });
+        res.writeHead(200, {
+          ...CORS,
+          "content-type": "application/json; charset=utf-8",
+          "content-length": Buffer.byteLength(json),
+          "set-cookie": clearSessionCookieHeader(),
+        });
+        res.end(json);
+        void actor;
         return;
       }
 
@@ -138,31 +218,38 @@ export function createApiServer() {
           send(res, 401, { error: "unauthorized" });
           return;
         }
-      } else if (path.startsWith("/v1/") && !verifyApiToken(req, url)) {
-        send(res, 401, { error: "unauthorized" });
-        return;
-      }
-
-      if (method === "POST" && path === "/v1/runs") {
-        const body = (await readJson(req)) as CreateRunRequest;
-        if (!body.prompt || !Array.isArray(body.repoUrls)) {
-          send(res, 400, { error: "prompt and repoUrls are required" });
+      } else if (path.startsWith("/v1/")) {
+        const actor = await resolveActor(req, url);
+        if (!actor) {
+          send(res, 401, { error: "unauthorized" });
           return;
         }
-        send(res, 201, await createRun(body));
-        return;
+        if (method === "GET" && path === "/v1/me") {
+          send(res, 200, { user: actor.kind === "user" ? { id: actor.userId, email: actor.email, orgId: actor.orgId } : null, actor: actor.kind });
+          return;
+        }
+        if (method === "POST" && path === "/v1/runs") {
+          const body = (await readJson(req)) as CreateRunRequest;
+          if (!body.prompt || !Array.isArray(body.repoUrls)) {
+            send(res, 400, { error: "prompt and repoUrls are required" });
+            return;
+          }
+          send(res, 201, await createRun(body, { userId: actor.userId, orgId: actor.orgId }));
+          return;
+        }
+        if (method === "GET" && path === "/v1/runs") {
+          send(res, 200, { runs: listRuns().filter((run) => actorCanAccessRun(actor, run)) });
+          return;
+        }
+        Object.assign(req, { neoActor: actor });
       }
 
-      if (method === "GET" && path === "/v1/runs") {
-        send(res, 200, { runs: listRuns() });
-        return;
-      }
+      const actor = ((req as IncomingMessage & { neoActor?: Actor }).neoActor ?? (await resolveActor(req, url))) as Actor | null;
 
       const runMatch = /^\/v1\/runs\/([^/]+)$/.exec(path);
       if (runMatch && method === "GET") {
         const run = await requireRun(runMatch[1] ?? "");
-        if (!run) {
-          notFound(res);
+        if (!actor || !denyUnless(run, actor, res)) {
           return;
         }
         send(res, 200, run);
@@ -172,8 +259,8 @@ export function createApiServer() {
       const followMatch = /^\/v1\/runs\/([^/]+)\/follow-ups$/.exec(path);
       if (followMatch && method === "POST") {
         const runId = followMatch[1] ?? "";
-        if (!getRun(runId)) {
-          notFound(res);
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res)) {
           return;
         }
         const body = (await readJson(req)) as CreateFollowUpRequest;
@@ -185,18 +272,30 @@ export function createApiServer() {
         return;
       }
       if (followMatch && method === "GET") {
+        const run = await requireRun(followMatch[1] ?? "");
+        if (!actor || !denyUnless(run, actor, res)) {
+          return;
+        }
         send(res, 200, { followUps: listFollowUps(followMatch[1] ?? "") });
         return;
       }
 
       const abortMatch = /^\/v1\/runs\/([^/]+)\/abort$/.exec(path);
       if (abortMatch && method === "POST") {
+        const run = await requireRun(abortMatch[1] ?? "");
+        if (!actor || !denyUnless(run, actor, res)) {
+          return;
+        }
         send(res, 200, abortRun(abortMatch[1] ?? ""));
         return;
       }
 
       const archiveMatch = /^\/v1\/runs\/([^/]+)\/archive$/.exec(path);
       if (archiveMatch && method === "POST") {
+        const run = await requireRun(archiveMatch[1] ?? "");
+        if (!actor || !denyUnless(run, actor, res)) {
+          return;
+        }
         send(res, 200, await archiveRun(archiveMatch[1] ?? ""));
         return;
       }
@@ -204,8 +303,8 @@ export function createApiServer() {
       const eventsMatch = /^\/v1\/runs\/([^/]+)\/events$/.exec(path);
       if (eventsMatch && method === "GET") {
         const runId = eventsMatch[1] ?? "";
-        if (!(await requireRun(runId))) {
-          notFound(res);
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res)) {
           return;
         }
         attachEventStream(req, res, runId, url);
@@ -227,7 +326,11 @@ export function createApiServer() {
       const sessionMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/session$/.exec(path);
       if (sessionMatch && method === "GET") {
         const runId = sessionMatch[1] ?? "";
-        if (!getRun(runId)) {
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
           notFound(res);
           return;
         }
@@ -236,7 +339,11 @@ export function createApiServer() {
       }
       if (sessionMatch && method === "POST") {
         const runId = sessionMatch[1] ?? "";
-        if (!getRun(runId)) {
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
           notFound(res);
           return;
         }
@@ -257,8 +364,8 @@ export function createApiServer() {
       const transcriptMatch = /^\/v1\/runs\/([^/]+)\/transcript$/.exec(path);
       if (transcriptMatch && method === "GET") {
         const runId = transcriptMatch[1] ?? "";
-        if (!(await requireRun(runId))) {
-          notFound(res);
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res)) {
           return;
         }
         const events = listEvents(runId);
@@ -269,7 +376,11 @@ export function createApiServer() {
       const commitMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/(?:scm\/)?commit$/.exec(path);
       if (commitMatch && method === "POST") {
         const runId = commitMatch[1] ?? "";
-        if (!getRun(runId)) {
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
           notFound(res);
           return;
         }
@@ -281,7 +392,11 @@ export function createApiServer() {
       const prMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/(?:scm\/)?pull-request$/.exec(path);
       if (prMatch && method === "POST") {
         const runId = prMatch[1] ?? "";
-        if (!getRun(runId)) {
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
           notFound(res);
           return;
         }
@@ -309,8 +424,8 @@ export function createApiServer() {
       const diffMatch = /^\/v1\/runs\/([^/]+)\/diff$/.exec(path);
       if (diffMatch && method === "GET") {
         const runId = diffMatch[1] ?? "";
-        if (!getRun(runId)) {
-          notFound(res);
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res)) {
           return;
         }
         send(res, 200, await getRunDiff(runId));

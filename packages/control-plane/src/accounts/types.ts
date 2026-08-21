@@ -1,0 +1,43 @@
+export type UserRecord = {
+  id: string;
+  email: string;
+  passwordHash: string;
+  orgId: string;
+  createdAt: string;
+};
+
+export type SessionRecord = {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  createdAt: string;
+};
+
+export type PublicUser = {
+  id: string;
+  email: string;
+  orgId: string;
+  createdAt: string;
+};
+
+export interface AccountStore {
+  createUser(user: UserRecord): Promise<UserRecord>;
+  findUserByEmail(email: string): Promise<UserRecord | null>;
+  findUserById(id: string): Promise<UserRecord | null>;
+  createSession(session: SessionRecord): Promise<void>;
+  findSessionByTokenHash(hash: string): Promise<SessionRecord | null>;
+  deleteSession(id: string): Promise<void>;
+}
+
+export function toPublicUser(user: UserRecord): PublicUser {
+  return { id: user.id, email: user.email, orgId: user.orgId, createdAt: user.createdAt };
+}
+
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}

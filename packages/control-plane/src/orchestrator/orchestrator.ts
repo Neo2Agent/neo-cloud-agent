@@ -25,6 +25,7 @@ import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
   listSessionFiles,
   loadPersistedEvents,
+  loadPersistedRun,
   loadPersistedRuns,
   loadSessionFiles,
   deleteWorkerLease,
@@ -32,6 +33,7 @@ import {
   persistRunRecord,
   persistSessionFiles,
   persistWorkerLease,
+  replacePersistedEvents,
   restoreSessionToDir,
 } from "../store/persist.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
@@ -80,15 +82,19 @@ function failRun(run: Run, message: string, kind: RunEvent["kind"] = "run.error"
   flushRun(run.id);
 }
 
+function hydrateRecord(record: { run: Run; followUps?: FollowUp[]; inbound?: WorkerInbound[] }): void {
+  const run = record.run;
+  run.pullRequests = Array.isArray(run.pullRequests) ? run.pullRequests : [];
+  run.baseBranch = run.baseBranch ?? null;
+  runs.set(run.id, run);
+  followUps.set(run.id, record.followUps ?? []);
+  inbound.set(run.id, record.inbound ?? []);
+  seedEvents(run.id, loadPersistedEvents(run.id));
+}
+
 function hydrateFromDisk(): void {
   for (const record of loadPersistedRuns()) {
-    const run = record.run;
-    runs.set(run.id, run);
-    followUps.set(run.id, record.followUps ?? []);
-    inbound.set(run.id, record.inbound ?? []);
-    seedEvents(run.id, loadPersistedEvents(run.id));
-    run.pullRequests = Array.isArray(run.pullRequests) ? run.pullRequests : [];
-    run.baseBranch = run.baseBranch ?? null;
+    hydrateRecord(record);
   }
 }
 
@@ -157,6 +163,8 @@ export async function recoverLiveWorkers(): Promise<void> {
           handleId: handle.id,
           pid: handle.pid ?? lease?.pid ?? null,
           container: handle.runtime === "docker" ? handle.id : null,
+          socket: handle.socket ?? lease?.socket ?? null,
+          cid: handle.cid ?? lease?.cid ?? null,
           updatedAt: now(),
         });
         publish(event(run.id, "run.running", "Reattached existing worker"));
@@ -286,16 +294,17 @@ function runningTitle(): string {
   const kind = getConfig().workerRuntime;
   if (kind === "local") return "Spawning local worker";
   if (kind === "docker") return "Starting Docker worker";
+  if (kind === "firecracker") return "Starting Firecracker microVM";
   return "Worker handle reserved";
 }
 
-export async function createRun(input: CreateRunRequest): Promise<Run> {
+export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string }): Promise<Run> {
   const config = getConfig();
   const createdAt = now();
   const run: Run = {
     id: crypto.randomUUID(),
-    orgId: config.orgId,
-    userId: config.userId,
+    orgId: owner?.orgId ?? config.orgId,
+    userId: owner?.userId ?? config.userId,
     envId: input.envId ?? null,
     envVersionId: null,
     buildId: null,
@@ -429,6 +438,8 @@ async function attachWorker(run: Run, title: string): Promise<void> {
     handleId: handle.id,
     pid: handle.pid ?? null,
     container: handle.runtime === "docker" ? handle.id : null,
+    socket: handle.socket ?? null,
+    cid: handle.cid ?? null,
     updatedAt: now(),
   });
   publish(event(run.id, "run.running", title));
@@ -460,6 +471,35 @@ export async function resumeRun(runId: string): Promise<Run> {
 
 export function getRun(id: string): Run | undefined {
   return runs.get(id);
+}
+
+export async function loadRunIntoMemory(runId: string): Promise<Run | undefined> {
+  const existing = runs.get(runId);
+  if (existing) {
+    return existing;
+  }
+  const local = loadPersistedRun(runId);
+  if (local?.run?.id) {
+    hydrateRecord(local);
+    return local.run;
+  }
+  try {
+    const { getPostgresStore } = await import("../platform.js");
+    const store = getPostgresStore();
+    const remote = await store?.loadRun(runId);
+    if (remote?.run?.id) {
+      persistRunRecord(remote, undefined, { mirror: false });
+      const events = (await store?.loadEvents(runId)) ?? [];
+      if (events.length > 0) {
+        replacePersistedEvents(runId, events);
+      }
+      hydrateRecord(remote);
+      return remote.run;
+    }
+  } catch {
+    // postgres is optional
+  }
+  return restoreArchivedRun(runId);
 }
 
 export function listRuns(): Run[] {

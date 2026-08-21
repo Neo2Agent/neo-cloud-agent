@@ -410,6 +410,45 @@ textarea {
   color: var(--err);
 }
 
+.auth-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.auth-tabs button {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.auth-tabs button.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: var(--accent);
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.account button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+}
+
 @media (max-width: 860px) {
   .app {
     grid-template-columns: 1fr;

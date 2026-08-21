@@ -1,14 +1,26 @@
 import { createApiServer } from "./api/server.js";
 import { getConfig } from "./config.js";
+import { startPlatform } from "./platform.js";
 import { startScheduler } from "./scheduler/scheduler.js";
 
 const config = getConfig();
 const scheduler = startScheduler();
 const server = createApiServer();
 
-server.listen(config.port, () => {
-  console.log(`control-plane listening on :${config.port} workerRuntime=${config.workerRuntime}`);
-});
+void startPlatform()
+  .catch((error) => {
+    console.error("platform init failed", error);
+  })
+  .finally(() => {
+    server.listen(config.port, () => {
+      const extra = [
+        `workerRuntime=${config.workerRuntime}`,
+        process.env.DATABASE_URL ? "postgres" : "fs",
+        process.env.REDIS_URL ? "redis" : "memory",
+      ].join(" ");
+      console.log(`control-plane listening on :${config.port} ${extra}`);
+    });
+  });
 
 const shutdown = () => {
   scheduler.stop();
