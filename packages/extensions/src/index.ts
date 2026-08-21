@@ -6,7 +6,19 @@ import { neoMcp } from "./neo-mcp.js";
 import { neoPr } from "./neo-pr.js";
 import type { CloudExtension } from "./types.js";
 
-export type { CloudExtension } from "./types.js";
+export type {
+  CloudExtension,
+  CloudToolContext,
+  CloudToolDefinition,
+  CloudToolFetch,
+  CloudToolParameterSchema,
+  CloudToolResult,
+} from "./types.js";
+export { defineExtension } from "./types.js";
+export { createCloudTools, CLOUD_TOOL_NAMES } from "./tools.js";
+export { createGitCommitTool, executeGitCommit } from "./neo-git.js";
+export { createPullRequestTool, executeOpenPullRequest } from "./neo-pr.js";
+export { createDiagnosticsTool, executeDiagnostics } from "./neo-diag.js";
 export { neoArtifact, neoBrowser, neoDiag, neoGit, neoMcp, neoPr };
 
 export function loadCloudExtensions(): CloudExtension[] {

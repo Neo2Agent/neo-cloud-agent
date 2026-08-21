@@ -21,6 +21,7 @@ import {
   enqueueFollowUp,
   getBootstrap,
   getRun,
+  getRunDiagnostics,
   getRunDiff,
   getRunSession,
   ingestEvents,
@@ -368,6 +369,21 @@ export function createApiServer() {
           return;
         }
         send(res, 200, evaluateEgress(bootstrap.egress, body.url));
+        return;
+      }
+
+      const diagnosticsMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/diagnostics$/.exec(path);
+      if (diagnosticsMatch && method === "GET") {
+        const runId = diagnosticsMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, getRunDiagnostics(runId));
         return;
       }
 

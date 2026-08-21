@@ -338,12 +338,12 @@ pi-ai                        ← 多 Provider 流式、用量、自定义 baseUr
 
 | 扩展 | 作用 |
 | --- | --- |
-| `neo-git` | 受控 commit；签名和 push 走 scm-service，不把长期 token 给 bash |
-| `neo-pr` | 请求控制面开/更新 PR |
-| `neo-mcp` | 按环境配置拉起 HTTP/stdio MCP；OAuth token 由控制面注入 |
-| `neo-browser` | 可选：headed browser / computer-use sidecar |
-| `neo-artifact` | 截图、录屏上传 artifact-service |
-| `neo-diag` | 给 agent 看本 Run 的 setup 日志、egress 拒绝、环境版本（对标 Cursor Cloud MCP） |
+| `neo-git` | 已落地：`neo_git_commit` 走 `POST /internal/runs/:id/scm/commit`；签名和 push 走 scm-service，不把长期 token 给 bash |
+| `neo-pr` | 已落地：`neo_pr_open` 走 `POST /internal/runs/:id/scm/pull-request` |
+| `neo-mcp` | 按环境配置拉起 HTTP/stdio MCP；OAuth token 由控制面注入（仍是空壳） |
+| `neo-browser` | 可选：headed browser / computer-use sidecar（仍是空壳） |
+| `neo-artifact` | 截图、录屏上传 artifact-service（仍是空壳） |
+| `neo-diag` | 已落地：`neo_diag` 读 `GET /internal/runs/:id/diagnostics` 和工作区 `.neo/logs` |
 
 策略类拦截（禁止 `curl` 外带、禁止读 `/opt/neo/worker` 证书）用 extension 的 tool hook，而不是改 `bash` 实现。
 
@@ -764,6 +764,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数�
 2. 块设备 CoW 已落地接口：Build / 预热 / Firecracker rootfs 先 `cp --reflink=always`；文件系统不支持时工作区整树复制，生产 rootfs 只读共享原盘（不整份拷 1.5GiB）。不是 live-fork。
 3. 配额、多租户计费、组织成员
 4. Egress 从应用层升级到 VM 出站代理 / iptables
+5. `neo-mcp` / `neo-artifact` / `neo-browser` 仍是空壳；artifacts 上传 URL 还是 `/dev-artifacts/...`
 
 控制面重启后续上 RUNNING Worker、以及对外 API 令牌鉴权已经落地。
 
@@ -780,3 +781,4 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数�
 - `WORKER_RUNTIME=firecracker` 走 Firecracker HTTP API（kernel / rootfs / tap / vsock）。开发机没配内核时继续用 local / docker。没配 `FIRECRACKER_ROOTFS` 时：若 `infra/firecracker/.assets/rootfs.ext4` 是生产盘（`pnpm fc:rootfs`）就用它，否则用 overlay 打一张小 ext4（单测路径，需要 `mkfs.ext4`）。Guest 不能用 `127.0.0.1` 回连宿主机，provision 会把控制面 / Gateway URL 改成 tap 宿主机 IP。
 - Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot（`rename`），否则 reflink / 拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。对话页可以选环境 / 快照，或点「预热」。
 - Egress：`environment.json` 的 `egress.mode` 会进 worker（`NEO_EGRESS_*`）。`allowlist_only` 拦 clone 和不在名单里的 `fetch`；Gateway / GitHub 仍放行。
+- Worker 把 `neo_git_commit` / `neo_pr_open` / `neo_diag` 注册成 pi `customTools`。Agent 用它们走控制面 commit / 开草稿 PR / 看 setup 与 egress；不要让 bash 拿长期 git token。`GET /v1/runs/:id/diagnostics` 给 UI，worker 走 `/internal`。

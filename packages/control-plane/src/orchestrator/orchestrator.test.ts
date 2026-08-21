@@ -16,6 +16,7 @@ const {
   enqueueFollowUp,
   getBootstrap,
   getRun,
+  getRunDiagnostics,
   getRunSession,
   ingestEvents,
   listRuns,
@@ -59,6 +60,18 @@ test("createRun mints a bootstrap JWT, copies the local repo, and queues the fir
   assert.ok(kinds.includes("run.install_started"));
   assert.ok(kinds.includes("run.install_succeeded"));
   assert.ok(kinds.includes("scm.branch_created"));
+  mkdirSync(path.join(bootstrap.workspaceDir, ".neo", "logs"), { recursive: true });
+  writeFileSync(path.join(bootstrap.workspaceDir, ".neo", "logs", "start.log"), "start ok\n");
+  const diagnostics = getRunDiagnostics(run.id);
+  assert.equal(diagnostics.run.id, run.id);
+  assert.equal(diagnostics.run.setupStatus, "INSTALL_SUCCEEDED");
+  assert.equal(diagnostics.egress.mode, "allow_all");
+  assert.ok(diagnostics.events.some((item) => item.kind === "run.install_succeeded"));
+  assert.ok(diagnostics.events.some((item) => item.kind === "scm.branch_created"));
+  assert.equal(
+    diagnostics.logs.some((item) => item.name === "start.log" && item.content.includes("start ok")),
+    true,
+  );
 });
 
 test("commit and local draft PR stay on the control plane", async () => {

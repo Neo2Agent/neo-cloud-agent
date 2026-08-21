@@ -10,6 +10,7 @@ import {
   type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import { deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
+import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { getWorkerConfig } from "./config.js";
 
 export interface OpenSessionInput {
@@ -19,6 +20,7 @@ export interface OpenSessionInput {
   jwt: string;
   gatewayUrl: string;
   modelId: string;
+  controlPlaneUrl?: string;
 }
 
 function isolatedLoader(): ResourceLoader {
@@ -28,13 +30,7 @@ function isolatedLoader(): ResourceLoader {
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () =>
-      `You are Neo Cloud Agent running in an isolated workspace.
-Repositories the user attached are already in the current working directory (one repo at the root, or each repo in its own folder).
-Use the local tools (read, write, edit, bash, grep, find, ls) to complete the user's task.
-If you change the project, run its tests (for example \`sh test.sh\` or the documented test command).
-Do not ask for API keys. LLM calls already go through the cloud gateway.
-Be concise and verify your work.`,
+    getSystemPrompt: () => CLOUD_SYSTEM_PROMPT,
     getSystemPromptSource: () => undefined,
     getAppendSystemPrompt: () => [],
     getAppendSystemPromptSources: () => [],
@@ -85,6 +81,14 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     throw new Error(`failed to register gateway model ${input.modelId}`);
   }
 
+  const config = getWorkerConfig();
+  const customTools = createPiCloudTools({
+    runId: input.runId,
+    jwt: input.jwt,
+    controlPlaneUrl: input.controlPlaneUrl ?? config.controlPlaneUrl,
+    workspaceDir: input.cwd,
+  });
+
   const { session } = await createAgentSession({
     cwd: input.cwd,
     agentDir,
@@ -92,7 +96,8 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     thinkingLevel: "off",
     modelRuntime,
     resourceLoader: isolatedLoader(),
-    tools: ["read", "write", "edit", "bash", "grep", "find", "ls"],
+    tools: sessionToolNames(),
+    customTools,
     sessionManager: SessionManager.create(input.cwd, input.sessionDir),
     settingsManager: SettingsManager.inMemory({
       compaction: { enabled: true },

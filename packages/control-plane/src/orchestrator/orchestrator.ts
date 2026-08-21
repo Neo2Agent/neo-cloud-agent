@@ -10,6 +10,7 @@ import type {
   FollowUp,
   FollowUpDelivery,
   Run,
+  RunDiagnostics,
   RunEvent,
   RuntimeHandle,
   RuntimeSpec,
@@ -26,10 +27,11 @@ import {
 } from "../env/builds.js";
 import { environmentFingerprint } from "../env/fingerprint.js";
 import { findInstallTargets, runInstallCommand } from "../env/install.js";
+import { readWorkspaceLogTails } from "../env/logs.js";
 import { getEnvironment } from "../env/store.js";
 import { claimWarmSlot, refillWarmPool } from "../env/warm-pool.js";
 import { resolveEgressPolicy } from "../egress/resolve.js";
-import { publish, resetHistory, seedEvents } from "../events/bus.js";
+import { listEvents, publish, resetHistory, seedEvents } from "../events/bus.js";
 import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
 import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
@@ -935,6 +937,53 @@ export async function getRunDiff(runId: string) {
     baseBranch: run.baseBranch,
     pullRequests: run.pullRequests,
     ...diff,
+  };
+}
+
+const DIAGNOSTIC_EVENT_KINDS = new Set([
+  "egress.denied",
+  "build.used",
+  "mcp.auth_error",
+]);
+
+export function getRunDiagnostics(runId: string): RunDiagnostics {
+  const run = requireRun(runId);
+  const env = run.envId ? getEnvironment(run.envId) : undefined;
+  const build = run.buildId ? getBuild(run.buildId) : undefined;
+  return {
+    run: {
+      id: run.id,
+      status: run.status,
+      setupStatus: run.setupStatus,
+      envId: run.envId,
+      envVersionId: run.envVersionId,
+      buildId: run.buildId,
+      branchName: run.branchName,
+      baseBranch: run.baseBranch,
+      model: run.model,
+      errorMessage: run.errorMessage,
+      repoUrls: run.repoUrls,
+    },
+    environment: env
+      ? { id: env.id, name: env.name, environmentJsonPath: env.environmentJsonPath }
+      : null,
+    build: build
+      ? {
+          id: build.id,
+          status: build.status,
+          draft: build.draft,
+          fingerprint: build.fingerprint,
+          envVersionId: build.envVersionId,
+        }
+      : null,
+    egress: egressForRun(run),
+    events: listEvents(runId).filter(
+      (item) =>
+        item.kind.startsWith("run.") ||
+        item.kind.startsWith("scm.") ||
+        DIAGNOSTIC_EVENT_KINDS.has(item.kind),
+    ),
+    logs: readWorkspaceLogTails(workspaceFor(runId)),
   };
 }
 

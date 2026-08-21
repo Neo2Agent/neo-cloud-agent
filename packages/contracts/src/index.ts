@@ -75,3 +75,11 @@ export { mintRunToken, verifyRunToken } from "./jwt.js";
 
 export type { DiskCloneMethod, DiskCloneResult, DiskKind, DiskSnapshot } from "./disk.js";
 
+export type {
+  RunDiagnostics,
+  RunDiagnosticsBuild,
+  RunDiagnosticsEnvironment,
+  RunDiagnosticsLog,
+  RunDiagnosticsSummary,
+} from "./diagnostics.js";
+
