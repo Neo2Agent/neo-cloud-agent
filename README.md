@@ -21,6 +21,18 @@ neo-cloud-agent/
   .neo/environment.json     本仓库自己的环境描述
 ```
 
+## 现在 main 上有什么
+
+设计蓝图仍是 [docs/architecture.md](docs/architecture.md)。已经落地、文档必须对得上的产品面：
+
+| 面 | 行为 |
+| --- | --- |
+| 对话页 | React。工具调研和模型答复按时间拆行（工具在最终答复上面）。Markdown、Diff、文件树、粘贴图片、token 用量、归档 |
+| 模型 | 默认 DeepSeek **v4-flash**；设置里可切 Pro。退役的 `deepseek-chat` / `deepseek-reasoner` 会改写成 flash |
+| 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错 |
+| CLI | `pnpm neo`，见 [docs/cli.md](docs/cli.md) |
+| 云工具 | `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` |
+
 ```mermaid
 flowchart LR
   User --> API
@@ -78,6 +90,18 @@ DEEPSEEK_API_KEY=sk-...
 ```
 
 `neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` 都会路由到便宜的 `deepseek-v4-flash`。要更强的模型把设置里的型号改成 `deepseek-v4-pro`，或直接请求 `deepseek-v4-pro`。
+
+4C/4G 轻量机（现网）用 loop 槽，不要开 Docker / Firecracker：
+
+```bash
+WORKER_RUNTIME=vm
+VM_SLOT_COUNT=2
+WORKER_MEMORY_MIB=512
+WORKER_DISK_GIB=4
+WORKER_IDLE_RELEASE_MS=900000   # 空闲 15 分钟卸槽；0 = 不自动释放
+```
+
+卸槽前必须把 slot 工作区拷回 `RUNS_DIR`，否则下一轮 claim 会擦盘。两个槽都忙时 `POST /v1/runs` 返回 `NOT_YET_STARTED` 并发 `run.queued`。
 
 接 GitHub 远程（只放控制面，不要进 worker）：
 

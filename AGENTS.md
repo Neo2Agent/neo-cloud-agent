@@ -18,8 +18,9 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 - Default `WORKER_RUNTIME=local`: `POST /v1/runs` spawns an in-process worker (no Docker needed). `docker`/`firecracker` runtimes need extra assets (see `README.md`).
 
 ### Testing
-- `pnpm typecheck` and `pnpm test` (unit + in-process mock e2e) are the reliable checks; both pass on a clean setup.
-- `pnpm test:e2e` (the standalone HTTP script `scripts/e2e-http.ts`) currently fails to launch because it uses top-level `await` but the repo root has no `"type": "module"`, so tsx transforms it as CJS. To verify the HTTP path, either run `pnpm test` or drive the running server directly (`curl` `/health`, `POST /v1/runs`, poll `/v1/runs/:id` and `/v1/runs/:id/transcript` until `status=IDLE`).
+- `pnpm typecheck` and `pnpm test` (unit + in-process mock e2e, including `packages/cli`) are the reliable checks.
+- `pnpm test:e2e` needs an already-running control-plane on `:8080`. Prefer `pnpm test` or `pnpm neo` against that server.
+- Production-shaped hosts use `WORKER_RUNTIME=vm` (loop slots, no Docker/KVM). Idle slots persist the workspace then unmount after `WORKER_IDLE_RELEASE_MS`.
 
 ### Env
 - The repo root `.env` (gitignored) is auto-loaded by both control-plane and gateway; existing environment variables take precedence. See `.env.example` for all keys.
