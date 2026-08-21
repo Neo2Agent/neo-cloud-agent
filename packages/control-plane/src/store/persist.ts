@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { FollowUp, Run, RunEvent, WorkerInbound } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
@@ -62,6 +62,44 @@ function sessionDir(runId: string, runsDir?: string): string {
   return path.join(controlStateDir(runsDir), `${runId}.session`);
 }
 
+const SKIP_SESSION_NAMES = new Set(["auth.json", "models.json"]);
+
+export function safeSessionPath(root: string, name: string): string | null {
+  const relative = name.replaceAll("\\", "/").replace(/^\/+/, "");
+  if (!relative || relative.includes("..")) {
+    return null;
+  }
+  const base = path.basename(relative);
+  if (SKIP_SESSION_NAMES.has(base)) {
+    return null;
+  }
+  if (!base.endsWith(".jsonl") && !base.endsWith(".json")) {
+    return null;
+  }
+  const dest = path.resolve(root, relative);
+  const resolvedRoot = path.resolve(root);
+  if (dest !== resolvedRoot && !dest.startsWith(resolvedRoot + path.sep)) {
+    return null;
+  }
+  return dest;
+}
+
+function walkSessionFiles(dir: string, prefix = ""): Array<{ name: string; bytes: number }> {
+  const out: Array<{ name: string; bytes: number }> = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...walkSessionFiles(full, rel));
+      continue;
+    }
+    if (entry.name.endsWith(".jsonl") || entry.name.endsWith(".json")) {
+      out.push({ name: rel, bytes: statSync(full).size });
+    }
+  }
+  return out;
+}
+
 export function persistSessionFiles(
   runId: string,
   files: Array<{ name: string; content: string }>,
@@ -71,17 +109,17 @@ export function persistSessionFiles(
   mkdirSync(dir, { recursive: true });
   const written: Array<{ name: string; bytes: number }> = [];
   for (const file of files) {
-    const name = path.basename(file.name);
-    if (!name || name.includes("..") || file.name.includes("..")) {
+    const dest = safeSessionPath(dir, file.name);
+    if (!dest) {
       continue;
     }
-    if (!name.endsWith(".jsonl") && !name.endsWith(".json")) {
-      continue;
-    }
+    mkdirSync(path.dirname(dest), { recursive: true });
     const content = file.content.slice(0, 1_000_000);
-    const dest = path.join(dir, name);
     writeFileSync(dest, content);
-    written.push({ name, bytes: Buffer.byteLength(content) });
+    written.push({
+      name: path.relative(dir, dest).replaceAll(path.sep, "/"),
+      bytes: Buffer.byteLength(content),
+    });
   }
   return written;
 }
@@ -89,15 +127,37 @@ export function persistSessionFiles(
 export function listSessionFiles(runId: string, runsDir?: string): Array<{ name: string; bytes: number }> {
   const dir = sessionDir(runId, runsDir);
   try {
-    return readdirSync(dir)
-      .filter((name) => name.endsWith(".jsonl") || name.endsWith(".json"))
-      .map((name) => ({
-        name,
-        bytes: Buffer.byteLength(readFileSync(path.join(dir, name))),
-      }));
+    return walkSessionFiles(dir);
   } catch {
     return [];
   }
+}
+
+export function loadSessionFiles(runId: string, runsDir?: string): Array<{ name: string; content: string }> {
+  const dir = sessionDir(runId, runsDir);
+  try {
+    return walkSessionFiles(dir).map((file) => ({
+      name: file.name,
+      content: readFileSync(path.join(dir, ...file.name.split("/")), "utf8"),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function restoreSessionToDir(runId: string, destDir: string, runsDir?: string): Array<{ name: string; bytes: number }> {
+  mkdirSync(destDir, { recursive: true });
+  const restored: Array<{ name: string; bytes: number }> = [];
+  for (const file of loadSessionFiles(runId, runsDir)) {
+    const dest = safeSessionPath(destDir, file.name);
+    if (!dest) {
+      continue;
+    }
+    mkdirSync(path.dirname(dest), { recursive: true });
+    writeFileSync(dest, file.content);
+    restored.push({ name: file.name, bytes: Buffer.byteLength(file.content) });
+  }
+  return restored;
 }
 
 export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[] {

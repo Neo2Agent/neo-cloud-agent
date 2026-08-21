@@ -752,10 +752,14 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 合约已经放在 `packages/contracts`。下一刀代码建议是（仍在本 monorepo）：
 
-P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已经通了。`install` 会在 clone 之后、worker 起来之前执行；Run 和事件写在 `RUNS_DIR/.control`，控制面重启后侧边栏还在。下一刀仍在本 monorepo：
+P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已经通了。`install` 会在 clone 之后、worker 起来之前执行；Run 和事件写在 `RUNS_DIR/.control`，控制面重启后侧边栏还在。GitHub App 安装令牌和 IDLE session 恢复已经落地。下一刀仍在本 monorepo：
 
-1. 真 GitHub App 安装令牌（现在是控制面持有的 PAT + 自签短寿命 broker token）
-2. 冷启动后的 `start` 若失败是否阻断 Agent（现在只记事件，继续跑）
-3. Session 从对象存储恢复 IDLE Run
+1. 冷启动后的 `start` 若失败是否阻断 Agent（现在只记事件，继续跑）
+2. Session / transcript 归档到对象存储（现在是控制面磁盘备份 + worker 启动下载）
+3. 真隔离 Runtime（Firecracker）；只换 Runtime，不换 Agent，也不拆仓
 
-换 Firecracker 只换 Runtime，不换 Agent，也不拆仓。
+已落地的 SCM / 恢复约定：
+
+- 控制面用 `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY` + `GITHUB_APP_INSTALLATION_ID` 签 App JWT，换短寿命 installation token 做 push / 开 PR；没配 App 或换票失败时回退 `SCM_PUSH_TOKEN` / `GITHUB_TOKEN`。
+- Worker 仍然只能申请 `neo.git.*` broker token，拿不到 App 私钥或 PAT。
+- 控制面重启后 LIVE Run 标 ERROR；IDLE Run 保留。下一条 follow-up 会从 `.control/<id>.session` 恢复 JSONL，再重新 provision worker。Docker 的 `SESSION_DIR=/var/neo/sessions` 不在 bind-mount 上，worker 启动时走 `GET /internal/runs/:id/session` 下载内容。

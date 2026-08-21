@@ -112,7 +112,7 @@ export function createApiServer() {
           send(res, 400, { error: "text is required" });
           return;
         }
-        send(res, 201, enqueueFollowUp(runId, body));
+        send(res, 201, await enqueueFollowUp(runId, body));
         return;
       }
       if (followMatch && method === "GET") {
@@ -173,7 +173,7 @@ export function createApiServer() {
           notFound(res);
           return;
         }
-        send(res, 200, getRunSession(runId));
+        send(res, 200, getRunSession(runId, { includeContent: path.startsWith("/internal/") }));
         return;
       }
       if (sessionMatch && method === "POST") {

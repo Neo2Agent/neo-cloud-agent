@@ -3,7 +3,7 @@ import { prepareWorkspaceRepo } from "./branch.js";
 import { commitWorkspace, openDraftPullRequest, workspaceDiff } from "./deliver.js";
 import { mintGitToken, type IssuedGitToken } from "./token.js";
 
-export { mintGitToken, scmPushToken, verifyGitToken } from "./token.js";
+export { mintGitToken, resolveScmPushToken, scmPushToken, verifyGitToken } from "./token.js";
 export { parseGithubRepo } from "./git.js";
 
 export async function prepareRunRepos(

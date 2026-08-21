@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PullRequestRef } from "@neo-cloud-agent/contracts";
 import { gitOk, parseGithubRepo, runGit } from "./git.js";
-import { scmPushToken } from "./token.js";
+import { resolveScmPushToken } from "./token.js";
 
 export type CommitResult = {
   sha: string;
@@ -92,7 +92,7 @@ export async function pushWorkspace(cwd: string, branch: string, remoteUrl?: str
   if (!remote) {
     return { pushed: false, remote: null };
   }
-  const token = scmPushToken();
+  const token = await resolveScmPushToken();
   const github = parseGithubRepo(remote);
   if (github && token) {
     await withAskpass(token, (env) => gitOk(cwd, ["push", "-u", "origin", `HEAD:${branch}`], env));
@@ -164,7 +164,7 @@ export async function openDraftPullRequest(
       : await pushWorkspace(cwd, input.branch, input.remoteUrl);
   const remote = pushed.remote ?? input.remoteUrl ?? input.repoUrl;
   const github = parseGithubRepo(remote);
-  const token = scmPushToken();
+  const token = await resolveScmPushToken();
   if (github && token) {
     const opened = await (input.githubPulls ?? defaultGithubPulls)({
       owner: github.owner,

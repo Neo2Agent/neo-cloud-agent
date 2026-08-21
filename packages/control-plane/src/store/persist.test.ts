@@ -4,7 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { Run, RunEvent } from "@neo-cloud-agent/contracts";
-import { loadPersistedEvents, loadPersistedRuns, persistEvent, persistRunRecord } from "./persist.js";
+import {
+  listSessionFiles,
+  loadPersistedEvents,
+  loadPersistedRuns,
+  loadSessionFiles,
+  persistEvent,
+  persistRunRecord,
+  persistSessionFiles,
+} from "./persist.js";
 
 function sampleRun(id: string): Run {
   const createdAt = "2026-08-21T00:00:00.000Z";
@@ -58,4 +66,27 @@ test("persists a run record and JSONL events next to the workspace dir", () => {
   const events = loadPersistedEvents(run.id, runsDir);
   assert.equal(events.length, 1);
   assert.equal(events[0]?.kind, "user.message");
+});
+
+test("session backup keeps nested paths and rejects escapes", () => {
+  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-persist-sess-"));
+  const written = persistSessionFiles(
+    "run-sess-1",
+    [
+      { name: "agent/turn.jsonl", content: "{\"type\":\"message\"}\n" },
+      { name: "../escape.jsonl", content: "nope" },
+      { name: "agent/auth.json", content: "{\"apiKey\":\"secret\"}" },
+    ],
+    runsDir,
+  );
+  assert.deepEqual(
+    written.map((file) => file.name),
+    ["agent/turn.jsonl"],
+  );
+  const listed = listSessionFiles("run-sess-1", runsDir);
+  assert.equal(listed.some((file) => file.name === "agent/turn.jsonl"), true);
+  assert.equal(listed.some((file) => file.name.includes("escape")), false);
+  assert.equal(listed.some((file) => file.name.endsWith("auth.json")), false);
+  const loaded = loadSessionFiles("run-sess-1", runsDir);
+  assert.equal(loaded[0]?.content, "{\"type\":\"message\"}\n");
 });

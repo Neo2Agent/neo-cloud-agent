@@ -79,6 +79,18 @@ export async function requestPullRequest(
   return response.json();
 }
 
+export async function downloadSession(runId: string): Promise<Array<{ name: string; content: string }>> {
+  const config = getWorkerConfig();
+  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/session`);
+  if (!response.ok) {
+    throw new Error(`session ${response.status}`);
+  }
+  const body = (await response.json()) as { files?: Array<{ name: string; content?: string }> };
+  return (body.files ?? [])
+    .filter((file): file is { name: string; content: string } => Boolean(file.name) && typeof file.content === "string")
+    .map((file) => ({ name: file.name, content: file.content }));
+}
+
 export async function uploadSession(runId: string, files: Array<{ name: string; content: string }>): Promise<void> {
   if (files.length === 0) {
     return;

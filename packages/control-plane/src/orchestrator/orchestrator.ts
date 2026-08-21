@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   CreateCommitRequest,
   CreateFollowUpRequest,
@@ -20,7 +21,15 @@ import { getRuntime } from "../runtime/factory.js";
 import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
 import { materializeRepos } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
-import { listSessionFiles, loadPersistedEvents, loadPersistedRuns, persistRunRecord, persistSessionFiles } from "../store/persist.js";
+import {
+  listSessionFiles,
+  loadPersistedEvents,
+  loadPersistedRuns,
+  loadSessionFiles,
+  persistRunRecord,
+  persistSessionFiles,
+  restoreSessionToDir,
+} from "../store/persist.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 
 const runs = new Map<string, Run>();
@@ -288,31 +297,60 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
   }
 
   try {
-    const handle = await getRuntime().provision(launchSpec(run, runJwts.get(run.id) ?? mintJwtForRun(run)), {
-      onExit: (code) => {
-        const current = runs.get(run.id);
-        if (!current || current.status === "ARCHIVED" || current.status === "EXPIRED") {
-          return;
-        }
-        if (code !== 0 && current.status === "RUNNING") {
-          current.status = "ERROR";
-          current.errorMessage = `worker exited with code ${code}`;
-          current.updatedAt = now();
-          publish(event(run.id, "run.error", current.errorMessage));
-          flushRun(run.id);
-        }
-      },
-    });
-    handles.set(run.id, handle);
-    run.workerHandle = handle.id;
-    run.status = "RUNNING";
-    run.updatedAt = now();
-    publish(event(run.id, "run.running", runningTitle()));
-    flushRun(run.id);
+    await attachWorker(run, runningTitle());
   } catch (error) {
     const message = error instanceof Error ? error.message : "worker provision failed";
     failRun(run, message);
     return run;
+  }
+  return run;
+}
+
+async function attachWorker(run: Run, title: string): Promise<void> {
+  const handle = await getRuntime().provision(launchSpec(run, runJwts.get(run.id) ?? mintJwtForRun(run)), {
+    onExit: (code) => {
+      const current = runs.get(run.id);
+      if (!current || current.status === "ARCHIVED" || current.status === "EXPIRED") {
+        return;
+      }
+      handles.delete(run.id);
+      if (code !== 0 && current.status === "RUNNING") {
+        current.status = "ERROR";
+        current.errorMessage = `worker exited with code ${code}`;
+        current.updatedAt = now();
+        publish(event(run.id, "run.error", current.errorMessage));
+        flushRun(run.id);
+      }
+    },
+  });
+  handles.set(run.id, handle);
+  run.workerHandle = handle.id;
+  run.status = "RUNNING";
+  run.errorMessage = null;
+  run.updatedAt = now();
+  publish(event(run.id, "run.running", title));
+  flushRun(run.id);
+}
+
+export async function resumeRun(runId: string): Promise<Run> {
+  const run = requireRun(runId);
+  if (handles.has(runId)) {
+    return run;
+  }
+  if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
+    throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
+  }
+  restoreSessionToDir(runId, path.join(workspaceFor(runId), "sessions"));
+  run.status = "PROVISIONING";
+  run.updatedAt = now();
+  publish(event(runId, "run.provisioning", "Resuming worker from session backup"));
+  flushRun(runId);
+  try {
+    await attachWorker(run, "Resuming worker");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "worker provision failed";
+    failRun(run, message);
+    throw error;
   }
   return run;
 }
@@ -367,10 +405,13 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
   }
 }
 
-export function enqueueFollowUp(runId: string, input: CreateFollowUpRequest): FollowUp {
+export async function enqueueFollowUp(runId: string, input: CreateFollowUpRequest): Promise<FollowUp> {
   const run = runs.get(runId);
   if (!run) {
     throw new Error(`run not found: ${runId}`);
+  }
+  if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
+    throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
   const delivery: FollowUpDelivery =
     input.delivery ?? (run.status === "RUNNING" ? "follow_up" : "prompt");
@@ -402,6 +443,13 @@ export function enqueueFollowUp(runId: string, input: CreateFollowUpRequest): Fo
     }),
   );
   flushRun(runId);
+  if (!handles.has(runId)) {
+    try {
+      await resumeRun(runId);
+    } catch {
+      // follow-up stays queued; resumeRun already marked the run ERROR
+    }
+  }
   return item;
 }
 
@@ -534,8 +582,11 @@ export function saveRunSession(runId: string, files: Array<{ name: string; conte
   return { files: written };
 }
 
-export function getRunSession(runId: string) {
+export function getRunSession(runId: string, options?: { includeContent?: boolean }) {
   requireRun(runId);
+  if (options?.includeContent) {
+    return { files: loadSessionFiles(runId) };
+  }
   return { files: listSessionFiles(runId) };
 }
 

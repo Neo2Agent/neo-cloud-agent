@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { GitTokenScope } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
+import { githubAppConfig, mintGithubInstallationToken } from "./github-app.js";
 
 export type IssuedGitToken = {
   token: string;
@@ -91,6 +92,21 @@ export function verifyGitToken(token: string, options?: { consume?: boolean }): 
 
 export function scmPushToken(): string | null {
   return process.env.SCM_PUSH_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || null;
+}
+
+export async function resolveScmPushToken(): Promise<string | null> {
+  const app = githubAppConfig();
+  if (app) {
+    try {
+      const issued = await mintGithubInstallationToken(app);
+      return issued.token;
+    } catch (error) {
+      if (!scmPushToken()) {
+        throw error;
+      }
+    }
+  }
+  return scmPushToken();
 }
 
 export function resetGitTokens(): void {

@@ -13,6 +13,7 @@ delete process.env.WORKER_WORKSPACE_MOUNT;
 const {
   commitRun,
   createRun,
+  enqueueFollowUp,
   getBootstrap,
   getRun,
   getRunSession,
@@ -142,6 +143,43 @@ test("events and session backups redact runtime secrets", async () => {
   } finally {
     delete process.env.DEEPSEEK_API_KEY;
   }
+});
+
+test("follow-up after reload resumes the worker from session backup", async () => {
+  const run = await createRun({
+    prompt: "resume me",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  ingestEvents(run.id, [
+    {
+      id: "agent-end-resume",
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "agent.end",
+      title: "done",
+    },
+  ]);
+  saveRunSession(run.id, [{ name: "agent/turn.jsonl", content: "{\"type\":\"message\"}\n" }]);
+  assert.equal(getRun(run.id)?.status, "IDLE");
+  reloadPersistedState();
+  assert.equal(getRun(run.id)?.status, "IDLE");
+
+  const follow = await enqueueFollowUp(run.id, { text: "continue the work" });
+  assert.equal(follow.delivery, "prompt");
+  assert.equal(getRun(run.id)?.status, "RUNNING");
+  assert.equal(
+    readFileSync(path.join(getBootstrap(run.id).workspaceDir, "sessions", "agent", "turn.jsonl"), "utf8"),
+    "{\"type\":\"message\"}\n",
+  );
+  const inbox = takeInbound(run.id);
+  assert.equal(inbox.length, 1);
+  assert.equal(inbox[0]?.type, "prompt");
+  assert.equal("text" in (inbox[0] ?? {}) ? inbox[0]?.text : "", "continue the work");
+  assert.ok(listEvents(run.id).some((item) => item.kind === "run.provisioning"));
+  assert.ok(listEvents(run.id).some((item) => item.title === "Resuming worker from session backup"));
 });
 
 test("createRun fails when the local repo path does not exist", async () => {

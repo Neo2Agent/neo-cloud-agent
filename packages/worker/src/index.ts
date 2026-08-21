@@ -1,8 +1,8 @@
 import { getWorkerConfig } from "./config.js";
 import { runWorkspaceBoot, stopTerminals } from "./boot.js";
-import { fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
+import { downloadSession, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
 import { toRunEvents } from "./events.js";
-import { collectSessionFiles } from "./session-backup.js";
+import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
 
 function sleep(ms: number): Promise<void> {
@@ -41,6 +41,12 @@ async function main(): Promise<void> {
   const boot = await runWorkspaceBoot({ runId: config.runId, workspaceDir });
   if (boot.events.length > 0) {
     await pushEvents(config.runId, boot.events);
+  }
+
+  try {
+    restoreSessionFiles(config.sessionDir, await downloadSession(config.runId));
+  } catch (error: unknown) {
+    console.error("failed to restore session", error);
   }
 
   const session = await openPiSession({
