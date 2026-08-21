@@ -113,7 +113,7 @@ export async function runWorkspaceBoot(input: { runId: string; workspaceDir: str
       child.stderr?.pipe(log);
       terminals.push({ name: terminal.name, child });
       const immediate = await new Promise<number | null>((resolve) => {
-        const timer = setTimeout(() => resolve(null), 80);
+        const timer = setTimeout(() => resolve(null), 400);
         child.once("exit", (code) => {
           clearTimeout(timer);
           resolve(code ?? 1);

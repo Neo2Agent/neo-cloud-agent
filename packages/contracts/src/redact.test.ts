@@ -10,7 +10,8 @@ test("collects long secret values and ignores short ones", () => {
     HOME: "/tmp",
     NEO_RUNTIME_SECRET_DB: "postgres-password-1",
   });
-  assert.deepEqual(secrets, ["sk-deepseek-secret", "postgres-password-1"]);
+  assert.deepEqual(new Set(secrets), new Set(["sk-deepseek-secret", "postgres-password-1"]));
+  assert.ok((secrets[0]?.length ?? 0) >= (secrets[1]?.length ?? 0));
 });
 
 test("redacts the longest secret first so overlapping tokens stay covered", () => {

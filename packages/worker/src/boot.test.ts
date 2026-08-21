@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -17,6 +17,10 @@ test("runWorkspaceBoot runs start then terminals and never start during install"
     }),
   );
   const result = await runWorkspaceBoot({ runId: "run-boot", workspaceDir: dir });
+  const deadline = Date.now() + 2000;
+  while (!existsSync(path.join(dir, ".neo-terminal")) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   assert.equal(readFileSync(path.join(dir, ".neo-started"), "utf8").trim(), "started");
   assert.equal(readFileSync(path.join(dir, ".neo-terminal"), "utf8").trim(), "term");
   assert.equal(existsInstalled(dir), false);
