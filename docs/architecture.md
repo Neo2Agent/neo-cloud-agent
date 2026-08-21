@@ -757,6 +757,5 @@ P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已�
 1. P1 SCM：短寿命 token、受控 commit、draft PR
 2. 读 `.neo/environment.json` 并跑 `install`
 3. Run / 事件持久化，重启不丢对话
-4. 在有 Docker 的机器上跑 `WORKER_RUNTIME=docker` 的整镜像 e2e
 
 换 Firecracker 只换 Runtime，不换 Agent，也不拆仓。
