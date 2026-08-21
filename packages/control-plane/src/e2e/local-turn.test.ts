@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { close, listen, waitForRun } from "./helpers.js";
+import { archiveRun, close, listen, waitForRun } from "./helpers.js";
 
 test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
   const runsDir = mkdtempSync(path.join(tmpdir(), "neo-e2e-"));
@@ -28,13 +28,18 @@ test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
   const apiPort = await listen(api);
   process.env.CONTROL_PLANE_URL = `http://127.0.0.1:${apiPort}`;
   process.env.CONTROL_PLANE_PORT = String(apiPort);
+  const apiBase = `http://127.0.0.1:${apiPort}`;
+  let runId = "";
   t.after(async () => {
+    if (runId) {
+      await archiveRun(apiBase, runId);
+    }
     await close(api);
     await close(gateway);
     process.env.WORKER_RUNTIME = "none";
   });
 
-  const created = await fetch(`http://127.0.0.1:${apiPort}/v1/runs`, {
+  const created = await fetch(`${apiBase}/v1/runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -45,11 +50,12 @@ test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
   });
   assert.equal(created.status, 201);
   const run = (await created.json()) as { id: string; status: string; errorMessage: string | null };
+  runId = run.id;
   assert.equal(run.status, "RUNNING", run.errorMessage ?? "");
   assert.ok(existsSync(path.join(runsDir, run.id, "hello.txt")));
   assert.ok(existsSync(path.join(runsDir, run.id, ".neo-installed")));
 
-  const result = await waitForRun(`http://127.0.0.1:${apiPort}`, run.id, 60_000);
+  const result = await waitForRun(apiBase, run.id, 60_000);
   assert.notEqual(result.status, "ERROR", result.errorMessage ?? result.kinds.join(","));
   assert.ok(existsSync(path.join(runsDir, run.id, ".neo-started")));
   assert.ok(existsSync(path.join(runsDir, run.id, ".neo-terminal")));

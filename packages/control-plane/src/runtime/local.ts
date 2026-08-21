@@ -16,6 +16,45 @@ function alive(pid: number): boolean {
   }
 }
 
+function terminateChild(child: ChildProcess, timeoutMs = 3000): Promise<void> {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, timeoutMs);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    child.kill("SIGTERM");
+  });
+}
+
+async function terminatePid(pid: number, timeoutMs = 3000): Promise<void> {
+  if (!alive(pid)) {
+    return;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return;
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (alive(pid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (alive(pid)) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
+}
+
 export class LocalProcessRuntime implements ExecutionRuntime {
   private readonly children = new Map<string, ChildProcess>();
   private readonly adopted = new Map<string, { pid: number; timer: ReturnType<typeof setInterval> }>();
@@ -90,20 +129,19 @@ export class LocalProcessRuntime implements ExecutionRuntime {
   async destroy(handle: RuntimeHandle): Promise<void> {
     const runId = handle.id.startsWith("local-") ? handle.id.slice("local-".length) : handle.id;
     const child = this.children.get(runId);
-    if (child) {
-      child.kill("SIGTERM");
-      this.children.delete(runId);
-    }
     const adopted = this.adopted.get(runId);
     if (adopted) {
       clearInterval(adopted.timer);
-      if (alive(adopted.pid)) {
-        process.kill(adopted.pid, "SIGTERM");
-      }
       this.adopted.delete(runId);
     }
-    if (!child && !adopted && handle.pid && alive(handle.pid)) {
-      process.kill(handle.pid, "SIGTERM");
+    if (child) {
+      this.children.delete(runId);
+      await terminateChild(child);
+      return;
+    }
+    const pid = adopted?.pid ?? handle.pid ?? null;
+    if (pid) {
+      await terminatePid(pid);
     }
   }
 }

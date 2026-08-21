@@ -19,6 +19,14 @@ export function close(server: Server): Promise<void> {
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
+export async function archiveRun(base: string, runId: string): Promise<void> {
+  try {
+    await fetch(`${base}/v1/runs/${runId}/archive`, { method: "POST" });
+  } catch {
+    // control plane may already be gone
+  }
+}
+
 export function dockerAvailable(): boolean {
   try {
     if (spawnSync("docker", ["info"], { encoding: "utf8", timeout: 4000 }).status === 0) {

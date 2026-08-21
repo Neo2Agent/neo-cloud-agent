@@ -180,8 +180,9 @@ export function expireStaleWorkers(at = Date.now()): string[] {
     if (!LIVE_STATUSES.has(run.status)) {
       continue;
     }
-    const handle = handles.get(run.id);
-    if (handle?.runtime === "none") {
+    if (handles.has(run.id)) {
+      // Process/container liveness is owned by the runtime. Heartbeats only
+      // cover the post-restart gap when adopt() could not reattach.
       continue;
     }
     const lastSeen = heartbeats.get(run.id) ?? Date.parse(run.updatedAt);

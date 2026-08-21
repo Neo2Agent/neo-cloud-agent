@@ -85,13 +85,21 @@ async function main(): Promise<void> {
     void stop();
   });
 
+  let consecutiveFailures = 0;
+  const maxFailures = Number(process.env.WORKER_INBOX_MAX_FAILURES ?? 75);
+
   try {
     while (running) {
       let messages;
       try {
         messages = await pullInbox(config.runId);
+        consecutiveFailures = 0;
       } catch (error: unknown) {
-        console.error("inbox unavailable, retrying", error);
+        consecutiveFailures += 1;
+        console.error(`inbox unavailable (${consecutiveFailures}/${maxFailures}), retrying`, error);
+        if (consecutiveFailures >= maxFailures) {
+          throw new Error(`control plane unreachable after ${maxFailures} inbox attempts`);
+        }
         await sleep(config.pollMs);
         continue;
       }

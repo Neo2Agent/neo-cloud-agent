@@ -766,5 +766,5 @@ P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已�
 - transcript / session 会再写一份到对象存储（默认 `RUNS_DIR/.objects`，可换 S3）。本地 `.control` 丢了还能从归档恢复。
 - `start` 失败默认不阻断 Agent（和 Cursor 一样，只记 `START_FAILED`）。`environment.json` 里 `startMustSucceed: true` 或 `START_MUST_SUCCEED=1` 才会让 worker 退出、Run 变 ERROR。
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
-- 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
+- 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。已经挂上的 handle 以进程/容器退出为准，不会因为一次长工具调用没心跳就被标 ERROR。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
 - 对外 `/v1` 用 `CONTROL_PLANE_TOKEN`（Bearer / Cookie / `access_token`）。Worker 走 `/internal`，只带 run JWT。`/health` 和静态页不需要令牌。
