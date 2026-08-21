@@ -33,6 +33,10 @@ const llmKeyEl = document.getElementById("llm-key");
 const saveLlmEl = document.getElementById("save-llm");
 const llmStatusEl = document.getElementById("llm-status");
 const vmStatusEl = document.getElementById("vm-status");
+const vmRailEl = document.getElementById("vm-rail");
+const vmBadgeEl = document.getElementById("vm-badge");
+const settingsPanelEl = document.getElementById("settings-panel");
+const toggleSettingsEl = document.getElementById("toggle-settings");
 
 const TOKEN_KEY = "neo.apiToken";
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
@@ -57,6 +61,7 @@ const state = {
   environments: [],
   builds: [],
   llm: { configured: false, upstream: "mock", model: null },
+  vms: { total: 0, busy: 0, backend: "none", slots: [] },
 };
 
 function apiHeaders(json) {
@@ -216,10 +221,137 @@ function showPullRequest(run) {
 function emptyState() {
   transcriptEl.innerHTML = `
     <div class="empty">
-      <h2>从一条任务开始</h2>
-      <p>仓库填 <code>fixtures/toy-repo</code>，让 Agent 加 README 并跑 <code>sh test.sh</code>。第一条消息会创建 Run，后续消息作为跟进。多个标签或设备打开同一条 Run，会订阅控制面同一条事件流。</p>
+      <h2>直接说要做什么</h2>
+      <p>发送后会占用一个空闲 VM。仓库和 API Key 在右上角「设置」里。</p>
     </div>
   `;
+}
+
+function slotLabel(id) {
+  const raw = String(id || "");
+  const match = /^slot-(\d+)$/.exec(raw);
+  if (match) return `VM ${Number(match[1]) + 1}`;
+  return raw || "未分配";
+}
+
+function runForSlot(slot) {
+  return state.runs.find((item) => item.id === slot.runId || item.vmSlotId === slot.id);
+}
+
+function currentRun() {
+  return state.runs.find((item) => item.id === state.runId) ?? null;
+}
+
+function currentSlotId() {
+  const run = currentRun();
+  if (run?.vmSlotId) return run.vmSlotId;
+  return state.vms.slots.find((item) => item.runId === state.runId)?.id ?? null;
+}
+
+function applyVmSummary(payload) {
+  if (!payload || typeof payload !== "object") return;
+  state.vms = {
+    total: payload.total || 0,
+    busy: payload.busy || 0,
+    backend: payload.backend || "none",
+    slots: Array.isArray(payload.slots) ? payload.slots : [],
+  };
+  let dirty = false;
+  for (const slot of state.vms.slots) {
+    if (!slot.runId) continue;
+    const run = state.runs.find((item) => item.id === slot.runId);
+    if (run && run.vmSlotId !== slot.id) {
+      run.vmSlotId = slot.id;
+      dirty = true;
+    }
+  }
+  if (dirty) renderRuns();
+}
+
+function renderVmBadge() {
+  if (!vmBadgeEl) return;
+  const id = currentSlotId();
+  if (!id) {
+    vmBadgeEl.textContent = state.runId ? "分配 VM 中…" : "未分配 VM";
+    vmBadgeEl.dataset.busy = "false";
+    return;
+  }
+  vmBadgeEl.textContent = `${slotLabel(id)} · ${id}`;
+  vmBadgeEl.dataset.busy = "true";
+}
+
+function renderVmHint() {
+  if (!vmStatusEl) return;
+  const { total, busy, backend, slots } = state.vms;
+  if (!total && slots.length === 0) {
+    vmStatusEl.textContent = "未启用 VM 槽。";
+    return;
+  }
+  const kind = backend === "loop" ? "loop 挂载" : backend === "kvm" ? "Firecracker" : backend;
+  const id = currentSlotId();
+  if (id) {
+    vmStatusEl.textContent = `当前对话占用 ${slotLabel(id)}（${id}，${kind}）`;
+    return;
+  }
+  const idle = Math.max(0, (total || slots.length) - busy);
+  const count = total || slots.length;
+  vmStatusEl.textContent =
+    idle > 0
+      ? `${idle}/${count} 个 VM 空闲，发送后占用其中一个（${kind}）。`
+      : `${count} 个 VM 都在忙。打开已有对话，或等槽位释放。`;
+}
+
+function renderVmRail() {
+  if (!vmRailEl) return;
+  const slots = state.vms.slots || [];
+  if (slots.length === 0) {
+    const text = state.vms.total ? "VM 槽还在初始化" : "当前未启用 VM";
+    vmRailEl.innerHTML = `<p class="hint">${escapeHtml(text)}</p>`;
+    return;
+  }
+  vmRailEl.innerHTML = slots
+    .map((slot) => {
+      const occupant = runForSlot(slot);
+      const busy = slot.status === "busy" || Boolean(slot.runId);
+      const current = Boolean(state.runId && (slot.runId === state.runId || occupant?.id === state.runId));
+      const title = occupant ? preview(occupant.prompt) : busy ? shortId(slot.runId || "") : "空闲";
+      const openId = occupant?.id || slot.runId;
+      const open = openId ? ` data-open="${escapeHtml(openId)}"` : "";
+      return `<article class="vm-slot" data-busy="${busy}" data-current="${current}"${open}>
+        <strong>${escapeHtml(slotLabel(slot.id))}</strong>
+        <small>${busy ? "占用" : "空闲"} · ${escapeHtml(title)}</small>
+      </article>`;
+    })
+    .join("");
+}
+
+function formatHealth(health) {
+  if (!health?.ok) return "控制面异常";
+  const provider = health.llmConfigured
+    ? health.llmUpstream === "openai"
+      ? "OpenAI"
+      : health.llmUpstream === "deepseek"
+        ? "DeepSeek"
+        : String(health.llmUpstream || "LLM")
+    : "未配置 Key";
+  const total = state.vms.total || health.vmSlots?.total || 0;
+  const busy = state.vms.busy ?? health.vmSlots?.busy ?? 0;
+  const vm = total > 0 ? ` · VM ${busy}/${total}` : health.workerRuntime === "vm" ? " · VM" : "";
+  return `在线 · ${provider}${vm}`;
+}
+
+async function refreshVms() {
+  if (!(state.authRequired && !state.token)) {
+    try {
+      const response = await api("/v1/vms");
+      if (response.ok) applyVmSummary(await response.json());
+    } catch {
+      // keep last known occupancy
+    }
+  }
+  renderVmRail();
+  renderVmBadge();
+  renderVmHint();
 }
 
 function renderRuns() {
@@ -229,7 +361,7 @@ function renderRuns() {
       (run) => `
       <button class="run-item${run.id === state.runId ? " active" : ""}" data-id="${escapeHtml(run.id)}" type="button">
         <strong>${escapeHtml(preview(run.prompt))}</strong>
-        <small>${escapeHtml(STATUS_LABELS[run.status] ?? run.status)} · ${escapeHtml(shortId(run.id))}</small>
+        <small>${escapeHtml(STATUS_LABELS[run.status] ?? run.status)}${run.vmSlotId ? ` · ${escapeHtml(slotLabel(run.vmSlotId))}` : ""}</small>
       </button>
     `,
     )
@@ -362,6 +494,15 @@ function applyEvent(event) {
   if (event.kind === "run.running" || event.kind === "run.provisioning") setStatus("RUNNING");
   if (event.kind === "run.idle") setStatus("IDLE");
   if (event.kind === "run.archived") setStatus("ARCHIVED");
+  if (
+    event.kind === "run.running" ||
+    event.kind === "run.provisioning" ||
+    event.kind === "run.idle" ||
+    event.kind === "run.archived" ||
+    event.kind === "run.error"
+  ) {
+    void refreshVms();
+  }
 }
 
 function closeStream() {
@@ -394,11 +535,16 @@ async function refreshRuns() {
   const body = await response.json();
   state.runs = body.runs ?? [];
   renderRuns();
+  renderVmRail();
+  renderVmBadge();
 }
 
 async function openRun(runId) {
   const run = await (await api(`/v1/runs/${runId}`)).json();
   state.runId = run.id;
+  const existing = state.runs.findIndex((item) => item.id === run.id);
+  if (existing >= 0) state.runs[existing] = { ...state.runs[existing], ...run };
+  else state.runs.unshift(run);
   state.events.clear();
   state.assistant = null;
   transcriptEl.innerHTML = "";
@@ -414,6 +560,8 @@ async function openRun(runId) {
       : shortId(run.id);
   showPullRequest(run);
   renderRuns();
+  renderVmBadge();
+  void refreshVms();
   const transcript = await (await api(`/v1/runs/${run.id}/transcript`)).json();
   if (transcript.snapshot) applySnapshot(transcript.snapshot);
   listen(run.id, transcript.snapshot?.lastEventId ?? state.lastEventId);
@@ -436,6 +584,8 @@ function resetComposer() {
   showPullRequest(null);
   history.replaceState(null, "", "/");
   renderRuns();
+  renderVmBadge();
+  renderVmHint();
 }
 
 function selectedBuildPayload() {
@@ -593,6 +743,13 @@ saveLlmEl?.addEventListener("click", async () => {
     if (saved.error === "login_required") throw new Error("请先登录再保存 API Key");
     if (saved.error) throw new Error(saved.error);
     renderLlmSettings(saved);
+    try {
+      const health = await (await fetch("/health")).json();
+      state.healthText = formatHealth(health);
+      healthEl.textContent = state.healthText;
+    } catch {
+      // occupancy footer is best-effort
+    }
   } catch (error) {
     if (llmStatusEl) {
       llmStatusEl.textContent = error instanceof Error ? error.message : "保存失败";
@@ -634,6 +791,19 @@ warmBuildEl.addEventListener("click", async () => {
   } finally {
     warmBuildEl.disabled = false;
   }
+});
+
+toggleSettingsEl?.addEventListener("click", () => {
+  if (!settingsPanelEl) return;
+  const open = settingsPanelEl.hidden;
+  settingsPanelEl.hidden = !open;
+  toggleSettingsEl.setAttribute("aria-expanded", String(open));
+  toggleSettingsEl.textContent = open ? "收起设置" : "设置";
+});
+
+vmRailEl?.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-open]");
+  if (card?.dataset.open) void openRun(card.dataset.open);
 });
 
 runListEl.addEventListener("click", (event) => {
@@ -737,6 +907,7 @@ async function finishLogin() {
   await refreshRuns();
   await refreshEnvironments();
   await refreshLlmSettings();
+  await refreshVms();
   const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
   if (match?.[1]) await openRun(match[1]);
   else emptyState();
@@ -829,33 +1000,11 @@ async function boot() {
     const health = await (await fetch("/health")).json();
     state.authRequired = health.authRequired === true;
     state.accountsRequired = health.accountsRequired === true;
-    if (!health.ok) {
-      state.healthText = "控制面异常";
-    } else if (health.defaultModel) {
-      const runtime = health.workerRuntime ? ` · ${health.workerRuntime}` : "";
-      const store = health.metadataStore ? ` · ${health.metadataStore}` : "";
-      const bus = health.eventBus ? ` · ${health.eventBus}` : "";
-      const auth = state.authRequired ? " · 需登录" : "";
-      const builds = typeof health.builds === "number" ? ` · ${health.builds} 快照` : "";
-      const llm = health.llmConfigured ? ` · ${health.llmUpstream}` : " · 未配置 API Key";
-      const vms =
-        health.vmSlots && health.vmSlots.total
-          ? ` · VM ${health.vmSlots.busy}/${health.vmSlots.total} ${health.vmSlots.backend}`
-          : "";
-      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${bus}${builds}${llm}${vms}${auth}`;
-      if (vmStatusEl && health.vmSlots) {
-        if (!health.vmSlots.total) {
-          vmStatusEl.textContent = "VM 槽未启用。";
-        } else if (health.vmSlots.kvm) {
-          vmStatusEl.textContent = `${health.vmSlots.total} 个 Firecracker 槽，每槽 ${health.vmSlots.sizeGiB}GiB。`;
-        } else {
-          vmStatusEl.textContent = `${health.vmSlots.total} 个 VM 槽（loop 挂载，这台机器没有 /dev/kvm），每槽 ${health.vmSlots.sizeGiB}GiB，同时最多 ${health.vmSlots.total} 个任务。`;
-        }
-      }
-    } else {
-      state.healthText = "控制面在线";
-    }
+    applyVmSummary(health.vmSlots);
+    state.healthText = formatHealth(health);
     healthEl.textContent = state.healthText;
+    renderVmRail();
+    renderVmHint();
     state.bootstrapEmail = typeof health.bootstrapEmail === "string" ? health.bootstrapEmail : "";
     state.bootstrapLogin = health.bootstrapLogin === true;
     state.defaultAdmin = health.defaultAdmin === true;
@@ -901,12 +1050,30 @@ async function boot() {
   await refreshRuns();
   await refreshEnvironments();
   await refreshLlmSettings();
+  await refreshVms();
   const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
   if (match?.[1]) {
     await openRun(match[1]);
   } else {
     emptyState();
+    renderVmBadge();
   }
 }
+
+window.setInterval(() => {
+  if (state.authRequired && !state.token) return;
+  void (async () => {
+    try {
+      const health = await (await fetch("/health")).json();
+      applyVmSummary(health.vmSlots);
+      state.healthText = formatHealth(health);
+      healthEl.textContent = state.healthText;
+    } catch {
+      // keep last health line
+    }
+    if (state.runId) await refreshRuns();
+    await refreshVms();
+  })();
+}, 5000);
 
 void boot();

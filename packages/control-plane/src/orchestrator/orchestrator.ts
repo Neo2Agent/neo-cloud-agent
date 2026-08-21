@@ -377,6 +377,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     repoUrls: input.repoUrls,
     pullRequests: [],
     workerHandle: null,
+    vmSlotId: null,
     createdAt,
     updatedAt: createdAt,
     idleAt: null,
@@ -563,6 +564,7 @@ async function attachWorker(run: Run, title: string): Promise<void> {
   });
   handles.set(run.id, handle);
   run.workerHandle = handle.id;
+  run.vmSlotId = handle.slotId ?? run.vmSlotId ?? null;
   run.status = "RUNNING";
   run.errorMessage = null;
   run.updatedAt = now();

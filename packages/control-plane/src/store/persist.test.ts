@@ -33,6 +33,7 @@ function sampleRun(id: string): Run {
     repoUrls: ["fixtures/toy-repo"],
     pullRequests: [],
     workerHandle: "none-1",
+    vmSlotId: "slot-0",
     createdAt,
     updatedAt: createdAt,
     idleAt: createdAt,
@@ -63,6 +64,7 @@ test("persists a run record and JSONL events next to the workspace dir", () => {
   assert.equal(loaded.length, 1);
   assert.equal(loaded[0]?.run.prompt, "hello");
   assert.equal(loaded[0]?.run.setupStatus, "INSTALL_SUCCEEDED");
+  assert.equal(loaded[0]?.run.vmSlotId, "slot-0");
   const events = loadPersistedEvents(run.id, runsDir);
   assert.equal(events.length, 1);
   assert.equal(events[0]?.kind, "user.message");

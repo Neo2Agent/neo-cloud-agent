@@ -44,6 +44,8 @@ export interface Run {
   repoUrls: string[];
   pullRequests: PullRequestRef[];
   workerHandle: string | null;
+  /** Firecracker / loop VM slot claimed for this run, e.g. slot-0. */
+  vmSlotId?: string | null;
   createdAt: string;
   updatedAt: string;
   idleAt: string | null;
