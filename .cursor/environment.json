@@ -1,0 +1,5 @@
+{
+  "name": "neo-cloud-agent",
+  "install": "bash .cursor/install-docker.sh",
+  "start": "bash .cursor/start-docker.sh"
+}
