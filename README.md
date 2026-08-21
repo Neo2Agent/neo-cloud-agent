@@ -16,6 +16,7 @@ neo-cloud-agent/
   packages/worker           打进 VM / 任务容器，不是集群 Deployment
   packages/extensions       打进同一张 worker 镜像
   packages/web              对话页，由 control-plane 托管
+  packages/cli              终端客户端 `neo`（打 /v1，不跑 Agent loop）
   infra/                    compose 与三份 Dockerfile
   .neo/environment.json     本仓库自己的环境描述
 ```
@@ -52,6 +53,18 @@ curl -s -X POST localhost:8080/v1/runs \
 # 然后看 SSE / transcript
 curl -s localhost:8080/v1/runs/<id>/transcript
 ```
+
+终端客户端（设计见 [docs/cli.md](docs/cli.md)）走同一套 `/v1`，不在本机跑 pi：
+
+```bash
+pnpm neo --repo fixtures/toy-repo -p "只回复一个词：pong。不要调用工具。"
+pnpm neo login --email admin --password 123456
+pnpm neo ls
+pnpm neo log <runId>
+```
+
+`NEO_API_URL` 默认 `http://127.0.0.1:8080`。CI 用 `NEO_API_KEY` 或 `--api-key`。`--output-format json|stream-json` 给脚本；`--detach` 只创建不阻塞。
+
 
 接 DeepSeek（推荐，OpenAI 兼容）：把 key 写进仓库根目录 `.env`（已 gitignore），不要提交。
 

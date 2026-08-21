@@ -11,6 +11,7 @@
     "dev:control-plane": "pnpm --filter @neo-cloud-agent/control-plane dev",
     "dev:gateway": "pnpm --filter @neo-cloud-agent/llm-gateway dev",
     "dev:worker": "pnpm --filter @neo-cloud-agent/worker dev",
+    "neo": "tsx packages/cli/src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && pnpm --filter @neo-cloud-agent/web --config.engine-strict=false typecheck",
     "test": "pnpm --filter @neo-cloud-agent/web --config.engine-strict=false build && tsx --test packages/**/*.test.ts",
     "build:web": "pnpm --filter @neo-cloud-agent/web --config.engine-strict=false build",

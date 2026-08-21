@@ -2,7 +2,7 @@
 
 对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离 VM 运行；**LLM 推理走云端网关**；**Agent 循环和工具执行在 VM 内**；Agent 内核使用 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
 
-本文是实现蓝图，不是产品文案。合约类型见 [`packages/contracts`](../packages/contracts)。
+本文是实现蓝图，不是产品文案。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
 
 ---
 
@@ -21,10 +21,11 @@
 
 ### 非目标（第一期不做）
 
-- 复刻 Cursor 的 IDE、Tab、本地 sandbox
+- 复刻 Cursor 的 IDE、Tab、本地 sandbox，或把 pi 再嵌进一份本机 TUI
 - 多租户计费的完整账务系统（先打点，后对账）
 - 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）
 - 让 VM 直连 Anthropic / OpenAI / 自建 GPU（密钥与配额会泄漏到不可信环境）
+- 让 CLI 在开发者机器上执行工具来「加速」——CLI 只打 `/v1`，见 [cli.md](./cli.md)
 
 ---
 
@@ -551,6 +552,8 @@ GET    /v1/builds/:id
 GET    /v1/builds/:id/logs
 ```
 
+第一个非 Web 宿主是 `packages/cli`（二进制 `neo`）。它只消费上面这组 `/v1` 和 SSE，`source` 填 `"cli"`。协议、退出码和明确不做的本机 Agent / worker 桥见 [cli.md](./cli.md)。
+
 内部（VM → 控制面，mTLS）：
 
 ```
@@ -654,11 +657,12 @@ neo-cloud-agent/                  ← 唯一应用仓库
     llm-gateway/                  打成第二个容器
     worker/                       打进 VM / 任务容器镜像
     extensions/                   打进同一张 worker 镜像
+    cli/                          终端客户端（不是第四个进程）
   infra/                          compose、helm、镜像配方（先放这里）
   .neo/environment.json
 ```
 
-P0 只写四个 package：`contracts`、`control-plane`、`llm-gateway`、`worker`。`orchestrator` / `scm` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
+控制面仍是四个运行时 package：`contracts`、`control-plane`、`llm-gateway`、`worker`。`packages/cli` 是第五个 **客户端** package，不部署成进程。`orchestrator` / `scm` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
 
 ### 14.4 和「微服务清单」的对照
 
@@ -740,6 +744,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | MCP / Hooks | pi extensions + 可选 hooks 目录 | |
 | Artifacts / 远程桌面 | artifact-service + 可选 sidecar | 桌面可后置 |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | 同一 Orchestrator |
+| Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
 | Agent 内核（自研） | **pi-coding-agent** | 这是唯一故意不对齐的地方 |
 
 不对齐是优点：pi 已经有 SDK、RPC、session、extensions。你们的差异化在 **编排、环境和安全**，不在再写一遍 tool loop。
@@ -765,6 +770,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数�
 3. 配额、多租户计费、组织成员
 4. Egress 从应用层升级到 VM 出站代理 / iptables
 5. `neo-mcp` / `neo-artifact` / `neo-browser` 仍是空壳；artifacts 上传 URL 还是 `/dev-artifacts/...`
+6. CLI 交互 TUI、浏览器登录、本机 pi 模式——都单开，不要和 `neo run` 混语义。P0 headless 客户端见 [cli.md](./cli.md)
 
 控制面重启后续上 RUNNING Worker、以及对外 API 令牌鉴权已经落地。
 
@@ -782,3 +788,4 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数�
 - Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot（`rename`），否则 reflink / 拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。对话页可以选环境 / 快照，或点「预热」。
 - Egress：`environment.json` 的 `egress.mode` 会进 worker（`NEO_EGRESS_*`）。`allowlist_only` 拦 clone 和不在名单里的 `fetch`；Gateway / GitHub 仍放行。
 - Worker 把 `neo_git_commit` / `neo_pr_open` / `neo_diag` 注册成 pi `customTools`。Agent 用它们走控制面 commit / 开草稿 PR / 看 setup 与 egress；不要让 bash 拿长期 git token。`GET /v1/runs/:id/diagnostics` 给 UI，worker 走 `/internal`。
+- `packages/cli` 是 `/v1` 的 headless 宿主：创建 Run（`source: "cli"`）、订 SSE、跟进 / 归档 / diff / PR。不在终端里跑 pi，不持有 Provider Key。
