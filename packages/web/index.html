@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Neo Cloud Agent</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;560;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="mark" aria-hidden="true"></span>
+          <div>
+            <strong>Neo</strong>
+            <span>Cloud Agent</span>
+          </div>
+        </div>
+        <button class="new-chat" id="new-chat" type="button">新对话</button>
+        <div class="run-list" id="run-list"></div>
+        <footer class="sidebar-foot">
+          <span id="health">检测服务…</span>
+          <span>pi-agent · :8080</span>
+        </footer>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="run-label">新对话</p>
+            <h1 id="run-title">和云端 Agent 说话</h1>
+          </div>
+          <div class="top-actions">
+            <span class="status" id="status" data-state="idle">就绪</span>
+            <button class="ghost" id="abort" type="button" hidden>停止</button>
+          </div>
+        </header>
+
+        <section class="transcript" id="transcript" aria-live="polite"></section>
+
+        <form class="composer" id="composer">
+          <label class="repo-row">
+            <span>仓库</span>
+            <input
+              id="repo"
+              name="repo"
+              type="text"
+              placeholder="可选，例如 github.com/acme/app"
+              autocomplete="off"
+            />
+          </label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            rows="3"
+            placeholder="描述任务。Enter 发送，Shift+Enter 换行。"
+            required
+          ></textarea>
+          <div class="composer-bar">
+            <p class="hint">推理走 LLM Gateway；工具在 worker / VM 里执行。</p>
+            <button type="submit" id="send">发送</button>
+          </div>
+        </form>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

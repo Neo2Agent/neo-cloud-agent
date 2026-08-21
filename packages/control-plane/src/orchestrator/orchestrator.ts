@@ -81,6 +81,12 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
   followUps.set(run.id, []);
   inbound.set(run.id, [{ type: "prompt", text: input.prompt, images: input.images }]);
   publish(event(run.id, "run.provisioning", "Provisioning worker"));
+  publish(
+    event(run.id, "user.message", "User message", {
+      category: "agent_run",
+      data: { text: input.prompt, source: run.source },
+    }),
+  );
   mintJwtForRun(run);
 
   const handle = await runtime.provision({
@@ -189,6 +195,12 @@ export function enqueueFollowUp(runId: string, input: CreateFollowUpRequest): Fo
   publish(
     event(runId, "followup.queued", "Follow-up queued", {
       data: { followUpId: item.id, delivery },
+    }),
+  );
+  publish(
+    event(runId, "user.message", "User message", {
+      category: "agent_run",
+      data: { text: input.text, followUpId: item.id, delivery },
     }),
   );
   return item;

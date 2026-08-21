@@ -21,6 +21,7 @@ export type RunEventKind =
   | "tool.end"
   | "followup.queued"
   | "followup.delivered"
+  | "user.message"
   | "mcp.auth_error"
   | "egress.denied"
   | "build.used";

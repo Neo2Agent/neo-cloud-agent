@@ -15,6 +15,7 @@ neo-cloud-agent/
   packages/llm-gateway      进程 2：唯一持有模型密钥
   packages/worker           打进 VM / 任务容器，不是集群 Deployment
   packages/extensions       打进同一张 worker 镜像
+  packages/web              对话页，由 control-plane 托管
   infra/                    compose 与三份 Dockerfile
   .neo/environment.json     本仓库自己的环境描述
 ```
@@ -38,6 +39,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm dev                 # control-plane :8080 + llm-gateway :8081
+# 打开 http://localhost:8080 对话
 ```
 
 默认 `SPAWN_LOCAL_WORKER=1`：`POST /v1/runs` 会在本机拉起 worker，嵌入 `createAgentSession`，推理走 gateway。没配 `OPENAI_API_KEY` 时 gateway 用 mock。

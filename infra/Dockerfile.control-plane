@@ -11,6 +11,7 @@ RUN pnpm install --frozen-lockfile --filter @neo-cloud-agent/control-plane...
 COPY tsconfig.base.json tsconfig.json ./
 COPY packages/contracts packages/contracts
 COPY packages/control-plane packages/control-plane
+COPY packages/web packages/web
 ENV CONTROL_PLANE_PORT=8080
 EXPOSE 8080
 CMD ["pnpm", "--filter", "@neo-cloud-agent/control-plane", "start"]

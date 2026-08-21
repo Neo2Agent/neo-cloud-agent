@@ -14,6 +14,7 @@ import {
   takeInbound,
 } from "../orchestrator/orchestrator.js";
 import { listEnvironments } from "../env/store.js";
+import { serveWebFile } from "./static.js";
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -165,6 +166,10 @@ export function createApiServer() {
 
       if (method === "GET" && path === "/v1/environments") {
         send(res, 200, { environments: listEnvironments() });
+        return;
+      }
+
+      if (serveWebFile(req, res)) {
         return;
       }
 

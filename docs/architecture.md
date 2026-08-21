@@ -690,7 +690,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 - Docker Runtime，一容器 = 一 Run
 - `packages/worker` 嵌入 `createAgentSession`
 - `packages/llm-gateway`（先只接一个 Provider，JWT 鉴权）
-- `packages/control-plane`：`POST /v1/runs` + SSE
+- `packages/control-plane`：`POST /v1/runs` + SSE，并托管 `packages/web` 对话页
 - 手工 mount 一个 git repo，不做 PR
 
 验收：对一个玩具仓库说「加个 README 并跑测试」，UI 能流式看到 bash / edit。
