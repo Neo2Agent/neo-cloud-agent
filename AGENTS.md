@@ -4,11 +4,13 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 
 ## Cursor Cloud specific instructions
 
-### Node version (important gotcha)
-- The default `node` on PATH is `/exec-daemon/node` (v22.14.0), which is **older than this repo's requirement** (`engines.node >=22.19`, `.nvmrc` pins `22.23.2`, and `.npmrc` sets `engine-strict=true`). Running `pnpm` with that node fails with `ERR_PNPM_UNSUPPORTED_ENGINE`.
-- Use the nvm-managed node instead. The update script installs the `.nvmrc` version (`22.23.2`). In an interactive shell, prepend it before `/exec-daemon`:
-  `export PATH="$HOME/.nvm/versions/node/$(cat .nvmrc)/bin:$PATH"` (or `. "$HOME/.nvm/nvm.sh" && nvm use`).
-- `/exec-daemon` is injected ahead of nvm in PATH even for login shells, so simply relying on nvm's default alias is not enough; prepend the nvm bin explicitly.
+### Node version (important gotcha — read before running any pnpm command)
+- The default `node` on PATH is `/exec-daemon/node` (v22.14.0), which is **older than this repo's requirement** (`engines.node >=22.19`, `.nvmrc` pins `22.23.2`, `.npmrc` sets `engine-strict=true`). Running `pnpm` with it fails with `ERR_PNPM_UNSUPPORTED_ENGINE`.
+- `/exec-daemon` is injected ahead of nvm in PATH even for login shells, and sourcing nvm does **not** auto-select the default node. So you must explicitly prepend the nvm bin in each interactive shell before running pnpm:
+  ```bash
+  export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"
+  ```
+- The update script already installs the `.nvmrc` node (`22.23.2`) via nvm, so the path above exists after startup. `pnpm` then resolves to the pinned `pnpm@10.33.3` via corepack.
 
 ### Services (started by `pnpm dev`)
 - `control-plane` on `:8080` — API + orchestration + SCM + events, and serves the web chat UI at `http://localhost:8080`.
@@ -21,3 +23,6 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 
 ### Env
 - The repo root `.env` (gitignored) is auto-loaded by both control-plane and gateway; existing environment variables take precedence. See `.env.example` for all keys.
+
+### Web UI testing note
+- The chat UI at `http://localhost:8080` currently shows a login/register modal (`#auth-gate`) on load and does not auto-dismiss after a successful login, even though accounts are not required (`authRequired=false`). For scripted/manual checks prefer driving the API directly (`POST /v1/runs`); if testing the UI, expect to dismiss/log in past that modal.
