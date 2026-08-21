@@ -17,11 +17,13 @@ import {
   getBootstrap,
   getRun,
   getRunDiff,
+  getRunSession,
   ingestEvents,
   listFollowUps,
   listRuns,
   mintRunGitToken,
   openRunDraftPr,
+  saveRunSession,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
 import { getConfig } from "../config.js";
@@ -161,6 +163,27 @@ export function createApiServer() {
       const bootstrapMatch = /^\/internal\/runs\/([^/]+)\/bootstrap$/.exec(path);
       if (bootstrapMatch && method === "GET") {
         send(res, 200, getBootstrap(bootstrapMatch[1] ?? ""));
+        return;
+      }
+
+      const sessionMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/session$/.exec(path);
+      if (sessionMatch && method === "GET") {
+        const runId = sessionMatch[1] ?? "";
+        if (!getRun(runId)) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, getRunSession(runId));
+        return;
+      }
+      if (sessionMatch && method === "POST") {
+        const runId = sessionMatch[1] ?? "";
+        if (!getRun(runId)) {
+          notFound(res);
+          return;
+        }
+        const body = (await readJson(req)) as { files?: Array<{ name: string; content: string }> };
+        send(res, 202, saveRunSession(runId, body.files ?? []));
         return;
       }
 

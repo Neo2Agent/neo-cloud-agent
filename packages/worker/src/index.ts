@@ -1,10 +1,20 @@
 import { getWorkerConfig } from "./config.js";
-import { fetchBootstrap, pullInbox, pushEvents } from "./channel.js";
+import { runWorkspaceBoot, stopTerminals } from "./boot.js";
+import { fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
 import { toRunEvents } from "./events.js";
+import { collectSessionFiles } from "./session-backup.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function backupSession(runId: string, sessionDir: string): Promise<void> {
+  try {
+    await uploadSession(runId, collectSessionFiles(sessionDir));
+  } catch (error: unknown) {
+    console.error("failed to backup session", error);
+  }
 }
 
 async function main(): Promise<void> {
@@ -23,12 +33,18 @@ async function main(): Promise<void> {
       }
     : await fetchBootstrap(config.runId);
 
+  const workspaceDir = bootstrap.workspaceDir || config.workspaceDir;
   console.log(
     `worker ${config.runId} version=${config.workerVersion} model=${bootstrap.model} gateway=${bootstrap.llmGatewayUrl}`,
   );
 
+  const boot = await runWorkspaceBoot({ runId: config.runId, workspaceDir });
+  if (boot.events.length > 0) {
+    await pushEvents(config.runId, boot.events);
+  }
+
   const session = await openPiSession({
-    cwd: bootstrap.workspaceDir || config.workspaceDir,
+    cwd: workspaceDir,
     sessionDir: config.sessionDir,
     runId: config.runId,
     jwt: bootstrap.jwt,
@@ -41,6 +57,9 @@ async function main(): Promise<void> {
     pushEvents(config.runId, mapped).catch((error: unknown) => {
       console.error("failed to push events", error);
     });
+    if (mapped.some((item) => item.kind === "agent.end")) {
+      void backupSession(config.runId, config.sessionDir);
+    }
   });
 
   let running = true;
@@ -72,6 +91,8 @@ async function main(): Promise<void> {
     }
   } finally {
     unsubscribe();
+    await backupSession(config.runId, config.sessionDir);
+    stopTerminals(boot.terminals);
     session.dispose();
   }
 }

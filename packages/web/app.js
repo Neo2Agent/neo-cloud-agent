@@ -146,7 +146,12 @@ function applyEvent(event) {
     return;
   }
 
-  if (String(event.kind).startsWith("scm.") || String(event.kind).startsWith("run.install")) {
+  if (
+    String(event.kind).startsWith("scm.") ||
+    String(event.kind).startsWith("run.install") ||
+    String(event.kind).startsWith("run.start") ||
+    String(event.kind).startsWith("run.terminal")
+  ) {
     addSetupLine(event);
     if (event.kind === "scm.pr_opened" && event.data?.url) {
       showPullRequest({ pullRequests: [{ url: event.data.url, draft: event.data.draft !== false }] });

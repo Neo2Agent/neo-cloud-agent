@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { findInstallTargets, installEnv, runInstallCommand } from "./install.js";
+import { findBootPlans, findInstallTargets, installEnv, runInstallCommand } from "./install.js";
 import { parseEnvironmentJson } from "./store.js";
 
 test("parseEnvironmentJson keeps install/start and drops unknown fields", () => {
@@ -32,6 +32,9 @@ test("findInstallTargets prefers repo-root .neo/environment.json", () => {
   assert.equal(targets.length, 1);
   assert.equal(targets[0]?.command, "printf ok > installed.txt");
   assert.equal(targets[0]?.config.start, "printf no > started.txt");
+  const boots = findBootPlans(dir);
+  assert.equal(boots.length, 1);
+  assert.equal(boots[0]?.config.start, "printf no > started.txt");
 });
 
 test("runInstallCommand executes install and does not run start", async () => {

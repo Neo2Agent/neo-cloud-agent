@@ -51,7 +51,11 @@ test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
 
   const result = await waitForRun(`http://127.0.0.1:${apiPort}`, run.id, 60_000);
   assert.notEqual(result.status, "ERROR", result.errorMessage ?? result.kinds.join(","));
+  assert.ok(existsSync(path.join(runsDir, run.id, ".neo-started")));
+  assert.ok(existsSync(path.join(runsDir, run.id, ".neo-terminal")));
   assert.ok(result.kinds.includes("scm.clone_succeeded"));
+  assert.ok(result.kinds.includes("run.start_succeeded"));
+  assert.ok(result.kinds.includes("run.terminal_started"));
   assert.ok(result.kinds.includes("agent.start"));
   assert.ok(result.kinds.includes("agent.end"));
   assert.equal(result.status, "IDLE");

@@ -1,5 +1,10 @@
-import type { RunEvent, WorkerInbound } from "@neo-cloud-agent/contracts";
+import { redactRunEvent, redactText, secretValuesFromEnv, type RunEvent, type WorkerInbound } from "@neo-cloud-agent/contracts";
 import { getWorkerConfig } from "./config.js";
+
+function workerSecrets(extra: string[] = []): string[] {
+  const config = getWorkerConfig();
+  return secretValuesFromEnv(process.env, [config.llmGatewayJwt, ...extra].filter(Boolean));
+}
 
 export async function pullInbox(runId: string): Promise<WorkerInbound[]> {
   const config = getWorkerConfig();
@@ -18,10 +23,11 @@ export async function pushEvents(runId: string, events: RunEvent[]): Promise<voi
     return;
   }
   const config = getWorkerConfig();
+  const secrets = workerSecrets();
   const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/events`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ events }),
+    body: JSON.stringify({ events: events.map((item) => redactRunEvent(item, secrets)) }),
   });
   if (!response.ok) {
     throw new Error(`events ${response.status}`);
@@ -71,6 +77,24 @@ export async function requestPullRequest(
     throw new Error(`pull request ${response.status}`);
   }
   return response.json();
+}
+
+export async function uploadSession(runId: string, files: Array<{ name: string; content: string }>): Promise<void> {
+  if (files.length === 0) {
+    return;
+  }
+  const config = getWorkerConfig();
+  const secrets = workerSecrets();
+  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      files: files.map((file) => ({ name: file.name, content: redactText(file.content, secrets) })),
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`session ${response.status}`);
+  }
 }
 
 export async function fetchBootstrap(runId: string): Promise<{

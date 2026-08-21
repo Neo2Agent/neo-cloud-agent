@@ -58,6 +58,48 @@ export function loadPersistedEvents(runId: string, runsDir?: string): RunEvent[]
   }
 }
 
+function sessionDir(runId: string, runsDir?: string): string {
+  return path.join(controlStateDir(runsDir), `${runId}.session`);
+}
+
+export function persistSessionFiles(
+  runId: string,
+  files: Array<{ name: string; content: string }>,
+  runsDir?: string,
+): Array<{ name: string; bytes: number }> {
+  const dir = sessionDir(runId, runsDir);
+  mkdirSync(dir, { recursive: true });
+  const written: Array<{ name: string; bytes: number }> = [];
+  for (const file of files) {
+    const name = path.basename(file.name);
+    if (!name || name.includes("..") || file.name.includes("..")) {
+      continue;
+    }
+    if (!name.endsWith(".jsonl") && !name.endsWith(".json")) {
+      continue;
+    }
+    const content = file.content.slice(0, 1_000_000);
+    const dest = path.join(dir, name);
+    writeFileSync(dest, content);
+    written.push({ name, bytes: Buffer.byteLength(content) });
+  }
+  return written;
+}
+
+export function listSessionFiles(runId: string, runsDir?: string): Array<{ name: string; bytes: number }> {
+  const dir = sessionDir(runId, runsDir);
+  try {
+    return readdirSync(dir)
+      .filter((name) => name.endsWith(".jsonl") || name.endsWith(".json"))
+      .map((name) => ({
+        name,
+        bytes: Buffer.byteLength(readFileSync(path.join(dir, name))),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[] {
   const dir = controlStateDir(runsDir);
   try {

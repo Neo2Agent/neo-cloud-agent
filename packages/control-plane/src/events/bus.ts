@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
-import type { RunEvent } from "@neo-cloud-agent/contracts";
+import { redactRunEvent, type RunEvent } from "@neo-cloud-agent/contracts";
+import { controlPlaneSecrets } from "../security/secrets.js";
 import { persistEvent } from "../store/persist.js";
 
 const bus = new EventEmitter();
@@ -8,14 +9,15 @@ bus.setMaxListeners(0);
 const history = new Map<string, RunEvent[]>();
 
 export function publish(event: RunEvent, options?: { persist?: boolean }): void {
+  const clean = redactRunEvent(event, controlPlaneSecrets());
   const list = history.get(event.runId) ?? [];
-  list.push(event);
+  list.push(clean);
   history.set(event.runId, list);
   if (options?.persist !== false) {
-    persistEvent(event);
+    persistEvent(clean);
   }
-  bus.emit(event.runId, event);
-  bus.emit("*", event);
+  bus.emit(event.runId, clean);
+  bus.emit("*", clean);
 }
 
 export function seedEvents(runId: string, events: RunEvent[]): void {

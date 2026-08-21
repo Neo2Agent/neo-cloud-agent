@@ -8,7 +8,10 @@ const DEFAULT_GITIGNORE = `# added by neo-cloud-agent when the workspace had no 
 !.env.example
 node_modules/
 .neo/runs/
+.neo/logs/
 .neo-installed
+.neo-started
+.neo-terminal
 `;
 
 export function branchSlug(prompt: string): string {

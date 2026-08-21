@@ -15,11 +15,13 @@ const {
   createRun,
   getBootstrap,
   getRun,
+  getRunSession,
   ingestEvents,
   listRuns,
   mintRunGitToken,
   openRunDraftPr,
   reloadPersistedState,
+  saveRunSession,
   takeInbound,
 } = await import("./orchestrator.js");
 const { listEvents } = await import("../events/bus.js");
@@ -37,6 +39,7 @@ test("createRun mints a bootstrap JWT, copies the local repo, and queues the fir
   assert.equal(existsSync(path.join(bootstrap.workspaceDir, "test.sh")), true);
   assert.equal(readFileSync(path.join(bootstrap.workspaceDir, ".neo-installed"), "utf8").trim(), "ok");
   assert.equal(existsSync(path.join(bootstrap.workspaceDir, ".neo-started")), false);
+  assert.equal(existsSync(path.join(bootstrap.workspaceDir, ".neo-terminal")), false);
   assert.equal(run.setupStatus, "INSTALL_SUCCEEDED");
   assert.match(run.branchName ?? "", /^neo\/list-files-/);
   assert.equal(run.baseBranch, "main");
@@ -117,6 +120,28 @@ test("persisted idle runs survive a control-plane reload", async () => {
   assert.equal(listRuns().length, before);
   assert.ok(listEvents(run.id).some((item) => item.kind === "user.message"));
   assert.ok(listEvents(run.id).some((item) => item.kind === "run.idle"));
+});
+
+test("events and session backups redact runtime secrets", async () => {
+  process.env.DEEPSEEK_API_KEY = "sk-should-not-appear-in-events";
+  try {
+    const run = await createRun({
+      prompt: "do not echo sk-should-not-appear-in-events",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    const dumped = JSON.stringify(listEvents(run.id));
+    assert.equal(dumped.includes("sk-should-not-appear-in-events"), false);
+    assert.match(dumped, /\[REDACTED\]/);
+    saveRunSession(run.id, [
+      { name: "turn.jsonl", content: "assistant said sk-should-not-appear-in-events" },
+      { name: "../escape.jsonl", content: "nope" },
+    ]);
+    const session = getRunSession(run.id);
+    assert.equal(session.files.some((file) => file.name === "turn.jsonl"), true);
+    assert.equal(session.files.some((file) => file.name.includes("escape")), false);
+  } finally {
+    delete process.env.DEEPSEEK_API_KEY;
+  }
 });
 
 test("createRun fails when the local repo path does not exist", async () => {

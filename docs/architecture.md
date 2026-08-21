@@ -754,8 +754,8 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 P0 主路径（gateway / worker / 对话页 / DeepSeek / 工作区落地）已经通了。`install` 会在 clone 之后、worker 起来之前执行；Run 和事件写在 `RUNS_DIR/.control`，控制面重启后侧边栏还在。下一刀仍在本 monorepo：
 
-1. 冷启动后跑 `start` / `terminals`（不要塞进 `install`）
-2. Session JSONL 备份与 secrets 打码
-3. 真 GitHub App 安装令牌（现在是控制面持有的 PAT + 自签短寿命 broker token）
+1. 真 GitHub App 安装令牌（现在是控制面持有的 PAT + 自签短寿命 broker token）
+2. 冷启动后的 `start` 若失败是否阻断 Agent（现在只记事件，继续跑）
+3. Session 从对象存储恢复 IDLE Run
 
 换 Firecracker 只换 Runtime，不换 Agent，也不拆仓。

@@ -12,14 +12,15 @@ import type {
   RuntimeSpec,
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
-import { mintRunToken } from "@neo-cloud-agent/contracts";
+import { mintRunToken, redactText } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 import { findInstallTargets, runInstallCommand } from "../env/install.js";
 import { publish, resetHistory, seedEvents } from "../events/bus.js";
 import { getRuntime } from "../runtime/factory.js";
 import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
 import { materializeRepos } from "../scm/workspace.js";
-import { loadPersistedEvents, loadPersistedRuns, persistRunRecord } from "../store/persist.js";
+import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
+import { listSessionFiles, loadPersistedEvents, loadPersistedRuns, persistRunRecord, persistSessionFiles } from "../store/persist.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 
 const runs = new Map<string, Run>();
@@ -123,6 +124,7 @@ export function mintJwtForRun(run: Run): string {
     jti: crypto.randomUUID(),
   });
   runJwts.set(run.id, token);
+  rememberSecret(token);
   return token;
 }
 
@@ -520,6 +522,21 @@ export async function openRunDraftPr(runId: string, input: CreatePullRequestRequ
     flushRun(runId);
     throw error;
   }
+}
+
+export function saveRunSession(runId: string, files: Array<{ name: string; content: string }>) {
+  requireRun(runId);
+  const secrets = controlPlaneSecrets();
+  const written = persistSessionFiles(
+    runId,
+    files.map((file) => ({ name: file.name, content: redactText(file.content, secrets) })),
+  );
+  return { files: written };
+}
+
+export function getRunSession(runId: string) {
+  requireRun(runId);
+  return { files: listSessionFiles(runId) };
 }
 
 export async function getRunDiff(runId: string) {

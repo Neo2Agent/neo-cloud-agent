@@ -28,6 +28,15 @@ export type {
   SecretRef,
   TerminalSpec,
 } from "./environment.js";
+export { parseEnvironmentJson } from "./environment.js";
+
+export {
+  SECRET_ENV_KEYS,
+  redactJson,
+  redactRunEvent,
+  redactText,
+  secretValuesFromEnv,
+} from "./redact.js";
 
 export type { RunEvent, RunEventCategory, RunEventKind, RunEventLevel } from "./events.js";
 
