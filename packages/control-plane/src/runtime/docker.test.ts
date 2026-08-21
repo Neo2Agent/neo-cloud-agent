@@ -48,7 +48,7 @@ test("docker run args mount the host workspace and inject JWT without provider k
   assert.ok(args.some((item) => item === "RUN_ID=run-1" || item.startsWith("RUN_ID=")));
   const joined = args.join("\n");
   assert.match(joined, /LLM_GATEWAY_JWT=jwt-token/);
-  assert.doesNotMatch(joined, /DEEPSEEK_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN|SCM_PUSH_TOKEN/);
+  assert.doesNotMatch(joined, /DEEPSEEK_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|LLM_API_KEY|GITHUB_TOKEN|SCM_PUSH_TOKEN/);
   assert.ok(args.includes("neo-cloud-agent-worker:dev"));
 });
 

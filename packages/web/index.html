@@ -7,7 +7,7 @@
     <meta name="color-scheme" content="light" />
     <title>Neo Cloud Agent</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=login-2" />
+    <link rel="stylesheet" href="/styles.css?v=apikey-1" />
   </head>
   <body>
     <div class="app">
@@ -75,6 +75,21 @@
             </label>
             <button class="ghost" id="warm-build" type="button">预热</button>
           </div>
+          <div class="env-row llm-row">
+            <label>
+              <span>模型上游</span>
+              <select id="llm-upstream" name="llm-upstream">
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+            <label>
+              <span>API Key</span>
+              <input id="llm-key" name="llm-key" type="password" autocomplete="new-password" placeholder="sk-…" />
+            </label>
+            <button class="ghost" id="save-llm" type="button">保存 Key</button>
+          </div>
+          <p class="hint" id="llm-status">未配置 API Key，当前是 mock 回复。</p>
           <textarea
             id="prompt"
             name="prompt"
@@ -108,6 +123,6 @@
         <button type="button" id="auth-skip" hidden>先不登录</button>
       </form>
     </div>
-    <script type="module" src="/app.js?v=login-2"></script>
+    <script type="module" src="/app.js?v=apikey-1"></script>
   </body>
 </html>

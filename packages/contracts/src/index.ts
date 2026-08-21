@@ -72,6 +72,15 @@ export { deliveryForPi } from "./worker.js";
 
 export type { LlmRunTokenClaims, ModelRoute, Usage } from "./llm.js";
 export { mintRunToken, verifyRunToken } from "./jwt.js";
+export type { LlmSettings, LlmSettingsRequest, LlmUpstreamMode, PublicLlmSettings } from "./llm-settings.js";
+export {
+  defaultLlmModel,
+  llmSettingsFile,
+  parseLlmSettingsRequest,
+  publicLlmSettings,
+  readLlmSettings,
+  writeLlmSettings,
+} from "./llm-settings.js";
 
 export type { DiskCloneMethod, DiskCloneResult, DiskKind, DiskSnapshot } from "./disk.js";
 

@@ -51,7 +51,7 @@ export function buildMockCompletion(model: string, text: string) {
 }
 
 const MOCK_TEXT =
-  "Mock gateway response. Set DEEPSEEK_API_KEY or OPENAI_API_KEY, or LLM_UPSTREAM=deepseek|openai.";
+  "Mock gateway response. Save a DeepSeek or OpenAI API key on the chat page, or set DEEPSEEK_API_KEY / OPENAI_API_KEY.";
 
 export async function proxyChatCompletions(body: ChatCompletionBody): Promise<{
   status: number;

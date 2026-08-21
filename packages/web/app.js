@@ -28,6 +28,10 @@ const authSkipEl = document.getElementById("auth-skip");
 const environmentEl = document.getElementById("environment");
 const buildEl = document.getElementById("build");
 const warmBuildEl = document.getElementById("warm-build");
+const llmUpstreamEl = document.getElementById("llm-upstream");
+const llmKeyEl = document.getElementById("llm-key");
+const saveLlmEl = document.getElementById("save-llm");
+const llmStatusEl = document.getElementById("llm-status");
 
 const TOKEN_KEY = "neo.apiToken";
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
@@ -51,6 +55,7 @@ const state = {
   authBusy: false,
   environments: [],
   builds: [],
+  llm: { configured: false, upstream: "mock", model: null },
 };
 
 function apiHeaders(json) {
@@ -461,6 +466,31 @@ function renderEnvOptions() {
   buildEl.value = builds.some((item) => item.id === buildValue) || buildValue === "cold" ? buildValue : "";
 }
 
+function renderLlmSettings(settings) {
+  state.llm = settings ?? { configured: false, upstream: "mock", model: null };
+  if (llmUpstreamEl && state.llm.upstream && state.llm.upstream !== "mock") {
+    llmUpstreamEl.value = state.llm.upstream;
+  }
+  if (llmKeyEl) {
+    llmKeyEl.value = "";
+    llmKeyEl.placeholder = state.llm.configured ? "已保存，留空则保持" : "sk-…";
+  }
+  if (llmStatusEl) {
+    llmStatusEl.textContent = state.llm.configured
+      ? `已配置 ${state.llm.upstream === "openai" ? "OpenAI" : "DeepSeek"}，对话走真实模型。`
+      : "未配置 API Key，当前是 mock 回复。";
+  }
+}
+
+async function refreshLlmSettings() {
+  try {
+    const settings = await (await api("/v1/settings/llm")).json();
+    if (!settings.error) renderLlmSettings(settings);
+  } catch {
+    // optional until logged in
+  }
+}
+
 async function refreshEnvironments() {
   try {
     const [envs, builds] = await Promise.all([
@@ -530,6 +560,45 @@ document.getElementById("new-chat").addEventListener("click", resetComposer);
 
 environmentEl.addEventListener("change", () => {
   renderEnvOptions();
+});
+
+llmKeyEl?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    saveLlmEl?.click();
+  }
+});
+
+saveLlmEl?.addEventListener("click", async () => {
+  const apiKey = llmKeyEl?.value.trim() ?? "";
+  const upstream = llmUpstreamEl?.value || "deepseek";
+  if (!apiKey && !state.llm?.configured) {
+    if (llmStatusEl) llmStatusEl.textContent = "请先填写 API Key。";
+    return;
+  }
+  saveLlmEl.disabled = true;
+  try {
+    const payload = {
+      upstream,
+      model: upstream === "openai" ? "gpt-4o-mini" : "deepseek-chat",
+    };
+    if (apiKey) payload.apiKey = apiKey;
+    const saved = await (
+      await api("/v1/settings/llm", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+    ).json();
+    if (saved.error === "login_required") throw new Error("请先登录再保存 API Key");
+    if (saved.error) throw new Error(saved.error);
+    renderLlmSettings(saved);
+  } catch (error) {
+    if (llmStatusEl) {
+      llmStatusEl.textContent = error instanceof Error ? error.message : "保存失败";
+    }
+  } finally {
+    saveLlmEl.disabled = false;
+  }
 });
 
 warmBuildEl.addEventListener("click", async () => {
@@ -666,6 +735,7 @@ async function loginBootstrap() {
 async function finishLogin() {
   await refreshRuns();
   await refreshEnvironments();
+  await refreshLlmSettings();
   const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
   if (match?.[1]) await openRun(match[1]);
   else emptyState();
@@ -766,7 +836,8 @@ async function boot() {
       const bus = health.eventBus ? ` · ${health.eventBus}` : "";
       const auth = state.authRequired ? " · 需登录" : "";
       const builds = typeof health.builds === "number" ? ` · ${health.builds} 快照` : "";
-      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${bus}${builds}${auth}`;
+      const llm = health.llmConfigured ? ` · ${health.llmUpstream}` : " · 未配置 API Key";
+      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${bus}${builds}${llm}${auth}`;
     } else {
       state.healthText = "控制面在线";
     }
@@ -815,6 +886,7 @@ async function boot() {
   }
   await refreshRuns();
   await refreshEnvironments();
+  await refreshLlmSettings();
   const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
   if (match?.[1]) {
     await openRun(match[1]);

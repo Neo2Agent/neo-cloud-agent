@@ -71,6 +71,7 @@ export function createGatewayServer() {
           service: "llm-gateway",
           upstream: config.upstream,
           upstreamModel: config.upstreamModel,
+          configured: config.configured,
         });
         return;
       }

@@ -371,6 +371,14 @@ h1 {
   padding-inline: 12px;
 }
 
+.llm-row {
+  margin-top: 2px;
+}
+
+#llm-status {
+  margin: 0 0 10px;
+}
+
 input,
 textarea {
   width: 100%;

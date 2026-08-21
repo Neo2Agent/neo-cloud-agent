@@ -9,7 +9,13 @@ import type {
   CreateRunRequest,
   RunEvent,
 } from "@neo-cloud-agent/contracts";
-import { evaluateEgress } from "@neo-cloud-agent/contracts";
+import {
+  evaluateEgress,
+  parseLlmSettingsRequest,
+  publicLlmSettings,
+  readLlmSettings,
+  writeLlmSettings,
+} from "@neo-cloud-agent/contracts";
 import { listEvents } from "../events/bus.js";
 import { attachEventStream } from "../events/stream.js";
 import { buildTranscriptSnapshot } from "../events/transcript.js";
@@ -149,11 +155,13 @@ export function createApiServer() {
 
       if (method === "GET" && path === "/health") {
         const config = getConfig();
+        const llm = publicLlmSettings(readLlmSettings());
         send(res, 200, {
           ok: true,
           service: "control-plane",
           defaultModel: config.defaultModel,
-          llmUpstream: config.llmUpstream,
+          llmUpstream: llm.configured ? llm.upstream : (config.llmUpstream ?? "mock"),
+          llmConfigured: llm.configured,
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           objectStore: getObjectStore().kind,
@@ -256,6 +264,23 @@ export function createApiServer() {
         }
         if (method === "GET" && path === "/v1/me") {
           send(res, 200, { user: actor.kind === "user" ? { id: actor.userId, email: actor.email, orgId: actor.orgId } : null, actor: actor.kind });
+          return;
+        }
+        if (method === "GET" && path === "/v1/settings/llm") {
+          send(res, 200, publicLlmSettings(readLlmSettings()));
+          return;
+        }
+        if (method === "POST" && path === "/v1/settings/llm") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 200, writeLlmSettings(parseLlmSettingsRequest(await readJson(req))));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "invalid_llm_settings";
+            send(res, 400, { error: message });
+          }
           return;
         }
         if (method === "POST" && path === "/v1/runs") {
