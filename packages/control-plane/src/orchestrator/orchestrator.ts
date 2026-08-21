@@ -1,5 +1,8 @@
 import type {
+  CreateCommitRequest,
   CreateFollowUpRequest,
+  CreateGitTokenRequest,
+  CreatePullRequestRequest,
   CreateRunRequest,
   FollowUp,
   FollowUpDelivery,
@@ -14,6 +17,7 @@ import { getConfig } from "../config.js";
 import { findInstallTargets, runInstallCommand } from "../env/install.js";
 import { publish, resetHistory, seedEvents } from "../events/bus.js";
 import { getRuntime } from "../runtime/factory.js";
+import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
 import { materializeRepos } from "../scm/workspace.js";
 import { loadPersistedEvents, loadPersistedRuns, persistRunRecord } from "../store/persist.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
@@ -67,6 +71,8 @@ function hydrateFromDisk(): void {
     followUps.set(run.id, record.followUps ?? []);
     inbound.set(run.id, record.inbound ?? []);
     seedEvents(run.id, loadPersistedEvents(run.id));
+    run.pullRequests = Array.isArray(run.pullRequests) ? run.pullRequests : [];
+    run.baseBranch = run.baseBranch ?? null;
     if (LIVE_STATUSES.has(run.status)) {
       run.status = "ERROR";
       run.errorMessage = "control plane restarted; worker was not recovered";
@@ -181,7 +187,9 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
     model: input.model ?? config.defaultModel,
     prompt: input.prompt,
     branchName: null,
+    baseBranch: null,
     repoUrls: input.repoUrls,
+    pullRequests: [],
     workerHandle: null,
     createdAt,
     updatedAt: createdAt,
@@ -217,6 +225,25 @@ export async function createRun(input: CreateRunRequest): Promise<Run> {
           },
         }),
       );
+      const dests = placed.length > 0 ? placed.map((item) => item.dest) : [workspaceFor(run.id)];
+      try {
+        const prepared = await prepareRunRepos(dests, run);
+        const first = prepared[0];
+        if (first) {
+          run.branchName = first.branch;
+          run.baseBranch = first.baseBranch;
+          run.updatedAt = now();
+          publish(
+            event(run.id, "scm.branch_created", `Created branch ${first.branch}`, {
+              data: { branch: first.branch, baseBranch: first.baseBranch },
+            }),
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "git branch failed";
+        failRun(run, message, "scm.branch_failed", "Failed to create run branch");
+        return run;
+      }
       flushRun(run.id);
     }
   } catch (error) {
@@ -421,6 +448,89 @@ export function abortRun(runId: string): Run {
   run.updatedAt = now();
   flushRun(runId);
   return run;
+}
+
+function requireRun(runId: string): Run {
+  const run = runs.get(runId);
+  if (!run) {
+    throw new Error(`run not found: ${runId}`);
+  }
+  return run;
+}
+
+export function mintRunGitToken(runId: string, input: CreateGitTokenRequest) {
+  const run = requireRun(runId);
+  const issued = issueRunGitToken(run, input);
+  return {
+    token: issued.token,
+    repoUrl: issued.repoUrl,
+    scope: issued.scope,
+    expiresAt: issued.expiresAt,
+  };
+}
+
+export async function commitRun(runId: string, input: CreateCommitRequest) {
+  const run = requireRun(runId);
+  try {
+    const result = await commitRunWorkspace(workspaceFor(runId), input);
+    run.updatedAt = now();
+    publish(
+      event(runId, "scm.commit_succeeded", result.empty ? "Nothing to commit" : "Committed workspace", {
+        data: { sha: result.sha, branch: result.branch, empty: result.empty },
+      }),
+    );
+    flushRun(runId);
+    return { ...result, branch: run.branchName ?? result.branch };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "commit failed";
+    publish(event(runId, "scm.commit_failed", "Commit failed", { level: "error", detail: message }));
+    flushRun(runId);
+    throw error;
+  }
+}
+
+export async function openRunDraftPr(runId: string, input: CreatePullRequestRequest) {
+  const run = requireRun(runId);
+  try {
+    const result = await openRunPullRequest(workspaceFor(runId), run, input);
+    run.pullRequests = [...run.pullRequests.filter((item) => item.branch !== result.pullRequest.branch), result.pullRequest];
+    run.updatedAt = now();
+    if (result.pushed) {
+      publish(
+        event(runId, "scm.push_succeeded", `Pushed ${result.pullRequest.branch}`, {
+          data: { branch: result.pullRequest.branch, repoUrl: result.pullRequest.repoUrl },
+        }),
+      );
+    }
+    publish(
+      event(runId, "scm.pr_opened", result.pullRequest.draft ? "Opened draft pull request" : "Opened pull request", {
+        data: {
+          url: result.pullRequest.url,
+          number: result.pullRequest.number,
+          title: result.pullRequest.title,
+          draft: result.pullRequest.draft,
+        },
+      }),
+    );
+    flushRun(runId);
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "pull request failed";
+    publish(event(runId, "scm.pr_failed", "Failed to open pull request", { level: "error", detail: message }));
+    flushRun(runId);
+    throw error;
+  }
+}
+
+export async function getRunDiff(runId: string) {
+  const run = requireRun(runId);
+  const diff = await diffRunWorkspace(workspaceFor(runId), run);
+  return {
+    branch: run.branchName,
+    baseBranch: run.baseBranch,
+    pullRequests: run.pullRequests,
+    ...diff,
+  };
 }
 
 hydrateFromDisk();

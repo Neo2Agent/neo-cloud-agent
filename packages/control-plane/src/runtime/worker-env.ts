@@ -14,6 +14,9 @@ const SECRET_KEYS = [
   "ANTHROPIC_API_KEY",
   "LLM_UPSTREAM_API_KEY",
   "LLM_GATEWAY_JWT_SECRET",
+  "GITHUB_TOKEN",
+  "GH_TOKEN",
+  "SCM_PUSH_TOKEN",
 ];
 
 /** Env injected into a worker. Provider keys must never appear here. */

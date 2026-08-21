@@ -28,6 +28,51 @@ export async function pushEvents(runId: string, events: RunEvent[]): Promise<voi
   }
 }
 
+export async function requestGitToken(
+  runId: string,
+  input: { repoUrl?: string; scope: "clone" | "push" },
+): Promise<{ token: string; expiresAt: string; scope: string; repoUrl: string }> {
+  const config = getWorkerConfig();
+  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/scm/token`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(`git token ${response.status}`);
+  }
+  return (await response.json()) as { token: string; expiresAt: string; scope: string; repoUrl: string };
+}
+
+export async function requestCommit(runId: string, input: { message: string; paths?: string[] }) {
+  const config = getWorkerConfig();
+  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/scm/commit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(`commit ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function requestPullRequest(
+  runId: string,
+  input: { title: string; body?: string; remoteUrl?: string },
+) {
+  const config = getWorkerConfig();
+  const response = await fetch(`${config.controlPlaneUrl}/internal/runs/${runId}/scm/pull-request`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(`pull request ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function fetchBootstrap(runId: string): Promise<{
   jwt: string;
   llmGatewayUrl: string;

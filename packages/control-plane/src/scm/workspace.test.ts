@@ -26,6 +26,7 @@ test("skipCopy keeps environment.json and drops run workspaces", () => {
   assert.equal(skipCopy("/repo/.neo/runs/abc/hello.txt"), true);
   assert.equal(skipCopy("/repo/node_modules/pkg"), true);
   assert.equal(skipCopy("/repo/.control/run.json"), true);
+  assert.equal(skipCopy("/repo/.git/HEAD"), false);
 });
 
 test("copies a local fixture into the run workspace", async () => {

@@ -10,8 +10,18 @@ process.env.LLM_GATEWAY_JWT_SECRET = "test-secret";
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-orch-"));
 delete process.env.WORKER_WORKSPACE_MOUNT;
 
-const { createRun, getBootstrap, getRun, ingestEvents, listRuns, reloadPersistedState, takeInbound } =
-  await import("./orchestrator.js");
+const {
+  commitRun,
+  createRun,
+  getBootstrap,
+  getRun,
+  ingestEvents,
+  listRuns,
+  mintRunGitToken,
+  openRunDraftPr,
+  reloadPersistedState,
+  takeInbound,
+} = await import("./orchestrator.js");
 const { listEvents } = await import("../events/bus.js");
 
 test("createRun mints a bootstrap JWT, copies the local repo, and queues the first prompt", async () => {
@@ -28,6 +38,9 @@ test("createRun mints a bootstrap JWT, copies the local repo, and queues the fir
   assert.equal(readFileSync(path.join(bootstrap.workspaceDir, ".neo-installed"), "utf8").trim(), "ok");
   assert.equal(existsSync(path.join(bootstrap.workspaceDir, ".neo-started")), false);
   assert.equal(run.setupStatus, "INSTALL_SUCCEEDED");
+  assert.match(run.branchName ?? "", /^neo\/list-files-/);
+  assert.equal(run.baseBranch, "main");
+  assert.equal(run.pullRequests.length, 0);
   const inbox = takeInbound(run.id);
   const first = inbox[0];
   assert.ok(first);
@@ -39,6 +52,29 @@ test("createRun mints a bootstrap JWT, copies the local repo, and queues the fir
   assert.ok(kinds.includes("scm.clone_succeeded"));
   assert.ok(kinds.includes("run.install_started"));
   assert.ok(kinds.includes("run.install_succeeded"));
+  assert.ok(kinds.includes("scm.branch_created"));
+});
+
+test("commit and local draft PR stay on the control plane", async () => {
+  const run = await createRun({
+    prompt: "open a draft pr",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "AGENT.md"), "from test\n");
+  const committed = await commitRun(run.id, { message: "feat: add AGENT.md" });
+  assert.equal(committed.empty, false);
+  const bare = mkdtempSync(path.join(tmpdir(), "neo-orch-bare-"));
+  const { runGit } = await import("../scm/git.js");
+  await runGit(bare, ["init", "--bare"]);
+  const opened = await openRunDraftPr(run.id, { title: "open a draft pr", remoteUrl: bare });
+  assert.equal(opened.pushed, true);
+  assert.equal(opened.pullRequest.draft, true);
+  assert.equal(getRun(run.id)?.pullRequests[0]?.url, opened.pullRequest.url);
+  assert.ok(listEvents(run.id).some((item) => item.kind === "scm.commit_succeeded"));
+  assert.ok(listEvents(run.id).some((item) => item.kind === "scm.pr_opened"));
+  const token = mintRunGitToken(run.id, { scope: "push", repoUrl: "fixtures/toy-repo" });
+  assert.match(token.token, /^neo\.git\./);
+  assert.doesNotMatch(token.token, /GITHUB_TOKEN|ghp-/);
 });
 
 test("createRun fails when environment install exits non-zero", async () => {

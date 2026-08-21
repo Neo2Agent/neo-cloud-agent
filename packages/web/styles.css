@@ -216,6 +216,16 @@ h1 {
   width: auto;
 }
 
+.pr-link {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: var(--accent);
+  text-decoration: none;
+}
+
 .transcript {
   padding: 8px 28px 20px;
   overflow: auto;

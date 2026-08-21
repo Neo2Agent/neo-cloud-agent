@@ -1,16 +1,27 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { CreateFollowUpRequest, CreateRunRequest, RunEvent } from "@neo-cloud-agent/contracts";
+import type {
+  CreateCommitRequest,
+  CreateFollowUpRequest,
+  CreateGitTokenRequest,
+  CreatePullRequestRequest,
+  CreateRunRequest,
+  RunEvent,
+} from "@neo-cloud-agent/contracts";
 import { listEvents, subscribe } from "../events/bus.js";
 import {
   abortRun,
   archiveRun,
+  commitRun,
   createRun,
   enqueueFollowUp,
   getBootstrap,
   getRun,
+  getRunDiff,
   ingestEvents,
   listFollowUps,
   listRuns,
+  mintRunGitToken,
+  openRunDraftPr,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
 import { getConfig } from "../config.js";
@@ -170,6 +181,57 @@ export function createApiServer() {
           return;
         }
         send(res, 200, { events: listEvents(runId) });
+        return;
+      }
+
+      const commitMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/(?:scm\/)?commit$/.exec(path);
+      if (commitMatch && method === "POST") {
+        const runId = commitMatch[1] ?? "";
+        if (!getRun(runId)) {
+          notFound(res);
+          return;
+        }
+        const body = (await readJson(req)) as CreateCommitRequest;
+        send(res, 201, await commitRun(runId, body));
+        return;
+      }
+
+      const prMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/(?:scm\/)?pull-request$/.exec(path);
+      if (prMatch && method === "POST") {
+        const runId = prMatch[1] ?? "";
+        if (!getRun(runId)) {
+          notFound(res);
+          return;
+        }
+        const body = (await readJson(req)) as CreatePullRequestRequest;
+        send(res, 201, await openRunDraftPr(runId, body));
+        return;
+      }
+
+      const tokenMatch = /^\/internal\/runs\/([^/]+)\/scm\/token$/.exec(path);
+      if (tokenMatch && method === "POST") {
+        const runId = tokenMatch[1] ?? "";
+        if (!getRun(runId)) {
+          notFound(res);
+          return;
+        }
+        const body = (await readJson(req)) as CreateGitTokenRequest;
+        if (body.scope !== "clone" && body.scope !== "push") {
+          send(res, 400, { error: "scope must be clone or push" });
+          return;
+        }
+        send(res, 201, mintRunGitToken(runId, body));
+        return;
+      }
+
+      const diffMatch = /^\/v1\/runs\/([^/]+)\/diff$/.exec(path);
+      if (diffMatch && method === "GET") {
+        const runId = diffMatch[1] ?? "";
+        if (!getRun(runId)) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, await getRunDiff(runId));
         return;
       }
 

@@ -4,7 +4,7 @@ import { cp } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SKIP_NAMES = new Set(["node_modules", ".git", "dist", ".pnpm-store", ".control"]);
+const SKIP_NAMES = new Set(["node_modules", "dist", ".pnpm-store", ".control"]);
 
 /** Copy `.neo/environment.json`, but never copy run workspaces or caches. */
 export function skipCopy(from: string): boolean {

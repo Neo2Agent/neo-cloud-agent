@@ -37,13 +37,24 @@ export interface Run {
   model: string;
   prompt: string;
   branchName: string | null;
+  baseBranch: string | null;
   repoUrls: string[];
+  pullRequests: PullRequestRef[];
   workerHandle: string | null;
   createdAt: string;
   updatedAt: string;
   idleAt: string | null;
   expiresAt: string | null;
   errorMessage: string | null;
+}
+
+export interface PullRequestRef {
+  repoUrl: string;
+  branch: string;
+  url: string;
+  draft: boolean;
+  number: number | null;
+  title: string;
 }
 
 export type FollowUpDelivery = "prompt" | "steer" | "follow_up";
@@ -82,4 +93,22 @@ export interface CreateFollowUpRequest {
   /** Omit to let the control plane pick prompt vs steer vs follow_up. */
   delivery?: FollowUpDelivery;
   images?: ImageRef[];
+}
+
+export interface CreateCommitRequest {
+  message: string;
+  paths?: string[];
+}
+
+export interface CreatePullRequestRequest {
+  title: string;
+  body?: string;
+  remoteUrl?: string;
+}
+
+export type GitTokenScope = "clone" | "push";
+
+export interface CreateGitTokenRequest {
+  repoUrl?: string;
+  scope: GitTokenScope;
 }

@@ -4,6 +4,8 @@ const promptEl = document.getElementById("prompt");
 const repoEl = document.getElementById("repo");
 const statusEl = document.getElementById("status");
 const abortEl = document.getElementById("abort");
+const openPrEl = document.getElementById("open-pr");
+const prLinkEl = document.getElementById("pr-link");
 const healthEl = document.getElementById("health");
 const runTitleEl = document.getElementById("run-title");
 const runLabelEl = document.getElementById("run-label");
@@ -50,6 +52,20 @@ function setStatus(value) {
   statusEl.dataset.state = value;
   statusEl.textContent = STATUS_LABELS[value] ?? value;
   abortEl.hidden = value !== "RUNNING" && value !== "PROVISIONING" && value !== "INSTALLING";
+}
+
+function showPullRequest(run) {
+  const pr = run?.pullRequests?.[0];
+  if (pr?.url) {
+    prLinkEl.hidden = false;
+    prLinkEl.href = pr.url;
+    prLinkEl.textContent = pr.draft ? "草稿 PR" : "PR";
+    openPrEl.hidden = true;
+    return;
+  }
+  prLinkEl.hidden = true;
+  prLinkEl.removeAttribute("href");
+  openPrEl.hidden = !state.runId;
 }
 
 function emptyState() {
@@ -130,15 +146,11 @@ function applyEvent(event) {
     return;
   }
 
-  if (
-    event.kind === "scm.clone_started" ||
-    event.kind === "scm.clone_succeeded" ||
-    event.kind === "scm.clone_failed" ||
-    event.kind === "run.install_started" ||
-    event.kind === "run.install_succeeded" ||
-    event.kind === "run.install_failed"
-  ) {
+  if (String(event.kind).startsWith("scm.") || String(event.kind).startsWith("run.install")) {
     addSetupLine(event);
+    if (event.kind === "scm.pr_opened" && event.data?.url) {
+      showPullRequest({ pullRequests: [{ url: event.data.url, draft: event.data.draft !== false }] });
+    }
     return;
   }
 
@@ -203,10 +215,11 @@ async function openRun(runId) {
   state.events.clear();
   state.assistant = null;
   transcriptEl.innerHTML = "";
-  runLabelEl.textContent = shortId(run.id);
   runTitleEl.textContent = preview(run.prompt);
   setStatus(run.status);
   repoEl.value = run.repoUrls?.[0] ?? "";
+  runLabelEl.textContent = run.branchName ? run.branchName : shortId(run.id);
+  showPullRequest(run);
   renderRuns();
   listen(run.id);
   history.replaceState(null, "", `/#/runs/${run.id}`);
@@ -222,6 +235,7 @@ function resetComposer() {
   runLabelEl.textContent = "新对话";
   runTitleEl.textContent = "和云端 Agent 说话";
   promptEl.value = "";
+  showPullRequest(null);
   history.replaceState(null, "", "/");
   renderRuns();
 }
@@ -283,6 +297,26 @@ runListEl.addEventListener("click", (event) => {
 abortEl.addEventListener("click", async () => {
   if (!state.runId) return;
   await fetch(`/v1/runs/${state.runId}/abort`, { method: "POST" });
+});
+
+openPrEl.addEventListener("click", async () => {
+  if (!state.runId) return;
+  openPrEl.disabled = true;
+  try {
+    const created = await (
+      await fetch(`/v1/runs/${state.runId}/pull-request`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: runTitleEl.textContent || "Agent changes" }),
+      })
+    ).json();
+    if (created.error) throw new Error(created.error);
+    showPullRequest({ pullRequests: [created.pullRequest ?? created] });
+  } catch (error) {
+    addBubble("assistant", error instanceof Error ? error.message : "开 PR 失败", `err-${Date.now()}`);
+  } finally {
+    openPrEl.disabled = false;
+  }
 });
 
 async function boot() {
