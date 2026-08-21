@@ -7,8 +7,12 @@ import { fileURLToPath } from "node:url";
 const SKIP_NAMES = new Set(["node_modules", "dist", ".pnpm-store", ".control", ".builds", ".warm", ".firecracker"]);
 
 /** Copy `.neo/environment.json`, but never copy run workspaces or caches. */
-export function skipCopy(from: string): boolean {
-  const parts = from.split(path.sep);
+export function skipCopy(from: string, root?: string): boolean {
+  const rel = root ? path.relative(root, from) : from;
+  if (root && (rel.startsWith("..") || path.isAbsolute(rel))) {
+    return true;
+  }
+  const parts = rel.split(path.sep);
   if (parts.some((part) => SKIP_NAMES.has(part))) {
     return true;
   }
@@ -99,10 +103,10 @@ export async function copyWorkspaceTree(src: string, dest: string): Promise<void
     throw new Error(`local repo not found: ${src}`);
   }
   mkdirSync(dest, { recursive: true });
-  const filter = (from: string) => !skipCopy(from);
+  const filter = (from: string) => !skipCopy(from, src);
   for (const entry of readdirSync(src, { withFileTypes: true })) {
     const from = path.join(src, entry.name);
-    if (skipCopy(from)) {
+    if (skipCopy(from, src)) {
       continue;
     }
     await cp(from, path.join(dest, entry.name), { recursive: true, filter });

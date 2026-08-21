@@ -31,6 +31,14 @@ test("skipCopy keeps environment.json and drops run workspaces", () => {
   assert.equal(skipCopy("/repo/.warm/abc/slot/hello.txt"), true);
   assert.equal(skipCopy("/repo/.firecracker/overlay/sbin/init"), true);
   assert.equal(skipCopy("/repo/.git/HEAD"), false);
+  assert.equal(
+    skipCopy("/tmp/runs/.builds/id/workspace/.neo-installed", "/tmp/runs/.builds/id/workspace"),
+    false,
+  );
+  assert.equal(
+    skipCopy("/tmp/runs/.builds/id/workspace/node_modules/pkg", "/tmp/runs/.builds/id/workspace"),
+    true,
+  );
 });
 
 test("copies a local fixture into the run workspace", async () => {

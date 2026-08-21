@@ -15,7 +15,7 @@ delete process.env.ACCOUNTS_REQUIRED;
 
 const { createApiServer } = await import("./server.js");
 const { listen, close } = await import("../e2e/helpers.js");
-const { createRun } = await import("../orchestrator/orchestrator.js");
+const { createRun, getBootstrap } = await import("../orchestrator/orchestrator.js");
 const { listEvents } = await import("../events/bus.js");
 
 test("environments and builds API create a snapshot that later runs reuse", async (t) => {
@@ -78,6 +78,7 @@ test("environments and builds API create a snapshot that later runs reuse", asyn
   assert.equal(run.status, "RUNNING");
   assert.equal(run.buildId, build.id);
   assert.equal(run.setupStatus, "INSTALL_SUCCEEDED");
+  assert.equal(readFileSync(path.join(getBootstrap(run.id).workspaceDir, ".neo-installed"), "utf8").trim(), "ok");
   assert.ok(listEvents(run.id).some((item) => item.kind === "build.used"));
   assert.equal(listEvents(run.id).some((item) => item.kind === "run.install_started"), false);
 });

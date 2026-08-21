@@ -84,7 +84,7 @@ test("failed install marks the build FAILED", async () => {
   writeFileSync(path.join(fixture, "README.md"), "x\n");
   const build = await createEnvironmentBuild({ repoUrls: [fixture] });
   assert.equal(build.status, "FAILED");
-  assert.match(build.failureMessage ?? "", /exit 9|FAILED/i);
+  assert.match(build.failureMessage ?? "", /exited 9|FAILED/i);
   assert.equal(canRestoreBuild(build), false);
   assert.match(readBuildLogs(build.id), /FAILED/);
 });
