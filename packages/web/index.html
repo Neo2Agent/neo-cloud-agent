@@ -22,9 +22,10 @@
         <button class="new-chat" id="new-chat" type="button">新对话</button>
         <div class="run-list" id="run-list"></div>
         <footer class="sidebar-foot">
-          <div class="account" id="account" hidden>
-            <span id="account-email"></span>
-            <button type="button" id="logout">退出</button>
+          <div class="account" id="account">
+            <span id="account-email">未登录</span>
+            <button type="button" id="login">登录</button>
+            <button type="button" id="logout" hidden>退出</button>
           </div>
           <span id="health">检测服务…</span>
           <span>pi-agent · :8080</span>
@@ -104,6 +105,7 @@
         <input id="auth-token" name="token" type="password" autocomplete="current-password" placeholder="neo_…" hidden />
         <p class="auth-error" id="auth-error" hidden></p>
         <button type="submit" id="auth-submit">进入</button>
+        <button type="button" id="auth-skip" hidden>先不登录</button>
       </form>
     </div>
     <script type="module" src="/app.js"></script>

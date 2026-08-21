@@ -14,6 +14,8 @@ delete process.env.CONTROL_PLANE_TOKEN;
 delete process.env.CONTROL_PLANE_AUTH;
 delete process.env.DATABASE_URL;
 delete process.env.REDIS_URL;
+delete process.env.BOOTSTRAP_EMAIL;
+delete process.env.BOOTSTRAP_PASSWORD;
 
 const { createApiServer } = await import("./server.js");
 const { listen, close } = await import("../e2e/helpers.js");

@@ -32,6 +32,22 @@ export class AccountError extends Error {
   }
 }
 
+/** Create BOOTSTRAP_EMAIL / BOOTSTRAP_PASSWORD on first boot. Existing email is left alone. */
+export async function ensureBootstrapAccount(): Promise<PublicUser | null> {
+  const email = normalizeEmail(process.env.BOOTSTRAP_EMAIL ?? "");
+  const password = process.env.BOOTSTRAP_PASSWORD ?? "";
+  if (!email || !password) {
+    return null;
+  }
+  const existing = await getAccountStore().findUserByEmail(email);
+  if (existing) {
+    return toPublicUser(existing);
+  }
+  const created = await registerAccount({ email, password });
+  console.log(`bootstrap account created: ${created.user.email}`);
+  return created.user;
+}
+
 export async function registerAccount(input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {
   const email = normalizeEmail(input.email ?? "");
   const password = input.password ?? "";

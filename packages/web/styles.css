@@ -438,6 +438,14 @@ textarea {
   border-radius: 10px;
 }
 
+.auth-card #auth-skip {
+  width: 100%;
+  margin-top: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
 .auth-error {
   color: var(--err);
 }

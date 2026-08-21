@@ -1,3 +1,4 @@
+import { ensureBootstrapAccount } from "./accounts/accounts.js";
 import { setAccountStore } from "./accounts/store.js";
 import { importBuild, listBuilds } from "./env/builds.js";
 import { setEnvPersistHooks } from "./env/persist-hooks.js";
@@ -96,6 +97,11 @@ async function doStart(): Promise<void> {
       }
     });
     console.log("control-plane event bus: redis");
+  }
+  if (!process.env.NODE_TEST_CONTEXT) {
+    await ensureBootstrapAccount().catch((error) => {
+      console.error("bootstrap account failed", error);
+    });
   }
 }
 

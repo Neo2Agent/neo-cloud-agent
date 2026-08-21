@@ -22,7 +22,9 @@ const authPasswordEl = document.getElementById("auth-password");
 const authSubmitEl = document.getElementById("auth-submit");
 const accountEl = document.getElementById("account");
 const accountEmailEl = document.getElementById("account-email");
+const loginEl = document.getElementById("login");
 const logoutEl = document.getElementById("logout");
+const authSkipEl = document.getElementById("auth-skip");
 const environmentEl = document.getElementById("environment");
 const buildEl = document.getElementById("build");
 const warmBuildEl = document.getElementById("warm-build");
@@ -70,6 +72,7 @@ function showAuthGate(message) {
   authGateEl.hidden = false;
   authErrorEl.hidden = !message;
   authErrorEl.textContent = message || "";
+  authSkipEl.hidden = state.authRequired;
   setAuthMode(state.authMode || "login");
   if (state.authMode === "token") {
     authTokenEl.value = state.token.startsWith("neo_sess_") ? "" : state.token;
@@ -101,12 +104,16 @@ function setAuthMode(mode) {
 }
 
 function renderAccount() {
+  accountEl.hidden = false;
   if (!state.user) {
-    accountEl.hidden = true;
+    accountEmailEl.textContent = "未登录";
+    loginEl.hidden = false;
+    logoutEl.hidden = true;
     return;
   }
-  accountEl.hidden = false;
   accountEmailEl.textContent = state.user.email;
+  loginEl.hidden = true;
+  logoutEl.hidden = false;
 }
 
 const STATUS_LABELS = {
@@ -583,6 +590,20 @@ async function applySession(token) {
   hideAuthGate();
 }
 
+loginEl.addEventListener("click", () => {
+  showAuthGate();
+});
+
+authSkipEl.addEventListener("click", () => {
+  hideAuthGate();
+});
+
+authGateEl.addEventListener("click", (event) => {
+  if (event.target === authGateEl && !state.authRequired) {
+    hideAuthGate();
+  }
+});
+
 authTabsEl.addEventListener("click", (event) => {
   const button = event.target.closest("[data-mode]");
   if (button) setAuthMode(button.dataset.mode);
@@ -647,6 +668,7 @@ async function boot() {
       state.healthText = "控制面在线";
     }
     healthEl.textContent = state.healthText;
+    renderAccount();
     if (state.token) {
       try {
         if (state.token.startsWith("neo_sess_")) await applySession(state.token);
