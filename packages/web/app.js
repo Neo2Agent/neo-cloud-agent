@@ -111,6 +111,8 @@ function setAuthMode(mode) {
       ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
       : "默认管理员账号 admin，密码 123456。";
   authSubmitEl.textContent = mode === "register" ? "创建账号" : "进入";
+  authEmailEl.type = "text";
+  authEmailEl.removeAttribute("pattern");
 }
 
 function renderAccount() {

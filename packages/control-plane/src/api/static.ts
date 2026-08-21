@@ -44,7 +44,13 @@ export function serveWebFile(req: IncomingMessage, res: ServerResponse): boolean
     return false;
   }
   const ext = path.extname(file);
-  res.writeHead(200, { "content-type": MIME[ext] ?? "application/octet-stream" });
+  const headers: Record<string, string> = {
+    "content-type": MIME[ext] ?? "application/octet-stream",
+  };
+  if (ext === ".html" || ext === ".js" || ext === ".css") {
+    headers["cache-control"] = "no-store";
+  }
+  res.writeHead(200, headers);
   if (req.method === "HEAD") {
     res.end();
     return true;
