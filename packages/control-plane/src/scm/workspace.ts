@@ -4,7 +4,7 @@ import { cp } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SKIP_NAMES = new Set(["node_modules", "dist", ".pnpm-store", ".control"]);
+const SKIP_NAMES = new Set(["node_modules", "dist", ".pnpm-store", ".control", ".builds", ".warm", ".firecracker"]);
 
 /** Copy `.neo/environment.json`, but never copy run workspaces or caches. */
 export function skipCopy(from: string): boolean {
@@ -13,7 +13,7 @@ export function skipCopy(from: string): boolean {
     return true;
   }
   const neo = parts.lastIndexOf(".neo");
-  return neo >= 0 && parts[neo + 1] === "runs";
+  return neo >= 0 && (parts[neo + 1] === "runs" || parts[neo + 1] === "firecracker");
 }
 
 export type RepoRef = {
@@ -94,7 +94,7 @@ export function gitClone(url: string, dest: string, timeoutMs = 60_000): Promise
   });
 }
 
-async function copyLocal(src: string, dest: string): Promise<void> {
+export async function copyWorkspaceTree(src: string, dest: string): Promise<void> {
   if (!existsSync(src) || !statSync(src).isDirectory()) {
     throw new Error(`local repo not found: ${src}`);
   }
@@ -123,7 +123,7 @@ export async function materializeRepos(
     if (ref.kind === "remote") {
       await gitClone(ref.source, dest);
     } else {
-      await copyLocal(ref.source, dest);
+      await copyWorkspaceTree(ref.source, dest);
     }
     placed.push({ dest, ref });
   }

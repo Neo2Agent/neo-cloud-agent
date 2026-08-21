@@ -15,12 +15,21 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import { mintRunToken, redactText } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
+import {
+  canRestoreBuild,
+  captureWorkspaceBuild,
+  findActiveBuild,
+  getBuild,
+  restoreBuildSnapshot,
+} from "../env/builds.js";
+import { environmentFingerprint } from "../env/fingerprint.js";
 import { findInstallTargets, runInstallCommand } from "../env/install.js";
+import { claimWarmSlot, refillWarmPool } from "../env/warm-pool.js";
 import { publish, resetHistory, seedEvents } from "../events/bus.js";
 import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
 import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
-import { materializeRepos } from "../scm/workspace.js";
+import { materializeRepos, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
   listSessionFiles,
@@ -226,9 +235,11 @@ export function event(runId: string, kind: RunEvent["kind"], title: string, extr
     createdAt: extra?.createdAt ?? now(),
     category:
       extra?.category ??
-      (kind.startsWith("run.install") || kind.startsWith("run.") || kind.startsWith("scm.")
-        ? "agent_setup"
-        : "agent_run"),
+      (kind.startsWith("build.")
+        ? "build"
+        : kind.startsWith("run.") || kind.startsWith("scm.")
+          ? "agent_setup"
+          : "agent_run"),
     level: extra?.level ?? (kind === "run.error" ? "error" : "info"),
     kind,
     title,
@@ -273,7 +284,7 @@ function launchSpec(run: Run, jwt: string): RuntimeSpec {
   return {
     runId: run.id,
     image: config.workerImage,
-    snapshotId: null,
+    snapshotId: run.buildId ? `snap_${run.buildId}` : null,
     cpu: Number(process.env.WORKER_CPUS ?? 2),
     memoryMiB: Number(process.env.WORKER_MEMORY_MIB ?? 2048),
     diskGiB: 40,
@@ -337,41 +348,61 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   mintJwtForRun(run);
   flushRun(run.id);
 
+  const fingerprint = environmentFingerprint({ repoUrls: run.repoUrls, ref: input.ref ?? null });
+  let restoredFromBuild = false;
+
   try {
     if (run.repoUrls.length > 0) {
-      publish(
-        event(run.id, "scm.clone_started", "Preparing workspace", {
-          data: { repoUrls: run.repoUrls },
-        }),
-      );
-      const placed = await materializeRepos(run.repoUrls, workspaceFor(run.id), repoRoot());
-      publish(
-        event(run.id, "scm.clone_succeeded", "Workspace ready", {
-          data: {
-            dests: placed.map((item) => ({ name: item.ref.name, kind: item.ref.kind, source: item.ref.raw })),
-          },
-        }),
-      );
-      const dests = placed.length > 0 ? placed.map((item) => item.dest) : [workspaceFor(run.id)];
-      try {
-        const prepared = await prepareRunRepos(dests, run);
-        const first = prepared[0];
-        if (first) {
-          run.branchName = first.branch;
-          run.baseBranch = first.baseBranch;
-          run.updatedAt = now();
-          publish(
-            event(run.id, "scm.branch_created", `Created branch ${first.branch}`, {
-              data: { branch: first.branch, baseBranch: first.baseBranch },
-            }),
+      const existing = input.buildId ? getBuild(input.buildId) : findActiveBuild(fingerprint);
+      if (canRestoreBuild(existing)) {
+        publish(
+          event(run.id, "scm.clone_started", "Restoring environment snapshot", {
+            data: { repoUrls: run.repoUrls, buildId: existing.id },
+          }),
+        );
+        const dest = workspaceFor(run.id);
+        const fromWarm = await claimWarmSlot(existing.id, dest);
+        if (!fromWarm) {
+          await restoreBuildSnapshot(existing, dest);
+        } else if (existing.snapshotPath) {
+          void refillWarmPool(existing.id, existing.snapshotPath).catch((error) =>
+            console.error("warm pool refill failed", error),
           );
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "git branch failed";
-        failRun(run, message, "scm.branch_failed", "Failed to create run branch");
-        return run;
+        run.buildId = existing.id;
+        run.envId = run.envId ?? existing.envId;
+        run.envVersionId = existing.envVersionId;
+        run.setupStatus = "INSTALL_SUCCEEDED";
+        run.updatedAt = now();
+        restoredFromBuild = true;
+        publish(
+          event(run.id, "scm.clone_succeeded", fromWarm ? "Warm pool workspace ready" : "Workspace restored from build", {
+            data: { buildId: existing.id, warm: fromWarm },
+          }),
+        );
+        publish(
+          event(run.id, "build.used", "Using environment build snapshot", {
+            category: "build",
+            data: { buildId: existing.id, fingerprint, warm: fromWarm },
+          }),
+        );
+        flushRun(run.id);
+      } else {
+        publish(
+          event(run.id, "scm.clone_started", "Preparing workspace", {
+            data: { repoUrls: run.repoUrls },
+          }),
+        );
+        const placed = await materializeRepos(run.repoUrls, workspaceFor(run.id), repoRoot());
+        publish(
+          event(run.id, "scm.clone_succeeded", "Workspace ready", {
+            data: {
+              dests: placed.map((item) => ({ name: item.ref.name, kind: item.ref.kind, source: item.ref.raw })),
+            },
+          }),
+        );
+        flushRun(run.id);
       }
-      flushRun(run.id);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "workspace prepare failed";
@@ -379,36 +410,79 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     return run;
   }
 
-  try {
-    const targets = findInstallTargets(workspaceFor(run.id));
-    if (targets.length > 0) {
-      run.status = "INSTALLING";
-      run.setupStatus = "INSTALL_STARTED";
-      run.updatedAt = now();
-      publish(
-        event(run.id, "run.install_started", "Running environment install", {
-          data: { files: targets.map((item) => item.file) },
-        }),
-      );
-      flushRun(run.id);
-      for (const target of targets) {
-        const result = await runInstallCommand(target.cwd, target.command);
-        if (result.code !== 0) {
-          const message = (result.stderr || result.stdout || `install exited ${result.code}`).trim().slice(-4000);
-          run.setupStatus = "INSTALL_FAILED";
-          failRun(run, message || `install exited ${result.code}`, "run.install_failed", "Environment install failed");
-          return run;
+  if (!restoredFromBuild) {
+    try {
+      const targets = findInstallTargets(workspaceFor(run.id));
+      if (targets.length > 0) {
+        run.status = "INSTALLING";
+        run.setupStatus = "INSTALL_STARTED";
+        run.updatedAt = now();
+        publish(
+          event(run.id, "run.install_started", "Running environment install", {
+            data: { files: targets.map((item) => item.file) },
+          }),
+        );
+        flushRun(run.id);
+        for (const target of targets) {
+          const result = await runInstallCommand(target.cwd, target.command);
+          if (result.code !== 0) {
+            const message = (result.stderr || result.stdout || `install exited ${result.code}`).trim().slice(-4000);
+            run.setupStatus = "INSTALL_FAILED";
+            failRun(run, message || `install exited ${result.code}`, "run.install_failed", "Environment install failed");
+            return run;
+          }
+        }
+        run.setupStatus = "INSTALL_SUCCEEDED";
+        run.updatedAt = now();
+        publish(event(run.id, "run.install_succeeded", "Environment install finished"));
+        flushRun(run.id);
+      }
+      if (run.repoUrls.length > 0 && run.status !== "ERROR") {
+        const captured = await captureWorkspaceBuild({
+          workspaceDir: workspaceFor(run.id),
+          repoUrls: run.repoUrls,
+          ref: input.ref ?? null,
+          envId: run.envId,
+          source: "agent",
+        });
+        if (captured?.status === "SUCCEEDED") {
+          run.buildId = captured.id;
+          run.envId = run.envId ?? captured.envId;
+          run.envVersionId = captured.envVersionId;
+          flushRun(run.id);
         }
       }
-      run.setupStatus = "INSTALL_SUCCEEDED";
-      run.updatedAt = now();
-      publish(event(run.id, "run.install_succeeded", "Environment install finished"));
-      flushRun(run.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "environment install failed";
+      run.setupStatus = "INSTALL_FAILED";
+      failRun(run, message, "run.install_failed", "Environment install failed");
+      return run;
+    }
+  }
+
+  try {
+    if (run.repoUrls.length > 0) {
+      const dests =
+        run.repoUrls.length <= 1
+          ? [workspaceFor(run.id)]
+          : run.repoUrls.map((url) => path.join(workspaceFor(run.id), repoName(url)));
+      const prepared = await prepareRunRepos(dests, run);
+      const first = prepared[0];
+      if (first) {
+        run.branchName = first.branch;
+        run.baseBranch = first.baseBranch;
+        run.updatedAt = now();
+        publish(
+          event(run.id, "scm.branch_created", `Created branch ${first.branch}`, {
+            data: { branch: first.branch, baseBranch: first.baseBranch },
+          }),
+        );
+        flushRun(run.id);
+      }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "environment install failed";
-    run.setupStatus = "INSTALL_FAILED";
-    failRun(run, message, "run.install_failed", "Environment install failed");
+    const message = error instanceof Error ? error.message : "git branch failed";
+    failRun(run, message, "scm.branch_failed", "Failed to create run branch");
     return run;
   }
 

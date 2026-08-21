@@ -1,12 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { access, open, unlink } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import type { ExecutionRuntime, RuntimeHandle, RuntimeSpec } from "@neo-cloud-agent/contracts";
 import type { WorkerLease } from "../store/persist.js";
 import type { RuntimeHooks } from "./docker.js";
+import { ensureFirecrackerRootfs } from "./rootfs.js";
 
 export type FirecrackerHttp = (
   socketPath: string,
@@ -272,7 +273,13 @@ export class FirecrackerRuntime implements ExecutionRuntime {
 
   async provision(spec: RuntimeSpec, hooks?: RuntimeHooks): Promise<RuntimeHandle> {
     const kernel = this.options.kernel || process.env.FIRECRACKER_KERNEL || "";
-    const rootfs = this.options.rootfs || process.env.FIRECRACKER_ROOTFS || "";
+    let rootfs = this.options.rootfs || process.env.FIRECRACKER_ROOTFS || "";
+    if (!rootfs) {
+      const packed = await ensureFirecrackerRootfs();
+      if (packed && existsSync(packed) && statSync(packed).isFile()) {
+        rootfs = packed;
+      }
+    }
     const bin = this.options.bin || process.env.FIRECRACKER_BIN || "firecracker";
     if (!kernel || !rootfs) {
       throw new Error("FIRECRACKER_KERNEL and FIRECRACKER_ROOTFS are required for WORKER_RUNTIME=firecracker");

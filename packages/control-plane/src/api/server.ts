@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type {
+  CreateBuildRequest,
   CreateCommitRequest,
+  CreateEnvironmentRequest,
   CreateFollowUpRequest,
   CreateGitTokenRequest,
   CreatePullRequestRequest,
@@ -46,7 +48,9 @@ import {
   verifyWorkerJwt,
 } from "../security/auth.js";
 import { actorCanAccessRun, type Actor } from "../security/actor.js";
-import { listEnvironments } from "../env/store.js";
+import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBuildLogs } from "../env/builds.js";
+import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
+import { readyWarmCount } from "../env/warm-pool.js";
 import { serveWebFile } from "./static.js";
 
 const CORS = {
@@ -144,6 +148,8 @@ export function createApiServer() {
           authRequired: accessRequired(),
           accountsEnabled: true,
           accountsRequired: accountsRequired(),
+          warmPoolReady: readyWarmCount(),
+          builds: listBuilds().filter((item) => item.status === "SUCCEEDED" && !item.draft).length,
           ...platformInfo(),
         });
         return;
@@ -432,8 +438,97 @@ export function createApiServer() {
         return;
       }
 
+      if (method === "POST" && path === "/v1/environments") {
+        if (!actor) {
+          send(res, 401, { error: "unauthorized" });
+          return;
+        }
+        const body = (await readJson(req)) as CreateEnvironmentRequest;
+        send(res, 201, createEnvironment(body, actor.orgId));
+        return;
+      }
+
+      const envBuildsMatch = /^\/v1\/environments\/([^/]+)\/builds$/.exec(path);
+      if (envBuildsMatch && method === "GET") {
+        const env = getEnvironment(envBuildsMatch[1] ?? "");
+        if (!env) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, { builds: listBuildsForEnv(env.id) });
+        return;
+      }
+      if (envBuildsMatch && method === "POST") {
+        const env = getEnvironment(envBuildsMatch[1] ?? "");
+        if (!env) {
+          notFound(res);
+          return;
+        }
+        const body = (await readJson(req)) as CreateBuildRequest;
+        const repoUrls =
+          Array.isArray(body.repoUrls) && body.repoUrls.length > 0 ? body.repoUrls : (env.config.repos ?? []);
+        if (repoUrls.length === 0) {
+          send(res, 400, { error: "repoUrls are required" });
+          return;
+        }
+        send(res, 201, await createEnvironmentBuild({ ...body, envId: env.id, repoUrls }));
+        return;
+      }
+
+      const envMatch = /^\/v1\/environments\/([^/]+)$/.exec(path);
+      if (envMatch && method === "GET") {
+        const env = getEnvironment(envMatch[1] ?? "");
+        if (!env) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, env);
+        return;
+      }
+
       if (method === "GET" && path === "/v1/environments") {
         send(res, 200, { environments: listEnvironments() });
+        return;
+      }
+
+      if (method === "POST" && path === "/v1/builds") {
+        const body = (await readJson(req)) as CreateBuildRequest;
+        let repoUrls = Array.isArray(body.repoUrls) ? body.repoUrls : [];
+        if (repoUrls.length === 0 && body.envId) {
+          repoUrls = getEnvironment(body.envId)?.config.repos ?? [];
+        }
+        if (repoUrls.length === 0) {
+          send(res, 400, { error: "repoUrls are required" });
+          return;
+        }
+        send(res, 201, await createEnvironmentBuild({ ...body, repoUrls }));
+        return;
+      }
+
+      if (method === "GET" && path === "/v1/builds") {
+        send(res, 200, { builds: listBuilds() });
+        return;
+      }
+
+      const buildLogsMatch = /^\/v1\/builds\/([^/]+)\/logs$/.exec(path);
+      if (buildLogsMatch && method === "GET") {
+        const build = getBuild(buildLogsMatch[1] ?? "");
+        if (!build) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, { buildId: build.id, logs: readBuildLogs(build.id) });
+        return;
+      }
+
+      const buildMatch = /^\/v1\/builds\/([^/]+)$/.exec(path);
+      if (buildMatch && method === "GET") {
+        const build = getBuild(buildMatch[1] ?? "");
+        if (!build) {
+          notFound(res);
+          return;
+        }
+        send(res, 200, build);
         return;
       }
 

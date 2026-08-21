@@ -20,6 +20,8 @@ export type {
   Build,
   BuildSource,
   BuildStatus,
+  CreateBuildRequest,
+  CreateEnvironmentRequest,
   EgressMode,
   EgressPolicy,
   Environment,

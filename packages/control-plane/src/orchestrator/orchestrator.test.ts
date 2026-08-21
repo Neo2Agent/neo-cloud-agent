@@ -242,3 +242,18 @@ test("createRun fails when the local repo path does not exist", async () => {
   assert.match(run.errorMessage ?? "", /not found/);
   assert.ok(listEvents(run.id).some((item) => item.kind === "scm.clone_failed"));
 });
+
+test("later runs reuse the captured environment build and skip install", async () => {
+  const run = await createRun({
+    prompt: "reuse the snapshot",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  assert.equal(run.status, "RUNNING");
+  assert.equal(run.setupStatus, "INSTALL_SUCCEEDED");
+  assert.ok(run.buildId);
+  assert.equal(readFileSync(path.join(getBootstrap(run.id).workspaceDir, ".neo-installed"), "utf8").trim(), "ok");
+  const kinds = listEvents(run.id).map((item) => item.kind);
+  assert.ok(kinds.includes("build.used"));
+  assert.equal(kinds.includes("run.install_started"), false);
+  assert.ok(listEvents(run.id).some((item) => item.category === "build"));
+});

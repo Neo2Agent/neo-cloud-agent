@@ -101,12 +101,33 @@ export interface Build {
   id: string;
   envId: string;
   envVersionId: string;
+  orgId: string;
   status: BuildStatus;
   source: BuildSource;
   /** Draft builds never become the boot image for new runs. */
   draft: boolean;
   snapshotId: string | null;
+  snapshotPath: string | null;
+  fingerprint: string;
+  repoUrls: string[];
+  ref: string | null;
   createdAt: string;
   completedAt: string | null;
   failureMessage: string | null;
+}
+
+export interface CreateEnvironmentRequest {
+  name?: string;
+  repoUrls?: string[];
+  config?: EnvironmentJson;
+}
+
+export interface CreateBuildRequest {
+  envId?: string;
+  name?: string;
+  repoUrls: string[];
+  ref?: string;
+  draft?: boolean;
+  source?: BuildSource;
+  environmentJson?: EnvironmentJson;
 }

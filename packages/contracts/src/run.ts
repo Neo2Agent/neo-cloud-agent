@@ -86,6 +86,7 @@ export interface CreateRunRequest {
   repoUrls: string[];
   ref?: string;
   envId?: string;
+  buildId?: string;
   model?: string;
   source?: RunSource;
   images?: ImageRef[];
