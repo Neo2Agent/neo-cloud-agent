@@ -19,6 +19,11 @@
   box-sizing: border-box;
 }
 
+/* Author `display` rules must not override the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -403,10 +408,13 @@ textarea {
 .auth-gate {
   position: fixed;
   inset: 0;
-  display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.88);
   z-index: 20;
+}
+
+.auth-gate:not([hidden]) {
+  display: grid;
 }
 
 .auth-card {

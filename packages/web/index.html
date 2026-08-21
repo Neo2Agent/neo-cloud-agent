@@ -7,7 +7,7 @@
     <meta name="color-scheme" content="light" />
     <title>Neo Cloud Agent</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=login-2" />
   </head>
   <body>
     <div class="app">
@@ -104,10 +104,10 @@
         </div>
         <input id="auth-token" name="token" type="password" autocomplete="current-password" placeholder="neo_…" hidden />
         <p class="auth-error" id="auth-error" hidden></p>
-        <button type="submit" id="auth-submit">进入</button>
+        <button type="submit" id="auth-submit">登录</button>
         <button type="button" id="auth-skip" hidden>先不登录</button>
       </form>
     </div>
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/app.js?v=login-2"></script>
   </body>
 </html>

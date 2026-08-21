@@ -48,6 +48,7 @@ const state = {
   defaultAdmin: false,
   user: null,
   authMode: "login",
+  authBusy: false,
   environments: [],
   builds: [],
 };
@@ -73,59 +74,87 @@ async function api(url, options = {}) {
 }
 
 function showAuthGate(message) {
+  if (!authGateEl) return;
   authGateEl.hidden = false;
-  authErrorEl.hidden = !message;
-  authErrorEl.textContent = message || "";
-  authSkipEl.hidden = state.authRequired;
+  if (authErrorEl) {
+    authErrorEl.hidden = !message;
+    authErrorEl.textContent = message || "";
+  }
+  if (authSkipEl) authSkipEl.hidden = state.authRequired;
   setAuthMode(state.authMode || "login");
   if (state.authMode === "token") {
-    authTokenEl.value = state.token.startsWith("neo_sess_") ? "" : state.token;
-    authTokenEl.focus();
-  } else {
-    if (state.bootstrapEmail && !authEmailEl.value) {
-      authEmailEl.value = state.bootstrapEmail;
+    if (authTokenEl) {
+      authTokenEl.value = state.token.startsWith("neo_sess_") ? "" : state.token;
+      authTokenEl.focus();
     }
-    if (state.defaultAdmin && !authPasswordEl.value) {
-      authPasswordEl.value = "123456";
-    }
-    authEmailEl.focus();
+    return;
   }
+  if (authEmailEl && !authEmailEl.value) {
+    authEmailEl.value = state.bootstrapEmail || "admin";
+  }
+  if (authPasswordEl && !authPasswordEl.value && state.authMode === "login") {
+    authPasswordEl.value = "123456";
+  }
+  authEmailEl?.focus?.();
 }
 
 function hideAuthGate() {
-  authGateEl.hidden = true;
-  authErrorEl.hidden = true;
+  if (authGateEl) authGateEl.hidden = true;
+  if (authErrorEl) authErrorEl.hidden = true;
+}
+
+function submitLabel(mode = state.authMode) {
+  if (state.authBusy) return "登录中…";
+  if (mode === "register") return "注册";
+  if (mode === "token") return "使用令牌";
+  return "登录";
+}
+
+function setAuthBusy(busy) {
+  state.authBusy = busy;
+  if (authSubmitEl) {
+    authSubmitEl.disabled = busy;
+    authSubmitEl.textContent = submitLabel();
+  }
+  if (loginEl) loginEl.disabled = busy;
 }
 
 function setAuthMode(mode) {
   state.authMode = mode;
-  for (const button of authTabsEl.querySelectorAll("button")) {
+  for (const button of authTabsEl?.querySelectorAll("button") ?? []) {
     button.classList.toggle("active", button.dataset.mode === mode);
   }
   const userMode = mode !== "token";
-  authUserFieldsEl.hidden = !userMode;
-  authTokenEl.hidden = userMode;
-  authTitleEl.textContent = mode === "register" ? "注册" : mode === "token" ? "服务令牌" : "登录";
-  authCopyEl.textContent =
-    mode === "token"
-      ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
-      : "默认管理员账号 admin，密码 123456。";
-  authSubmitEl.textContent = mode === "register" ? "创建账号" : "进入";
-  authEmailEl.type = "text";
-  authEmailEl.removeAttribute("pattern");
+  if (authUserFieldsEl) authUserFieldsEl.hidden = !userMode;
+  if (authTokenEl) authTokenEl.hidden = userMode;
+  if (authTitleEl) {
+    authTitleEl.textContent = mode === "register" ? "注册" : mode === "token" ? "服务令牌" : "登录";
+  }
+  if (authCopyEl) {
+    authCopyEl.textContent =
+      mode === "token"
+        ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
+        : "默认管理员账号 admin，密码 123456。点登录即可。";
+  }
+  if (authSubmitEl && !state.authBusy) authSubmitEl.textContent = submitLabel(mode);
+  if (authEmailEl) {
+    authEmailEl.type = "text";
+    authEmailEl.removeAttribute("pattern");
+  }
 }
 
 function renderAccount() {
+  if (!accountEl) return;
   accountEl.hidden = false;
   if (!state.user) {
-    accountEmailEl.textContent = "未登录";
-    loginEl.hidden = false;
-    logoutEl.hidden = true;
+    if (accountEmailEl) accountEmailEl.textContent = state.authBusy ? "登录中…" : "未登录";
+    if (loginEl) loginEl.hidden = false;
+    if (logoutEl) logoutEl.hidden = true;
     return;
   }
-  accountEmailEl.textContent = state.user.email;
-  loginEl.hidden = true;
-  logoutEl.hidden = false;
+  if (accountEmailEl) accountEmailEl.textContent = state.user.email;
+  if (loginEl) loginEl.hidden = true;
+  if (logoutEl) logoutEl.hidden = false;
 }
 
 const STATUS_LABELS = {
@@ -589,14 +618,35 @@ async function applyServiceToken(token) {
   hideAuthGate();
 }
 
-async function applySession(token) {
+async function applySession(token, user) {
+  if (!token) {
+    saveToken("");
+    state.user = null;
+    renderAccount();
+    throw new Error("登录响应缺少会话");
+  }
   saveToken(token);
+  if (user?.email) {
+    state.user = user;
+    sessionStorage.removeItem(SKIP_BOOTSTRAP_KEY);
+    renderAccount();
+    hideAuthGate();
+    return;
+  }
   const me = await api("/v1/me");
   if (!me.ok) {
     saveToken("");
+    state.user = null;
+    renderAccount();
     throw new Error("unauthorized");
   }
   const body = await me.json();
+  if (!body.user) {
+    saveToken("");
+    state.user = null;
+    renderAccount();
+    throw new Error("登录未生效，请再试一次");
+  }
   state.user = body.user;
   sessionStorage.removeItem(SKIP_BOOTSTRAP_KEY);
   renderAccount();
@@ -610,67 +660,85 @@ async function loginBootstrap() {
   });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || "unauthorized");
-  await applySession(body.token);
+  await applySession(body.token, body.user);
 }
 
-loginEl.addEventListener("click", async () => {
-  if (state.bootstrapLogin) {
-    try {
-      await loginBootstrap();
-      await refreshRuns();
-      await refreshEnvironments();
-      return;
-    } catch (error) {
-      showAuthGate(error instanceof Error ? error.message : "登录失败");
-      return;
-    }
-  }
+async function finishLogin() {
+  await refreshRuns();
+  await refreshEnvironments();
+  const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
+  if (match?.[1]) await openRun(match[1]);
+  else emptyState();
+}
+
+loginEl?.addEventListener("click", async () => {
+  if (state.authBusy) return;
   showAuthGate();
+  if (!state.bootstrapLogin && !state.defaultAdmin) return;
+  setAuthBusy(true);
+  renderAccount();
+  try {
+    await loginBootstrap();
+    await finishLogin();
+  } catch (error) {
+    showAuthGate(error instanceof Error ? error.message : "登录失败");
+  } finally {
+    setAuthBusy(false);
+    renderAccount();
+  }
 });
 
-authSkipEl.addEventListener("click", () => {
+authSkipEl?.addEventListener("click", () => {
   hideAuthGate();
 });
 
-authGateEl.addEventListener("click", (event) => {
+authGateEl?.addEventListener("click", (event) => {
   if (event.target === authGateEl && !state.authRequired) {
     hideAuthGate();
   }
 });
 
-authTabsEl.addEventListener("click", (event) => {
+authTabsEl?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-mode]");
-  if (button) setAuthMode(button.dataset.mode);
+  if (!button) return;
+  const mode = button.dataset.mode;
+  if (mode === "login" && state.authMode === "login") {
+    authFormEl?.requestSubmit?.();
+    return;
+  }
+  setAuthMode(mode);
 });
 
-authFormEl.addEventListener("submit", async (event) => {
+authFormEl?.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (state.authBusy) return;
+  setAuthBusy(true);
   try {
     if (state.authMode === "token") {
-      await applyServiceToken(authTokenEl.value.trim());
+      await applyServiceToken(authTokenEl?.value.trim() ?? "");
     } else {
+      const email = (authEmailEl?.value ?? "").trim() || state.bootstrapEmail || "admin";
+      const password = authPasswordEl?.value || (state.authMode === "login" ? "123456" : "");
       const path = state.authMode === "register" ? "/v1/auth/register" : "/v1/auth/login";
       const response = await fetch(path, {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: authEmailEl.value.trim(), password: authPasswordEl.value }),
+        body: JSON.stringify({ email, password }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "unauthorized");
-      await applySession(body.token);
+      await applySession(body.token, body.user);
     }
-    await refreshRuns();
-    await refreshEnvironments();
-    const match = /^#\/runs\/([^/]+)$/.exec(location.hash);
-    if (match?.[1]) await openRun(match[1]);
-    else emptyState();
+    await finishLogin();
   } catch (error) {
     showAuthGate(error instanceof Error ? error.message : "登录失败");
+  } finally {
+    setAuthBusy(false);
   }
 });
 
-logoutEl.addEventListener("click", async () => {
+logoutEl?.addEventListener("click", async () => {
   try {
     await api("/v1/auth/logout", { method: "POST" });
   } catch {
@@ -706,8 +774,8 @@ async function boot() {
     state.bootstrapEmail = typeof health.bootstrapEmail === "string" ? health.bootstrapEmail : "";
     state.bootstrapLogin = health.bootstrapLogin === true;
     state.defaultAdmin = health.defaultAdmin === true;
-    if (state.bootstrapEmail) authEmailEl.value = state.bootstrapEmail;
-    if (state.defaultAdmin) authPasswordEl.value = "123456";
+    if (authEmailEl && state.bootstrapEmail) authEmailEl.value = state.bootstrapEmail;
+    if (authPasswordEl && state.defaultAdmin) authPasswordEl.value = "123456";
     renderAccount();
     if (state.token) {
       try {
