@@ -11,7 +11,7 @@ process.env.BOOTSTRAP_EMAIL = "neo@example.com";
 process.env.BOOTSTRAP_PASSWORD = "password1";
 delete process.env.DATABASE_URL;
 
-const { ensureBootstrapAccount, loginAccount } = await import("./accounts.js");
+const { bootstrapEmail, ensureBootstrapAccount, loginAccount, loginBootstrapAccount } = await import("./accounts.js");
 
 test("ensureBootstrapAccount creates the env user once", async () => {
   const first = await ensureBootstrapAccount();
@@ -20,6 +20,13 @@ test("ensureBootstrapAccount creates the env user once", async () => {
   assert.equal(again?.email, "neo@example.com");
   const session = await loginAccount({ email: "neo@example.com", password: "password1" });
   assert.match(session.token, /^neo_sess_/);
+});
+
+test("loginBootstrapAccount signs in without a client password", async () => {
+  const session = await loginBootstrapAccount();
+  assert.equal(session.user.email, "neo@example.com");
+  assert.match(session.token, /^neo_sess_/);
+  assert.equal(bootstrapEmail(), "neo@example.com");
 });
 
 test("ensureBootstrapAccount no-ops without env", async () => {

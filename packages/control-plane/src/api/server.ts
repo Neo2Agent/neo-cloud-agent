@@ -35,7 +35,16 @@ import {
   startWorkerLeaseWatch,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
-import { AccountError, loginAccount, logoutSession, registerAccount, sessionCookieHeader, clearSessionCookieHeader } from "../accounts/accounts.js";
+import {
+  AccountError,
+  bootstrapEmail,
+  loginAccount,
+  loginBootstrapAccount,
+  logoutSession,
+  registerAccount,
+  sessionCookieHeader,
+  clearSessionCookieHeader,
+} from "../accounts/accounts.js";
 import { getConfig } from "../config.js";
 import { getObjectStore } from "../objects/store.js";
 import { startPlatform, platformInfo } from "../platform.js";
@@ -150,6 +159,8 @@ export function createApiServer() {
           authRequired: accessRequired(),
           accountsEnabled: true,
           accountsRequired: accountsRequired(),
+          bootstrapEmail: bootstrapEmail(),
+          bootstrapLogin: Boolean(bootstrapEmail()),
           warmPoolReady: readyWarmCount(),
           builds: listBuilds().filter((item) => item.status === "SUCCEEDED" && !item.draft).length,
           ...platformInfo(),
@@ -173,6 +184,15 @@ export function createApiServer() {
         try {
           const created = await loginAccount(body);
           sendAuthSession(res, 200, created);
+        } catch (error) {
+          sendAccountError(res, error);
+        }
+        return;
+      }
+
+      if (method === "POST" && path === "/v1/auth/bootstrap") {
+        try {
+          sendAuthSession(res, 200, await loginBootstrapAccount());
         } catch (error) {
           sendAccountError(res, error);
         }

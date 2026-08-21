@@ -32,11 +32,17 @@ export class AccountError extends Error {
   }
 }
 
-/** Create BOOTSTRAP_EMAIL / BOOTSTRAP_PASSWORD on first boot. Existing email is left alone. */
-export async function ensureBootstrapAccount(): Promise<PublicUser | null> {
+export function bootstrapEmail(): string | null {
   const email = normalizeEmail(process.env.BOOTSTRAP_EMAIL ?? "");
   const password = process.env.BOOTSTRAP_PASSWORD ?? "";
-  if (!email || !password) {
+  return isValidEmail(email) && password.length >= 8 ? email : null;
+}
+
+/** Create BOOTSTRAP_EMAIL / BOOTSTRAP_PASSWORD on first boot. Existing email is left alone. */
+export async function ensureBootstrapAccount(): Promise<PublicUser | null> {
+  const email = bootstrapEmail();
+  const password = process.env.BOOTSTRAP_PASSWORD ?? "";
+  if (!email) {
     return null;
   }
   const existing = await getAccountStore().findUserByEmail(email);
@@ -46,6 +52,17 @@ export async function ensureBootstrapAccount(): Promise<PublicUser | null> {
   const created = await registerAccount({ email, password });
   console.log(`bootstrap account created: ${created.user.email}`);
   return created.user;
+}
+
+/** Sign in as the bootstrap user without sending the password to the browser. */
+export async function loginBootstrapAccount(): Promise<{ user: PublicUser; token: string }> {
+  const email = bootstrapEmail();
+  const password = process.env.BOOTSTRAP_PASSWORD ?? "";
+  if (!email) {
+    throw new AccountError("bootstrap account is not configured", 404);
+  }
+  await ensureBootstrapAccount();
+  return loginAccount({ email, password });
 }
 
 export async function registerAccount(input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {

@@ -30,6 +30,7 @@ const buildEl = document.getElementById("build");
 const warmBuildEl = document.getElementById("warm-build");
 
 const TOKEN_KEY = "neo.apiToken";
+const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
 
 const state = {
   runId: null,
@@ -42,6 +43,8 @@ const state = {
   token: localStorage.getItem(TOKEN_KEY) || "",
   authRequired: false,
   accountsRequired: false,
+  bootstrapEmail: "",
+  bootstrapLogin: false,
   user: null,
   authMode: "login",
   environments: [],
@@ -78,6 +81,9 @@ function showAuthGate(message) {
     authTokenEl.value = state.token.startsWith("neo_sess_") ? "" : state.token;
     authTokenEl.focus();
   } else {
+    if (state.bootstrapEmail && !authEmailEl.value) {
+      authEmailEl.value = state.bootstrapEmail;
+    }
     authEmailEl.focus();
   }
 }
@@ -586,11 +592,33 @@ async function applySession(token) {
   }
   const body = await me.json();
   state.user = body.user;
+  sessionStorage.removeItem(SKIP_BOOTSTRAP_KEY);
   renderAccount();
   hideAuthGate();
 }
 
-loginEl.addEventListener("click", () => {
+async function loginBootstrap() {
+  const response = await fetch("/v1/auth/bootstrap", {
+    method: "POST",
+    credentials: "same-origin",
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || "unauthorized");
+  await applySession(body.token);
+}
+
+loginEl.addEventListener("click", async () => {
+  if (state.bootstrapLogin) {
+    try {
+      await loginBootstrap();
+      await refreshRuns();
+      await refreshEnvironments();
+      return;
+    } catch (error) {
+      showAuthGate(error instanceof Error ? error.message : "登录失败");
+      return;
+    }
+  }
   showAuthGate();
 });
 
@@ -644,6 +672,7 @@ logoutEl.addEventListener("click", async () => {
   }
   saveToken("");
   state.user = null;
+  sessionStorage.setItem(SKIP_BOOTSTRAP_KEY, "1");
   renderAccount();
   state.runs = [];
   resetComposer();
@@ -668,14 +697,35 @@ async function boot() {
       state.healthText = "控制面在线";
     }
     healthEl.textContent = state.healthText;
+    state.bootstrapEmail = typeof health.bootstrapEmail === "string" ? health.bootstrapEmail : "";
+    state.bootstrapLogin = health.bootstrapLogin === true;
+    if (state.bootstrapEmail) authEmailEl.value = state.bootstrapEmail;
     renderAccount();
     if (state.token) {
       try {
         if (state.token.startsWith("neo_sess_")) await applySession(state.token);
         else await applyServiceToken(state.token);
       } catch {
-        if (state.authRequired) {
+        if (state.bootstrapLogin && sessionStorage.getItem(SKIP_BOOTSTRAP_KEY) !== "1") {
+          try {
+            await loginBootstrap();
+          } catch {
+            if (state.authRequired) {
+              showAuthGate("请重新登录");
+              return;
+            }
+          }
+        } else if (state.authRequired) {
           showAuthGate("请重新登录");
+          return;
+        }
+      }
+    } else if (state.bootstrapLogin && sessionStorage.getItem(SKIP_BOOTSTRAP_KEY) !== "1") {
+      try {
+        await loginBootstrap();
+      } catch {
+        if (state.authRequired) {
+          showAuthGate();
           return;
         }
       }

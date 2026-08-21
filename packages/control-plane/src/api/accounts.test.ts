@@ -82,3 +82,28 @@ test("users register, login, and cannot see another user's run", async (t) => {
   const me = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${adaAgain.token}` } });
   assert.equal(((await me.json()) as { user: { email: string } }).user.email, "ada@example.com");
 });
+
+test("POST /v1/auth/bootstrap signs in the env account", async (t) => {
+  process.env.BOOTSTRAP_EMAIL = "neo@example.com";
+  process.env.BOOTSTRAP_PASSWORD = "password1";
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    delete process.env.BOOTSTRAP_EMAIL;
+    delete process.env.BOOTSTRAP_PASSWORD;
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const health = (await (await fetch(`${base}/health`)).json()) as {
+    bootstrapEmail: string | null;
+    bootstrapLogin: boolean;
+  };
+  assert.equal(health.bootstrapEmail, "neo@example.com");
+  assert.equal(health.bootstrapLogin, true);
+  const response = await fetch(`${base}/v1/auth/bootstrap`, { method: "POST" });
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { token: string; user: { email: string } };
+  assert.equal(body.user.email, "neo@example.com");
+  const me = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${body.token}` } });
+  assert.equal(((await me.json()) as { user: { email: string } }).user.email, "neo@example.com");
+});
