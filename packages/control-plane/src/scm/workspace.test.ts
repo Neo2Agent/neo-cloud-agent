@@ -25,6 +25,7 @@ test("skipCopy keeps environment.json and drops run workspaces", () => {
   assert.equal(skipCopy("/repo/.neo/environment.json"), false);
   assert.equal(skipCopy("/repo/.neo/runs/abc/hello.txt"), true);
   assert.equal(skipCopy("/repo/.neo/firecracker/vsock.sock"), true);
+  assert.equal(skipCopy("/repo/.neo/vms/slot-0.ext4"), true);
   assert.equal(skipCopy("/repo/node_modules/pkg"), true);
   assert.equal(skipCopy("/repo/.control/run.json"), true);
   assert.equal(skipCopy("/repo/.builds/abc/workspace/hello.txt"), true);

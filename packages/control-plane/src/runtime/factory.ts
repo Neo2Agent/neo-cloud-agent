@@ -5,6 +5,7 @@ import { DockerRuntime, type RuntimeHooks } from "./docker.js";
 import { FirecrackerRuntime } from "./firecracker.js";
 import { LocalProcessRuntime } from "./local.js";
 import { NoneRuntime } from "./none.js";
+import { VmSlotRuntime } from "./vm.js";
 
 export interface AgentRuntime {
   provision(spec: RuntimeSpec, hooks?: RuntimeHooks): Promise<RuntimeHandle>;
@@ -16,6 +17,7 @@ const local = new LocalProcessRuntime();
 const docker = new DockerRuntime();
 const none = new NoneRuntime();
 const firecracker = new FirecrackerRuntime();
+const vm = new VmSlotRuntime();
 
 export function getRuntime(kind: WorkerRuntimeKind = workerRuntimeKind()): AgentRuntime {
   if (kind === "docker") {
@@ -26,6 +28,9 @@ export function getRuntime(kind: WorkerRuntimeKind = workerRuntimeKind()): Agent
   }
   if (kind === "firecracker") {
     return firecracker;
+  }
+  if (kind === "vm") {
+    return vm;
   }
   return local;
 }

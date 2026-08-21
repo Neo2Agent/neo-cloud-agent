@@ -8,14 +8,29 @@ function repoRoot(): string {
   return fileURLToPath(new URL("../../..", import.meta.url));
 }
 
-export type WorkerRuntimeKind = "local" | "docker" | "none" | "firecracker";
+export type WorkerRuntimeKind = "local" | "docker" | "none" | "firecracker" | "vm";
 
 export function workerRuntimeKind(): WorkerRuntimeKind {
   const explicit = process.env.WORKER_RUNTIME;
-  if (explicit === "local" || explicit === "docker" || explicit === "none" || explicit === "firecracker") {
+  if (
+    explicit === "local" ||
+    explicit === "docker" ||
+    explicit === "none" ||
+    explicit === "firecracker" ||
+    explicit === "vm"
+  ) {
     return explicit;
   }
   return process.env.SPAWN_LOCAL_WORKER === "0" ? "docker" : "local";
+}
+
+export function defaultWorkerResources(kind = workerRuntimeKind()): { cpu: number; memoryMiB: number; diskGiB: number } {
+  const small = kind === "firecracker" || kind === "vm";
+  return {
+    cpu: Number(process.env.WORKER_CPUS ?? (small ? 1 : 2)),
+    memoryMiB: Number(process.env.WORKER_MEMORY_MIB ?? (small ? 512 : 2048)),
+    diskGiB: Number(process.env.WORKER_DISK_GIB ?? (small ? 4 : 40)),
+  };
 }
 
 export function getConfig() {
@@ -38,7 +53,7 @@ export function getConfig() {
     llmGatewayUrl,
     controlPlaneUrl,
     workerRuntime: kind,
-    spawnLocalWorker: kind === "local",
+    spawnLocalWorker: kind === "local" || kind === "vm",
     runsDir,
     hostRunsDir: process.env.HOST_RUNS_DIR ?? runsDir,
     workerWorkspaceMount: process.env.WORKER_WORKSPACE_MOUNT ?? "/workspace",

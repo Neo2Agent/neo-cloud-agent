@@ -70,6 +70,7 @@ import { createEnvironment, getEnvironment, listEnvironments } from "../env/stor
 import { readyWarmCount } from "../env/warm-pool.js";
 import { serveWebFile } from "./static.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
+import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -141,6 +142,11 @@ export function createApiServer() {
     })
     .then(() => recoverLiveWorkers());
   startWorkerLeaseWatch();
+  if (getConfig().workerRuntime === "vm" && !process.env.NODE_TEST_CONTEXT) {
+    void ensureVmSlots().catch((error) => {
+      console.error("vm slots init failed", error);
+    });
+  }
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://control-plane.local");
     const path = url.pathname;
@@ -164,6 +170,7 @@ export function createApiServer() {
           llmConfigured: llm.configured,
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
+          vmSlots: summarizeVmSlots(config.workerRuntime),
           objectStore: getObjectStore().kind,
           authRequired: accessRequired(),
           accountsEnabled: true,
@@ -264,6 +271,10 @@ export function createApiServer() {
         }
         if (method === "GET" && path === "/v1/me") {
           send(res, 200, { user: actor.kind === "user" ? { id: actor.userId, email: actor.email, orgId: actor.orgId } : null, actor: actor.kind });
+          return;
+        }
+        if (method === "GET" && path === "/v1/vms") {
+          send(res, 200, summarizeVmSlots(getConfig().workerRuntime));
           return;
         }
         if (method === "GET" && path === "/v1/settings/llm") {
@@ -376,7 +387,10 @@ export function createApiServer() {
       if (bootstrapMatch && method === "GET") {
         const runId = bootstrapMatch[1] ?? "";
         const bootstrap = getBootstrap(runId);
-        if (getConfig().workerRuntime === "firecracker") {
+        if (
+          getConfig().workerRuntime === "firecracker" ||
+          (getConfig().workerRuntime === "vm" && kvmAvailable())
+        ) {
           send(res, 200, guestFacingBootstrap(runId, bootstrap, getConfig().workerControlPlaneUrl));
           return;
         }

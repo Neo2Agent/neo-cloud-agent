@@ -17,7 +17,7 @@ import type {
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
 import { evaluateEgress, mintRunToken, redactText } from "@neo-cloud-agent/contracts";
-import { getConfig } from "../config.js";
+import { defaultWorkerResources, getConfig } from "../config.js";
 import {
   canRestoreBuild,
   captureWorkspaceBuild,
@@ -327,13 +327,14 @@ function denyEgress(run: Run, policy: EgressPolicy, target: string): boolean {
 function launchSpec(run: Run, jwt: string): RuntimeSpec {
   const config = getConfig();
   const egress = egressForRun(run);
+  const resources = defaultWorkerResources(config.workerRuntime);
   return {
     runId: run.id,
     image: config.workerImage,
     snapshotId: run.buildId ? `snap_${run.buildId}` : null,
-    cpu: Number(process.env.WORKER_CPUS ?? 2),
-    memoryMiB: Number(process.env.WORKER_MEMORY_MIB ?? 2048),
-    diskGiB: Number(process.env.WORKER_DISK_GIB ?? 40),
+    cpu: resources.cpu,
+    memoryMiB: resources.memoryMiB,
+    diskGiB: resources.diskGiB,
     egress: { mode: egress.mode, domains: egress.domains ?? [] },
     jwt,
     model: run.model,
@@ -352,6 +353,7 @@ function runningTitle(): string {
   if (kind === "local") return "Spawning local worker";
   if (kind === "docker") return "Starting Docker worker";
   if (kind === "firecracker") return "Starting Firecracker microVM";
+  if (kind === "vm") return "Mounting VM slot";
   return "Worker handle reserved";
 }
 

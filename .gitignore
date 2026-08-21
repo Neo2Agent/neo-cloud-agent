@@ -7,5 +7,6 @@ dist/
 !.env.example
 .pnpm-store/
 **/.neo/runs/
+**/.neo/vms/
 **/.neo/llm-upstream.env
 infra/firecracker/.assets/

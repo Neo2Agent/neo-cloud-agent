@@ -17,7 +17,7 @@ export function skipCopy(from: string, root?: string): boolean {
     return true;
   }
   const neo = parts.lastIndexOf(".neo");
-  return neo >= 0 && (parts[neo + 1] === "runs" || parts[neo + 1] === "firecracker");
+  return neo >= 0 && (parts[neo + 1] === "runs" || parts[neo + 1] === "firecracker" || parts[neo + 1] === "vms");
 }
 
 export type RepoRef = {

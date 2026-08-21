@@ -616,6 +616,17 @@ export function firecrackerAvailable(bin = resolveFirecrackerBin()): boolean {
   return existsSync("/dev/kvm") && resolved;
 }
 
+/** True only when this host can actually boot a guest (KVM + kernel + rootfs). */
+export function firecrackerReady(): boolean {
+  if (!existsSync("/dev/kvm") || !firecrackerHostSupported().ok) {
+    return false;
+  }
+  const assets = productionFirecrackerPaths();
+  const bin = resolveFirecrackerBin();
+  const binOk = bin.includes("/") ? existsSync(bin) : true;
+  return Boolean(binOk && existsSync(assets.kernel) && existsSync(assets.rootfs));
+}
+
 /** Nested KVM on AMX hosts faults in KVM_CREATE_VCPU; skip live boots unless forced. */
 export function firecrackerHostSupported(): { ok: boolean; reason: string } {
   if (process.env.FIRECRACKER_FORCE === "1") {

@@ -32,6 +32,7 @@ const llmUpstreamEl = document.getElementById("llm-upstream");
 const llmKeyEl = document.getElementById("llm-key");
 const saveLlmEl = document.getElementById("save-llm");
 const llmStatusEl = document.getElementById("llm-status");
+const vmStatusEl = document.getElementById("vm-status");
 
 const TOKEN_KEY = "neo.apiToken";
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
@@ -837,7 +838,20 @@ async function boot() {
       const auth = state.authRequired ? " · 需登录" : "";
       const builds = typeof health.builds === "number" ? ` · ${health.builds} 快照` : "";
       const llm = health.llmConfigured ? ` · ${health.llmUpstream}` : " · 未配置 API Key";
-      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${bus}${builds}${llm}${auth}`;
+      const vms =
+        health.vmSlots && health.vmSlots.total
+          ? ` · VM ${health.vmSlots.busy}/${health.vmSlots.total} ${health.vmSlots.backend}`
+          : "";
+      state.healthText = `控制面在线 · ${health.defaultModel}${runtime}${store}${bus}${builds}${llm}${vms}${auth}`;
+      if (vmStatusEl && health.vmSlots) {
+        if (!health.vmSlots.total) {
+          vmStatusEl.textContent = "VM 槽未启用。";
+        } else if (health.vmSlots.kvm) {
+          vmStatusEl.textContent = `${health.vmSlots.total} 个 Firecracker 槽，每槽 ${health.vmSlots.sizeGiB}GiB。`;
+        } else {
+          vmStatusEl.textContent = `${health.vmSlots.total} 个 VM 槽（loop 挂载，这台机器没有 /dev/kvm），每槽 ${health.vmSlots.sizeGiB}GiB，同时最多 ${health.vmSlots.total} 个任务。`;
+        }
+      }
     } else {
       state.healthText = "控制面在线";
     }

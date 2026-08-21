@@ -7,7 +7,7 @@
     <meta name="color-scheme" content="light" />
     <title>Neo Cloud Agent</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=apikey-1" />
+    <link rel="stylesheet" href="/styles.css?v=vm-1" />
   </head>
   <body>
     <div class="app">
@@ -90,6 +90,7 @@
             <button class="ghost" id="save-llm" type="button">保存 Key</button>
           </div>
           <p class="hint" id="llm-status">未配置 API Key，当前是 mock 回复。</p>
+          <p class="hint" id="vm-status">VM 槽未启用。</p>
           <textarea
             id="prompt"
             name="prompt"
@@ -123,6 +124,6 @@
         <button type="button" id="auth-skip" hidden>先不登录</button>
       </form>
     </div>
-    <script type="module" src="/app.js?v=apikey-1"></script>
+    <script type="module" src="/app.js?v=vm-1"></script>
   </body>
 </html>
