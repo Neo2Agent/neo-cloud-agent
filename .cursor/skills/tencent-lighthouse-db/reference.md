@@ -6,8 +6,8 @@
 
 1. 用 UIN `100047610252` 登录。旧号 Chrome 会话看不到这台。
 2. 打开 [Lighthouse 北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)（`rid=8`）。
-3. 实例 `OpenClaw(龙虾)-8Dd3`（`lhins-1whwkmau`）运行中，公网 `101.42.105.230`。
-4. **不要点重启、重装、绑定密钥。**
+3. 实例 `neo-mysql-redis`（`lhins-1whwkmau`）运行中，公网 `101.42.105.230`。
+4. **不要点重启、绑定密钥。** 换系统镜像用官方 **Ubuntu 24.04 LTS 系统镜像**（`lhbp-1l4ptuvm`，`PURE_OS`），不要再选 OpenClaw / Hermes。重装会清盘，先备份 `/home/ubuntu/db`。控制台重装要账号微信 MFA。
 
 未登录会被微信/Hermes 扫码拦住。Agent 浏览器登录和用户手机登录不是同一会话，不要猜密码。
 

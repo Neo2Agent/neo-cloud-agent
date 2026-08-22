@@ -1,6 +1,6 @@
 ---
 name: tencent-lighthouse-db
-description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse (101.42.105.230 / OpenClaw(龙虾)-8Dd3). Use when checking or restarting db-mysql/db-redis, reading persisted runs/events, wiring DATABASE_URL or REDIS_URL, or opening 3306/6379. Not the app host 62.234.211.200.
+description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse (101.42.105.230 / neo-mysql-redis). Use when checking or restarting db-mysql/db-redis, reading persisted runs/events, wiring DATABASE_URL or REDIS_URL, or opening 3306/6379. Not the app host 62.234.211.200.
 ---
 
 # 腾讯云轻量：MySQL / Redis 库机
@@ -15,7 +15,7 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | | 应用机 | 库机（本 skill） |
 | --- | --- | --- |
 | 账号 | 旧号（Halo 那台） | UIN `100047610252`（昵称 旺动香菇-昆阳喷泉） |
-| 实例 | `Halo建站-AFjg` / `lhins-b0l0d8b2` | `OpenClaw(龙虾)-8Dd3` / `lhins-1whwkmau` |
+| 实例 | `Halo建站-AFjg` / `lhins-b0l0d8b2` | `neo-mysql-redis` / `lhins-1whwkmau` |
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
 | 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`） |
