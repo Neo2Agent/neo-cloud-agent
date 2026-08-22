@@ -14,6 +14,12 @@ delete process.env.WORKER_WORKSPACE_MOUNT;
 delete process.env.ACCOUNTS_REQUIRED;
 delete process.env.DATABASE_URL;
 delete process.env.REDIS_URL;
+delete process.env.GITHUB_APP_ID;
+delete process.env.GITHUB_APP_PRIVATE_KEY;
+delete process.env.GITHUB_APP_INSTALLATION_ID;
+delete process.env.SCM_PUSH_TOKEN;
+delete process.env.GITHUB_TOKEN;
+delete process.env.GH_TOKEN;
 
 const { createApiServer } = await import("./server.js");
 const { listen, close } = await import("../e2e/helpers.js");
@@ -63,6 +69,35 @@ test("llm settings API stores a key without ever returning it", async (t) => {
   assert.equal(health.llmConfigured, true);
   assert.equal(health.llmUpstream, "deepseek");
   assert.doesNotMatch(JSON.stringify(health), /sk-never-echo/);
+
+  const scmDenied = await fetch(`${base}/v1/settings/scm`);
+  assert.equal(scmDenied.status, 401);
+  const scmBefore = (await (await fetch(`${base}/v1/settings/scm`, { headers: AUTH })).json()) as {
+    configured: boolean;
+    method: string;
+  };
+  assert.equal(scmBefore.configured, false);
+  const scmSaved = await fetch(`${base}/v1/settings/scm`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ token: "ghp_settings_pat" }),
+  });
+  assert.equal(scmSaved.status, 200);
+  const scmPublished = (await scmSaved.json()) as { configured: boolean; method: string };
+  assert.equal(scmPublished.configured, true);
+  assert.equal(scmPublished.method, "pat");
+  assert.doesNotMatch(JSON.stringify(scmPublished), /ghp_settings_pat/);
+  const scmHealth = (await (await fetch(`${base}/health`)).json()) as {
+    scmPush?: { configured?: boolean; method?: string };
+    objectStore?: string;
+  };
+  assert.equal(scmHealth.scmPush?.method, "pat");
+  assert.equal(scmHealth.objectStore, "fs");
+  await fetch(`${base}/v1/settings/scm`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ clear: true }),
+  });
 
   const again = await fetch(`${base}/v1/settings/llm`, {
     method: "POST",

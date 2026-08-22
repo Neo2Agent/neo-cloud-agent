@@ -3,9 +3,15 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExecutionRuntime, RuntimeHandle, RuntimeSpec } from "@neo-cloud-agent/contracts";
+import { defaultWorkerResources } from "../config.js";
 import { repoRoot } from "../worker-spawn.js";
 import type { RuntimeHooks } from "./docker.js";
+import { applyWorkerMemoryLimit, heapMiBForWorker, nodeHeapArgs, releaseWorkerMemoryLimit } from "./process-limit.js";
 import { assertNoProviderSecrets, buildWorkerEnv } from "./worker-env.js";
+
+export function localWorkerNodeArgs(memoryMiB: number, tsxCli: string, workerEntry: string): string[] {
+  return [...nodeHeapArgs(memoryMiB), tsxCli, workerEntry];
+}
 
 function alive(pid: number): boolean {
   try {
@@ -79,11 +85,17 @@ export class LocalProcessRuntime implements ExecutionRuntime {
 
     const tsxCli = fileURLToPath(new URL("../../../../node_modules/tsx/dist/cli.mjs", import.meta.url));
     const workerEntry = fileURLToPath(new URL("../../../worker/src/index.ts", import.meta.url));
-    const child = spawn(process.execPath, [tsxCli, workerEntry], {
+    const child = spawn(process.execPath, localWorkerNodeArgs(spec.memoryMiB, tsxCli, workerEntry), {
       cwd: repoRoot(),
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    if (child.pid) {
+      const limit = applyWorkerMemoryLimit(child.pid, spec.memoryMiB);
+      hooks?.onLog?.(
+        `worker memory cap ${spec.memoryMiB}MiB (heap ${heapMiBForWorker(spec.memoryMiB)}MiB, ${limit.method})\n`,
+      );
+    }
     child.stdout?.on("data", (chunk) => {
       const text = String(chunk);
       process.stdout.write(`[worker ${spec.runId}] ${text}`);
@@ -96,6 +108,7 @@ export class LocalProcessRuntime implements ExecutionRuntime {
     });
     child.once("exit", (code) => {
       this.children.delete(spec.runId);
+      releaseWorkerMemoryLimit(child.pid);
       hooks?.onExit?.(code);
     });
     this.children.set(spec.runId, child);
@@ -113,10 +126,12 @@ export class LocalProcessRuntime implements ExecutionRuntime {
       }
       clearInterval(timer);
       this.children.delete(runId);
+      releaseWorkerMemoryLimit(pid);
       hooks?.onExit?.(null);
     }, 1000);
     timer.unref();
     this.adopted.set(runId, { pid, timer });
+    applyWorkerMemoryLimit(pid, defaultWorkerResources().memoryMiB);
     return { id: lease?.handleId ?? `local-${runId}`, runtime: "local", ip: null, pid };
   }
 
@@ -139,11 +154,13 @@ export class LocalProcessRuntime implements ExecutionRuntime {
     if (child) {
       this.children.delete(runId);
       await terminateChild(child);
+      releaseWorkerMemoryLimit(child.pid);
       return;
     }
     const pid = adopted?.pid ?? handle.pid ?? null;
     if (pid) {
       await terminatePid(pid);
+      releaseWorkerMemoryLimit(pid);
     }
   }
 }

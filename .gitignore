@@ -9,4 +9,5 @@ dist/
 **/.neo/runs/
 **/.neo/vms/
 **/.neo/llm-upstream.env
+**/.neo/scm-push.env
 infra/firecracker/.assets/

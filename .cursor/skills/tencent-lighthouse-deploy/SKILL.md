@@ -133,8 +133,8 @@ LLM_UPSTREAM=mock
 | --- | --- |
 | 进程 | `neo-llm-gateway` `:8081`，`neo-control-plane` `:8080`，Caddy `:80` |
 | 工作目录 | `/home/ubuntu/neo-cloud-agent`（unit 的 `WorkingDirectory`） |
-| 密钥 | 根目录 `.env` + `.neo/llm-upstream.env`（gitignore） |
-| Worker | `WORKER_RUNTIME=vm`，2×4GiB ext4 在 `.neo/vms/`，无 KVM 则 loop 挂载 |
+| 密钥 | 根目录 `.env` + `.neo/llm-upstream.env` + `.neo/scm-push.env`（gitignore） |
+| Worker | `WORKER_RUNTIME=vm`，2×4GiB ext4 在 `.neo/vms/`，无 KVM 则 loop 挂载。`WORKER_MEMORY_MIB` 会限制 heap；unit 需 `Delegate=` 才有 cgroup RSS |
 | 对话 | 默认管理员 `admin` / `123456`；`ACCOUNTS_REQUIRED` 未开 |
 | 爱马仕 | 已下线，不要 `systemctl --user start hermes-gateway` |
 

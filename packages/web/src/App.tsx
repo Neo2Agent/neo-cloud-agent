@@ -7,7 +7,7 @@ import { AuthGate } from "./components/AuthGate";
 import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
-import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings } from "./components/SettingsPanel";
+import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
 import { formatUsage, modelLabel, preview, shortId, slotLabel } from "./format";
@@ -47,6 +47,9 @@ type Health = {
   llmUpstream?: string;
   llmModel?: string | null;
   workerRuntime?: string;
+  objectStore?: string;
+  scmPush?: ScmSettings;
+  workerMemoryMiB?: number;
   vmSlots?: VmSummary;
 };
 
@@ -60,7 +63,8 @@ function formatHealth(health: Health | null, vms: VmSummary): string {
   const total = vms.total || health.vmSlots?.total || 0;
   const busy = vms.busy ?? health.vmSlots?.busy ?? 0;
   const vm = total > 0 ? ` · VM ${busy}/${total}` : health.workerRuntime === "vm" ? " · VM" : "";
-  return `在线 · ${provider}${vm}`;
+  const scm = health.scmPush?.configured ? " · GitHub" : "";
+  return `在线 · ${provider}${vm}${scm}`;
 }
 
 function hashRunId(): string | null {
@@ -105,6 +109,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [llm, setLlm] = useState<LlmSettings>({ configured: false, upstream: "deepseek", model: null });
   const [llmKey, setLlmKey] = useState("");
+  const [scm, setScm] = useState<ScmSettings>({ configured: false, method: "none" });
+  const [scmToken, setScmToken] = useState("");
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [pendingTurn, setPendingTurn] = useState<PendingUser | null>(null);
@@ -283,6 +289,23 @@ export function App() {
     }
   }, []);
 
+  const refreshScm = useCallback(async () => {
+    try {
+      const response = await api(tokenRef.current, "/v1/settings/scm");
+      if (!response.ok) return;
+      const settings = await readJson<ScmSettings & { error?: string }>(response);
+      if (!settings.error) {
+        setScm({
+          configured: settings.configured,
+          method: settings.method === "github-app" || settings.method === "pat" ? settings.method : "none",
+        });
+        setScmToken("");
+      }
+    } catch {
+      // optional
+    }
+  }, []);
+
   const resetComposer = useCallback(() => {
     closeStream();
     setRunId(null);
@@ -342,11 +365,11 @@ export function App() {
   );
 
   const finishLogin = useCallback(async () => {
-    await Promise.all([refreshRuns(), refreshEnvironments(), refreshLlm(), refreshVms()]);
+    await Promise.all([refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()]);
     const match = hashRunId();
     if (match) await openRun(match);
     else resetComposer();
-  }, [openRun, refreshEnvironments, refreshLlm, refreshRuns, refreshVms, resetComposer]);
+  }, [openRun, refreshEnvironments, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
     async (nextToken: string, user?: { email?: string } | null) => {
@@ -851,6 +874,8 @@ export function App() {
                   builds={builds}
                   llm={llm}
                   llmKey={llmKey}
+                  scm={scm}
+                  scmToken={scmToken}
                   onRepo={setRepo}
                   onEnv={setEnvId}
                   onBuild={setBuildId}
@@ -888,6 +913,45 @@ export function App() {
                 setHealthText(formatHealth(nextHealth, vms));
               })().catch((error) => {
                 setLlm((prev) => ({ ...prev, model: error instanceof Error ? error.message : "保存失败" }));
+              });
+            }}
+                  onScmToken={setScmToken}
+                  onSaveScm={() => {
+              void (async () => {
+                if (!scmToken && !scm.configured) return;
+                const payload: { token?: string } = {};
+                if (scmToken) payload.token = scmToken;
+                const saved = await readJson<ScmSettings & { error?: string }>(
+                  await api(token, "/v1/settings/scm", { method: "POST", body: JSON.stringify(payload) }),
+                );
+                if (saved.error === "login_required") throw new Error("请先登录再保存 GitHub 凭证");
+                if (saved.error) throw new Error(saved.error);
+                setScm({
+                  configured: saved.configured,
+                  method: saved.method === "github-app" || saved.method === "pat" ? saved.method : "none",
+                });
+                setScmToken("");
+                const nextHealth = await readJson<Health>(await fetch("/health"));
+                setHealth(nextHealth);
+                setHealthText(formatHealth(nextHealth, vms));
+              })().catch((error) => {
+                setScm((prev) => ({ ...prev, method: "none" }));
+                setHealthText(error instanceof Error ? error.message : "保存 GitHub 凭证失败");
+              });
+            }}
+                  onClearScm={() => {
+              void (async () => {
+                const saved = await readJson<ScmSettings & { error?: string }>(
+                  await api(token, "/v1/settings/scm", { method: "POST", body: JSON.stringify({ clear: true }) }),
+                );
+                if (saved.error) throw new Error(saved.error);
+                setScm({ configured: false, method: "none" });
+                setScmToken("");
+                const nextHealth = await readJson<Health>(await fetch("/health"));
+                setHealth(nextHealth);
+                setHealthText(formatHealth(nextHealth, vms));
+              })().catch((error) => {
+                setHealthText(error instanceof Error ? error.message : "清除 GitHub 凭证失败");
               });
             }}
                   onWarm={() => {

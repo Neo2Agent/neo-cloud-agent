@@ -16,7 +16,7 @@ import {
   readLlmSettings,
   writeLlmSettings,
 } from "@neo-cloud-agent/contracts";
-import { listEvents } from "../events/bus.js";
+import { eventsForRun } from "../events/bus.js";
 import { attachEventStream } from "../events/stream.js";
 import { buildTranscriptSnapshot } from "../events/transcript.js";
 import {
@@ -54,7 +54,8 @@ import {
   sessionCookieHeader,
   clearSessionCookieHeader,
 } from "../accounts/accounts.js";
-import { getConfig } from "../config.js";
+import { defaultWorkerResources, getConfig } from "../config.js";
+import { publicScmSettings, writeScmSettings } from "../scm/settings.js";
 import { getObjectStore } from "../objects/store.js";
 import { startPlatform, platformInfo } from "../platform.js";
 import {
@@ -176,6 +177,8 @@ export function createApiServer() {
           spawnLocalWorker: config.spawnLocalWorker,
           vmSlots: summarizeVmSlots(config.workerRuntime),
           objectStore: getObjectStore().kind,
+          scmPush: publicScmSettings(),
+          workerMemoryMiB: defaultWorkerResources(config.workerRuntime).memoryMiB,
           authRequired: accessRequired(),
           accountsEnabled: true,
           accountsRequired: accountsRequired(),
@@ -294,6 +297,24 @@ export function createApiServer() {
             send(res, 200, writeLlmSettings(parseLlmSettingsRequest(await readJson(req))));
           } catch (error) {
             const message = error instanceof Error ? error.message : "invalid_llm_settings";
+            send(res, 400, { error: message });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/settings/scm") {
+          send(res, 200, publicScmSettings());
+          return;
+        }
+        if (method === "POST" && path === "/v1/settings/scm") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { token?: string; clear?: boolean };
+            send(res, 200, writeScmSettings(body));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "invalid_scm_settings";
             send(res, 400, { error: message });
           }
           return;
@@ -475,7 +496,7 @@ export function createApiServer() {
         if (!actor || !denyUnless(run, actor, res)) {
           return;
         }
-        const events = listEvents(runId);
+        const events = eventsForRun(runId);
         send(res, 200, { events, snapshot: buildTranscriptSnapshot(runId, events) });
         return;
       }

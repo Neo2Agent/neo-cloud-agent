@@ -91,7 +91,7 @@ DEEPSEEK_API_KEY=sk-...
 
 `neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` 都会路由到便宜的 `deepseek-v4-flash`。要更强的模型把设置里的型号改成 `deepseek-v4-pro`，或直接请求 `deepseek-v4-pro`。
 
-4C/4G 轻量机（现网）用 loop 槽，不要开 Docker / Firecracker：
+4C/4G 轻量机（现网）用 loop 槽，不要开 Docker / Firecracker。`WORKER_MEMORY_MIB` 会打进 loop/local worker 的 V8 堆上限；control-plane unit 开了 cgroup `Delegate=` 时再套 RSS。归档后控制面丢掉内存里的事件，对话从 MySQL / `.control` 再读。对象存储默认仍是本机 `RUNS_DIR/.objects`，不要为了现网去切 S3。
 
 ```bash
 WORKER_RUNTIME=vm
@@ -103,7 +103,7 @@ WORKER_IDLE_RELEASE_MS=900000   # 空闲 15 分钟卸槽；0 = 不自动释放
 
 卸槽前必须把 slot 工作区拷回 `RUNS_DIR`，否则下一轮 claim 会擦盘。两个槽都忙时 `POST /v1/runs` 返回 `NOT_YET_STARTED` 并发 `run.queued`。
 
-接 GitHub 远程（只放控制面，不要进 worker）：
+接 GitHub 远程（只放控制面，不要进 worker）。也可以在对话页设置里贴 PAT，写到 `.neo/scm-push.env`：
 
 ```bash
 # 推荐：GitHub App 安装令牌

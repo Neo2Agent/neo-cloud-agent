@@ -1,7 +1,7 @@
 import type { ClipboardEvent, FormEvent, KeyboardEvent } from "react";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 
-export type { BuildOption, EnvOption, LlmSettings } from "./SettingsPanel";
+export type { BuildOption, EnvOption, LlmSettings, ScmSettings } from "./SettingsPanel";
 
 type Props = {
   prompt: string;
