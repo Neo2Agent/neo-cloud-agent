@@ -19,7 +19,7 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
 | 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`） |
-| 同机还有 | 爱马仕已下线，不要拉起 | `openclaw-gateway` 占 **20041**，不要停 |
+| 同机还有 | 爱马仕已下线，不要拉起 | OpenClaw 已停，不要拉起 |
 
 控制台列表：[北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。  
 Chrome 里若还登着旧号，**看不到**这台机。
@@ -40,12 +40,20 @@ Host lighthouse-db
 
 ## 硬约束
 
-1. **不要重启实例。** 同机还有 OpenClaw。
+1. **不要重启实例。**
 2. **不要在控制台绑定 SSH 密钥。** 用 TAT 追加 `authorized_keys`。
 3. **不要读、打印、提交** `/home/ubuntu/db/.env`。只报键名和连通性。
-4. **不要停 `openclaw-gateway`（`:20041`）。**
+4. **不要重新拉起 OpenClaw。** root 用户单元已 `stop/disable`，文件改名为 `~/.config/systemd/user/openclaw-gateway.service.disabled`。
 5. **不要**在这台机上部署 neo-cloud-agent / 改 Caddy / 动应用机 systemd。
 6. 3306 / 6379 现在对 `0.0.0.0/0` 开放，只靠密码。不要再把明文密码写进聊天或 git。
+
+## OpenClaw（已下线）
+
+原先是 root 用户 systemd：`openclaw-gateway.service`，监听 `:20041`（还带 Playwright Chrome）。2026-08-22 已 `stop` + `disable`，单元文件改名为 `openclaw-gateway.service.disabled`。
+
+- 不要 `systemctl --user start openclaw-gateway`（root 的 `XDG_RUNTIME_DIR=/run/user/0`）
+- 数据目录 `/root/.openclaw`、pnpm 全局包可以留着
+- 不要读 `/root/.openclaw` 里的密钥
 
 ## 现场
 
@@ -58,7 +66,7 @@ Host lighthouse-db
 | 数据卷 | `db_mysql_data`、`db_redis_data` |
 | 库名 / 用户 | `app` / `app` |
 | 镜像源 | `/etc/docker/daemon.json` → `https://mirror.ccs.tencentyun.com`（Docker Hub 直连常超时） |
-| 主机 ufw | inactive；放行在轻量控制台防火墙：22、3306、6379、20041、ICMP |
+| 主机 ufw | inactive；放行在轻量控制台防火墙：22、3306、6379、ICMP（20041 可关，OpenClaw 已下线） |
 
 `.env` 键（值留在机上）：
 
@@ -149,7 +157,7 @@ ORDER BY seq;
 | 连不上 3306 / 6379 | 轻量防火墙是否放行；容器 `docker compose ps` 是否 `healthy`；密码是否和 `.env` 一致 |
 | `docker pull` 超时 | 确认 `registry-mirrors` 是 `https://mirror.ccs.tencentyun.com`，`systemctl restart docker` |
 | 表是空的 | 控制面还没写过；探测 run 只有 `run_live_probe` |
-| 想收紧端口 | 控制台防火墙把 3306/6379 改成应用机出口 IP，不要关 22 / 20041 |
+| 想收紧端口 | 控制台防火墙把 3306/6379 改成应用机出口 IP，不要关 22；20041 可删 |
 
 看容器日志，不要 `cat .env`：
 

@@ -20,7 +20,7 @@
 | 22 | SSH |
 | 3306 | MySQL（现网 `0.0.0.0/0`，只靠密码；能收到应用机出口 IP 就收窄） |
 | 6379 | Redis（同上） |
-| 20041 | 同机已有的 OpenClaw WebUI，不要关 |
+| 20041 | 旧 OpenClaw WebUI，已下线，可从防火墙删掉 |
 | ICMP | ping |
 
 ## TAT 写入 SSH 公钥（首次）
