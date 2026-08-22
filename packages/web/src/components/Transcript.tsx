@@ -21,11 +21,20 @@ function toolMark(tool: TranscriptTool): string {
   return tool.isError ? "✗" : "✓";
 }
 
+function toolDisplayName(tool: TranscriptTool): string {
+  const nested = typeof tool.details?.subagent === "string" ? tool.details.subagent : "";
+  if (nested && tool.name !== "neo_subagent") {
+    return `${nested} / ${tool.name}`;
+  }
+  return tool.name === "neo_subagent" ? "subagent" : tool.name;
+}
+
 function ToolCard({ tool }: { tool: TranscriptTool }) {
   const running = tool.status === "running" && !tool.output;
   const preview = toolArgPreview(tool.args);
   const diff = fileToolDiff(tool);
   const preRef = useRef<HTMLPreElement>(null);
+  const subagent = tool.name === "neo_subagent" || Boolean(tool.details?.subagent);
 
   useLayoutEffect(() => {
     if (!running || !preRef.current) return;
@@ -33,10 +42,13 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
   }, [running, tool.output]);
 
   return (
-    <details className={tool.isError ? "tool err" : running ? "tool run" : "tool"} open={running}>
+    <details
+      className={`${tool.isError ? "tool err" : running ? "tool run" : "tool"}${subagent ? " subagent" : ""}`}
+      open={running}
+    >
       <summary>
         <span>
-          {toolMark(tool)} {tool.name}
+          {toolMark(tool)} {toolDisplayName(tool)}
         </span>
         {preview ? <span className="cmd">{preview}</span> : null}
       </summary>

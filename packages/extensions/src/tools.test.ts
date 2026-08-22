@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createCloudTools, CLOUD_TOOL_NAMES } from "./tools.js";
+import { availableSubagents } from "./neo-subagent.js";
 import type { CloudToolContext, CloudToolFetch } from "./types.js";
 
 function mockFetch(routes: Record<string, { status?: number; body: unknown }>): CloudToolFetch {
@@ -245,6 +246,40 @@ test("neo_mcp_list and neo_mcp_call talk to an HTTP MCP server", async () => {
   });
   assert.equal(called.isError, undefined);
   assert.match(called.content, /found it/);
+});
+
+test("neo_subagent follows the pi single/parallel/chain contract", async () => {
+  const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-subagent-"));
+  mkdirSync(path.join(workspaceDir, ".pi", "agents"), { recursive: true });
+  writeFileSync(
+    path.join(workspaceDir, ".pi/agents/auditor.md"),
+    `---
+name: auditor
+description: Local security reviewer
+tools: read, grep
+---
+
+Look for secrets.
+`,
+  );
+  const names = availableSubagents(workspaceDir).map((item) => item.name);
+  assert.ok(names.includes("scout"));
+  assert.ok(names.includes("auditor"));
+  const tool = createCloudTools(ctx(mockFetch({}), workspaceDir)).find((item) => item.name === "neo_subagent");
+  assert.ok(tool);
+  const bad = await tool.execute({ agent: "scout" });
+  assert.equal(bad.isError, true);
+  const missingRunner = await tool.execute({ agent: "scout", task: "find auth" });
+  assert.equal(missingRunner.isError, true);
+  assert.match(missingRunner.content, /worker session|scout/i);
+  const ran = await createCloudTools({
+    ...ctx(mockFetch({}), workspaceDir),
+    runSubagent: async (params) => ({ content: `ran ${String(params.agent)}`, details: { agent: params.agent } }),
+  })
+    .find((item) => item.name === "neo_subagent")!
+    .execute({ agent: "scout", task: "find auth" });
+  assert.equal(ran.isError, undefined);
+  assert.match(ran.content, /ran scout/);
 });
 
 test("neo_diag falls back to local logs when the control plane is down", async () => {

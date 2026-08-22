@@ -633,6 +633,10 @@ h1 {
   border-color: #bfdbfe;
 }
 
+.tool.subagent {
+  border-left: 3px solid #93c5fd;
+}
+
 .tool pre {
   margin: 8px 0 0;
   white-space: pre-wrap;
