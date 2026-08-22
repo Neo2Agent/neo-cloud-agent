@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applyRunEventsToMessages,
   DEFAULT_TRANSCRIPT_PAGE,
@@ -38,7 +38,7 @@ import {
   withPendingUser,
   type PendingUser,
 } from "./turn";
-import { closeMobileSidebar, isNarrowViewport } from "./viewport";
+import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
 
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
@@ -152,6 +152,8 @@ export function App() {
     if (saved === "1") return true;
     return window.innerWidth >= 860;
   });
+  const [narrow, setNarrow] = useState(() => isNarrowViewport());
+  const topMoreRef = useRef<HTMLDetailsElement>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const streamFrameRef = useRef(0);
   const lastEventIdRef = useRef<string | null>(null);
@@ -699,6 +701,18 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const media = window.matchMedia(NARROW_MQ);
+    const sync = () => setNarrow(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (topMoreRef.current) topMoreRef.current.open = !narrow;
+  }, [narrow]);
+
+  useEffect(() => {
     if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {
       setPendingTurn(null);
     }
@@ -854,11 +868,12 @@ export function App() {
                 {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
                 {statusView.label}
               </span>
-              <details className="top-more">
+              <details className="top-more" ref={topMoreRef}>
                 <summary className="ghost top-more-sum">更多</summary>
                 <div
                   className="top-more-menu"
                   onClick={(event) => {
+                    if (!narrow) return;
                     const action = (event.target as HTMLElement | null)?.closest("button, a");
                     const details = event.currentTarget.closest("details");
                     if (action && details) details.removeAttribute("open");

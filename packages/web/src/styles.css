@@ -1145,6 +1145,11 @@ textarea {
   margin-top: 10px;
 }
 
+.composer-bar .send,
+.composer-bar .stop {
+  margin-left: auto;
+}
+
 .context-usage {
   position: relative;
   flex: 0 0 auto;
