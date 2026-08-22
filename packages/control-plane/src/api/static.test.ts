@@ -79,6 +79,7 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /文件树/);
   assert.match(appText, /归档/);
   assert.match(appText, /settings-panel/);
+  assert.match(appText, /workspace-drawer/);
   assert.match(appText, /auth-email/);
   assert.match(appText, /novalidate|noValidate/);
   assert.match(appText, /turn-progress/);
@@ -86,6 +87,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /stop-icon/);
   assert.match(cssText, /pulse-dot/);
   assert.match(cssText, /think-bounce/);
+  assert.match(cssText, /\.workspace-drawer\{[^}]*min-height:\s*160px/);
+  assert.match(cssText, /\.main\{[^}]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\)/);
   assert.doesNotMatch(html, /Fraunces/);
   assert.doesNotMatch(cssText, /#0b0[0-9a-f]{3}\b/);
   assert.equal(resolveWebFile("/../package.json"), null);
