@@ -24,7 +24,8 @@ export function apiAuthEnabled(): boolean {
 }
 
 export function accountsRequired(): boolean {
-  return process.env.ACCOUNTS_REQUIRED === "1" || process.env.ACCOUNTS_REQUIRED === "true";
+  const raw = (process.env.ACCOUNTS_REQUIRED ?? "1").trim().toLowerCase();
+  return raw !== "0" && raw !== "false" && raw !== "off";
 }
 
 export function accessRequired(): boolean {

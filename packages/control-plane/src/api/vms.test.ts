@@ -13,7 +13,7 @@ process.env.LLM_GATEWAY_JWT_SECRET = "vm-secret";
 process.env.CONTROL_PLANE_TOKEN = "vm-api-token";
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-vm-runs-"));
 delete process.env.WORKER_WORKSPACE_MOUNT;
-delete process.env.ACCOUNTS_REQUIRED;
+process.env.ACCOUNTS_REQUIRED = "0";
 delete process.env.DATABASE_URL;
 delete process.env.REDIS_URL;
 

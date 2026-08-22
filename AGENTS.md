@@ -26,4 +26,4 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 - The repo root `.env` (gitignored) is auto-loaded by both control-plane and gateway; existing environment variables take precedence. See `.env.example` for all keys.
 
 ### Web UI testing note
-- The chat UI at `http://localhost:8080` is a React app. When accounts are not required it auto-logs in as the default admin (`admin` / `123456`). Prefer the API (`POST /v1/runs`) for scripted checks; `pnpm neo` is the terminal client against the same `/v1`.
+- The chat UI at `http://localhost:8080` is a React app. Login is required: type `admin` / `123456` (the form is empty and cannot be skipped). Prefer the API (`POST /v1/runs`) for scripted checks; `pnpm neo` is the terminal client against the same `/v1`.

@@ -111,7 +111,7 @@ neo --repo fixtures/toy-repo -p "只回复一个词：pong"
 | `neo login --token` | 写入 credentials，可先 `POST /v1/auth` 校验 |
 | `neo login --email --password` | `POST /v1/auth/login`，存 `neo_sess_*` |
 | `neo login`（TTY） | 提示邮箱和密码 |
-| 控制面未开鉴权 | 无 token 也可以打 `/v1` |
+| 控制面未开鉴权 | 仅当 `ACCOUNTS_REQUIRED=0` 且未设服务令牌时，无 token 也可以打 `/v1` |
 | `neo logout` | 删 credentials；若是 session 则 `POST /v1/auth/logout` |
 
 对话页不再自动登录，也不支持注册；`neo login --email admin --password 123456` 走 `POST /v1/auth/login`。

@@ -17,6 +17,7 @@ test("docker worker mock turn: clone toy repo inside a container", { skip: !dock
   process.env.HOST_RUNS_DIR = runsDir;
   process.env.WORKER_IMAGE = image;
   process.env.WORKER_MEMORY_MIB = "1024";
+  process.env.ACCOUNTS_REQUIRED = "0";
   delete process.env.WORKER_COMMAND;
 
   const { createGatewayServer } = await import("../../../llm-gateway/src/server.js");
