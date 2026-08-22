@@ -122,15 +122,14 @@ sudo systemctl reload caddy
 
 必须 `flush_interval -1`，否则对话 SSE 会缓冲。对外只开 80 即可，不要让用户去记 `:8080`。
 
-## 爱马仕（已卸载）
+## 系统镜像
 
-建机时用过爱马仕应用镜像，2026-08-22 已在原盘上清掉，改成自建栈（Caddy + Node + `neo-*` systemd）。**不要重装系统去换镜像。**
+2026-08-22 已用控制台 **重装系统**（勾选备份后重装）换成 **Ubuntu Server 24.04 LTS 64bit 系统镜像**，不再是爱马仕/Halo 应用模板。公网 IP 仍是 `62.234.211.200`。
 
-已删除：`~/.hermes`、用户单元 `hermes-gateway`、`~/.local/bin/hermes`、clawhub、qwen-code、uv/python3.11（爱马仕用的）。`ubuntu` linger 已关。
-
-- 不要再 `npm i -g` / 装回爱马仕
-- 不要读已经不存在的 `~/.hermes/.env`
-- 保留 Node、pnpm（`~/.local/share/pnpm`）、Caddy、`/home/ubuntu/neo-cloud-agent`
+- 登录用户 `ubuntu`；部署公钥注释 `neo-cloud-agent-deploy`
+- 不要再选应用模板重装
+- 装软件：Node 22、pnpm 10、`apt install caddy e2fsprogs`；不要装 Docker / 爱马仕
+- 覆盖源码后必须 `pnpm --filter @neo-cloud-agent/web build`，控制面只跑得起来 `packages/web/dist`
 
 ## 验收命令
 

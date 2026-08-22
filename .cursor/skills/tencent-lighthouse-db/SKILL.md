@@ -19,7 +19,7 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
 | 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`） |
-| 同机还有 | 爱马仕制品已卸掉，自建 systemd + Caddy + Node | OpenClaw 已停，不要拉起 |
+| 同机还有 | 已重装为 Ubuntu 24.04 系统镜像 + systemd + Caddy + Node | OpenClaw 已停，不要拉起 |
 
 控制台列表：[北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。  
 Chrome 里若还登着旧号，**看不到**这台机。
