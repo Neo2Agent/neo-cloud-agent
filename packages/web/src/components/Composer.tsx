@@ -1,6 +1,7 @@
 import { useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
+import { isNarrowViewport, shouldSendOnEnter } from "../viewport";
 import { ContextUsageControl } from "./ContextUsage";
 
 export type { BuildOption, EnvOption, LlmSettings, ScmSettings } from "./SettingsPanel";
@@ -43,6 +44,8 @@ export function Composer({
     ? "对话已归档。"
     : busy
       ? "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
+      : isNarrowViewport()
+      ? "描述任务，点发送。可粘贴图片。"
       : "描述任务。Enter 发送，Shift+Enter 换行。可直接粘贴图片。";
   return (
     <form
@@ -87,7 +90,7 @@ export function Composer({
           });
         }}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-          if (event.key === "Enter" && !event.shiftKey) {
+          if (shouldSendOnEnter(event, { narrow: isNarrowViewport() })) {
             event.preventDefault();
             if (!busy && !archived) {
               (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();

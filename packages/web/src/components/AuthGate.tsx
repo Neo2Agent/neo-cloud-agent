@@ -101,7 +101,7 @@ export function AuthGate({
         <p className="auth-error" id="auth-error" hidden={!error}>
           {error}
         </p>
-        <button type="submit" id="auth-submit" disabled={busy}>
+        <button type="submit" id="auth-submit" className="auth-submit" disabled={busy}>
           {submit}
         </button>
         <button type="button" id="auth-skip" hidden={!canSkip} onClick={onClose}>

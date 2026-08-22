@@ -42,20 +42,22 @@ export function Sidebar({
   const items = [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   return (
     <aside className="sidebar">
-      <div className="brand">
-        <span className="mark" aria-hidden="true">
-          N
-        </span>
-        <div>
-          <strong>Neo</strong>
-          <span>Cloud Agent</span>
+      <div className="sidebar-head">
+        <div className="brand">
+          <span className="mark" aria-hidden="true">
+            N
+          </span>
+          <div>
+            <strong>Neo</strong>
+            <span>Cloud Agent</span>
+          </div>
         </div>
+        {onClose ? (
+          <button className="ghost sidebar-close" id="sidebar-close" type="button" onClick={onClose}>
+            关闭
+          </button>
+        ) : null}
       </div>
-      {onClose ? (
-        <button className="ghost sidebar-close" id="sidebar-close" type="button" onClick={onClose}>
-          收起
-        </button>
-      ) : null}
       <button className="new-chat" id="new-chat" type="button" onClick={onNewChat}>
         <span className="new-chat-plus" aria-hidden="true">
           +

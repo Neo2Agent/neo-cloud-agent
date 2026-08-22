@@ -38,6 +38,7 @@ import {
   withPendingUser,
   type PendingUser,
 } from "./turn";
+import { closeMobileSidebar } from "./viewport";
 
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
@@ -786,7 +787,13 @@ export function App() {
           authBusy={authBusy}
           health={healthText}
           onClose={toggleSidebar}
-          onNewChat={resetComposer}
+          onNewChat={() => {
+            resetComposer();
+            setSidebarOpen((open) => {
+              if (!closeMobileSidebar()) return open;
+              return false;
+            });
+          }}
           onOpenRun={(id) => {
             setSidebarOpen((open) => {
               if (window.innerWidth < 860 && open) {
@@ -817,8 +824,15 @@ export function App() {
         <main className="main">
           <header className="topbar">
             <div className="topbar-lead">
-              <button className="ghost sidebar-toggle" id="sidebar-toggle" type="button" onClick={toggleSidebar}>
-                {sidebarOpen ? "收起侧栏" : "对话列表"}
+              <button
+                className="ghost sidebar-toggle"
+                id="sidebar-toggle"
+                type="button"
+                aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
+                onClick={toggleSidebar}
+              >
+                <span aria-hidden="true">{sidebarOpen ? "‹" : "☰"}</span>
+                <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
               </button>
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
@@ -832,12 +846,22 @@ export function App() {
               </div>
             </div>
             <div className="top-actions">
-              <span className="vm-badge" id="vm-badge" data-busy={currentSlot ? "true" : "false"}>
-                {currentSlot ? `${slotLabel(currentSlot)} · ${currentSlot}` : runId ? "分配 VM 中…" : "未分配 VM"}
-              </span>
               <span className="status" id="status" data-state={statusView.state} data-busy={busy ? "true" : "false"}>
                 {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
                 {statusView.label}
+              </span>
+              <details className="top-more">
+                <summary className="ghost top-more-sum">更多</summary>
+                <div
+                  className="top-more-menu"
+                  onClick={(event) => {
+                    const action = (event.target as HTMLElement | null)?.closest("button, a");
+                    const details = event.currentTarget.closest("details");
+                    if (action && details) details.removeAttribute("open");
+                  }}
+                >
+              <span className="vm-badge" id="vm-badge" data-busy={currentSlot ? "true" : "false"}>
+                {currentSlot ? `${slotLabel(currentSlot)} · ${currentSlot}` : runId ? "分配 VM 中…" : "未分配 VM"}
               </span>
               {formatUsage(currentRun?.usage) ? (
                 <span className="vm-badge" id="usage-badge">
@@ -955,6 +979,8 @@ export function App() {
               >
                 开草稿 PR
               </button>
+                </div>
+              </details>
             </div>
           </header>
           <div className="workspace-col">
