@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@neo-cloud-agent/contracts": "workspace:*",
+    "mysql2": "^3.23.4",
     "pg": "^8.16.3",
     "redis": "^5.8.2"
   },

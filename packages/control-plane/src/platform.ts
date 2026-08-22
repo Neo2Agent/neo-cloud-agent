@@ -6,13 +6,13 @@ import { listEnvironments, upsertEnvironment } from "./env/store.js";
 import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
 import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
 import { reloadPersistedState } from "./orchestrator/orchestrator.js";
-import { connectPostgres, type PostgresMetadataStore } from "./store/postgres.js";
+import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
 import { persistRunRecord, persistWorkerLease, replacePersistedEvents, setPersistHooks } from "./store/persist.js";
 
 let started: Promise<void> | null = null;
-let postgres: PostgresMetadataStore | null = null;
+let metadata: MetadataStore | null = null;
 let redis: RedisHotClient | null = null;
-let metadataKind: "fs" | "postgres" = "fs";
+let metadataKind: "fs" | DatabaseKind = "fs";
 let eventBusKind: "memory" | "redis" = "memory";
 
 export function platformInfo() {
@@ -22,8 +22,12 @@ export function platformInfo() {
   };
 }
 
-export function getPostgresStore(): PostgresMetadataStore | null {
-  return postgres;
+export function getPostgresStore(): MetadataStore | null {
+  return metadata;
+}
+
+export function getMetadataStore(): MetadataStore | null {
+  return metadata;
 }
 
 export function getRedisClient(): RedisHotClient | null {
@@ -37,7 +41,7 @@ export async function startPlatform(): Promise<void> {
 
 export function resetPlatformForTests(): void {
   started = null;
-  postgres = null;
+  metadata = null;
   redis = null;
   metadataKind = "fs";
   eventBusKind = "memory";
@@ -50,35 +54,36 @@ async function doStart(): Promise<void> {
   const databaseUrl = (process.env.DATABASE_URL ?? "").trim();
   const redisUrl = (process.env.REDIS_URL ?? "").trim();
   if (databaseUrl) {
-    postgres = await connectPostgres(databaseUrl);
-    metadataKind = "postgres";
-    setAccountStore(postgres);
+    const connected = await connectDatabase(databaseUrl);
+    metadata = connected.store;
+    metadataKind = connected.kind;
+    setAccountStore(metadata);
     setPersistHooks({
       onRun: (record) => {
-        void postgres?.saveRun(record).catch((error) => console.error("postgres saveRun failed", error));
+        void metadata?.saveRun(record).catch((error) => console.error("metadata saveRun failed", error));
       },
       onEvent: (event) => {
-        void postgres?.saveEvent(event).catch((error) => console.error("postgres saveEvent failed", error));
+        void metadata?.saveEvent(event).catch((error) => console.error("metadata saveEvent failed", error));
       },
       onLease: (lease) => {
-        void postgres?.saveLease(lease).catch((error) => console.error("postgres saveLease failed", error));
+        void metadata?.saveLease(lease).catch((error) => console.error("metadata saveLease failed", error));
       },
       onDeleteLease: (runId) => {
-        void postgres?.deleteLease(runId).catch((error) => console.error("postgres deleteLease failed", error));
+        void metadata?.deleteLease(runId).catch((error) => console.error("metadata deleteLease failed", error));
       },
     });
     setEnvPersistHooks({
       onEnvironment: (env) => {
-        void postgres?.saveEnvironment(env).catch((error) => console.error("postgres saveEnvironment failed", error));
+        void metadata?.saveEnvironment(env).catch((error) => console.error("metadata saveEnvironment failed", error));
       },
       onBuild: (build) => {
-        void postgres?.saveBuild(build).catch((error) => console.error("postgres saveBuild failed", error));
+        void metadata?.saveBuild(build).catch((error) => console.error("metadata saveBuild failed", error));
       },
     });
-    await hydrateFromPostgres(postgres);
-    await hydrateEnvFromPostgres(postgres);
+    await hydrateFromStore(metadata);
+    await hydrateEnvFromStore(metadata);
     reloadPersistedState();
-    console.log("control-plane metadata store: postgres");
+    console.log(`control-plane metadata store: ${metadataKind}`);
   }
   if (redisUrl) {
     redis = await connectRedis(redisUrl);
@@ -108,7 +113,7 @@ async function doStart(): Promise<void> {
   }
 }
 
-async function hydrateFromPostgres(store: PostgresMetadataStore): Promise<void> {
+async function hydrateFromStore(store: MetadataStore): Promise<void> {
   const records = await store.loadRuns();
   for (const record of records) {
     persistRunRecord(record, undefined, { mirror: false });
@@ -123,7 +128,7 @@ async function hydrateFromPostgres(store: PostgresMetadataStore): Promise<void> 
   }
 }
 
-async function hydrateEnvFromPostgres(store: PostgresMetadataStore): Promise<void> {
+async function hydrateEnvFromStore(store: MetadataStore): Promise<void> {
   const remoteEnvs = await store.loadEnvironments();
   if (remoteEnvs.length > 0) {
     for (const env of remoteEnvs) {

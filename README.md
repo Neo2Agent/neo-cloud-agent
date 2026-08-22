@@ -134,9 +134,10 @@ GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVA
 # BOOTSTRAP_EMAIL=you@example.com
 # BOOTSTRAP_PASSWORD=at-least-8-chars
 
-# Postgres / Redis（不设则用 .control JSON + 进程内事件总线）
+# MySQL 或 Postgres / Redis（不设则用 .control JSON + 进程内事件总线）
+# DATABASE_URL=mysql://app:app@127.0.0.1:3306/app
 # DATABASE_URL=postgres://neo:neo@127.0.0.1:5432/neo
-# REDIS_URL=redis://127.0.0.1:6379
+# REDIS_URL=redis://:pass@127.0.0.1:6379
 
 # Firecracker（需要 /dev/kvm、内核和 rootfs）
 # WORKER_RUNTIME=firecracker
