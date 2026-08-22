@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getConfig } from "../config.js";
 import { hashPassword, verifyPassword } from "./password.js";
-import { getAccountStore } from "./store.js";
-import { isValidEmail, isValidLogin, normalizeEmail, toPublicUser, type PublicUser, type SessionRecord } from "./types.js";
+import { accountStoreKind, getAccountStore } from "./store.js";
+import { isValidLogin, normalizeEmail, toPublicUser, type PublicUser, type SessionRecord } from "./types.js";
 
 export const DEFAULT_ADMIN_LOGIN = "admin";
 export const DEFAULT_ADMIN_PASSWORD = "123456";
@@ -40,109 +40,67 @@ export function defaultAdminEnabled(): boolean {
 }
 
 export function bootstrapPassword(): string {
-  const explicit = process.env.BOOTSTRAP_PASSWORD ?? "";
-  if (explicit) {
-    return explicit;
-  }
   return defaultAdminEnabled() ? DEFAULT_ADMIN_PASSWORD : "";
 }
 
 export function bootstrapEmail(): string | null {
-  const login = normalizeEmail(process.env.BOOTSTRAP_EMAIL ?? "");
-  const password = process.env.BOOTSTRAP_PASSWORD ?? "";
-  if (login && isValidLogin(login) && password.length >= 6) {
-    return login;
-  }
-  if (!defaultAdminEnabled()) {
-    return null;
-  }
-  return DEFAULT_ADMIN_LOGIN;
+  return defaultAdminEnabled() ? DEFAULT_ADMIN_LOGIN : null;
 }
 
-async function upsertLoginAccount(login: string, password: string): Promise<PublicUser> {
-  const existing = await getAccountStore().findUserByEmail(login);
-  if (existing) {
-    return toPublicUser(existing);
+function requireAccountDatabase(): void {
+  const url = (process.env.DATABASE_URL ?? "").trim();
+  if (!url) {
+    return;
   }
-  const user = await getAccountStore().createUser({
-    id: crypto.randomUUID(),
-    email: login,
-    passwordHash: hashPassword(password),
-    orgId: getConfig().orgId,
-    createdAt: new Date().toISOString(),
-  });
-  if (login === DEFAULT_ADMIN_LOGIN) {
-    console.log("default admin account ready: admin");
-  } else {
-    console.log(`bootstrap account created: ${login}`);
+  const mysql = /^mysql:|^mariadb:/i.test(url);
+  if (mysql && accountStoreKind() !== "mysql") {
+    throw new AccountError("账号库未连接", 503);
   }
-  return toPublicUser(user);
 }
 
-/** Always seed `admin` / `123456` unless DEFAULT_ADMIN=0. */
+/** Seed or reset the hardcoded `admin` / `123456` row. */
 export async function ensureDefaultAdmin(): Promise<PublicUser | null> {
   if (!defaultAdminEnabled()) {
     return null;
   }
-  const password = process.env.DEFAULT_ADMIN_PASSWORD ?? DEFAULT_ADMIN_PASSWORD;
-  const user = await upsertLoginAccount(DEFAULT_ADMIN_LOGIN, password);
-  return user;
+  requireAccountDatabase();
+  const store = getAccountStore();
+  const existing = await store.findUserByEmail(DEFAULT_ADMIN_LOGIN);
+  if (!existing) {
+    const user = await store.createUser({
+      id: crypto.randomUUID(),
+      email: DEFAULT_ADMIN_LOGIN,
+      passwordHash: hashPassword(DEFAULT_ADMIN_PASSWORD),
+      orgId: getConfig().orgId,
+      createdAt: new Date().toISOString(),
+    });
+    console.log("default admin account ready: admin");
+    return toPublicUser(user);
+  }
+  if (!verifyPassword(DEFAULT_ADMIN_PASSWORD, existing.passwordHash)) {
+    await store.updateUserPassword(existing.id, hashPassword(DEFAULT_ADMIN_PASSWORD));
+  }
+  return toPublicUser(existing);
 }
 
-/** Create BOOTSTRAP_EMAIL / BOOTSTRAP_PASSWORD on first boot. Existing login is left alone. */
+/** @deprecated Extra bootstrap emails are no longer created. */
 export async function ensureBootstrapAccount(): Promise<PublicUser | null> {
-  const login = bootstrapEmail();
-  const password = bootstrapPassword();
-  if (!login || password.length < 6) {
-    return null;
-  }
-  return upsertLoginAccount(login, password);
+  return ensureDefaultAdmin();
 }
 
-/** Sign in as the bootstrap / default admin user without sending the password to the browser. */
-export async function loginBootstrapAccount(): Promise<{ user: PublicUser; token: string }> {
-  const login = bootstrapEmail();
-  const password = bootstrapPassword();
-  if (!login) {
-    throw new AccountError("bootstrap account is not configured", 404);
-  }
-  await ensureDefaultAdmin();
-  await ensureBootstrapAccount();
-  return loginAccount({ email: login, password });
-}
-
-export async function registerAccount(input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {
-  const email = normalizeEmail(input.email ?? "");
-  const password = input.password ?? "";
-  if (!isValidEmail(email)) {
-    throw new AccountError("valid email is required", 400);
-  }
-  if (password.length < 8) {
-    throw new AccountError("password must be at least 8 characters", 400);
-  }
-  const existing = await getAccountStore().findUserByEmail(email);
-  if (existing) {
-    throw new AccountError("email already registered", 409);
-  }
-  const now = new Date().toISOString();
-  const user = await getAccountStore().createUser({
-    id: crypto.randomUUID(),
-    email,
-    passwordHash: hashPassword(password),
-    orgId: getConfig().orgId,
-    createdAt: now,
-  });
-  const token = await issueSession(user.id);
-  return { user: toPublicUser(user), token };
+export async function registerAccount(_input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {
+  throw new AccountError("不支持注册", 403);
 }
 
 export async function loginAccount(input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {
+  requireAccountDatabase();
   const login = normalizeEmail(input.email ?? "");
   const password = input.password ?? "";
-  if (!isValidLogin(login)) {
+  if (!isValidLogin(login) || login !== DEFAULT_ADMIN_LOGIN || password !== DEFAULT_ADMIN_PASSWORD) {
     throw new AccountError("invalid account or password", 401);
   }
-  const user = await getAccountStore().findUserByEmail(login);
+  await ensureDefaultAdmin();
+  const user = await getAccountStore().findUserByEmail(DEFAULT_ADMIN_LOGIN);
   if (!user || !verifyPassword(password, user.passwordHash)) {
     throw new AccountError("invalid account or password", 401);
   }

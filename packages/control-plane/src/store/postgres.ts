@@ -252,6 +252,9 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       );
       return mapUser(result.rows[0]);
     },
+    async updateUserPassword(userId, passwordHash) {
+      await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);
+    },
     async createSession(session) {
       await query(
         `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at)

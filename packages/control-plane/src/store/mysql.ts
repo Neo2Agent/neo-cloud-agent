@@ -259,6 +259,9 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       );
       return mapUser(result.rows[0]);
     },
+    async updateUserPassword(userId, passwordHash) {
+      await query(`UPDATE users SET password_hash = ? WHERE id = ?`, [passwordHash, userId]);
+    },
     async createSession(session) {
       await query(
         `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at)

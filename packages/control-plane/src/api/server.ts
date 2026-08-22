@@ -50,9 +50,7 @@ import {
   AccountError,
   bootstrapEmail,
   loginAccount,
-  loginBootstrapAccount,
   logoutSession,
-  registerAccount,
   sessionCookieHeader,
   clearSessionCookieHeader,
 } from "../accounts/accounts.js";
@@ -186,7 +184,7 @@ export function createApiServer() {
           accountsEnabled: true,
           accountsRequired: accountsRequired(),
           bootstrapEmail: bootstrapEmail(),
-          bootstrapLogin: Boolean(bootstrapEmail()),
+          bootstrapLogin: false,
           defaultAdmin: bootstrapEmail() === "admin",
           warmPoolReady: readyWarmCount(),
           builds: listBuilds().filter((item) => item.status === "SUCCEEDED" && !item.draft).length,
@@ -196,13 +194,7 @@ export function createApiServer() {
       }
 
       if (method === "POST" && path === "/v1/auth/register") {
-        const body = (await readJson(req)) as { email?: string; password?: string };
-        try {
-          const created = await registerAccount(body);
-          sendAuthSession(res, 201, created);
-        } catch (error) {
-          sendAccountError(res, error);
-        }
+        send(res, 403, { error: "不支持注册" });
         return;
       }
 
@@ -218,11 +210,7 @@ export function createApiServer() {
       }
 
       if (method === "POST" && path === "/v1/auth/bootstrap") {
-        try {
-          sendAuthSession(res, 200, await loginBootstrapAccount());
-        } catch (error) {
-          sendAccountError(res, error);
-        }
+        send(res, 403, { error: "请使用账号登录" });
         return;
       }
 

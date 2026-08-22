@@ -50,6 +50,15 @@ export function createFileAccountStore(runsDir?: string): AccountStore {
     async findUserById(id) {
       return read().users.find((item) => item.id === id) ?? null;
     },
+    async updateUserPassword(userId, passwordHash) {
+      const snapshot = read();
+      const user = snapshot.users.find((item) => item.id === userId);
+      if (!user) {
+        throw new Error("user not found");
+      }
+      user.passwordHash = passwordHash;
+      write(snapshot);
+    },
     async createSession(session) {
       const snapshot = read();
       snapshot.sessions = snapshot.sessions.filter((item) => item.tokenHash !== session.tokenHash);

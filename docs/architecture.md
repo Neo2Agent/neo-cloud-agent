@@ -541,7 +541,7 @@ Run 1──* PullRequestRef
 ## 13. 对外 API（最小集）
 
 ```
-POST   /v1/auth/register|login|logout|bootstrap
+POST   /v1/auth/login|logout
 GET    /v1/me
 GET    /v1/vms
 GET    /v1/settings/llm
@@ -801,7 +801,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 - `start` 失败默认不阻断 Agent（和 Cursor 一样，只记 `START_FAILED`）。`environment.json` 里 `startMustSucceed: true` 或 `START_MUST_SUCCEED=1` 才会让 worker 退出、Run 变 ERROR。
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
 - 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。已经挂上的 handle 以进程/容器退出为准，不会因为一次长工具调用没心跳就被标 ERROR。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
-- 对外 `/v1` 用用户 session（`POST /v1/auth/register|login`）或 `CONTROL_PLANE_TOKEN`。`ACCOUNTS_REQUIRED=1` 时必须登录。默认管理员是 `admin` / `123456`（`DEFAULT_ADMIN=0` 可关）。设了 `BOOTSTRAP_EMAIL` / `BOOTSTRAP_PASSWORD` 后还会再创建一个账号。对话页会自动登录（`POST /v1/auth/bootstrap`，密码不进浏览器）。Worker 走 `/internal`，只带 run JWT。`/health` 和静态页不需要令牌。对话页左下角可以登录；未强制登录时可以先跳过。
+- 对外 `/v1` 用用户 session（`POST /v1/auth/login`）或 `CONTROL_PLANE_TOKEN`。不支持注册。`ACCOUNTS_REQUIRED=1` 时必须登录。账号写死为 `admin` / `123456`，登录时查账号库（接了 MySQL 就查 `users` 表）。Worker 走 `/internal`，只带 run JWT。`/health` 和静态页不需要令牌。对话页左下角可以登录；未强制登录时可以先跳过。
 - 设了 `DATABASE_URL` 后，Run / 事件 / 用户 / Environment / Build 写入 MySQL 或 Postgres（看 URL scheme）；没配则继续用 `.control` JSON。
 - 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。
 - `WORKER_RUNTIME=firecracker` 走 Firecracker HTTP API（kernel / rootfs / tap / vsock）。开发机没配内核时继续用 local / docker。没配 `FIRECRACKER_ROOTFS` 时：若 `infra/firecracker/.assets/rootfs.ext4` 是生产盘（`pnpm fc:rootfs`）就用它，否则用 overlay 打一张小 ext4（单测路径，需要 `mkfs.ext4`）。Guest 不能用 `127.0.0.1` 回连宿主机，provision 会把控制面 / Gateway URL 改成 tap 宿主机 IP。

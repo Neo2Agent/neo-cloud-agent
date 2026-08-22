@@ -111,11 +111,8 @@ export function App() {
   const [vms, setVms] = useState<VmSummary>({ total: 0, busy: 0, backend: "none", slots: [] });
   const [userEmail, setUserEmail] = useState("");
   const [authRequired, setAuthRequired] = useState(false);
-  const [bootstrapEmail, setBootstrapEmail] = useState("");
-  const [bootstrapLogin, setBootstrapLogin] = useState(false);
-  const [defaultAdmin, setDefaultAdmin] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "register" | "token">("login");
+  const [authMode, setAuthMode] = useState<"login" | "token">("login");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authEmail, setAuthEmail] = useState("admin");
@@ -520,13 +517,6 @@ export function App() {
     [persistToken],
   );
 
-  const loginBootstrap = useCallback(async () => {
-    const response = await fetch("/v1/auth/bootstrap", { method: "POST", credentials: "same-origin" });
-    const body = await readJson<{ token?: string; user?: { email?: string }; error?: string }>(response);
-    if (!response.ok) throw new Error(body.error || "unauthorized");
-    await applySession(body.token ?? "", body.user);
-  }, [applySession]);
-
   const sendMessage = useCallback(async () => {
     const text = prompt.trim();
     if (!text && images.length === 0) return;
@@ -635,11 +625,8 @@ export function App() {
         if (cancelled) return;
         setHealth(payload);
         setAuthRequired(payload.authRequired === true);
-        setBootstrapEmail(typeof payload.bootstrapEmail === "string" ? payload.bootstrapEmail : "");
-        setBootstrapLogin(payload.bootstrapLogin === true);
-        setDefaultAdmin(payload.defaultAdmin === true);
-        if (payload.bootstrapEmail) setAuthEmail(payload.bootstrapEmail);
-        if (payload.defaultAdmin) setAuthPassword("123456");
+        setAuthEmail("admin");
+        setAuthPassword("123456");
         applyVms(payload.vmSlots);
         setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
         const saved = tokenRef.current;
@@ -651,24 +638,12 @@ export function App() {
               setUserEmail("");
               setAuthOpen(false);
             }
-          } else if (payload.bootstrapLogin && sessionStorage.getItem(SKIP_BOOTSTRAP_KEY) !== "1") {
-            await loginBootstrap();
           } else if (payload.authRequired) {
             setAuthOpen(true);
             return;
           }
         } catch {
-          if (payload.bootstrapLogin && sessionStorage.getItem(SKIP_BOOTSTRAP_KEY) !== "1") {
-            try {
-              await loginBootstrap();
-            } catch {
-              if (payload.authRequired) {
-                setAuthError("请重新登录");
-                setAuthOpen(true);
-                return;
-              }
-            }
-          } else if (payload.authRequired) {
+          if (payload.authRequired) {
             setAuthError("请重新登录");
             setAuthOpen(true);
             return;
@@ -797,16 +772,11 @@ export function App() {
             void openRun(id);
           }}
           onLogin={() => {
+            setAuthMode("login");
+            setAuthEmail("admin");
+            setAuthPassword("123456");
+            setAuthError("");
             setAuthOpen(true);
-            if (!bootstrapLogin && !defaultAdmin) return;
-            setAuthBusy(true);
-            void loginBootstrap()
-              .then(() => finishLogin())
-              .catch((error) => {
-                setAuthError(error instanceof Error ? error.message : "登录失败");
-                setAuthOpen(true);
-              })
-              .finally(() => setAuthBusy(false));
           }}
           onLogout={() => {
             void api(token, "/v1/auth/logout", { method: "POST" });
@@ -1156,10 +1126,9 @@ export function App() {
               setUserEmail("");
               setAuthOpen(false);
             } else {
-              const email = authEmail.trim() || bootstrapEmail || "admin";
-              const password = authPassword || (authMode === "login" ? "123456" : "");
-              const path = authMode === "register" ? "/v1/auth/register" : "/v1/auth/login";
-              const response = await fetch(path, {
+              const email = authEmail.trim() || "admin";
+              const password = authPassword || "123456";
+              const response = await fetch("/v1/auth/login", {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "content-type": "application/json" },

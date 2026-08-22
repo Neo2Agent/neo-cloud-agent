@@ -114,7 +114,7 @@ neo --repo fixtures/toy-repo -p "只回复一个词：pong"
 | 控制面未开鉴权 | 无 token 也可以打 `/v1` |
 | `neo logout` | 删 credentials；若是 session 则 `POST /v1/auth/logout` |
 
-CLI **不**调用 `POST /v1/auth/bootstrap`（那是对话页避免把默认密码送进浏览器的捷径）。
+对话页不再自动登录，也不支持注册；`neo login --email admin --password 123456` 走 `POST /v1/auth/login`。
 
 不要把 Provider Key 交给 CLI。`GET /v1/settings/llm` 只用来看 `configured`；写入仍走已有 settings API 或服务器上的 `.neo/llm-upstream.env`。
 
