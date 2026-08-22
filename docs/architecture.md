@@ -810,5 +810,5 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 - Worker 把 `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` 注册成 pi `customTools`。Agent 用它们走控制面 commit / 开草稿 PR / 看 setup 与 egress / 抓网页 / 调 MCP / 上传产物；不要让 bash 拿长期 git token。`GET /v1/runs/:id/diagnostics` 给 UI，worker 走 `/internal`。
 - `packages/cli` 是 `/v1` 的 headless 宿主：创建 Run（`source: "cli"`）、订 SSE、跟进 / 归档 / diff / PR。不在终端里跑 pi，不持有 Provider Key。
 - DeepSeek：`deepseek-v4-flash` 是默认便宜模型；`deepseek-chat` / `deepseek-reasoner` 已退役，读写设置时改写成 flash。`deepseek-v4-pro` 显式保留。对话页可以切 Flash / Pro。
-- `WORKER_RUNTIME=vm`：无 KVM 时用 loop ext4 槽。空闲超时先 `persistWorkspaceTree` 再 `releaseVmSlot`（卸槽会擦盘）。两槽都忙则新对话 `run.queued`。
+- `WORKER_RUNTIME=vm`：无 KVM 时用 loop ext4 槽。空闲超时先 `persistWorkspaceTree` 再 `releaseVmSlot`（卸槽会擦盘）。两槽都忙则新对话 `run.queued`。loop/local worker 套 `WORKER_MEMORY_MIB` 堆上限；control-plane 有 cgroup `Delegate=` 时再套 RSS。归档 / 过期 run 不把事件树留在控制面内存里，补播从 persist 读并折叠 `message.delta`。
 - 对话页 React 包在 `packages/web`；control-plane 托管 `dist/`。工具卡和模型文字按时间拆行，见 §9.3。

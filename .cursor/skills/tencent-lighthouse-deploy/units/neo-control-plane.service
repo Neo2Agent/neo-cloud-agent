@@ -13,6 +13,8 @@ ExecStart=/usr/bin/pnpm --filter @neo-cloud-agent/control-plane start
 Restart=on-failure
 RestartSec=3
 KillMode=control-group
+Delegate=yes
+DelegateSubgroup=main
 
 [Install]
 WantedBy=multi-user.target

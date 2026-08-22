@@ -12,6 +12,7 @@ process.env.WORKER_IDLE_RELEASE_MS = "0";
 delete process.env.WORKER_WORKSPACE_MOUNT;
 
 const {
+  archiveRun,
   commitRun,
   createRun,
   enqueueFollowUp,
@@ -29,7 +30,7 @@ const {
   saveRunSession,
   takeInbound,
 } = await import("./orchestrator.js");
-const { listEvents } = await import("../events/bus.js");
+const { eventsForRun, listEvents } = await import("../events/bus.js");
 
 test("createRun mints a bootstrap JWT, copies the local repo, and queues the first prompt", async () => {
   const run = await createRun({
@@ -293,4 +294,28 @@ test("later runs reuse the captured environment build and skip install", async (
   assert.ok(listEvents(run.id).some((item) => item.category === "build"));
   const used = listEvents(run.id).find((item) => item.kind === "build.used");
   assert.ok(used?.data?.cloneMethod === "rename" || used?.data?.cloneMethod === "copy" || used?.data?.cloneMethod === "reflink");
+});
+
+test("archiving drops the hot event log but transcript can still reload from persist", async () => {
+  const run = await createRun({
+    prompt: "archive after a short turn",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  ingestEvents(run.id, [
+    {
+      id: `${run.id}-d1`,
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "message.delta",
+      title: "Assistant text",
+      data: { delta: "Hi" },
+    },
+  ]);
+  assert.ok(listEvents(run.id).length > 0);
+  await archiveRun(run.id);
+  assert.equal(getRun(run.id)?.status, "ARCHIVED");
+  assert.equal(listEvents(run.id).length, 0);
+  assert.ok(eventsForRun(run.id).some((item) => item.kind === "run.archived"));
 });

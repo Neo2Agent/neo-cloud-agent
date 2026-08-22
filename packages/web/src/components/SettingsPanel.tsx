@@ -6,6 +6,11 @@ export type LlmSettings = {
   model: string | null;
 };
 
+export type ScmSettings = {
+  configured: boolean;
+  method: "github-app" | "pat" | "none";
+};
+
 export type EnvOption = { id: string; name?: string };
 export type BuildOption = { id: string; envId?: string; status: string; draft?: boolean };
 
@@ -17,6 +22,8 @@ type Props = {
   builds: BuildOption[];
   llm: LlmSettings;
   llmKey: string;
+  scm: ScmSettings;
+  scmToken: string;
   onRepo: (value: string) => void;
   onEnv: (value: string) => void;
   onBuild: (value: string) => void;
@@ -24,6 +31,9 @@ type Props = {
   onLlmModel: (value: string) => void;
   onLlmKey: (value: string) => void;
   onSaveLlm: () => void;
+  onScmToken: (value: string) => void;
+  onSaveScm: () => void;
+  onClearScm: () => void;
   onWarm: () => void;
 };
 
@@ -35,6 +45,8 @@ export function SettingsPanel({
   builds,
   llm,
   llmKey,
+  scm,
+  scmToken,
   onRepo,
   onEnv,
   onBuild,
@@ -42,6 +54,9 @@ export function SettingsPanel({
   onLlmModel,
   onLlmKey,
   onSaveLlm,
+  onScmToken,
+  onSaveScm,
+  onClearScm,
   onWarm,
 }: Props) {
   const envBuilds = builds.filter((item) => item.status === "SUCCEEDED" && (!envId || item.envId === envId));
@@ -140,6 +155,39 @@ export function SettingsPanel({
         {llm.configured
           ? `已配置 ${deepseek ? (/pro/i.test(llm.model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash") : "OpenAI"}，对话走真实模型。`
           : "未配置 API Key，当前是 mock 回复。"}
+      </p>
+      <div className="env-row llm-row">
+        <label>
+          <span>GitHub PAT</span>
+          <input
+            id="scm-token"
+            name="scm-token"
+            type="password"
+            autoComplete="new-password"
+            placeholder={scm.configured ? "已保存，留空则保持" : "ghp_… 或 github_pat_…"}
+            value={scmToken}
+            onChange={(event) => onScmToken(event.target.value)}
+            onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                onSaveScm();
+              }
+            }}
+          />
+        </label>
+        <button className="ghost" id="save-scm" type="button" onClick={onSaveScm}>
+          保存
+        </button>
+        <button className="ghost" id="clear-scm" type="button" onClick={onClearScm} hidden={!scm.configured || scm.method === "github-app"}>
+          清除
+        </button>
+      </div>
+      <p className="hint" id="scm-status">
+        {scm.method === "github-app"
+          ? "已配置 GitHub App，Agent 可以 push / 开 PR。"
+          : scm.configured
+            ? "已配置 PAT，Agent 可以 push / 开 PR。"
+            : "未配置 GitHub 凭证，push 只会记成本地 local://pr。"}
       </p>
     </div>
   );

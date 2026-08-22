@@ -31,7 +31,8 @@ import { readWorkspaceLogTails } from "../env/logs.js";
 import { getEnvironment } from "../env/store.js";
 import { claimWarmSlot, refillWarmPool } from "../env/warm-pool.js";
 import { resolveEgressPolicy } from "../egress/resolve.js";
-import { listEvents, publish, resetHistory, seedEvents } from "../events/bus.js";
+import { dropHistory, eventsForRun, publish, resetHistory, seedEvents } from "../events/bus.js";
+import { keepHotHistory } from "../events/history.js";
 import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
 import { persistRunWorkspace } from "../runtime/persist-workspace.js";
@@ -108,7 +109,9 @@ function hydrateRecord(record: { run: Run; followUps?: FollowUp[]; inbound?: Wor
   runs.set(run.id, run);
   followUps.set(run.id, record.followUps ?? []);
   inbound.set(run.id, record.inbound ?? []);
-  seedEvents(run.id, loadPersistedEvents(run.id));
+  if (keepHotHistory(run.status)) {
+    seedEvents(run.id, loadPersistedEvents(run.id));
+  }
 }
 
 function hydrateFromDisk(): void {
@@ -966,6 +969,7 @@ export async function archiveRun(runId: string): Promise<Run> {
   run.vmSlotId = null;
   publish(event(runId, "run.archived", "Run archived"));
   flushRun(runId);
+  dropHistory(runId);
   void tryStartQueued();
   return run;
 }
@@ -1083,7 +1087,9 @@ export async function restoreArchivedRun(runId: string) {
   runs.set(run.id, run);
   followUps.set(run.id, restored.record.followUps ?? []);
   inbound.set(run.id, restored.record.inbound ?? []);
-  seedEvents(run.id, restored.events);
+  if (keepHotHistory(run.status)) {
+    seedEvents(run.id, restored.events);
+  }
   persistRunRecord({
     version: 1,
     run,
@@ -1149,7 +1155,7 @@ export function getRunDiagnostics(runId: string): RunDiagnostics {
         }
       : null,
     egress: egressForRun(run),
-    events: listEvents(runId).filter(
+    events: eventsForRun(runId).filter(
       (item) =>
         item.kind.startsWith("run.") ||
         item.kind.startsWith("scm.") ||

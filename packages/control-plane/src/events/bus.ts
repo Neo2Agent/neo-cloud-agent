@@ -2,7 +2,8 @@ import { EventEmitter } from "node:events";
 import { redactRunEvent, type RunEvent } from "@neo-cloud-agent/contracts";
 import { scheduleArchive } from "../objects/archive.js";
 import { controlPlaneSecrets } from "../security/secrets.js";
-import { persistEvent } from "../store/persist.js";
+import { loadPersistedEvents, persistEvent } from "../store/persist.js";
+import { compactClosedDeltaRuns, compactHotEvents } from "./history.js";
 
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
@@ -27,6 +28,7 @@ export function ingestRemoteEvent(event: RunEvent): boolean {
   const seq = event.seq ?? (list.at(-1)?.seq ?? 0) + 1;
   const clean = { ...event, seq };
   list.push(clean);
+  compactClosedDeltaRuns(list);
   history.set(event.runId, list);
   bus.emit(event.runId, clean);
   bus.emit("*", clean);
@@ -38,6 +40,7 @@ export function publish(event: RunEvent, options?: { persist?: boolean }): void 
   const seq = event.seq ?? (list.at(-1)?.seq ?? 0) + 1;
   const clean = { ...redactRunEvent(event, controlPlaneSecrets()), seq };
   list.push(clean);
+  compactClosedDeltaRuns(list);
   history.set(event.runId, list);
   if (options?.persist !== false) {
     persistEvent(clean);
@@ -53,8 +56,12 @@ export function publish(event: RunEvent, options?: { persist?: boolean }): void 
 export function seedEvents(runId: string, events: RunEvent[]): void {
   history.set(
     runId,
-    events.map((item, index) => ({ ...item, seq: item.seq ?? index + 1 })),
+    compactHotEvents(events.map((item, index) => ({ ...item, seq: item.seq ?? index + 1 }))),
   );
+}
+
+export function dropHistory(runId: string): void {
+  history.delete(runId);
 }
 
 export function resetHistory(): void {
@@ -65,8 +72,17 @@ export function listEvents(runId: string): RunEvent[] {
   return history.get(runId) ?? [];
 }
 
+/** Live RAM first; archived / evicted runs read the persisted log and collapse deltas. */
+export function eventsForRun(runId: string): RunEvent[] {
+  const hot = history.get(runId);
+  if (hot && hot.length > 0) {
+    return hot;
+  }
+  return compactHotEvents(loadPersistedEvents(runId));
+}
+
 export function listEventsAfter(runId: string, after?: string | null): RunEvent[] {
-  const all = listEvents(runId);
+  const all = eventsForRun(runId);
   if (!after) {
     return all;
   }
