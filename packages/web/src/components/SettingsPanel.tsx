@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import { AutomationsSettings } from "./AutomationsSettings";
 
 export type LlmSettings = {
   configured: boolean;
@@ -22,6 +23,7 @@ type Props = {
   builds: BuildOption[];
   llm: LlmSettings;
   llmKey: string;
+  token: string;
   scm: ScmSettings;
   scmToken: string;
   onRepo: (value: string) => void;
@@ -43,6 +45,7 @@ export function SettingsPanel({
   buildId,
   environments,
   builds,
+  token,
   llm,
   llmKey,
   scm,
@@ -189,6 +192,7 @@ export function SettingsPanel({
             ? "已配置 PAT，Agent 可以 push / 开 PR。"
             : "未配置 GitHub 凭证，push 只会记成本地 local://pr。"}
       </p>
+      <AutomationsSettings token={token} />
     </div>
   );
 }

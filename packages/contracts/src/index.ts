@@ -155,6 +155,16 @@ export {
 
 export type { DiskCloneMethod, DiskCloneResult, DiskKind, DiskSnapshot } from "./disk.js";
 export type {
+  Automation,
+  AutomationSchedule,
+  CreateAutomationRequest,
+} from "./automation.js";
+export {
+  describeAutomationSchedule,
+  nextAutomationRunAt,
+  parseAutomationSchedule,
+} from "./automation.js";
+export type {
   CreateSubscriptionRequest,
   RunSubscription,
   RunSubscriptionKind,

@@ -8,6 +8,7 @@ import type {
   CreatePullRequestRequest,
   CreateRunRequest,
   CreateSubscriptionRequest,
+  CreateAutomationRequest,
   RunEvent,
 } from "@neo-cloud-agent/contracts";
 import {
@@ -77,6 +78,15 @@ import { createEnvironment, getEnvironment, listEnvironments } from "../env/stor
 import { readyWarmCount } from "../env/warm-pool.js";
 import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
 import { GITHUB_WEBHOOK_PATH, publicGitHubWebhookInfo } from "../subscriptions/secret.js";
+import { createAutomation, deleteAutomation, listAutomations, updateAutomation } from "../automations/store.js";
+import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
+import {
+  publicNotifySettings,
+  TELEGRAM_WEBHOOK_PATH,
+  WECHAT_WEBHOOK_PATH,
+  writeNotifySettings,
+} from "../notify/settings.js";
+import { registerTelegramWebhook } from "../notify/telegram.js";
 import { serveWebFile } from "./static.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
 import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
@@ -137,6 +147,15 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
     return {};
   }
   return JSON.parse(raw.toString("utf8"));
+}
+
+function sendPlain(res: ServerResponse, status: number, body: string, contentType = "text/plain"): void {
+  res.writeHead(status, {
+    ...CORS,
+    "content-type": `${contentType}; charset=utf-8`,
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -204,6 +223,8 @@ export function createApiServer() {
           builds: listBuilds().filter((item) => item.status === "SUCCEEDED" && !item.draft).length,
           ...platformInfo(),
           githubWebhook: publicGitHubWebhookInfo(),
+          notify: publicNotifySettings(),
+          automations: listAutomations().length,
         });
         return;
       }
@@ -221,6 +242,41 @@ export function createApiServer() {
           raw,
         });
         send(res, result.status, result.body);
+        return;
+      }
+
+      if (path === TELEGRAM_WEBHOOK_PATH && method === "POST") {
+        const raw = await readRawBody(req);
+        let payload: unknown = {};
+        if (raw.length > 0) {
+          try {
+            payload = JSON.parse(raw.toString("utf8")) as unknown;
+          } catch {
+            send(res, 400, { error: "invalid_json" });
+            return;
+          }
+        }
+        const result = await ingestTelegramWebhook({
+          secretHeader: req.headers["x-telegram-bot-api-secret-token"],
+          payload,
+        });
+        send(res, result.status, result.body);
+        return;
+      }
+
+      if (path === WECHAT_WEBHOOK_PATH && (method === "GET" || method === "POST")) {
+        const verified = verifyWeChatQuery(url.searchParams);
+        if (!verified.ok) {
+          send(res, 401, { error: "invalid_signature" });
+          return;
+        }
+        if (method === "GET") {
+          sendPlain(res, 200, verified.echo ?? "");
+          return;
+        }
+        const raw = await readRawBody(req);
+        const result = await ingestWeChatXml(raw.toString("utf8"));
+        sendPlain(res, result.status, result.xml, "application/xml");
         return;
       }
 
@@ -339,6 +395,79 @@ export function createApiServer() {
             const message = error instanceof Error ? error.message : "invalid_scm_settings";
             send(res, 400, { error: message });
           }
+          return;
+        }
+        if (method === "GET" && path === "/v1/settings/notify") {
+          send(res, 200, publicNotifySettings());
+          return;
+        }
+        if (method === "POST" && path === "/v1/settings/notify") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as {
+              telegramBotToken?: string;
+              telegramChatId?: string;
+              wecomWebhook?: string;
+              httpUrl?: string;
+              wechatToken?: string;
+              defaultRepo?: string;
+              clear?: boolean;
+            };
+            const saved = writeNotifySettings(body);
+            if (body.telegramBotToken) {
+              void registerTelegramWebhook().catch(() => undefined);
+            }
+            send(res, 200, saved);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "invalid_notify_settings";
+            send(res, 400, { error: message });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/automations") {
+          send(res, 200, { automations: listAutomations() });
+          return;
+        }
+        if (method === "POST" && path === "/v1/automations") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 201, createAutomation((await readJson(req)) as CreateAutomationRequest));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "invalid_automation";
+            send(res, 400, { error: message });
+          }
+          return;
+        }
+        const automationMatch = /^\/v1\/automations\/([^/]+)$/.exec(path);
+        if (automationMatch && method === "POST") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const body = (await readJson(req)) as {
+            name?: string;
+            prompt?: string;
+            repoUrls?: string[];
+            enabled?: boolean;
+            schedule?: { kind: string };
+            delete?: boolean;
+          };
+          if (body.delete) {
+            send(res, deleteAutomation(automationMatch[1] ?? "") ? 200 : 404, { ok: true });
+            return;
+          }
+          const updated = updateAutomation(automationMatch[1] ?? "", body);
+          if (!updated) {
+            notFound(res);
+            return;
+          }
+          send(res, 200, updated);
           return;
         }
         if (method === "POST" && path === "/v1/runs") {

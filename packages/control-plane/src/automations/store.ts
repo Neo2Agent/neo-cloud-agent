@@ -1,0 +1,132 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import {
+  nextAutomationRunAt,
+  parseAutomationSchedule,
+  type Automation,
+  type AutomationSchedule,
+  type CreateAutomationRequest,
+} from "@neo-cloud-agent/contracts";
+import { controlStateDir } from "../store/persist.js";
+
+const MAX_AUTOMATIONS = 20;
+
+export function automationsFile(): string {
+  return path.join(controlStateDir(), "automations.json");
+}
+
+function readAll(): Automation[] {
+  try {
+    const parsed = JSON.parse(readFileSync(automationsFile(), "utf8")) as { automations?: unknown };
+    return Array.isArray(parsed.automations) ? parsed.automations.map(normalize).filter(Boolean) as Automation[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAll(items: Automation[]): void {
+  mkdirSync(path.dirname(automationsFile()), { recursive: true });
+  writeFileSync(automationsFile(), `${JSON.stringify({ version: 1, automations: items }, null, 2)}\n`, { mode: 0o600 });
+}
+
+function normalize(value: unknown): Automation | null {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  if (!record || typeof record.id !== "string" || typeof record.prompt !== "string") {
+    return null;
+  }
+  let schedule: AutomationSchedule;
+  try {
+    schedule = parseAutomationSchedule(record.schedule);
+  } catch {
+    return null;
+  }
+  const repos = Array.isArray(record.repoUrls) ? record.repoUrls.filter((item): item is string => typeof item === "string") : [];
+  const createdAt = typeof record.createdAt === "string" ? record.createdAt : new Date().toISOString();
+  return {
+    id: record.id,
+    name: typeof record.name === "string" && record.name.trim() ? record.name.trim() : record.prompt.slice(0, 24),
+    enabled: record.enabled !== false,
+    prompt: record.prompt,
+    repoUrls: repos,
+    schedule,
+    nextRunAt: typeof record.nextRunAt === "string" ? record.nextRunAt : nextAutomationRunAt(schedule).toISOString(),
+    lastRunAt: typeof record.lastRunAt === "string" ? record.lastRunAt : null,
+    lastRunId: typeof record.lastRunId === "string" ? record.lastRunId : null,
+    lastError: typeof record.lastError === "string" ? record.lastError : null,
+    createdAt,
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : createdAt,
+  };
+}
+
+export function listAutomations(): Automation[] {
+  return readAll().sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+export function createAutomation(input: CreateAutomationRequest): Automation {
+  const items = readAll();
+  if (items.length >= MAX_AUTOMATIONS) {
+    throw new Error(`at most ${MAX_AUTOMATIONS} automations`);
+  }
+  const schedule = parseAutomationSchedule(input.schedule);
+  const prompt = input.prompt.trim();
+  if (!prompt) throw new Error("prompt required");
+  const now = new Date();
+  const item: Automation = {
+    id: `auto_${randomUUID().slice(0, 8)}`,
+    name: (input.name ?? "").trim() || prompt.slice(0, 24),
+    enabled: input.enabled !== false,
+    prompt,
+    repoUrls: (input.repoUrls ?? []).map((item) => item.trim()).filter(Boolean),
+    schedule,
+    nextRunAt: nextAutomationRunAt(schedule, now).toISOString(),
+    lastRunAt: null,
+    lastRunId: null,
+    lastError: null,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+  items.push(item);
+  writeAll(items);
+  return item;
+}
+
+export function updateAutomation(
+  id: string,
+  patch: Partial<Pick<Automation, "name" | "prompt" | "repoUrls" | "enabled" | "schedule" | "lastRunAt" | "lastRunId" | "lastError" | "nextRunAt">>,
+): Automation | null {
+  const items = readAll();
+  const index = items.findIndex((item) => item.id === id);
+  if (index < 0) return null;
+  const current = items[index]!;
+  const schedule = patch.schedule ? parseAutomationSchedule(patch.schedule) : current.schedule;
+  const next: Automation = {
+    ...current,
+    name: patch.name !== undefined ? patch.name.trim() || current.name : current.name,
+    prompt: patch.prompt !== undefined ? patch.prompt.trim() || current.prompt : current.prompt,
+    repoUrls: patch.repoUrls ?? current.repoUrls,
+    enabled: patch.enabled ?? current.enabled,
+    schedule,
+    nextRunAt: patch.nextRunAt ?? (patch.schedule ? nextAutomationRunAt(schedule).toISOString() : current.nextRunAt),
+    lastRunAt: patch.lastRunAt !== undefined ? patch.lastRunAt : current.lastRunAt,
+    lastRunId: patch.lastRunId !== undefined ? patch.lastRunId : current.lastRunId,
+    lastError: patch.lastError !== undefined ? patch.lastError : current.lastError,
+    updatedAt: new Date().toISOString(),
+  };
+  items[index] = next;
+  writeAll(items);
+  return next;
+}
+
+export function deleteAutomation(id: string): boolean {
+  const items = readAll();
+  const next = items.filter((item) => item.id !== id);
+  if (next.length === items.length) return false;
+  writeAll(next);
+  return true;
+}
+
+export function dueAutomations(at = new Date()): Automation[] {
+  const iso = at.toISOString();
+  return readAll().filter((item) => item.enabled && item.nextRunAt <= iso);
+}
