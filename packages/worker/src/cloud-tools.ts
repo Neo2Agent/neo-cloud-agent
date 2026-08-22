@@ -7,8 +7,12 @@ export { CLOUD_SYSTEM_PROMPT, CLOUD_TOOL_NAMES };
 
 export const FILE_TOOL_NAMES = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
 
-export function sessionToolNames(): string[] {
-  return [...FILE_TOOL_NAMES, ...CLOUD_TOOL_NAMES];
+export function sessionToolNames(options?: { includeSubagent?: boolean }): string[] {
+  const cloud =
+    options?.includeSubagent === false
+      ? CLOUD_TOOL_NAMES.filter((name) => name !== "neo_subagent")
+      : [...CLOUD_TOOL_NAMES];
+  return [...FILE_TOOL_NAMES, ...cloud];
 }
 
 function toPiResult(result: CloudToolResult) {
@@ -34,6 +38,7 @@ export function createPiCloudTools(ctx: CloudToolContext) {
   const browse = byName.get("neo_browse")!;
   const mcpList = byName.get("neo_mcp_list")!;
   const mcpCall = byName.get("neo_mcp_call")!;
+  const subagent = byName.get("neo_subagent")!;
 
   return [
     defineTool({
@@ -109,6 +114,32 @@ export function createPiCloudTools(ctx: CloudToolContext) {
         arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
       }),
       execute: async (_id, params) => toPiResult(await mcpCall.execute(params)),
+    }),
+    defineTool({
+      name: subagent.name,
+      label: subagent.label,
+      description: subagent.description,
+      parameters: Type.Object({
+        agent: Type.Optional(Type.String({ description: "Single-mode agent name" })),
+        task: Type.Optional(Type.String({ description: "Single-mode task text" })),
+        tasks: Type.Optional(
+          Type.Array(
+            Type.Object({
+              agent: Type.String(),
+              task: Type.String(),
+            }),
+          ),
+        ),
+        chain: Type.Optional(
+          Type.Array(
+            Type.Object({
+              agent: Type.String(),
+              task: Type.String(),
+            }),
+          ),
+        ),
+      }),
+      execute: async (_id, params) => toPiResult(await subagent.execute((params ?? {}) as Record<string, unknown>)),
     }),
   ];
 }

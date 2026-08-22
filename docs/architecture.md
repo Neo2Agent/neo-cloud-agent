@@ -747,7 +747,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 - Firecracker / Cloud Hypervisor live-fork（正在跑的 VM 热分叉）
 - 失败 Build 不影响 fleets
 - 多仓、自动化（cron / GitHub webhook）、OIDC
-- 子 Agent：用 pi 的自定义 tool 再开一个同镜像 worker（不要让 loop 回控制面）
+- 子 Agent：已落地 `neo_subagent`。契约对齐 pi 官方 `subagent` 扩展（scout / planner / reviewer / worker，single / parallel / chain，`.pi/agents/*.md`）。实现走 worker 内二次 `createAgentSession`，不 spawn `pi` CLI，也不把 loop 打回控制面。子会话的 `agent.end` 不会把父 Run 标成 IDLE。
 
 ---
 
@@ -760,6 +760,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Builds + warm fork | `build-service` + snapshot | 先冷快照，后热 fork |
 | 模型在云端 | LLM Gateway | VM 无 Provider Key |
 | 跟进队列 | Redis + pi `steer`/`followUp` | 不要自研第二套 loop |
+| Subagents / Task | `neo_subagent` | 对齐 pi 官方 subagent 契约；SDK 嵌套 session，不用 `pi --mode json` |
 | Cloud MCP | `neo-diag` extension | 动态工具，不必改 pi |
 | MCP / Hooks | pi extensions + 可选 hooks 目录 | |
 | Artifacts / 远程桌面 | artifact-service + 可选 sidecar | 桌面可后置 |

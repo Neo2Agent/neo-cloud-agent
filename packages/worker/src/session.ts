@@ -14,6 +14,7 @@ import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./clo
 import { getWorkerConfig } from "./config.js";
 import { materializeInboundImages } from "./images.js";
 import { gatewayModelSpec } from "./model-spec.js";
+import { executeNestedSubagent, type SubagentEventHandler } from "./subagent.js";
 
 export interface OpenSessionInput {
   cwd: string;
@@ -23,16 +24,20 @@ export interface OpenSessionInput {
   gatewayUrl: string;
   modelId: string;
   controlPlaneUrl?: string;
+  tools?: string[];
+  systemPrompt?: string;
+  allowSubagent?: boolean;
+  onSubagentEvent?: SubagentEventHandler;
 }
 
-function isolatedLoader(): ResourceLoader {
+function isolatedLoader(systemPrompt = CLOUD_SYSTEM_PROMPT): ResourceLoader {
   return {
     getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
     getSkills: () => ({ skills: [], diagnostics: [] }),
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => CLOUD_SYSTEM_PROMPT,
+    getSystemPrompt: () => systemPrompt,
     getSystemPromptSource: () => undefined,
     getAppendSystemPrompt: () => [],
     getAppendSystemPromptSources: () => [],
@@ -84,11 +89,19 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
   }
 
   const config = getWorkerConfig();
+  const allowSubagent = input.allowSubagent !== false;
   const customTools = createPiCloudTools({
     runId: input.runId,
     jwt: input.jwt,
     controlPlaneUrl: input.controlPlaneUrl ?? config.controlPlaneUrl,
     workspaceDir: input.cwd,
+    runSubagent: allowSubagent
+      ? (params) =>
+          executeNestedSubagent({
+            ...input,
+            params,
+          })
+      : undefined,
   });
 
   const { session } = await createAgentSession({
@@ -97,8 +110,8 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     model,
     thinkingLevel: "off",
     modelRuntime,
-    resourceLoader: isolatedLoader(),
-    tools: sessionToolNames(),
+    resourceLoader: isolatedLoader(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT),
+    tools: input.tools ?? sessionToolNames({ includeSubagent: allowSubagent }),
     customTools,
     sessionManager: SessionManager.create(input.cwd, input.sessionDir),
     settingsManager: SettingsManager.inMemory({

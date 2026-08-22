@@ -83,6 +83,13 @@ async function main(): Promise<void> {
     jwt: bootstrap.jwt,
     gatewayUrl: bootstrap.llmGatewayUrl,
     modelId: bootstrap.model,
+    onSubagentEvent: (event, nest) => {
+      enqueueEvents(config.runId, stampWorkerSeq(toRunEvents(config.runId, event, { nest }), workerSeq)).catch(
+        (error: unknown) => {
+          console.error("failed to push subagent events", error);
+        },
+      );
+    },
   });
 
   const pushContext = (reportedTokens?: number) => {

@@ -20,7 +20,9 @@ test("session tools include filesystem tools plus neo-git, neo-pr, and neo-diag"
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_artifact_upload/);
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_browse/);
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_mcp_list/);
+  assert.match(CLOUD_SYSTEM_PROMPT, /neo_subagent/);
   assert.match(CLOUD_SYSTEM_PROMPT, /Do not `git commit`/);
+  assert.deepEqual(sessionToolNames({ includeSubagent: false }).includes("neo_subagent"), false);
 });
 
 test("createPiCloudTools wraps extension execute into pi tool results", async () => {
@@ -39,7 +41,12 @@ test("createPiCloudTools wraps extension execute into pi tool results", async ()
   assert.ok(commit);
   const result = await commit.execute("call-1", { message: "  " }, undefined, undefined, {} as never);
   assert.equal(result.content[0]?.type, "text");
-  assert.match(result.content[0]?.text ?? "", /required/i);
+  assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /required/i);
+  const subagent = tools.find((item) => item.name === "neo_subagent");
+  assert.ok(subagent);
+  const delegated = await subagent.execute("call-2", { agent: "scout", task: "find auth" }, undefined, undefined, {} as never);
+  const delegatedText = delegated.content[0]?.type === "text" ? delegated.content[0].text : "";
+  assert.match(delegatedText, /worker session|scout/i);
 });
 
 test("gateway model spec uses each model's advertised window", () => {

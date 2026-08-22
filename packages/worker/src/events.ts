@@ -99,22 +99,55 @@ export function stampWorkerSeq(events: RunEvent[], next: { value: number }): Run
   }));
 }
 
+export type RunEventMapOptions = {
+  nest?: { id: string; agent: string };
+};
+
+function withNest(data: Record<string, unknown> | undefined, nest?: { id: string; agent: string }): Record<string, unknown> | undefined {
+  if (!nest) {
+    return data;
+  }
+  return {
+    ...(data ?? {}),
+    subagentId: nest.id,
+    subagent: nest.agent,
+    details: {
+      ...((data?.details as Record<string, unknown> | undefined) ?? {}),
+      subagent: nest.agent,
+      subagentId: nest.id,
+    },
+  };
+}
+
 /** Map a pi AgentSession event onto one or more control-plane RunEvents. */
-export function toRunEvents(runId: string, event: LooseAgentEvent): RunEvent[] {
+export function toRunEvents(runId: string, event: LooseAgentEvent, options?: RunEventMapOptions): RunEvent[] {
+  const nest = options?.nest;
   switch (event.type) {
     case "agent_start":
+      if (nest) {
+        return [];
+      }
       return [makeEvent(runId, "agent.start", "Agent turn started")];
     case "agent_end": {
-      const events = [makeEvent(runId, "agent.end", "Agent turn finished")];
       const usage = collectUsage(event);
+      if (nest) {
+        return usage ? [makeEvent(runId, "llm.usage", "Token usage", withNest(usage, nest))] : [];
+      }
+      const events = [makeEvent(runId, "agent.end", "Agent turn finished")];
       if (usage) {
         events.push(makeEvent(runId, "llm.usage", "Token usage", usage));
       }
       return events;
     }
     case "message_start":
+      if (nest) {
+        return [];
+      }
       return [makeEvent(runId, "message.start", "Assistant message started")];
     case "message_update": {
+      if (nest) {
+        return [];
+      }
       if (event.assistantMessageEvent?.type === "text_delta" && event.assistantMessageEvent.delta) {
         return [
           makeEvent(runId, "message.delta", "Assistant text", {
@@ -125,26 +158,42 @@ export function toRunEvents(runId: string, event: LooseAgentEvent): RunEvent[] {
       return [];
     }
     case "message_end":
+      if (nest) {
+        return [];
+      }
       return [makeEvent(runId, "message.end", "Assistant message completed")];
     case "tool_execution_start":
       return [
-        makeEvent(runId, "tool.start", `Tool ${event.toolName ?? "unknown"}`, toolPayload(event)),
+        makeEvent(
+          runId,
+          "tool.start",
+          nest ? `${nest.agent} · ${event.toolName ?? "unknown"}` : `Tool ${event.toolName ?? "unknown"}`,
+          withNest(toolPayload(event), nest),
+        ),
       ];
     case "tool_execution_update":
       return [
         makeEvent(
           runId,
           "tool.update",
-          `Tool ${event.toolName ?? "unknown"}`,
-          toolPayload(event, collectText(event.partialResult)),
+          nest ? `${nest.agent} · ${event.toolName ?? "unknown"}` : `Tool ${event.toolName ?? "unknown"}`,
+          withNest(toolPayload(event, collectText(event.partialResult)), nest),
         ),
       ];
     case "tool_execution_end":
       return [
-        makeEvent(runId, "tool.end", `Tool ${event.toolName ?? "unknown"} finished`, {
-          ...toolPayload(event, collectText(event.result)),
-          isError: event.isError === true,
-        }),
+        makeEvent(
+          runId,
+          "tool.end",
+          nest ? `${nest.agent} · ${event.toolName ?? "unknown"} finished` : `Tool ${event.toolName ?? "unknown"} finished`,
+          withNest(
+            {
+              ...toolPayload(event, collectText(event.result)),
+              isError: event.isError === true,
+            },
+            nest,
+          ),
+        ),
       ];
     default: {
       const usage = collectUsage(event);

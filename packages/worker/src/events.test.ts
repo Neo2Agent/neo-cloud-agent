@@ -50,6 +50,23 @@ test("maps pi session events to RunEvents", () => {
   assert.equal(update[0]?.data?.output, "README");
 });
 
+test("nested subagent events skip parent lifecycle kinds", () => {
+  const nest = { id: "sa-1", agent: "scout" };
+  assert.deepEqual(toRunEvents("run1", { type: "agent_start" }, { nest }), []);
+  assert.deepEqual(toRunEvents("run1", { type: "message_start" }, { nest }), []);
+  const usage = toRunEvents("run1", { type: "agent_end", usage: { input: 3, output: 1 } }, { nest });
+  assert.equal(usage[0]?.kind, "llm.usage");
+  assert.equal(usage.some((item) => item.kind === "agent.end"), false);
+  const tool = toRunEvents(
+    "run1",
+    { type: "tool_execution_start", toolName: "grep", args: { pattern: "auth" } },
+    { nest },
+  );
+  assert.equal(tool[0]?.kind, "tool.start");
+  assert.equal(tool[0]?.data?.subagent, "scout");
+  assert.match(tool[0]?.title ?? "", /scout/);
+});
+
 test("maps token usage on agent_end", () => {
   const events = toRunEvents("run1", {
     type: "agent_end",

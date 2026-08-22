@@ -111,6 +111,29 @@ export {
 export type { ModelLimits } from "./models.js";
 export { resolveModelLimits } from "./models.js";
 export { BASELINE_TOOL_TEXT, CLOUD_SYSTEM_PROMPT } from "./system-prompt.js";
+export {
+  BUNDLED_SUBAGENTS,
+  BUNDLED_SUBAGENT_NAMES,
+  MAX_SUBAGENT_CONCURRENCY,
+  MAX_SUBAGENT_TASKS,
+  SUBAGENT_TOOL_NAME,
+  applyChainPlaceholder,
+  formatSubagentResult,
+  listSubagentNames,
+  mergeSubagentDefinitions,
+  parseAgentMarkdown,
+  parseSubagentRequest,
+  parseToolList,
+  resolveSubagent,
+} from "./subagent.js";
+export type {
+  BundledSubagentName,
+  ParsedSubagentRequest,
+  SubagentDefinition,
+  SubagentMode,
+  SubagentSource,
+  SubagentTask,
+} from "./subagent.js";
 export type { ContextUsageBucket, ContextUsageBucketId, ContextUsageSnapshot } from "./context-usage.js";
 export {
   CONTEXT_BUCKET_LABELS,

@@ -15,6 +15,8 @@ export interface CloudToolContext {
   jwt: string;
   workspaceDir: string;
   fetch?: CloudToolFetch;
+  /** Worker-injected nested session runner. Missing in unit tests that only check schemas. */
+  runSubagent?: (params: Record<string, unknown>) => Promise<CloudToolResult>;
 }
 
 export interface CloudToolResult {
