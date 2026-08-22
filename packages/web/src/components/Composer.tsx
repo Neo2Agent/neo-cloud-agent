@@ -22,6 +22,11 @@ type Props = {
   llmKey: string;
   images: ImageRef[];
   vmHint: string;
+  busy?: boolean;
+  stopping?: boolean;
+  archived?: boolean;
+  canStop?: boolean;
+  activity?: string;
   onPrompt: (value: string) => void;
   onRepo: (value: string) => void;
   onEnv: (value: string) => void;
@@ -33,6 +38,7 @@ type Props = {
   onSaveLlm: () => void;
   onWarm: () => void;
   onSend: () => void;
+  onStop?: () => void;
 };
 
 export function Composer({
@@ -47,6 +53,11 @@ export function Composer({
   llmKey,
   images,
   vmHint,
+  busy = false,
+  stopping = false,
+  archived = false,
+  canStop = false,
+  activity,
   onPrompt,
   onRepo,
   onEnv,
@@ -58,16 +69,25 @@ export function Composer({
   onSaveLlm,
   onWarm,
   onSend,
+  onStop,
 }: Props) {
   const envBuilds = builds.filter((item) => item.status === "SUCCEEDED" && (!envId || item.envId === envId));
   const deepseek = llm.upstream !== "openai";
+  const empty = !prompt.trim() && images.length === 0;
+  const hint = archived ? "对话已归档，无法继续发送。" : busy ? (activity ?? "正在进行…") : vmHint;
+  const placeholder = archived
+    ? "对话已归档。"
+    : busy
+      ? "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
+      : "描述任务。Enter 发送，Shift+Enter 换行。可直接粘贴图片。";
   return (
     <form
-      className="composer"
+      className={busy ? "composer is-busy" : archived ? "composer is-locked" : "composer"}
       id="composer"
+      aria-busy={busy}
       onSubmit={(event: FormEvent) => {
         event.preventDefault();
-        onSend();
+        if (!busy && !archived) onSend();
       }}
     >
       <div className="settings-panel" id="settings-panel" hidden={!settingsOpen}>
@@ -184,8 +204,9 @@ export function Composer({
         id="prompt"
         name="prompt"
         rows={3}
-        placeholder="描述任务。Enter 发送，Shift+Enter 换行。可直接粘贴图片。"
-        required={images.length === 0}
+        placeholder={placeholder}
+        required={!busy && !archived && images.length === 0}
+        disabled={archived}
         value={prompt}
         onChange={(event) => onPrompt(event.target.value)}
         onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -199,17 +220,27 @@ export function Composer({
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
-            (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
+            if (!busy && !archived) {
+              (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
+            }
           }
         }}
       />
       <div className="composer-bar">
-        <p className="hint" id="vm-status">
-          {vmHint}
+        <p className="hint" id="vm-status" data-busy={busy ? "true" : "false"}>
+          {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
+          {hint}
         </p>
-        <button type="submit" id="send">
-          发送
-        </button>
+        {busy && canStop ? (
+          <button type="button" id="abort" className="stop" aria-label="停止生成" onClick={onStop}>
+            <span className="stop-icon" aria-hidden="true" />
+            {stopping ? "停止中" : "停止"}
+          </button>
+        ) : (
+          <button type="submit" id="send" disabled={archived || empty || busy}>
+            {busy ? "发送中" : "发送"}
+          </button>
+        )}
       </div>
     </form>
   );

@@ -3,11 +3,14 @@ import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { fileToolDiff, toolArgPreview } from "../format";
 import { MarkdownBody } from "../markdown";
+import { shouldShowThinking } from "../turn";
 
 type Props = {
   messages: TranscriptMessage[];
   remaining: number;
   empty: boolean;
+  busy?: boolean;
+  activity?: string;
   onLoadOlder: () => void;
 };
 
@@ -71,7 +74,7 @@ function ArtifactCard({ message }: { message: TranscriptMessage }) {
   );
 }
 
-export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
+export function Transcript({ messages, remaining, empty, busy = false, activity, onLoadOlder }: Props) {
   const scroller = useRef<HTMLElement>(null);
   const stick = useRef(true);
   const restore = useRef<{ height: number; top: number } | null>(null);
@@ -88,7 +91,7 @@ export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
     if (stick.current) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [messages, remaining]);
+  }, [messages, remaining, busy, activity]);
 
   const loadOlder = () => {
     if (remaining <= 0 || restore.current) return;
@@ -102,6 +105,7 @@ export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
       className="transcript"
       id="transcript"
       aria-live="polite"
+      aria-busy={busy}
       ref={scroller}
       onScroll={() => {
         const node = scroller.current;
@@ -187,6 +191,19 @@ export function Transcript({ messages, remaining, empty, onLoadOlder }: Props) {
           );
         })
       )}
+      {shouldShowThinking(busy, messages) && !empty ? (
+        <div className="turn-progress" id="turn-progress">
+          <span className="who">Agent</span>
+          <div className="think-line">
+            <span className="think-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span>{activity || "正在思考…"}</span>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

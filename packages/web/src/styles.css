@@ -103,8 +103,13 @@ button[type="submit"] {
 }
 
 .new-chat:hover,
-button[type="submit"]:hover {
+button[type="submit"]:hover:not(:disabled) {
   background: var(--accent-2);
+}
+
+button[type="submit"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .run-list {
@@ -147,11 +152,18 @@ button[type="submit"]:hover {
 }
 
 .run-item strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.run-item[data-busy="true"] small {
+  color: var(--run);
 }
 
 .sidebar-foot {
@@ -194,6 +206,10 @@ button[type="submit"]:hover {
 
 .vm-slot[data-current="true"] {
   outline: 2px solid #93c5fd;
+}
+
+.vm-slot[data-active="true"] small {
+  color: var(--run);
 }
 
 .vm-slot small {
@@ -266,6 +282,9 @@ h1 {
 }
 
 .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border-radius: 999px;
   padding: 5px 10px;
   font-size: 12px;
@@ -275,7 +294,9 @@ h1 {
 
 .status[data-state="RUNNING"],
 .status[data-state="PROVISIONING"],
-.status[data-state="INSTALLING"] {
+.status[data-state="INSTALLING"],
+.status[data-state="NOT_YET_STARTED"],
+.status[data-state="WAITING_FOR_BACKGROUND_WORK"] {
   color: var(--run);
   border-color: #b2ddff;
   background: #eff8ff;
@@ -287,7 +308,6 @@ h1 {
   background: #ecfdf3;
 }
 
-.status[data-state="NOT_YET_STARTED"],
 .status[data-state="ARCHIVED"] {
   color: var(--muted);
 }
@@ -581,6 +601,110 @@ h1 {
   overflow: auto;
 }
 
+.composer.is-busy {
+  border-color: #bfdbfe;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08), var(--shadow);
+}
+
+.turn-progress {
+  align-self: flex-start;
+  max-width: 760px;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+
+.think-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.think-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.think-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--run);
+  animation: think-bounce 1.2s ease-in-out infinite;
+}
+
+.think-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.think-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes think-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--run);
+  box-shadow: 0 0 0 0 rgba(23, 92, 211, 0.45);
+  animation: pulse-dot 1.4s ease-out infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes pulse-dot {
+  0% {
+    box-shadow: 0 0 0 0 rgba(23, 92, 211, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(23, 92, 211, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(23, 92, 211, 0);
+  }
+}
+
+button.stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: #111827;
+  color: #ffffff;
+  font-weight: 600;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+button.stop:hover {
+  background: #030712;
+}
+
+.stop-icon {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #ffffff;
+}
+
 .settings-panel {
   margin-bottom: 10px;
   padding: 10px;
@@ -767,6 +891,13 @@ textarea {
 .hint {
   margin: 0;
   font-size: 12px;
+}
+
+.composer-bar .hint[data-busy="true"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--run);
 }
 
 .auth-gate {

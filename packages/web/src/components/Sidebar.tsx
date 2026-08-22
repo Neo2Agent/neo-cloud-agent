@@ -1,5 +1,6 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { preview, slotLabel, STATUS_LABELS } from "../format";
+import { isActiveRunStatus } from "../turn";
 
 export type VmSlotView = {
   id: string;
@@ -68,12 +69,14 @@ export function Sidebar({
               const occupant = items.find((run) => run.id === slot.runId || run.vmSlotId === slot.id);
               const busy = slot.status === "busy" || Boolean(slot.runId);
               const current = Boolean(currentRunId && (slot.runId === currentRunId || occupant?.id === currentRunId));
+              const running = Boolean(occupant && isActiveRunStatus(occupant.status));
               const title = occupant ? preview(occupant.prompt) : busy ? slot.runId?.slice(0, 8) : "空闲";
               return (
                 <article
                   key={slot.id}
                   className="vm-slot"
                   data-busy={String(busy)}
+                  data-active={String(running)}
                   data-current={String(current)}
                   data-open={occupant?.id || slot.runId || undefined}
                   onClick={() => {
@@ -92,21 +95,28 @@ export function Sidebar({
         </div>
       </section>
       <div className="run-list" id="run-list">
-        {items.map((run) => (
-          <button
-            key={run.id}
-            className={`run-item${run.id === currentRunId ? " active" : ""}`}
-            data-id={run.id}
-            type="button"
-            onClick={() => onOpenRun(run.id)}
-          >
-            <strong>{preview(run.prompt)}</strong>
-            <small>
-              {STATUS_LABELS[run.status] ?? run.status}
-              {run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
-            </small>
-          </button>
-        ))}
+        {items.map((run) => {
+          const running = isActiveRunStatus(run.status);
+          return (
+            <button
+              key={run.id}
+              className={`run-item${run.id === currentRunId ? " active" : ""}${running ? " busy" : ""}`}
+              data-id={run.id}
+              data-busy={running ? "true" : "false"}
+              type="button"
+              onClick={() => onOpenRun(run.id)}
+            >
+              <strong>
+                {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
+                {preview(run.prompt)}
+              </strong>
+              <small>
+                {STATUS_LABELS[run.status] ?? run.status}
+                {run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
+              </small>
+            </button>
+          );
+        })}
       </div>
       <footer className="sidebar-foot">
         <div className="account" id="account">

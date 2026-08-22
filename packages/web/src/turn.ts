@@ -1,0 +1,161 @@
+import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
+import type { ImageRef } from "@neo-cloud-agent/contracts/run";
+import { STATUS_LABELS } from "./format";
+
+export const ACTIVE_RUN_STATUSES = [
+  "NOT_YET_STARTED",
+  "PROVISIONING",
+  "INSTALLING",
+  "RUNNING",
+  "WAITING_FOR_BACKGROUND_WORK",
+] as const;
+
+const SETUP_STATUSES = new Set(["NOT_YET_STARTED", "PROVISIONING", "INSTALLING"]);
+const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived", "agent.end"]);
+
+export type PendingUser = {
+  id: string;
+  text: string;
+  images?: ImageRef[];
+  createdAt: string;
+};
+
+export function isActiveRunStatus(status?: string | null): boolean {
+  return Boolean(status && (ACTIVE_RUN_STATUSES as readonly string[]).includes(status));
+}
+
+export function isComposerClosed(status?: string | null): boolean {
+  return status === "ARCHIVED" || status === "EXPIRED";
+}
+
+export function hasLiveAssistantWork(messages: TranscriptMessage[]): boolean {
+  return messages.some((message) => {
+    if (message.role !== "assistant") return false;
+    if (message.streaming && message.text.trim()) return true;
+    return Boolean(message.tools?.some((tool) => tool.status === "running"));
+  });
+}
+
+export function isAssistantStreaming(messages: TranscriptMessage[]): boolean {
+  return messages.some((message) => message.role === "assistant" && message.streaming && Boolean(message.text.trim()));
+}
+
+export function runningToolName(messages: TranscriptMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const running = messages[index]?.tools?.find((tool) => tool.status === "running");
+    if (running?.name) return running.name;
+  }
+  return null;
+}
+
+export function isTurnBusy(input: {
+  sending?: boolean;
+  stopping?: boolean;
+  pending?: boolean;
+  status?: string | null;
+  messages?: TranscriptMessage[];
+}): boolean {
+  if (input.sending || input.stopping || input.pending) return true;
+  if (isActiveRunStatus(input.status)) return true;
+  return Boolean(input.messages && hasLiveAssistantWork(input.messages));
+}
+
+export function shouldShowThinking(busy: boolean, messages: TranscriptMessage[]): boolean {
+  if (!busy || hasLiveAssistantWork(messages)) return false;
+  const last = [...messages].reverse().find((message) => message.role === "user" || message.role === "assistant");
+  return !last || last.role === "user";
+}
+
+export function activityLabel(input: {
+  sending?: boolean;
+  stopping?: boolean;
+  status?: string | null;
+  streaming?: boolean;
+  runningTool?: string | null;
+}): string {
+  if (input.stopping) return "正在停止…";
+  if (input.sending) return "正在发送…";
+  if (input.status === "NOT_YET_STARTED") return "排队等待空闲 VM…";
+  if (input.status === "PROVISIONING") return "正在准备运行环境…";
+  if (input.status === "INSTALLING") return "正在安装环境…";
+  if (input.runningTool) return `正在执行 ${input.runningTool}…`;
+  if (input.streaming) return "正在回复…";
+  if (input.status === "WAITING_FOR_BACKGROUND_WORK") return "后台任务进行中…";
+  if (input.status === "RUNNING") return "正在思考…";
+  return "进行中…";
+}
+
+export function turnStatusLabel(input: { sending?: boolean; stopping?: boolean; status?: string | null }): {
+  state: string;
+  label: string;
+} {
+  if (input.stopping) return { state: "RUNNING", label: "正在停止" };
+  if (input.sending && !isActiveRunStatus(input.status)) return { state: "RUNNING", label: "发送中" };
+  const status = input.status ?? "idle";
+  return { state: status, label: STATUS_LABELS[status] ?? input.status ?? "就绪" };
+}
+
+/** Map a live event onto the run status the chat UI should show. */
+export function statusFromEventKind(kind: string, current?: string | null): string | null {
+  switch (kind) {
+    case "run.install_started":
+      return "INSTALLING";
+    case "run.provisioning":
+      return "PROVISIONING";
+    case "run.running":
+    case "agent.start":
+      return "RUNNING";
+    case "user.message":
+    case "followup.queued":
+      if (isComposerClosed(current) || (current && SETUP_STATUSES.has(current)) || current === "RUNNING" || current === "WAITING_FOR_BACKGROUND_WORK") {
+        return null;
+      }
+      return "RUNNING";
+    case "run.idle":
+      return "IDLE";
+    case "agent.end":
+      return current === "RUNNING" || current === "WAITING_FOR_BACKGROUND_WORK" ? "IDLE" : null;
+    case "run.queued":
+      return "NOT_YET_STARTED";
+    case "run.archived":
+      return "ARCHIVED";
+    case "run.error":
+      return "ERROR";
+    default:
+      return null;
+  }
+}
+
+export function isTerminalTurnEvent(kind: string): boolean {
+  return TERMINAL_EVENT_KINDS.has(kind);
+}
+
+export function withPendingUser(messages: TranscriptMessage[], pending: PendingUser | null): TranscriptMessage[] {
+  if (!pending) return messages;
+  const arrived = messages.some(
+    (message) =>
+      message.role === "user" &&
+      message.text === pending.text &&
+      Date.parse(message.createdAt) >= Date.parse(pending.createdAt) - 5000,
+  );
+  if (arrived) return messages;
+  return [
+    ...messages,
+    {
+      id: pending.id,
+      role: "user",
+      text: pending.text,
+      createdAt: pending.createdAt,
+      images: pending.images?.length ? pending.images : undefined,
+    },
+  ];
+}
+
+export function pendingUserArrived(messages: TranscriptMessage[], pending: PendingUser): boolean {
+  return messages.some(
+    (message) =>
+      message.role === "user" &&
+      message.text === pending.text &&
+      Date.parse(message.createdAt) >= Date.parse(pending.createdAt) - 5000,
+  );
+}

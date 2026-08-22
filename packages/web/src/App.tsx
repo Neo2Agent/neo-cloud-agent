@@ -9,7 +9,21 @@ import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
-import { formatUsage, modelLabel, preview, shortId, slotLabel, STATUS_LABELS } from "./format";
+import { formatUsage, modelLabel, preview, shortId, slotLabel } from "./format";
+import {
+  activityLabel,
+  isActiveRunStatus,
+  isAssistantStreaming,
+  isComposerClosed,
+  isTerminalTurnEvent,
+  isTurnBusy,
+  pendingUserArrived,
+  runningToolName,
+  statusFromEventKind,
+  turnStatusLabel,
+  withPendingUser,
+  type PendingUser,
+} from "./turn";
 
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
 const HISTORY_PAGE = 40;
@@ -90,6 +104,9 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [llm, setLlm] = useState<LlmSettings>({ configured: false, upstream: "deepseek", model: null });
   const [llmKey, setLlmKey] = useState("");
+  const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [pendingTurn, setPendingTurn] = useState<PendingUser | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window === "undefined") return true;
     const saved = window.localStorage.getItem("neo.sidebar");
@@ -99,7 +116,12 @@ export function App() {
   });
   const sourceRef = useRef<EventSource | null>(null);
   const tokenRef = useRef(token);
+  const sendingRef = useRef(false);
+  const pendingRef = useRef<PendingUser | null>(null);
+  const keepPendingRef = useRef(false);
   tokenRef.current = token;
+  sendingRef.current = sending;
+  pendingRef.current = pendingTurn;
 
   const snapshot = useMemo(() => buildTranscriptSnapshot(runId ?? "local", events), [runId, events]);
   const visibleMessages = snapshot.messages.slice(shownFrom);
@@ -125,6 +147,11 @@ export function App() {
     sourceRef.current = null;
   }, []);
 
+  const patchRun = useCallback((id: string, patch: (run: Run) => Run) => {
+    setCurrentRun((run) => (run && run.id === id ? patch(run) : run));
+    setRuns((prev) => prev.map((run) => (run.id === id ? patch(run) : run)));
+  }, []);
+
   const listen = useCallback(
     (id: string, after?: string | null) => {
       closeStream();
@@ -136,29 +163,25 @@ export function App() {
       source.onmessage = (message) => {
         const event = JSON.parse(message.data) as RunEvent;
         setEvents((prev) => (prev.some((item) => item.id === event.id) ? prev : [...prev, event]));
+        const nextStatus = statusFromEventKind(event.kind, undefined);
+        if (nextStatus || event.kind === "user.message" || event.kind === "followup.queued" || event.kind === "agent.end") {
+          patchRun(id, (run) => {
+            const status = statusFromEventKind(event.kind, run.status);
+            return status ? { ...run, status: status as Run["status"] } : run;
+          });
+        }
+        if (isTerminalTurnEvent(event.kind)) {
+          setStopping(false);
+          setSending(false);
+        }
         if (event.kind === "scm.pr_opened" && event.data?.url) {
-          setCurrentRun((run) =>
-            run
-              ? {
-                  ...run,
-                  pullRequests: [{ url: String(event.data?.url), draft: event.data?.draft !== false, repoUrl: "", branch: "", number: null, title: "" }],
-                }
-              : run,
-          );
+          patchRun(id, (run) => ({
+            ...run,
+            pullRequests: [{ url: String(event.data?.url), draft: event.data?.draft !== false, repoUrl: "", branch: "", number: null, title: "" }],
+          }));
         }
-        if (event.kind === "run.install_started") {
-          setCurrentRun((run) => (run ? { ...run, status: "INSTALLING" } : run));
-        }
-        if (event.kind === "run.running" || event.kind === "run.provisioning") {
-          setCurrentRun((run) => (run ? { ...run, status: event.kind === "run.provisioning" ? "PROVISIONING" : "RUNNING" } : run));
-        }
-        if (event.kind === "run.idle") setCurrentRun((run) => (run ? { ...run, status: "IDLE" } : run));
-        if (event.kind === "run.queued") setCurrentRun((run) => (run ? { ...run, status: "NOT_YET_STARTED" } : run));
-        if (event.kind === "run.archived") setCurrentRun((run) => (run ? { ...run, status: "ARCHIVED" } : run));
-        if (event.kind === "run.error") setCurrentRun((run) => (run ? { ...run, status: "ERROR" } : run));
         if (event.kind === "llm.usage") {
-          setCurrentRun((run) => {
-            if (!run) return run;
+          patchRun(id, (run) => {
             const promptTokens = Number(event.data?.promptTokens ?? 0);
             const completionTokens = Number(event.data?.completionTokens ?? 0);
             const totalTokens = Number(event.data?.totalTokens ?? promptTokens + completionTokens);
@@ -179,7 +202,7 @@ export function App() {
       };
       sourceRef.current = source;
     },
-    [closeStream],
+    [closeStream, patchRun],
   );
 
   const refreshVms = useCallback(async () => {
@@ -196,7 +219,30 @@ export function App() {
     const response = await api(tokenRef.current, "/v1/runs");
     if (!response.ok) return;
     const body = await readJson<{ runs?: Run[] }>(response);
-    setRuns(body.runs ?? []);
+    const incoming = body.runs ?? [];
+    setRuns((prev) =>
+      incoming.map((run) => {
+        const local = prev.find((item) => item.id === run.id);
+        if (
+          local &&
+          isActiveRunStatus(local.status) &&
+          !isActiveRunStatus(run.status) &&
+          (sendingRef.current || pendingRef.current)
+        ) {
+          return { ...run, status: local.status };
+        }
+        return run;
+      }),
+    );
+    setCurrentRun((run) => {
+      if (!run) return run;
+      const fresh = incoming.find((item) => item.id === run.id);
+      if (!fresh) return run;
+      if (isActiveRunStatus(run.status) && !isActiveRunStatus(fresh.status) && (sendingRef.current || pendingRef.current)) {
+        return { ...run, ...fresh, status: run.status };
+      }
+      return { ...run, ...fresh };
+    });
   }, []);
 
   const refreshEnvironments = useCallback(async () => {
@@ -249,6 +295,9 @@ export function App() {
     setDiffStat("");
     setDiffPatch("");
     setDiffError("");
+    setSending(false);
+    setStopping(false);
+    setPendingTurn(null);
     setEnvId("");
     setBuildId("");
     history.replaceState(null, "", "/");
@@ -257,10 +306,13 @@ export function App() {
   const openRun = useCallback(
     async (id: string) => {
       const runRes = await api(tokenRef.current, `/v1/runs/${id}`);
-      if (!runRes.ok) return;
+      if (!runRes.ok) return false;
       const run = await readJson<Run>(runRes);
       setRunId(run.id);
       setCurrentRun(run);
+      setStopping(false);
+      setSending(false);
+      if (!keepPendingRef.current) setPendingTurn(null);
       setRepo(run.repoUrls?.[0] ?? "");
       setEnvId(run.envId ?? "");
       setBuildId(run.buildId ?? "");
@@ -283,6 +335,7 @@ export function App() {
       listen(run.id, transcript.snapshot?.lastEventId ?? built.lastEventId);
       history.replaceState(null, "", `/#/runs/${run.id}`);
       void refreshVms();
+      return true;
     },
     [listen, refreshVms],
   );
@@ -335,9 +388,33 @@ export function App() {
   const sendMessage = useCallback(async () => {
     const text = prompt.trim();
     if (!text && images.length === 0) return;
+    if (isComposerClosed(currentRun?.status)) return;
+    if (
+      isTurnBusy({
+        sending: sendingRef.current,
+        stopping,
+        pending: Boolean(pendingRef.current),
+        status: currentRun?.status,
+        messages: snapshot.messages,
+      })
+    ) {
+      return;
+    }
     const attached = images;
+    const previousStatus = currentRun?.status;
+    const pending: PendingUser = {
+      id: `pending-${Date.now()}`,
+      text: text || "（图片）",
+      images: attached.length ? attached : undefined,
+      createdAt: new Date().toISOString(),
+    };
+    setSending(true);
+    setPendingTurn(pending);
     setPrompt("");
     setImages([]);
+    if (runId && !isActiveRunStatus(currentRun?.status)) {
+      patchRun(runId, (run) => ({ ...run, status: "RUNNING" }));
+    }
     const repoUrls = repo.trim() ? [repo.trim()] : [];
     const model =
       llm.upstream === "openai" ? "gpt-4o-mini" : /pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash";
@@ -359,8 +436,14 @@ export function App() {
           }),
         );
         if (created.error) throw new Error(created.error);
-        setRuns((prev) => [created, ...prev]);
-        await openRun(created.id);
+        setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+        keepPendingRef.current = true;
+        try {
+          const opened = await openRun(created.id);
+          if (!opened) throw new Error("打开对话失败");
+        } finally {
+          keepPendingRef.current = false;
+        }
         return;
       }
       const follow = await readJson<{ error?: string }>(
@@ -371,6 +454,12 @@ export function App() {
       );
       if (follow.error) throw new Error(follow.error);
     } catch (error) {
+      setPendingTurn(null);
+      setPrompt(text);
+      setImages(attached);
+      if (runId && previousStatus) {
+        patchRun(runId, (run) => ({ ...run, status: previousStatus }));
+      }
       setEvents((prev) => [
         ...prev,
         {
@@ -383,8 +472,18 @@ export function App() {
           title: error instanceof Error ? error.message : "发送失败",
         },
       ]);
+    } finally {
+      setSending(false);
     }
-  }, [buildId, envId, images, llm.model, llm.upstream, openRun, prompt, repo, runId]);
+  }, [buildId, currentRun?.status, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, snapshot.messages, stopping]);
+
+  const stopTurn = useCallback(() => {
+    if (!runId) return;
+    setStopping(true);
+    void api(tokenRef.current, `/v1/runs/${runId}/abort`, { method: "POST" }).catch(() => {
+      setStopping(false);
+    });
+  }, [runId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -466,7 +565,29 @@ export function App() {
 
   useEffect(() => () => closeStream(), [closeStream]);
 
-  const busy = currentRun && ["RUNNING", "PROVISIONING", "INSTALLING"].includes(currentRun.status);
+  useEffect(() => {
+    if (pendingTurn && pendingUserArrived(snapshot.messages, pendingTurn)) {
+      setPendingTurn(null);
+    }
+  }, [pendingTurn, snapshot.messages]);
+
+  const displayMessages = withPendingUser(visibleMessages as TranscriptMessage[], pendingTurn);
+  const busy = isTurnBusy({
+    sending,
+    stopping,
+    pending: Boolean(pendingTurn),
+    status: currentRun?.status,
+    messages: snapshot.messages,
+  });
+  const archived = isComposerClosed(currentRun?.status);
+  const activity = activityLabel({
+    sending,
+    stopping,
+    status: currentRun?.status,
+    streaming: isAssistantStreaming(snapshot.messages),
+    runningTool: runningToolName(snapshot.messages),
+  });
+  const statusView = turnStatusLabel({ sending, stopping, status: currentRun?.status });
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
   const currentSlot = currentRun?.vmSlotId || vms.slots.find((slot) => slot.runId === runId)?.id || null;
   const vmHint = !vms.total && vms.slots.length === 0
@@ -556,8 +677,9 @@ export function App() {
               <span className="vm-badge" id="vm-badge" data-busy={currentSlot ? "true" : "false"}>
                 {currentSlot ? `${slotLabel(currentSlot)} · ${currentSlot}` : runId ? "分配 VM 中…" : "未分配 VM"}
               </span>
-              <span className="status" id="status" data-state={currentRun?.status ?? "idle"}>
-                {STATUS_LABELS[currentRun?.status ?? "idle"] ?? currentRun?.status ?? "就绪"}
+              <span className="status" id="status" data-state={statusView.state} data-busy={busy ? "true" : "false"}>
+                {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
+                {statusView.label}
               </span>
               {formatUsage(currentRun?.usage) ? (
                 <span className="vm-badge" id="usage-badge">
@@ -680,26 +802,17 @@ export function App() {
               >
                 开草稿 PR
               </button>
-              <button
-                className="ghost"
-                id="abort"
-                type="button"
-                hidden={!busy}
-                onClick={() => {
-                  if (runId) void api(token, `/v1/runs/${runId}/abort`, { method: "POST" });
-                }}
-              >
-                停止
-              </button>
             </div>
           </header>
           <div className="workspace-col">
             <FileTree token={token} runId={runId} open={filesOpen} />
             <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
             <Transcript
-              messages={visibleMessages as TranscriptMessage[]}
+              messages={displayMessages}
               remaining={remaining}
-              empty={!runId && snapshot.messages.length === 0}
+              empty={displayMessages.length === 0}
+              busy={busy}
+              activity={activity}
               onLoadOlder={loadOlder}
             />
           </div>
@@ -715,6 +828,11 @@ export function App() {
             llmKey={llmKey}
             images={images}
             vmHint={vmHint}
+            busy={busy}
+            stopping={stopping}
+            archived={archived}
+            canStop={Boolean(runId)}
+            activity={activity}
             onPrompt={setPrompt}
             onRepo={setRepo}
             onEnv={setEnvId}
@@ -798,6 +916,7 @@ export function App() {
               });
             }}
             onSend={() => void sendMessage()}
+            onStop={stopTurn}
           />
         </main>
       </div>
