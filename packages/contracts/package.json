@@ -9,7 +9,8 @@
     "./subagent": "./src/subagent.ts",
     "./events": "./src/events.ts",
     "./run": "./src/run.ts",
-    "./context-usage": "./src/context-usage.ts"
+    "./context-usage": "./src/context-usage.ts",
+    "./automation": "./src/automation.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

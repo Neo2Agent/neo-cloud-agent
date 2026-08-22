@@ -14,6 +14,7 @@ import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
+import { AutomationsPage } from "./components/AutomationsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
@@ -101,6 +102,10 @@ function hashRunId(): string | null {
   return /^#\/runs\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
 }
 
+function hashAutomations(): boolean {
+  return location.hash === "#/automations";
+}
+
 export function App() {
   const [token, setToken] = useState(readToken);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -136,6 +141,7 @@ export function App() {
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mainTab, setMainTab] = useState<"chat" | "automations">(() => (hashAutomations() ? "automations" : "chat"));
   const [llm, setLlm] = useState<LlmSettings>({ configured: false, upstream: "deepseek", model: null });
   const [llmKey, setLlmKey] = useState("");
   const [scm, setScm] = useState<ScmSettings>({ configured: false, method: "none" });
@@ -439,6 +445,7 @@ export function App() {
       setStopping(false);
       setSending(false);
       if (!keepPendingRef.current) setPendingTurn(null);
+      setMainTab("chat");
       history.replaceState(null, "", `/#/runs/${id}`);
       const [runRes, transcriptRes] = await Promise.all([
         api(tokenRef.current, `/v1/runs/${id}`),
@@ -485,7 +492,27 @@ export function App() {
     [listen, refreshVms],
   );
 
+  const openAutomations = useCallback(() => {
+    setMainTab("automations");
+    setFilesOpen(false);
+    setDiffOpen(false);
+    setSettingsOpen(false);
+    history.replaceState(null, "", "/#/automations");
+  }, []);
+
+  const openChat = useCallback(() => {
+    setMainTab("chat");
+    if (hashAutomations()) {
+      history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
+    }
+  }, [runId]);
+
   const finishLogin = useCallback(async () => {
+    if (hashAutomations()) {
+      setMainTab("automations");
+      await Promise.all([refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()]);
+      return;
+    }
     const match = hashRunId();
     await Promise.all([
       refreshRuns(),
@@ -688,6 +715,21 @@ export function App() {
   useEffect(() => () => closeStream(), [closeStream]);
 
   useEffect(() => {
+    const syncHash = () => {
+      if (hashAutomations()) {
+        setMainTab("automations");
+        setFilesOpen(false);
+        setDiffOpen(false);
+        setSettingsOpen(false);
+        return;
+      }
+      setMainTab("chat");
+    };
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
+
+  useEffect(() => {
     if (isNarrowViewport()) setSidebarOpen(false);
   }, []);
 
@@ -797,6 +839,7 @@ export function App() {
           health={healthText}
           onClose={toggleSidebar}
           onNewChat={() => {
+            setMainTab("chat");
             resetComposer();
             setSidebarOpen((open) => {
               if (!closeMobileSidebar()) return open;
@@ -804,6 +847,7 @@ export function App() {
             });
           }}
           onOpenRun={(id) => {
+            setMainTab("chat");
             setSidebarOpen((open) => {
               if (window.innerWidth < 860 && open) {
                 window.localStorage.setItem("neo.sidebar", "0");
@@ -844,15 +888,41 @@ export function App() {
                 <span aria-hidden="true">{sidebarOpen ? "‹" : "☰"}</span>
                 <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
               </button>
+              <nav className="app-tabs" id="app-tabs" aria-label="主导航">
+                <button
+                  type="button"
+                  className={mainTab === "chat" ? "active" : ""}
+                  aria-current={mainTab === "chat" ? "page" : undefined}
+                  onClick={openChat}
+                >
+                  对话
+                </button>
+                <button
+                  type="button"
+                  className={mainTab === "automations" ? "active" : ""}
+                  aria-current={mainTab === "automations" ? "page" : undefined}
+                  onClick={openAutomations}
+                >
+                  定时任务
+                </button>
+              </nav>
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
-                  {currentRun
-                    ? currentRun.buildId
-                      ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
-                      : currentRun.branchName ?? shortId(currentRun.id)
-                    : "新对话"}
+                  {mainTab === "automations"
+                    ? "定时任务"
+                    : currentRun
+                      ? currentRun.buildId
+                        ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
+                        : currentRun.branchName ?? shortId(currentRun.id)
+                      : "新对话"}
                 </p>
-                <h1 id="run-title">{currentRun ? preview(currentRun.prompt) : "和云端 Agent 说话"}</h1>
+                <h1 id="run-title">
+                  {mainTab === "automations"
+                    ? "到点自动开对话"
+                    : currentRun
+                      ? preview(currentRun.prompt)
+                      : "和云端 Agent 说话"}
+                </h1>
               </div>
             </div>
             <div className="top-actions">
@@ -1019,7 +1089,6 @@ export function App() {
                   buildId={buildId}
                   environments={environments}
                   builds={builds}
-                  token={token}
                   llm={llm}
                   llmKey={llmKey}
                   scm={scm}
@@ -1127,34 +1196,46 @@ export function App() {
               <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
             </aside>
           ) : null}
-            <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
-              <Transcript
-                messages={displayMessages}
-                remaining={remaining}
-                empty={!loadingTranscript && displayMessages.length === 0}
-                loading={loadingTranscript && displayMessages.length === 0}
-                loadingOlder={loadingOlder}
-                busy={busy}
-                activity={activity}
-                onLoadOlder={loadOlder}
+            {mainTab === "automations" ? (
+              <AutomationsPage
+                token={token}
+                onOpenRun={(id) => {
+                  setMainTab("chat");
+                  void openRun(id);
+                }}
               />
-            </ChatErrorBoundary>
+            ) : (
+              <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
+                <Transcript
+                  messages={displayMessages}
+                  remaining={remaining}
+                  empty={!loadingTranscript && displayMessages.length === 0}
+                  loading={loadingTranscript && displayMessages.length === 0}
+                  loadingOlder={loadingOlder}
+                  busy={busy}
+                  activity={activity}
+                  onLoadOlder={loadOlder}
+                />
+              </ChatErrorBoundary>
+            )}
           </div>
-          <Composer
-            prompt={prompt}
-            images={images}
-            vmHint={vmHint}
-            busy={busy}
-            stopping={stopping}
-            archived={archived}
-            canStop={Boolean(runId)}
-            activity={activity}
-            contextUsage={contextUsage}
-            onPrompt={setPrompt}
-            onImages={setImages}
-            onSend={() => void sendMessage()}
-            onStop={stopTurn}
-          />
+          {mainTab === "chat" ? (
+            <Composer
+              prompt={prompt}
+              images={images}
+              vmHint={vmHint}
+              busy={busy}
+              stopping={stopping}
+              archived={archived}
+              canStop={Boolean(runId)}
+              activity={activity}
+              contextUsage={contextUsage}
+              onPrompt={setPrompt}
+              onImages={setImages}
+              onSend={() => void sendMessage()}
+              onStop={stopTurn}
+            />
+          ) : null}
         </main>
       </div>
       <AuthGate

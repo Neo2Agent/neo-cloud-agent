@@ -2,6 +2,8 @@ import { ensureDefaultAdmin } from "./accounts/accounts.js";
 import { setAccountStore } from "./accounts/store.js";
 import { importBuild, listBuilds } from "./env/builds.js";
 import { setEnvPersistHooks } from "./env/persist-hooks.js";
+import { listAutomations, replaceAutomations } from "./automations/store.js";
+import { setAutomationPersistHooks } from "./automations/persist-hooks.js";
 import { listEnvironments, upsertEnvironment } from "./env/store.js";
 import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
 import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
@@ -48,6 +50,7 @@ export function resetPlatformForTests(): void {
   eventBusKind = "memory";
   setPersistHooks({});
   setEnvPersistHooks({});
+  setAutomationPersistHooks({});
   attachHotBus(null);
 }
 
@@ -74,6 +77,11 @@ async function doStart(): Promise<void> {
         void metadata?.deleteLease(runId).catch((error) => console.error("metadata deleteLease failed", error));
       },
     });
+    setAutomationPersistHooks({
+      onWrite: (items) => {
+        void mirrorAutomations(metadata, items).catch((error) => console.error("metadata saveAutomation failed", error));
+      },
+    });
     setEnvPersistHooks({
       onEnvironment: (env) => {
         void metadata?.saveEnvironment(env).catch((error) => console.error("metadata saveEnvironment failed", error));
@@ -84,6 +92,7 @@ async function doStart(): Promise<void> {
     });
     await hydrateFromStore(metadata);
     await hydrateEnvFromStore(metadata);
+    await hydrateAutomationsFromStore(metadata);
     reloadPersistedState();
     console.log(`control-plane metadata store: ${metadataKind}`);
   }
@@ -146,6 +155,33 @@ async function hydrateEnvFromStore(store: MetadataStore): Promise<void> {
   } else {
     for (const build of listBuilds()) {
       await store.saveBuild(build);
+    }
+  }
+}
+
+async function hydrateAutomationsFromStore(store: MetadataStore): Promise<void> {
+  const remote = await store.loadAutomations();
+  if (remote.length > 0) {
+    replaceAutomations(remote, { mirror: false });
+    return;
+  }
+  for (const item of listAutomations()) {
+    await store.saveAutomation(item);
+  }
+}
+
+async function mirrorAutomations(store: MetadataStore | null, items: import("@neo-cloud-agent/contracts").Automation[]): Promise<void> {
+  if (!store) {
+    return;
+  }
+  const remote = await store.loadAutomations();
+  const keep = new Set(items.map((item) => item.id));
+  for (const item of items) {
+    await store.saveAutomation(item);
+  }
+  for (const old of remote) {
+    if (!keep.has(old.id)) {
+      await store.deleteAutomation(old.id);
     }
   }
 }

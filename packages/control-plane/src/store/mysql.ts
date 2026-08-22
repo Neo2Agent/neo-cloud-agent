@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import type { Build, Environment, RunEvent } from "@neo-cloud-agent/contracts";
+import type { Automation, Build, Environment, RunEvent } from "@neo-cloud-agent/contracts";
 import type { SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS builds (
   updated_at DATETIME(3) NOT NULL,
   KEY builds_fingerprint (fingerprint)
 );
+CREATE TABLE IF NOT EXISTS automations (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
 `;
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -99,6 +104,14 @@ function asBuild(value: unknown): Build | null {
   }
   const build = value as Build;
   return build.id && build.envId ? build : null;
+}
+
+function asAutomation(value: unknown): Automation | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Automation;
+  return item.id && item.prompt && item.schedule ? item : null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -229,6 +242,23 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     async loadBuilds() {
       const result = await query(`SELECT body FROM builds ORDER BY updated_at DESC`);
       return result.rows.map((row) => parseJson(row.body, asBuild)).filter((item): item is Build => Boolean(item));
+    },
+    async saveAutomation(item) {
+      await query(
+        `INSERT INTO automations (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [item.id, JSON.stringify(item), mysqlDateTime(item.updatedAt)],
+      );
+    },
+    async loadAutomations() {
+      const result = await query(`SELECT body FROM automations ORDER BY updated_at ASC`);
+      return result.rows
+        .map((row) => parseJson(row.body, asAutomation))
+        .filter((item): item is Automation => Boolean(item));
+    },
+    async deleteAutomation(id) {
+      await query(`DELETE FROM automations WHERE id = ?`, [id]);
     },
     async createUser(user) {
       try {

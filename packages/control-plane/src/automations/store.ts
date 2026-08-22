@@ -9,6 +9,7 @@ import {
   type CreateAutomationRequest,
 } from "@neo-cloud-agent/contracts";
 import { controlStateDir } from "../store/persist.js";
+import { automationPersistHooks } from "./persist-hooks.js";
 
 const MAX_AUTOMATIONS = 20;
 
@@ -25,9 +26,16 @@ function readAll(): Automation[] {
   }
 }
 
-function writeAll(items: Automation[]): void {
+function writeAll(items: Automation[], options?: { mirror?: boolean }): void {
   mkdirSync(path.dirname(automationsFile()), { recursive: true });
   writeFileSync(automationsFile(), `${JSON.stringify({ version: 1, automations: items }, null, 2)}\n`, { mode: 0o600 });
+  if (options?.mirror !== false) {
+    automationPersistHooks().onWrite?.(items);
+  }
+}
+
+export function replaceAutomations(items: Automation[], options?: { mirror?: boolean }): void {
+  writeAll(items.map((item) => normalize(item)).filter((item): item is Automation => Boolean(item)), options);
 }
 
 function normalize(value: unknown): Automation | null {

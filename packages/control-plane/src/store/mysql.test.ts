@@ -95,4 +95,21 @@ test("mysql store upserts run JSON, events, and users", async () => {
   ];
   const user = await store.findUserByEmail("ada@example.com");
   assert.equal(user?.id, "user-1");
+
+  const automation = {
+    id: "auto_1",
+    name: "每天检查",
+    enabled: true,
+    prompt: "检查测试",
+    repoUrls: ["fixtures/toy-repo"],
+    schedule: { kind: "daily" as const, hour: 9 },
+    nextRunAt: record.run.createdAt,
+    lastRunAt: null,
+    lastRunId: null,
+    lastError: null,
+    createdAt: record.run.createdAt,
+    updatedAt: record.run.createdAt,
+  };
+  await store.saveAutomation(automation);
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO automations/);
 });
