@@ -40,7 +40,6 @@ import {
 } from "./turn";
 import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
 
-const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
 
 function localErrorMessage(runId: string | null, title: string): TranscriptMessage {
@@ -116,13 +115,12 @@ export function App() {
   const [healthText, setHealthText] = useState("检测服务…");
   const [vms, setVms] = useState<VmSummary>({ total: 0, busy: 0, backend: "none", slots: [] });
   const [userEmail, setUserEmail] = useState("");
-  const [authRequired, setAuthRequired] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(true);
   const [authMode, setAuthMode] = useState<"login" | "token">("login");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
-  const [authEmail, setAuthEmail] = useState("admin");
-  const [authPassword, setAuthPassword] = useState("123456");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const [authToken, setAuthToken] = useState("");
   const [prompt, setPrompt] = useState("");
   const [images, setImages] = useState<ImageRef[]>([]);
@@ -312,14 +310,14 @@ export function App() {
   listenRef.current = listen;
 
   const refreshVms = useCallback(async () => {
-    if (authRequired && !tokenRef.current) return;
+    if (!tokenRef.current) return;
     try {
       const response = await api(tokenRef.current, "/v1/vms");
       if (response.ok) applyVms(await readJson<VmSummary>(response));
     } catch {
       // keep last occupancy
     }
-  }, [applyVms, authRequired]);
+  }, [applyVms]);
 
   const refreshRuns = useCallback(async () => {
     const response = await api(tokenRef.current, "/v1/runs");
@@ -506,9 +504,9 @@ export function App() {
       persistToken(nextToken);
       if (user?.email) {
         setUserEmail(user.email);
-        sessionStorage.removeItem(SKIP_BOOTSTRAP_KEY);
         setAuthOpen(false);
         setAuthError("");
+        setAuthPassword("");
         return;
       }
       const me = await api(nextToken, "/v1/me");
@@ -524,9 +522,9 @@ export function App() {
         throw new Error("登录未生效，请再试一次");
       }
       setUserEmail(body.user.email ?? "");
-      sessionStorage.removeItem(SKIP_BOOTSTRAP_KEY);
       setAuthOpen(false);
       setAuthError("");
+      setAuthPassword("");
     },
     [persistToken],
   );
@@ -638,32 +636,25 @@ export function App() {
         const payload = await readJson<Health>(await fetch("/health"));
         if (cancelled) return;
         setHealth(payload);
-        setAuthRequired(payload.authRequired === true);
-        setAuthEmail("admin");
-        setAuthPassword("123456");
+        setAuthEmail("");
+        setAuthPassword("");
         applyVms(payload.vmSlots);
         setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
         const saved = tokenRef.current;
-        try {
-          if (saved) {
-            if (saved.startsWith("neo_sess_")) await applySession(saved);
-            else {
-              persistToken(saved);
-              setUserEmail("");
-              setAuthOpen(false);
-            }
-          } else if (payload.authRequired) {
-            setAuthOpen(true);
+        if (saved.startsWith("neo_sess_")) {
+          try {
+            await applySession(saved);
+            await finishLogin();
             return;
-          }
-        } catch {
-          if (payload.authRequired) {
+          } catch {
+            persistToken("");
             setAuthError("请重新登录");
             setAuthOpen(true);
             return;
           }
         }
-        await finishLogin();
+        persistToken("");
+        setAuthOpen(true);
       } catch {
         if (!cancelled) setHealthText("控制面不可达");
       }
@@ -677,7 +668,7 @@ export function App() {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (authRequired && !tokenRef.current) return;
+      if (!tokenRef.current) return;
       void (async () => {
         try {
           const payload = await readJson<Health>(await fetch("/health"));
@@ -692,7 +683,7 @@ export function App() {
       })();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [applyVms, authRequired, refreshRuns, refreshVms, runId]);
+  }, [applyVms, refreshRuns, refreshVms, runId]);
 
   useEffect(() => () => closeStream(), [closeStream]);
 
@@ -824,8 +815,8 @@ export function App() {
           }}
           onLogin={() => {
             setAuthMode("login");
-            setAuthEmail("admin");
-            setAuthPassword("123456");
+            setAuthEmail("");
+            setAuthPassword("");
             setAuthError("");
             setAuthOpen(true);
           }}
@@ -833,10 +824,11 @@ export function App() {
             void api(token, "/v1/auth/logout", { method: "POST" });
             persistToken("");
             setUserEmail("");
-            sessionStorage.setItem(SKIP_BOOTSTRAP_KEY, "1");
+            setAuthEmail("");
+            setAuthPassword("");
             setRuns([]);
             resetComposer();
-            if (authRequired) setAuthOpen(true);
+            setAuthOpen(true);
           }}
         />
         <main className="main">
@@ -1170,17 +1162,24 @@ export function App() {
         mode={authMode}
         busy={authBusy}
         error={authError}
-        canSkip={!authRequired}
         email={authEmail}
         password={authPassword}
         token={authToken}
-        onClose={() => setAuthOpen(false)}
         onMode={setAuthMode}
         onEmail={setAuthEmail}
         onPassword={setAuthPassword}
         onToken={setAuthToken}
         onSubmit={() => {
           if (authBusy) return;
+          if (authMode === "token") {
+            if (!authToken.trim()) {
+              setAuthError("请输入服务令牌");
+              return;
+            }
+          } else if (!authEmail.trim() || !authPassword) {
+            setAuthError("请输入账号和密码");
+            return;
+          }
           setAuthBusy(true);
           void (async () => {
             if (authMode === "token") {
@@ -1198,8 +1197,8 @@ export function App() {
               setUserEmail("");
               setAuthOpen(false);
             } else {
-              const email = authEmail.trim() || "admin";
-              const password = authPassword || "123456";
+              const email = authEmail.trim();
+              const password = authPassword;
               const response = await fetch("/v1/auth/login", {
                 method: "POST",
                 credentials: "same-origin",
@@ -1213,6 +1212,7 @@ export function App() {
             await finishLogin();
           })()
             .catch((error) => {
+              persistToken("");
               setAuthError(error instanceof Error ? error.message : "登录失败");
               setAuthOpen(true);
             })

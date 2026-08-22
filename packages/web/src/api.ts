@@ -1,4 +1,4 @@
-const TOKEN_KEY = "neo.apiToken";
+const TOKEN_KEY = "neo.apiToken.v2";
 
 export function readToken(): string {
   return localStorage.getItem(TOKEN_KEY) || "";

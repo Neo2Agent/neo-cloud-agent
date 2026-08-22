@@ -1,3 +1,4 @@
+import type { FocusEvent } from "react";
 import { isNarrowViewport } from "../viewport";
 
 type AuthMode = "login" | "token";
@@ -7,11 +8,9 @@ type Props = {
   mode: AuthMode;
   busy: boolean;
   error: string;
-  canSkip: boolean;
   email: string;
   password: string;
   token: string;
-  onClose: () => void;
   onMode: (mode: AuthMode) => void;
   onEmail: (value: string) => void;
   onPassword: (value: string) => void;
@@ -19,16 +18,18 @@ type Props = {
   onSubmit: () => void;
 };
 
+function unlockField(event: FocusEvent<HTMLInputElement>) {
+  event.currentTarget.removeAttribute("readOnly");
+}
+
 export function AuthGate({
   open,
   mode,
   busy,
   error,
-  canSkip,
   email,
   password,
   token,
-  onClose,
   onMode,
   onEmail,
   onPassword,
@@ -38,28 +39,23 @@ export function AuthGate({
   const phone = isNarrowViewport();
   const effectiveMode = phone ? "login" : mode;
   const title = effectiveMode === "token" ? "服务令牌" : "登录";
-  const copy = phone
-    ? "账号 admin，密码 123456。点登录即可。"
-    : effectiveMode === "token"
+  const copy =
+    effectiveMode === "token"
       ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
-      : "账号 admin，密码 123456。登录会查询账号库。";
+      : "请输入账号和密码后登录。";
+  const canSubmit = effectiveMode === "token" ? Boolean(token.trim()) : Boolean(email.trim() && password);
   const submit = busy ? "登录中…" : effectiveMode === "token" ? "使用令牌" : "登录";
 
   return (
-    <div
-      className="auth-gate"
-      id="auth-gate"
-      hidden={!open}
-      onClick={(event) => {
-        if (event.target === event.currentTarget && canSkip) onClose();
-      }}
-    >
+    <div className="auth-gate" id="auth-gate" hidden={!open}>
       <form
         className="auth-card"
         id="auth-form"
+        autoComplete="off"
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
+          if (!canSubmit || busy) return;
           onSubmit();
         }}
       >
@@ -77,29 +73,36 @@ export function AuthGate({
         <div id="auth-user-fields" hidden={effectiveMode === "token"}>
           <input
             id="auth-email"
-            name="login"
+            name="neo-account"
             type="text"
             inputMode="text"
-            autoComplete="username"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            readOnly
             placeholder="账号"
             value={email}
+            onFocus={unlockField}
             onChange={(event) => onEmail(event.target.value)}
           />
           <input
             id="auth-password"
-            name="password"
+            name="neo-secret"
             type="password"
-            autoComplete="current-password"
+            autoComplete="new-password"
+            readOnly
             placeholder="密码"
             value={password}
+            onFocus={unlockField}
             onChange={(event) => onPassword(event.target.value)}
           />
         </div>
         <input
           id="auth-token"
-          name="token"
+          name="neo-token"
           type="password"
-          autoComplete="current-password"
+          autoComplete="off"
           placeholder="neo_…"
           hidden={effectiveMode !== "token"}
           value={token}
@@ -108,11 +111,8 @@ export function AuthGate({
         <p className="auth-error" id="auth-error" hidden={!error}>
           {error}
         </p>
-        <button type="submit" id="auth-submit" className="auth-submit" disabled={busy}>
+        <button type="submit" id="auth-submit" className="auth-submit" disabled={busy || !canSubmit}>
           {submit}
-        </button>
-        <button type="button" id="auth-skip" hidden={!canSkip} onClick={onClose}>
-          先不登录
         </button>
       </form>
     </div>

@@ -13,6 +13,7 @@ test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
   process.env.LLM_GATEWAY_JWT_SECRET = "e2e-secret";
   process.env.RUNS_DIR = runsDir;
   process.env.HOST_RUNS_DIR = runsDir;
+  process.env.ACCOUNTS_REQUIRED = "0";
   delete process.env.WORKER_CONTROL_PLANE_URL;
   delete process.env.WORKER_LLM_GATEWAY_URL;
 

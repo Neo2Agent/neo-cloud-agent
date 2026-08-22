@@ -11,7 +11,7 @@ process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-env-api-"));
 process.env.WARM_POOL_SIZE = "1";
 delete process.env.WORKER_WORKSPACE_MOUNT;
 delete process.env.CONTROL_PLANE_TOKEN;
-delete process.env.ACCOUNTS_REQUIRED;
+process.env.ACCOUNTS_REQUIRED = "0";
 
 const { createApiServer } = await import("./server.js");
 const { listen, close } = await import("../e2e/helpers.js");

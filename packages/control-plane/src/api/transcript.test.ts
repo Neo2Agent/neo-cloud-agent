@@ -11,6 +11,7 @@ process.env.SPAWN_LOCAL_WORKER = "0";
 process.env.LLM_GATEWAY_JWT_SECRET = "transcript-secret";
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-transcript-api-"));
 process.env.OBJECT_STORE = "memory";
+process.env.ACCOUNTS_REQUIRED = "0";
 delete process.env.WORKER_WORKSPACE_MOUNT;
 
 const { createApiServer } = await import("./server.js");

@@ -53,6 +53,7 @@ test(
     process.env.FIRECRACKER_NET = "tap";
     process.env.WORKER_MEMORY_MIB = "2048";
     process.env.WORKER_DISK_GIB = "1";
+    process.env.ACCOUNTS_REQUIRED = "0";
     delete process.env.WORKER_CONTROL_PLANE_URL;
     delete process.env.WORKER_LLM_GATEWAY_URL;
 

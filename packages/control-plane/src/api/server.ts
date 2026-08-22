@@ -14,6 +14,7 @@ import type {
 import {
   evaluateEgress,
   pageTranscriptSnapshot,
+  parseAutomationSchedule,
   parseLlmSettingsRequest,
   publicLlmSettings,
   readLlmSettings,
@@ -322,7 +323,7 @@ export function createApiServer() {
       if (method === "POST" && path === "/v1/auth") {
         const expected = resolveApiToken();
         if (!expected) {
-          send(res, 200, { ok: true, authRequired: false });
+          send(res, accessRequired() ? 401 : 200, { ok: !accessRequired(), authRequired: accessRequired() });
           return;
         }
         const body = (await readJson(req)) as { token?: string };
@@ -455,14 +456,30 @@ export function createApiServer() {
             prompt?: string;
             repoUrls?: string[];
             enabled?: boolean;
-            schedule?: { kind: string };
+            schedule?: unknown;
             delete?: boolean;
           };
           if (body.delete) {
             send(res, deleteAutomation(automationMatch[1] ?? "") ? 200 : 404, { ok: true });
             return;
           }
-          const updated = updateAutomation(automationMatch[1] ?? "", body);
+          let schedule = undefined;
+          if (body.schedule !== undefined) {
+            try {
+              schedule = parseAutomationSchedule(body.schedule);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "invalid_schedule";
+              send(res, 400, { error: message });
+              return;
+            }
+          }
+          const updated = updateAutomation(automationMatch[1] ?? "", {
+            name: body.name,
+            prompt: body.prompt,
+            repoUrls: body.repoUrls,
+            enabled: body.enabled,
+            schedule,
+          });
           if (!updated) {
             notFound(res);
             return;

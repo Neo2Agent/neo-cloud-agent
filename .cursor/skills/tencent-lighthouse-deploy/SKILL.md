@@ -128,7 +128,7 @@ LLM_UPSTREAM=mock
 
 6. 安装 [units/](units/) 两个 systemd unit，`daemon-reload && enable --now`。
 7. Caddy `:80` 反代 `127.0.0.1:8080`，`flush_interval -1`（SSE）。
-8. 打开 http://62.234.211.200/ ，`admin` / `123456`（页面常会自动登录），在页上保存 API Key，**不要把 Key 发到聊天里**。
+8. 打开 http://62.234.211.200/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。
 
 ## 线上运行时
 
@@ -138,7 +138,7 @@ LLM_UPSTREAM=mock
 | 工作目录 | `/home/ubuntu/neo-cloud-agent`（unit 的 `WorkingDirectory`） |
 | 密钥 | 根目录 `.env` + `.neo/llm-upstream.env` + `.neo/scm-push.env`（gitignore） |
 | Worker | `WORKER_RUNTIME=vm`，2×4GiB ext4 在 `.neo/vms/`，无 KVM 则 loop 挂载。`WORKER_MEMORY_MIB` 会限制 heap；unit 需 `Delegate=` 才有 cgroup RSS |
-| 对话 | 默认管理员 `admin` / `123456`；`ACCOUNTS_REQUIRED` 未开 |
+| 对话 | 必须手输 `admin` / `123456`；默认 `ACCOUNTS_REQUIRED=1` |
 | 栈 | 官方 Ubuntu 24.04 系统镜像 + systemd + Caddy + Node 22 |
 
 改 `.env` 键值用脚本替换，不要 `cat` 整个文件。改完必须 `sudo systemctl restart neo-llm-gateway neo-control-plane`。只改 API Key 走页面即可，**不用重启**。
