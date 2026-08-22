@@ -13,7 +13,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | --- | --- | --- |
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 实例 | `Halo建站-AFjg` | `OpenClaw(龙虾)-8Dd3` |
-| 职责 | 本仓库 + systemd + Caddy + VM 槽 | Docker MySQL / Redis |
+| 职责 | 本仓库 + systemd + Caddy + VM 槽（自建，不是爱马仕制品） | Docker MySQL / Redis |
 
 库机操作见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。控制面要持久化时，在**本机**仓库根 `.env` 写 `DATABASE_URL` / `REDIS_URL` 指向库机，然后只重启 `neo-control-plane`。`/health` 应为 `metadataStore: "mysql"`、`eventBus: "redis"`。不要把库机密码打进聊天。
 
@@ -30,6 +30,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | 入口 | http://62.234.211.200/ （Caddy `:80` → `127.0.0.1:8080`） |
 | Node | 已装 **v22.23.1**（满足 `>=22.19`） |
 | Docker / KVM | **都没有**。`WORKER_RUNTIME=vm` 用 2 个 loop 挂载的 ext4 槽，不是 Firecracker |
+| 运行时栈 | **自建**：Ubuntu 24.04 + Node 22 + pnpm + Caddy + systemd（`neo-llm-gateway` / `neo-control-plane`）。爱马仕 / clawhub / qwen-code 已卸掉 |
 
 SSH 别名（本机 `~/.ssh/config`）：
 
@@ -43,13 +44,15 @@ Host lighthouse
 
 首次装公钥用控制台 **TAT**，不要在控制台「绑定密钥」（会重启）。详见 [reference.md](reference.md)。
 
+控制台实例名还可能写着 Halo / 某应用镜像，那只是**建机时的镜像标签**。换官方「纯净版 Ubuntu」要 **重装系统**，会清盘。现网已经在原盘上清掉爱马仕，按自建应用机用即可，**不要重装**。
+
 ## 硬约束
 
-1. **不要重启实例。** 这台机以前跑过 Halo / Caddy，重启会中断线上。
+1. **不要重启实例，也不要重装系统。** 重装才能换控制台应用镜像，但会清掉现网服务。
 2. **不要在控制台绑定新的 SSH 密钥。** 绑定会重启。用 TAT 往 `~/.ssh/authorized_keys` 追加。
 3. **不要读、打印、提交** `/home/ubuntu/neo-cloud-agent/.env` 或 `.neo/llm-upstream.env`。只改键名，不回传值。
 4. **不要把 Cloud Agent 的 GitHub token 拷到这台机。**
-5. **不要重新拉起爱马仕。** 用户单元已改名为 `~/.config/systemd/user/hermes-gateway.service.disabled`。
+5. **不要再装爱马仕 / OpenClaw / clawhub / qwen-code。** `~/.hermes` 和用户单元已删除；`ubuntu` linger 已关。
 6. 轻量访问 **GitHub 443 经常超时**（DNS 能解析到 `20.205.243.166`）。通了再用 `git pull`；不通就从能访问 GitHub 的机器 **tar/scp 覆盖源码**。
 7. **MySQL / Redis 不在这台机。** 不要在这里 `docker compose` 库，也不要重启 `101.42.105.230`。
 
@@ -136,7 +139,7 @@ LLM_UPSTREAM=mock
 | 密钥 | 根目录 `.env` + `.neo/llm-upstream.env`（gitignore） |
 | Worker | `WORKER_RUNTIME=vm`，2×4GiB ext4 在 `.neo/vms/`，无 KVM 则 loop 挂载 |
 | 对话 | 默认管理员 `admin` / `123456`；`ACCOUNTS_REQUIRED` 未开 |
-| 爱马仕 | 已下线，不要 `systemctl --user start hermes-gateway` |
+| 栈 | 自建 systemd + Caddy + Node；不是爱马仕制品 |
 
 改 `.env` 键值用脚本替换，不要 `cat` 整个文件。改完必须 `sudo systemctl restart neo-llm-gateway neo-control-plane`。只改 API Key 走页面即可，**不用重启**。
 

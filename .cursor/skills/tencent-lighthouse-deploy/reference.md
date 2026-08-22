@@ -5,7 +5,7 @@
 ## 控制台
 
 1. 打开 [Lighthouse 北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。
-2. 未登录会拦 Hermes 扫码；等用户扫完再继续，不要猜密码。
+2. 未登录会拦微信扫码；等用户扫完再继续，不要猜密码。
 3. 确认实例 `Halo建站-AFjg`（`lhins-b0l0d8b2`）运行中，公网 `62.234.211.200`。
 4. **不要点重启、重装、绑定密钥。**
 5. MySQL / Redis **不在这台机上**。库机是另一账号的 `OpenClaw(龙虾)-8Dd3`（`101.42.105.230`），见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。
@@ -122,13 +122,15 @@ sudo systemctl reload caddy
 
 必须 `flush_interval -1`，否则对话 SSE 会缓冲。对外只开 80 即可，不要让用户去记 `:8080`。
 
-## 爱马仕
+## 爱马仕（已卸载）
 
-旧网关是用户 systemd：`hermes-gateway.service`，`Restart=always`，linger=yes。已 `stop/disable`，单元文件改名为 `hermes-gateway.service.disabled`。
+建机时用过爱马仕应用镜像，2026-08-22 已在原盘上清掉，改成自建栈（Caddy + Node + `neo-*` systemd）。**不要重装系统去换镜像。**
 
-- 不要 `systemctl --user start hermes-gateway`
-- 不要读 `~/.hermes/.env`
-- 数据目录 `~/.hermes` 可以留着
+已删除：`~/.hermes`、用户单元 `hermes-gateway`、`~/.local/bin/hermes`、clawhub、qwen-code、uv/python3.11（爱马仕用的）。`ubuntu` linger 已关。
+
+- 不要再 `npm i -g` / 装回爱马仕
+- 不要读已经不存在的 `~/.hermes/.env`
+- 保留 Node、pnpm（`~/.local/share/pnpm`）、Caddy、`/home/ubuntu/neo-cloud-agent`
 
 ## 验收命令
 
