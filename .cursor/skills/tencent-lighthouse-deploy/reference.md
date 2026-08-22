@@ -7,7 +7,7 @@
 1. 打开 [Lighthouse 北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。
 2. 未登录会拦微信扫码；等用户扫完再继续，不要猜密码。
 3. 确认实例 `Halo建站-AFjg`（`lhins-b0l0d8b2`）运行中，公网 `62.234.211.200`。
-4. **不要点重启、重装、绑定密钥。**
+4. **不要点重启、再次重装、绑定密钥。** 镜像已经是 Ubuntu 24.04 系统镜像。
 5. MySQL / Redis **不在这台机上**。库机是另一账号的 `OpenClaw(龙虾)-8Dd3`（`101.42.105.230`），见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。
 
 ## 防火墙（轻量安全组，不是 ufw）
