@@ -17,7 +17,7 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | 账号 | 旧号（Halo 那台） | UIN `100047610252`（昵称 旺动香菇-昆阳喷泉） |
 | 实例 | `Halo建站-AFjg` / `lhins-b0l0d8b2` | `neo-mysql-redis` / `lhins-1whwkmau` |
 | 公网 | `62.234.211.200` | `101.42.105.230` |
-| 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
+| 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8`。控制台显示名 `neo-mysql-redis`；底层制品仍是 OpenClaw 应用镜像 `lhbp-rn2vvmsy`，目标换成系统镜像 Ubuntu 24.04（`lhbp-1l4ptuvm`），重装要微信 MFA |
 | 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`） |
 | 同机还有 | 爱马仕已下线，不要拉起 | OpenClaw 已停，不要拉起 |
 
