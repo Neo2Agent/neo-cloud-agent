@@ -102,6 +102,7 @@ summary {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   padding: 16px 12px;
@@ -183,6 +184,7 @@ button[type="submit"]:disabled {
   flex-direction: column;
   gap: 8px;
   flex: 1;
+  min-width: 0;
   overflow: auto;
 }
 
@@ -226,17 +228,26 @@ button[type="submit"]:disabled {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .run-item strong {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   font-size: 14px;
   font-weight: 600;
-  white-space: nowrap;
+  overflow: hidden;
+}
+
+.run-title {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .run-item[data-busy="true"] small {
@@ -2023,7 +2034,11 @@ textarea {
 
   .run-item strong {
     font-size: 16px;
-    white-space: normal;
+  }
+
+  .run-title {
+    font-size: 16px;
+    white-space: nowrap;
   }
 
   .topbar {

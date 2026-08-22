@@ -261,9 +261,15 @@ export function settleTranscriptMessages(messages: TranscriptMessage[]): Transcr
 }
 
 const RESTART_HEARTBEAT = /heartbeat lost after control plane restart/i;
+const SLOT_BUSY_NOTICE = /all VM slots are busy/i;
+
+function isTransientInfraNotice(text: string | undefined): boolean {
+  const value = text ?? "";
+  return RESTART_HEARTBEAT.test(value) || SLOT_BUSY_NOTICE.test(value);
+}
 
 export function isStaleRestartNotice(message: TranscriptMessage, later: TranscriptMessage[]): boolean {
-  if (!RESTART_HEARTBEAT.test(message.text ?? "")) {
+  if (!isTransientInfraNotice(message.text)) {
     return false;
   }
   return later.some(
@@ -293,7 +299,7 @@ export function displayTranscriptMessages(
   options?: { hideStaleRestart?: boolean },
 ): TranscriptMessage[] {
   return messages.filter((message, index) => {
-    if (options?.hideStaleRestart && RESTART_HEARTBEAT.test(message.text ?? "")) {
+    if (options?.hideStaleRestart && isTransientInfraNotice(message.text)) {
       return false;
     }
     return !isStaleRestartNotice(message, messages.slice(index + 1));

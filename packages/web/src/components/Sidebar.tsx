@@ -115,7 +115,7 @@ export function Sidebar({
             >
               <strong>
                 {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
-                {preview(run.prompt)}
+                <span className="run-title">{preview(run.prompt)}</span>
               </strong>
               <small>
                 {STATUS_LABELS[run.status] ?? run.status}
