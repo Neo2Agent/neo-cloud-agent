@@ -4,9 +4,10 @@ import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/eve
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson, readToken, writeToken } from "./api";
 import { AuthGate } from "./components/AuthGate";
-import { Composer, type BuildOption, type EnvOption, type LlmSettings } from "./components/Composer";
+import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
+import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings } from "./components/SettingsPanel";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
 import { formatUsage, modelLabel, preview, shortId, slotLabel } from "./format";
@@ -571,6 +572,12 @@ export function App() {
     }
   }, [pendingTurn, snapshot.messages]);
 
+  useEffect(() => {
+    if (filesOpen || diffOpen || settingsOpen) {
+      document.getElementById("workspace-drawer")?.scrollIntoView({ block: "nearest" });
+    }
+  }, [filesOpen, diffOpen, settingsOpen]);
+
   const displayMessages = withPendingUser(visibleMessages as TranscriptMessage[], pendingTurn);
   const busy = isTurnBusy({
     sending,
@@ -692,7 +699,14 @@ export function App() {
                 type="button"
                 hidden={!runId}
                 aria-expanded={filesOpen}
-                onClick={() => setFilesOpen((value) => !value)}
+                onClick={() => {
+                  const next = !filesOpen;
+                  setFilesOpen(next);
+                  if (next) {
+                    setDiffOpen(false);
+                    setSettingsOpen(false);
+                  }
+                }}
               >
                 {filesOpen ? "收起文件" : "文件树"}
               </button>
@@ -703,8 +717,11 @@ export function App() {
                 hidden={!runId}
                 aria-expanded={diffOpen}
                 onClick={() => {
-                  setDiffOpen((value) => !value);
-                  if (!diffOpen && runId) {
+                  const next = !diffOpen;
+                  setDiffOpen(next);
+                  setFilesOpen(false);
+                  setSettingsOpen(false);
+                  if (next && runId) {
                     setDiffLoading(true);
                     setDiffError("");
                     void (async () => {
@@ -758,7 +775,14 @@ export function App() {
                 id="toggle-settings"
                 type="button"
                 aria-expanded={settingsOpen}
-                onClick={() => setSettingsOpen((value) => !value)}
+                onClick={() => {
+                  const next = !settingsOpen;
+                  setSettingsOpen(next);
+                  if (next) {
+                    setFilesOpen(false);
+                    setDiffOpen(false);
+                  }
+                }}
               >
                 {settingsOpen ? "收起设置" : "设置"}
               </button>
@@ -804,50 +828,45 @@ export function App() {
               </button>
             </div>
           </header>
-          <div className="workspace-col">
-            <FileTree token={token} runId={runId} open={filesOpen} />
-            <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
-            <Transcript
-              messages={displayMessages}
-              remaining={remaining}
-              empty={displayMessages.length === 0}
-              busy={busy}
-              activity={activity}
-              onLoadOlder={loadOlder}
-            />
-          </div>
-          <Composer
-            prompt={prompt}
-            repo={repo}
-            envId={envId}
-            buildId={buildId}
-            environments={environments}
-            builds={builds}
-            settingsOpen={settingsOpen}
-            llm={llm}
-            llmKey={llmKey}
-            images={images}
-            vmHint={vmHint}
-            busy={busy}
-            stopping={stopping}
-            archived={archived}
-            canStop={Boolean(runId)}
-            activity={activity}
-            onPrompt={setPrompt}
-            onRepo={setRepo}
-            onEnv={setEnvId}
-            onBuild={setBuildId}
-            onLlmUpstream={(value) =>
-              setLlm((prev) => ({
-                ...prev,
-                upstream: value,
-                model: value === "openai" ? "gpt-4o-mini" : /pro/i.test(prev.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash",
-              }))
-            }
-            onLlmModel={(value) => setLlm((prev) => ({ ...prev, model: value }))}
-            onLlmKey={setLlmKey}
-            onImages={setImages}
-            onSaveLlm={() => {
+          {filesOpen || diffOpen || settingsOpen ? (
+            <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label={settingsOpen ? "设置" : filesOpen ? "文件树" : "Diff"}>
+              <div className="workspace-drawer-bar">
+                <strong>{settingsOpen ? "设置" : filesOpen ? "文件树" : "Diff"}</strong>
+                <button
+                  type="button"
+                  className="ghost"
+                  id="close-drawer"
+                  onClick={() => {
+                    setFilesOpen(false);
+                    setDiffOpen(false);
+                    setSettingsOpen(false);
+                  }}
+                >
+                  关闭
+                </button>
+              </div>
+              {settingsOpen ? (
+                <SettingsPanel
+                  repo={repo}
+                  envId={envId}
+                  buildId={buildId}
+                  environments={environments}
+                  builds={builds}
+                  llm={llm}
+                  llmKey={llmKey}
+                  onRepo={setRepo}
+                  onEnv={setEnvId}
+                  onBuild={setBuildId}
+                  onLlmUpstream={(value) =>
+                    setLlm((prev) => ({
+                      ...prev,
+                      upstream: value,
+                      model: value === "openai" ? "gpt-4o-mini" : /pro/i.test(prev.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash",
+                    }))
+                  }
+                  onLlmModel={(value) => setLlm((prev) => ({ ...prev, model: value }))}
+                  onLlmKey={setLlmKey}
+                  onSaveLlm={() => {
               void (async () => {
                 if (!llmKey && !llm.configured) return;
                 const payload: Record<string, string> = {
@@ -874,47 +893,74 @@ export function App() {
                 setLlm((prev) => ({ ...prev, model: error instanceof Error ? error.message : "保存失败" }));
               });
             }}
-            onWarm={() => {
-              void (async () => {
-                if (!repo.trim()) {
-                  setEvents((prev) => [
-                    ...prev,
-                    {
-                      id: `err-${Date.now()}`,
-                      runId: runId ?? "local",
-                      createdAt: new Date().toISOString(),
-                      category: "agent_setup",
-                      level: "error",
-                      kind: "run.error",
-                      title: "预热前先填仓库。",
-                    },
-                  ]);
-                  return;
-                }
-                const created = await readJson<{ id?: string; status?: string; error?: string; failureMessage?: string }>(
-                  await api(token, "/v1/builds", {
-                    method: "POST",
-                    body: JSON.stringify({ repoUrls: [repo.trim()], envId: envId || undefined }),
-                  }),
-                );
-                if (created.error) throw new Error(created.error);
-                await refreshEnvironments();
-                if (created.id && created.status === "SUCCEEDED") setBuildId(created.id);
-              })().catch((error) => {
-                setEvents((prev) => [
-                  ...prev,
-                  {
-                    id: `err-${Date.now()}`,
-                    runId: runId ?? "local",
-                    createdAt: new Date().toISOString(),
-                    category: "agent_setup",
-                    level: "error",
-                    kind: "run.error",
-                    title: error instanceof Error ? error.message : "预热失败",
-                  },
-                ]);
-              });
-            }}
+                  onWarm={() => {
+                    void (async () => {
+                      if (!repo.trim()) {
+                        setEvents((prev) => [
+                          ...prev,
+                          {
+                            id: `err-${Date.now()}`,
+                            runId: runId ?? "local",
+                            createdAt: new Date().toISOString(),
+                            category: "agent_setup",
+                            level: "error",
+                            kind: "run.error",
+                            title: "预热前先填仓库。",
+                          },
+                        ]);
+                        return;
+                      }
+                      const created = await readJson<{ id?: string; status?: string; error?: string; failureMessage?: string }>(
+                        await api(token, "/v1/builds", {
+                          method: "POST",
+                          body: JSON.stringify({ repoUrls: [repo.trim()], envId: envId || undefined }),
+                        }),
+                      );
+                      if (created.error) throw new Error(created.error);
+                      await refreshEnvironments();
+                      if (created.id && created.status === "SUCCEEDED") setBuildId(created.id);
+                    })().catch((error) => {
+                      setEvents((prev) => [
+                        ...prev,
+                        {
+                          id: `err-${Date.now()}`,
+                          runId: runId ?? "local",
+                          createdAt: new Date().toISOString(),
+                          category: "agent_setup",
+                          level: "error",
+                          kind: "run.error",
+                          title: error instanceof Error ? error.message : "预热失败",
+                        },
+                      ]);
+                    });
+                  }}
+                />
+              ) : null}
+              <FileTree token={token} runId={runId} open={filesOpen} />
+              <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
+            </aside>
+          ) : null}
+          <div className="workspace-col">
+            <Transcript
+              messages={displayMessages}
+              remaining={remaining}
+              empty={displayMessages.length === 0}
+              busy={busy}
+              activity={activity}
+              onLoadOlder={loadOlder}
+            />
+          </div>
+          <Composer
+            prompt={prompt}
+            images={images}
+            vmHint={vmHint}
+            busy={busy}
+            stopping={stopping}
+            archived={archived}
+            canStop={Boolean(runId)}
+            activity={activity}
+            onPrompt={setPrompt}
+            onImages={setImages}
             onSend={() => void sendMessage()}
             onStop={stopTurn}
           />

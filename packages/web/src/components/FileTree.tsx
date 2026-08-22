@@ -46,7 +46,13 @@ export function FileTree({ token, runId, open }: Props) {
   }, [open, path, runId, token]);
 
   if (!open) return null;
-  if (!runId) return <p className="hint">发送任务后可以浏览工作区文件。</p>;
+  if (!runId) {
+    return (
+      <section className="file-tree" id="file-tree">
+        <p className="hint">发送任务后可以浏览工作区文件。</p>
+      </section>
+    );
+  }
 
   const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 
