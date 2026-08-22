@@ -225,29 +225,37 @@ button[type="submit"]:disabled {
 }
 
 .run-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  line-height: 1.4;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .run-item strong {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 100%;
+  display: block;
+  width: 100%;
+  overflow: hidden;
   font-size: 14px;
   font-weight: 600;
-  overflow: hidden;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .run-title {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+.run-item strong .pulse-dot {
+  display: inline-block;
+  vertical-align: 0.1em;
+  margin-right: 6px;
 }
 
 .run-item[data-busy="true"] small {
@@ -900,7 +908,6 @@ h1 {
   background: var(--run);
   box-shadow: 0 0 0 0 rgba(23, 92, 211, 0.45);
   animation: pulse-dot 1.4s ease-out infinite;
-  flex: 0 0 auto;
 }
 
 @keyframes pulse-dot {
@@ -1992,6 +1999,7 @@ textarea {
     z-index: 9;
     border-right: 1px solid var(--line);
     box-shadow: var(--shadow);
+    background: #f7f7f8;
   }
 
   .sidebar {
@@ -2034,11 +2042,11 @@ textarea {
 
   .run-item strong {
     font-size: 16px;
-  }
-
-  .run-title {
-    font-size: 16px;
-    white-space: nowrap;
+    line-height: 1.45;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    word-break: break-word;
   }
 
   .topbar {
