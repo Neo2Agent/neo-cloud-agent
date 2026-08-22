@@ -200,6 +200,19 @@ test("empty assistant turns without tools are dropped", () => {
   assert.equal(snapshot.messages.length, 0);
 });
 
+test("run.error closes a cut-off stream so the composer is not stuck", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "m1", kind: "message.start" }),
+    ev({ id: "d1", kind: "message.delta", data: { delta: "half" } }),
+    ev({ id: "t1", kind: "tool.start", data: { toolName: "bash" } }),
+    ev({ id: "e1", kind: "run.error", title: "worker heartbeat lost after control plane restart" }),
+  ]);
+  const assistant = snapshot.messages.find((item) => item.role === "assistant");
+  assert.equal(assistant?.streaming, false);
+  assert.equal(assistant?.tools?.[0]?.status, "done");
+  assert.match(assistant?.text ?? "", /heartbeat lost/);
+});
+
 test("in-progress assistant stays streaming so another client can tail", () => {
   const snapshot = buildTranscriptSnapshot("run-1", [
     ev({ id: "m1", kind: "message.start" }),

@@ -92,6 +92,7 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /turn-progress/);
   assert.match(appText, /正在思考/);
   assert.match(appText, /stop-icon/);
+  assert.match(appText, /停止失败/);
   assert.match(appText, /context-usage/);
   assert.match(appText, /上下文用量/);
   assert.match(appText, /窗口未知/);

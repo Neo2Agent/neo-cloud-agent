@@ -988,8 +988,27 @@ export function abortRun(runId: string): Run {
   if (!run) {
     throw new Error(`run not found: ${runId}`);
   }
-  inbound.get(runId)?.push({ type: "abort" });
+  if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
+    return run;
+  }
+  if (isWorkerAttached(runId)) {
+    inbound.get(runId)?.push({ type: "abort" });
+    run.updatedAt = now();
+    flushRun(runId);
+    return run;
+  }
+  const queued = inbound.get(runId) ?? [];
+  inbound.set(
+    runId,
+    queued.filter((item) => item.type !== "abort"),
+  );
+  run.status = "IDLE";
+  run.errorMessage = null;
+  run.workerHandle = null;
+  run.vmSlotId = null;
+  run.idleAt = now();
   run.updatedAt = now();
+  publish(event(runId, "run.idle", "Stopped; worker was not attached"));
   flushRun(runId);
   return run;
 }

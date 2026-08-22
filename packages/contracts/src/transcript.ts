@@ -155,6 +155,11 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
       return;
     }
     assistant.streaming = false;
+    for (const tool of assistant.tools ?? []) {
+      if (tool.status === "running") {
+        tool.status = "done";
+      }
+    }
     if (!hasAssistantContent(assistant)) {
       const index = messages.lastIndexOf(assistant);
       if (index >= 0) {
@@ -228,7 +233,7 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
       }
       continue;
     }
-    if (event.kind === "agent.end") {
+    if (event.kind === "agent.end" || event.kind === "run.idle") {
       finishAssistant();
       continue;
     }
@@ -242,6 +247,7 @@ export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): Tran
     if (event.kind === "run.error") {
       const current = ensureAssistant(event);
       appendText(current, current.text ? `\n${event.title}` : event.title);
+      finishAssistant();
       continue;
     }
     if (isSetupKind(event.kind)) {

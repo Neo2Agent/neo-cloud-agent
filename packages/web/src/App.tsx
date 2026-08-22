@@ -577,10 +577,21 @@ export function App() {
   const stopTurn = useCallback(() => {
     if (!runId) return;
     setStopping(true);
-    void api(tokenRef.current, `/v1/runs/${runId}/abort`, { method: "POST" }).catch(() => {
-      setStopping(false);
-    });
-  }, [runId]);
+    void (async () => {
+      try {
+        const response = await api(tokenRef.current, `/v1/runs/${runId}/abort`, { method: "POST" });
+        const body = await readJson<Run & { error?: string }>(response);
+        if (!response.ok) throw new Error(body.error || "停止失败");
+        patchRun(runId, (run) => ({ ...run, ...body }));
+        if (!isActiveRunStatus(body.status)) {
+          setStopping(false);
+          setSending(false);
+        }
+      } catch {
+        setStopping(false);
+      }
+    })();
+  }, [patchRun, runId]);
 
   useEffect(() => {
     let cancelled = false;

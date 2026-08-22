@@ -56,6 +56,7 @@ export function isTurnBusy(input: {
   messages?: TranscriptMessage[];
 }): boolean {
   if (input.sending || input.stopping || input.pending) return true;
+  if (input.status === "ERROR" || isComposerClosed(input.status)) return false;
   if (isActiveRunStatus(input.status)) return true;
   return Boolean(input.messages && hasLiveAssistantWork(input.messages));
 }

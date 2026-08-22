@@ -12,6 +12,7 @@ process.env.WORKER_IDLE_RELEASE_MS = "0";
 delete process.env.WORKER_WORKSPACE_MOUNT;
 
 const {
+  abortRun,
   archiveRun,
   commitRun,
   createRun,
@@ -186,6 +187,23 @@ test("live runs without a worker heartbeat become ERROR", async () => {
   assert.ok(expired.includes(run.id));
   assert.equal(getRun(run.id)?.status, "ERROR");
   assert.match(getRun(run.id)?.errorMessage ?? "", /heartbeat/);
+});
+
+test("abort without a worker settles ERROR so the chat can continue", async () => {
+  const run = await createRun({
+    prompt: "lost then abort",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  reloadPersistedState();
+  expireStaleWorkers(Date.now() + 60_000);
+  assert.equal(getRun(run.id)?.status, "ERROR");
+  const aborted = abortRun(run.id);
+  assert.equal(aborted.status, "IDLE");
+  assert.equal(aborted.errorMessage, null);
+  assert.ok(listEvents(run.id).some((item) => item.kind === "run.idle"));
+  const follow = await enqueueFollowUp(run.id, { text: "try again" });
+  assert.equal(follow.text, "try again");
+  assert.notEqual(getRun(run.id)?.status, "ERROR");
 });
 
 test("follow-up after reload resumes the worker from session backup", async () => {
