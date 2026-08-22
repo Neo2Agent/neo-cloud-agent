@@ -15,7 +15,9 @@ import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
 import { AutomationsPage } from "./components/AutomationsPage";
+import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
+import type { Project } from "@neo-cloud-agent/contracts/project";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
 import {
@@ -106,6 +108,24 @@ function hashAutomations(): boolean {
   return location.hash === "#/automations";
 }
 
+function hashInviteToken(): string | null {
+  return /^#\/invite\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
+}
+
+function hashProjectId(): string | null {
+  return /^#\/projects\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
+}
+
+function hashProjects(): boolean {
+  return location.hash === "#/projects" || Boolean(hashProjectId()) || Boolean(hashInviteToken());
+}
+
+function initialMainTab(): "chat" | "automations" | "projects" {
+  if (hashAutomations()) return "automations";
+  if (hashProjects()) return "projects";
+  return "chat";
+}
+
 export function App() {
   const [token, setToken] = useState(readToken);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -120,6 +140,7 @@ export function App() {
   const [healthText, setHealthText] = useState("检测服务…");
   const [vms, setVms] = useState<VmSummary>({ total: 0, busy: 0, backend: "none", slots: [] });
   const [userEmail, setUserEmail] = useState("");
+  const [userId, setUserId] = useState("");
   const [authOpen, setAuthOpen] = useState(true);
   const [authMode, setAuthMode] = useState<"login" | "token">("login");
   const [authBusy, setAuthBusy] = useState(false);
@@ -141,7 +162,10 @@ export function App() {
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mainTab, setMainTab] = useState<"chat" | "automations">(() => (hashAutomations() ? "automations" : "chat"));
+  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects">(initialMainTab);
+  const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
+  const [inviteToken, setInviteToken] = useState<string | null>(hashInviteToken);
   const [llm, setLlm] = useState<LlmSettings>({ configured: false, upstream: "deepseek", model: null });
   const [llmKey, setLlmKey] = useState("");
   const [scm, setScm] = useState<ScmSettings>({ configured: false, method: "none" });
@@ -459,6 +483,12 @@ export function App() {
       const run = await readJson<Run>(runRes);
       if (openGenRef.current !== gen) return false;
       setCurrentRun(run);
+      const projectId = run.projectId ?? "";
+      if (projectId) {
+        setActiveProject((prev) => (prev?.id === projectId ? prev : { id: projectId, name: prev?.name ?? "项目对话" }));
+      } else {
+        setActiveProject(null);
+      }
       setRepo(run.repoUrls?.[0] ?? "");
       setEnvId(run.envId ?? "");
       setBuildId(run.buildId ?? "");
@@ -500,17 +530,51 @@ export function App() {
     history.replaceState(null, "", "/#/automations");
   }, []);
 
+  const openProjects = useCallback((id?: string | null, invite?: string | null) => {
+    setMainTab("projects");
+    setFilesOpen(false);
+    setDiffOpen(false);
+    setSettingsOpen(false);
+    setSelectedProjectId(id ?? null);
+    setInviteToken(invite ?? null);
+    if (invite) {
+      history.replaceState(null, "", `/#/invite/${invite}`);
+      return;
+    }
+    history.replaceState(null, "", id ? `/#/projects/${id}` : "/#/projects");
+  }, []);
+
+  const startProjectChat = useCallback(
+    (project: Project) => {
+      resetComposer();
+      setActiveProject({ id: project.id, name: project.name });
+      if (project.defaultRepoUrls[0]) setRepo(project.defaultRepoUrls[0]);
+      setMainTab("chat");
+    },
+    [resetComposer],
+  );
+
   const openChat = useCallback(() => {
     setMainTab("chat");
-    if (hashAutomations()) {
+    if (hashAutomations() || hashProjects()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
   }, [runId]);
 
   const finishLogin = useCallback(async () => {
+    const refreshShell = [refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()] as const;
     if (hashAutomations()) {
       setMainTab("automations");
-      await Promise.all([refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()]);
+      await Promise.all(refreshShell);
+      return;
+    }
+    const invite = hashInviteToken();
+    const projectId = hashProjectId();
+    if (invite || projectId || location.hash === "#/projects") {
+      setMainTab("projects");
+      setInviteToken(invite);
+      setSelectedProjectId(projectId);
+      await Promise.all(refreshShell);
       return;
     }
     const match = hashRunId();
@@ -522,15 +586,16 @@ export function App() {
       refreshScm(),
       refreshVms(),
     ]);
-    if (!match && !hashRunId()) resetComposer();
+    if (!match && !hashRunId() && !hashProjects()) resetComposer();
   }, [openRun, refreshEnvironments, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
-    async (nextToken: string, user?: { email?: string } | null) => {
+    async (nextToken: string, user?: { id?: string; email?: string } | null) => {
       if (!nextToken) throw new Error("登录响应缺少会话");
       persistToken(nextToken);
       if (user?.email) {
         setUserEmail(user.email);
+        setUserId(user.id ?? "");
         setAuthOpen(false);
         setAuthError("");
         setAuthPassword("");
@@ -540,15 +605,18 @@ export function App() {
       if (!me.ok) {
         persistToken("");
         setUserEmail("");
+        setUserId("");
         throw new Error("unauthorized");
       }
-      const body = await readJson<{ user?: { email?: string } }>(me);
+      const body = await readJson<{ user?: { id?: string; email?: string } }>(me);
       if (!body.user) {
         persistToken("");
         setUserEmail("");
+        setUserId("");
         throw new Error("登录未生效，请再试一次");
       }
       setUserEmail(body.user.email ?? "");
+      setUserId(body.user.id ?? "");
       setAuthOpen(false);
       setAuthError("");
       setAuthPassword("");
@@ -602,6 +670,7 @@ export function App() {
               envId: envId || undefined,
               model,
               images: attached.length ? attached : undefined,
+              projectId: activeProject?.id,
               ...buildPayload,
             }),
           }),
@@ -635,7 +704,7 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [buildId, currentRun?.status, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, buildId, currentRun?.status, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
 
   const stopTurn = useCallback(() => {
     if (!runId) return;
@@ -716,14 +785,27 @@ export function App() {
 
   useEffect(() => {
     const syncHash = () => {
+      const invite = hashInviteToken();
+      const projectId = hashProjectId();
       if (hashAutomations()) {
         setMainTab("automations");
+        setInviteToken(null);
+        setFilesOpen(false);
+        setDiffOpen(false);
+        setSettingsOpen(false);
+        return;
+      }
+      if (invite || projectId || location.hash === "#/projects") {
+        setMainTab("projects");
+        setInviteToken(invite);
+        setSelectedProjectId(projectId);
         setFilesOpen(false);
         setDiffOpen(false);
         setSettingsOpen(false);
         return;
       }
       setMainTab("chat");
+      setInviteToken(null);
     };
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
@@ -839,6 +921,7 @@ export function App() {
           health={healthText}
           onClose={toggleSidebar}
           onNewChat={() => {
+            setActiveProject(null);
             setMainTab("chat");
             resetComposer();
             setSidebarOpen((open) => {
@@ -868,6 +951,8 @@ export function App() {
             void api(token, "/v1/auth/logout", { method: "POST" });
             persistToken("");
             setUserEmail("");
+            setUserId("");
+            setActiveProject(null);
             setAuthEmail("");
             setAuthPassword("");
             setRuns([]);
@@ -899,6 +984,14 @@ export function App() {
                 </button>
                 <button
                   type="button"
+                  className={mainTab === "projects" ? "active" : ""}
+                  aria-current={mainTab === "projects" ? "page" : undefined}
+                  onClick={() => openProjects()}
+                >
+                  项目
+                </button>
+                <button
+                  type="button"
                   className={mainTab === "automations" ? "active" : ""}
                   aria-current={mainTab === "automations" ? "page" : undefined}
                   onClick={openAutomations}
@@ -908,20 +1001,28 @@ export function App() {
               </nav>
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
-                  {mainTab === "automations"
-                    ? "定时任务"
-                    : currentRun
-                      ? currentRun.buildId
-                        ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
-                        : currentRun.branchName ?? shortId(currentRun.id)
-                      : "新对话"}
+                  {mainTab === "projects"
+                    ? "项目"
+                    : mainTab === "automations"
+                      ? "定时任务"
+                      : currentRun
+                        ? currentRun.buildId
+                          ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
+                          : currentRun.branchName ?? shortId(currentRun.id)
+                        : activeProject
+                          ? `项目 · ${activeProject.name}`
+                          : "新对话"}
                 </p>
                 <h1 id="run-title">
-                  {mainTab === "automations"
-                    ? "到点自动开对话"
-                    : currentRun
-                      ? preview(currentRun.prompt)
-                      : "和云端 Agent 说话"}
+                  {mainTab === "projects"
+                    ? "人和 Agent 共用一份上下文"
+                    : mainTab === "automations"
+                      ? "到点自动开对话"
+                      : currentRun
+                        ? preview(currentRun.prompt)
+                        : activeProject
+                          ? `在「${activeProject.name}」里开对话`
+                          : "和云端 Agent 说话"}
                 </h1>
               </div>
             </div>
@@ -1196,7 +1297,20 @@ export function App() {
               <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
             </aside>
           ) : null}
-            {mainTab === "automations" ? (
+            {mainTab === "projects" ? (
+              <ProjectsPage
+                token={token}
+                userId={userId}
+                inviteToken={inviteToken}
+                selectedId={selectedProjectId}
+                onOpenProject={(id) => openProjects(id)}
+                onStartChat={startProjectChat}
+                onOpenRun={(id) => {
+                  setMainTab("chat");
+                  void openRun(id);
+                }}
+              />
+            ) : mainTab === "automations" ? (
               <AutomationsPage
                 token={token}
                 onOpenRun={(id) => {
@@ -1219,6 +1333,22 @@ export function App() {
               </ChatErrorBoundary>
             )}
           </div>
+          {mainTab === "chat" && activeProject ? (
+            <div className="proj-chip-bar" id="project-chip">
+              <span className="proj-chip">
+                {runId ? `项目对话 · ${activeProject.name}` : `将在项目「${activeProject.name}」中开对话`}
+              </span>
+              {runId ? (
+                <button type="button" className="ghost" onClick={() => openProjects(activeProject.id)}>
+                  打开项目
+                </button>
+              ) : (
+                <button type="button" className="ghost" onClick={() => setActiveProject(null)}>
+                  不用项目
+                </button>
+              )}
+            </div>
+          ) : null}
           {mainTab === "chat" ? (
             <Composer
               prompt={prompt}

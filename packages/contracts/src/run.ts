@@ -39,6 +39,8 @@ export interface Run {
   status: RunStatus;
   setupStatus: SetupStatus;
   source: RunSource;
+  projectId?: string | null;
+  assigneeUserId?: string | null;
   model: string;
   prompt: string;
   branchName: string | null;
@@ -109,6 +111,7 @@ export interface CreateRunRequest {
   reuseBuild?: boolean;
   model?: string;
   source?: RunSource;
+  projectId?: string;
   images?: ImageRef[];
 }
 

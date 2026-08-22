@@ -9,9 +9,12 @@ import type {
   CreateRunRequest,
   CreateSubscriptionRequest,
   CreateAutomationRequest,
+  CreateProjectRequest,
   RunEvent,
+  UpdateProjectRequest,
 } from "@neo-cloud-agent/contracts";
 import {
+  canManageProject,
   evaluateEgress,
   pageTranscriptSnapshot,
   parseAutomationSchedule,
@@ -41,6 +44,7 @@ import {
   listRunSubscriptions,
   listRuns,
   subscribeRun,
+  transferRun,
   loadRunIntoMemory,
   mintRunGitToken,
   openRunDraftPr,
@@ -55,6 +59,8 @@ import { workspaceFor } from "../worker-spawn.js";
 import {
   AccountError,
   bootstrapEmail,
+  createTeammateAccount,
+  findPublicUserByEmail,
   loginAccount,
   logoutSession,
   sessionCookieHeader,
@@ -80,6 +86,19 @@ import { readyWarmCount } from "../env/warm-pool.js";
 import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
 import { GITHUB_WEBHOOK_PATH, publicGitHubWebhookInfo } from "../subscriptions/secret.js";
 import { createAutomation, deleteAutomation, listAutomations, updateAutomation } from "../automations/store.js";
+import {
+  acceptInvite,
+  addProjectMember,
+  approveInvite,
+  createInvite,
+  createProject,
+  findInvite,
+  getProject,
+  listProjects,
+  listProjectsForUser,
+  memberRole,
+  updateProject,
+} from "../projects/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
   publicNotifySettings,
@@ -226,6 +245,7 @@ export function createApiServer() {
           githubWebhook: publicGitHubWebhookInfo(),
           notify: publicNotifySettings(),
           automations: listAutomations().length,
+          projects: listProjects().length,
         });
         return;
       }
@@ -487,13 +507,164 @@ export function createApiServer() {
           send(res, 200, updated);
           return;
         }
+        if (method === "GET" && path === "/v1/projects") {
+          if (actor.kind !== "user") {
+            send(res, 200, { projects: [] });
+            return;
+          }
+          send(res, 200, { projects: listProjectsForUser(actor.userId) });
+          return;
+        }
+        if (method === "POST" && path === "/v1/projects") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as CreateProjectRequest;
+            send(res, 201, createProject({ ...body, actor: { userId: actor.userId, email: actor.email } }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invalid_project" });
+          }
+          return;
+        }
+        const inviteLookup = /^\/v1\/invites\/([^/]+)$/.exec(path);
+        if (inviteLookup && method === "GET") {
+          const found = findInvite(inviteLookup[1] ?? "");
+          if (!found) {
+            notFound(res);
+            return;
+          }
+          send(res, 200, {
+            projectId: found.project.id,
+            projectName: found.project.name,
+            invitePolicy: found.project.invitePolicy,
+            status: found.invite.status,
+            expiresAt: found.invite.expiresAt,
+          });
+          return;
+        }
+        if (inviteLookup && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 200, acceptInvite(inviteLookup[1] ?? "", { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invite_failed" });
+          }
+          return;
+        }
+        const projectMatch = /^\/v1\/projects\/([^/]+)$/.exec(path);
+        if (projectMatch && method === "GET") {
+          const project = getProject(projectMatch[1] ?? "");
+          if (!project || (actor.kind === "user" && !memberRole(project.id, actor.userId))) {
+            notFound(res);
+            return;
+          }
+          send(res, 200, project);
+          return;
+        }
+        if (projectMatch && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(
+              res,
+              200,
+              updateProject(projectMatch[1] ?? "", (await readJson(req)) as UpdateProjectRequest, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "update_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const projectInviteMatch = /^\/v1\/projects\/([^/]+)\/invites$/.exec(path);
+        if (projectInviteMatch && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const invite = createInvite(projectInviteMatch[1] ?? "", { userId: actor.userId, email: actor.email });
+            const app = publicNotifySettings().publicAppUrl.replace(/\/$/, "");
+            send(res, 201, { ...invite, url: `${app || ""}/#/invite/${invite.token}` });
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invite_failed" });
+          }
+          return;
+        }
+        const projectApproveMatch = /^\/v1\/projects\/([^/]+)\/invites\/([^/]+)\/approve$/.exec(path);
+        if (projectApproveMatch && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(
+              res,
+              200,
+              approveInvite(projectApproveMatch[1] ?? "", projectApproveMatch[2] ?? "", {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "approve_failed" });
+          }
+          return;
+        }
+        const projectMemberMatch = /^\/v1\/projects\/([^/]+)\/members$/.exec(path);
+        if (projectMemberMatch && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const projectId = projectMemberMatch[1] ?? "";
+          if (!canManageProject(memberRole(projectId, actor.userId))) {
+            send(res, 403, { error: "没有权限加成员" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { email?: string; password?: string; role?: "admin" | "member" };
+            const email = (body.email ?? "").trim();
+            let user = await findPublicUserByEmail(email);
+            if (!user) {
+              if (!body.password) {
+                send(res, 400, { error: "新成员需要设置密码" });
+                return;
+              }
+              user = await createTeammateAccount({ email, password: body.password, orgId: actor.orgId });
+            }
+            send(
+              res,
+              200,
+              addProjectMember(projectId, { userId: user.id, email: user.email, role: body.role }, { userId: actor.userId, email: actor.email }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "member_failed";
+            send(res, message.includes("已存在") ? 409 : 400, { error: message });
+          }
+          return;
+        }
         if (method === "POST" && path === "/v1/runs") {
           const body = (await readJson(req)) as CreateRunRequest;
           if (!body.prompt || !Array.isArray(body.repoUrls)) {
             send(res, 400, { error: "prompt and repoUrls are required" });
             return;
           }
-          send(res, 201, await createRun(body, { userId: actor.userId, orgId: actor.orgId }));
+          try {
+            send(res, 201, await createRun(body, { userId: actor.userId, orgId: actor.orgId }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "create_run_failed" });
+          }
           return;
         }
         if (method === "GET" && path === "/v1/runs") {
@@ -571,6 +742,29 @@ export function createApiServer() {
           return;
         }
         send(res, 200, abortRun(abortMatch[1] ?? ""));
+        return;
+      }
+
+      const transferMatch = /^\/v1\/runs\/([^/]+)\/transfer$/.exec(path);
+      if (transferMatch && method === "POST") {
+        const run = await requireRun(transferMatch[1] ?? "");
+        if (!run || !actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        if (actor.kind !== "user") {
+          send(res, 401, { error: "login_required" });
+          return;
+        }
+        try {
+          const body = (await readJson(req)) as { toUserId?: string; note?: string };
+          if (!body.toUserId) {
+            send(res, 400, { error: "toUserId is required" });
+            return;
+          }
+          send(res, 200, transferRun(run.id, body.toUserId, { userId: actor.userId, email: actor.email }, body.note));
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "transfer_failed" });
+        }
         return;
       }
 

@@ -1,4 +1,4 @@
-import type { Automation, Build, Environment, RunEvent } from "@neo-cloud-agent/contracts";
+import type { Automation, Build, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
 import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS automations (
   body JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -80,6 +85,9 @@ export interface PostgresMetadataStore extends AccountStore {
   saveAutomation(item: Automation): Promise<void>;
   loadAutomations(): Promise<Automation[]>;
   deleteAutomation(id: string): Promise<void>;
+  saveProject(item: Project): Promise<void>;
+  loadProjects(): Promise<Project[]>;
+  deleteProject(id: string): Promise<void>;
 }
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -128,6 +136,14 @@ function asAutomation(value: unknown): Automation | null {
   }
   const item = value as Automation;
   return item.id && item.prompt && item.schedule ? item : null;
+}
+
+function asProject(value: unknown): Project | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Project;
+  return item.id && item.name ? item : null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -254,6 +270,21 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async deleteAutomation(id) {
       await query(`DELETE FROM automations WHERE id = $1`, [id]);
+    },
+    async saveProject(item) {
+      await query(
+        `INSERT INTO projects (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.updatedAt],
+      );
+    },
+    async loadProjects() {
+      const result = await query(`SELECT body FROM projects ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asProject)).filter((item): item is Project => Boolean(item));
+    },
+    async deleteProject(id) {
+      await query(`DELETE FROM projects WHERE id = $1`, [id]);
     },
     async createUser(user) {
       try {

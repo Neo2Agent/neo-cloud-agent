@@ -112,4 +112,19 @@ test("mysql store upserts run JSON, events, and users", async () => {
   };
   await store.saveAutomation(automation);
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO automations/);
+
+  await store.saveProject({
+    id: "proj_1",
+    name: "官网改版",
+    instruction: "用中文回复",
+    defaultRepoUrls: [],
+    invitePolicy: "open",
+    createdBy: "user_ada",
+    createdAt: record.run.createdAt,
+    updatedAt: record.run.createdAt,
+    members: [],
+    invites: [],
+    events: [],
+  });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO projects/);
 });

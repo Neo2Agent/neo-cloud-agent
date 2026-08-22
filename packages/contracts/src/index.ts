@@ -159,6 +159,18 @@ export type {
   AutomationSchedule,
   CreateAutomationRequest,
 } from "./automation.js";
+export type {
+  CreateProjectRequest,
+  InvitePolicy,
+  InviteStatus,
+  Project,
+  ProjectEvent,
+  ProjectInvite,
+  ProjectMember,
+  ProjectRole,
+  UpdateProjectRequest,
+} from "./project.js";
+export { appendProjectInstruction, canManageProject, formatProjectMemory } from "./project.js";
 export {
   describeAutomationSchedule,
   nextAutomationRunAt,
