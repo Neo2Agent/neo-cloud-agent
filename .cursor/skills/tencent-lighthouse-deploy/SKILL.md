@@ -20,6 +20,7 @@ description: Deploy and operate neo-cloud-agent on the Tencent Cloud Lighthouse 
 | 入口 | http://62.234.211.200/ （Caddy `:80` → `127.0.0.1:8080`） |
 | Node | 已装 **v22.23.1**（满足 `>=22.19`） |
 | Docker / KVM | **都没有**。`WORKER_RUNTIME=vm` 用 2 个 loop 挂载的 ext4 槽，不是 Firecracker |
+| 元数据 / 热事件 | 远程 MySQL + Redis，见下表「远程库」。根目录 `.env` 的 `DATABASE_URL` / `REDIS_URL` |
 
 SSH 别名（本机 `~/.ssh/config`）：
 
@@ -32,6 +33,30 @@ Host lighthouse
 ```
 
 首次装公钥用控制台 **TAT**，不要在控制台「绑定密钥」（会重启）。详见 [reference.md](reference.md)。
+
+## 远程库（另一台轻量，不要当生产应用机）
+
+MySQL / Redis 跑在**另一台**北京六区轻量上，不是 `62.234.211.200`。
+
+| 项 | 值 |
+| --- | --- |
+| 实例 | `OpenClaw(龙虾)-8Dd3` / `lhins-1whwkmau` |
+| 公网 | `101.42.105.230` |
+| 栈 | Docker Compose：`/home/ubuntu/db`（`mysql:8.4` 库/用户 `app`，`redis:7` 有密码） |
+| 端口 | `3306` / `6379`（当前控制台防火墙是 `0.0.0.0/0`，密码在该机 `/home/ubuntu/db/.env`） |
+
+生产控制面用仓库根 `.env` 的这两个键连过去（`chmod 600`，不要打印或提交）：
+
+- `DATABASE_URL=mysql://app:…@101.42.105.230:3306/app`
+- `REDIS_URL=redis://:…@101.42.105.230:6379/0`
+
+改这两个键或覆盖了含 `mysql2` 的 `main` 之后，必须：
+
+```bash
+sudo systemctl restart neo-llm-gateway neo-control-plane
+```
+
+`/health` 应出现 `metadataStore: "mysql"`、`eventBus: "redis"`。日志里是 `control-plane metadata store: mysql` 和 `control-plane event bus: redis`。不要重启**任何**轻量实例；不要在控制台绑密钥。这台 Cloud Agent 默认**没有**新库机 SSH 密钥，连库用 TCP + 已写入生产 `.env` 的 URL 即可。
 
 ## 硬约束
 
@@ -84,9 +109,10 @@ ssh lighthouse '
 期望：
 
 - 两个 unit `active`
-- control-plane：`ok: true`，`workerRuntime: "vm"`，`vmSlots.total: 2`，`llmConfigured` 看是否已存 Key
+- control-plane：`ok: true`，`workerRuntime: "vm"`，`vmSlots.total: 2`，`metadataStore: "mysql"`，`eventBus: "redis"`，`llmConfigured` 看是否已存 Key
 - gateway：若已存 DeepSeek Key，则 `upstream: "deepseek"` 且 `configured: true`
 - `:80` 是对话页，不是 Caddy 欢迎页
+- 若 `metadataStore` 仍是 `fs` 或 `eventBus` 仍是 `memory`：先确认根 `.env` 有 `DATABASE_URL` / `REDIS_URL`（不要 `cat`），再 `journalctl -u neo-control-plane -n 80` 看 `platform init failed`，不要把 Environment 打出来
 
 `pnpm --filter ... start` 的 cwd 是 **package 目录**。API Key 必须写在**仓库根** `.neo/llm-upstream.env`，代码会往上找到 `pnpm-workspace.yaml`。不要把 Key 写进 `packages/control-plane/.neo/`。
 
@@ -122,7 +148,7 @@ LLM_UPSTREAM=mock
 | --- | --- |
 | 进程 | `neo-llm-gateway` `:8081`，`neo-control-plane` `:8080`，Caddy `:80` |
 | 工作目录 | `/home/ubuntu/neo-cloud-agent`（unit 的 `WorkingDirectory`） |
-| 密钥 | 根目录 `.env` + `.neo/llm-upstream.env`（gitignore） |
+| 密钥 | 根目录 `.env`（含 `DATABASE_URL` / `REDIS_URL`）+ `.neo/llm-upstream.env`（gitignore） |
 | Worker | `WORKER_RUNTIME=vm`，2×4GiB ext4 在 `.neo/vms/`，无 KVM 则 loop 挂载 |
 | 对话 | 默认管理员 `admin` / `123456`；`ACCOUNTS_REQUIRED` 未开 |
 | 爱马仕 | 已下线，不要 `systemctl --user start hermes-gateway` |
@@ -150,5 +176,6 @@ ssh lighthouse 'journalctl -u neo-control-plane -u neo-llm-gateway -n 80 --no-pa
 
 - SSH 目标就是 `lighthouse`。连不上先 TAT 追加当前公钥，不要重启。
 - 同步代码默认用 tar，不要假设轻量能拉 GitHub。
-- 验收只报 `ok` / `configured` / `workerRuntime` / 槽位数字，不报密钥。
+- 验收只报 `ok` / `configured` / `workerRuntime` / `metadataStore` / `eventBus` / 槽位数字，不报密钥或连接串。
 - 改完代码照常 commit、push，再同步轻量并重启两个 unit。
+- 不要动新库机 `101.42.105.230` 上的 Docker 栈，除非库本身挂了。

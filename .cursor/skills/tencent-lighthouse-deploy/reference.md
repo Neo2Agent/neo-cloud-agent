@@ -90,6 +90,13 @@ DEFAULT_ADMIN=1
 
 `LLM_GATEWAY_JWT_SECRET` 在主机上生成一次，两边 unit 共用，不要提交。
 
+线上还要有（值从新库机 `/home/ubuntu/db/.env` 拼，不要打印）：
+
+```
+DATABASE_URL=mysql://app:…@101.42.105.230:3306/app
+REDIS_URL=redis://:…@101.42.105.230:6379/0
+```
+
 API Key **不要**写进 `.env` 也可以：上线后在对话页保存，落到 `.neo/llm-upstream.env`。
 
 ## systemd
