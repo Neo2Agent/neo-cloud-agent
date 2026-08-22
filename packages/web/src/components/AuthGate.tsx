@@ -1,4 +1,3 @@
-import type { FocusEvent } from "react";
 import { isNarrowViewport } from "../viewport";
 
 type AuthMode = "login" | "token";
@@ -17,10 +16,6 @@ type Props = {
   onToken: (value: string) => void;
   onSubmit: () => void;
 };
-
-function unlockField(event: FocusEvent<HTMLInputElement>) {
-  event.currentTarget.removeAttribute("readOnly");
-}
 
 export function AuthGate({
   open,
@@ -71,43 +66,50 @@ export function AuthGate({
           </div>
         )}
         <div id="auth-user-fields" hidden={effectiveMode === "token"}>
-          <input
-            id="auth-email"
-            name="neo-account"
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            readOnly
-            placeholder="账号"
-            value={email}
-            onFocus={unlockField}
-            onChange={(event) => onEmail(event.target.value)}
-          />
-          <input
-            id="auth-password"
-            name="neo-secret"
-            type="password"
-            autoComplete="new-password"
-            readOnly
-            placeholder="密码"
-            value={password}
-            onFocus={unlockField}
-            onChange={(event) => onPassword(event.target.value)}
-          />
+          <label className="auth-field" htmlFor="auth-email">
+            <span>账号</span>
+            <input
+              id="auth-email"
+              name="account"
+              type="text"
+              inputMode="text"
+              enterKeyHint="next"
+              autoComplete="username"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              lang="zh-CN"
+              placeholder="请输入账号"
+              value={email}
+              onChange={(event) => onEmail(event.target.value)}
+            />
+          </label>
+          <label className="auth-field" htmlFor="auth-password">
+            <span>密码</span>
+            <input
+              id="auth-password"
+              name="secret"
+              type="password"
+              enterKeyHint="done"
+              autoComplete="current-password"
+              placeholder="请输入密码"
+              value={password}
+              onChange={(event) => onPassword(event.target.value)}
+            />
+          </label>
         </div>
-        <input
-          id="auth-token"
-          name="neo-token"
-          type="password"
-          autoComplete="off"
-          placeholder="neo_…"
-          hidden={effectiveMode !== "token"}
-          value={token}
-          onChange={(event) => onToken(event.target.value)}
-        />
+        <label className="auth-field" htmlFor="auth-token" hidden={effectiveMode !== "token"}>
+          <span>服务令牌</span>
+          <input
+            id="auth-token"
+            name="token"
+            type="password"
+            autoComplete="off"
+            placeholder="neo_…"
+            value={token}
+            onChange={(event) => onToken(event.target.value)}
+          />
+        </label>
         <p className="auth-error" id="auth-error" hidden={!error}>
           {error}
         </p>
