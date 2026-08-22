@@ -14,7 +14,6 @@ Restart=on-failure
 RestartSec=3
 KillMode=control-group
 Delegate=yes
-DelegateControllers=cpu memory pids
 DelegateSubgroup=main
 
 [Install]
