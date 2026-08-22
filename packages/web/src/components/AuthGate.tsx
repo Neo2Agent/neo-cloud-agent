@@ -1,3 +1,5 @@
+import { isNarrowViewport } from "../viewport";
+
 type AuthMode = "login" | "token";
 
 type Props = {
@@ -33,12 +35,15 @@ export function AuthGate({
   onToken,
   onSubmit,
 }: Props) {
-  const title = mode === "token" ? "服务令牌" : "登录";
-  const copy =
-    mode === "token"
+  const phone = isNarrowViewport();
+  const effectiveMode = phone ? "login" : mode;
+  const title = effectiveMode === "token" ? "服务令牌" : "登录";
+  const copy = phone
+    ? "账号 admin，密码 123456。点登录即可。"
+    : effectiveMode === "token"
       ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
       : "账号 admin，密码 123456。登录会查询账号库。";
-  const submit = busy ? "登录中…" : mode === "token" ? "使用令牌" : "登录";
+  const submit = busy ? "登录中…" : effectiveMode === "token" ? "使用令牌" : "登录";
 
   return (
     <div
@@ -60,14 +65,16 @@ export function AuthGate({
       >
         <h2 id="auth-title">{title}</h2>
         <p id="auth-copy">{copy}</p>
-        <div className="auth-tabs" id="auth-tabs">
-          {(["login", "token"] as const).map((item) => (
-            <button key={item} type="button" data-mode={item} className={mode === item ? "active" : ""} onClick={() => onMode(item)}>
-              {item === "login" ? "登录" : "服务令牌"}
-            </button>
-          ))}
-        </div>
-        <div id="auth-user-fields" hidden={mode === "token"}>
+        {phone ? null : (
+          <div className="auth-tabs" id="auth-tabs">
+            {(["login", "token"] as const).map((item) => (
+              <button key={item} type="button" data-mode={item} className={mode === item ? "active" : ""} onClick={() => onMode(item)}>
+                {item === "login" ? "登录" : "服务令牌"}
+              </button>
+            ))}
+          </div>
+        )}
+        <div id="auth-user-fields" hidden={effectiveMode === "token"}>
           <input
             id="auth-email"
             name="login"
@@ -94,14 +101,14 @@ export function AuthGate({
           type="password"
           autoComplete="current-password"
           placeholder="neo_…"
-          hidden={mode !== "token"}
+          hidden={effectiveMode !== "token"}
           value={token}
           onChange={(event) => onToken(event.target.value)}
         />
         <p className="auth-error" id="auth-error" hidden={!error}>
           {error}
         </p>
-        <button type="submit" id="auth-submit" disabled={busy}>
+        <button type="submit" id="auth-submit" className="auth-submit" disabled={busy}>
           {submit}
         </button>
         <button type="button" id="auth-skip" hidden={!canSkip} onClick={onClose}>
