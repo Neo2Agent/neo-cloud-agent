@@ -3,7 +3,8 @@ import { getWorkerConfig } from "./config.js";
 import { runWorkspaceBoot, stopTerminals } from "./boot.js";
 import { downloadSession, enqueueEvents, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
 import { installEgressGuard, policyFromEnv } from "./egress.js";
-import { stampWorkerSeq, toRunEvents } from "./events.js";
+import { inspectSessionContext } from "./context-usage.js";
+import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
 
@@ -84,15 +85,37 @@ async function main(): Promise<void> {
     modelId: bootstrap.model,
   });
 
+  const pushContext = (reportedTokens?: number) => {
+    try {
+      const snapshot = inspectSessionContext(session, {
+        modelId: bootstrap.model,
+        reportedTokens,
+      });
+      enqueueEvents(config.runId, stampWorkerSeq([contextUsageEvent(config.runId, snapshot)], workerSeq)).catch(
+        (error: unknown) => {
+          console.error("failed to push context usage", error);
+        },
+      );
+    } catch (error: unknown) {
+      console.error("failed to inspect context usage", error);
+    }
+  };
+
   const unsubscribe = session.subscribe((event) => {
     const mapped = stampWorkerSeq(toRunEvents(config.runId, event), workerSeq);
     enqueueEvents(config.runId, mapped).catch((error: unknown) => {
       console.error("failed to push events", error);
     });
+    if (event.type === "agent_start" || event.type === "agent_end" || event.type === "compaction_end") {
+      const usage = mapped.find((item) => item.kind === "llm.usage")?.data;
+      const promptTokens = Number(usage?.promptTokens ?? 0);
+      pushContext(promptTokens > 0 ? promptTokens : undefined);
+    }
     if (mapped.some((item) => item.kind === "agent.end")) {
       void backupSession(config.runId, config.sessionDir);
     }
   });
+  pushContext();
 
   let running = true;
   const stop = async () => {

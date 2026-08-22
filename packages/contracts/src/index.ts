@@ -97,6 +97,20 @@ export {
   readLlmSettings,
   writeLlmSettings,
 } from "./llm-settings.js";
+export type { ModelLimits } from "./models.js";
+export { resolveModelLimits } from "./models.js";
+export { BASELINE_TOOL_TEXT, CLOUD_SYSTEM_PROMPT } from "./system-prompt.js";
+export type { ContextUsageBucket, ContextUsageBucketId, ContextUsageSnapshot } from "./context-usage.js";
+export {
+  CONTEXT_BUCKET_LABELS,
+  assembleContextUsage,
+  baselineContextUsage,
+  contextUsageToData,
+  estimateTokensFromText,
+  formatTokenCount,
+  overlayContextUsage,
+  parseContextUsage,
+} from "./context-usage.js";
 
 export type { DiskCloneMethod, DiskCloneResult, DiskKind, DiskSnapshot } from "./disk.js";
 

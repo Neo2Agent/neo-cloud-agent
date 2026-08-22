@@ -13,6 +13,7 @@ import { deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
 import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { getWorkerConfig } from "./config.js";
 import { materializeInboundImages } from "./images.js";
+import { gatewayModelSpec } from "./model-spec.js";
 
 export interface OpenSessionInput {
   cwd: string;
@@ -53,21 +54,21 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     allowModelNetwork: false,
   });
 
-  const publicId = input.modelId.includes("/") ? input.modelId.split("/")[1]! : input.modelId;
+  const spec = gatewayModelSpec(input.modelId);
   modelRuntime.registerProvider("neo-gateway", {
     name: "Neo LLM Gateway",
     baseUrl: `${input.gatewayUrl.replace(/\/$/, "")}/v1`,
     api: "openai-completions",
     models: [
       {
-        id: publicId,
-        name: input.modelId,
+        id: spec.id,
+        name: spec.name,
         api: "openai-completions",
         reasoning: false,
         input: ["text", "image"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 8192,
+        contextWindow: spec.contextWindow,
+        maxTokens: spec.maxTokens,
         compat: {
           supportsDeveloperRole: false,
           supportsReasoningEffort: false,
@@ -77,7 +78,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
   });
   await modelRuntime.setRuntimeApiKey("neo-gateway", input.jwt);
 
-  const model = modelRuntime.getModel("neo-gateway", publicId);
+  const model = modelRuntime.getModel("neo-gateway", spec.id);
   if (!model) {
     throw new Error(`failed to register gateway model ${input.modelId}`);
   }
@@ -101,7 +102,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     customTools,
     sessionManager: SessionManager.create(input.cwd, input.sessionDir),
     settingsManager: SettingsManager.inMemory({
-      compaction: { enabled: true },
+      compaction: { enabled: spec.compactionEnabled },
       retry: { enabled: true, maxRetries: 2 },
     }),
   });

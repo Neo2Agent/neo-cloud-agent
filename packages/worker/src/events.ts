@@ -1,4 +1,5 @@
-import type { RunEvent, RunEventKind } from "@neo-cloud-agent/contracts";
+import type { ContextUsageSnapshot, RunEvent, RunEventKind } from "@neo-cloud-agent/contracts";
+import { contextUsageToData } from "@neo-cloud-agent/contracts";
 
 export interface LooseAgentEvent {
   type: string;
@@ -85,6 +86,10 @@ function makeEvent(runId: string, kind: RunEventKind, title: string, data?: Reco
     title,
     data,
   };
+}
+
+export function contextUsageEvent(runId: string, snapshot: ContextUsageSnapshot): RunEvent {
+  return makeEvent(runId, "context.usage", "Context usage", contextUsageToData(snapshot));
 }
 
 export function stampWorkerSeq(events: RunEvent[], next: { value: number }): RunEvent[] {

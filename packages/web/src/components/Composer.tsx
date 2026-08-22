@@ -1,5 +1,7 @@
-import type { ClipboardEvent, FormEvent, KeyboardEvent } from "react";
+import { useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
+import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
+import { ContextUsageControl } from "./ContextUsage";
 
 export type { BuildOption, EnvOption, LlmSettings, ScmSettings } from "./SettingsPanel";
 
@@ -12,6 +14,7 @@ type Props = {
   archived?: boolean;
   canStop?: boolean;
   activity?: string;
+  contextUsage?: ContextUsageSnapshot;
   onPrompt: (value: string) => void;
   onImages: (images: ImageRef[]) => void;
   onSend: () => void;
@@ -27,11 +30,13 @@ export function Composer({
   archived = false,
   canStop = false,
   activity,
+  contextUsage,
   onPrompt,
   onImages,
   onSend,
   onStop,
 }: Props) {
+  const [usageOpen, setUsageOpen] = useState(false);
   const empty = !prompt.trim() && images.length === 0;
   const hint = archived ? "对话已归档，无法继续发送。" : busy ? (activity ?? "正在进行…") : vmHint;
   const placeholder = archived
@@ -91,6 +96,9 @@ export function Composer({
         }}
       />
       <div className="composer-bar">
+        {contextUsage ? (
+          <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
+        ) : null}
         <p className="hint" id="vm-status" data-busy={busy ? "true" : "false"}>
           {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
           {hint}

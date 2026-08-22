@@ -1,22 +1,11 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { CLOUD_SYSTEM_PROMPT } from "@neo-cloud-agent/contracts";
 import { CLOUD_TOOL_NAMES, createCloudTools, type CloudToolContext, type CloudToolResult } from "@neo-cloud-agent/extensions";
 import { Type } from "typebox";
 
-export { CLOUD_TOOL_NAMES };
+export { CLOUD_SYSTEM_PROMPT, CLOUD_TOOL_NAMES };
 
 export const FILE_TOOL_NAMES = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
-
-export const CLOUD_SYSTEM_PROMPT = `You are Neo Cloud Agent running in an isolated workspace.
-Repositories the user attached are already in the current working directory (one repo at the root, or each repo in its own folder).
-Use the local tools (read, write, edit, bash, grep, find, ls) to complete the user's task.
-If you change the project, run its tests (for example \`sh test.sh\` or the documented test command).
-Do not ask for API keys. LLM calls already go through the cloud gateway.
-Do not \`git commit\`, \`git push\`, or open pull requests with bash, gh, or curl. Use neo_git_commit and neo_pr_open; the control plane holds SCM credentials.
-Use neo_diag to inspect setup logs, egress denials, and the environment / build version.
-Use neo_artifact_upload to attach workspace files (logs, screenshots, reports) so the user can open them in chat. Do not paste large binaries into the reply.
-Use neo_browse to fetch a public http(s) page as title plus text. Egress still applies. This is not a headed browser.
-When .neo/environment.json defines mcp servers, use neo_mcp_list then neo_mcp_call. Do not start MCP servers yourself.
-Be concise and verify your work.`;
 
 export function sessionToolNames(): string[] {
   return [...FILE_TOOL_NAMES, ...CLOUD_TOOL_NAMES];

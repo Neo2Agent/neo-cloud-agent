@@ -56,6 +56,15 @@ export interface Run {
     completionTokens: number;
     totalTokens: number;
   } | null;
+  /** Latest model-context fill. Not cumulative billed tokens. */
+  contextUsage?: {
+    tokens: number;
+    contextWindow: number | null;
+    percent: number | null;
+    source: "session" | "estimate";
+    model?: string;
+    buckets: Array<{ id: string; label: string; tokens: number }>;
+  } | null;
 }
 
 export interface PullRequestRef {

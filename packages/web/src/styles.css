@@ -637,7 +637,8 @@ h1 {
   flex-shrink: 0;
   min-height: 0;
   max-height: 32vh;
-  overflow: auto;
+  overflow: visible;
+  position: relative;
 }
 
 .composer.is-busy {
@@ -963,8 +964,102 @@ textarea {
   margin-top: 10px;
 }
 
+.context-usage {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.context-usage-chip {
+  min-width: 44px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.context-usage-chip[aria-expanded="true"] {
+  border-color: #93c5fd;
+  color: var(--accent);
+  background: #eff6ff;
+}
+
+.context-usage-pop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: min(360px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  z-index: 8;
+}
+
+.context-usage-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-usage-head strong {
+  font-size: 14px;
+}
+
+.context-usage-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.context-usage-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: #eef0f3;
+}
+
+.context-usage-bar i {
+  display: block;
+  height: 100%;
+}
+
+.context-usage-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.context-usage-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.context-usage-list span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-usage-list i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
 .hint {
   margin: 0;
+  flex: 1 1 auto;
   font-size: 12px;
 }
 

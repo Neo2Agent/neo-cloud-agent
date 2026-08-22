@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./transcript": "./src/transcript.ts",
     "./events": "./src/events.ts",
-    "./run": "./src/run.ts"
+    "./run": "./src/run.ts",
+    "./context-usage": "./src/context-usage.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -14,6 +14,7 @@ import {
   parseLlmSettingsRequest,
   publicLlmSettings,
   readLlmSettings,
+  resolveModelLimits,
   writeLlmSettings,
 } from "@neo-cloud-agent/contracts";
 import { eventsForRun } from "../events/bus.js";
@@ -172,6 +173,7 @@ export function createApiServer() {
           defaultModel: config.defaultModel,
           llmUpstream: llm.configured ? llm.upstream : (config.llmUpstream ?? "mock"),
           llmModel: llm.model,
+          llmContextWindow: resolveModelLimits(llm.model)?.contextWindow ?? null,
           llmConfigured: llm.configured,
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,

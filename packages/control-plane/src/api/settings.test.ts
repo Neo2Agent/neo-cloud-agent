@@ -65,9 +65,13 @@ test("llm settings API stores a key without ever returning it", async (t) => {
   const health = (await (await fetch(`${base}/health`)).json()) as {
     llmConfigured: boolean;
     llmUpstream: string;
+    llmModel?: string | null;
+    llmContextWindow?: number | null;
   };
   assert.equal(health.llmConfigured, true);
   assert.equal(health.llmUpstream, "deepseek");
+  assert.equal(health.llmModel, "deepseek-v4-flash");
+  assert.equal(health.llmContextWindow, 1_000_000);
   assert.doesNotMatch(JSON.stringify(health), /sk-never-echo/);
 
   const scmDenied = await fetch(`${base}/v1/settings/scm`);
