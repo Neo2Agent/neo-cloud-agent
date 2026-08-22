@@ -54,6 +54,8 @@ test("turn stays busy while sending, pending, live tools, or active status", () 
   assert.equal(isTurnBusy({ status: "RUNNING" }), true);
   assert.equal(isTurnBusy({ status: "IDLE", messages: streaming }), true);
   assert.equal(isTurnBusy({ status: "IDLE", messages: tool }), true);
+  assert.equal(isTurnBusy({ status: "ERROR", messages: streaming }), false);
+  assert.equal(isTurnBusy({ status: "ERROR", messages: tool }), false);
   assert.equal(isTurnBusy({ status: "IDLE", messages: [message({ id: "u", role: "user", text: "go" })] }), false);
   assert.equal(hasLiveAssistantWork(tool), true);
   assert.equal(shouldShowThinking(true, streaming), false);
