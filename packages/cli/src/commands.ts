@@ -320,7 +320,15 @@ export async function followCommand(parsed: ParsedCli, io: CliIo): Promise<numbe
     return EXIT_OK;
   }
   const run = await client.getRun(runId);
-  return waitForTurn(client, run, parsed.flags, io, startedAt, [], before.events?.at(-1)?.id ?? before.snapshot.lastEventId);
+  return waitForTurn(
+    client,
+    run,
+    parsed.flags,
+    io,
+    startedAt,
+    [],
+    before.events?.at(-1)?.id ?? before.snapshot.lastEventId ?? undefined,
+  );
 }
 
 export async function resumeCommand(parsed: ParsedCli, io: CliIo): Promise<number> {
