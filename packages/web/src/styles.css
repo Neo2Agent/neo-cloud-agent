@@ -53,6 +53,11 @@ summary {
   touch-action: manipulation;
 }
 
+button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .app {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
@@ -228,31 +233,32 @@ button[type="submit"]:disabled {
   display: block;
   width: 100%;
   max-width: 100%;
+  height: auto;
   box-sizing: border-box;
-  font-family: inherit;
-  line-height: 1.4;
+  -webkit-appearance: none;
+  appearance: none;
+  overflow: visible;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.45;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
 
-.run-item strong {
+.run-title {
   display: block;
-  width: 100%;
-  overflow: hidden;
+  max-width: 100%;
+  overflow: visible;
   font-size: 14px;
   font-weight: 600;
-  line-height: 1.4;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  line-height: 1.45;
+  letter-spacing: 0;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
 }
 
-.run-title {
-  font-size: inherit;
-  font-weight: inherit;
-  line-height: inherit;
-}
-
-.run-item strong .pulse-dot {
+.run-item .pulse-dot {
   display: inline-block;
   vertical-align: 0.1em;
   margin-right: 6px;
@@ -2040,13 +2046,9 @@ textarea {
     -webkit-overflow-scrolling: touch;
   }
 
-  .run-item strong {
+  .run-title {
     font-size: 16px;
-    line-height: 1.45;
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    word-break: break-word;
+    line-height: 1.5;
   }
 
   .topbar {
