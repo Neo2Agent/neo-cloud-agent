@@ -14,7 +14,7 @@ import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./clo
 import { getWorkerConfig } from "./config.js";
 import { materializeInboundImages } from "./images.js";
 import { gatewayModelSpec } from "./model-spec.js";
-import { executeNestedSubagent, type SubagentEventHandler } from "./subagent.js";
+import { abortNestedSubagents, executeNestedSubagent, type SubagentEventHandler } from "./subagent.js";
 
 export interface OpenSessionInput {
   cwd: string;
@@ -90,6 +90,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
 
   const config = getWorkerConfig();
   const allowSubagent = input.allowSubagent !== false;
+  const toolNames = input.tools ?? sessionToolNames({ includeSubagent: allowSubagent });
   const customTools = createPiCloudTools({
     runId: input.runId,
     jwt: input.jwt,
@@ -102,7 +103,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
             params,
           })
       : undefined,
-  });
+  }).filter((tool) => toolNames.includes(tool.name));
 
   const { session } = await createAgentSession({
     cwd: input.cwd,
@@ -111,7 +112,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     thinkingLevel: "off",
     modelRuntime,
     resourceLoader: isolatedLoader(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT),
-    tools: input.tools ?? sessionToolNames({ includeSubagent: allowSubagent }),
+    tools: toolNames,
     customTools,
     sessionManager: SessionManager.create(input.cwd, input.sessionDir),
     settingsManager: SettingsManager.inMemory({
@@ -124,10 +125,12 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
 
 export async function dispatchInbound(session: AgentSession, message: WorkerInbound): Promise<"continue" | "stop"> {
   if (message.type === "shutdown") {
+    abortNestedSubagents();
     await session.abort();
     return "stop";
   }
   if (message.type === "abort") {
+    abortNestedSubagents();
     await session.abort();
     return "continue";
   }

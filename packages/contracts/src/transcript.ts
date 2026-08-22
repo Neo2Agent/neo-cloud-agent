@@ -6,6 +6,14 @@ import type {
   TranscriptSnapshot,
   TranscriptTool,
 } from "./events.js";
+import {
+  isNestedSubagentEvent,
+  MAX_SUBAGENT_STEPS,
+  readSubagentSteps,
+  seedSubagentDetails,
+  SUBAGENT_TOOL_NAME,
+  type SubagentStep,
+} from "./subagent.js";
 
 const SETUP_PREFIXES = [
   "scm.",
@@ -80,7 +88,17 @@ function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTo
     tool.output = event.data.output;
   }
   if (event.data?.details && typeof event.data.details === "object") {
-    tool.details = event.data.details as Record<string, unknown>;
+    const incoming = event.data.details as Record<string, unknown>;
+    const previous = tool.details ?? {};
+    tool.details = {
+      ...previous,
+      ...incoming,
+      steps: Array.isArray(previous.steps) ? previous.steps : incoming.steps,
+      tasks: previous.tasks ?? incoming.tasks,
+    };
+  }
+  if (tool.name === SUBAGENT_TOOL_NAME) {
+    tool.details = seedSubagentDetails(tool.args, tool.details);
   }
   if (event.kind === "tool.end") {
     tool.status = "done";
@@ -176,10 +194,24 @@ export function pageTranscriptMessages(
   };
 }
 
+function cloneDetails(details?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!details) {
+    return undefined;
+  }
+  const next = { ...details };
+  if (Array.isArray(next.steps)) {
+    next.steps = next.steps.map((step) => (step && typeof step === "object" ? { ...step } : step));
+  }
+  if (Array.isArray(next.tasks)) {
+    next.tasks = next.tasks.map((task) => (task && typeof task === "object" ? { ...task } : task));
+  }
+  return next;
+}
+
 function cloneTool(tool: TranscriptTool): TranscriptTool {
   return {
     ...tool,
-    details: tool.details ? { ...tool.details } : undefined,
+    details: cloneDetails(tool.details),
   };
 }
 
@@ -315,6 +347,65 @@ function settleAll(state: BuildState): void {
   state.open = null;
 }
 
+function findParentSubagent(state: BuildState): { message: TranscriptMessage; tool: TranscriptTool } | null {
+  const pick = (runningOnly: boolean) => {
+    for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+      const message = state.messages[index];
+      if (message?.role !== "assistant") {
+        continue;
+      }
+      const tools = message.tools ?? [];
+      for (let toolIndex = tools.length - 1; toolIndex >= 0; toolIndex -= 1) {
+        const tool = tools[toolIndex];
+        if (tool?.name !== SUBAGENT_TOOL_NAME) {
+          continue;
+        }
+        if (runningOnly && tool.status !== "running") {
+          continue;
+        }
+        return { message, tool };
+      }
+    }
+    return null;
+  };
+  return pick(true) ?? pick(false);
+}
+
+function upsertNestedStep(parent: TranscriptTool, event: RunEvent): void {
+  const id = toolKey(event);
+  const name = String(event.data?.toolName ?? "tool");
+  const agent = typeof event.data?.subagent === "string" && event.data.subagent ? event.data.subagent : "subagent";
+  const subagentId = typeof event.data?.subagentId === "string" ? event.data.subagentId : undefined;
+  parent.details = { ...(parent.details ?? {}) };
+  const steps: SubagentStep[] = readSubagentSteps(parent.details).map((step) => ({ ...step }));
+  let step = steps.find((item) => item.id === id);
+  if (!step) {
+    step = { id, name, agent, subagentId, status: "running" };
+    steps.push(step);
+  }
+  step.name = name;
+  step.agent = agent;
+  if (subagentId) {
+    step.subagentId = subagentId;
+  }
+  if (event.data?.args !== undefined) {
+    step.args = event.data.args;
+  }
+  if (typeof event.data?.output === "string") {
+    step.output = event.data.output;
+  }
+  if (event.kind === "tool.end") {
+    step.status = "done";
+    step.isError = event.data?.isError === true;
+  }
+  while (steps.length > MAX_SUBAGENT_STEPS) {
+    const doneIndex = steps.findIndex((item) => item.status === "done");
+    steps.splice(doneIndex >= 0 ? doneIndex : 0, 1);
+    parent.details.omittedSteps = Number(parent.details.omittedSteps ?? 0) + 1;
+  }
+  parent.details.steps = steps;
+}
+
 function assistantForTool(state: BuildState, event: RunEvent): TranscriptMessage | null {
   const id = toolKey(event);
   const name = String(event.data?.toolName ?? "tool");
@@ -375,7 +466,8 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
   if (event.kind === "message.end") {
     if (state.open) {
       state.open.streaming = false;
-      if (state.open.text.trim()) {
+      const busy = state.open.tools?.some((tool) => tool.status === "running");
+      if (state.open.text.trim() && !busy) {
         finishAssistant(state);
       }
     }
@@ -386,6 +478,15 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     return;
   }
   if (event.kind === "tool.start" || event.kind === "tool.update" || event.kind === "tool.end") {
+    if (isNestedSubagentEvent(event.data)) {
+      const parent = findParentSubagent(state);
+      if (!parent) {
+        return;
+      }
+      upsertNestedStep(parent.tool, event);
+      state.open = parent.message;
+      return;
+    }
     const existing = assistantForTool(state, event);
     if (existing) {
       state.open = existing;

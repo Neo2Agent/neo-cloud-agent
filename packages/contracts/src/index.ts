@@ -115,16 +115,22 @@ export {
   BUNDLED_SUBAGENTS,
   BUNDLED_SUBAGENT_NAMES,
   MAX_SUBAGENT_CONCURRENCY,
+  MAX_SUBAGENT_STEPS,
   MAX_SUBAGENT_TASKS,
+  SUBAGENT_TIMEOUT_MS,
   SUBAGENT_TOOL_NAME,
   applyChainPlaceholder,
   formatSubagentResult,
+  isNestedSubagentEvent,
+  isSubagentStep,
   listSubagentNames,
   mergeSubagentDefinitions,
   parseAgentMarkdown,
   parseSubagentRequest,
   parseToolList,
+  readSubagentSteps,
   resolveSubagent,
+  seedSubagentDetails,
 } from "./subagent.js";
 export type {
   BundledSubagentName,
@@ -132,6 +138,7 @@ export type {
   SubagentDefinition,
   SubagentMode,
   SubagentSource,
+  SubagentStep,
   SubagentTask,
 } from "./subagent.js";
 export type { ContextUsageBucket, ContextUsageBucketId, ContextUsageSnapshot } from "./context-usage.js";

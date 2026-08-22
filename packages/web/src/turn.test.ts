@@ -76,6 +76,7 @@ test("activity and status labels match ChatGPT-style turn states", () => {
   assert.equal(activityLabel({ stopping: true }), "正在停止…");
   assert.equal(activityLabel({ status: "RUNNING" }), "正在思考…");
   assert.equal(activityLabel({ status: "RUNNING", runningTool: "bash" }), "正在执行 bash…");
+  assert.equal(activityLabel({ status: "RUNNING", runningTool: "neo_subagent" }), "正在执行子代理…");
   assert.equal(activityLabel({ status: "RUNNING", streaming: true }), "正在回复…");
   assert.equal(activityLabel({ status: "PROVISIONING" }), "正在准备运行环境…");
   assert.deepEqual(turnStatusLabel({ sending: true, status: "IDLE" }), { state: "RUNNING", label: "发送中" });

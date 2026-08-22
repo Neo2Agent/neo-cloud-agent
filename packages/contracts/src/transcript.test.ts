@@ -174,6 +174,139 @@ test("transcriptHasUnsettledWork sees running tools on either tools or blocks", 
   );
 });
 
+test("nested subagent tool events stay inside the parent card", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "调研" } }),
+    ev({ id: "a1", kind: "agent.start" }),
+    ev({
+      id: "p0",
+      kind: "tool.start",
+      data: {
+        toolCallId: "parent-1",
+        toolName: "neo_subagent",
+        args: {
+          tasks: [
+            { agent: "scout", task: "market" },
+            { agent: "scout", task: "vendors" },
+          ],
+        },
+      },
+    }),
+    ev({
+      id: "c0",
+      kind: "tool.start",
+      data: {
+        toolCallId: "child-1",
+        toolName: "bash",
+        subagent: "scout",
+        subagentId: "sa-1",
+        args: { command: "curl https://example.com" },
+      },
+    }),
+    ev({
+      id: "c1",
+      kind: "tool.end",
+      data: {
+        toolCallId: "child-1",
+        toolName: "bash",
+        subagent: "scout",
+        subagentId: "sa-1",
+        output: "timeout",
+        isError: true,
+      },
+    }),
+    ev({
+      id: "c2",
+      kind: "tool.start",
+      data: {
+        toolCallId: "child-2",
+        toolName: "neo_browse",
+        subagent: "scout",
+        subagentId: "sa-2",
+        args: { url: "https://example.com" },
+      },
+    }),
+    ev({
+      id: "p1",
+      kind: "tool.end",
+      data: {
+        toolCallId: "parent-1",
+        toolName: "neo_subagent",
+        output: "## 1. scout\nok",
+        details: { mode: "parallel", agents: ["scout", "scout"] },
+        isError: false,
+      },
+    }),
+    ev({ id: "z1", kind: "agent.end" }),
+  ]);
+  const assistant = snapshot.messages.find((item) => item.role === "assistant");
+  assert.equal(assistant?.tools?.length, 1);
+  assert.equal(assistant?.tools?.[0]?.name, "neo_subagent");
+  assert.equal(assistant?.tools?.[0]?.status, "done");
+  assert.equal(assistant?.tools?.[0]?.details?.mode, "parallel");
+  const steps = assistant?.tools?.[0]?.details?.steps as Array<{ name: string; isError?: boolean }> | undefined;
+  assert.equal(steps?.length, 2);
+  assert.equal(steps?.[0]?.name, "bash");
+  assert.equal(steps?.[0]?.isError, true);
+  assert.equal(steps?.[1]?.name, "neo_browse");
+  assert.equal(assistant?.tools?.some((tool) => tool.name === "bash"), false);
+});
+
+test("live nested events attach to an already compiled parent card", () => {
+  const seed: TranscriptMessage[] = [
+    {
+      id: "a1",
+      role: "assistant",
+      text: "",
+      createdAt: "2026-08-21T00:00:01.000Z",
+      streaming: true,
+      tools: [
+        {
+          id: "parent-1",
+          name: "neo_subagent",
+          status: "running",
+          args: { agent: "scout", task: "find auth" },
+          details: { mode: "single", agents: ["scout"], tasks: [{ agent: "scout", task: "find auth" }] },
+        },
+      ],
+    },
+  ];
+  const next = applyRunEventsToMessages(seed, [
+    ev({
+      id: "c0",
+      kind: "tool.start",
+      data: { toolCallId: "grep-1", toolName: "grep", subagent: "scout", args: { pattern: "auth" } },
+    }),
+    ev({
+      id: "c1",
+      kind: "tool.end",
+      data: { toolCallId: "grep-1", toolName: "grep", subagent: "scout", output: "src/auth.ts", isError: false },
+    }),
+  ]);
+  assert.equal(next[0]?.tools?.length, 1);
+  assert.equal(next[0]?.tools?.[0]?.name, "neo_subagent");
+  assert.equal(next[0]?.tools?.[0]?.status, "running");
+  const steps = next[0]?.tools?.[0]?.details?.steps as Array<{ name: string; status?: string }> | undefined;
+  assert.equal(steps?.[0]?.name, "grep");
+  assert.equal(steps?.[0]?.status, "done");
+});
+
+test("message.end does not settle a still-running subagent card", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "m1", kind: "message.start" }),
+    ev({ id: "d1", kind: "message.delta", data: { delta: "先委派。" } }),
+    ev({
+      id: "p0",
+      kind: "tool.start",
+      data: { toolCallId: "parent-1", toolName: "neo_subagent", args: { agent: "scout", task: "look" } },
+    }),
+    ev({ id: "e1", kind: "message.end" }),
+  ]);
+  const assistant = snapshot.messages.find((item) => item.role === "assistant");
+  assert.equal(assistant?.tools?.[0]?.status, "running");
+  assert.equal(assistant?.streaming, false);
+});
+
 test("applyRunEventsToMessages continues a streaming assistant without replaying history", () => {
   const seed: TranscriptMessage[] = [
     { id: "u1", role: "user", text: "hello", createdAt: "2026-08-21T00:00:00.000Z" },

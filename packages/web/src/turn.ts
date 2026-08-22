@@ -92,6 +92,7 @@ export function activityLabel(input: {
   if (input.status === "NOT_YET_STARTED") return "排队等待空闲 VM…";
   if (input.status === "PROVISIONING") return "正在准备运行环境…";
   if (input.status === "INSTALLING") return "正在安装环境…";
+  if (input.runningTool === "neo_subagent") return "正在执行子代理…";
   if (input.runningTool) return `正在执行 ${input.runningTool}…`;
   if (input.streaming) return "正在回复…";
   if (input.status === "WAITING_FOR_BACKGROUND_WORK") return "后台任务进行中…";

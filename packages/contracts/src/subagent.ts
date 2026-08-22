@@ -30,28 +30,87 @@ export interface ParsedSubagentRequest {
 
 export const MAX_SUBAGENT_TASKS = 8;
 export const MAX_SUBAGENT_CONCURRENCY = 2;
+export const MAX_SUBAGENT_STEPS = 40;
+export const SUBAGENT_TIMEOUT_MS = 120_000;
+
+export type SubagentStep = {
+  id: string;
+  name: string;
+  agent: string;
+  subagentId?: string;
+  status: "running" | "done";
+  isError?: boolean;
+  args?: unknown;
+  output?: string;
+};
+
+export function isNestedSubagentEvent(data?: Record<string, unknown> | null): boolean {
+  return Boolean(
+    (typeof data?.subagent === "string" && data.subagent) ||
+      (typeof data?.subagentId === "string" && data.subagentId),
+  );
+}
+
+export function isSubagentStep(value: unknown): value is SubagentStep {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.id === "string" && typeof record.name === "string" && typeof record.agent === "string";
+}
+
+export function readSubagentSteps(details?: Record<string, unknown>): SubagentStep[] {
+  const raw = details?.steps;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter(isSubagentStep);
+}
+
+export function seedSubagentDetails(
+  args: unknown,
+  existing?: Record<string, unknown>,
+): Record<string, unknown> {
+  const base = { ...(existing ?? {}) };
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    return base;
+  }
+  const parsed = parseSubagentRequest(args as Record<string, unknown>);
+  if ("error" in parsed) {
+    return base;
+  }
+  return {
+    ...base,
+    mode: parsed.mode,
+    agents: parsed.tasks.map((item) => item.agent),
+    tasks: parsed.tasks,
+  };
+}
 
 export const BUNDLED_SUBAGENTS: SubagentDefinition[] = [
   {
     name: "scout",
     description: "Fast codebase recon that returns compressed context for another agent",
-    tools: ["read", "grep", "find", "ls", "bash"],
+    tools: ["read", "grep", "find", "ls", "neo_browse"],
     source: "bundled",
-    systemPrompt: `You are a scout. Investigate the workspace and return structured findings another agent can use without re-reading everything.
+    systemPrompt: `You are a scout. Investigate the workspace or a public page and return structured findings another agent can use without re-reading everything.
 
 Thoroughness (infer from the task, default medium):
-- Quick: targeted lookups, key files only
-- Medium: follow imports, read critical sections
-- Thorough: trace dependencies, check tests
+- Quick: targeted lookups, key files or 1-2 pages
+- Medium: follow imports, read critical sections, or a few high-signal pages
+- Thorough: trace dependencies, check tests, or a short set of sources
 
 Strategy:
-1. grep/find to locate relevant code
-2. Read key sections, not entire files
-3. Identify types, interfaces, and key functions
+1. Workspace: grep/find/ls, then read key sections — not entire files
+2. Public web: use neo_browse only. Never curl, wget, or other HTTP via a shell
+3. Fetch a few high-signal pages, then stop. Do not loop
 
 Output:
 ## Files Retrieved
 1. \`path/file.ts\` (lines 10-50) - what is here
+
+## Sources
+- title — url — one-line takeaway
 
 ## Key Code
 Short excerpts only.
@@ -60,7 +119,7 @@ Short excerpts only.
 How the pieces connect.
 
 ## Start Here
-Which file to open first and why.`,
+Which file or source to open first and why.`,
   },
   {
     name: "planner",

@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyChainPlaceholder,
+  BUNDLED_SUBAGENTS,
   formatSubagentResult,
+  isNestedSubagentEvent,
   mergeSubagentDefinitions,
   parseAgentMarkdown,
   parseSubagentRequest,
   parseToolList,
+  readSubagentSteps,
   resolveSubagent,
+  seedSubagentDetails,
 } from "./subagent.js";
 
 test("parseAgentMarkdown reads pi-style frontmatter", () => {
@@ -65,6 +69,28 @@ test("project agents override bundled names", () => {
   ]);
   assert.equal(resolveSubagent(agents, "scout")?.systemPrompt, "custom");
   assert.ok(resolveSubagent(agents, "worker"));
+});
+
+test("scout uses neo_browse instead of bash", () => {
+  const scout = BUNDLED_SUBAGENTS.find((item) => item.name === "scout");
+  assert.ok(scout);
+  assert.deepEqual(scout.tools, ["read", "grep", "find", "ls", "neo_browse"]);
+  assert.match(scout.systemPrompt, /neo_browse/);
+  assert.match(scout.systemPrompt, /Never curl/);
+});
+
+test("seedSubagentDetails and nested event helpers", () => {
+  const details = seedSubagentDetails({
+    tasks: [
+      { agent: "scout", task: "market" },
+      { agent: "scout", task: "vendors" },
+    ],
+  });
+  assert.equal(details.mode, "parallel");
+  assert.deepEqual(details.agents, ["scout", "scout"]);
+  assert.equal(isNestedSubagentEvent({ subagent: "scout", toolName: "bash" }), true);
+  assert.equal(isNestedSubagentEvent({ toolName: "bash" }), false);
+  assert.equal(readSubagentSteps({ steps: [{ id: "c1", name: "grep", agent: "scout", status: "done" }] }).length, 1);
 });
 
 test("chain placeholder and result formatting", () => {
