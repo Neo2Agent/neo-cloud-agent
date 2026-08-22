@@ -1374,7 +1374,13 @@ textarea {
     top: var(--app-offset-top, 0px);
     width: 100%;
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .main {
+    grid-row: 1;
+    height: 100%;
+    min-height: 0;
   }
 
   .app:not(.sidebar-closed) .sidebar-backdrop {
