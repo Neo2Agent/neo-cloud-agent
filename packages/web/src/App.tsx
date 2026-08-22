@@ -572,12 +572,6 @@ export function App() {
     }
   }, [pendingTurn, snapshot.messages]);
 
-  useEffect(() => {
-    if (filesOpen || diffOpen || settingsOpen) {
-      document.getElementById("workspace-drawer")?.scrollIntoView({ block: "nearest" });
-    }
-  }, [filesOpen, diffOpen, settingsOpen]);
-
   const displayMessages = withPendingUser(visibleMessages as TranscriptMessage[], pendingTurn);
   const busy = isTurnBusy({
     sending,
@@ -667,18 +661,20 @@ export function App() {
         />
         <main className="main">
           <header className="topbar">
-            <div>
+            <div className="topbar-lead">
               <button className="ghost sidebar-toggle" id="sidebar-toggle" type="button" onClick={toggleSidebar}>
                 {sidebarOpen ? "收起侧栏" : "对话列表"}
               </button>
-              <p className="eyebrow" id="run-label">
-                {currentRun
-                  ? currentRun.buildId
-                    ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
-                    : currentRun.branchName ?? shortId(currentRun.id)
-                  : "新对话"}
-              </p>
-              <h1 id="run-title">{currentRun ? preview(currentRun.prompt) : "和云端 Agent 说话"}</h1>
+              <div className="topbar-heading">
+                <p className="eyebrow" id="run-label">
+                  {currentRun
+                    ? currentRun.buildId
+                      ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
+                      : currentRun.branchName ?? shortId(currentRun.id)
+                    : "新对话"}
+                </p>
+                <h1 id="run-title">{currentRun ? preview(currentRun.prompt) : "和云端 Agent 说话"}</h1>
+              </div>
             </div>
             <div className="top-actions">
               <span className="vm-badge" id="vm-badge" data-busy={currentSlot ? "true" : "false"}>
@@ -828,6 +824,7 @@ export function App() {
               </button>
             </div>
           </header>
+          <div className="workspace-col">
           {filesOpen || diffOpen || settingsOpen ? (
             <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label={settingsOpen ? "设置" : filesOpen ? "文件树" : "Diff"}>
               <div className="workspace-drawer-bar">
@@ -940,7 +937,6 @@ export function App() {
               <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
             </aside>
           ) : null}
-          <div className="workspace-col">
             <Transcript
               messages={displayMessages}
               remaining={remaining}
