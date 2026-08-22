@@ -1,11 +1,21 @@
 ---
 name: tencent-lighthouse-deploy
-description: Deploy and operate neo-cloud-agent on the Tencent Cloud Lighthouse host in Beijing. Use when shipping code to 62.234.211.200, restarting systemd units, fixing Caddy, saving API keys, checking VM slots, or when GitHub is unreachable from the server.
+description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app host 62.234.211.200 (Halo建站-AFjg). Use when shipping code, restarting systemd units, fixing Caddy, saving API keys, checking VM slots, or when GitHub is unreachable. Not the MySQL/Redis host 101.42.105.230.
 ---
 
 # 腾讯云轻量部署
 
 生产机是腾讯云 **轻量应用服务器（Lighthouse）**，不是 CVM。按这份 skill 操作，不要凭印象重启、绑密钥或 `git pull`。
+
+现网拆两台，**不要混**：
+
+| | 本 skill（应用机） | 库机 |
+| --- | --- | --- |
+| 公网 | `62.234.211.200` | `101.42.105.230` |
+| 实例 | `Halo建站-AFjg` | `OpenClaw(龙虾)-8Dd3` |
+| 职责 | 本仓库 + systemd + Caddy + VM 槽 | Docker MySQL / Redis |
+
+库机操作见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。控制面要持久化时，在**本机**仓库根 `.env` 写 `DATABASE_URL` / `REDIS_URL` 指向库机，然后只重启 `neo-control-plane`。`/health` 应为 `metadataStore: "mysql"`、`eventBus: "redis"`。不要把库机密码打进聊天。
 
 ## 主机
 
@@ -41,6 +51,7 @@ Host lighthouse
 4. **不要把 Cloud Agent 的 GitHub token 拷到这台机。**
 5. **不要重新拉起爱马仕。** 用户单元已改名为 `~/.config/systemd/user/hermes-gateway.service.disabled`。
 6. 轻量访问 **GitHub 443 经常超时**（DNS 能解析到 `20.205.243.166`）。通了再用 `git pull`；不通就从能访问 GitHub 的机器 **tar/scp 覆盖源码**。
+7. **MySQL / Redis 不在这台机。** 不要在这里 `docker compose` 库，也不要重启 `101.42.105.230`。
 
 ## 日常更新（已有 systemd）
 
@@ -84,7 +95,7 @@ ssh lighthouse '
 期望：
 
 - 两个 unit `active`
-- control-plane：`ok: true`，`workerRuntime: "vm"`，`vmSlots.total: 2`，`llmConfigured` 看是否已存 Key
+- control-plane：`ok: true`，`workerRuntime: "vm"`，`vmSlots.total: 2`，`llmConfigured` 看是否已存 Key；接了库机后还应有 `metadataStore: "mysql"`、`eventBus: "redis"`
 - gateway：若已存 DeepSeek Key，则 `upstream: "deepseek"` 且 `configured: true`
 - `:80` 是对话页，不是 Caddy 欢迎页
 
