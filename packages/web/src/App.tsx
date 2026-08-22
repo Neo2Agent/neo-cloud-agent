@@ -3,7 +3,9 @@ import { buildTranscriptSnapshot } from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson, readToken, writeToken } from "./api";
+import { applyLiveEvents, parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
+import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
@@ -122,6 +124,9 @@ export function App() {
     return window.innerWidth >= 860;
   });
   const sourceRef = useRef<EventSource | null>(null);
+  const streamFrameRef = useRef(0);
+  const lastEventIdRef = useRef<string | null>(null);
+  const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
   const tokenRef = useRef(token);
   const sendingRef = useRef(false);
   const pendingRef = useRef<PendingUser | null>(null);
@@ -150,6 +155,10 @@ export function App() {
   }, []);
 
   const closeStream = useCallback(() => {
+    if (streamFrameRef.current) {
+      cancelAnimationFrame(streamFrameRef.current);
+      streamFrameRef.current = 0;
+    }
     sourceRef.current?.close();
     sourceRef.current = null;
   }, []);
@@ -163,54 +172,85 @@ export function App() {
     (id: string, after?: string | null) => {
       closeStream();
       const params = new URLSearchParams();
-      if (after) params.set("after", after);
+      const cursor = after ?? lastEventIdRef.current;
+      if (cursor) params.set("after", cursor);
       if (tokenRef.current) params.set("access_token", tokenRef.current);
       const query = params.toString() ? `?${params}` : "";
       const source = new EventSource(`/v1/runs/${id}/events${query}`);
-      source.onmessage = (message) => {
-        const event = JSON.parse(message.data) as RunEvent;
-        setEvents((prev) => (prev.some((item) => item.id === event.id) ? prev : [...prev, event]));
-        const nextStatus = statusFromEventKind(event.kind, undefined);
-        if (nextStatus || event.kind === "user.message" || event.kind === "followup.queued" || event.kind === "agent.end") {
-          patchRun(id, (run) => {
-            const status = statusFromEventKind(event.kind, run.status);
-            return status ? { ...run, status: status as Run["status"] } : run;
-          });
+      const pending: RunEvent[] = [];
+      const flush = () => {
+        streamFrameRef.current = 0;
+        if (sourceRef.current !== source) {
+          return;
         }
-        if (isTerminalTurnEvent(event.kind)) {
-          setStopping(false);
-          setSending(false);
+        const batch = pending.splice(0);
+        if (batch.length === 0) {
+          return;
         }
-        if (event.kind === "scm.pr_opened" && event.data?.url) {
-          patchRun(id, (run) => ({
-            ...run,
-            pullRequests: [{ url: String(event.data?.url), draft: event.data?.draft !== false, repoUrl: "", branch: "", number: null, title: "" }],
-          }));
-        }
-        if (event.kind === "llm.usage") {
-          patchRun(id, (run) => {
-            const promptTokens = Number(event.data?.promptTokens ?? 0);
-            const completionTokens = Number(event.data?.completionTokens ?? 0);
-            const totalTokens = Number(event.data?.totalTokens ?? promptTokens + completionTokens);
-            const prev = run.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-            return {
+        setEvents((prev) => applyLiveEvents(prev, batch));
+        for (const event of batch) {
+          const nextStatus = statusFromEventKind(event.kind, undefined);
+          if (nextStatus || event.kind === "user.message" || event.kind === "followup.queued" || event.kind === "agent.end") {
+            patchRun(id, (run) => {
+              const status = statusFromEventKind(event.kind, run.status);
+              return status ? { ...run, status: status as Run["status"] } : run;
+            });
+          }
+          if (isTerminalTurnEvent(event.kind)) {
+            setStopping(false);
+            setSending(false);
+          }
+          if (event.kind === "scm.pr_opened" && event.data?.url) {
+            patchRun(id, (run) => ({
               ...run,
-              usage: {
-                promptTokens: prev.promptTokens + promptTokens,
-                completionTokens: prev.completionTokens + completionTokens,
-                totalTokens: prev.totalTokens + totalTokens,
-              },
-            };
-          });
+              pullRequests: [{ url: String(event.data?.url), draft: event.data?.draft !== false, repoUrl: "", branch: "", number: null, title: "" }],
+            }));
+          }
+          if (event.kind === "llm.usage") {
+            patchRun(id, (run) => {
+              const promptTokens = Number(event.data?.promptTokens ?? 0);
+              const completionTokens = Number(event.data?.completionTokens ?? 0);
+              const totalTokens = Number(event.data?.totalTokens ?? promptTokens + completionTokens);
+              const prev = run.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+              return {
+                ...run,
+                usage: {
+                  promptTokens: prev.promptTokens + promptTokens,
+                  completionTokens: prev.completionTokens + completionTokens,
+                  totalTokens: prev.totalTokens + totalTokens,
+                },
+              };
+            });
+          }
+        }
+      };
+      source.onmessage = (message) => {
+        const event = parseSseData(message.data);
+        if (!event) {
+          return;
+        }
+        lastEventIdRef.current = event.id;
+        pending.push(event);
+        if (!streamFrameRef.current) {
+          streamFrameRef.current = requestAnimationFrame(flush);
         }
       };
       source.onerror = () => {
         setHealthText("事件流已断开，正在重试");
+        if (source.readyState !== EventSource.CLOSED) {
+          return;
+        }
+        window.setTimeout(() => {
+          if (sourceRef.current === source) {
+            listenRef.current(id, lastEventIdRef.current);
+          }
+        }, 750);
       };
       sourceRef.current = source;
     },
     [closeStream, patchRun],
   );
+  listenRef.current = listen;
 
   const refreshVms = useCallback(async () => {
     if (authRequired && !tokenRef.current) return;
@@ -311,6 +351,7 @@ export function App() {
     setRunId(null);
     setCurrentRun(null);
     setEvents([]);
+    lastEventIdRef.current = null;
     setShownFrom(0);
     setPrompt("");
     setImages([]);
@@ -355,8 +396,9 @@ export function App() {
       const loaded = transcript.events ?? [];
       setEvents(loaded);
       const built = buildTranscriptSnapshot(run.id, loaded);
+      lastEventIdRef.current = transcript.snapshot?.lastEventId ?? built.lastEventId;
       setShownFrom(Math.max(0, built.messages.length - HISTORY_PAGE));
-      listen(run.id, transcript.snapshot?.lastEventId ?? built.lastEventId);
+      listen(run.id, lastEventIdRef.current);
       history.replaceState(null, "", `/#/runs/${run.id}`);
       void refreshVms();
       return true;
@@ -523,7 +565,7 @@ export function App() {
         if (payload.bootstrapEmail) setAuthEmail(payload.bootstrapEmail);
         if (payload.defaultAdmin) setAuthPassword("123456");
         applyVms(payload.vmSlots);
-        setHealthText(formatHealth(payload, payload.vmSlots ?? vms));
+        setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
         const saved = tokenRef.current;
         try {
           if (saved) {
@@ -576,7 +618,7 @@ export function App() {
           const payload = await readJson<Health>(await fetch("/health"));
           setHealth(payload);
           applyVms(payload.vmSlots);
-          setHealthText(formatHealth(payload, payload.vmSlots ?? vms));
+          setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
         } catch {
           // keep last
         }
@@ -585,7 +627,7 @@ export function App() {
       })();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [applyVms, authRequired, refreshRuns, refreshVms, runId, vms]);
+  }, [applyVms, authRequired, refreshRuns, refreshVms, runId]);
 
   useEffect(() => () => closeStream(), [closeStream]);
 
@@ -1001,14 +1043,16 @@ export function App() {
               <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
             </aside>
           ) : null}
-            <Transcript
-              messages={displayMessages}
-              remaining={remaining}
-              empty={displayMessages.length === 0}
-              busy={busy}
-              activity={activity}
-              onLoadOlder={loadOlder}
-            />
+            <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
+              <Transcript
+                messages={displayMessages}
+                remaining={remaining}
+                empty={displayMessages.length === 0}
+                busy={busy}
+                activity={activity}
+                onLoadOlder={loadOlder}
+              />
+            </ChatErrorBoundary>
           </div>
           <Composer
             prompt={prompt}

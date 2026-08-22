@@ -104,7 +104,7 @@ export function Transcript({ messages, remaining, empty, busy = false, activity,
     <section
       className="transcript"
       id="transcript"
-      aria-live="polite"
+      aria-live={busy ? "off" : "polite"}
       aria-busy={busy}
       ref={scroller}
       onScroll={() => {

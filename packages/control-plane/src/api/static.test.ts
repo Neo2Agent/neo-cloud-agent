@@ -65,6 +65,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /\/v1\/vms/);
   assert.match(appText, /slot-/);
   assert.match(appText, /加载更早的消息/);
+  assert.match(appText, /对话页刚才崩了/);
+  assert.match(appText, /chat-crash-retry/);
   assert.match(appText, /环境/);
   assert.match(appText, /快照/);
   assert.match(appText, /API Key/);

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type Props = { text: string; className?: string; streaming?: boolean };
 
@@ -12,9 +12,18 @@ export function prepareMarkdown(text: string, streaming?: boolean): string {
 }
 
 export function MarkdownBody({ text, className, streaming }: Props) {
+  const [shown, setShown] = useState(text);
+  useEffect(() => {
+    if (!streaming) {
+      setShown(text);
+      return;
+    }
+    const timer = window.setTimeout(() => setShown(text), 80);
+    return () => window.clearTimeout(timer);
+  }, [text, streaming]);
   return (
     <div className={className ? `md ${className}` : "md"}>
-      {renderBlocks(prepareMarkdown(text, streaming))}
+      {renderBlocks(prepareMarkdown(shown, streaming))}
       {streaming ? <span className="md-caret" aria-hidden="true" /> : null}
     </div>
   );

@@ -16,15 +16,17 @@ export function writeSseEvent(res: ServerResponse, event: RunEvent): void {
 }
 
 export function resumeAfter(req: IncomingMessage, url: URL): string | null {
-  const query = url.searchParams.get("after")?.trim();
-  if (query) {
-    return query;
-  }
   const header = req.headers["last-event-id"];
   if (typeof header === "string" && header.trim()) {
     return header.trim();
   }
-  return null;
+  if (Array.isArray(header)) {
+    const first = header.find((item) => item.trim());
+    if (first?.trim()) {
+      return first.trim();
+    }
+  }
+  return url.searchParams.get("after")?.trim() || null;
 }
 
 /** Subscribe first, then replay, so two clients never miss the same live delta. */
