@@ -18,9 +18,9 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | 实例 | `Halo建站-AFjg` / `lhins-b0l0d8b2` | `neo-mysql-redis` / `lhins-1whwkmau` |
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
-| 制品 | Halo 应用镜像 | **系统镜像 Ubuntu 24.04 LTS**（`lhbp-1l4ptuvm`，`PURE_OS`）。2026-08-22 已从 OpenClaw 应用镜像重装 |
+| 制品 | **系统镜像 Ubuntu 24.04 LTS**（已从爱马仕/Halo 应用镜像重装） | **系统镜像 Ubuntu 24.04 LTS**（`lhbp-1l4ptuvm`，`PURE_OS`）。2026-08-22 已从 OpenClaw 应用镜像重装 |
 | 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`） |
-| 同机还有 | 爱马仕已下线，不要拉起 | 无。不要再装 OpenClaw |
+| 同机还有 | Ubuntu 24.04 + systemd + Caddy + Node。不要再装爱马仕 | 无。不要再装 OpenClaw |
 
 控制台列表：[北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。  
 Chrome 里若还登着旧号，**看不到**这台机。
