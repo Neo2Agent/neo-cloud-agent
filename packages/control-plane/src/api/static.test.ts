@@ -87,8 +87,12 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /stop-icon/);
   assert.match(cssText, /pulse-dot/);
   assert.match(cssText, /think-bounce/);
-  assert.match(cssText, /\.workspace-drawer\{[^}]*min-height:\s*160px/);
-  assert.match(cssText, /\.main\{[^}]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\)/);
+  assert.match(cssText, /\.workspace-drawer\{[^}]*max-height:\s*min\(32vh/);
+  assert.match(cssText, /\.main\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/);
+  assert.match(cssText, /\.main\{[^}]*grid-template-areas/);
+  assert.match(cssText, /#root\{[^}]*overflow:\s*hidden/);
+  assert.match(cssText, /\.workspace-col\{[^}]*grid-area:\s*workspace/);
+  assert.match(cssText, /\.composer\{[^}]*grid-area:\s*composer/);
   assert.doesNotMatch(html, /Fraunces/);
   assert.doesNotMatch(cssText, /#0b0[0-9a-f]{3}\b/);
   assert.equal(resolveWebFile("/../package.json"), null);
