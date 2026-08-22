@@ -36,23 +36,38 @@ export function bindVisualViewport(
     });
     doc.documentElement.classList.toggle("is-narrow", isNarrowViewport(view));
   };
+  const onFocusIn = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") return;
+    const reveal = () => {
+      sync();
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    view.setTimeout(reveal, 50);
+    view.setTimeout(reveal, 350);
+  };
   sync();
   view.visualViewport?.addEventListener("resize", sync);
   view.visualViewport?.addEventListener("scroll", sync);
   view.addEventListener("resize", sync);
   view.addEventListener("orientationchange", sync);
+  doc.addEventListener("focusin", onFocusIn);
   return () => {
     view.visualViewport?.removeEventListener("resize", sync);
     view.visualViewport?.removeEventListener("scroll", sync);
     view.removeEventListener("resize", sync);
     view.removeEventListener("orientationchange", sync);
+    doc.removeEventListener("focusin", onFocusIn);
   };
 }
 
-export function closeMobileSidebar(): boolean {
-  if (!isNarrowViewport()) {
+export function closeMobileSidebar(
+  win: Pick<Window, "localStorage"> & Parameters<typeof isNarrowViewport>[0] = window,
+): boolean {
+  if (!isNarrowViewport(win)) {
     return false;
   }
-  window.localStorage.setItem("neo.sidebar", "0");
+  win.localStorage.setItem("neo.sidebar", "0");
   return true;
 }

@@ -38,7 +38,7 @@ import {
   withPendingUser,
   type PendingUser,
 } from "./turn";
-import { closeMobileSidebar } from "./viewport";
+import { closeMobileSidebar, isNarrowViewport } from "./viewport";
 
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
@@ -693,6 +693,10 @@ export function App() {
   }, [applyVms, authRequired, refreshRuns, refreshVms, runId]);
 
   useEffect(() => () => closeStream(), [closeStream]);
+
+  useEffect(() => {
+    if (isNarrowViewport()) setSidebarOpen(false);
+  }, []);
 
   useEffect(() => {
     if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {

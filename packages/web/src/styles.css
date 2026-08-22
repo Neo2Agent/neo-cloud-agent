@@ -34,9 +34,12 @@ body,
 #root {
   margin: 0;
   height: 100%;
+  height: 100vh;
+  height: 100dvh;
   height: var(--app-height, 100dvh);
   max-height: var(--app-height, 100dvh);
   overflow: hidden;
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -54,6 +57,8 @@ summary {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   height: 100%;
+  height: 100vh;
+  height: 100dvh;
   height: var(--app-height, 100dvh);
   max-height: var(--app-height, 100dvh);
   overflow: hidden;
@@ -1351,6 +1356,8 @@ textarea {
   body,
   #root,
   .app {
+    height: 100vh;
+    height: 100dvh;
     height: var(--app-height, 100dvh);
     max-height: var(--app-height, 100dvh);
   }
@@ -1404,8 +1411,16 @@ textarea {
   button.send,
   button.stop,
   .auth-tabs button,
-  .auth-submit {
+  .auth-submit,
+  .account button,
+  .history-more button,
+  .tool summary,
+  .context-usage-chip {
     min-height: 44px;
+  }
+
+  .vm-block {
+    display: none;
   }
 
   .run-list {
@@ -1442,6 +1457,15 @@ textarea {
 
   h1 {
     font-size: 16px;
+  }
+
+  .history-more button {
+    padding: 10px 12px;
+    font-size: 16px;
+  }
+
+  .account button {
+    padding: 8px 12px;
   }
 
   .top-actions {
@@ -1551,12 +1575,21 @@ textarea {
   }
 
   .auth-gate {
-    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    inset: auto;
+    top: var(--app-offset-top, 0px);
+    left: 0;
+    right: 0;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
+    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
     align-items: end;
+    overflow: auto;
   }
 
   .auth-card {
     width: min(420px, 100%);
+    max-height: 100%;
+    overflow: auto;
     padding: 20px 16px;
   }
 
@@ -1567,5 +1600,22 @@ textarea {
   .auth-card p,
   .auth-tabs button {
     font-size: 16px;
+  }
+
+  .auth-card input {
+    min-height: 48px;
+    padding: 12px 14px;
+  }
+
+  .auth-submit {
+    width: 100%;
+    min-height: 48px;
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 400px) {
+  .status {
+    display: none;
   }
 }

@@ -75,7 +75,7 @@ export function Composer({
       <textarea
         id="prompt"
         name="prompt"
-        rows={3}
+        rows={isNarrowViewport() ? 2 : 3}
         placeholder={placeholder}
         required={!busy && !archived && images.length === 0}
         disabled={archived}
