@@ -10,7 +10,7 @@ export const FILE_TOOL_NAMES = ["read", "write", "edit", "bash", "grep", "find",
 export function sessionToolNames(options?: { includeSubagent?: boolean }): string[] {
   const cloud =
     options?.includeSubagent === false
-      ? CLOUD_TOOL_NAMES.filter((name) => name !== "neo_subagent")
+      ? CLOUD_TOOL_NAMES.filter((name) => name !== "neo_subagent" && name !== "neo_subscribe")
       : [...CLOUD_TOOL_NAMES];
   return [...FILE_TOOL_NAMES, ...cloud];
 }
@@ -39,6 +39,7 @@ export function createPiCloudTools(ctx: CloudToolContext) {
   const mcpList = byName.get("neo_mcp_list")!;
   const mcpCall = byName.get("neo_mcp_call")!;
   const subagent = byName.get("neo_subagent")!;
+  const subscribe = byName.get("neo_subscribe")!;
 
   return [
     defineTool({
@@ -140,6 +141,20 @@ export function createPiCloudTools(ctx: CloudToolContext) {
         ),
       }),
       execute: async (_id, params) => toPiResult(await subagent.execute((params ?? {}) as Record<string, unknown>)),
+    }),
+    defineTool({
+      name: subscribe.name,
+      label: subscribe.label,
+      description: subscribe.description,
+      parameters: Type.Object({
+        events: Type.Optional(
+          Type.Array(
+            Type.Union([Type.Literal("pr_activity"), Type.Literal("ci")]),
+            { description: "pr_activity and/or ci. Default both." },
+          ),
+        ),
+      }),
+      execute: async (_id, params) => toPiResult(await subscribe.execute((params ?? {}) as Record<string, unknown>)),
     }),
   ];
 }

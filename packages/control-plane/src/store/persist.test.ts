@@ -48,7 +48,29 @@ function sampleRun(id: string): Run {
 test("persists a run record and JSONL events next to the workspace dir", () => {
   const runsDir = mkdtempSync(path.join(tmpdir(), "neo-persist-"));
   const run = sampleRun("run-persist-1");
-  persistRunRecord({ version: 1, run, followUps: [], inbound: [] }, runsDir);
+  persistRunRecord(
+    {
+      version: 1,
+      run,
+      followUps: [],
+      inbound: [],
+      subscriptions: [
+        {
+          id: "sub-1",
+          runId: run.id,
+          kind: "github_ci",
+          repo: "acme/app",
+          prNumber: 3,
+          branch: "neo/demo",
+          createdAt: run.createdAt,
+          wakeCount: 0,
+          lastDeliveryKey: null,
+          lastDeliveredAt: null,
+        },
+      ],
+    },
+    runsDir,
+  );
   persistEvent(
     {
       id: "evt-1",
@@ -68,6 +90,7 @@ test("persists a run record and JSONL events next to the workspace dir", () => {
   assert.equal(loaded[0]?.run.prompt, "hello");
   assert.equal(loaded[0]?.run.setupStatus, "INSTALL_SUCCEEDED");
   assert.equal(loaded[0]?.run.vmSlotId, "slot-0");
+  assert.equal(loaded[0]?.subscriptions?.[0]?.kind, "github_ci");
   const events = loadPersistedEvents(run.id, runsDir);
   assert.equal(events.length, 1);
   assert.equal(events[0]?.kind, "user.message");

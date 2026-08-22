@@ -154,6 +154,21 @@ export {
 } from "./context-usage.js";
 
 export type { DiskCloneMethod, DiskCloneResult, DiskKind, DiskSnapshot } from "./disk.js";
+export type {
+  CreateSubscriptionRequest,
+  RunSubscription,
+  RunSubscriptionKind,
+  SubscriptionEventKind,
+} from "./subscription.js";
+export {
+  MAX_SUBSCRIPTION_WAKES,
+  SUBSCRIPTION_COALESCE_MS,
+  SUBSCRIPTION_TOOL_NAME,
+  githubRepoSlug,
+  parseSubscriptionEvents,
+  subscriptionKindForEvent,
+  subscriptionTargetsFrom,
+} from "./subscription.js";
 
 export type {
   RunDiagnostics,

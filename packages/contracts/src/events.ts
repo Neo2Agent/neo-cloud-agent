@@ -30,6 +30,8 @@ export type RunEventKind =
   | "tool.end"
   | "followup.queued"
   | "followup.delivered"
+  | "subscription.created"
+  | "subscription.delivered"
   | "user.message"
   | "scm.clone_started"
   | "scm.clone_succeeded"

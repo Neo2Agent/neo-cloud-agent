@@ -23,7 +23,9 @@ const {
   getRunSession,
   ingestEvents,
   listRuns,
+  listRunSubscriptions,
   mintRunGitToken,
+  subscribeRun,
   openRunDraftPr,
   recoverLiveWorkers,
   reloadPersistedState,
@@ -384,4 +386,27 @@ test("context.usage stores the model's window and does not invent one", async ()
     },
   ]);
   assert.equal(getRun(other.id)?.contextUsage?.contextWindow, null);
+});
+
+test("subscriptions persist across control-plane reload", async () => {
+  const run = await createRun({
+    prompt: "watch ci",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  run.pullRequests.push({
+    repoUrl: "https://github.com/acme/app",
+    branch: run.branchName ?? "neo/watch",
+    url: "https://github.com/acme/app/pull/4",
+    draft: true,
+    number: 4,
+    title: "CI",
+  });
+  const created = subscribeRun(run.id, { events: ["ci"] });
+  assert.equal(created.subscriptions.length, 1);
+  assert.equal(created.subscriptions[0]?.kind, "github_ci");
+  reloadPersistedState();
+  const restored = listRunSubscriptions(run.id);
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0]?.repo, "acme/app");
+  assert.equal(restored[0]?.prNumber, 4);
 });

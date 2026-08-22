@@ -6,6 +6,7 @@ import { listEnvironments, upsertEnvironment } from "./env/store.js";
 import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
 import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
 import { reloadPersistedState } from "./orchestrator/orchestrator.js";
+import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
 import { persistRunRecord, persistWorkerLease, replacePersistedEvents, setPersistHooks } from "./store/persist.js";
 
@@ -51,6 +52,7 @@ export function resetPlatformForTests(): void {
 }
 
 async function doStart(): Promise<void> {
+  ensureGitHubWebhookSecret();
   const databaseUrl = (process.env.DATABASE_URL ?? "").trim();
   const redisUrl = (process.env.REDIS_URL ?? "").trim();
   if (databaseUrl) {

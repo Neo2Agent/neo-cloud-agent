@@ -5,6 +5,7 @@ import { neoGit } from "./neo-git.js";
 import { neoMcp } from "./neo-mcp.js";
 import { neoPr } from "./neo-pr.js";
 import { neoSubagent } from "./neo-subagent.js";
+import { neoSubscribe } from "./neo-subscribe.js";
 import type { CloudExtension } from "./types.js";
 
 export type {
@@ -24,9 +25,10 @@ export { createArtifactTool, executeArtifactUpload } from "./neo-artifact.js";
 export { createBrowserTool, executeBrowse } from "./neo-browser.js";
 export { createMcpCallTool, createMcpListTool, executeMcpCall, executeMcpList, listWorkspaceMcpServers } from "./neo-mcp.js";
 export { createSubagentTool, executeSubagentTool, availableSubagents, loadProjectSubagents } from "./neo-subagent.js";
+export { createSubscribeTool, executeSubscribe } from "./neo-subscribe.js";
 export { extractPageText } from "./html-text.js";
-export { neoArtifact, neoBrowser, neoDiag, neoGit, neoMcp, neoPr, neoSubagent };
+export { neoArtifact, neoBrowser, neoDiag, neoGit, neoMcp, neoPr, neoSubagent, neoSubscribe };
 
 export function loadCloudExtensions(): CloudExtension[] {
-  return [neoGit, neoPr, neoMcp, neoDiag, neoArtifact, neoBrowser, neoSubagent];
+  return [neoGit, neoPr, neoMcp, neoDiag, neoArtifact, neoBrowser, neoSubagent, neoSubscribe];
 }

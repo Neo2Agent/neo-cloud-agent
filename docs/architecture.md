@@ -349,12 +349,14 @@ pi-ai                        ← 多 Provider 流式、用量、自定义 baseUr
 | `neo-browser` | `neo_browse`：抓公开 http(s) 页的 title + 可见文本。**不是** headed browser / computer-use |
 | `neo-artifact` | `neo_artifact_upload`：把工作区文件传到 `POST /internal/runs/:id/artifacts`，对话页用 `/v1/runs/:id/artifacts/:name` 下载或预览。录屏 / 远程桌面未做 |
 | `neo-diag` | `neo_diag` 读 `GET /internal/runs/:id/diagnostics` 和工作区 `.neo/logs` |
+| `neo-subagent` | `neo_subagent`：worker 内嵌套 session，不占第二槽，也不把 loop 打回控制面 |
+| `neo-subscribe` | `neo_subscribe` → `POST /internal/runs/:id/subscriptions`；GitHub 评论 / Actions 经 `POST /webhooks/github` 进跟进队列 |
 
-策略类拦截（禁止 `curl` 外带、禁止读 `/opt/neo/worker` 证书）用 extension 的 tool hook，而不是改 `bash` 实现。
+策略类拦截（禁止 `curl` 外带、禁止读 `/opt/neo/worker` 证书）用 extension 的 tool hook，而不是改 `bash` 实现。工作区 `.cursor/hooks.json` / `.neo/hooks.json` 的 command hooks（`preToolUse`、`beforeShellExecution`、`afterFileEdit`、`stop`）走 pi 的 inline `tool_call` 钩子；**不**加载宿主机 `~/.cursor/hooks.json` 或 pi host extensions。
 
 ### 6.4 系统提示
 
-worker 用 **isolated loader**：不读仓库 `AGENTS.md` / `.pi/skills` / 本机 extensions，只注入云端系统提示（工作区路径、分支命名、禁止交互式 sudo、用 `neo_*` 工具而不是自己 `git push`）。本机再跑一份 pi TUI 是另一个产品，不要和云端 `neo run` 混语义。
+worker 用 **workspace loader**：读工作区 `AGENTS.md` / `CLAUDE.md`，以及 `.pi/skills`、`.cursor/skills`、`.claude/skills`、`.codex/skills`、`.neo/skills`、`.agents/skills`。仍然 **不** 加载宿主机 `~/.pi` / `~/.cursor` 的 skills 或 extensions。云端系统提示继续注入（工作区路径、分支命名、禁止交互式 sudo、用 `neo_*` 而不是自己 `git push`）。本机再跑一份 pi TUI 是另一个产品，不要和云端 `neo run` 混语义。
 
 ---
 
@@ -746,7 +748,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 - Firecracker / Cloud Hypervisor live-fork（正在跑的 VM 热分叉）
 - 失败 Build 不影响 fleets
-- 多仓、自动化（cron / GitHub webhook）、OIDC
+- 多仓、cron、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），事件进现有跟进队列，单订阅最多唤醒 10 次
 - 子 Agent：已落地 `neo_subagent`。契约对齐 pi 官方 `subagent` 扩展（scout / planner / reviewer / worker，single / parallel / chain，`.pi/agents/*.md`）。实现走 worker 内二次 `createAgentSession`，不 spawn `pi` CLI，也不把 loop 打回控制面。子会话的 `agent.end` 不会把父 Run 标成 IDLE。子工具事件收进父卡片的 `details.steps`，不在 transcript 里铺成平级卡片。scout 用 `neo_browse` 做公开网页，不再带 bash。
 
 ---
@@ -762,7 +764,8 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | 跟进队列 | Redis + pi `steer`/`followUp` | 不要自研第二套 loop |
 | Subagents / Task | `neo_subagent` | 对齐 pi 官方 subagent 契约；SDK 嵌套 session，不用 `pi --mode json` |
 | Cloud MCP | `neo-diag` extension | 动态工具，不必改 pi |
-| MCP / Hooks | pi extensions + 可选 hooks 目录 | |
+| MCP / Hooks | 工作区 skills / `AGENTS.md` + `.cursor/hooks.json` command hooks | 不加载宿主机 `~/.pi` extensions |
+| GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 唤醒走跟进队列，不另开 loop |
 | Artifacts / 远程桌面 | artifact-service + 可选 sidecar | 桌面可后置 |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | 同一 Orchestrator |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |

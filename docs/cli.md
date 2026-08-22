@@ -21,7 +21,7 @@ neo 的拆法和 Cloud Agent 对齐，不和本地 CLI 对齐：
 
 三条故意不做的产品：
 
-1. **本机 pi CLI**（对标 `agent -p` 改 cwd）。worker 还用 `isolatedLoader()`，云端不读仓库 `AGENTS.md` / skills。本机再嵌一份 pi 是另一个产品，语义不能和 `neo run` 混用。
+1. **本机 pi CLI**（对标 `agent -p` 改 cwd）。云端 worker 读的是工作区 `AGENTS.md` / skills / hooks，不是开发者家里的 `~/.pi`。本机再嵌一份 pi 是另一个产品，语义不能和 `neo run` 混用。
 2. **Worker 桥**（对标 `agent worker start`）。loop 在云、工具打开发者机器。要长期通道和另一套信任模型，不是把现有能力 CLI 化。
 3. **ACP / 本机 sandbox / `--yolo`。** 那些是「工具打在用户机器上」才需要的审批面。neo 的边界是 VM + JWT + egress + 受控 git。
 
@@ -220,6 +220,6 @@ neo / web / curl
 | 新 package `@neo-cloud-agent/cli`，只依赖 `contracts` | 依赖 `worker` / `llm-gateway` / pi |
 | 用 Node 22 `fetch` + SSE | 为 CLI 加 commander / ink / 重型 TUI |
 | 把 `RunEvent` 映成 `neo.cli.v1` | 在 CLI 里执行 read/edit/bash |
-| 文档写清云端不加载仓库 skills | 假装 `neo` 和 Cursor 本地 CLI 行为一致 |
+| 文档写清云端只加载**工作区** skills / `AGENTS.md`，不读宿主机 `~/.pi` | 假装 `neo` 和本机 `agent` TUI 行为完全一致 |
 
 进程模型不变：仍然是 control-plane + llm-gateway + worker 镜像。CLI 不是第四个 Deployment。
