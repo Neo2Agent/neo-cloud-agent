@@ -70,15 +70,17 @@ export function Sidebar({
           ) : (
             slots.map((slot) => {
               const occupant = items.find((run) => run.id === slot.runId || run.vmSlotId === slot.id);
-              const busy = slot.status === "busy" || Boolean(slot.runId);
+              const held = slot.status === "busy" || Boolean(slot.runId);
               const current = Boolean(currentRunId && (slot.runId === currentRunId || occupant?.id === currentRunId));
               const running = Boolean(occupant && isActiveRunStatus(occupant.status));
-              const title = occupant ? preview(occupant.prompt) : busy ? slot.runId?.slice(0, 8) : "空闲";
+              const title = occupant ? preview(occupant.prompt) : held ? slot.runId?.slice(0, 8) : "空闲";
+              const occupancy = running ? "占用" : held ? "待命" : "空闲";
               return (
                 <article
                   key={slot.id}
                   className="vm-slot"
-                  data-busy={String(busy)}
+                  data-busy={String(running)}
+                  data-held={String(held && !running)}
                   data-active={String(running)}
                   data-current={String(current)}
                   data-open={occupant?.id || slot.runId || undefined}
@@ -89,7 +91,7 @@ export function Sidebar({
                 >
                   <strong>{slotLabel(slot.id)}</strong>
                   <small>
-                    {busy ? "占用" : "空闲"} · {title}
+                    {occupancy} · {title}
                   </small>
                 </article>
               );

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { applyRunEventsToMessages, DEFAULT_TRANSCRIPT_PAGE } from "@neo-cloud-agent/contracts/transcript";
+import {
+  applyRunEventsToMessages,
+  DEFAULT_TRANSCRIPT_PAGE,
+  displayTranscriptMessages,
+  settleTranscriptMessages,
+} from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson, readToken, writeToken } from "./api";
@@ -227,7 +232,12 @@ export function App() {
         if (batch.length === 0) {
           return;
         }
-        setMessages((prev) => applyRunEventsToMessages(prev, batch));
+        setMessages((prev) => {
+          const next = applyRunEventsToMessages(prev, batch);
+          return batch.some((event) => isTerminalTurnEvent(event.kind))
+            ? settleTranscriptMessages(next)
+            : next;
+        });
         for (const event of batch) {
           const nextStatus = statusFromEventKind(event.kind, undefined);
           if (nextStatus || event.kind === "user.message" || event.kind === "followup.queued" || event.kind === "agent.end") {
@@ -457,7 +467,8 @@ export function App() {
         const transcript = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
         if (openGenRef.current !== gen) return false;
         const snapshot = transcript.snapshot;
-        setMessages(snapshot?.messages ?? []);
+        const loaded = snapshot?.messages ?? [];
+        setMessages(isActiveRunStatus(run.status) ? loaded : settleTranscriptMessages(loaded));
         setRemaining(snapshot?.remaining ?? 0);
         setNextBefore(snapshot?.nextBefore ?? snapshot?.messages?.[0]?.id ?? null);
         lastEventIdRef.current = snapshot?.lastEventId ?? null;
@@ -688,13 +699,28 @@ export function App() {
     }
   }, [pendingTurn, messages]);
 
-  const displayMessages = withPendingUser(messages, pendingTurn);
+  useEffect(() => {
+    if (!currentRun || isActiveRunStatus(currentRun.status)) {
+      return;
+    }
+    setMessages((prev) => {
+      if (!prev.some((message) => message.streaming || message.tools?.some((tool) => tool.status === "running"))) {
+        return prev;
+      }
+      return settleTranscriptMessages(prev);
+    });
+  }, [currentRun?.id, currentRun?.status]);
+
+  const viewMessages = withPendingUser(messages, pendingTurn);
+  const displayMessages = displayTranscriptMessages(viewMessages, {
+    hideStaleRestart: currentRun?.status !== "ERROR",
+  });
   const busy = isTurnBusy({
     sending,
     stopping,
     pending: Boolean(pendingTurn),
     status: currentRun?.status,
-    messages,
+    messages: viewMessages,
   });
   const archived = isComposerClosed(currentRun?.status);
   const activity = activityLabel({

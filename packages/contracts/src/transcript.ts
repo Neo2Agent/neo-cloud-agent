@@ -184,14 +184,87 @@ function cloneTool(tool: TranscriptTool): TranscriptTool {
 }
 
 export function cloneTranscriptMessage(message: TranscriptMessage): TranscriptMessage {
+  const tools = message.tools?.map(cloneTool);
+  const byId = new Map((tools ?? []).map((tool) => [tool.id, tool]));
   return {
     ...message,
-    tools: message.tools?.map(cloneTool),
-    blocks: message.blocks?.map((block) =>
-      block.type === "tool" ? { type: "tool" as const, tool: cloneTool(block.tool) } : { ...block },
-    ),
+    tools,
+    blocks: message.blocks?.map((block) => {
+      if (block.type !== "tool") {
+        return { ...block };
+      }
+      const shared = (block.tool.id && byId.get(block.tool.id)) || cloneTool(block.tool);
+      if (block.tool.id) {
+        byId.set(block.tool.id, shared);
+      }
+      return { type: "tool" as const, tool: shared };
+    }),
     images: message.images?.map((image) => ({ ...image })),
   };
+}
+
+function markToolsDone(assistant: TranscriptMessage): void {
+  for (const tool of assistant.tools ?? []) {
+    if (tool.status === "running") {
+      tool.status = "done";
+    }
+  }
+  for (const block of assistant.blocks ?? []) {
+    if (block.type === "tool" && block.tool.status === "running") {
+      block.tool.status = "done";
+    }
+  }
+}
+
+export function settleTranscriptMessages(messages: TranscriptMessage[]): TranscriptMessage[] {
+  return messages.map((message) => {
+    const next = cloneTranscriptMessage(message);
+    if (next.role === "assistant") {
+      next.streaming = false;
+      markToolsDone(next);
+    }
+    return next;
+  });
+}
+
+const RESTART_HEARTBEAT = /heartbeat lost after control plane restart/i;
+
+export function isStaleRestartNotice(message: TranscriptMessage, later: TranscriptMessage[]): boolean {
+  if (!RESTART_HEARTBEAT.test(message.text ?? "")) {
+    return false;
+  }
+  return later.some(
+    (item) =>
+      item.role === "user" ||
+      (item.role === "assistant" && Boolean(item.text.trim() || item.tools?.length)),
+  );
+}
+
+export function transcriptHasUnsettledWork(messages: TranscriptMessage[]): boolean {
+  return messages.some((message) => {
+    if (message.role !== "assistant") {
+      return false;
+    }
+    if (message.streaming) {
+      return true;
+    }
+    if (message.tools?.some((tool) => tool.status === "running")) {
+      return true;
+    }
+    return Boolean(message.blocks?.some((block) => block.type === "tool" && block.tool.status === "running"));
+  });
+}
+
+export function displayTranscriptMessages(
+  messages: TranscriptMessage[],
+  options?: { hideStaleRestart?: boolean },
+): TranscriptMessage[] {
+  return messages.filter((message, index) => {
+    if (options?.hideStaleRestart && RESTART_HEARTBEAT.test(message.text ?? "")) {
+      return false;
+    }
+    return !isStaleRestartNotice(message, messages.slice(index + 1));
+  });
 }
 
 type BuildState = {
@@ -205,11 +278,7 @@ function finishAssistant(state: BuildState): void {
     return;
   }
   assistant.streaming = false;
-  for (const tool of assistant.tools ?? []) {
-    if (tool.status === "running") {
-      tool.status = "done";
-    }
-  }
+  markToolsDone(assistant);
   if (!hasAssistantContent(assistant)) {
     const index = state.messages.lastIndexOf(assistant);
     if (index >= 0) {
@@ -231,6 +300,35 @@ function ensureAssistant(state: BuildState, event: RunEvent): TranscriptMessage 
       blocks: [],
     };
     state.messages.push(state.open);
+  }
+  return state.open;
+}
+
+function settleAll(state: BuildState): void {
+  for (const message of state.messages) {
+    if (message.role === "assistant") {
+      message.streaming = false;
+      markToolsDone(message);
+    }
+  }
+  state.messages = state.messages.filter((message) => message.role !== "assistant" || hasAssistantContent(message));
+  state.open = null;
+}
+
+function assistantForTool(state: BuildState, event: RunEvent): TranscriptMessage | null {
+  const id = toolKey(event);
+  const name = String(event.data?.toolName ?? "tool");
+  for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+    const message = state.messages[index];
+    if (message?.role !== "assistant") {
+      continue;
+    }
+    const match = message.tools?.find(
+      (item) => item.id === id || (item.name === name && item.status === "running"),
+    );
+    if (match) {
+      return message;
+    }
   }
   return state.open;
 }
@@ -284,10 +382,16 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     return;
   }
   if (event.kind === "agent.end" || event.kind === "run.idle") {
-    finishAssistant(state);
+    settleAll(state);
     return;
   }
   if (event.kind === "tool.start" || event.kind === "tool.update" || event.kind === "tool.end") {
+    const existing = assistantForTool(state, event);
+    if (existing) {
+      state.open = existing;
+      upsertTool(existing, event);
+      return;
+    }
     if (state.open?.text.trim() && state.open.streaming === false) {
       finishAssistant(state);
     }
@@ -295,9 +399,15 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     return;
   }
   if (event.kind === "run.error") {
-    const current = ensureAssistant(state, event);
-    appendText(current, current.text ? `\n${event.title}` : event.title);
-    finishAssistant(state);
+    settleAll(state);
+    state.messages.push({
+      id: event.id,
+      role: "setup",
+      text: event.detail ? `${event.title}：${event.detail}` : event.title,
+      createdAt: event.createdAt,
+      kind: event.kind,
+      level: event.level ?? "error",
+    });
     return;
   }
   if (isSetupKind(event.kind)) {
@@ -316,8 +426,9 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
 
 function stateFromMessages(messages: TranscriptMessage[]): BuildState {
   const cloned = messages.map(cloneTranscriptMessage);
-  const last = cloned.at(-1);
-  const open = last?.role === "assistant" && last.streaming ? last : null;
+  const last = [...cloned].reverse().find((item) => item.role === "assistant");
+  const open =
+    last && (last.streaming || Boolean(last.tools?.some((tool) => tool.status === "running"))) ? last : null;
   return { messages: cloned, open };
 }
 

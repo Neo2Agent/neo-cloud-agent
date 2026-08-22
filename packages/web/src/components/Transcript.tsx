@@ -22,7 +22,7 @@ function toolMark(tool: TranscriptTool): string {
 }
 
 function ToolCard({ tool }: { tool: TranscriptTool }) {
-  const running = tool.status === "running";
+  const running = tool.status === "running" && !tool.output;
   const preview = toolArgPreview(tool.args);
   const diff = fileToolDiff(tool);
   const preRef = useRef<HTMLPreElement>(null);
