@@ -127,7 +127,7 @@ sequenceDiagram
 
 ## 4. 控制面
 
-控制面是 **少数几个无状态进程** + 托管存储（Postgres / Redis / 对象存储）。职责可以很多，Deployment 不要很多。
+控制面是 **少数几个无状态进程** + 托管存储（MySQL 或 Postgres / Redis / 对象存储）。职责可以很多，Deployment 不要很多。
 
 ### 4.1 职责（先当模块，不要当仓库）
 
@@ -177,7 +177,7 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 
 | 存储 | 内容 |
 | --- | --- |
-| Postgres | 用户、环境、Run 元数据、Build、PR 链接、事件索引 |
+| MySQL 或 Postgres | 用户、环境、Run 元数据、Build、PR 链接、事件索引。`DATABASE_URL` 以 `mysql://` / `mariadb://` 走 MySQL，`postgres://` 走 Postgres |
 | Redis | 跟进队列、live event stream、lease / lock、warm pool 索引 |
 | 对象存储 | transcript 归档、artifacts、（可选）session JSONL 备份 |
 | 密钥库 | SCM App 私钥、Provider Key、用户 secrets（KMS 加密） |
@@ -658,7 +658,7 @@ P2 以后，**最多再拆 1 个进程**：
 
 再往后才考虑把 webhook 量大的 `scm-ingress` 或对象上传的 `artifact-service` 拆出去。那是流量问题，不是架构正确性问题。
 
-**不要做成独立进程的：** Postgres、Redis、对象存储用托管。egress proxy / git proxy 是基础设施（Envoy / squid / 自建小代理），不是业务仓库。
+**不要做成独立进程的：** MySQL / Postgres、Redis、对象存储用托管。egress proxy / git proxy 是基础设施（Envoy / squid / 自建小代理），不是业务仓库。
 
 ### 14.3 monorepo 目录（模块，不是服务）
 
@@ -783,7 +783,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 ## 18. 建议的下一步实现顺序
 
-P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数据、用户账号、以及 Environment Builds / warm pool 已经落地（没配服务时仍回退到本机文件 / 内存）。下一刀仍在本 monorepo：
+P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres 元数据、用户账号、以及 Environment Builds / warm pool 已经落地（没配服务时仍回退到本机文件 / 内存）。下一刀仍在本 monorepo：
 
 1. Firecracker 生产 rootfs / tap 回连已经落地（`pnpm fc:assets` / `pnpm fc:rootfs` / `pnpm test:firecracker`）。嵌套 KVM + AMX 的宿主机 `KVM_CREATE_VCPU` 会故障，live turn 需在真机或非 AMX 宿主上跑。
 2. 块设备 CoW 已落地接口：Build / 预热 / Firecracker rootfs 先 `cp --reflink=always`；文件系统不支持时工作区整树复制，生产 rootfs 只读共享原盘（不整份拷 1.5GiB）。不是 live-fork。
@@ -802,7 +802,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、Postgres 元数�
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
 - 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。已经挂上的 handle 以进程/容器退出为准，不会因为一次长工具调用没心跳就被标 ERROR。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
 - 对外 `/v1` 用用户 session（`POST /v1/auth/register|login`）或 `CONTROL_PLANE_TOKEN`。`ACCOUNTS_REQUIRED=1` 时必须登录。默认管理员是 `admin` / `123456`（`DEFAULT_ADMIN=0` 可关）。设了 `BOOTSTRAP_EMAIL` / `BOOTSTRAP_PASSWORD` 后还会再创建一个账号。对话页会自动登录（`POST /v1/auth/bootstrap`，密码不进浏览器）。Worker 走 `/internal`，只带 run JWT。`/health` 和静态页不需要令牌。对话页左下角可以登录；未强制登录时可以先跳过。
-- 设了 `DATABASE_URL` 后，Run / 事件 / 用户 / Environment / Build 写入 Postgres；没配则继续用 `.control` JSON。
+- 设了 `DATABASE_URL` 后，Run / 事件 / 用户 / Environment / Build 写入 MySQL 或 Postgres（看 URL scheme）；没配则继续用 `.control` JSON。
 - 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。
 - `WORKER_RUNTIME=firecracker` 走 Firecracker HTTP API（kernel / rootfs / tap / vsock）。开发机没配内核时继续用 local / docker。没配 `FIRECRACKER_ROOTFS` 时：若 `infra/firecracker/.assets/rootfs.ext4` 是生产盘（`pnpm fc:rootfs`）就用它，否则用 overlay 打一张小 ext4（单测路径，需要 `mkfs.ext4`）。Guest 不能用 `127.0.0.1` 回连宿主机，provision 会把控制面 / Gateway URL 改成 tap 宿主机 IP。
 - Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot（`rename`），否则 reflink / 拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。对话页可以选环境 / 快照，或点「预热」。
