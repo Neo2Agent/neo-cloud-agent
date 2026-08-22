@@ -25,7 +25,9 @@ export type RunSource =
   | "slack"
   | "github"
   | "api"
-  | "automation";
+  | "automation"
+  | "telegram"
+  | "wechat";
 
 export interface Run {
   id: string;

@@ -116,6 +116,9 @@ function failRun(run: Run, message: string, kind: RunEvent["kind"] = "run.error"
   }
   publish(event(run.id, "run.error", message));
   flushRun(run.id);
+  void import("../notify/dispatch.js")
+    .then(({ notifyRunFinished }) => notifyRunFinished(run, "error"))
+    .catch(() => undefined);
 }
 
 function hydrateRecord(record: {
@@ -871,6 +874,9 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
         run.updatedAt = now();
         publish(event(runId, "run.idle", "Agent turn finished"));
         flushRun(runId);
+        void import("../notify/dispatch.js")
+          .then(({ notifyRunFinished }) => notifyRunFinished(run, "idle"))
+          .catch(() => undefined);
       }
     }
     if (item.kind === "agent.start") {

@@ -1,3 +1,4 @@
+import { fireDueAutomations } from "../automations/runner.js";
 import { findActiveBuild, listBuilds } from "../env/builds.js";
 import { refillWarmPool, warmPoolSize } from "../env/warm-pool.js";
 
@@ -22,6 +23,9 @@ export async function refillActiveWarmPools(): Promise<void> {
 export function startScheduler(): { stop: () => void } {
   const timer = setInterval(() => {
     void refillActiveWarmPools().catch((error) => console.error("warm pool refill failed", error));
+    if (!process.env.NODE_TEST_CONTEXT) {
+      void fireDueAutomations().catch((error) => console.error("automation tick failed", error));
+    }
   }, 30_000);
   timer.unref();
   return { stop: () => clearInterval(timer) };

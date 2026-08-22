@@ -748,7 +748,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 - Firecracker / Cloud Hypervisor live-fork（正在跑的 VM 热分叉）
 - 失败 Build 不影响 fleets
-- 多仓、cron、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），事件进现有跟进队列，单订阅最多唤醒 10 次
+- 多仓、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），事件进现有跟进队列，单订阅最多唤醒 10 次。对话页可建每天 / 每小时任务（`source: automation`）。Telegram / 微信公众号发一句开新对话；做完可推企业微信机器人、Telegram 或 HTTP。
 - 子 Agent：已落地 `neo_subagent`。契约对齐 pi 官方 `subagent` 扩展（scout / planner / reviewer / worker，single / parallel / chain，`.pi/agents/*.md`）。实现走 worker 内二次 `createAgentSession`，不 spawn `pi` CLI，也不把 loop 打回控制面。子会话的 `agent.end` 不会把父 Run 标成 IDLE。子工具事件收进父卡片的 `details.steps`，不在 transcript 里铺成平级卡片。scout 用 `neo_browse` 做公开网页，不再带 bash。
 
 ---
@@ -767,7 +767,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | MCP / Hooks | 工作区 skills / `AGENTS.md` + `.cursor/hooks.json` command hooks | 不加载宿主机 `~/.pi` extensions |
 | GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 唤醒走跟进队列，不另开 loop |
 | Artifacts / 远程桌面 | artifact-service + 可选 sidecar | 桌面可后置 |
-| GitHub / Slack / API | `api` + `scm` + 适配器 | 同一 Orchestrator |
+| GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
 | Agent 内核（自研） | **pi-coding-agent** | 这是唯一故意不对齐的地方 |
 

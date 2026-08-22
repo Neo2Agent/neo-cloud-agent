@@ -1027,6 +1027,7 @@ export function App() {
                   buildId={buildId}
                   environments={environments}
                   builds={builds}
+                  token={token}
                   llm={llm}
                   llmKey={llmKey}
                   scm={scm}
