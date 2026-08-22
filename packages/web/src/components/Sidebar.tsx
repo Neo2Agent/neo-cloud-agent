@@ -105,23 +105,31 @@ export function Sidebar({
         {items.map((run) => {
           const running = isActiveRunStatus(run.status);
           return (
-            <button
+            <div
               key={run.id}
               className={`run-item${run.id === currentRunId ? " active" : ""}${running ? " busy" : ""}`}
               data-id={run.id}
               data-busy={running ? "true" : "false"}
-              type="button"
+              role="button"
+              tabIndex={0}
+              aria-current={run.id === currentRunId ? "true" : undefined}
               onClick={() => onOpenRun(run.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOpenRun(run.id);
+                }
+              }}
             >
-              <strong>
+              <span className="run-title">
                 {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
-                <span className="run-title">{preview(run.prompt)}</span>
-              </strong>
+                {preview(run.prompt)}
+              </span>
               <small>
                 {STATUS_LABELS[run.status] ?? run.status}
                 {run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
               </small>
-            </button>
+            </div>
           );
         })}
       </div>

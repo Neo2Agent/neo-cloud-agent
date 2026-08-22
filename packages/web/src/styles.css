@@ -53,6 +53,11 @@ summary {
   touch-action: manipulation;
 }
 
+button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .app {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
@@ -225,29 +230,38 @@ button[type="submit"]:disabled {
 }
 
 .run-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.run-item strong {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+  display: block;
+  width: 100%;
   max-width: 100%;
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
+  height: auto;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  overflow: visible;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .run-title {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: 0;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+
+.run-item .pulse-dot {
+  display: inline-block;
+  vertical-align: 0.1em;
+  margin-right: 6px;
 }
 
 .run-item[data-busy="true"] small {
@@ -900,7 +914,6 @@ h1 {
   background: var(--run);
   box-shadow: 0 0 0 0 rgba(23, 92, 211, 0.45);
   animation: pulse-dot 1.4s ease-out infinite;
-  flex: 0 0 auto;
 }
 
 @keyframes pulse-dot {
@@ -1992,6 +2005,7 @@ textarea {
     z-index: 9;
     border-right: 1px solid var(--line);
     box-shadow: var(--shadow);
+    background: #f7f7f8;
   }
 
   .sidebar {
@@ -2032,13 +2046,9 @@ textarea {
     -webkit-overflow-scrolling: touch;
   }
 
-  .run-item strong {
-    font-size: 16px;
-  }
-
   .run-title {
     font-size: 16px;
-    white-space: nowrap;
+    line-height: 1.5;
   }
 
   .topbar {
