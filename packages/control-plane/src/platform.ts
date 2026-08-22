@@ -4,6 +4,8 @@ import { importBuild, listBuilds } from "./env/builds.js";
 import { setEnvPersistHooks } from "./env/persist-hooks.js";
 import { listAutomations, replaceAutomations } from "./automations/store.js";
 import { setAutomationPersistHooks } from "./automations/persist-hooks.js";
+import { listProjects, replaceProjects } from "./projects/store.js";
+import { setProjectPersistHooks } from "./projects/persist-hooks.js";
 import { listEnvironments, upsertEnvironment } from "./env/store.js";
 import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
 import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
@@ -51,6 +53,7 @@ export function resetPlatformForTests(): void {
   setPersistHooks({});
   setEnvPersistHooks({});
   setAutomationPersistHooks({});
+  setProjectPersistHooks({});
   attachHotBus(null);
 }
 
@@ -82,6 +85,11 @@ async function doStart(): Promise<void> {
         void mirrorAutomations(metadata, items).catch((error) => console.error("metadata saveAutomation failed", error));
       },
     });
+    setProjectPersistHooks({
+      onWrite: (items) => {
+        void mirrorProjects(metadata, items).catch((error) => console.error("metadata saveProject failed", error));
+      },
+    });
     setEnvPersistHooks({
       onEnvironment: (env) => {
         void metadata?.saveEnvironment(env).catch((error) => console.error("metadata saveEnvironment failed", error));
@@ -93,6 +101,7 @@ async function doStart(): Promise<void> {
     await hydrateFromStore(metadata);
     await hydrateEnvFromStore(metadata);
     await hydrateAutomationsFromStore(metadata);
+    await hydrateProjectsFromStore(metadata);
     reloadPersistedState();
     console.log(`control-plane metadata store: ${metadataKind}`);
   }
@@ -167,6 +176,33 @@ async function hydrateAutomationsFromStore(store: MetadataStore): Promise<void> 
   }
   for (const item of listAutomations()) {
     await store.saveAutomation(item);
+  }
+}
+
+async function hydrateProjectsFromStore(store: MetadataStore): Promise<void> {
+  const remote = await store.loadProjects();
+  if (remote.length > 0) {
+    replaceProjects(remote, { mirror: false });
+    return;
+  }
+  for (const item of listProjects()) {
+    await store.saveProject(item);
+  }
+}
+
+async function mirrorProjects(store: MetadataStore | null, items: import("@neo-cloud-agent/contracts").Project[]): Promise<void> {
+  if (!store) {
+    return;
+  }
+  const remote = await store.loadProjects();
+  const keep = new Set(items.map((item) => item.id));
+  for (const item of items) {
+    await store.saveProject(item);
+  }
+  for (const old of remote) {
+    if (!keep.has(old.id)) {
+      await store.deleteProject(old.id);
+    }
   }
 }
 

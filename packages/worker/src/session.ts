@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   createAgentSession,
@@ -7,7 +7,7 @@ import {
   SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import { deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
+import { appendProjectInstruction, deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
 import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { getWorkerConfig } from "./config.js";
 import { materializeInboundImages } from "./images.js";
@@ -95,7 +95,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
   const resourceLoader = await createWorkspaceLoader({
     cwd: input.cwd,
     agentDir,
-    systemPrompt: input.systemPrompt ?? CLOUD_SYSTEM_PROMPT,
+    systemPrompt: appendProjectInstruction(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, readProjectInstruction(input.cwd)),
     settingsManager,
   });
   const loaded = summarizeWorkspaceResources(resourceLoader);
@@ -118,6 +118,14 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     settingsManager,
   });
   return session;
+}
+
+function readProjectInstruction(cwd: string): string {
+  try {
+    return readFileSync(path.join(cwd, ".neo", "PROJECT.md"), "utf8");
+  } catch {
+    return process.env.NEO_PROJECT_INSTRUCTION ?? "";
+  }
 }
 
 export async function dispatchInbound(session: AgentSession, message: WorkerInbound): Promise<"continue" | "stop"> {

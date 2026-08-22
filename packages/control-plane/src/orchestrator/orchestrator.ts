@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type {
   CreateCommitRequest,
@@ -27,6 +28,7 @@ import {
   redactText,
   SUBSCRIPTION_COALESCE_MS,
   subscriptionKindForEvent,
+  formatProjectMemory,
   subscriptionTargetsFrom,
 } from "@neo-cloud-agent/contracts";
 import { defaultWorkerResources, getConfig } from "../config.js";
@@ -68,6 +70,7 @@ import {
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
+import { getProject, projectHasMember, recordProjectEvent } from "../projects/store.js";
 
 const runs = new Map<string, Run>();
 const followUps = new Map<string, FollowUp[]>();
@@ -523,13 +526,39 @@ function runningTitle(): string {
   return "Worker handle reserved";
 }
 
+function writeProjectMemory(run: Run): void {
+  if (!run.projectId) return;
+  const project = getProject(run.projectId);
+  if (!project) return;
+  const dest = path.join(workspaceFor(run.id), ".neo");
+  mkdirSync(dest, { recursive: true });
+  writeFileSync(path.join(dest, "PROJECT.md"), formatProjectMemory(project));
+}
+
 export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string }): Promise<Run> {
   const config = getConfig();
   const createdAt = now();
+  let repoUrls = input.repoUrls;
+  let projectId: string | null = null;
+  if (input.projectId) {
+    const project = getProject(input.projectId);
+    if (!project) {
+      throw new Error("项目不存在");
+    }
+    if (owner?.userId && !projectHasMember(project.id, owner.userId)) {
+      throw new Error("不是项目成员");
+    }
+    projectId = project.id;
+    if (repoUrls.length === 0 && project.defaultRepoUrls.length > 0) {
+      repoUrls = [...project.defaultRepoUrls];
+    }
+  }
   const run: Run = {
     id: crypto.randomUUID(),
     orgId: owner?.orgId ?? config.orgId,
     userId: owner?.userId ?? config.userId,
+    projectId,
+    assigneeUserId: owner?.userId ?? config.userId,
     envId: input.envId ?? null,
     envVersionId: null,
     buildId: null,
@@ -540,7 +569,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     prompt: input.prompt,
     branchName: null,
     baseBranch: null,
-    repoUrls: input.repoUrls,
+    repoUrls,
     pullRequests: [],
     workerHandle: null,
     vmSlotId: null,
@@ -717,6 +746,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   }
 
   try {
+    writeProjectMemory(run);
     await attachWorker(run, runningTitle());
   } catch (error) {
     if (isSlotBusyError(error)) {
@@ -813,6 +843,30 @@ export async function loadRunIntoMemory(runId: string): Promise<Run | undefined>
     // postgres is optional
   }
   return restoreArchivedRun(runId);
+}
+
+export function transferRun(
+  runId: string,
+  toUserId: string,
+  actor: { userId: string; email: string },
+  note = "",
+): Run {
+  const run = requireRun(runId);
+  if (!run.projectId) {
+    throw new Error("只有项目里的对话才能转交");
+  }
+  if (!projectHasMember(run.projectId, toUserId)) {
+    throw new Error("对方还不是项目成员");
+  }
+  if (run.userId !== actor.userId && !projectHasMember(run.projectId, actor.userId)) {
+    throw new Error("没有权限转交");
+  }
+  run.userId = toUserId;
+  run.assigneeUserId = toUserId;
+  run.updatedAt = now();
+  flushRun(run.id);
+  recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `转交了对话：${note.trim()}` : "转交了一条对话");
+  return run;
 }
 
 export function listRuns(): Run[] {

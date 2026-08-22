@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import type { Automation, Build, Environment, RunEvent } from "@neo-cloud-agent/contracts";
+import type { Automation, Build, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
 import type { SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
@@ -64,6 +64,11 @@ CREATE TABLE IF NOT EXISTS automations (
   body JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL
 );
+CREATE TABLE IF NOT EXISTS projects (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
 `;
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -104,6 +109,14 @@ function asBuild(value: unknown): Build | null {
   }
   const build = value as Build;
   return build.id && build.envId ? build : null;
+}
+
+function asProject(value: unknown): Project | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Project;
+  return item.id && item.name ? item : null;
 }
 
 function asAutomation(value: unknown): Automation | null {
@@ -259,6 +272,21 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async deleteAutomation(id) {
       await query(`DELETE FROM automations WHERE id = ?`, [id]);
+    },
+    async saveProject(item) {
+      await query(
+        `INSERT INTO projects (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [item.id, JSON.stringify(item), mysqlDateTime(item.updatedAt)],
+      );
+    },
+    async loadProjects() {
+      const result = await query(`SELECT body FROM projects ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asProject)).filter((item): item is Project => Boolean(item));
+    },
+    async deleteProject(id) {
+      await query(`DELETE FROM projects WHERE id = ?`, [id]);
     },
     async createUser(user) {
       try {

@@ -96,16 +96,44 @@ export async function loginAccount(input: { email?: string; password?: string })
   requireAccountDatabase();
   const login = normalizeEmail(input.email ?? "");
   const password = input.password ?? "";
-  if (!isValidLogin(login) || login !== DEFAULT_ADMIN_LOGIN || password !== DEFAULT_ADMIN_PASSWORD) {
+  if (!isValidLogin(login) || !password) {
     throw new AccountError("invalid account or password", 401);
   }
   await ensureDefaultAdmin();
-  const user = await getAccountStore().findUserByEmail(DEFAULT_ADMIN_LOGIN);
+  const user = await getAccountStore().findUserByEmail(login);
   if (!user || !verifyPassword(password, user.passwordHash)) {
     throw new AccountError("invalid account or password", 401);
   }
   const token = await issueSession(user.id);
   return { user: toPublicUser(user), token };
+}
+
+export async function createTeammateAccount(input: { email: string; password: string; orgId: string }): Promise<PublicUser> {
+  requireAccountDatabase();
+  const login = normalizeEmail(input.email);
+  if (!isValidLogin(login) || login === DEFAULT_ADMIN_LOGIN) {
+    throw new AccountError("账号不合法", 400);
+  }
+  if (input.password.length < 6) {
+    throw new AccountError("密码至少 6 位", 400);
+  }
+  const existing = await getAccountStore().findUserByEmail(login);
+  if (existing) {
+    throw new AccountError("账号已存在", 409);
+  }
+  const user = await getAccountStore().createUser({
+    id: crypto.randomUUID(),
+    email: login,
+    passwordHash: hashPassword(input.password),
+    orgId: input.orgId,
+    createdAt: new Date().toISOString(),
+  });
+  return toPublicUser(user);
+}
+
+export async function findPublicUserByEmail(email: string): Promise<PublicUser | null> {
+  const user = await getAccountStore().findUserByEmail(normalizeEmail(email));
+  return user ? toPublicUser(user) : null;
 }
 
 export async function lookupSession(token: string): Promise<{ user: PublicUser; session: SessionRecord } | null> {
