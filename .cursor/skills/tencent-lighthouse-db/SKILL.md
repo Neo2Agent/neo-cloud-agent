@@ -1,6 +1,6 @@
 ---
 name: tencent-lighthouse-db
-description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse (101.42.105.230 / OpenClaw(龙虾)-8Dd3). Use when checking or restarting db-mysql/db-redis, reading persisted runs/events, wiring DATABASE_URL or REDIS_URL, or opening 3306/6379. Not the app host 62.234.211.200.
+description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse (101.42.105.230 / neo-mysql-redis). Use when checking or restarting db-mysql/db-redis, reading persisted runs/events, wiring DATABASE_URL or REDIS_URL, or opening 3306/6379. Not the app host 62.234.211.200.
 ---
 
 # 腾讯云轻量：MySQL / Redis 库机
@@ -15,11 +15,12 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | | 应用机 | 库机（本 skill） |
 | --- | --- | --- |
 | 账号 | 旧号（Halo 那台） | UIN `100047610252`（昵称 旺动香菇-昆阳喷泉） |
-| 实例 | `Halo建站-AFjg` / `lhins-b0l0d8b2` | `OpenClaw(龙虾)-8Dd3` / `lhins-1whwkmau` |
+| 实例 | `Halo建站-AFjg` / `lhins-b0l0d8b2` | `neo-mysql-redis` / `lhins-1whwkmau` |
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
+| 制品 | Halo 应用镜像 | **系统镜像 Ubuntu 24.04 LTS**（`lhbp-1l4ptuvm`，`PURE_OS`）。2026-08-22 已从 OpenClaw 应用镜像重装 |
 | 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`） |
-| 同机还有 | 爱马仕已下线，不要拉起 | OpenClaw 已停，不要拉起 |
+| 同机还有 | 爱马仕已下线，不要拉起 | 无。不要再装 OpenClaw |
 
 控制台列表：[北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。  
 Chrome 里若还登着旧号，**看不到**这台机。
@@ -43,17 +44,10 @@ Host lighthouse-db
 1. **不要重启实例。**
 2. **不要在控制台绑定 SSH 密钥。** 用 TAT 追加 `authorized_keys`。
 3. **不要读、打印、提交** `/home/ubuntu/db/.env`。只报键名和连通性。
-4. **不要重新拉起 OpenClaw。** root 用户单元已 `stop/disable`，文件改名为 `~/.config/systemd/user/openclaw-gateway.service.disabled`。
+4. **不要再装 OpenClaw。** 盘已重装成纯 Ubuntu，没有 gateway / 20041。
 5. **不要**在这台机上部署 neo-cloud-agent / 改 Caddy / 动应用机 systemd。
 6. 3306 / 6379 现在对 `0.0.0.0/0` 开放，只靠密码。不要再把明文密码写进聊天或 git。
-
-## OpenClaw（已下线）
-
-原先是 root 用户 systemd：`openclaw-gateway.service`，监听 `:20041`（还带 Playwright Chrome）。2026-08-22 已 `stop` + `disable`，单元文件改名为 `openclaw-gateway.service.disabled`。
-
-- 不要 `systemctl --user start openclaw-gateway`（root 的 `XDG_RUNTIME_DIR=/run/user/0`）
-- 数据目录 `/root/.openclaw`、pnpm 全局包可以留着
-- 不要读 `/root/.openclaw` 里的密钥
+7. 换系统镜像（`ResetInstance`）要账号微信 MFA。不要用控制台「绑定密钥」。SSH 用 TAT 写公钥。
 
 ## 现场
 
@@ -66,7 +60,8 @@ Host lighthouse-db
 | 数据卷 | `db_mysql_data`、`db_redis_data` |
 | 库名 / 用户 | `app` / `app` |
 | 镜像源 | `/etc/docker/daemon.json` → `https://mirror.ccs.tencentyun.com`（Docker Hub 直连常超时） |
-| 主机 ufw | inactive；放行在轻量控制台防火墙：22、3306、6379、ICMP（20041 可关，OpenClaw 已下线） |
+| 主机 ufw | inactive；轻量防火墙：22、3306、6379、ICMP（20041 可删） |
+| 制品 | `lhbp-1l4ptuvm` Ubuntu 24.04 LTS 系统镜像 |
 
 `.env` 键（值留在机上）：
 

@@ -6,8 +6,8 @@
 
 1. 用 UIN `100047610252` 登录。旧号 Chrome 会话看不到这台。
 2. 打开 [Lighthouse 北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)（`rid=8`）。
-3. 实例 `OpenClaw(龙虾)-8Dd3`（`lhins-1whwkmau`）运行中，公网 `101.42.105.230`。
-4. **不要点重启、重装、绑定密钥。**
+3. 实例 `neo-mysql-redis`（`lhins-1whwkmau`）运行中，公网 `101.42.105.230`。
+4. **不要点重启、绑定密钥。** 现网制品是 **Ubuntu 24.04 LTS 系统镜像**（`lhbp-1l4ptuvm`）。再重装会清盘，先备份 `/home/ubuntu/db`。`ResetInstance` 要账号微信 MFA。不要选 OpenClaw / Hermes。
 
 未登录会被微信/Hermes 扫码拦住。Agent 浏览器登录和用户手机登录不是同一会话，不要猜密码。
 
@@ -20,7 +20,7 @@
 | 22 | SSH |
 | 3306 | MySQL（现网 `0.0.0.0/0`，只靠密码；能收到应用机出口 IP 就收窄） |
 | 6379 | Redis（同上） |
-| 20041 | 旧 OpenClaw WebUI，已下线，可从防火墙删掉 |
+| 20041 | 旧 OpenClaw 端口，可删 |
 | ICMP | ping |
 
 ## TAT 写入 SSH 公钥（首次）
@@ -46,16 +46,24 @@ ssh-keygen -t ed25519 -f ~/.ssh/neo_lighthouse_new -C neo-db-deploy -N ""
 
 Docker Hub 直连常超时，装完立刻加腾讯云镜像：
 
+`get.docker.com` / `download.docker.com` 常被 RST。用腾讯云 apt：
+
 ```bash
-curl -fsSL https://get.docker.com | sudo sh
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://mirrors.cloud.tencent.com/docker-ce/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://mirrors.cloud.tencent.com/docker-ce/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo usermod -aG docker ubuntu
 sudo mkdir -p /etc/docker
 printf '%s\n' '{"registry-mirrors":["https://mirror.ccs.tencentyun.com"]}' | sudo tee /etc/docker/daemon.json
-sudo systemctl restart docker
-docker compose version
+sudo systemctl enable --now docker
+sudo docker compose version
 ```
 
-新会话才有 `docker` 组。当前 shell 用 `sudo docker` 或 `sg docker -c '...'`。
+新会话才有 `docker` 组。当前 shell 用 `sudo docker`。
+
+恢复 Redis 备份时：compose 开了 AOF，空 AOF 会盖掉 `dump.rdb`。先 `--appendonly no` 载入 RDB，再 `CONFIG SET appendonly yes` + `BGREWRITEAOF`，然后才 `compose up redis`。
 
 ## 目录与密钥
 

@@ -12,7 +12,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | | 本 skill（应用机） | 库机 |
 | --- | --- | --- |
 | 公网 | `62.234.211.200` | `101.42.105.230` |
-| 实例 | `Halo建站-AFjg` | `OpenClaw(龙虾)-8Dd3` |
+| 实例 | `Halo建站-AFjg` | `neo-mysql-redis` |
 | 职责 | 本仓库 + systemd + Caddy + VM 槽 | Docker MySQL / Redis |
 
 库机操作见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。控制面要持久化时，在**本机**仓库根 `.env` 写 `DATABASE_URL` / `REDIS_URL` 指向库机，然后只重启 `neo-control-plane`。`/health` 应为 `metadataStore: "mysql"`、`eventBus: "redis"`。不要把库机密码打进聊天。
