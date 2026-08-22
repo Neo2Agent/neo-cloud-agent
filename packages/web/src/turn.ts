@@ -28,8 +28,18 @@ export function isComposerClosed(status?: string | null): boolean {
   return status === "ARCHIVED" || status === "EXPIRED";
 }
 
+function currentTurnMessages(messages: TranscriptMessage[]): TranscriptMessage[] {
+  let lastUser = -1;
+  for (let index = 0; index < messages.length; index += 1) {
+    if (messages[index]?.role === "user") {
+      lastUser = index;
+    }
+  }
+  return lastUser >= 0 ? messages.slice(lastUser + 1) : messages;
+}
+
 export function hasLiveAssistantWork(messages: TranscriptMessage[]): boolean {
-  return messages.some((message) => {
+  return currentTurnMessages(messages).some((message) => {
     if (message.role !== "assistant") return false;
     if (message.streaming && message.text.trim()) return true;
     return Boolean(message.tools?.some((tool) => tool.status === "running"));
@@ -37,12 +47,15 @@ export function hasLiveAssistantWork(messages: TranscriptMessage[]): boolean {
 }
 
 export function isAssistantStreaming(messages: TranscriptMessage[]): boolean {
-  return messages.some((message) => message.role === "assistant" && message.streaming && Boolean(message.text.trim()));
+  return currentTurnMessages(messages).some(
+    (message) => message.role === "assistant" && message.streaming && Boolean(message.text.trim()),
+  );
 }
 
 export function runningToolName(messages: TranscriptMessage[]): string | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const running = messages[index]?.tools?.find((tool) => tool.status === "running");
+  const turn = currentTurnMessages(messages);
+  for (let index = turn.length - 1; index >= 0; index -= 1) {
+    const running = turn[index]?.tools?.find((tool) => tool.status === "running");
     if (running?.name) return running.name;
   }
   return null;

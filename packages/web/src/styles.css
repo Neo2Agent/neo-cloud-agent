@@ -236,6 +236,11 @@ button[type="submit"]:disabled {
   background: var(--user);
 }
 
+.vm-slot[data-held="true"] {
+  border-color: #e5e7eb;
+  background: #f8fafc;
+}
+
 .vm-slot[data-current="true"] {
   outline: 2px solid #93c5fd;
 }

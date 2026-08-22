@@ -208,9 +208,11 @@ test("run.error closes a cut-off stream so the composer is not stuck", () => {
     ev({ id: "e1", kind: "run.error", title: "worker heartbeat lost after control plane restart" }),
   ]);
   const assistant = snapshot.messages.find((item) => item.role === "assistant");
+  const notice = snapshot.messages.find((item) => item.role === "setup");
   assert.equal(assistant?.streaming, false);
   assert.equal(assistant?.tools?.[0]?.status, "done");
-  assert.match(assistant?.text ?? "", /heartbeat lost/);
+  assert.equal(assistant?.text, "half");
+  assert.match(notice?.text ?? "", /heartbeat lost/);
 });
 
 test("in-progress assistant stays streaming so another client can tail", () => {
