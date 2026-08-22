@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./transcript": "./src/transcript.ts",
+    "./subagent": "./src/subagent.ts",
     "./events": "./src/events.ts",
     "./run": "./src/run.ts",
     "./context-usage": "./src/context-usage.ts"

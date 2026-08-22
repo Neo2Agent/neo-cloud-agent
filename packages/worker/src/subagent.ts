@@ -2,6 +2,7 @@ import path from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   MAX_SUBAGENT_CONCURRENCY,
+  SUBAGENT_TIMEOUT_MS,
   applyChainPlaceholder,
   formatSubagentResult,
   listSubagentNames,
@@ -22,6 +23,31 @@ export type SubagentRunInput = OpenSessionInput & {
   params: Record<string, unknown>;
   onSubagentEvent?: SubagentEventHandler;
 };
+
+const liveNested = new Set<AgentSession>();
+
+export function abortNestedSubagents(): void {
+  for (const session of liveNested) {
+    void session.abort();
+  }
+}
+
+async function promptWithTimeout(session: AgentSession, task: string, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      void session.abort();
+      reject(new Error(`subagent timed out after ${Math.round(ms / 1000)}s`));
+    }, ms);
+  });
+  try {
+    await Promise.race([session.prompt(task), timeout]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
 
 function lastAssistantText(session: AgentSession): string {
   const chunks: string[] = [];
@@ -100,8 +126,9 @@ async function runOne(input: SubagentRunInput, agentName: string, task: string):
   const unsubscribe = session.subscribe((event) => {
     input.onSubagentEvent?.(event as LooseAgentEvent, nest);
   });
+  liveNested.add(session);
   try {
-    await session.prompt(task);
+    await promptWithTimeout(session, task, SUBAGENT_TIMEOUT_MS);
     const content = lastAssistantText(session) || "(no output)";
     return {
       content,
@@ -119,6 +146,7 @@ async function runOne(input: SubagentRunInput, agentName: string, task: string):
       details: { agent: agent.name, subagentId: nest.id, durationMs: Date.now() - started },
     };
   } finally {
+    liveNested.delete(session);
     unsubscribe();
     session.dispose();
   }

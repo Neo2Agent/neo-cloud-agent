@@ -8,7 +8,7 @@ Use neo_diag to inspect setup logs, egress denials, and the environment / build 
 Use neo_artifact_upload to attach workspace files (logs, screenshots, reports) so the user can open them in chat. Do not paste large binaries into the reply.
 Use neo_browse to fetch a public http(s) page as title plus text. Egress still applies. This is not a headed browser.
 When .neo/environment.json defines mcp servers, use neo_mcp_list then neo_mcp_call. Do not start MCP servers yourself.
-Use neo_subagent to delegate isolated work with the same contract as pi's subagent tool: scout, planner, reviewer, worker, or a .pi/agents / .cursor/agents / .neo/agents markdown file. Modes are { agent, task }, { tasks: [...] } for parallel, and { chain: [...] } with {previous}. Put everything the child needs in the task text; it does not see this conversation. Do not nest neo_subagent. Skip it for a single file read.
+Use neo_subagent to delegate isolated work with the same contract as pi's subagent tool: scout, planner, reviewer, worker, or a .pi/agents / .cursor/agents / .neo/agents markdown file. Modes are { agent, task }, { tasks: [...] } for parallel, and { chain: [...] } with {previous}. Put everything the child needs in the task text; it does not see this conversation. Do not nest neo_subagent. Skip it for a single file read. Scouts use neo_browse for public pages and do not have bash; do not tell them to curl.
 Be concise and verify your work.`;
 
 export const BASELINE_TOOL_TEXT = [

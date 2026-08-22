@@ -1,4 +1,5 @@
 import { Fragment, useLayoutEffect, useRef } from "react";
+import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { fileToolDiff, toolArgPreview } from "../format";
@@ -29,12 +30,30 @@ function toolDisplayName(tool: TranscriptTool): string {
   return tool.name === "neo_subagent" ? "subagent" : tool.name;
 }
 
+function readSubagentTasks(details?: Record<string, unknown>): SubagentTask[] {
+  const raw = details?.tasks;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter((item): item is SubagentTask => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+    const record = item as { agent?: unknown; task?: unknown };
+    return typeof record.agent === "string" && typeof record.task === "string";
+  });
+}
+
 function ToolCard({ tool }: { tool: TranscriptTool }) {
   const running = tool.status === "running" && !tool.output;
   const preview = toolArgPreview(tool.args);
   const diff = fileToolDiff(tool);
   const preRef = useRef<HTMLPreElement>(null);
-  const subagent = tool.name === "neo_subagent" || Boolean(tool.details?.subagent);
+  const parentSubagent = tool.name === "neo_subagent";
+  const subagent = parentSubagent || Boolean(tool.details?.subagent);
+  const steps = parentSubagent ? readSubagentSteps(tool.details) : [];
+  const tasks = parentSubagent ? readSubagentTasks(tool.details) : [];
+  const omitted = parentSubagent ? Number(tool.details?.omittedSteps ?? 0) : 0;
 
   useLayoutEffect(() => {
     if (!running || !preRef.current) return;
@@ -52,6 +71,31 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
         </span>
         {preview ? <span className="cmd">{preview}</span> : null}
       </summary>
+      {tasks.length > 0 ? (
+        <ul className="subagent-tasks">
+          {tasks.map((task, index) => (
+            <li key={`${task.agent}-${index}`}>
+              <b>{task.agent}</b> {task.task.replace(/\s+/g, " ").trim()}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {steps.length > 0 ? (
+        <ol className="subagent-steps">
+          {steps.map((step) => (
+            <li
+              key={step.id}
+              className={step.status === "running" ? "run" : step.isError ? "err" : undefined}
+            >
+              <span>
+                {step.status === "running" ? "…" : step.isError ? "✗" : "✓"} {step.agent} / {step.name}
+              </span>
+              {toolArgPreview(step.args) ? <span className="cmd">{toolArgPreview(step.args)}</span> : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {omitted > 0 ? <p className="subagent-more">已折叠 {omitted} 步</p> : null}
       {diff ? (
         <pre className="tool-diff">
           {diff.lines.map((line, index) => (
@@ -63,7 +107,11 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
           ))}
         </pre>
       ) : null}
-      {tool.output ? <pre ref={preRef}>{tool.output}</pre> : running && !diff ? <pre ref={preRef}>执行中…</pre> : null}
+      {tool.output ? (
+        <pre ref={preRef}>{tool.output}</pre>
+      ) : running && !diff && steps.length === 0 ? (
+        <pre ref={preRef}>执行中…</pre>
+      ) : null}
     </details>
   );
 }

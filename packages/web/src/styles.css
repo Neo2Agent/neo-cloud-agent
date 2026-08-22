@@ -637,6 +637,36 @@ h1 {
   border-left: 3px solid #93c5fd;
 }
 
+.subagent-tasks,
+.subagent-steps {
+  margin: 8px 0 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subagent-tasks li,
+.subagent-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.subagent-steps li.run {
+  color: #1d4ed8;
+}
+
+.subagent-steps li.err {
+  color: var(--err);
+}
+
+.subagent-more {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
 .tool pre {
   margin: 8px 0 0;
   white-space: pre-wrap;

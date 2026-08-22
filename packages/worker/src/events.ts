@@ -172,12 +172,15 @@ export function toRunEvents(runId: string, event: LooseAgentEvent, options?: Run
         ),
       ];
     case "tool_execution_update":
+      if (nest) {
+        return [];
+      }
       return [
         makeEvent(
           runId,
           "tool.update",
-          nest ? `${nest.agent} · ${event.toolName ?? "unknown"}` : `Tool ${event.toolName ?? "unknown"}`,
-          withNest(toolPayload(event, collectText(event.partialResult)), nest),
+          `Tool ${event.toolName ?? "unknown"}`,
+          toolPayload(event, collectText(event.partialResult)),
         ),
       ];
     case "tool_execution_end":

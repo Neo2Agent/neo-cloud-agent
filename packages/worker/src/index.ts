@@ -7,6 +7,7 @@ import { inspectSessionContext } from "./context-usage.js";
 import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
+import { abortNestedSubagents } from "./subagent.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -127,6 +128,7 @@ async function main(): Promise<void> {
   let running = true;
   const stop = async () => {
     running = false;
+    abortNestedSubagents();
     await session.abort();
   };
   process.on("SIGINT", () => {

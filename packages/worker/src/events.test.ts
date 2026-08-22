@@ -65,6 +65,14 @@ test("nested subagent events skip parent lifecycle kinds", () => {
   assert.equal(tool[0]?.kind, "tool.start");
   assert.equal(tool[0]?.data?.subagent, "scout");
   assert.match(tool[0]?.title ?? "", /scout/);
+  assert.deepEqual(
+    toRunEvents(
+      "run1",
+      { type: "tool_execution_update", toolName: "bash", partialResult: { content: [{ type: "text", text: "..." }] } },
+      { nest },
+    ),
+    [],
+  );
 });
 
 test("maps token usage on agent_end", () => {
