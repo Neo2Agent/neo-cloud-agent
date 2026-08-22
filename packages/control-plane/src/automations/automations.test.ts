@@ -11,9 +11,20 @@ process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-auto-"));
 process.env.LLM_SETTINGS_DIR = mkdtempSync(path.join(tmpdir(), "neo-auto-settings-"));
 delete process.env.CONTROL_PLANE_TOKEN;
 
-const { createAutomation, dueAutomations, listAutomations, updateAutomation } = await import("./store.js");
+const { createAutomation, dueAutomations, listAutomations, replaceAutomations, updateAutomation } = await import("./store.js");
 const { fireDueAutomations } = await import("./runner.js");
 const { getRun } = await import("../orchestrator/orchestrator.js");
+
+test("replaceAutomations reloads the saved list", () => {
+  const first = createAutomation({
+    prompt: "先写一条",
+    schedule: { kind: "every", minutes: 60 },
+  });
+  replaceAutomations(
+    listAutomations().map((item) => (item.id === first.id ? { ...item, name: "从库里回来" } : item)),
+  );
+  assert.equal(listAutomations().find((item) => item.id === first.id)?.name, "从库里回来");
+});
 
 test("createAutomation stores the next Shanghai run time", () => {
   const item = createAutomation({
@@ -23,7 +34,7 @@ test("createAutomation stores the next Shanghai run time", () => {
   });
   assert.equal(item.enabled, true);
   assert.ok(Date.parse(item.nextRunAt) > Date.now());
-  assert.equal(listAutomations().length, 1);
+  assert.equal(listAutomations().some((row) => row.id === item.id), true);
 });
 
 test("fireDueAutomations starts a run and pushes the next tick", async () => {

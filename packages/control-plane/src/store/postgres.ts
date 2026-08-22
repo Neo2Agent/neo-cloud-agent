@@ -1,4 +1,4 @@
-import type { Build, Environment, RunEvent } from "@neo-cloud-agent/contracts";
+import type { Automation, Build, Environment, RunEvent } from "@neo-cloud-agent/contracts";
 import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS builds (
   updated_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS builds_fingerprint ON builds (fingerprint);
+CREATE TABLE IF NOT EXISTS automations (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -72,6 +77,9 @@ export interface PostgresMetadataStore extends AccountStore {
   loadEnvironments(): Promise<Environment[]>;
   saveBuild(build: Build): Promise<void>;
   loadBuilds(): Promise<Build[]>;
+  saveAutomation(item: Automation): Promise<void>;
+  loadAutomations(): Promise<Automation[]>;
+  deleteAutomation(id: string): Promise<void>;
 }
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -112,6 +120,14 @@ function asBuild(value: unknown): Build | null {
   }
   const build = value as Build;
   return build.id && build.envId ? build : null;
+}
+
+function asAutomation(value: unknown): Automation | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Automation;
+  return item.id && item.prompt && item.schedule ? item : null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -221,6 +237,23 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     async loadBuilds() {
       const result = await query(`SELECT body FROM builds ORDER BY updated_at DESC`);
       return result.rows.map((row) => parseJson(row.body, asBuild)).filter((item): item is Build => Boolean(item));
+    },
+    async saveAutomation(item) {
+      await query(
+        `INSERT INTO automations (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.updatedAt],
+      );
+    },
+    async loadAutomations() {
+      const result = await query(`SELECT body FROM automations ORDER BY updated_at ASC`);
+      return result.rows
+        .map((row) => parseJson(row.body, asAutomation))
+        .filter((item): item is Automation => Boolean(item));
+    },
+    async deleteAutomation(id) {
+      await query(`DELETE FROM automations WHERE id = $1`, [id]);
     },
     async createUser(user) {
       try {

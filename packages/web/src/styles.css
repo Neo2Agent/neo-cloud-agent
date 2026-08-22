@@ -371,6 +371,29 @@ button[type="submit"]:disabled {
   gap: 2px;
 }
 
+.app-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.app-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 999px;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.app-tabs button.active {
+  color: var(--text);
+  background: var(--bg-2);
+  font-weight: 600;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   font-size: 12px;
@@ -1100,15 +1123,54 @@ button.stop:hover {
   margin: 2px 0 0;
 }
 
-.auto-block {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--line);
+.auto-page {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auto-page-head h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.auto-create,
+.auto-notify .env-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.auto-create label,
+.auto-notify label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.auto-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.auto-empty {
+  margin: 0;
+  padding: 18px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
 }
 
 .auto-list {
   list-style: none;
-  margin: 8px 0 12px;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -1119,6 +1181,10 @@ button.stop:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
 }
 
 .auto-list li div {
@@ -1129,6 +1195,17 @@ button.stop:hover {
 .auto-list small {
   display: block;
   color: var(--muted);
+}
+
+.auto-notify {
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+}
+
+.auto-notify summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 0;
 }
 
 input,
@@ -1488,6 +1565,29 @@ textarea {
     gap: 8px;
   }
 
+  .app-tabs button {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 15px;
+  }
+
+  .topbar-heading {
+    display: none;
+  }
+
+  .auto-page {
+    padding: 12px 16px max(20px, env(safe-area-inset-bottom));
+  }
+
+  .auto-create,
+  .auto-notify .env-row {
+    grid-template-columns: 1fr;
+  }
+
+  .auto-list li {
+    flex-wrap: wrap;
+  }
+
   .sidebar-toggle {
     min-width: 44px;
     padding: 8px 10px;
@@ -1598,7 +1698,9 @@ textarea {
   .composer textarea,
   .auth-card input,
   .settings-panel input,
-  .settings-panel select {
+  .settings-panel select,
+  .auto-page input,
+  .auto-page select {
     font-size: 16px;
   }
 
