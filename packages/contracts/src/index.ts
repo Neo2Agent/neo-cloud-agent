@@ -64,8 +64,15 @@ export type {
   TranscriptTool,
 } from "./events.js";
 export {
+  DEFAULT_TRANSCRIPT_PAGE,
+  MAX_TRANSCRIPT_PAGE,
+  applyRunEventsToMessages,
   buildTranscriptSnapshot,
+  clampTranscriptPage,
+  cloneTranscriptMessage,
   isSetupKind,
+  pageTranscriptMessages,
+  pageTranscriptSnapshot,
   sortRunEvents,
   transcriptBlocks,
   transcriptGroups,

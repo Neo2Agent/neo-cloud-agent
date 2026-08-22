@@ -9,6 +9,8 @@ type Props = {
   messages: TranscriptMessage[];
   remaining: number;
   empty: boolean;
+  loading?: boolean;
+  loadingOlder?: boolean;
   busy?: boolean;
   activity?: string;
   onLoadOlder: () => void;
@@ -31,10 +33,7 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
   }, [running, tool.output]);
 
   return (
-    <details
-      className={tool.isError ? "tool err" : running ? "tool run" : "tool"}
-      open={running || Boolean(tool.output) || Boolean(preview) || Boolean(diff)}
-    >
+    <details className={tool.isError ? "tool err" : running ? "tool run" : "tool"} open={running}>
       <summary>
         <span>
           {toolMark(tool)} {tool.name}
@@ -74,7 +73,16 @@ function ArtifactCard({ message }: { message: TranscriptMessage }) {
   );
 }
 
-export function Transcript({ messages, remaining, empty, busy = false, activity, onLoadOlder }: Props) {
+export function Transcript({
+  messages,
+  remaining,
+  empty,
+  loading = false,
+  loadingOlder = false,
+  busy = false,
+  activity,
+  onLoadOlder,
+}: Props) {
   const scroller = useRef<HTMLElement>(null);
   const stick = useRef(true);
   const restore = useRef<{ height: number; top: number } | null>(null);
@@ -91,10 +99,10 @@ export function Transcript({ messages, remaining, empty, busy = false, activity,
     if (stick.current) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [messages, remaining, busy, activity]);
+  }, [messages, remaining, busy, activity, loading]);
 
   const loadOlder = () => {
-    if (remaining <= 0 || restore.current) return;
+    if (remaining <= 0 || loadingOlder || restore.current) return;
     const node = scroller.current;
     if (node) restore.current = { height: node.scrollHeight, top: node.scrollTop };
     onLoadOlder();
@@ -105,7 +113,7 @@ export function Transcript({ messages, remaining, empty, busy = false, activity,
       className="transcript"
       id="transcript"
       aria-live={busy ? "off" : "polite"}
-      aria-busy={busy}
+      aria-busy={busy || loading}
       ref={scroller}
       onScroll={() => {
         const node = scroller.current;
@@ -114,96 +122,101 @@ export function Transcript({ messages, remaining, empty, busy = false, activity,
         if (node.scrollTop < 48) loadOlder();
       }}
     >
-      {remaining > 0 ? (
-        <div className="history-more" id="history-more">
-          <button type="button" id="load-older" onClick={loadOlder}>
-            加载更早的消息（还有 {remaining} 条）
-          </button>
-        </div>
-      ) : null}
-      {empty ? (
-        <div className="empty">
-          <h2>直接说要做什么</h2>
-          <p>发送后会占用一个空闲 VM。仓库和 API Key 在右上角「设置」里。</p>
-        </div>
-      ) : (
-        messages.map((message) => {
-          if (message.kind === "artifact.uploaded") {
-            return <ArtifactCard key={message.id} message={message} />;
-          }
-          if (message.role === "setup") {
-            return (
-              <p key={message.id} className={message.level === "error" || String(message.kind).endsWith("_failed") ? "setup err" : "setup"}>
-                {message.text}
-              </p>
-            );
-          }
-          if (message.role === "user") {
-            return (
-              <article key={message.id} className="bubble user">
-                <span className="who">你</span>
-                {message.text ? <div className="body">{message.text}</div> : null}
-                {message.images?.length ? (
-                  <div className="image-row">
-                    {message.images.map((image, index) => (
-                      <img
-                        key={`${message.id}-${index}`}
-                        className="user-image"
-                        src={`data:${image.mediaType};base64,${image.data}`}
-                        alt=""
-                      />
-                    ))}
-                  </div>
-                ) : null}
-              </article>
-            );
-          }
-          const groups = transcriptGroups(message);
-          if (groups.length === 0) {
-            return null;
-          }
-          return (
-            <Fragment key={message.id}>
-              {groups.map((group, index) => {
-                if (group.type === "tools") {
-                  return (
-                    <div key={`${message.id}-tools-${index}`} className="tool-stack">
-                      <span className="who">工具</span>
-                      {group.tools.map((tool, toolIndex) => (
-                        <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
+      <div className="transcript-col">
+        {remaining > 0 ? (
+          <div className="history-more" id="history-more">
+            <button type="button" id="load-older" disabled={loadingOlder} onClick={loadOlder}>
+              {loadingOlder ? "正在加载…" : `加载更早的消息（还有 ${remaining} 条）`}
+            </button>
+          </div>
+        ) : null}
+        {loading ? (
+          <div className="transcript-skel" aria-hidden="true">
+            <div className="skel skel-user" />
+            <div className="skel skel-ai" />
+            <div className="skel skel-ai short" />
+          </div>
+        ) : null}
+        {empty ? (
+          <div className="empty">
+            <h2>有什么可以帮你的？</h2>
+            <p>发送后会占用一个空闲 VM。仓库和 API Key 在右上角「设置」里。</p>
+          </div>
+        ) : (
+          messages.map((message) => {
+            if (message.kind === "artifact.uploaded") {
+              return <ArtifactCard key={message.id} message={message} />;
+            }
+            if (message.role === "setup") {
+              return (
+                <p key={message.id} className={message.level === "error" || String(message.kind).endsWith("_failed") ? "setup err" : "setup"}>
+                  {message.text}
+                </p>
+              );
+            }
+            if (message.role === "user") {
+              return (
+                <article key={message.id} className="bubble user">
+                  {message.text ? <div className="body">{message.text}</div> : null}
+                  {message.images?.length ? (
+                    <div className="image-row">
+                      {message.images.map((image, index) => (
+                        <img
+                          key={`${message.id}-${index}`}
+                          className="user-image"
+                          src={`data:${image.mediaType};base64,${image.data}`}
+                          alt=""
+                        />
                       ))}
                     </div>
+                  ) : null}
+                </article>
+              );
+            }
+            const groups = transcriptGroups(message);
+            if (groups.length === 0) {
+              return null;
+            }
+            return (
+              <Fragment key={message.id}>
+                {groups.map((group, index) => {
+                  if (group.type === "tools") {
+                    return (
+                      <div key={`${message.id}-tools-${index}`} className="tool-stack">
+                        {group.tools.map((tool, toolIndex) => (
+                          <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
+                        ))}
+                      </div>
+                    );
+                  }
+                  const lastText = !groups.slice(index + 1).some((item) => item.type === "text");
+                  return (
+                    <article key={`${message.id}-text-${index}`} className="bubble assistant">
+                      <MarkdownBody
+                        text={group.text}
+                        className="body"
+                        streaming={Boolean(message.streaming && lastText)}
+                      />
+                    </article>
                   );
-                }
-                const lastText = !groups.slice(index + 1).some((item) => item.type === "text");
-                return (
-                  <article key={`${message.id}-text-${index}`} className="bubble assistant">
-                    <span className="who">Agent</span>
-                    <MarkdownBody
-                      text={group.text}
-                      className="body"
-                      streaming={Boolean(message.streaming && lastText)}
-                    />
-                  </article>
-                );
-              })}
-            </Fragment>
-          );
-        })
-      )}
-      {shouldShowThinking(busy, messages) && !empty ? (
-        <div className="turn-progress" id="turn-progress">
-          <span className="who">Agent</span>
-          <div className="think-line">
-            <span className="think-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span>{activity || "正在思考…"}</span>
+                })}
+              </Fragment>
+            );
+          })
+        )}
+        {shouldShowThinking(busy, messages) && !empty && !loading ? (
+          <div className="turn-progress" id="turn-progress">
+            <div className="think-line">
+              <span className="think-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span>{activity || "正在思考…"}</span>
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </section>
   );
 }

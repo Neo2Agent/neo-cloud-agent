@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildTranscriptSnapshot } from "@neo-cloud-agent/contracts/transcript";
-import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
+import { applyRunEventsToMessages, DEFAULT_TRANSCRIPT_PAGE } from "@neo-cloud-agent/contracts/transcript";
+import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson, readToken, writeToken } from "./api";
-import { applyLiveEvents, parseSseData } from "./stream-apply";
+import { parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { Composer } from "./components/Composer";
@@ -35,7 +35,24 @@ import {
 } from "./turn";
 
 const SKIP_BOOTSTRAP_KEY = "neo.skipBootstrapLogin";
-const HISTORY_PAGE = 40;
+const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
+
+function localErrorMessage(runId: string | null, title: string): TranscriptMessage {
+  return {
+    id: `err-${Date.now()}`,
+    role: "setup",
+    text: title,
+    createdAt: new Date().toISOString(),
+    kind: "run.error",
+    level: "error",
+  };
+}
+
+function mergeMessages(older: TranscriptMessage[], newer: TranscriptMessage[]): TranscriptMessage[] {
+  if (older.length === 0) return newer;
+  const seen = new Set(newer.map((item) => item.id));
+  return [...older.filter((item) => !seen.has(item.id)), ...newer];
+}
 
 type VmSummary = {
   total: number;
@@ -82,10 +99,13 @@ function hashRunId(): string | null {
 export function App() {
   const [token, setToken] = useState(readToken);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [events, setEvents] = useState<RunEvent[]>([]);
+  const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [remaining, setRemaining] = useState(0);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [loadingTranscript, setLoadingTranscript] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
   const [currentRun, setCurrentRun] = useState<Run | null>(null);
-  const [shownFrom, setShownFrom] = useState(0);
   const [health, setHealth] = useState<Health | null>(null);
   const [healthText, setHealthText] = useState("检测服务…");
   const [vms, setVms] = useState<VmSummary>({ total: 0, busy: 0, backend: "none", slots: [] });
@@ -132,6 +152,7 @@ export function App() {
   const sourceRef = useRef<EventSource | null>(null);
   const streamFrameRef = useRef(0);
   const lastEventIdRef = useRef<string | null>(null);
+  const openGenRef = useRef(0);
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
   const tokenRef = useRef(token);
   const sendingRef = useRef(false);
@@ -141,9 +162,6 @@ export function App() {
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
 
-  const snapshot = useMemo(() => buildTranscriptSnapshot(runId ?? "local", events), [runId, events]);
-  const visibleMessages = snapshot.messages.slice(shownFrom);
-  const remaining = shownFrom;
   const selectedModel =
     currentRun?.model ||
     (llm.upstream === "openai" ? "gpt-4o-mini" : /pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash");
@@ -152,7 +170,7 @@ export function App() {
     const base = reported ?? baselineContextUsage(selectedModel);
     const catalogWindow = resolveModelLimits(base.model || selectedModel)?.contextWindow ?? null;
     const contextWindow = base.contextWindow ?? catalogWindow;
-    const streaming = snapshot.messages.find((message) => message.streaming)?.text ?? "";
+    const streaming = messages.find((message) => message.streaming)?.text ?? "";
     return overlayContextUsage(
       {
         ...base,
@@ -162,7 +180,7 @@ export function App() {
       },
       { draft: prompt, streaming },
     );
-  }, [currentRun?.contextUsage, prompt, selectedModel, snapshot.messages]);
+  }, [currentRun?.contextUsage, prompt, selectedModel, messages]);
 
   const applyVms = useCallback((payload?: Partial<VmSummary> | null) => {
     if (!payload) return;
@@ -212,7 +230,7 @@ export function App() {
         if (batch.length === 0) {
           return;
         }
-        setEvents((prev) => applyLiveEvents(prev, batch));
+        setMessages((prev) => applyRunEventsToMessages(prev, batch));
         for (const event of batch) {
           const nextStatus = statusFromEventKind(event.kind, undefined);
           if (nextStatus || event.kind === "user.message" || event.kind === "followup.queued" || event.kind === "agent.end") {
@@ -381,9 +399,12 @@ export function App() {
     closeStream();
     setRunId(null);
     setCurrentRun(null);
-    setEvents([]);
+    setMessages([]);
+    setRemaining(0);
+    setNextBefore(null);
+    setLoadingTranscript(false);
+    setLoadingOlder(false);
     lastEventIdRef.current = null;
-    setShownFrom(0);
     setPrompt("");
     setImages([]);
     setFilesOpen(false);
@@ -401,14 +422,28 @@ export function App() {
 
   const openRun = useCallback(
     async (id: string) => {
-      const runRes = await api(tokenRef.current, `/v1/runs/${id}`);
-      if (!runRes.ok) return false;
-      const run = await readJson<Run>(runRes);
-      setRunId(run.id);
-      setCurrentRun(run);
+      const gen = ++openGenRef.current;
+      setRunId(id);
+      setLoadingTranscript(true);
+      setMessages([]);
+      setRemaining(0);
+      setNextBefore(null);
       setStopping(false);
       setSending(false);
       if (!keepPendingRef.current) setPendingTurn(null);
+      history.replaceState(null, "", `/#/runs/${id}`);
+      const [runRes, transcriptRes] = await Promise.all([
+        api(tokenRef.current, `/v1/runs/${id}`),
+        api(tokenRef.current, `/v1/runs/${id}/transcript?limit=${HISTORY_PAGE}`),
+      ]);
+      if (openGenRef.current !== gen) return false;
+      if (!runRes.ok) {
+        setLoadingTranscript(false);
+        return false;
+      }
+      const run = await readJson<Run>(runRes);
+      if (openGenRef.current !== gen) return false;
+      setCurrentRun(run);
       setRepo(run.repoUrls?.[0] ?? "");
       setEnvId(run.envId ?? "");
       setBuildId(run.buildId ?? "");
@@ -421,16 +456,20 @@ export function App() {
         }
         return [run, ...prev];
       });
-      const transcript = await readJson<{ events?: RunEvent[]; snapshot?: { lastEventId?: string | null } }>(
-        await api(tokenRef.current, `/v1/runs/${run.id}/transcript`),
-      );
-      const loaded = transcript.events ?? [];
-      setEvents(loaded);
-      const built = buildTranscriptSnapshot(run.id, loaded);
-      lastEventIdRef.current = transcript.snapshot?.lastEventId ?? built.lastEventId;
-      setShownFrom(Math.max(0, built.messages.length - HISTORY_PAGE));
+      if (transcriptRes.ok) {
+        const transcript = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
+        if (openGenRef.current !== gen) return false;
+        const snapshot = transcript.snapshot;
+        setMessages(snapshot?.messages ?? []);
+        setRemaining(snapshot?.remaining ?? 0);
+        setNextBefore(snapshot?.nextBefore ?? snapshot?.messages?.[0]?.id ?? null);
+        lastEventIdRef.current = snapshot?.lastEventId ?? null;
+      } else {
+        setMessages([]);
+        lastEventIdRef.current = null;
+      }
+      setLoadingTranscript(false);
       listen(run.id, lastEventIdRef.current);
-      history.replaceState(null, "", `/#/runs/${run.id}`);
       void refreshVms();
       return true;
     },
@@ -438,10 +477,16 @@ export function App() {
   );
 
   const finishLogin = useCallback(async () => {
-    await Promise.all([refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()]);
     const match = hashRunId();
-    if (match) await openRun(match);
-    else resetComposer();
+    await Promise.all([
+      refreshRuns(),
+      match ? openRun(match) : Promise.resolve(),
+      refreshEnvironments(),
+      refreshLlm(),
+      refreshScm(),
+      refreshVms(),
+    ]);
+    if (!match && !hashRunId()) resetComposer();
   }, [openRun, refreshEnvironments, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
@@ -492,7 +537,7 @@ export function App() {
         stopping,
         pending: Boolean(pendingRef.current),
         status: currentRun?.status,
-        messages: snapshot.messages,
+        messages,
       })
     ) {
       return;
@@ -557,22 +602,11 @@ export function App() {
       if (runId && previousStatus) {
         patchRun(runId, (run) => ({ ...run, status: previousStatus }));
       }
-      setEvents((prev) => [
-        ...prev,
-        {
-          id: `err-${Date.now()}`,
-          runId: runId ?? "local",
-          createdAt: new Date().toISOString(),
-          category: "agent_run",
-          level: "error",
-          kind: "run.error",
-          title: error instanceof Error ? error.message : "发送失败",
-        },
-      ]);
+      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "发送失败")]);
     } finally {
       setSending(false);
     }
-  }, [buildId, currentRun?.status, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, snapshot.messages, stopping]);
+  }, [buildId, currentRun?.status, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
 
   const stopTurn = useCallback(() => {
     if (!runId) return;
@@ -674,26 +708,26 @@ export function App() {
   useEffect(() => () => closeStream(), [closeStream]);
 
   useEffect(() => {
-    if (pendingTurn && pendingUserArrived(snapshot.messages, pendingTurn)) {
+    if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {
       setPendingTurn(null);
     }
-  }, [pendingTurn, snapshot.messages]);
+  }, [pendingTurn, messages]);
 
-  const displayMessages = withPendingUser(visibleMessages as TranscriptMessage[], pendingTurn);
+  const displayMessages = withPendingUser(messages, pendingTurn);
   const busy = isTurnBusy({
     sending,
     stopping,
     pending: Boolean(pendingTurn),
     status: currentRun?.status,
-    messages: snapshot.messages,
+    messages,
   });
   const archived = isComposerClosed(currentRun?.status);
   const activity = activityLabel({
     sending,
     stopping,
     status: currentRun?.status,
-    streaming: isAssistantStreaming(snapshot.messages),
-    runningTool: runningToolName(snapshot.messages),
+    streaming: isAssistantStreaming(messages),
+    runningTool: runningToolName(messages),
   });
   const statusView = turnStatusLabel({ sending, stopping, status: currentRun?.status });
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
@@ -707,8 +741,26 @@ export function App() {
         : `${vms.total || vms.slots.length} 个 VM 都在忙。新对话会排队，有空闲槽再自动开始。`;
 
   const loadOlder = () => {
-    if (shownFrom <= 0) return;
-    setShownFrom((value) => Math.max(0, value - HISTORY_PAGE));
+    if (!runId || remaining <= 0 || loadingOlder || loadingTranscript) return;
+    const before = nextBefore ?? messages[0]?.id;
+    if (!before) return;
+    setLoadingOlder(true);
+    void (async () => {
+      try {
+        const response = await api(
+          tokenRef.current,
+          `/v1/runs/${runId}/transcript?limit=${HISTORY_PAGE}&before=${encodeURIComponent(before)}`,
+        );
+        if (!response.ok) return;
+        const body = await readJson<{ snapshot?: TranscriptSnapshot }>(response);
+        const older = body.snapshot?.messages ?? [];
+        setMessages((prev) => mergeMessages(older, prev));
+        setRemaining(body.snapshot?.remaining ?? 0);
+        setNextBefore(body.snapshot?.nextBefore ?? older[0]?.id ?? null);
+      } finally {
+        setLoadingOlder(false);
+      }
+    })();
   };
 
   const toggleSidebar = () => {
@@ -856,18 +908,7 @@ export function App() {
                     setCurrentRun(archived);
                     setRuns((prev) => prev.map((item) => (item.id === archived.id ? { ...item, ...archived } : item)));
                   })().catch((error) => {
-                    setEvents((prev) => [
-                      ...prev,
-                      {
-                        id: `err-${Date.now()}`,
-                        runId,
-                        createdAt: new Date().toISOString(),
-                        category: "agent_run",
-                        level: "error",
-                        kind: "run.error",
-                        title: error instanceof Error ? error.message : "归档失败",
-                      },
-                    ]);
+                    setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "归档失败")]);
                   });
                 }}
               >
@@ -912,18 +953,7 @@ export function App() {
                     const next = created.pullRequest ?? created;
                     setCurrentRun((run) => (run ? { ...run, pullRequests: [next as Run["pullRequests"][number]] } : run));
                   } catch (error) {
-                    setEvents((prev) => [
-                      ...prev,
-                      {
-                        id: `err-${Date.now()}`,
-                        runId,
-                        createdAt: new Date().toISOString(),
-                        category: "agent_run",
-                        level: "error",
-                        kind: "run.error",
-                        title: error instanceof Error ? error.message : "开 PR 失败",
-                      },
-                    ]);
+                    setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "开 PR 失败")]);
                   }
                 }}
               >
@@ -1041,18 +1071,7 @@ export function App() {
                   onWarm={() => {
                     void (async () => {
                       if (!repo.trim()) {
-                        setEvents((prev) => [
-                          ...prev,
-                          {
-                            id: `err-${Date.now()}`,
-                            runId: runId ?? "local",
-                            createdAt: new Date().toISOString(),
-                            category: "agent_setup",
-                            level: "error",
-                            kind: "run.error",
-                            title: "预热前先填仓库。",
-                          },
-                        ]);
+                        setMessages((prev) => [...prev, localErrorMessage(runId, "预热前先填仓库。")]);
                         return;
                       }
                       const created = await readJson<{ id?: string; status?: string; error?: string; failureMessage?: string }>(
@@ -1065,18 +1084,7 @@ export function App() {
                       await refreshEnvironments();
                       if (created.id && created.status === "SUCCEEDED") setBuildId(created.id);
                     })().catch((error) => {
-                      setEvents((prev) => [
-                        ...prev,
-                        {
-                          id: `err-${Date.now()}`,
-                          runId: runId ?? "local",
-                          createdAt: new Date().toISOString(),
-                          category: "agent_setup",
-                          level: "error",
-                          kind: "run.error",
-                          title: error instanceof Error ? error.message : "预热失败",
-                        },
-                      ]);
+                      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "预热失败")]);
                     });
                   }}
                 />
@@ -1089,7 +1097,9 @@ export function App() {
               <Transcript
                 messages={displayMessages}
                 remaining={remaining}
-                empty={displayMessages.length === 0}
+                empty={!loadingTranscript && displayMessages.length === 0}
+                loading={loadingTranscript && displayMessages.length === 0}
+                loadingOlder={loadingOlder}
                 busy={busy}
                 activity={activity}
                 onLoadOlder={loadOlder}
