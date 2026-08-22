@@ -1,6 +1,18 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
-import type { FollowUp, Run, RunEvent, RuntimeKind, WorkerInbound } from "@neo-cloud-agent/contracts";
+import type { FollowUp, Run, RunEvent, RuntimeKind, TranscriptSnapshot, WorkerInbound } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 
 export type PersistedRun = {
@@ -20,6 +32,10 @@ function runFile(runId: string, runsDir?: string): string {
 
 function eventsFile(runId: string, runsDir?: string): string {
   return path.join(controlStateDir(runsDir), `${runId}.events.jsonl`);
+}
+
+function transcriptFile(runId: string, runsDir?: string): string {
+  return path.join(controlStateDir(runsDir), `${runId}.transcript.json`);
 }
 
 function writeJsonAtomic(file: string, data: unknown): void {
@@ -51,6 +67,55 @@ export function persistRunRecord(record: PersistedRun, runsDir?: string, options
   writeJsonAtomic(runFile(record.run.id, runsDir), { ...record, version: 1 });
   if (options?.mirror !== false) {
     persistHooks.onRun?.(record);
+  }
+}
+
+export function persistTranscriptSnapshot(snapshot: TranscriptSnapshot, runsDir?: string): void {
+  writeJsonAtomic(transcriptFile(snapshot.runId, runsDir), snapshot);
+}
+
+export function loadTranscriptSnapshot(runId: string, runsDir?: string): TranscriptSnapshot | null {
+  try {
+    const parsed = JSON.parse(readFileSync(transcriptFile(runId, runsDir), "utf8")) as TranscriptSnapshot;
+    if (!parsed || parsed.runId !== runId || !Array.isArray(parsed.messages)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/** Cheap tail read so a compiled snapshot can skip parsing the full JSONL. */
+export function peekLastPersistedEventId(runId: string, runsDir?: string): string | null {
+  const file = eventsFile(runId, runsDir);
+  try {
+    const fd = openSync(file, "r");
+    try {
+      const size = fstatSync(fd).size;
+      if (size === 0) {
+        return null;
+      }
+      const length = Math.min(size, 8192);
+      const buf = Buffer.alloc(length);
+      readSync(fd, buf, 0, length, size - length);
+      const lines = buf.toString("utf8").split("\n").filter((line) => line.trim());
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        try {
+          const event = JSON.parse(lines[index] ?? "") as { id?: unknown };
+          if (typeof event.id === "string" && event.id) {
+            return event.id;
+          }
+        } catch {
+          // first line may be a torn prefix when the window starts mid-record
+        }
+      }
+      return null;
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return null;
   }
 }
 
@@ -203,7 +268,13 @@ export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[]
   const dir = controlStateDir(runsDir);
   try {
     return readdirSync(dir)
-      .filter((name) => name.endsWith(".json") && !name.endsWith(".tmp") && !name.endsWith(".worker.json"))
+      .filter(
+        (name) =>
+          name.endsWith(".json") &&
+          !name.endsWith(".tmp") &&
+          !name.endsWith(".worker.json") &&
+          !name.endsWith(".transcript.json"),
+      )
       .map((name) => {
         try {
           return JSON.parse(readFileSync(path.join(dir, name), "utf8")) as PersistedRun;

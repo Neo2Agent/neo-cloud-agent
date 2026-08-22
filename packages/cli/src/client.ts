@@ -36,7 +36,7 @@ export interface MeInfo {
 }
 
 export interface TranscriptResponse {
-  events: RunEvent[];
+  events?: RunEvent[];
   snapshot: TranscriptSnapshot;
 }
 
@@ -148,7 +148,7 @@ export class ControlPlaneClient {
   }
 
   transcript(id: string): Promise<TranscriptResponse> {
-    return this.request("GET", `/v1/runs/${id}/transcript`);
+    return this.request("GET", `/v1/runs/${id}/transcript?includeEvents=1`);
   }
 
   diagnostics(id: string): Promise<RunDiagnostics> {

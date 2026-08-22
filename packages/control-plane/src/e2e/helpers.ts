@@ -57,10 +57,10 @@ export async function waitForRun(
   let status = "RUNNING";
   let errorMessage: string | null = null;
   while (Date.now() < deadline) {
-    const transcript = (await (await fetch(`${base}/v1/runs/${runId}/transcript`)).json()) as {
-      events: Array<{ kind: string }>;
+    const transcript = (await (await fetch(`${base}/v1/runs/${runId}/transcript?includeEvents=1`)).json()) as {
+      events?: Array<{ kind: string }>;
     };
-    kinds = transcript.events.map((item) => item.kind);
+    kinds = (transcript.events ?? []).map((item) => item.kind);
     const latest = (await (await fetch(`${base}/v1/runs/${runId}`)).json()) as {
       status: string;
       errorMessage: string | null;

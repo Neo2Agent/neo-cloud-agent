@@ -1,9 +1,13 @@
 import { EventEmitter } from "node:events";
-import { redactRunEvent, type RunEvent } from "@neo-cloud-agent/contracts";
+import { buildTranscriptSnapshot, redactRunEvent, type RunEvent } from "@neo-cloud-agent/contracts";
 import { scheduleArchive } from "../objects/archive.js";
 import { controlPlaneSecrets } from "../security/secrets.js";
-import { loadPersistedEvents, persistEvent } from "../store/persist.js";
+import { loadPersistedEvents, persistEvent, persistTranscriptSnapshot } from "../store/persist.js";
 import { compactClosedDeltaRuns, compactHotEvents } from "./history.js";
+
+function rememberTranscript(runId: string, events: RunEvent[]): void {
+  persistTranscriptSnapshot(buildTranscriptSnapshot(runId, events));
+}
 
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
@@ -30,6 +34,9 @@ export function ingestRemoteEvent(event: RunEvent): boolean {
   list.push(clean);
   compactClosedDeltaRuns(list);
   history.set(event.runId, list);
+  if (clean.kind !== "message.delta") {
+    rememberTranscript(event.runId, list);
+  }
   bus.emit(event.runId, clean);
   bus.emit("*", clean);
   return true;
@@ -45,6 +52,9 @@ export function publish(event: RunEvent, options?: { persist?: boolean }): void 
   if (options?.persist !== false) {
     persistEvent(clean);
     scheduleArchive(event.runId);
+    if (clean.kind !== "message.delta") {
+      rememberTranscript(event.runId, list);
+    }
   }
   bus.emit(event.runId, clean);
   bus.emit("*", clean);

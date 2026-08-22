@@ -45,7 +45,7 @@ const deadline = Date.now() + timeoutMs;
 let kinds: string[] = [];
 let status = run.status ?? "";
 while (Date.now() < deadline) {
-  const transcript = (await (await fetch(`${base}/v1/runs/${run.id}/transcript`)).json()) as {
+  const transcript = (await (await fetch(`${base}/v1/runs/${run.id}/transcript?includeEvents=1`)).json()) as {
     events?: Array<{ kind: string; title?: string }>;
   };
   kinds = (transcript.events ?? []).map((item) => item.kind);

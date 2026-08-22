@@ -11,6 +11,7 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import {
   evaluateEgress,
+  pageTranscriptSnapshot,
   parseLlmSettingsRequest,
   publicLlmSettings,
   readLlmSettings,
@@ -18,8 +19,8 @@ import {
   writeLlmSettings,
 } from "@neo-cloud-agent/contracts";
 import { eventsForRun } from "../events/bus.js";
+import { snapshotForRun } from "../events/snapshot.js";
 import { attachEventStream } from "../events/stream.js";
-import { buildTranscriptSnapshot } from "../events/transcript.js";
 import {
   abortRun,
   archiveRun,
@@ -498,8 +499,15 @@ export function createApiServer() {
         if (!actor || !denyUnless(run, actor, res)) {
           return;
         }
-        const events = eventsForRun(runId);
-        send(res, 200, { events, snapshot: buildTranscriptSnapshot(runId, events) });
+        const includeEvents = url.searchParams.get("includeEvents") === "1";
+        const before = url.searchParams.get("before");
+        const limitParam = url.searchParams.get("limit");
+        const full = snapshotForRun(runId);
+        const snapshot = pageTranscriptSnapshot(full, {
+          before,
+          limit: includeEvents && !limitParam ? full.messages.length || 1 : limitParam ? Number(limitParam) : undefined,
+        });
+        send(res, 200, includeEvents ? { snapshot, events: eventsForRun(runId) } : { snapshot });
         return;
       }
 

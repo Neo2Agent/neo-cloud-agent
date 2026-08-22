@@ -109,7 +109,7 @@ export function Composer({
             {stopping ? "停止中" : "停止"}
           </button>
         ) : (
-          <button type="submit" id="send" disabled={archived || empty || busy}>
+          <button type="submit" id="send" className="send" disabled={archived || empty || busy} aria-label={busy ? "发送中" : "发送"}>
             {busy ? "发送中" : "发送"}
           </button>
         )}

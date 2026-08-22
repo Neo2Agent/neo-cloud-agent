@@ -57,6 +57,9 @@ export function Sidebar({
         </button>
       ) : null}
       <button className="new-chat" id="new-chat" type="button" onClick={onNewChat}>
+        <span className="new-chat-plus" aria-hidden="true">
+          +
+        </span>
         新对话
       </button>
       <section className="vm-block">

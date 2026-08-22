@@ -105,4 +105,10 @@ export interface TranscriptSnapshot {
   seq: number;
   lastEventId: string | null;
   messages: TranscriptMessage[];
+  /** Messages older than this page; used for scroll-up. */
+  remaining?: number;
+  /** Pass as `before` to fetch the previous page. */
+  nextBefore?: string | null;
+  /** Full compiled message count, not the page size. */
+  total?: number;
 }

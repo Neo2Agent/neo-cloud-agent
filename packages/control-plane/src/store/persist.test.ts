@@ -9,9 +9,12 @@ import {
   loadPersistedEvents,
   loadPersistedRuns,
   loadSessionFiles,
+  loadTranscriptSnapshot,
+  peekLastPersistedEventId,
   persistEvent,
   persistRunRecord,
   persistSessionFiles,
+  persistTranscriptSnapshot,
 } from "./persist.js";
 
 function sampleRun(id: string): Run {
@@ -91,4 +94,37 @@ test("session backup keeps nested paths and rejects escapes", () => {
   assert.equal(listed.some((file) => file.name.endsWith("auth.json")), false);
   const loaded = loadSessionFiles("run-sess-1", runsDir);
   assert.equal(loaded[0]?.content, "{\"type\":\"message\"}\n");
+});
+
+test("compiled transcript snapshots are not loaded as run records", () => {
+  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-persist-snap-"));
+  const run = sampleRun("run-snap-1");
+  persistRunRecord({ version: 1, run, followUps: [], inbound: [] }, runsDir);
+  persistEvent(
+    {
+      id: "evt-last",
+      runId: run.id,
+      createdAt: run.createdAt,
+      category: "agent_run",
+      level: "info",
+      kind: "user.message",
+      title: "User message",
+      data: { text: "hello" },
+    } satisfies RunEvent,
+    runsDir,
+  );
+  persistTranscriptSnapshot(
+    {
+      runId: run.id,
+      seq: 1,
+      lastEventId: "evt-last",
+      messages: [{ id: "evt-last", role: "user", text: "hello", createdAt: run.createdAt }],
+    },
+    runsDir,
+  );
+  const loaded = loadPersistedRuns(runsDir);
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0]?.run.id, run.id);
+  assert.equal(peekLastPersistedEventId(run.id, runsDir), "evt-last");
+  assert.equal(loadTranscriptSnapshot(run.id, runsDir)?.messages[0]?.text, "hello");
 });

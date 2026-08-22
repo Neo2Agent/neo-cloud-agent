@@ -144,7 +144,7 @@ async function waitForTurn(
       latest = await client.getRun(run.id);
     }
     const transcript = await client.transcript(run.id);
-    for (const event of transcript.events) {
+    for (const event of transcript.events ?? []) {
       consume(event);
     }
     if (!TERMINAL.has(latest.status)) {
@@ -170,7 +170,8 @@ async function replayAndMaybeWait(
   if (!waitIfRunning || TERMINAL.has(run.status)) {
     const formatter = createFormatter(flags.output, io);
     formatter.init(run);
-    for (const event of transcript.events) {
+    const events = transcript.events ?? [];
+    for (const event of events) {
       formatter.event(event);
     }
     return formatter.finish(
@@ -178,13 +179,13 @@ async function replayAndMaybeWait(
         subtype: subtypeFor(run.status),
         run,
         durationMs: Math.max(0, io.now() - startedAt),
-        result: accumulateAssistant(transcript.events) || run.errorMessage || run.status,
-        eventCount: transcript.events.length,
+        result: accumulateAssistant(events) || run.errorMessage || run.status,
+        eventCount: events.length,
         error: run.errorMessage ?? undefined,
       }),
     );
   }
-  return waitForTurn(client, run, flags, io, startedAt, transcript.events);
+  return waitForTurn(client, run, flags, io, startedAt, transcript.events ?? []);
 }
 
 export async function loginCommand(parsed: ParsedCli, io: CliIo): Promise<number> {
@@ -319,7 +320,7 @@ export async function followCommand(parsed: ParsedCli, io: CliIo): Promise<numbe
     return EXIT_OK;
   }
   const run = await client.getRun(runId);
-  return waitForTurn(client, run, parsed.flags, io, startedAt, [], before.events.at(-1)?.id);
+  return waitForTurn(client, run, parsed.flags, io, startedAt, [], before.events?.at(-1)?.id ?? before.snapshot.lastEventId);
 }
 
 export async function resumeCommand(parsed: ParsedCli, io: CliIo): Promise<number> {
