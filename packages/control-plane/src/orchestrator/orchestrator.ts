@@ -179,6 +179,32 @@ export function isWorkerAttached(runId: string, at = Date.now()): boolean {
   return seen !== undefined && at - seen < workerHeartbeatTimeoutMs();
 }
 
+function hasPendingUserInbound(runId: string): boolean {
+  return (inbound.get(runId) ?? []).some((item) => item.type === "prompt" || item.type === "steer" || item.type === "follow_up");
+}
+
+function settleDetachedRun(run: Run, title: string): void {
+  run.status = "IDLE";
+  run.errorMessage = null;
+  run.workerHandle = null;
+  run.vmSlotId = null;
+  run.idleAt = now();
+  run.updatedAt = now();
+  handles.delete(run.id);
+  deleteWorkerLease(run.id);
+  heartbeats.delete(run.id);
+  publish(event(run.id, "run.idle", title));
+  flushRun(run.id);
+}
+
+function detachOrQueue(run: Run, queuedTitle: string, idleTitle: string): void {
+  if (hasPendingUserInbound(run.id)) {
+    queueRun(run, queuedTitle);
+    return;
+  }
+  settleDetachedRun(run, idleTitle);
+}
+
 function bindWorkerExit(runId: string) {
   return (code: number | null) => {
     const current = runs.get(runId);
@@ -209,6 +235,10 @@ function bindWorkerExit(runId: string) {
 
 export async function recoverLiveWorkers(): Promise<void> {
   for (const run of runs.values()) {
+    if (run.status === "ERROR" && /heartbeat lost after control plane restart/i.test(run.errorMessage ?? "")) {
+      detachOrQueue(run, "控制面重启后正在排队等待空闲电脑", "控制面已恢复，发送即可继续");
+      continue;
+    }
     if (!LIVE_STATUSES.has(run.status) || handles.has(run.id)) {
       continue;
     }
@@ -238,18 +268,17 @@ export async function recoverLiveWorkers(): Promise<void> {
     } catch (error) {
       console.error(`failed to adopt worker for ${run.id}`, error);
     }
-    run.updatedAt = now();
-    publish(event(run.id, "run.provisioning", "Waiting for worker heartbeat"));
-    flushRun(run.id);
+    detachOrQueue(run, "控制面重启后正在排队等待空闲电脑", "控制面已恢复，发送即可继续");
   }
   startWorkerLeaseWatch();
+  void tryStartQueued();
 }
 
 export function expireStaleWorkers(at = Date.now()): string[] {
   const expired: string[] = [];
   const timeout = workerHeartbeatTimeoutMs();
   for (const run of runs.values()) {
-    if (!LIVE_STATUSES.has(run.status)) {
+    if (!LIVE_STATUSES.has(run.status) || run.status === "NOT_YET_STARTED") {
       continue;
     }
     if (handles.has(run.id)) {
@@ -261,14 +290,11 @@ export function expireStaleWorkers(at = Date.now()): string[] {
     if (Number.isFinite(lastSeen) && at - lastSeen < timeout) {
       continue;
     }
-    run.status = "ERROR";
-    run.errorMessage = "worker heartbeat lost after control plane restart";
-    run.updatedAt = now();
-    handles.delete(run.id);
-    deleteWorkerLease(run.id);
-    publish(event(run.id, "run.error", run.errorMessage));
-    flushRun(run.id);
+    detachOrQueue(run, "工作进程已断开，正在排队等待空闲电脑", "控制面重启后连接已断开，发送即可继续");
     expired.push(run.id);
+  }
+  if (expired.length > 0) {
+    void tryStartQueued();
   }
   return expired;
 }
@@ -286,8 +312,9 @@ function isSlotBusyError(error: unknown): boolean {
   return error instanceof Error && /all VM slots are busy/i.test(error.message);
 }
 
-function queueRun(run: Run, title = "Waiting for a free VM slot"): void {
+function queueRun(run: Run, title = "两台云端电脑都在忙，已排队，空出来会自动开始"): void {
   run.status = "NOT_YET_STARTED";
+  run.errorMessage = null;
   run.workerHandle = null;
   run.vmSlotId = null;
   run.updatedAt = now();
@@ -302,7 +329,12 @@ export async function tryStartQueued(): Promise<string | null> {
   startingQueued = true;
   try {
     const waiting = [...runs.values()]
-      .filter((run) => run.status === "NOT_YET_STARTED" && !handles.has(run.id))
+      .filter(
+        (run) =>
+          !handles.has(run.id) &&
+          (run.status === "NOT_YET_STARTED" ||
+            ((run.status === "IDLE" || run.status === "ERROR") && hasPendingUserInbound(run.id))),
+      )
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     let started: string | null = null;
     for (const run of waiting) {
@@ -750,7 +782,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     await attachWorker(run, runningTitle());
   } catch (error) {
     if (isSlotBusyError(error)) {
-      queueRun(run, "All VM slots are busy");
+      queueRun(run);
       return run;
     }
     const message = error instanceof Error ? error.message : "worker provision failed";
@@ -802,7 +834,13 @@ export async function resumeRun(runId: string): Promise<Run> {
     await attachWorker(run, "Resuming worker");
   } catch (error) {
     if (isSlotBusyError(error)) {
-      queueRun(run, "All VM slots are busy");
+      run.status = "IDLE";
+      run.errorMessage = null;
+      run.workerHandle = null;
+      run.vmSlotId = null;
+      run.updatedAt = now();
+      publish(event(run.id, "run.queued", "两台云端电脑都在忙，已排队，空出来会自动开始"));
+      flushRun(run.id);
       return run;
     }
     const message = error instanceof Error ? error.message : "worker provision failed";

@@ -179,33 +179,64 @@ test("live runs are reattached after a control-plane reload", async () => {
   assert.equal(expireStaleWorkers(Date.now() + 60_000).includes(run.id), false);
 });
 
-test("live runs without a worker heartbeat become ERROR", async () => {
+test("detached live runs settle to idle so the chat can continue", async () => {
   const run = await createRun({
     prompt: "lost worker",
     repoUrls: ["fixtures/toy-repo"],
   });
   reloadPersistedState();
+  takeInbound(run.id);
   const expired = expireStaleWorkers(Date.now() + 60_000);
   assert.ok(expired.includes(run.id));
-  assert.equal(getRun(run.id)?.status, "ERROR");
-  assert.match(getRun(run.id)?.errorMessage ?? "", /heartbeat/);
+  assert.equal(getRun(run.id)?.status, "IDLE");
+  assert.equal(getRun(run.id)?.errorMessage, null);
+  assert.ok(listEvents(run.id).some((item) => item.kind === "run.idle"));
 });
 
-test("abort without a worker settles ERROR so the chat can continue", async () => {
+test("queued runs are not marked dead while waiting for a VM slot", async () => {
+  const run = await createRun({
+    prompt: "wait in line",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  reloadPersistedState();
+  const expired = expireStaleWorkers(Date.now() + 60_000);
+  assert.ok(expired.includes(run.id));
+  assert.equal(getRun(run.id)?.status, "NOT_YET_STARTED");
+  assert.equal(expireStaleWorkers(Date.now() + 120_000).includes(run.id), false);
+  assert.equal(getRun(run.id)?.status, "NOT_YET_STARTED");
+});
+
+test("abort without a worker leaves the chat idle so it can continue", async () => {
   const run = await createRun({
     prompt: "lost then abort",
     repoUrls: ["fixtures/toy-repo"],
   });
   reloadPersistedState();
+  takeInbound(run.id);
   expireStaleWorkers(Date.now() + 60_000);
-  assert.equal(getRun(run.id)?.status, "ERROR");
+  assert.equal(getRun(run.id)?.status, "IDLE");
   const aborted = abortRun(run.id);
   assert.equal(aborted.status, "IDLE");
   assert.equal(aborted.errorMessage, null);
-  assert.ok(listEvents(run.id).some((item) => item.kind === "run.idle"));
   const follow = await enqueueFollowUp(run.id, { text: "try again" });
   assert.equal(follow.text, "try again");
   assert.notEqual(getRun(run.id)?.status, "ERROR");
+});
+
+test("recoverLiveWorkers heals chats left in heartbeat ERROR", async () => {
+  const run = await createRun({
+    prompt: "heal me",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  reloadPersistedState();
+  takeInbound(run.id);
+  const loaded = getRun(run.id);
+  assert.ok(loaded);
+  loaded.status = "ERROR";
+  loaded.errorMessage = "worker heartbeat lost after control plane restart";
+  await recoverLiveWorkers();
+  assert.equal(getRun(run.id)?.status, "IDLE");
+  assert.equal(getRun(run.id)?.errorMessage, null);
 });
 
 test("follow-up after reload resumes the worker from session backup", async () => {

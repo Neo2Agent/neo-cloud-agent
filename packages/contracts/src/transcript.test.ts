@@ -144,6 +144,19 @@ test("stale control-plane restart notices hide after the conversation continues"
   const recovered = displayTranscriptMessages([heartbeat], { hideStaleRestart: true });
   assert.equal(recovered.length, 0);
   assert.equal(displayTranscriptMessages([heartbeat]).length, 1);
+  const busy = displayTranscriptMessages(
+    [
+      {
+        id: "q1",
+        role: "setup",
+        text: "All VM slots are busy",
+        createdAt: "2026-08-21T00:00:00.000Z",
+        kind: "run.queued",
+      },
+    ],
+    { hideStaleRestart: true },
+  );
+  assert.equal(busy.length, 0);
 });
 
 test("transcriptHasUnsettledWork sees running tools on either tools or blocks", () => {

@@ -847,7 +847,7 @@ export function App() {
 
   const viewMessages = withPendingUser(messages, pendingTurn);
   const displayMessages = displayTranscriptMessages(viewMessages, {
-    hideStaleRestart: currentRun?.status !== "ERROR",
+    hideStaleRestart: true,
   });
   const busy = isTurnBusy({
     sending,
