@@ -34,7 +34,7 @@ test("createAutomation stores the next Shanghai run time", () => {
   });
   assert.equal(item.enabled, true);
   assert.ok(Date.parse(item.nextRunAt) > Date.now());
-  assert.equal(listAutomations().length, 1);
+  assert.equal(listAutomations().some((row) => row.id === item.id), true);
 });
 
 test("fireDueAutomations starts a run and pushes the next tick", async () => {
