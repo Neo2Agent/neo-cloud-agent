@@ -1,4 +1,4 @@
-type AuthMode = "login" | "register" | "token";
+type AuthMode = "login" | "token";
 
 type Props = {
   open: boolean;
@@ -33,12 +33,12 @@ export function AuthGate({
   onToken,
   onSubmit,
 }: Props) {
-  const title = mode === "register" ? "注册" : mode === "token" ? "服务令牌" : "登录";
+  const title = mode === "token" ? "服务令牌" : "登录";
   const copy =
     mode === "token"
       ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
-      : "默认管理员账号 admin，密码 123456。点登录即可。";
-  const submit = busy ? "登录中…" : mode === "register" ? "注册" : mode === "token" ? "使用令牌" : "登录";
+      : "账号 admin，密码 123456。登录会查询账号库。";
+  const submit = busy ? "登录中…" : mode === "token" ? "使用令牌" : "登录";
 
   return (
     <div
@@ -61,9 +61,9 @@ export function AuthGate({
         <h2 id="auth-title">{title}</h2>
         <p id="auth-copy">{copy}</p>
         <div className="auth-tabs" id="auth-tabs">
-          {(["login", "register", "token"] as const).map((item) => (
+          {(["login", "token"] as const).map((item) => (
             <button key={item} type="button" data-mode={item} className={mode === item ? "active" : ""} onClick={() => onMode(item)}>
-              {item === "login" ? "登录" : item === "register" ? "注册" : "服务令牌"}
+              {item === "login" ? "登录" : "服务令牌"}
             </button>
           ))}
         </div>
@@ -74,7 +74,7 @@ export function AuthGate({
             type="text"
             inputMode="text"
             autoComplete="username"
-            placeholder="账号（admin 或邮箱）"
+            placeholder="账号"
             value={email}
             onChange={(event) => onEmail(event.target.value)}
           />

@@ -18,9 +18,10 @@ delete process.env.BOOTSTRAP_EMAIL;
 delete process.env.BOOTSTRAP_PASSWORD;
 
 const { createApiServer } = await import("./server.js");
+const { ensureDefaultAdmin } = await import("../accounts/accounts.js");
 const { listen, close } = await import("../e2e/helpers.js");
 
-test("users register, login, and cannot see another user's run", async (t) => {
+test("registration is disabled and only admin/123456 can log in", async (t) => {
   const server = createApiServer();
   const port = await listen(server);
   t.after(async () => {
@@ -28,6 +29,7 @@ test("users register, login, and cannot see another user's run", async (t) => {
     delete process.env.ACCOUNTS_REQUIRED;
   });
   const base = `http://127.0.0.1:${port}`;
+  await ensureDefaultAdmin();
 
   const denied = await fetch(`${base}/v1/runs`);
   assert.equal(denied.status, 401);
@@ -37,75 +39,52 @@ test("users register, login, and cannot see another user's run", async (t) => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: "ada@example.com", password: "password1" }),
   });
-  assert.equal(registered.status, 201);
-  const ada = (await registered.json()) as { token: string; user: { email: string } };
-  assert.equal(ada.user.email, "ada@example.com");
-  assert.match(ada.token, /^neo_sess_/);
-  assert.match(registered.headers.get("set-cookie") ?? "", /neo_session=/);
+  assert.equal(registered.status, 403);
+  assert.equal(((await registered.json()) as { error?: string }).error, "不支持注册");
 
-  const created = await fetch(`${base}/v1/runs`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${ada.token}` },
-    body: JSON.stringify({ prompt: "ada only", repoUrls: ["fixtures/toy-repo"] }),
-  });
-  assert.equal(created.status, 201);
-  const run = (await created.json()) as { id: string; userId: string };
-  assert.ok(run.id);
+  const bootstrap = await fetch(`${base}/v1/auth/bootstrap`, { method: "POST" });
+  assert.equal(bootstrap.status, 403);
 
-  const other = await fetch(`${base}/v1/auth/register`, {
+  const wrong = await fetch(`${base}/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "grace@example.com", password: "password1" }),
+    body: JSON.stringify({ email: "admin", password: "wrong" }),
   });
-  const grace = (await other.json()) as { token: string };
-  const hidden = await fetch(`${base}/v1/runs/${run.id}`, {
-    headers: { authorization: `Bearer ${grace.token}` },
-  });
-  assert.equal(hidden.status, 404);
-  const listed = await fetch(`${base}/v1/runs`, {
-    headers: { authorization: `Bearer ${grace.token}` },
-  });
-  const body = (await listed.json()) as { runs: Array<{ id: string }> };
-  assert.equal(body.runs.some((item) => item.id === run.id), false);
+  assert.equal(wrong.status, 401);
 
-  const login = await fetch(`${base}/v1/auth/login`, {
+  const other = await fetch(`${base}/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: "ada@example.com", password: "password1" }),
   });
-  assert.equal(login.status, 200);
-  const adaAgain = (await login.json()) as { token: string };
-  const visible = await fetch(`${base}/v1/runs/${run.id}`, {
-    headers: { authorization: `Bearer ${adaAgain.token}` },
-  });
-  assert.equal(visible.status, 200);
-  const me = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${adaAgain.token}` } });
-  assert.equal(((await me.json()) as { user: { email: string } }).user.email, "ada@example.com");
-});
+  assert.equal(other.status, 401);
 
-test("POST /v1/auth/bootstrap signs in the env account", async (t) => {
-  process.env.BOOTSTRAP_EMAIL = "neo@example.com";
-  process.env.BOOTSTRAP_PASSWORD = "password1";
-  const server = createApiServer();
-  const port = await listen(server);
-  t.after(async () => {
-    await close(server);
-    delete process.env.BOOTSTRAP_EMAIL;
-    delete process.env.BOOTSTRAP_PASSWORD;
+  const login = await fetch(`${base}/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "Admin", password: "123456" }),
   });
-  const base = `http://127.0.0.1:${port}`;
+  assert.equal(login.status, 200);
+  const session = (await login.json()) as { token: string; user: { email: string } };
+  assert.equal(session.user.email, "admin");
+  assert.match(session.token, /^neo_sess_/);
+  assert.match(login.headers.get("set-cookie") ?? "", /neo_session=/);
+
+  const created = await fetch(`${base}/v1/runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({ prompt: "admin only", repoUrls: ["fixtures/toy-repo"] }),
+  });
+  assert.equal(created.status, 201);
+  const me = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${session.token}` } });
+  assert.equal(((await me.json()) as { user: { email: string } }).user.email, "admin");
+
   const health = (await (await fetch(`${base}/health`)).json()) as {
-    bootstrapEmail: string | null;
     bootstrapLogin: boolean;
     defaultAdmin: boolean;
+    bootstrapEmail: string | null;
   };
-  assert.equal(health.bootstrapEmail, "neo@example.com");
-  assert.equal(health.bootstrapLogin, true);
-  assert.equal(health.defaultAdmin, false);
-  const response = await fetch(`${base}/v1/auth/bootstrap`, { method: "POST" });
-  assert.equal(response.status, 200);
-  const body = (await response.json()) as { token: string; user: { email: string } };
-  assert.equal(body.user.email, "neo@example.com");
-  const me = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${body.token}` } });
-  assert.equal(((await me.json()) as { user: { email: string } }).user.email, "neo@example.com");
+  assert.equal(health.bootstrapLogin, false);
+  assert.equal(health.defaultAdmin, true);
+  assert.equal(health.bootstrapEmail, "admin");
 });

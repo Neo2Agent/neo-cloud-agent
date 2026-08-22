@@ -1,4 +1,4 @@
-import { ensureBootstrapAccount, ensureDefaultAdmin } from "./accounts/accounts.js";
+import { ensureDefaultAdmin } from "./accounts/accounts.js";
 import { setAccountStore } from "./accounts/store.js";
 import { importBuild, listBuilds } from "./env/builds.js";
 import { setEnvPersistHooks } from "./env/persist-hooks.js";
@@ -57,7 +57,7 @@ async function doStart(): Promise<void> {
     const connected = await connectDatabase(databaseUrl);
     metadata = connected.store;
     metadataKind = connected.kind;
-    setAccountStore(metadata);
+    setAccountStore(metadata, connected.kind);
     setPersistHooks({
       onRun: (record) => {
         void metadata?.saveRun(record).catch((error) => console.error("metadata saveRun failed", error));
@@ -106,9 +106,6 @@ async function doStart(): Promise<void> {
   if (!process.env.NODE_TEST_CONTEXT) {
     await ensureDefaultAdmin().catch((error) => {
       console.error("default admin account failed", error);
-    });
-    await ensureBootstrapAccount().catch((error) => {
-      console.error("bootstrap account failed", error);
     });
   }
 }
