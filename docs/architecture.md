@@ -177,8 +177,8 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 
 | 存储 | 内容 |
 | --- | --- |
-| MySQL 或 Postgres | 用户、环境、Run 元数据、Build、PR 链接、事件索引。`DATABASE_URL` 以 `mysql://` / `mariadb://` 走 MySQL，`postgres://` 走 Postgres |
-| Redis | 跟进队列、live event stream、lease / lock、warm pool 索引 |
+| MySQL 或 Postgres | 用户、环境、Run 元数据、Build、PR 链接、事件索引。`DATABASE_URL` 以 `mysql://` / `mariadb://` 走 MySQL，`postgres://` 走 Postgres。现网 MySQL 在库机 `101.42.105.230`，操作见 [.cursor/skills/tencent-lighthouse-db/SKILL.md](../.cursor/skills/tencent-lighthouse-db/SKILL.md) |
+| Redis | 跟进队列、live event stream、lease / lock、warm pool 索引。现网 Redis 与 MySQL 同机 |
 | 对象存储 | transcript 归档、artifacts、（可选）session JSONL 备份 |
 | 密钥库 | SCM App 私钥、Provider Key、用户 secrets（KMS 加密） |
 | 块存储 / 快照服务 | Environment Build 与 Run 磁盘快照 |

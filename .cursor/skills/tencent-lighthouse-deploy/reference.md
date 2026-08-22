@@ -8,6 +8,7 @@
 2. 未登录会拦 Hermes 扫码；等用户扫完再继续，不要猜密码。
 3. 确认实例 `Halo建站-AFjg`（`lhins-b0l0d8b2`）运行中，公网 `62.234.211.200`。
 4. **不要点重启、重装、绑定密钥。**
+5. MySQL / Redis **不在这台机上**。库机是另一账号的 `OpenClaw(龙虾)-8Dd3`（`101.42.105.230`），见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。
 
 ## 防火墙（轻量安全组，不是 ufw）
 
@@ -89,6 +90,8 @@ DEFAULT_ADMIN=1
 ```
 
 `LLM_GATEWAY_JWT_SECRET` 在主机上生成一次，两边 unit 共用，不要提交。
+
+要落 MySQL / Redis 时，在这台机的 `.env` 加 `DATABASE_URL` / `REDIS_URL`（值从库机 `/home/ubuntu/db/.env` 拼，不要打印）。改完重启 `neo-control-plane`。
 
 API Key **不要**写进 `.env` 也可以：上线后在对话页保存，落到 `.neo/llm-upstream.env`。
 
