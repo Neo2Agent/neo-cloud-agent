@@ -12,7 +12,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import type { FollowUp, Run, RunEvent, RuntimeKind, TranscriptSnapshot, WorkerInbound } from "@neo-cloud-agent/contracts";
+import type {
+  FollowUp,
+  Run,
+  RunEvent,
+  RunSubscription,
+  RuntimeKind,
+  TranscriptSnapshot,
+  WorkerInbound,
+} from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 
 export type PersistedRun = {
@@ -20,6 +28,7 @@ export type PersistedRun = {
   run: Run;
   followUps: FollowUp[];
   inbound: WorkerInbound[];
+  subscriptions?: RunSubscription[];
 };
 
 export function controlStateDir(runsDir = getConfig().runsDir): string {

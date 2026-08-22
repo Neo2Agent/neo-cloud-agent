@@ -7,6 +7,7 @@ import type {
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
+  CreateSubscriptionRequest,
   RunEvent,
 } from "@neo-cloud-agent/contracts";
 import {
@@ -27,6 +28,7 @@ import {
   commitRun,
   createRun,
   enqueueFollowUp,
+  ingestGitHubWebhook,
   getBootstrap,
   getRun,
   getRunDiagnostics,
@@ -34,7 +36,9 @@ import {
   getRunSession,
   ingestEvents,
   listFollowUps,
+  listRunSubscriptions,
   listRuns,
+  subscribeRun,
   loadRunIntoMemory,
   mintRunGitToken,
   openRunDraftPr,
@@ -72,6 +76,7 @@ import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBui
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
 import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
+import { GITHUB_WEBHOOK_PATH, publicGitHubWebhookInfo } from "../subscriptions/secret.js";
 import { serveWebFile } from "./static.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
 import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
@@ -114,15 +119,24 @@ function sendAccountError(res: ServerResponse, error: unknown): void {
   send(res, message.includes("already registered") ? 409 : 500, { error: message });
 }
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
-  if (chunks.length === 0) {
+  return Buffer.concat(chunks);
+}
+
+function headerValue(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value)?.trim() ?? "";
+}
+
+async function readJson(req: IncomingMessage): Promise<unknown> {
+  const raw = await readRawBody(req);
+  if (raw.length === 0) {
     return {};
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return JSON.parse(raw.toString("utf8"));
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -189,7 +203,24 @@ export function createApiServer() {
           warmPoolReady: readyWarmCount(),
           builds: listBuilds().filter((item) => item.status === "SUCCEEDED" && !item.draft).length,
           ...platformInfo(),
+          githubWebhook: publicGitHubWebhookInfo(),
         });
+        return;
+      }
+
+      if (path === GITHUB_WEBHOOK_PATH && (method === "GET" || method === "POST")) {
+        if (method === "GET") {
+          send(res, 200, { ok: true, ...publicGitHubWebhookInfo() });
+          return;
+        }
+        const raw = await readRawBody(req);
+        const result = await ingestGitHubWebhook({
+          eventName: headerValue(req.headers["x-github-event"]) || "unknown",
+          deliveryId: headerValue(req.headers["x-github-delivery"]),
+          signature: req.headers["x-hub-signature-256"],
+          raw,
+        });
+        send(res, result.status, result.body);
         return;
       }
 
@@ -359,6 +390,31 @@ export function createApiServer() {
           return;
         }
         send(res, 200, { followUps: listFollowUps(followMatch[1] ?? "") });
+        return;
+      }
+
+      const subscriptionMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/subscriptions$/.exec(path);
+      if (subscriptionMatch && (method === "GET" || method === "POST")) {
+        const runId = subscriptionMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+          return;
+        }
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        if (method === "GET") {
+          send(res, 200, { subscriptions: listRunSubscriptions(runId), webhook: publicGitHubWebhookInfo() });
+          return;
+        }
+        try {
+          const body = (await readJson(req)) as CreateSubscriptionRequest;
+          send(res, 201, subscribeRun(runId, body));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "subscribe failed";
+          send(res, message.includes("not found") ? 404 : 400, { error: message });
+        }
         return;
       }
 

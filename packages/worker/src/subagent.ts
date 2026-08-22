@@ -3,6 +3,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   MAX_SUBAGENT_CONCURRENCY,
   SUBAGENT_TIMEOUT_MS,
+  SUBSCRIPTION_TOOL_NAME,
   applyChainPlaceholder,
   formatSubagentResult,
   listSubagentNames,
@@ -113,7 +114,7 @@ async function runOne(input: SubagentRunInput, agentName: string, task: string):
     agent: agent.name,
   };
   const tools = (agent.tools ?? sessionToolNames({ includeSubagent: false })).filter(
-    (name) => name !== SUBAGENT_TOOL_NAME,
+    (name) => name !== SUBAGENT_TOOL_NAME && name !== SUBSCRIPTION_TOOL_NAME,
   );
   const started = Date.now();
   const session = await openPiSession({

@@ -2,12 +2,10 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import {
   createAgentSession,
-  createExtensionRuntime,
   ModelRuntime,
   SessionManager,
   SettingsManager,
   type AgentSession,
-  type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import { deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
 import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
@@ -15,6 +13,7 @@ import { getWorkerConfig } from "./config.js";
 import { materializeInboundImages } from "./images.js";
 import { gatewayModelSpec } from "./model-spec.js";
 import { abortNestedSubagents, executeNestedSubagent, type SubagentEventHandler } from "./subagent.js";
+import { createWorkspaceLoader, summarizeWorkspaceResources } from "./workspace-loader.js";
 
 export interface OpenSessionInput {
   cwd: string;
@@ -28,22 +27,6 @@ export interface OpenSessionInput {
   systemPrompt?: string;
   allowSubagent?: boolean;
   onSubagentEvent?: SubagentEventHandler;
-}
-
-function isolatedLoader(systemPrompt = CLOUD_SYSTEM_PROMPT): ResourceLoader {
-  return {
-    getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
-    getSkills: () => ({ skills: [], diagnostics: [] }),
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => systemPrompt,
-    getSystemPromptSource: () => undefined,
-    getAppendSystemPrompt: () => [],
-    getAppendSystemPromptSources: () => [],
-    extendResources: () => {},
-    reload: async () => {},
-  };
 }
 
 export async function openPiSession(input: OpenSessionInput): Promise<AgentSession> {
@@ -105,20 +88,34 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
       : undefined,
   }).filter((tool) => toolNames.includes(tool.name));
 
+  const settingsManager = SettingsManager.inMemory({
+    compaction: { enabled: spec.compactionEnabled },
+    retry: { enabled: true, maxRetries: 2 },
+  });
+  const resourceLoader = await createWorkspaceLoader({
+    cwd: input.cwd,
+    agentDir,
+    systemPrompt: input.systemPrompt ?? CLOUD_SYSTEM_PROMPT,
+    settingsManager,
+  });
+  const loaded = summarizeWorkspaceResources(resourceLoader);
+  if (loaded.skills.length > 0 || loaded.agentsFiles.length > 0) {
+    console.log(
+      `workspace resources skills=${loaded.skills.join(",") || "-"} agents=${loaded.agentsFiles.length}`,
+    );
+  }
+
   const { session } = await createAgentSession({
     cwd: input.cwd,
     agentDir,
     model,
     thinkingLevel: "off",
     modelRuntime,
-    resourceLoader: isolatedLoader(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT),
+    resourceLoader,
     tools: toolNames,
     customTools,
     sessionManager: SessionManager.create(input.cwd, input.sessionDir),
-    settingsManager: SettingsManager.inMemory({
-      compaction: { enabled: spec.compactionEnabled },
-      retry: { enabled: true, maxRetries: 2 },
-    }),
+    settingsManager,
   });
   return session;
 }

@@ -26,6 +26,7 @@ const SETUP_PREFIXES = [
   "artifact.",
   "mcp.",
   "llm.",
+  "subscription.",
 ];
 
 export function isSetupKind(kind: string): boolean {

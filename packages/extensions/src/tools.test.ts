@@ -282,6 +282,35 @@ Look for secrets.
   assert.match(ran.content, /ran scout/);
 });
 
+test("neo_subscribe posts events to the control plane", async () => {
+  const tool = createCloudTools(
+    ctx(
+      mockFetch({
+        "/internal/runs/run_1/subscriptions": {
+          status: 201,
+          body: {
+            created: [
+              {
+                id: "sub-1",
+                kind: "github_pr",
+                repo: "acme/app",
+                prNumber: 3,
+                branch: "cursor/fix",
+              },
+            ],
+            webhook: { path: "/webhooks/github", configured: true },
+          },
+        },
+      }),
+    ),
+  ).find((item) => item.name === "neo_subscribe");
+  assert.ok(tool);
+  const result = await tool.execute({ events: ["pr_activity"] });
+  assert.equal(result.isError, undefined);
+  assert.match(result.content, /PR activity/);
+  assert.match(result.content, /acme\/app#3/);
+});
+
 test("neo_diag falls back to local logs when the control plane is down", async () => {
   const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-diag-local-"));
   mkdirSync(path.join(workspaceDir, ".neo", "logs"), { recursive: true });

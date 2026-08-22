@@ -5,6 +5,7 @@ import type {
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
+  CreateSubscriptionRequest,
   DiskCloneMethod,
   EgressPolicy,
   FollowUp,
@@ -12,11 +13,22 @@ import type {
   Run,
   RunDiagnostics,
   RunEvent,
+  RunSubscription,
   RuntimeHandle,
   RuntimeSpec,
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
-import { evaluateEgress, mintRunToken, parseContextUsage, redactText } from "@neo-cloud-agent/contracts";
+import {
+  evaluateEgress,
+  MAX_SUBSCRIPTION_WAKES,
+  mintRunToken,
+  parseContextUsage,
+  parseSubscriptionEvents,
+  redactText,
+  SUBSCRIPTION_COALESCE_MS,
+  subscriptionKindForEvent,
+  subscriptionTargetsFrom,
+} from "@neo-cloud-agent/contracts";
 import { defaultWorkerResources, getConfig } from "../config.js";
 import {
   canRestoreBuild,
@@ -53,11 +65,14 @@ import {
   replacePersistedEvents,
   restoreSessionToDir,
 } from "../store/persist.js";
+import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
+import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 
 const runs = new Map<string, Run>();
 const followUps = new Map<string, FollowUp[]>();
 const inbound = new Map<string, WorkerInbound[]>();
+const subscriptions = new Map<string, RunSubscription[]>();
 const runJwts = new Map<string, string>();
 const handles = new Map<string, RuntimeHandle>();
 const heartbeats = new Map<string, number>();
@@ -88,6 +103,7 @@ function flushRun(runId: string): void {
     run,
     followUps: followUps.get(runId) ?? [],
     inbound: inbound.get(runId) ?? [],
+    subscriptions: subscriptions.get(runId) ?? [],
   });
 }
 
@@ -102,13 +118,19 @@ function failRun(run: Run, message: string, kind: RunEvent["kind"] = "run.error"
   flushRun(run.id);
 }
 
-function hydrateRecord(record: { run: Run; followUps?: FollowUp[]; inbound?: WorkerInbound[] }): void {
+function hydrateRecord(record: {
+  run: Run;
+  followUps?: FollowUp[];
+  inbound?: WorkerInbound[];
+  subscriptions?: RunSubscription[];
+}): void {
   const run = record.run;
   run.pullRequests = Array.isArray(run.pullRequests) ? run.pullRequests : [];
   run.baseBranch = run.baseBranch ?? null;
   runs.set(run.id, run);
   followUps.set(run.id, record.followUps ?? []);
   inbound.set(run.id, record.inbound ?? []);
+  subscriptions.set(run.id, record.subscriptions ?? []);
   if (keepHotHistory(run.status)) {
     seedEvents(run.id, loadPersistedEvents(run.id));
   }
@@ -124,6 +146,7 @@ export function reloadPersistedState(): void {
   runs.clear();
   followUps.clear();
   inbound.clear();
+  subscriptions.clear();
   runJwts.clear();
   handles.clear();
   heartbeats.clear();
@@ -385,7 +408,7 @@ export function event(runId: string, kind: RunEvent["kind"], title: string, extr
       extra?.category ??
       (kind.startsWith("build.")
         ? "build"
-        : kind.startsWith("run.") || kind.startsWith("scm.")
+        : kind.startsWith("run.") || kind.startsWith("scm.") || kind.startsWith("subscription.")
           ? "agent_setup"
           : "agent_run"),
     level: extra?.level ?? (kind === "run.error" ? "error" : "info"),
@@ -528,6 +551,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   runs.set(run.id, run);
   followUps.set(run.id, []);
   inbound.set(run.id, [{ type: "prompt", text: input.prompt, images: input.images }]);
+  subscriptions.set(run.id, []);
   publish(event(run.id, "run.provisioning", "Provisioning worker"));
   publish(
     event(run.id, "user.message", "User message", {
@@ -941,6 +965,151 @@ export function listFollowUps(runId: string): FollowUp[] {
   return followUps.get(runId) ?? [];
 }
 
+export function listRunSubscriptions(runId: string): RunSubscription[] {
+  return subscriptions.get(runId) ?? [];
+}
+
+export function subscribeRun(
+  runId: string,
+  input: CreateSubscriptionRequest = {},
+): { subscriptions: RunSubscription[]; created: RunSubscription[]; webhook: { path: string; configured: boolean } } {
+  const run = requireRun(runId);
+  if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
+    throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
+  }
+  const events = parseSubscriptionEvents(input.events);
+  const targets = subscriptionTargetsFrom(run);
+  if (targets.length === 0) {
+    throw new Error("No GitHub repository on this run. Attach a github.com repo or open a pull request first.");
+  }
+  const existing = subscriptions.get(runId) ?? [];
+  const created: RunSubscription[] = [];
+  for (const target of targets) {
+    for (const item of events) {
+      const kind = subscriptionKindForEvent(item);
+      const found = existing.find(
+        (entry) =>
+          entry.kind === kind &&
+          entry.repo === target.repo &&
+          entry.prNumber === target.prNumber &&
+          entry.branch === target.branch,
+      );
+      if (found) {
+        created.push(found);
+        continue;
+      }
+      const next: RunSubscription = {
+        id: crypto.randomUUID(),
+        runId,
+        kind,
+        repo: target.repo,
+        prNumber: target.prNumber,
+        branch: target.branch,
+        createdAt: now(),
+        wakeCount: 0,
+        lastDeliveryKey: null,
+        lastDeliveredAt: null,
+      };
+      existing.push(next);
+      created.push(next);
+      publish(
+        event(runId, "subscription.created", `Subscribed to ${kind} on ${target.repo}`, {
+          category: "agent_setup",
+          data: {
+            subscriptionId: next.id,
+            kind,
+            repo: target.repo,
+            prNumber: target.prNumber,
+            branch: target.branch,
+          },
+        }),
+      );
+    }
+  }
+  subscriptions.set(runId, existing);
+  flushRun(runId);
+  return { subscriptions: existing, created, webhook: publicGitHubWebhookInfo() };
+}
+
+export async function ingestGitHubWebhook(input: {
+  eventName: string;
+  deliveryId?: string;
+  signature?: string | string[];
+  raw: Buffer;
+}): Promise<{ status: number; body: Record<string, unknown> }> {
+  const secret = readGitHubWebhookSecret();
+  if (!secret) {
+    return { status: 503, body: { error: "webhook_not_configured" } };
+  }
+  if (!verifyGitHubSignature(input.raw, secret, input.signature)) {
+    return { status: 401, body: { error: "invalid_signature" } };
+  }
+  let payload: unknown = {};
+  if (input.raw.length > 0) {
+    try {
+      payload = JSON.parse(input.raw.toString("utf8")) as unknown;
+    } catch {
+      return { status: 400, body: { error: "invalid_json" } };
+    }
+  }
+  const ingress = parseGitHubWebhook(input.eventName, payload, input.deliveryId);
+  if (ingress.kind === "ping") {
+    return { status: 200, body: { ok: true, zen: ingress.text } };
+  }
+  if (ingress.kind === "ignored") {
+    return { status: 202, body: { ok: true, ignored: true } };
+  }
+  let delivered = 0;
+  for (const [runId, items] of subscriptions) {
+    const run = runs.get(runId);
+    if (!run || run.status === "ARCHIVED" || run.status === "EXPIRED") {
+      continue;
+    }
+    for (const item of items) {
+      if (!subscriptionMatchesIngress(item, ingress)) {
+        continue;
+      }
+      if (item.lastDeliveryKey === ingress.deliveryKey) {
+        continue;
+      }
+      if (item.wakeCount >= MAX_SUBSCRIPTION_WAKES) {
+        continue;
+      }
+      const lastAt = item.lastDeliveredAt ? Date.parse(item.lastDeliveredAt) : 0;
+      if (lastAt && Date.now() - lastAt < SUBSCRIPTION_COALESCE_MS) {
+        continue;
+      }
+      item.lastDeliveryKey = ingress.deliveryKey;
+      item.lastDeliveredAt = now();
+      item.wakeCount += 1;
+      publish(
+        event(runId, "subscription.delivered", "GitHub subscription event", {
+          category: "agent_setup",
+          data: {
+            subscriptionId: item.id,
+            kind: item.kind,
+            repo: item.repo,
+            deliveryKey: ingress.deliveryKey,
+            wakeCount: item.wakeCount,
+          },
+        }),
+      );
+      await enqueueFollowUp(runId, { text: ingress.text });
+      delivered += 1;
+    }
+  }
+  flushAllSubscriptions();
+  return { status: 202, body: { ok: true, delivered } };
+}
+
+function flushAllSubscriptions(): void {
+  for (const runId of subscriptions.keys()) {
+    if (runs.has(runId)) {
+      flushRun(runId);
+    }
+  }
+}
+
 export function takeInbound(runId: string): WorkerInbound[] {
   noteWorkerHeartbeat(runId);
   const queued = inbound.get(runId) ?? [];
@@ -1115,6 +1284,7 @@ export async function restoreArchivedRun(runId: string) {
   runs.set(run.id, run);
   followUps.set(run.id, restored.record.followUps ?? []);
   inbound.set(run.id, restored.record.inbound ?? []);
+  subscriptions.set(run.id, restored.record.subscriptions ?? []);
   if (keepHotHistory(run.status)) {
     seedEvents(run.id, restored.events);
   }
@@ -1123,6 +1293,7 @@ export async function restoreArchivedRun(runId: string) {
     run,
     followUps: followUps.get(run.id) ?? [],
     inbound: inbound.get(run.id) ?? [],
+    subscriptions: subscriptions.get(run.id) ?? [],
   });
   return run;
 }
