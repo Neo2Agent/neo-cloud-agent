@@ -19,6 +19,7 @@ export type RunEventKind =
   | "run.error"
   | "run.archived"
   | "llm.usage"
+  | "context.usage"
   | "agent.start"
   | "agent.end"
   | "message.start"

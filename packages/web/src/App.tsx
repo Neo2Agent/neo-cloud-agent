@@ -12,6 +12,12 @@ import { FileTree } from "./components/FileTree";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
+import {
+  baselineContextUsage,
+  overlayContextUsage,
+  parseContextUsage,
+  resolveModelLimits,
+} from "@neo-cloud-agent/contracts/context-usage";
 import { formatUsage, modelLabel, preview, shortId, slotLabel } from "./format";
 import {
   activityLabel,
@@ -138,6 +144,25 @@ export function App() {
   const snapshot = useMemo(() => buildTranscriptSnapshot(runId ?? "local", events), [runId, events]);
   const visibleMessages = snapshot.messages.slice(shownFrom);
   const remaining = shownFrom;
+  const selectedModel =
+    currentRun?.model ||
+    (llm.upstream === "openai" ? "gpt-4o-mini" : /pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash");
+  const contextUsage = useMemo(() => {
+    const reported = parseContextUsage(currentRun?.contextUsage ?? null);
+    const base = reported ?? baselineContextUsage(selectedModel);
+    const catalogWindow = resolveModelLimits(base.model || selectedModel)?.contextWindow ?? null;
+    const contextWindow = base.contextWindow ?? catalogWindow;
+    const streaming = snapshot.messages.find((message) => message.streaming)?.text ?? "";
+    return overlayContextUsage(
+      {
+        ...base,
+        model: base.model || selectedModel,
+        contextWindow,
+        percent: contextWindow ? (base.tokens / contextWindow) * 100 : null,
+      },
+      { draft: prompt, streaming },
+    );
+  }, [currentRun?.contextUsage, prompt, selectedModel, snapshot.messages]);
 
   const applyVms = useCallback((payload?: Partial<VmSummary> | null) => {
     if (!payload) return;
@@ -205,6 +230,12 @@ export function App() {
               ...run,
               pullRequests: [{ url: String(event.data?.url), draft: event.data?.draft !== false, repoUrl: "", branch: "", number: null, title: "" }],
             }));
+          }
+          if (event.kind === "context.usage") {
+            const parsed = parseContextUsage(event.data);
+            if (parsed) {
+              patchRun(id, (run) => ({ ...run, contextUsage: parsed }));
+            }
           }
           if (event.kind === "llm.usage") {
             patchRun(id, (run) => {
@@ -1063,6 +1094,7 @@ export function App() {
             archived={archived}
             canStop={Boolean(runId)}
             activity={activity}
+            contextUsage={contextUsage}
             onPrompt={setPrompt}
             onImages={setImages}
             onSend={() => void sendMessage()}

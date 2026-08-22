@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { resolveModelLimits } from "./models.js";
+
+test("DeepSeek V4 flash and pro both advertise a 1M window", () => {
+  assert.deepEqual(resolveModelLimits("deepseek-v4-flash"), {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
+  });
+  assert.deepEqual(resolveModelLimits("neo/deepseek"), {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
+  });
+  assert.deepEqual(resolveModelLimits("deepseek-v4-pro"), {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
+  });
+});
+
+test("OpenAI 4o family uses 128k, not DeepSeek's 1M", () => {
+  assert.equal(resolveModelLimits("gpt-4o-mini")?.contextWindow, 128_000);
+  assert.equal(resolveModelLimits("gpt-4o")?.contextWindow, 128_000);
+  assert.notEqual(resolveModelLimits("gpt-4o-mini")?.contextWindow, resolveModelLimits("deepseek-v4-flash")?.contextWindow);
+});
+
+test("unknown models have no invented window", () => {
+  assert.equal(resolveModelLimits("some-local-70b"), null);
+  assert.equal(resolveModelLimits(""), null);
+  assert.equal(resolveModelLimits(undefined), null);
+});

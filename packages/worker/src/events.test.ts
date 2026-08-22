@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { stampWorkerSeq, toRunEvents } from "./events.js";
+import { assembleContextUsage } from "@neo-cloud-agent/contracts";
+import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
 
 test("maps pi session events to RunEvents", () => {
   const start = toRunEvents("run1", { type: "agent_start" });
@@ -71,6 +72,12 @@ test("stamps a monotonic workerSeq onto each event", () => {
   );
   assert.equal(first[0]?.data?.workerSeq, 1);
   assert.equal(second[0]?.data?.workerSeq, 2);
+});
+
+test("context usage event keeps a null window for unknown models", () => {
+  const event = contextUsageEvent("run1", assembleContextUsage({ conversationText: "hi" }));
+  assert.equal(event.kind, "context.usage");
+  assert.equal(event.data?.contextWindow, null);
 });
 
 test("ignores unknown or empty deltas", () => {

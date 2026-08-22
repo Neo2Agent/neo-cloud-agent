@@ -55,6 +55,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.transcript\{[^}]*min-height:\s*0/);
   assert.match(cssText, /\.transcript\{[^}]*overflow-y:\s*auto/);
   assert.match(cssText, /\.composer\{[^}]*flex-shrink:\s*0/);
+  assert.match(cssText, /\.context-usage-pop/);
+  assert.match(cssText, /\.context-usage-bar/);
   const appText = readBuiltAsset(".js");
   assert.match(appText, /requestSubmit/);
   assert.match(appText, /登录响应缺少会话|登录未生效/);
@@ -90,6 +92,12 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /turn-progress/);
   assert.match(appText, /正在思考/);
   assert.match(appText, /stop-icon/);
+  assert.match(appText, /context-usage/);
+  assert.match(appText, /上下文用量/);
+  assert.match(appText, /窗口未知/);
+  assert.match(appText, /系统提示/);
+  assert.match(appText, /工具定义/);
+  assert.match(appText, /已压缩对话/);
   assert.match(cssText, /pulse-dot/);
   assert.match(cssText, /think-bounce/);
   assert.match(cssText, /\.workspace-drawer\{[^}]*max-height:\s*min\(32vh/);

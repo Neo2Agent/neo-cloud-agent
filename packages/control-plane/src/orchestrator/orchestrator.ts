@@ -16,7 +16,7 @@ import type {
   RuntimeSpec,
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
-import { evaluateEgress, mintRunToken, redactText } from "@neo-cloud-agent/contracts";
+import { evaluateEgress, mintRunToken, parseContextUsage, redactText } from "@neo-cloud-agent/contracts";
 import { defaultWorkerResources, getConfig } from "../config.js";
 import {
   canRestoreBuild,
@@ -814,6 +814,15 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
   noteWorkerHeartbeat(runId);
   for (const item of events) {
     publish(event(runId, item.kind, item.title, item));
+    if (item.kind === "context.usage") {
+      const run = runs.get(runId);
+      const parsed = parseContextUsage(item.data);
+      if (run && parsed) {
+        run.contextUsage = parsed;
+        run.updatedAt = now();
+        flushRun(runId);
+      }
+    }
     if (item.kind === "llm.usage") {
       const run = runs.get(runId);
       if (run) {

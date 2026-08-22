@@ -319,3 +319,51 @@ test("archiving drops the hot event log but transcript can still reload from per
   assert.equal(listEvents(run.id).length, 0);
   assert.ok(eventsForRun(run.id).some((item) => item.kind === "run.archived"));
 });
+
+test("context.usage stores the model's window and does not invent one", async () => {
+  const run = await createRun({
+    prompt: "show context",
+    repoUrls: ["fixtures/toy-repo"],
+    model: "deepseek-v4-flash",
+  });
+  ingestEvents(run.id, [
+    {
+      id: `${run.id}-ctx`,
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "context.usage",
+      title: "Context usage",
+      data: {
+        tokens: 2400,
+        contextWindow: 1_000_000,
+        percent: 0.24,
+        source: "session",
+        model: "deepseek-v4-flash",
+        buckets: [{ id: "conversation", label: "对话", tokens: 2400 }],
+      },
+    },
+  ]);
+  assert.equal(getRun(run.id)?.contextUsage?.contextWindow, 1_000_000);
+  assert.equal(getRun(run.id)?.contextUsage?.tokens, 2400);
+
+  const other = await createRun({
+    prompt: "unknown model",
+    repoUrls: ["fixtures/toy-repo"],
+    model: "mystery-local",
+  });
+  ingestEvents(other.id, [
+    {
+      id: `${other.id}-ctx`,
+      runId: other.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "context.usage",
+      title: "Context usage",
+      data: { tokens: 80, contextWindow: null, source: "estimate", buckets: [] },
+    },
+  ]);
+  assert.equal(getRun(other.id)?.contextUsage?.contextWindow, null);
+});
