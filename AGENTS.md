@@ -14,7 +14,7 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 
 ### Services (started by `pnpm dev`)
 - `control-plane` on `:8080` — API + orchestration + SCM + events, and serves the web chat UI at `http://localhost:8080`.
-- Desk preview on `:8082` — `pnpm dev:desk`. Same UI as `:8080` with `window.neoDesk` injected so 本机 is enabled. Does not take over 8080.
+- Desk client is Electron (`pnpm --filter @neo-cloud-agent/desk start`) after `pnpm build:web`. It loads `packages/web/dist` via `neo-desk://` and talks to the control plane. Browser preview on `:8082` (`pnpm dev:desk`) is only a fallback when there is no desktop session.
 - `llm-gateway` on `:8081` — holds provider keys. With no `DEEPSEEK_API_KEY`/`OPENAI_API_KEY` set it runs `upstream=mock`, which is enough to exercise runs end-to-end.
 - Default `WORKER_RUNTIME=local`: `POST /v1/runs` spawns an in-process worker (no Docker needed). `docker`/`firecracker` runtimes need extra assets (see `README.md`).
 
