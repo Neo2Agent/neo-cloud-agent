@@ -531,10 +531,10 @@ button:disabled {
 }
 
 .team-art {
-  width: 180px;
-  height: 72px;
+  width: 236px;
+  height: 100px;
   margin-left: auto;
-  color: #9a9a94;
+  color: #8d8d87;
   flex: none;
 }
 

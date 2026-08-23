@@ -362,15 +362,25 @@ export function AutomationCreateForm({
 
 function TeamArt() {
   return (
-    <svg className="team-art" viewBox="0 0 220 88" aria-hidden="true">
-      <circle cx="36" cy="40" r="14" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M18 74c4-16 32-16 36 0" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <rect x="86" y="28" width="28" height="20" rx="4" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="100" cy="22" r="8" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <rect x="140" y="30" width="36" height="24" rx="6" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M152 42h12M158 36v12" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="196" cy="38" r="12" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M178 74c6-14 28-14 36 0" fill="none" stroke="currentColor" strokeWidth="1.6" />
+    <svg className="team-art" viewBox="0 0 260 110" aria-hidden="true">
+      <circle cx="32" cy="28" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M16 80c4-24 30-24 34 0" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <rect x="42" y="38" width="13" height="17" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="98" cy="26" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M82 80c4-24 30-24 34 0" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M84 58h28l-4 9H88z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="148" y="16" width="28" height="20" rx="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="157" cy="26" r="2" fill="currentColor" />
+      <circle cx="167" cy="26" r="2" fill="currentColor" />
+      <rect x="144" y="40" width="36" height="26" rx="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M154 54h16" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="226" cy="26" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M210 80c4-24 30-24 34 0" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <rect x="216" y="44" width="11" height="15" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="223" y="40" width="11" height="15" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M48 30C70 8 80 8 88 18" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" />
+      <path d="M116 30C132 8 146 8 158 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" />
+      <path d="M182 28C200 8 210 8 216 18" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" />
     </svg>
   );
 }
