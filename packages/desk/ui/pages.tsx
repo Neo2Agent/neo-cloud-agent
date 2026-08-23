@@ -1,11 +1,16 @@
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { useLayoutEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import {
+  COMPOSER_CHROME,
+  COMPOSER_FOLLOW_MIN,
+  COMPOSER_MAX_PX,
+  composerBoxWidth,
+  composerMaxWidth,
+  composerTextareaHeight,
+} from "../src/composer-size";
 import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
-
-const COMPOSER_MIN = 320;
-const COMPOSER_MAX = 680;
 
 export type ContextMenuId = "repo" | "target" | null;
 export type RepoChoice = { url: string; label: string };
@@ -545,26 +550,38 @@ export function ChatComposer({
   home?: boolean;
 }) {
   const label = selected || "Add Models";
-  const [width, setWidth] = useState(COMPOSER_MIN);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [maxWidth, setMaxWidth] = useState(COMPOSER_MAX_PX);
+  const [width, setWidth] = useState(home ? COMPOSER_MAX_PX : COMPOSER_FOLLOW_MIN);
+
+  useLayoutEffect(() => {
+    const stage = boxRef.current?.closest(".stage") ?? boxRef.current?.closest(".composer-wrap");
+    if (!stage) return;
+    const apply = () => setMaxWidth(composerMaxWidth(stage.clientWidth));
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
 
   useLayoutEffect(() => {
     const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
     const font = ta ? getComputedStyle(ta).font : "14.5px ui-sans-serif, sans-serif";
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
-    const textWidth = ctx ? (ctx.font = font, ctx.measureText(prompt).width) : prompt.length * 14;
-    setWidth(Math.min(COMPOSER_MAX, Math.max(COMPOSER_MIN, Math.ceil(textWidth) + 96)));
-  }, [prompt, taRef]);
+    const textWidth = ctx ? ((ctx.font = font), ctx.measureText(prompt).width) : prompt.length * 14;
+    setWidth(composerBoxWidth({ home: Boolean(home), measuredText: textWidth, maxWidth, chrome: COMPOSER_CHROME }));
+  }, [home, maxWidth, prompt, taRef]);
 
   useLayoutEffect(() => {
     const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${Math.min(128, Math.max(22, ta.scrollHeight))}px`;
-  }, [prompt, taRef]);
+    ta.style.height = `${composerTextareaHeight(ta.scrollHeight, Boolean(home))}px`;
+  }, [home, prompt, taRef]);
 
   return (
-    <div className={`composer composer-stack${home ? " home" : ""}`} style={{ width }}>
+    <div ref={boxRef} className={`composer composer-stack${home ? " home" : ""}`} style={{ width }}>
       <textarea
         ref={taRef}
         value={prompt}
