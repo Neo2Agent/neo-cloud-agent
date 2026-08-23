@@ -15,7 +15,8 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 ### Services
 - `pnpm dev` — backend only: `control-plane` `:8080` + `llm-gateway` `:8081`.
 - `pnpm dev:web` — Web UI on `:5173` (reuses backend on `:8080` if already up). This is `packages/web`.
-- `pnpm dev:desk` — Desk UI Vite on `:5174` plus the Electron window. This is `packages/desk/ui`, a different UI that talks to the same `/v1`. Do not confuse with the old `:8082` browser preview (`pnpm preview:desk`).
+- `pnpm dev:desk` — Desk UI Vite on `:5174` plus the Electron window, against local `:8080`. This is `packages/desk/ui`, a different UI that talks to the same `/v1`. Do not confuse with the old `:8082` browser preview (`pnpm preview:desk`).
+- `pnpm dev:desk:prod` — same Desk window, API is the production control plane (`http://62.234.211.200` unless `NEO_CONTROL_PLANE_URL` is a non-loopback override). Does not start local `:8080`. Web against production is just opening that URL.
 - `llm-gateway` holds provider keys. With no `DEEPSEEK_API_KEY`/`OPENAI_API_KEY` set it runs `upstream=mock`, which is enough to exercise runs end-to-end.
 - Default `WORKER_RUNTIME=local`: `POST /v1/runs` spawns an in-process worker (no Docker needed). `docker`/`firecracker` runtimes need extra assets (see `README.md`).
 

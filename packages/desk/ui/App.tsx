@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
+import { isLoopbackOrigin } from "../src/ports";
 import {
   AutomationCreateForm,
   AutomationsPage,
@@ -184,6 +185,8 @@ export function App() {
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const canRunLocal = Boolean(deskBridge()?.canRunLocal);
+  const apiBase = deskBridge()?.apiBase || "";
+  const remoteApiHost = apiBase && !isLoopbackOrigin(apiBase) ? new URL(apiBase).host : "";
 
   const persist = useCallback((next: string) => {
     tokenRef.current = next;
@@ -826,6 +829,7 @@ export function App() {
               <IconGear />
             </button>
           </div>
+          {remoteApiHost ? <p className="rail-api">线上 {remoteApiHost}</p> : null}
         </div>
       </aside>
 

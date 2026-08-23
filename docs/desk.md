@@ -26,8 +26,9 @@
 5. 掉线走现有 `detachOrQueue`，不标 ERROR。
 
 ```bash
-pnpm dev:web    # Web UI :5173，API :8080
-pnpm dev:desk   # 独立 Desk UI :5174 + Electron
+pnpm dev:web        # Web UI :5173，API :8080
+pnpm dev:desk       # 独立 Desk UI :5174 + Electron → 本地 :8080
+pnpm dev:desk:prod  # 同一套 Desk UI → 线上控制面（默认 http://62.234.211.200），不启本地后端
 ```
 
 Web 和 Desk 共用控制面 / gateway / worker，UI 分包：`packages/web` 与 `packages/desk/ui`。

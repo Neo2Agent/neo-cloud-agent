@@ -433,6 +433,12 @@ button:disabled {
   flex: none;
 }
 
+.rail-api {
+  margin: 6px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .profile-name {
   flex: 1;
   min-width: 0;

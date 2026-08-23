@@ -3,12 +3,17 @@
 独立的 Electron 桌面客户端。和 Web **共用控制面 / gateway / worker**，但 **UI 是另一套**（`packages/desk/ui`），不再加载 `packages/web`。
 
 ```bash
-# 仓库根。控制面已在 :8080 时会复用，否则自动拉起。
+# 仓库根。
 export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"
-pnpm dev:web    # Web UI :5173，API :8080
-pnpm dev:desk   # Desk UI Vite :5174 + Electron 窗口
+pnpm dev:web        # Web UI :5173，打本地 :8080
+pnpm dev:desk       # Desk Vite :5174 + Electron，打本地 :8080（没有就拉起）
+pnpm dev:desk:prod  # 同一套 Desk UI，API 打线上控制面，不启本地 :8080
 ```
 
 `dev:desk` 打开的是原生窗口，不是浏览器页。登录账号和 Web 相同（默认 `admin` / `123456`）。
+
+本地 `pnpm dev` / `pnpm dev:desk` 只连本机控制面（内存事件总线 + 本地 Run）。要和线上 MySQL / Redis / VM 槽是同一条总线，用 `pnpm dev:desk:prod`（默认 `http://62.234.211.200`）。Web 看现网直接打开该地址，不必再起一份本地 Web。
+
+覆盖地址：`NEO_CONTROL_PLANE_URL=http://host pnpm dev:desk:prod`。`.env` 里的本地 `CONTROL_PLANE_URL` 不会把 prod 模式拽回 8080。
 
 锁定设计里「对齐 Cursor」指 Agents Window 的交互（This Computer / Cloud / Remote），不是复用 Web 那套浅色壳。
