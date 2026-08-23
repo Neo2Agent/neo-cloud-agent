@@ -985,18 +985,6 @@ button:disabled {
   min-height: 0;
 }
 
-.composer-measure {
-  position: absolute;
-  left: -9999px;
-  top: 0;
-  visibility: hidden;
-  white-space: pre;
-  width: max-content;
-  max-width: none;
-  pointer-events: none;
-  font-size: 14.5px;
-  line-height: 1.45;
-}
 
 .composer-tools {
   display: flex;

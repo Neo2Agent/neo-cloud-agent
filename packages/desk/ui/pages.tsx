@@ -1,7 +1,7 @@
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useLayoutEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
 
 const COMPOSER_MIN = 320;
@@ -545,15 +545,16 @@ export function ChatComposer({
   home?: boolean;
 }) {
   const label = selected || "Add Models";
-  const measureRef = useRef<HTMLSpanElement>(null);
   const [width, setWidth] = useState(COMPOSER_MIN);
 
   useLayoutEffect(() => {
-    const node = measureRef.current;
-    if (!node) return;
-    const grown = Math.ceil(node.scrollWidth) + 88;
-    setWidth(Math.min(COMPOSER_MAX, Math.max(COMPOSER_MIN, grown)));
-  }, [prompt]);
+    const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
+    const font = ta ? getComputedStyle(ta).font : "14.5px ui-sans-serif, sans-serif";
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const textWidth = ctx ? (ctx.font = font, ctx.measureText(prompt).width) : prompt.length * 14;
+    setWidth(Math.min(COMPOSER_MAX, Math.max(COMPOSER_MIN, Math.ceil(textWidth) + 96)));
+  }, [prompt, taRef]);
 
   useLayoutEffect(() => {
     const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
@@ -564,9 +565,6 @@ export function ChatComposer({
 
   return (
     <div className={`composer composer-stack${home ? " home" : ""}`} style={{ width }}>
-      <span className="composer-measure" ref={measureRef}>
-        {prompt || " "}
-      </span>
       <textarea
         ref={taRef}
         value={prompt}
