@@ -204,6 +204,7 @@ export function App() {
   const topMoreRef = useRef<HTMLDetailsElement>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const streamFrameRef = useRef(0);
+  const streamTimerRef = useRef(0);
   const lastEventIdRef = useRef<string | null>(null);
   const openGenRef = useRef(0);
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
@@ -255,6 +256,10 @@ export function App() {
       cancelAnimationFrame(streamFrameRef.current);
       streamFrameRef.current = 0;
     }
+    if (streamTimerRef.current) {
+      window.clearTimeout(streamTimerRef.current);
+      streamTimerRef.current = 0;
+    }
     sourceRef.current?.close();
     sourceRef.current = null;
   }, []);
@@ -276,6 +281,10 @@ export function App() {
       const pending: RunEvent[] = [];
       const flush = () => {
         streamFrameRef.current = 0;
+        if (streamTimerRef.current) {
+          window.clearTimeout(streamTimerRef.current);
+          streamTimerRef.current = 0;
+        }
         if (sourceRef.current !== source) {
           return;
         }
@@ -344,9 +353,14 @@ export function App() {
         }
         lastEventIdRef.current = event.id;
         pending.push(event);
-        if (!streamFrameRef.current) {
-          streamFrameRef.current = requestAnimationFrame(flush);
+        if (streamFrameRef.current || streamTimerRef.current) {
+          return;
         }
+        if (typeof document !== "undefined" && document.hidden) {
+          streamTimerRef.current = window.setTimeout(flush, 16);
+          return;
+        }
+        streamFrameRef.current = requestAnimationFrame(flush);
       };
       source.onerror = () => {
         setHealthText("事件流已断开，正在重试");
