@@ -11,5 +11,5 @@
     "isolatedModules": true,
     "types": ["vite/client"]
   },
-  "include": ["./**/*.ts", "./**/*.tsx", "../src/composer-size.ts", "../src/ports.ts"]
+  "include": ["./**/*.ts", "./**/*.tsx", "../src/composer-size.ts", "../src/format.ts", "../src/ports.ts", "../src/stream.ts"]
 }
