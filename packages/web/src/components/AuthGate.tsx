@@ -1,3 +1,4 @@
+import { isDeskApp } from "../desk";
 import { isNarrowViewport } from "../viewport";
 
 type AuthMode = "login" | "token";
@@ -33,11 +34,13 @@ export function AuthGate({
 }: Props) {
   const phone = isNarrowViewport();
   const effectiveMode = phone ? "login" : mode;
-  const title = effectiveMode === "token" ? "服务令牌" : "登录";
+  const title = effectiveMode === "token" ? "服务令牌" : isDeskApp() ? "登录 Desk" : "登录";
   const copy =
     effectiveMode === "token"
       ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
-      : "请输入账号和密码后登录。";
+      : isDeskApp()
+        ? "Desk 与 Web 共用账号。登录后可以选本机执行。"
+        : "请输入账号和密码后登录。";
   const canSubmit = effectiveMode === "token" ? Boolean(token.trim()) : Boolean(email.trim() && password);
   const submit = busy ? "登录中…" : effectiveMode === "token" ? "使用令牌" : "登录";
 

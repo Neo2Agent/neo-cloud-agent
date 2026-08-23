@@ -11,6 +11,7 @@
     "dev:control-plane": "pnpm --filter @neo-cloud-agent/control-plane dev",
     "dev:gateway": "pnpm --filter @neo-cloud-agent/llm-gateway dev",
     "dev:worker": "pnpm --filter @neo-cloud-agent/worker dev",
+    "dev:desk": "pnpm --filter @neo-cloud-agent/desk preview",
     "neo": "tsx packages/cli/src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && pnpm --filter @neo-cloud-agent/web --config.engine-strict=false typecheck",
     "test": "pnpm --filter @neo-cloud-agent/web --config.engine-strict=false build && env LLM_UPSTREAM=mock LLM_SETTINGS_DIR=/tmp/neo-test-llm-empty DEEPSEEK_API_KEY= OPENAI_API_KEY= LLM_UPSTREAM_API_KEY= LLM_API_KEY= tsx --test packages/**/*.test.ts",

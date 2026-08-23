@@ -350,6 +350,16 @@ button[type="submit"]:disabled {
   color: var(--accent);
 }
 
+.desk-badge {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: var(--accent);
+}
+
 .main {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;

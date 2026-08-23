@@ -8,7 +8,7 @@ import {
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
-import { deskBridge, withApiBase, type DeskTarget } from "./desk";
+import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
 import { cycle, shortcutAction } from "./shortcuts";
@@ -591,6 +591,15 @@ export function App() {
   }, [runId]);
 
   const finishLogin = useCallback(async () => {
+    const desk = deskBridge();
+    if (desk) {
+      await desk.setToken(tokenRef.current).catch(() => undefined);
+      const target = await desk.getTarget().catch(() => undefined);
+      if (target) {
+        setDeskTarget(target);
+        if (target.folder) setDeskFolder(target.folder);
+      }
+    }
     const refreshShell = [refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()] as const;
     if (hashAutomations()) {
       setMainTab("automations");
@@ -1219,6 +1228,11 @@ export function App() {
               </div>
             </div>
             <div className="top-actions">
+              {isDeskApp() ? (
+                <span className="desk-badge" title="Desk 预览，本机执行可用">
+                  Desk
+                </span>
+              ) : null}
               <span className="status" id="status" data-state={statusView.state} data-busy={busy ? "true" : "false"}>
                 {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
                 {statusView.label}

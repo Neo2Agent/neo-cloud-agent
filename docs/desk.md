@@ -27,6 +27,8 @@
 
 ```bash
 pnpm --filter @neo-cloud-agent/desk start
+# 浏览器预览（无 Electron）：Desk :8082，Web 仍是 :8080
+pnpm --filter @neo-cloud-agent/desk preview
 ```
 
 未做：P3 并排窗格 / SSH 远程机；云 loop + 本机工具 RPC（见设计 §12）。

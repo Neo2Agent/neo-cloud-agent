@@ -3,13 +3,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createLeaseClient } from "../src/lease.ts";
+import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.ts";
 import { hashForRun, runIdFromDeepLink } from "../src/protocol.ts";
 import { spawnDeskWorker } from "../src/spawn.ts";
 import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap } from "../src/workspace.ts";
 
 type DeskTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?: string };
 
-const controlPlaneUrl = (process.env.NEO_CONTROL_PLANE_URL || "http://127.0.0.1:8080").replace(/\/$/, "");
+const controlPlaneUrl = controlPlaneOrigin();
+const rendererUrl = deskRendererUrl() || controlPlaneUrl;
 const stateDir = () => path.join(app.getPath("userData"), "neo-desk");
 const stateFile = (name: string) => path.join(stateDir(), name);
 
@@ -81,7 +83,7 @@ function createWindow(): void {
       sandbox: true,
     },
   });
-  void mainWindow.loadURL(controlPlaneUrl);
+  void mainWindow.loadURL(rendererUrl);
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -261,7 +263,7 @@ app.whenReady().then(() => {
 app.on("open-url", (_event, url) => {
   const runId = runIdFromDeepLink(url);
   if (runId && mainWindow) {
-    void mainWindow.loadURL(`${controlPlaneUrl}/${hashForRun(runId)}`);
+    void mainWindow.loadURL(`${rendererUrl}/${hashForRun(runId)}`);
     mainWindow.webContents.send("desk:deep-link", url);
   }
 });
