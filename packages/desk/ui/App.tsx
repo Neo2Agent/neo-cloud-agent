@@ -3,12 +3,14 @@ import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { applyRunEventsToMessages, displayTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
+import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
 import { isLoopbackOrigin } from "../src/ports";
+import { isActiveRunStatus, isTerminalTurnEvent, parseSse, runEventsQuery } from "../src/stream";
+import { ToolCard } from "./ToolCard";
 import {
   AutomationCreateForm,
   AutomationsPage,
@@ -75,15 +77,6 @@ function repoPath(url?: string): string {
   }
 }
 
-function parseSse(raw: string): RunEvent | null {
-  try {
-    const event = JSON.parse(raw) as RunEvent;
-    return event?.id && event.kind ? event : null;
-  } catch {
-    return null;
-  }
-}
-
 function initials(value: string): string {
   const parts = value.trim().split(/[@\s./_-]+/).filter(Boolean);
   if (parts.length === 0) return "N";
@@ -108,6 +101,7 @@ function isCloudRun(run?: Run | null): boolean {
 }
 
 function isThought(message: TranscriptMessage): boolean {
+  if (message.tools?.length || message.blocks?.some((block) => block.type === "tool")) return false;
   const blob = `${message.kind ?? ""} ${message.text}`.toLowerCase();
   return blob.includes("thought") || blob.includes("thinking") || blob.includes("reasoning");
 }
@@ -181,6 +175,9 @@ export function App() {
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
   const tokenRef = useRef("");
   const sourceRef = useRef<EventSource | null>(null);
+  const lastEventIdRef = useRef<string | null>(null);
+  const streamFrameRef = useRef(0);
+  const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -235,23 +232,57 @@ export function App() {
     if (next.baseUrl) setModelBaseUrl(next.baseUrl);
   }, []);
 
+  const closeStream = useCallback(() => {
+    if (streamFrameRef.current) {
+      cancelAnimationFrame(streamFrameRef.current);
+      streamFrameRef.current = 0;
+    }
+    sourceRef.current?.close();
+    sourceRef.current = null;
+  }, []);
+
   const listen = useCallback(
-    (id: string) => {
-      sourceRef.current?.close();
-      const params = tokenRef.current ? `?access_token=${encodeURIComponent(tokenRef.current)}` : "";
-      const source = new EventSource(withApiBase(`/v1/runs/${id}/events${params}`));
-      sourceRef.current = source;
-      source.onmessage = (event) => {
-        const parsed = parseSse(event.data);
-        if (!parsed) return;
-        setMessages((prev) => applyRunEventsToMessages(prev, [parsed]));
-        if (parsed.kind === "run.idle" || parsed.kind === "run.error") {
+    (id: string, after?: string | null) => {
+      closeStream();
+      const cursor = after ?? lastEventIdRef.current;
+      const query = runEventsQuery({ after: cursor, accessToken: tokenRef.current });
+      const source = new EventSource(withApiBase(`/v1/runs/${id}/events${query}`));
+      const pending: RunEvent[] = [];
+      const flush = () => {
+        streamFrameRef.current = 0;
+        if (sourceRef.current !== source) return;
+        const batch = pending.splice(0);
+        if (batch.length === 0) return;
+        setMessages((prev) => {
+          const next = applyRunEventsToMessages(prev, batch);
+          return batch.some((event) => isTerminalTurnEvent(event.kind)) ? settleTranscriptMessages(next) : next;
+        });
+        if (batch.some((event) => event.kind === "run.idle" || event.kind === "run.error")) {
           void refreshRuns();
         }
       };
+      source.onmessage = (event) => {
+        const parsed = parseSse(event.data);
+        if (!parsed) return;
+        lastEventIdRef.current = parsed.id;
+        pending.push(parsed);
+        if (!streamFrameRef.current) {
+          streamFrameRef.current = requestAnimationFrame(flush);
+        }
+      };
+      source.onerror = () => {
+        if (source.readyState !== EventSource.CLOSED) return;
+        window.setTimeout(() => {
+          if (sourceRef.current === source) {
+            listenRef.current(id, lastEventIdRef.current);
+          }
+        }, 750);
+      };
+      sourceRef.current = source;
     },
-    [refreshRuns],
+    [closeStream, refreshRuns],
   );
+  listenRef.current = listen;
 
   const openRun = useCallback(
     async (id: string, opts?: { record?: boolean }) => {
@@ -275,16 +306,20 @@ export function App() {
       setCurrent(run);
       if (transcriptRes.ok) {
         const body = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
-        setMessages(body.snapshot?.messages ?? []);
+        const snapshot = body.snapshot;
+        const loaded = snapshot?.messages ?? [];
+        setMessages(isActiveRunStatus(run.status) ? loaded : settleTranscriptMessages(loaded));
+        lastEventIdRef.current = snapshot?.lastEventId ?? null;
       } else {
         setMessages([]);
+        lastEventIdRef.current = null;
       }
       if (diffRes.ok) {
         setDiff(diffStats(await diffRes.text()));
       } else {
         setDiff(null);
       }
-      listen(id);
+      listen(id, lastEventIdRef.current);
     },
     [listen],
   );
@@ -318,7 +353,14 @@ export function App() {
         persist("");
       }
     })();
-    return () => sourceRef.current?.close();
+    return () => {
+      if (streamFrameRef.current) {
+        cancelAnimationFrame(streamFrameRef.current);
+        streamFrameRef.current = 0;
+      }
+      sourceRef.current?.close();
+      sourceRef.current = null;
+    };
   }, [finishLogin, persist]);
 
   const login = async () => {
@@ -487,7 +529,8 @@ export function App() {
     setModelMenu(false);
     setContextOpen(null);
     setNav("chats");
-    sourceRef.current?.close();
+    lastEventIdRef.current = null;
+    closeStream();
     requestAnimationFrame(() => taRef.current?.focus());
   };
 
@@ -953,22 +996,53 @@ export function App() {
                         </div>
                       );
                     }
+                    const groups = transcriptGroups(message);
+                    if (groups.length === 0) {
+                      return message.text ? (
+                        <article key={message.id} className="assistant-block">
+                          <div className="assistant-text">{message.text}</div>
+                        </article>
+                      ) : null;
+                    }
+                    const lastText = [...groups].reverse().find((group) => group.type === "text");
                     return (
-                      <article key={message.id} className="assistant-block">
-                        <div className="assistant-text">{message.text}</div>
-                        <div className="assistant-actions">
-                          <button type="button" className="icon-btn" aria-label="Good response">
-                            <IconThumbsUp />
-                          </button>
-                          <button type="button" className="icon-btn" aria-label="Bad response">
-                            <IconThumbsDown />
-                          </button>
-                          <button type="button" className="icon-btn" aria-label="Copy" onClick={() => void copyText(message.text)}>
-                            <IconCopy />
-                          </button>
-                          <span className="ago">{formatRel(message.createdAt)}</span>
-                        </div>
-                      </article>
+                      <div key={message.id} className="assistant-turn">
+                        {groups.map((group, index) => {
+                          if (group.type === "tools") {
+                            return (
+                              <div key={`${message.id}-tools-${index}`} className="tool-stack">
+                                {group.tools.map((tool, toolIndex) => (
+                                  <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
+                                ))}
+                              </div>
+                            );
+                          }
+                          return (
+                            <article key={`${message.id}-text-${index}`} className="assistant-block">
+                              <div className="assistant-text">{group.text}</div>
+                              {group === lastText ? (
+                                <div className="assistant-actions">
+                                  <button type="button" className="icon-btn" aria-label="Good response">
+                                    <IconThumbsUp />
+                                  </button>
+                                  <button type="button" className="icon-btn" aria-label="Bad response">
+                                    <IconThumbsDown />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-btn"
+                                    aria-label="Copy"
+                                    onClick={() => void copyText(group.text)}
+                                  >
+                                    <IconCopy />
+                                  </button>
+                                  <span className="ago">{formatRel(message.createdAt)}</span>
+                                </div>
+                              ) : null}
+                            </article>
+                          );
+                        })}
+                      </div>
                     );
                   })}
                 </div>

@@ -834,6 +834,104 @@ button:disabled {
   font-size: 14.5px;
 }
 
+.assistant-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool {
+  margin: 0;
+  padding: 8px 12px;
+  background: #f4f4f1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: #374151;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.tool.err {
+  color: var(--red);
+  border-color: #fecdca;
+  background: #fef3f2;
+}
+
+.tool.run {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
+.tool.subagent {
+  border-left: 3px solid #93c5fd;
+}
+
+.tool summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.tool summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool .cmd {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.subagent-steps {
+  margin: 8px 0 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subagent-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.subagent-steps li.run {
+  color: #1d4ed8;
+}
+
+.subagent-steps li.err {
+  color: var(--red);
+}
+
+.subagent-more {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.tool pre {
+  margin: 8px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px;
+  background: #fff;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .assistant-actions {
   display: flex;
   align-items: center;
