@@ -9,7 +9,7 @@ export async function waitForHttp(url: string, timeoutMs = 30_000): Promise<void
   while (Date.now() - start < timeoutMs) {
     try {
       const response = await fetch(url);
-      if (response.ok) {
+      if (response.status > 0) {
         return;
       }
     } catch {
