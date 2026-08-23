@@ -1,12 +1,20 @@
-import { app, BrowserWindow, Tray, Menu, Notification, dialog, shell, safeStorage, powerSaveBlocker } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, net, powerSaveBlocker, protocol, safeStorage, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createLeaseClient } from "../src/lease.ts";
-import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.ts";
-import { hashForRun, runIdFromDeepLink } from "../src/protocol.ts";
-import { spawnDeskWorker } from "../src/spawn.ts";
-import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap } from "../src/workspace.ts";
+import { pathToFileURL } from "node:url";
+import { createLeaseClient } from "../src/lease.js";
+import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.js";
+import { hashForRun, runIdFromDeepLink } from "../src/protocol.js";
+import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
+import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap } from "../src/workspace.js";
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "neo-desk",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
+  },
+]);
 
 type DeskTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?: string };
 
@@ -71,19 +79,53 @@ function rememberFolder(folder: string): void {
   writeJson(stateFile("folders.json"), [...new Set([...authorizedFolders(), folder])]);
 }
 
+function webDist(): string {
+  return path.join(deskRepoRoot(), "packages/web/dist");
+}
+
+function registerRendererProtocol(): void {
+  protocol.handle("neo-desk", (request) => {
+    const dist = webDist();
+    const url = new URL(request.url);
+    let relative = decodeURIComponent(url.pathname || "/");
+    if (relative === "/" || relative === "") {
+      relative = "/index.html";
+    }
+    const file = path.normalize(path.join(dist, relative));
+    if (!file.startsWith(dist)) {
+      return new Response("forbidden", { status: 403 });
+    }
+    const target = existsSync(file) ? file : path.join(dist, "index.html");
+    return net.fetch(pathToFileURL(target).href);
+  });
+}
+
+function rendererEntry(): string {
+  if (process.env.NEO_DESK_URL) {
+    return deskRendererUrl();
+  }
+  if (existsSync(path.join(webDist(), "index.html"))) {
+    return "neo-desk://app/";
+  }
+  return rendererUrl;
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     title: "Neo Desk",
+    autoHideMenuBar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
     },
   });
-  void mainWindow.loadURL(rendererUrl);
+  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  void mainWindow.loadURL(rendererEntry());
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -240,6 +282,9 @@ app.whenReady().then(() => {
     deskId = saved.deskId ?? "";
     deskToken = saved.token ? decodeSecret(saved.token) : "";
   }
+  if (existsSync(path.join(webDist(), "index.html"))) {
+    registerRendererProtocol();
+  }
   wireIpc();
   createWindow();
   if (process.platform !== "linux" || process.env.NEO_DESK_TRAY === "1") {
@@ -263,7 +308,7 @@ app.whenReady().then(() => {
 app.on("open-url", (_event, url) => {
   const runId = runIdFromDeepLink(url);
   if (runId && mainWindow) {
-    void mainWindow.loadURL(`${rendererUrl}/${hashForRun(runId)}`);
+    void mainWindow.loadURL(`${rendererEntry().replace(/\/$/, "")}/${hashForRun(runId)}`);
     mainWindow.webContents.send("desk:deep-link", url);
   }
 });

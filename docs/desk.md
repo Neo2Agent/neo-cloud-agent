@@ -26,8 +26,9 @@
 5. 掉线走现有 `detachOrQueue`，不标 ERROR。
 
 ```bash
-pnpm --filter @neo-cloud-agent/desk start
-# 浏览器预览（无 Electron）：Desk :8082，Web 仍是 :8080
+pnpm --filter @neo-cloud-agent/desk compile
+NEO_CONTROL_PLANE_URL=http://127.0.0.1:8080 pnpm --filter @neo-cloud-agent/desk start
+# 浏览器预览只是兜底（无图形会话时）：Desk :8082
 pnpm --filter @neo-cloud-agent/desk preview
 ```
 

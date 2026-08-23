@@ -1,8 +1,13 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const apiBase = (process.env.NEO_CONTROL_PLANE_URL || process.env.CONTROL_PLANE_URL || "http://127.0.0.1:8080").replace(
+  /\/$/,
+  "",
+);
+
 contextBridge.exposeInMainWorld("neoDesk", {
   platform: process.platform,
-  apiBase: "",
+  apiBase,
   canRunLocal: true,
   getToken: () => ipcRenderer.invoke("desk:getToken"),
   setToken: (token) => ipcRenderer.invoke("desk:setToken", token),

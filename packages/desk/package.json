@@ -8,9 +8,13 @@
     "start": "electron app/main.cjs",
     "dev": "electron app/main.cjs",
     "preview": "tsx src/serve.ts",
+    "compile": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@neo-cloud-agent/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^43.4.1"
   }
 }
