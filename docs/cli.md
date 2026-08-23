@@ -22,7 +22,7 @@ neo 的拆法和 Cloud Agent 对齐，不和本地 CLI 对齐：
 三条故意不做的产品：
 
 1. **本机 pi CLI**（对标 `agent -p` 改 cwd）。云端 worker 读的是工作区 `AGENTS.md` / skills / hooks，不是开发者家里的 `~/.pi`。本机再嵌一份 pi 是另一个产品，语义不能和 `neo run` 混用。
-2. **Worker 桥**（对标 `agent worker start`）。loop 在云、工具打开发者机器。要长期通道和另一套信任模型，不是把现有能力 CLI 化。
+2. **Worker 桥**（对标 `agent worker start`）。loop 在云、工具打开发者机器。要长期通道和另一套信任模型，不是把现有能力 CLI 化。「在本机执行」这条需求改由桌面端承接，且不拆 loop 与工具，见 [desk.md](./desk.md) §2.3。
 3. **ACP / 本机 sandbox / `--yolo`。** 那些是「工具打在用户机器上」才需要的审批面。neo 的边界是 VM + JWT + egress + 受控 git。
 
 ---

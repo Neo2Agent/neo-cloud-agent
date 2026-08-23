@@ -33,6 +33,8 @@ neo-cloud-agent/
 | CLI | `pnpm neo`，见 [docs/cli.md](docs/cli.md) |
 | 云工具 | `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` |
 
+桌面端还没落地，设计（UI 与本地/云端切换对齐 Cursor、Electron 选型）见 [docs/desk.md](docs/desk.md)。
+
 ```mermaid
 flowchart LR
   User --> API
