@@ -14,8 +14,8 @@
 | --- | --- |
 | P0-A | `KillMode=process`；worker 按工具次数 / 时间增量备份 session；`detachOrQueue` 把未完成 prompt 放回 inbox |
 | P0-B | `packages/desk` Electron 壳（`contextIsolation` + `safeStorage` + 托盘/通知/深链 `neo://runs/<id>`） |
-| P1 | 侧栏置顶/分组；对话 / Diff / 终端 / 产物标签；composer 上的目标 / 模式 / 模型；`Ctrl+Enter` 排队 |
-| P2 | `/v1/desks` 登记 + lease/claim；`DeskRuntime`；`POST /v1/runs` 的 `target`；本机 → 云端 handoff（干净 clone，未提交改动不跟随） |
+| P1 | 侧栏置顶/分组；对话 / Diff / 终端 / 产物标签；composer 上的目标 / 模式 / 模型；`Ctrl+Enter` 排队；Diff 页可提交；`Cmd+W` 关会话 |
+| P2 | `/v1/desks` 登记 + lease/claim；`DeskRuntime`；`POST /v1/runs` 的 `target`；双向 handoff（干净 clone，UI 写明未提交改动不跟随） |
 
 ## 本机 Run 路径
 

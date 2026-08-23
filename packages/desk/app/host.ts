@@ -126,6 +126,8 @@ async function startLeaseLoop(): Promise<void> {
     deskId = registered.deskId;
     deskToken = registered.token;
     writeJson(stateFile("desk.json"), { deskId, token: encodeSecret(deskToken) });
+    const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
+    writeJson(stateFile("target.json"), { ...saved, deskId });
   }
   leaseLoop = true;
   const tick = async () => {
@@ -211,9 +213,12 @@ function wireIpc(): void {
     writeJson(stateFile("target.json"), target);
     return folder;
   });
-  ipcMain.handle("desk:getTarget", () => readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" }));
+  ipcMain.handle("desk:getTarget", () => {
+    const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
+    return { ...saved, deskId: saved.deskId || deskId || undefined };
+  });
   ipcMain.handle("desk:setTarget", (_event, target: DeskTarget) => {
-    writeJson(stateFile("target.json"), target);
+    writeJson(stateFile("target.json"), { ...target, deskId: target.deskId || deskId || undefined });
   });
   ipcMain.handle("desk:notify", (_event, title: string, body: string) => {
     new Notification({ title, body }).show();

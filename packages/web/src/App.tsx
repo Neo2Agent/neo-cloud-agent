@@ -10,6 +10,7 @@ import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
+import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
 import { cycle, shortcutAction } from "./shortcuts";
 import { parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
@@ -178,6 +179,9 @@ export function App() {
   const [artifacts, setArtifacts] = useState<Array<{ name: string; url?: string; contentType?: string }>>([]);
   const [artifactsError, setArtifactsError] = useState("");
   const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [commitError, setCommitError] = useState("");
+  const [handoffError, setHandoffError] = useState("");
   const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects">(initialMainTab);
   const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
@@ -507,6 +511,7 @@ export function App() {
       const run = await readJson<Run>(runRes);
       if (openGenRef.current !== gen) return false;
       setCurrentRun(run);
+      writeLastRunId(id);
       const projectId = run.projectId ?? "";
       if (projectId) {
         setActiveProject((prev) => (prev?.id === projectId ? prev : { id: projectId, name: prev?.name ?? "项目对话" }));
@@ -601,7 +606,7 @@ export function App() {
       await Promise.all(refreshShell);
       return;
     }
-    const match = hashRunId();
+    const match = hashRunId() || readLastRunId();
     await Promise.all([
       refreshRuns(),
       match ? openRun(match) : Promise.resolve(),
@@ -784,6 +789,71 @@ export function App() {
     })();
   }, [patchRun, runId]);
 
+  const commitWorkspace = useCallback(
+    async (message: string) => {
+      if (!runId) return;
+      setCommitting(true);
+      setCommitError("");
+      try {
+        const body = await readJson<{ error?: string }>(
+          await api(tokenRef.current, `/v1/runs/${runId}/commit`, {
+            method: "POST",
+            body: JSON.stringify({ message }),
+          }),
+        );
+        if (body.error) throw new Error(body.error);
+        setDiffLoading(true);
+        const response = await api(tokenRef.current, `/v1/runs/${runId}/diff`);
+        const diff = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
+        if (!response.ok) throw new Error(diff.error || "读取 diff 失败");
+        setDiffStat(diff.stat ?? "");
+        setDiffPatch(diff.patch ?? "");
+      } catch (error) {
+        setCommitError(error instanceof Error ? error.message : "提交失败");
+      } finally {
+        setCommitting(false);
+        setDiffLoading(false);
+      }
+    },
+    [runId],
+  );
+
+  const handoffCurrent = useCallback(
+    async (kind: "cloud" | "desk") => {
+      if (!runId) return;
+      const warning = "未提交的改动不会带过去，先 commit 或 stash。确定？";
+      if (!window.confirm(kind === "cloud" ? `切到云端。${warning}` : `切到本机。${warning}`)) {
+        return;
+      }
+      setHandoffError("");
+      try {
+        const target =
+          kind === "desk"
+            ? { loop: "desk" as const, tools: "desk" as const, deskId: deskTarget.deskId }
+            : { loop: "cloud" as const, tools: "cloud" as const };
+        const body = await readJson<Run & { error?: string }>(
+          await api(tokenRef.current, `/v1/runs/${runId}/handoff`, {
+            method: "POST",
+            body: JSON.stringify({ target }),
+          }),
+        );
+        if (body.error) throw new Error(body.error);
+        setCurrentRun(body);
+        setRuns((prev) => prev.map((item) => (item.id === body.id ? { ...item, ...body } : item)));
+      } catch (error) {
+        setHandoffError(error instanceof Error ? error.message : "移交失败");
+      }
+    },
+    [deskTarget.deskId, runId],
+  );
+
+  const applyTarget = useCallback((next: DeskTarget) => {
+    setDeskTarget(next);
+    if (next.folder) setDeskFolder(next.folder);
+    writeLastTarget(next);
+    void deskBridge()?.setTarget(next);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -797,7 +867,7 @@ export function App() {
         setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
         const saved = (await hydrateDeskToken()) || tokenRef.current;
         persistToken(saved);
-        const remembered = await deskBridge()?.getTarget().catch(() => undefined);
+        const remembered = (await deskBridge()?.getTarget().catch(() => undefined)) ?? readLastTarget();
         if (remembered) {
           setDeskTarget(remembered);
           if (remembered.folder) setDeskFolder(remembered.folder);
@@ -889,6 +959,10 @@ export function App() {
       if (action === "new-chat") {
         setActiveProject(null);
         setMainTab("chat");
+        resetComposer();
+        return;
+      }
+      if (action === "close") {
         resetComposer();
         return;
       }
@@ -1232,6 +1306,27 @@ export function App() {
                   </button>
                 ))}
               </nav>
+              {runId && currentRun?.executionTarget?.loop === "desk" ? (
+                <button
+                  className="ghost"
+                  type="button"
+                  title="未提交的改动不会带过去，先 commit 或 stash"
+                  onClick={() => void handoffCurrent("cloud")}
+                >
+                  切到云端
+                </button>
+              ) : null}
+              {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
+                <button
+                  className="ghost"
+                  type="button"
+                  title="未提交的改动不会带过去，先 commit 或 stash"
+                  onClick={() => void handoffCurrent("desk")}
+                >
+                  切到本机
+                </button>
+              ) : null}
+              {handoffError ? <span className="setup err">{handoffError}</span> : null}
               <button
                 className="ghost"
                 id="archive-run"
@@ -1453,7 +1548,16 @@ export function App() {
                 }}
               />
             ) : sessionTab === "diff" ? (
-              <DiffPanel open loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
+              <DiffPanel
+                open
+                loading={diffLoading}
+                error={diffError}
+                stat={diffStat}
+                patch={diffPatch}
+                committing={committing}
+                commitError={commitError}
+                onCommit={(message) => void commitWorkspace(message)}
+              />
             ) : sessionTab === "terminal" ? (
               <TerminalPanel open loading={diagLoading} error={diagError} logs={diagLogs} />
             ) : sessionTab === "artifacts" ? (
@@ -1523,12 +1627,11 @@ export function App() {
               folder={deskFolder}
               mode={agentMode}
               model={selectedModel}
-              onTarget={setDeskTarget}
+              onTarget={applyTarget}
               onPickFolder={() => {
                 void deskBridge()?.pickFolder().then((folder) => {
                   if (folder) {
-                    setDeskFolder(folder);
-                    setDeskTarget((prev) => ({ ...prev, kind: "desk", folder }));
+                    applyTarget({ ...deskTarget, kind: "desk", folder });
                   }
                 });
               }}

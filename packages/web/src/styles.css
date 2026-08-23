@@ -1031,6 +1031,19 @@ button.stop:hover {
   background: var(--bg-2);
 }
 
+.diff-commit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.diff-commit input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
 .file-tree-bar,
 .diff-panel strong {
   display: flex;
