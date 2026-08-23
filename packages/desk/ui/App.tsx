@@ -868,11 +868,11 @@ export function App() {
           <div className="profile">
             <span className="avatar">{initials(user)}</span>
             <span className="profile-name">{user}</span>
+            {remoteApiHost ? <span className="prod-tag">生产</span> : null}
             <button type="button" className="icon-btn" aria-label="Settings" onClick={openSettings}>
               <IconGear />
             </button>
           </div>
-          {remoteApiHost ? <p className="rail-api">线上 {remoteApiHost}</p> : null}
         </div>
       </aside>
 

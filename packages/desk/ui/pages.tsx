@@ -3,10 +3,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import {
-  COMPOSER_CHROME,
-  COMPOSER_FOLLOW_MIN,
   COMPOSER_MAX_PX,
-  composerBoxWidth,
   composerMaxWidth,
   composerTextareaHeight,
 } from "../src/composer-size";
@@ -552,7 +549,6 @@ export function ChatComposer({
   const label = selected || "Add Models";
   const boxRef = useRef<HTMLDivElement>(null);
   const [maxWidth, setMaxWidth] = useState(COMPOSER_MAX_PX);
-  const [width, setWidth] = useState(home ? COMPOSER_MAX_PX : COMPOSER_FOLLOW_MIN);
 
   useLayoutEffect(() => {
     const stage = boxRef.current?.closest(".stage") ?? boxRef.current?.closest(".composer-wrap");
@@ -566,26 +562,13 @@ export function ChatComposer({
 
   useLayoutEffect(() => {
     const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
-    const font = ta ? getComputedStyle(ta).font : "14.5px ui-sans-serif, sans-serif";
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const textWidth = ctx ? ((ctx.font = font), ctx.measureText(prompt).width) : prompt.length * 14;
-    setWidth(composerBoxWidth({ home: Boolean(home), measuredText: textWidth, maxWidth, chrome: COMPOSER_CHROME }));
-  }, [home, maxWidth, prompt, taRef]);
-
-  useLayoutEffect(() => {
-    const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${composerTextareaHeight(ta.scrollHeight, Boolean(home))}px`;
   }, [home, prompt, taRef]);
 
   return (
-    <div
-      ref={boxRef}
-      className={`composer composer-stack${home ? " home" : ""}`}
-      style={home ? { width: "100%", maxWidth } : { width, maxWidth }}
-    >
+    <div ref={boxRef} className={`composer composer-stack${home ? " home" : ""}`} style={{ width: "100%", maxWidth }}>
       <textarea
         ref={taRef}
         value={prompt}

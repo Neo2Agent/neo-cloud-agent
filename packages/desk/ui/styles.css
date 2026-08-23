@@ -240,6 +240,14 @@ button:disabled {
   min-height: 0;
   overflow: auto;
   padding: 2px 8px 12px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.repo-tree::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .repo-group {
@@ -411,8 +419,8 @@ button:disabled {
 
 .rail-foot {
   margin-top: auto;
-  padding: 10px 10px 12px;
-  border-top: 1px solid var(--line);
+  padding: 8px 10px 10px;
+  border-top: 0;
 }
 
 .profile {
@@ -433,19 +441,27 @@ button:disabled {
   flex: none;
 }
 
-.rail-api {
-  margin: 6px 2px 0;
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .profile-name {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+}
+
+.prod-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e8e8e4;
+  color: #5c5c58;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.profile .icon-btn {
+  margin-left: auto;
 }
 
 .stage {
@@ -768,6 +784,14 @@ button:disabled {
   overflow: auto;
   overscroll-behavior: contain;
   padding: 8px 0 20px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.feed::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .feed > * {
@@ -990,9 +1014,9 @@ button:disabled {
   position: sticky;
   bottom: 0;
   z-index: 3;
-  padding: 8px 24px 10px;
+  padding: 8px 24px 16px;
   background: var(--stage);
-  border-top: 1px solid var(--line);
+  border-top: 0;
 }
 
 .composer-wrap.home-wrap {
@@ -1080,13 +1104,15 @@ button:disabled {
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
+  width: 100%;
   min-width: 320px;
+  min-height: 132px;
   margin: 0 auto;
-  padding: 10px 12px 8px;
+  padding: 16px 16px 12px;
   background: #fff;
   border: 1px solid #e8e8e4;
-  border-radius: 14px;
-  box-shadow: none;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(17, 17, 16, 0.04);
   transition: width 0.12s ease;
 }
 
@@ -1374,6 +1400,10 @@ button:disabled {
   width: 32px;
   height: 32px;
   flex: none;
+}
+
+.composer.composer-stack textarea {
+  min-height: 72px;
 }
 
 .composer textarea {

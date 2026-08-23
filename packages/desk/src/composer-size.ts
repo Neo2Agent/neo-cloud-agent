@@ -4,7 +4,7 @@ export const COMPOSER_FOLLOW_MIN = 400;
 export const COMPOSER_CHROME = 96;
 export const COMPOSER_HOME_TEXTAREA_MIN = 128;
 export const COMPOSER_HOME_TEXTAREA_MAX = 240;
-export const COMPOSER_FOLLOW_TEXTAREA_MIN = 22;
+export const COMPOSER_FOLLOW_TEXTAREA_MIN = 72;
 export const COMPOSER_FOLLOW_TEXTAREA_MAX = 160;
 
 export function composerMaxWidth(stageWidth: number): number {
@@ -13,16 +13,13 @@ export function composerMaxWidth(stageWidth: number): number {
 }
 
 export function composerBoxWidth(opts: {
-  home: boolean;
-  measuredText: number;
+  home?: boolean;
+  measuredText?: number;
   maxWidth: number;
   chrome?: number;
   followMin?: number;
 }): number {
-  if (opts.home) return opts.maxWidth;
-  const chrome = opts.chrome ?? COMPOSER_CHROME;
-  const followMin = opts.followMin ?? COMPOSER_FOLLOW_MIN;
-  return Math.min(opts.maxWidth, Math.max(followMin, Math.ceil(opts.measuredText) + chrome));
+  return opts.maxWidth;
 }
 
 export function composerTextareaHeight(scrollHeight: number, home: boolean): number {
