@@ -1,8 +1,11 @@
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import type { FormEvent, KeyboardEvent, ReactNode, Ref } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
+
+const COMPOSER_MIN = 400;
+const COMPOSER_MAX = 680;
 
 export type ContextMenuId = "repo" | "target" | null;
 export type RepoChoice = { url: string; label: string };
@@ -138,7 +141,7 @@ export function SearchPalette({
   return (
     <div className="palette-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="palette"
+        className="palette palette-float"
         role="dialog"
         aria-modal="true"
         aria-label="Search"
@@ -542,15 +545,35 @@ export function ChatComposer({
   home?: boolean;
 }) {
   const label = selected || "Add Models";
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState(COMPOSER_MIN);
+
+  useLayoutEffect(() => {
+    const node = measureRef.current;
+    if (!node) return;
+    const grown = Math.ceil(node.getBoundingClientRect().width) + 72;
+    setWidth(Math.min(COMPOSER_MAX, Math.max(COMPOSER_MIN, grown)));
+  }, [prompt]);
+
+  useLayoutEffect(() => {
+    const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(128, Math.max(22, ta.scrollHeight))}px`;
+  }, [prompt, taRef]);
+
   return (
-    <div className={`composer composer-stack${home ? " home" : ""}`}>
+    <div className={`composer composer-stack${home ? " home" : ""}`} style={{ width }}>
+      <span className="composer-measure" ref={measureRef}>
+        {prompt || " "}
+      </span>
       <textarea
         ref={taRef}
         value={prompt}
         placeholder={placeholder}
         onChange={(event) => setPrompt(event.target.value)}
         onKeyDown={onComposerKey}
-        rows={home ? 4 : 1}
+        rows={1}
       />
       <div className="composer-tools">
         <div className="model-wrap">
