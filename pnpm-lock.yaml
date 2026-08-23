@@ -45,6 +45,12 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
 
+  packages/desk:
+    dependencies:
+      '@neo-cloud-agent/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/extensions:
     dependencies:
       '@neo-cloud-agent/contracts':
