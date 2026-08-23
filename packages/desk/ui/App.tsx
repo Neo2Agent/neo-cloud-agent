@@ -2,22 +2,47 @@ import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
+import {
+  IconAddRepo,
+  IconAutomations,
+  IconBack,
+  IconChevron,
+  IconCloud,
+  IconCopy,
+  IconCustomize,
+  IconForward,
+  IconGear,
+  IconMic,
+  IconNewChat,
+  IconPeople,
+  IconPlus,
+  IconSearch,
+  IconSlack,
+  IconSort,
+  IconSync,
+  IconThumbsDown,
+  IconThumbsUp,
+} from "./icons";
 
-type NavId = "chats" | "search" | "automations";
-type ContextTab = "overview" | "files" | "terminal" | "diff";
+type NavId = "chats" | "search" | "automations" | "customize";
 
 function preview(text: string, n = 56): string {
-  return (text || "新对话").replace(/\s+/g, " ").slice(0, n);
+  return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
 }
 
 function repoLabel(url?: string): string {
-  if (!url) return "workspace";
-  const clean = url.replace(/\/$/, "").replace(/\.git$/, "");
-  const parts = clean.split("/").filter(Boolean);
-  return parts.slice(-2).join(" / ") || clean;
+  if (!url) return "Inbox";
+  try {
+    const path = new URL(url).pathname.replace(/\.git$/, "");
+    const name = path.split("/").filter(Boolean).pop();
+    return name || url;
+  } catch {
+    const clean = url.replace(/\/$/, "").replace(/\.git$/, "");
+    return clean.split("/").filter(Boolean).pop() || clean;
+  }
 }
 
 function parseSse(raw: string): RunEvent | null {
@@ -30,8 +55,51 @@ function parseSse(raw: string): RunEvent | null {
 }
 
 function initials(value: string): string {
-  const part = value.trim().split(/[@\s./]+/)[0] || "N";
-  return part.slice(0, 1).toUpperCase();
+  const parts = value.trim().split(/[@\s./_-]+/).filter(Boolean);
+  if (parts.length === 0) return "N";
+  if (parts.length === 1) return parts[0]!.slice(0, 1).toUpperCase();
+  return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
+}
+
+function formatRel(iso?: string | null): string {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const min = Math.round(ms / 60_000);
+  if (min < 1) return "now";
+  if (min < 60) return `${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h`;
+  return `${Math.round(hr / 24)}d`;
+}
+
+function isCloudRun(run?: Run | null): boolean {
+  return run?.executionTarget?.loop !== "desk";
+}
+
+function isThought(message: TranscriptMessage): boolean {
+  const blob = `${message.kind ?? ""} ${message.text}`.toLowerCase();
+  return blob.includes("thought") || blob.includes("thinking") || blob.includes("reasoning");
+}
+
+function isStatus(message: TranscriptMessage): boolean {
+  if (message.role !== "setup") return false;
+  return !isThought(message);
+}
+
+function looksLikeCi(text: string): boolean {
+  return /\bci\b|checks completed|github actions|all \d+ (ci )?check/i.test(text);
+}
+
+function diffStats(text: string): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) continue;
+    if (line.startsWith("+")) added += 1;
+    else if (line.startsWith("-")) removed += 1;
+  }
+  return { added, removed };
 }
 
 export function App() {
@@ -51,13 +119,17 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [query, setQuery] = useState("");
   const [nav, setNav] = useState<NavId>("chats");
-  const [contextTab, setContextTab] = useState<ContextTab>("overview");
   const [target, setTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [folder, setFolder] = useState("");
   const [mode, setMode] = useState<"agent" | "ask">("agent");
-  const [contextText, setContextText] = useState("");
+  const [model, setModel] = useState("Extra High Fast");
+  const [repoOpen, setRepoOpen] = useState<Record<string, boolean>>({});
+  const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
+  const [copied, setCopied] = useState("");
   const tokenRef = useRef("");
   const sourceRef = useRef<EventSource | null>(null);
+  const feedRef = useRef<HTMLDivElement | null>(null);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
   const canRunLocal = Boolean(deskBridge()?.canRunLocal);
 
   const persist = useCallback((next: string) => {
@@ -102,10 +174,10 @@ export function App() {
     async (id: string) => {
       setRunId(id);
       setNav("chats");
-      setContextTab("overview");
-      const [runRes, transcriptRes] = await Promise.all([
+      const [runRes, transcriptRes, diffRes] = await Promise.all([
         api(tokenRef.current, `/v1/runs/${id}`),
         api(tokenRef.current, `/v1/runs/${id}/transcript?limit=80`),
+        api(tokenRef.current, `/v1/runs/${id}/diff`),
       ]);
       if (!runRes.ok) return;
       const run = await readJson<Run>(runRes);
@@ -116,6 +188,11 @@ export function App() {
       } else {
         setMessages([]);
       }
+      if (diffRes.ok) {
+        setDiff(diffStats(await diffRes.text()));
+      } else {
+        setDiff(null);
+      }
       listen(id);
     },
     [listen],
@@ -124,8 +201,8 @@ export function App() {
   const finishLogin = useCallback(async () => {
     const me = await api(tokenRef.current, "/v1/me");
     if (!me.ok) throw new Error("unauthorized");
-    const body = await readJson<{ user?: { email?: string } }>(me);
-    setUser(body.user?.email ?? "desk");
+    const body = await readJson<{ user?: { email?: string; username?: string } }>(me);
+    setUser(body.user?.username || body.user?.email || "desk");
     setAuthed(true);
     const desk = deskBridge();
     if (desk) {
@@ -221,28 +298,9 @@ export function App() {
     void deskBridge()?.setTarget(next);
   };
 
-  const loadContext = useCallback(
-    async (tab: ContextTab) => {
-      if (!runId || tab === "overview") {
-        setContextText("");
-        return;
-      }
-      const path =
-        tab === "files"
-          ? `/v1/runs/${runId}/files`
-          : tab === "terminal"
-            ? `/v1/runs/${runId}/diagnostics`
-            : `/v1/runs/${runId}/diff`;
-      const response = await api(tokenRef.current, path);
-      const body = await response.text();
-      setContextText(body.slice(0, 4000) || "暂无内容");
-    },
-    [runId],
-  );
-
   useEffect(() => {
-    void loadContext(contextTab);
-  }, [contextTab, loadContext]);
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
+  }, [messages, runId]);
 
   const visible = displayTranscriptMessages(messages);
   const filtered = useMemo(() => {
@@ -250,162 +308,186 @@ export function App() {
     if (!q) return runs;
     return runs.filter((run) => run.prompt.toLowerCase().includes(q) || run.id.toLowerCase().includes(q));
   }, [query, runs]);
-  const repo = current?.repoUrls?.[0] || runs[0]?.repoUrls?.[0] || "";
-  const prs = current?.pullRequests?.length
-    ? current.pullRequests
-    : runs.flatMap((run) => run.pullRequests ?? []).slice(0, 6);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, Run[]>();
+    for (const run of filtered) {
+      const key = repoLabel(run.repoUrls[0]);
+      const list = map.get(key) ?? [];
+      list.push(run);
+      map.set(key, list);
+    }
+    return [...map.entries()];
+  }, [filtered]);
+
+  useEffect(() => {
+    setRepoOpen((cur) => {
+      const next = { ...cur };
+      for (const [name] of grouped) {
+        if (next[name] === undefined) next[name] = true;
+      }
+      return next;
+    });
+  }, [grouped]);
 
   const newChat = () => {
     setRunId(null);
     setCurrent(null);
     setMessages([]);
+    setDiff(null);
     setNav("chats");
     sourceRef.current?.close();
+    requestAnimationFrame(() => taRef.current?.focus());
+  };
+
+  const startedSteps = 1 + (runs.length > 0 ? 1 : 0);
+  const title = current ? preview(current.prompt, 42) : "New Agent";
+  const branch = current?.branchName || "";
+  const statusPlace = current ? (isCloudRun(current) ? "Cloud" : "This Computer") : target.kind === "desk" ? "This Computer" : "Cloud";
+
+  const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void send();
+    }
+  };
+
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(text);
+      window.setTimeout(() => setCopied(""), 1500);
+    } catch {
+      setAuthError("复制失败");
+    }
   };
 
   if (!authed) {
     return (
-      <div className="shell">
-        <div className="menubar">
-          <span>Neo Desk</span>
-          <span className="muted">File</span>
-          <span className="muted">Edit</span>
-          <span className="muted">View</span>
-          <span className="muted">Help</span>
-        </div>
-        <main className="login">
-          <p className="eyebrow">Agents</p>
-          <h1>登录 Desk</h1>
-          <p className="muted">和 Web 共用控制面。布局按 Cursor Agents 三栏来。</p>
+      <div className="login-shell">
+        <form
+          className="login-card"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void login();
+          }}
+        >
+          <p className="login-kicker">Neo Desk</p>
+          <h1>Sign in</h1>
+          <p>表单故意留空。默认账号是 admin / 123456，和 Web 同一控制面。</p>
           <label>
-            账号
+            Username
             <input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
           </label>
           <label>
-            密码
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+            />
           </label>
           {authError ? <p className="error">{authError}</p> : null}
-          <button type="button" className="primary" disabled={authBusy} onClick={() => void login()}>
-            {authBusy ? "登录中…" : "Continue"}
+          <button type="submit" disabled={authBusy}>
+            {authBusy ? "Signing in…" : "Continue"}
           </button>
-        </main>
+        </form>
       </div>
     );
   }
 
   return (
-    <div className="shell">
-      <div className="menubar">
-        <span className="brand">Neo Desk</span>
-        <span>File</span>
-        <span>Edit</span>
-        <span>View</span>
-        <span>Help</span>
-        <strong className="title">{current ? preview(current.prompt, 40) : "New agent"}</strong>
-      </div>
-      <div className="columns">
-        <aside className="left">
-          <button type="button" className="new-chat" onClick={newChat}>
-            + New chat
+    <div className="agents-app">
+      <aside className="rail">
+        <div className="rail-history">
+          <button type="button" className="icon-btn" aria-label="Back" disabled>
+            <IconBack />
           </button>
-          <nav>
-            <button type="button" className={nav === "search" ? "on" : ""} onClick={() => setNav("search")}>
-              Search
+          <button type="button" className="icon-btn" aria-label="Forward" disabled>
+            <IconForward />
+          </button>
+        </div>
+
+        <nav className="rail-nav">
+          <button type="button" className="rail-item" onClick={newChat}>
+            <span className="rail-icon">
+              <IconNewChat />
+            </span>
+            New Chat
+          </button>
+          <button type="button" className={`rail-item${nav === "search" ? " on" : ""}`} onClick={() => setNav("search")}>
+            <span className="rail-icon">
+              <IconSearch />
+            </span>
+            Search
+          </button>
+          <button
+            type="button"
+            className={`rail-item${nav === "automations" ? " on" : ""}`}
+            onClick={() => setNav("automations")}
+          >
+            <span className="rail-icon">
+              <IconAutomations />
+            </span>
+            Automations
+          </button>
+          <button
+            type="button"
+            className={`rail-item${nav === "customize" ? " on" : ""}`}
+            onClick={() => setNav("customize")}
+          >
+            <span className="rail-icon">
+              <IconCustomize />
+            </span>
+            Customize
+          </button>
+        </nav>
+
+        <div className="repo-head">
+          <span>Repositories</span>
+          <div className="repo-head-actions">
+            <button type="button" className="icon-btn" aria-label="Filter repositories" onClick={() => setNav("search")}>
+              <IconSort />
             </button>
-            <button type="button" className={nav === "automations" ? "on" : ""} onClick={() => setNav("automations")}>
-              Automations
+            <button type="button" className="icon-btn" aria-label="Add repository" onClick={newChat}>
+              <IconAddRepo />
             </button>
-            <button type="button" className={nav === "chats" ? "on" : ""} onClick={() => setNav("chats")}>
-              Agents
-            </button>
-          </nav>
-          {nav === "search" ? (
-            <input className="search" value={query} placeholder="Search agents" onChange={(event) => setQuery(event.target.value)} />
-          ) : null}
-          <p className="section">Repositories</p>
-          <div className="repo-pill">{repoLabel(repo)}</div>
-          <ul className="chats">
-            {(nav === "automations" ? [] : filtered).map((run) => (
-              <li key={run.id}>
-                <button type="button" className={run.id === runId ? "on" : ""} onClick={() => void openRun(run.id)}>
-                  <strong>{preview(run.prompt, 36)}</strong>
-                  <em>
-                    {run.executionTarget?.loop === "desk" ? "This Computer" : "Cloud"} · {run.status}
-                  </em>
-                </button>
-              </li>
-            ))}
-          </ul>
-          {nav === "automations" ? (
-            <ul className="chats">
-              {automations.map((item) => (
-                <li key={item.id}>
-                  <button type="button">
-                    <strong>{item.name || preview(item.prompt, 36)}</strong>
-                    <em>{item.enabled ? "On" : "Off"} · {item.schedule.kind}</em>
-                  </button>
-                </li>
-              ))}
-              {automations.length === 0 ? <li className="muted pad">还没有定时任务</li> : null}
-            </ul>
-          ) : null}
-          <div className="left-foot">
-            <div className="avatar">{initials(user)}</div>
-            <div>
-              <strong>{user}</strong>
-              <em>Desk · {canRunLocal ? "This Computer ready" : "Cloud only"}</em>
-            </div>
           </div>
-        </aside>
-        <main className="center">
-          <header className="center-head">
-            <h1>{current ? preview(current.prompt, 64) : "Ask the agent to work this repo"}</h1>
-            {current ? (
-              <p className="muted">
-                {current.branchName || "no branch"} · {current.status}
-              </p>
-            ) : (
-              <p className="muted">Follow-ups stay on this thread. Uncommitted files do not follow a handoff.</p>
-            )}
-          </header>
-          <section className="thread">
-            {visible.length === 0 ? <p className="empty">Send a task to start this agent.</p> : null}
-            {visible.map((message) => (
-              <article key={message.id} data-role={message.role}>
-                <div className="who">{message.role === "user" ? initials(user) : "N"}</div>
-                <div className="bubble">
-                  <span>{message.role}</span>
-                  <pre>{message.text}</pre>
-                </div>
-              </article>
-            ))}
-          </section>
-          <footer className="composer">
-            <textarea
-              value={prompt}
-              placeholder={runId ? "Send follow-up" : "Describe a task. Enter to send."}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void send();
-                }
-              }}
+        </div>
+
+        <div className="repo-tree">
+          {nav === "search" ? (
+            <input
+              className="search"
+              value={query}
+              placeholder="Search agents"
+              onChange={(event) => setQuery(event.target.value)}
+              autoFocus
             />
-            <div className="composer-row">
-              <select value={target.kind} onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}>
-                <option value="cloud">Cloud</option>
-                <option value="desk" disabled={!canRunLocal}>
-                  {canRunLocal ? "This Computer" : "This Computer (needs Electron)"}
-                </option>
-                <option value="remote" disabled>
-                  Remote SSH
-                </option>
-              </select>
+          ) : null}
+
+          {nav === "customize" ? (
+            <div className="customize">
+              <label>
+                Target
+                <select
+                  value={target.kind}
+                  onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}
+                >
+                  <option value="cloud">Cloud</option>
+                  <option value="desk" disabled={!canRunLocal}>
+                    {canRunLocal ? "This Computer" : "This Computer (needs Electron)"}
+                  </option>
+                  <option value="remote" disabled>
+                    Remote SSH
+                  </option>
+                </select>
+              </label>
               {target.kind === "desk" ? (
                 <button
                   type="button"
+                  className="folder-btn"
                   onClick={() => {
                     void deskBridge()
                       ?.pickFolder()
@@ -419,56 +501,221 @@ export function App() {
                   {folder || "Folder…"}
                 </button>
               ) : null}
-              <select value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")}>
-                <option value="agent">Agent</option>
-                <option value="ask">Ask</option>
-              </select>
-              <span className="grow" />
-              <button type="button" className="primary" disabled={sending || !prompt.trim()} onClick={() => void send()}>
-                {sending ? "Sending" : runId ? "Follow-up" : "Send"}
-              </button>
+              <label>
+                Mode
+                <select value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")}>
+                  <option value="agent">Agent</option>
+                  <option value="ask">Ask</option>
+                </select>
+              </label>
+              <p className="pane-note">Ask 只加提示前缀。Provider key 仍在 gateway。</p>
             </div>
-          </footer>
-        </main>
-        <aside className="right">
-          <p className="section">Project</p>
-          <h2>{repoLabel(repo)}</h2>
-          <div className="icon-row">
-            <button type="button" className={contextTab === "overview" ? "on" : ""} onClick={() => setContextTab("overview")}>
-              Overview
-            </button>
-            <button type="button" className={contextTab === "diff" ? "on" : ""} onClick={() => setContextTab("diff")}>
-              Diff
-            </button>
-            <button type="button" className={contextTab === "files" ? "on" : ""} onClick={() => setContextTab("files")}>
-              Files
-            </button>
-            <button type="button" className={contextTab === "terminal" ? "on" : ""} onClick={() => setContextTab("terminal")}>
-              Terminal
+          ) : nav === "automations" ? (
+            automations.length === 0 ? (
+              <p className="pane-note">还没有定时任务。Automations 走同一控制面。</p>
+            ) : (
+              automations.map((item) => (
+                <div key={item.id} className="chat-row static">
+                  <span className="chat-dot" />
+                  <span className="chat-title">{item.name || preview(item.prompt, 36)}</span>
+                  <span className="chat-meta">
+                    <span>{item.enabled ? "On" : "Off"}</span>
+                  </span>
+                </div>
+              ))
+            )
+          ) : grouped.length === 0 ? (
+            <p className="pane-note">{query ? "没有匹配的对话。" : "还没有对话。从 New Chat 开始。"}</p>
+          ) : (
+            grouped.map(([name, list]) => (
+              <div key={name} className="repo-group">
+                <button
+                  type="button"
+                  className="repo-folder"
+                  onClick={() => setRepoOpen((cur) => ({ ...cur, [name]: cur[name] === false }))}
+                >
+                  <IconChevron open={repoOpen[name] !== false} size={14} />
+                  <span>{name}</span>
+                </button>
+                {repoOpen[name] !== false
+                  ? list.map((run) => {
+                      const active = run.id === runId;
+                      return (
+                        <button
+                          key={run.id}
+                          type="button"
+                          className={`chat-row${active ? " active" : ""}`}
+                          onClick={() => void openRun(run.id)}
+                        >
+                          <span className={`chat-dot${active ? " on" : ""}`} />
+                          <span className="chat-title">{preview(run.prompt, 40)}</span>
+                          <span className="chat-meta">
+                            <IconPeople size={13} />
+                            {isCloudRun(run) ? <IconCloud size={13} /> : null}
+                            <span>{formatRel(run.updatedAt)}</span>
+                          </span>
+                        </button>
+                      );
+                    })
+                  : null}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="rail-foot">
+          <div className="getting-started">
+            <div className="gs-row">
+              <span>Getting Started</span>
+              <span className="gs-count">
+                {startedSteps}/3
+              </span>
+            </div>
+            <div className="gs-bar">
+              <i style={{ width: `${(startedSteps / 3) * 100}%` }} />
+            </div>
+            <span className="gs-dot" />
+          </div>
+          <button type="button" className="slack-btn" onClick={() => setNav("customize")}>
+            <IconSlack />
+            Connect Slack
+          </button>
+          <div className="profile">
+            <span className="avatar">{initials(user)}</span>
+            <span className="profile-name">{user}</span>
+            <button type="button" className="icon-btn" aria-label="Settings" onClick={() => setNav("customize")}>
+              <IconGear />
             </button>
           </div>
-          <p className="section">Pull requests</p>
-          <ul className="prs">
-            {prs.map((pr) => (
-              <li key={`${pr.url}-${pr.number}`}>
-                <strong>
-                  {pr.number ? `#${pr.number}` : "PR"} {pr.title || pr.branch}
-                </strong>
-                <em>{pr.draft ? "Draft" : "Open"}</em>
-              </li>
-            ))}
-            {prs.length === 0 ? <li className="muted">No pull requests yet</li> : null}
-          </ul>
-          {contextTab !== "overview" ? <pre className="context">{contextText || "Loading…"}</pre> : null}
-        </aside>
-      </div>
-      <footer className="statusbar">
-        <span>{current?.branchName || "cursor/desk-impl-916f"}</span>
-        <span className="dot" />
-        <span>{target.kind === "desk" ? "This Computer" : "Cloud"}</span>
-        <span className="grow" />
-        <span>{current?.status || "idle"}</span>
-      </footer>
+        </div>
+      </aside>
+
+      <main className="stage">
+        <header className="stage-head">
+          <h1>{title}</h1>
+          {!current || isCloudRun(current) ? <IconCloud /> : null}
+        </header>
+
+        <div className="feed" ref={feedRef}>
+          {!current && visible.length === 0 ? (
+            <div className="empty-copy">
+              <p>这是 Agents Window，不是完整编辑器。对话按仓库分组，右侧数据来自现有 /v1。</p>
+            </div>
+          ) : null}
+
+          {visible.map((message) => {
+            if (message.role === "user") {
+              return (
+                <article key={message.id} className="user-card">
+                  <div className="user-card-text">{message.text || current?.prompt}</div>
+                  {message.images?.length ? (
+                    <div className="thumbs">
+                      {message.images.map((image, index) => (
+                        <img key={`${message.id}-${index}`} src={`data:${image.mediaType};base64,${image.data}`} alt="" />
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            }
+            if (isThought(message)) {
+              return (
+                <details key={message.id} className="thought">
+                  <summary>Thought briefly.</summary>
+                  <p>{message.text}</p>
+                </details>
+              );
+            }
+            if (isStatus(message) || looksLikeCi(message.text)) {
+              return (
+                <div key={message.id} className={`status-line${looksLikeCi(message.text) ? " ok" : ""}`}>
+                  <span />
+                  <p>{message.text}</p>
+                </div>
+              );
+            }
+            return (
+              <article key={message.id} className="assistant-block">
+                <div className="assistant-text">{message.text}</div>
+                <div className="assistant-actions">
+                  <button type="button" className="icon-btn" aria-label="Good response">
+                    <IconThumbsUp />
+                  </button>
+                  <button type="button" className="icon-btn" aria-label="Bad response">
+                    <IconThumbsDown />
+                  </button>
+                  <button type="button" className="icon-btn" aria-label="Copy" onClick={() => void copyText(message.text)}>
+                    <IconCopy />
+                  </button>
+                  <span className="ago">{formatRel(message.createdAt)}</span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <footer className="composer-wrap">
+          {current ? (
+            <div className="chips">
+              {diff && (diff.added > 0 || diff.removed > 0) ? (
+                <button type="button" className="chip">
+                  Changes <em className="add">+{diff.added}</em> <em className="del">-{diff.removed}</em>
+                </button>
+              ) : null}
+              {branch ? (
+                <button type="button" className="chip" onClick={() => void copyText(branch)}>
+                  Checkout {branch}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="composer">
+            <button type="button" className="plus" aria-label="Attach">
+              <IconPlus />
+            </button>
+            <textarea
+              ref={taRef}
+              value={prompt}
+              placeholder={runId ? "Send follow-up" : "Describe a task"}
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={onComposerKey}
+              rows={1}
+            />
+            <select className="model" value={model} onChange={(event) => setModel(event.target.value)} aria-label="Model">
+              <option>Extra High Fast</option>
+              <option>High Fast</option>
+              <option>Default</option>
+            </select>
+            <button type="button" className="icon-btn mic" aria-label="Voice">
+              <IconMic />
+            </button>
+          </div>
+
+          <div className="status-bar">
+            <span className="mono">{branch || "untracked"}</span>
+            <button
+              type="button"
+              className="cloud-pill"
+              onClick={() => {
+                if (current) return;
+                applyTarget({
+                  ...target,
+                  kind: target.kind === "cloud" && canRunLocal ? "desk" : "cloud",
+                });
+              }}
+            >
+              <IconCloud size={14} />
+              {statusPlace}
+            </button>
+            <span className={`sync${sending ? " spin" : ""}`} aria-hidden="true">
+              <IconSync size={14} />
+            </span>
+          </div>
+          {authError ? <p className="error toast-inline">{authError}</p> : null}
+          {copied ? <p className="copied">Copied</p> : null}
+        </footer>
+      </main>
     </div>
   );
 }
