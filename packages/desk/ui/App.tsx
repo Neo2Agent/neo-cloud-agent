@@ -512,7 +512,7 @@ export function App() {
   }
 
   return (
-    <div className="agents-app">
+    <div className="agents-app" data-nav={nav}>
       <aside className="rail">
         <div className="rail-history">
           <button
@@ -548,7 +548,7 @@ export function App() {
         </div>
 
         <nav className="rail-nav">
-          <button type="button" className="rail-item" onClick={newChat}>
+          <button type="button" className={`rail-item${nav === "chats" ? " on" : ""}`} onClick={newChat}>
             <span className="rail-icon">
               <IconNewChat />
             </span>
@@ -589,66 +589,72 @@ export function App() {
           </button>
         </nav>
 
-        <div className="repo-head">
-          <span>{activeProject ? activeProject.name : "Repositories"}</span>
-          <div className="repo-head-actions">
-            <button type="button" className="icon-btn" aria-label="Filter repositories" onClick={() => setNav("search")}>
-              <IconSort />
-            </button>
-            <button type="button" className="icon-btn" aria-label="Add repository" onClick={newChat}>
-              <IconAddRepo />
-            </button>
-          </div>
-        </div>
-
-        <div className="repo-tree">
-          {nav === "search" ? (
-            <input
-              className="search"
-              value={query}
-              placeholder="Search agents"
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          ) : null}
-
-          {grouped.length === 0 ? (
-            <p className="pane-note">{query ? "没有匹配的对话。" : "还没有对话。从 New Chat 开始。"}</p>
-          ) : (
-            grouped.map(([name, list]) => (
-              <div key={name} className="repo-group">
-                <button
-                  type="button"
-                  className="repo-folder"
-                  onClick={() => setRepoOpen((cur) => ({ ...cur, [name]: cur[name] === false }))}
-                >
-                  <IconChevron open={repoOpen[name] !== false} size={14} />
-                  <span>{name}</span>
+        {nav === "chats" ? (
+          <>
+            <div className="repo-head">
+              {activeProject ? (
+                <button type="button" className="repo-filter" onClick={() => setActiveProject(null)}>
+                  {activeProject.name}
+                  <span aria-hidden="true">×</span>
                 </button>
-                {repoOpen[name] !== false
-                  ? list.map((run) => {
-                      const active = run.id === runId;
-                      return (
-                        <button
-                          key={run.id}
-                          type="button"
-                          className={`chat-row${active ? " active" : ""}`}
-                          onClick={() => void openRun(run.id)}
-                        >
-                          <span className={`chat-dot${active ? " on" : ""}`} />
-                          <span className="chat-title">{preview(run.prompt, 40)}</span>
-                          <span className="chat-meta">
-                            <IconPeople size={13} />
-                            {isCloudRun(run) ? <IconCloud size={13} /> : null}
-                            <span>{formatRel(run.updatedAt)}</span>
-                          </span>
-                        </button>
-                      );
-                    })
-                  : null}
+              ) : (
+                <span>Repositories</span>
+              )}
+              <div className="repo-head-actions">
+                <button type="button" className="icon-btn" aria-label="Filter repositories" onClick={() => setNav("search")}>
+                  <IconSort />
+                </button>
+                <button type="button" className="icon-btn" aria-label="Add repository" onClick={newChat}>
+                  <IconAddRepo />
+                </button>
               </div>
-            ))
-          )}
-        </div>
+            </div>
+
+            <div className="repo-tree">
+              {grouped.length === 0 ? (
+                <p className="pane-note">
+                  {activeProject ? "这个项目还没有对话。从 New Chat 开始。" : "还没有对话。从 New Chat 开始。"}
+                </p>
+              ) : (
+                grouped.map(([name, list]) => (
+                  <div key={name} className="repo-group">
+                    <button
+                      type="button"
+                      className="repo-folder"
+                      onClick={() => setRepoOpen((cur) => ({ ...cur, [name]: cur[name] === false }))}
+                    >
+                      <IconChevron open={repoOpen[name] !== false} size={14} />
+                      <span>{name}</span>
+                    </button>
+                    {repoOpen[name] !== false
+                      ? list.map((run) => {
+                          const active = run.id === runId;
+                          return (
+                            <button
+                              key={run.id}
+                              type="button"
+                              className={`chat-row${active ? " active" : ""}`}
+                              onClick={() => void openRun(run.id)}
+                            >
+                              <span className={`chat-dot${active ? " on" : ""}`} />
+                              <span className="chat-title">{preview(run.prompt, 40)}</span>
+                              <span className="chat-meta">
+                                <IconPeople size={13} />
+                                {isCloudRun(run) ? <IconCloud size={13} /> : null}
+                                <span>{formatRel(run.updatedAt)}</span>
+                              </span>
+                            </button>
+                          );
+                        })
+                      : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="rail-spacer" aria-hidden="true" />
+        )}
 
         <div className="rail-foot">
           <div className="profile">

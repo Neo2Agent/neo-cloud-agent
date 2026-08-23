@@ -138,7 +138,9 @@ export function AutomationsPage({
       </header>
       <div className="page-body">
         {items.length === 0 ? (
-          <p className="empty-copy">还没有定时任务。点右上角新建。</p>
+          <button type="button" className="empty-copy empty-cta" onClick={onCreate}>
+            还没有定时任务。点这里或右上角新建。
+          </button>
         ) : (
           <ul className="auto-list">
             {items.map((item) => (
@@ -188,14 +190,14 @@ export function ProjectsPage({
   return (
     <Page>
       <header className="dash-head">
-        <div>
+        <div className="dash-copy">
           <h1>项目</h1>
           <p>多人协同，打造超级团队</p>
+          <button type="button" className="dash-create" onClick={onCreate}>
+            <IconPlus size={16} />
+            新建项目
+          </button>
         </div>
-        <button type="button" className="dash-create" onClick={onCreate}>
-          <IconPlus size={16} />
-          新建项目
-        </button>
         <TeamArt />
       </header>
       <div className="page-body">
@@ -207,7 +209,13 @@ export function ProjectsPage({
           </label>
         </div>
         {visible.length === 0 ? (
-          <p className="empty-copy">{items.length === 0 ? "还没有项目。点右上角新建。" : "没有匹配的项目。"}</p>
+          items.length === 0 ? (
+            <button type="button" className="empty-copy empty-cta" onClick={onCreate}>
+              还没有项目。点这里或右上角新建。
+            </button>
+          ) : (
+            <p className="empty-copy">没有匹配的项目。</p>
+          )
         ) : (
           <div className="project-grid">
             {visible.map((item) => (

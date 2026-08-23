@@ -150,13 +150,6 @@ button:disabled {
   overflow: hidden;
   background: var(--rail);
   border-right: 1px solid var(--line);
-  -webkit-app-region: drag;
-}
-
-.rail button,
-.rail input,
-.rail select {
-  -webkit-app-region: no-drag;
 }
 
 .rail-history {
@@ -222,6 +215,20 @@ button:disabled {
   padding: 8px 12px 4px;
   font-size: 12px;
   color: var(--muted);
+}
+
+.repo-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 150px;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.rail-spacer {
+  flex: 1;
+  min-height: 0;
 }
 
 .repo-head-actions {
@@ -403,6 +410,7 @@ button:disabled {
 }
 
 .rail-foot {
+  margin-top: auto;
   padding: 10px 10px 12px;
   border-top: 1px solid var(--line);
 }
@@ -471,12 +479,27 @@ button:disabled {
 }
 
 .dash-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 16px;
   padding: 22px 28px 12px;
   flex: none;
+}
+
+.dash-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.dash-copy .dash-create {
+  margin-top: 14px;
+}
+
+.dash-head > .dash-create {
+  margin-left: auto;
 }
 
 .dash-head.compact {
@@ -510,7 +533,9 @@ button:disabled {
 .team-art {
   width: 180px;
   height: 72px;
+  margin-left: auto;
   color: #9a9a94;
+  flex: none;
 }
 
 .mine-head {
@@ -624,7 +649,7 @@ button:disabled {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 40;
   display: grid;
   place-items: center;
   background: rgba(20, 20, 18, 0.28);
@@ -662,6 +687,15 @@ button:disabled {
   padding: 8px 18px 18px;
 }
 
+.modal-form input,
+.modal-form textarea,
+.modal-form select {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+
 .modal-form label {
   display: grid;
   gap: 6px;
@@ -693,6 +727,12 @@ button:disabled {
   padding: 8px 16px;
 }
 
+.modal-actions button[type="submit"]:disabled {
+  background: #d0d0ca;
+  color: #fff;
+  opacity: 1;
+}
+
 .stage-head {
   display: flex;
   align-items: center;
@@ -700,7 +740,6 @@ button:disabled {
   flex: none;
   padding: 16px 28px 8px;
   color: var(--muted);
-  -webkit-app-region: drag;
 }
 
 .stage-head h1 {
@@ -730,6 +769,17 @@ button:disabled {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.55;
+}
+
+.empty-cta {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.empty-cta:hover {
+  color: var(--text);
 }
 
 .user-card {
