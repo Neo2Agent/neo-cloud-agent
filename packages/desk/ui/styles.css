@@ -451,6 +451,248 @@ button:disabled {
   overflow: hidden;
 }
 
+.page,
+.chat-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--stage);
+}
+
+.page-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 28px 28px;
+}
+
+.dash-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 16px;
+  padding: 22px 28px 12px;
+  flex: none;
+}
+
+.dash-head.compact {
+  grid-template-columns: 1fr;
+}
+
+.dash-head h1 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.04em;
+}
+
+.dash-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dash-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.team-art {
+  width: 180px;
+  height: 72px;
+  color: #9a9a94;
+}
+
+.mine-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 16px;
+}
+
+.mine-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.mine-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: #f3f3f1;
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: var(--muted);
+}
+
+.mine-search input {
+  border: 0;
+  background: transparent;
+  outline: none;
+  min-width: 140px;
+}
+
+.project-grid,
+.auto-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.auto-list {
+  grid-template-columns: 1fr;
+}
+
+.dash-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.dash-card:hover,
+.dash-card.active {
+  background: var(--active);
+}
+
+.project-tile .tile-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #efefe9;
+  color: #555;
+  flex: none;
+}
+
+.tile-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.tile-copy em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.tile-more {
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.auto-card {
+  justify-content: space-between;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.card-actions button,
+.ghost {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 20, 18, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+.modal {
+  width: min(520px, calc(100vw - 48px));
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 8px;
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.modal-head .icon-btn {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.modal-form {
+  display: grid;
+  gap: 14px;
+  padding: 8px 18px 18px;
+}
+
+.modal-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.modal-form .count {
+  justify-self: end;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.modal-form textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-actions button[type="submit"] {
+  background: var(--ink);
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 16px;
+}
+
 .stage-head {
   display: flex;
   align-items: center;

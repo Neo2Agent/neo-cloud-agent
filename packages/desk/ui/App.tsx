@@ -4,8 +4,20 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
+import {
+  AutomationCreateForm,
+  AutomationsPage,
+  Modal,
+  ProjectCreateForm,
+  ProjectsPage,
+  SCHEDULE_PRESETS,
+  SearchPage,
+  SettingsPage,
+  type ScheduleKind,
+} from "./pages";
 import {
   IconAddRepo,
   IconAutomations,
@@ -117,6 +129,12 @@ export function App() {
   const [projectName, setProjectName] = useState("");
   const [projectInstruction, setProjectInstruction] = useState("");
   const [projectBusy, setProjectBusy] = useState(false);
+  const [projectModal, setProjectModal] = useState(false);
+  const [projectQuery, setProjectQuery] = useState("");
+  const [autoModal, setAutoModal] = useState(false);
+  const [autoPrompt, setAutoPrompt] = useState("");
+  const [autoPreset, setAutoPreset] = useState<ScheduleKind>("daily_09");
+  const [autoBusy, setAutoBusy] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
   const [current, setCurrent] = useState<Run | null>(null);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
@@ -400,12 +418,44 @@ export function App() {
       setProjectInstruction("");
       await refreshProjects();
       setActiveProject(body);
+      setProjectModal(false);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "创建失败");
     } finally {
       setProjectBusy(false);
     }
   };
+
+  const createAutomation = async () => {
+    if (!autoPrompt.trim() || autoBusy) return;
+    setAutoBusy(true);
+    setAuthError("");
+    try {
+      const schedule = SCHEDULE_PRESETS.find((item) => item.id === autoPreset)?.schedule;
+      const response = await api(token, "/v1/automations", {
+        method: "POST",
+        body: JSON.stringify({ prompt: autoPrompt.trim(), schedule }),
+      });
+      const body = await readJson<Automation & { error?: string }>(response);
+      if (!response.ok) throw new Error(body.error || "创建失败");
+      setAutoPrompt("");
+      setAutoModal(false);
+      await refreshAutomations();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "创建失败");
+    } finally {
+      setAutoBusy(false);
+    }
+  };
+
+  const toggleAutomation = async (item: Automation) => {
+    await api(token, `/v1/automations/${item.id}`, {
+      method: "POST",
+      body: JSON.stringify({ enabled: !item.enabled }),
+    });
+    await refreshAutomations();
+  };
+
   const branch = current?.branchName || "";
   const statusPlace = current ? (isCloudRun(current) ? "Cloud" : "This Computer") : target.kind === "desk" ? "This Computer" : "Cloud";
 
@@ -612,173 +662,92 @@ export function App() {
       </aside>
 
       <main className="stage">
-        <div className="stage-col">
+        <div className="stage-col" key={nav}>
         {nav === "automations" ? (
-          <>
-            <header className="stage-head">
-              <h1>Automations</h1>
-            </header>
-            <div className="feed">
-              {automations.length === 0 ? (
-                <div className="empty-copy">
-                  <p>还没有定时任务。Automations 走同一控制面 /v1/automations。</p>
-                </div>
-              ) : (
-                automations.map((item) => (
-                  <article key={item.id} className="user-card">
-                    <div className="user-card-text">{item.name || item.prompt}</div>
-                    <p className="pane-note">
-                      {item.enabled ? "On" : "Off"} · {item.schedule.kind}
-                    </p>
-                  </article>
-                ))
-              )}
-            </div>
-          </>
+          <AutomationsPage
+            items={automations}
+            onCreate={() => {
+              setAuthError("");
+              setAutoModal(true);
+            }}
+            onToggle={(item) => void toggleAutomation(item)}
+            onOpenRun={(id) => void openRun(id)}
+          />
         ) : nav === "projects" ? (
-          <>
-            <header className="stage-head">
-              <h1>Projects</h1>
-            </header>
-            <div className="feed">
-              <form
-                className="project-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void createProject();
-                }}
-              >
-                <p className="user-card-text">新建项目</p>
-                <label>
-                  名称
-                  <input
-                    value={projectName}
-                    onChange={(event) => setProjectName(event.target.value)}
-                    placeholder="例如：官网改版"
-                    autoComplete="off"
-                  />
-                </label>
-                <label>
-                  项目指令
-                  <textarea
-                    value={projectInstruction}
-                    onChange={(event) => setProjectInstruction(event.target.value)}
-                    placeholder="给这个项目里所有对话看的规则，可先留空"
-                  />
-                </label>
-                <button type="submit" disabled={projectBusy || !projectName.trim()}>
-                  {projectBusy ? "创建中…" : "创建项目"}
-                </button>
-              </form>
-              {projects.length === 0 ? (
-                <div className="empty-copy">
-                  <p>还没有项目。建一个之后，新对话可以带上同一套仓库和指令。</p>
-                </div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className={`project-card${!activeProject ? " active" : ""}`}
-                    onClick={() => setActiveProject(null)}
-                  >
-                    <strong>全部对话</strong>
-                    <p className="pane-note">不按项目过滤侧栏。</p>
-                  </button>
-                  {projects.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`project-card${activeProject?.id === item.id ? " active" : ""}`}
-                      onClick={() => {
-                        setActiveProject(item);
-                        setNav("chats");
-                      }}
-                    >
-                      <strong>{item.name}</strong>
-                      <p className="pane-note">
-                        {item.members.length} 人 · {item.instruction || "还没写指令"}
-                      </p>
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-          </>
+          <ProjectsPage
+            items={projects}
+            query={projectQuery}
+            setQuery={setProjectQuery}
+            activeId={activeProject?.id}
+            onCreate={() => {
+              setAuthError("");
+              setProjectName("");
+              setProjectInstruction("");
+              setProjectModal(true);
+            }}
+            onSelect={setActiveProject}
+          />
         ) : nav === "settings" ? (
-          <>
-            <header className="stage-head">
-              <h1>Settings</h1>
-            </header>
-            <div className="feed">
-              <div className="project-form">
-                <p className="user-card-text">Desk 执行目标</p>
-                <label>
-                  Target
-                  <select
-                    value={target.kind}
-                    onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}
-                  >
-                    <option value="cloud">Cloud</option>
-                    <option value="desk" disabled={!canRunLocal}>
-                      {canRunLocal ? "This Computer" : "This Computer (needs Electron)"}
-                    </option>
-                    <option value="remote" disabled>
-                      Remote SSH
-                    </option>
-                  </select>
-                </label>
-                {target.kind === "desk" ? (
-                  <button
-                    type="button"
-                    className="folder-btn"
-                    onClick={() => {
-                      void deskBridge()
-                        ?.pickFolder()
-                        .then((picked) => {
-                          if (!picked) return;
-                          setFolder(picked);
-                          applyTarget({ ...target, kind: "desk", folder: picked });
-                        });
-                    }}
-                  >
-                    {folder || "Folder…"}
-                  </button>
-                ) : null}
-                <label>
-                  Mode
-                  <select value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")}>
-                    <option value="agent">Agent</option>
-                    <option value="ask">Ask</option>
-                  </select>
-                </label>
-                <p className="pane-note">Ask 只加提示前缀。Provider key 仍在 gateway 的设置里。</p>
-              </div>
+          <SettingsPage>
+            <div className="project-form">
+              <p className="user-card-text">Desk 执行目标</p>
+              <label>
+                Target
+                <select
+                  value={target.kind}
+                  onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}
+                >
+                  <option value="cloud">Cloud</option>
+                  <option value="desk" disabled={!canRunLocal}>
+                    {canRunLocal ? "This Computer" : "This Computer (needs Electron)"}
+                  </option>
+                  <option value="remote" disabled>
+                    Remote SSH
+                  </option>
+                </select>
+              </label>
+              {target.kind === "desk" ? (
+                <button
+                  type="button"
+                  className="folder-btn"
+                  onClick={() => {
+                    void deskBridge()
+                      ?.pickFolder()
+                      .then((picked) => {
+                        if (!picked) return;
+                        setFolder(picked);
+                        applyTarget({ ...target, kind: "desk", folder: picked });
+                      });
+                  }}
+                >
+                  {folder || "Folder…"}
+                </button>
+              ) : null}
+              <label>
+                Mode
+                <select value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")}>
+                  <option value="agent">Agent</option>
+                  <option value="ask">Ask</option>
+                </select>
+              </label>
+              <p className="pane-note">Ask 只加提示前缀。Provider key 仍在 gateway 的设置里。</p>
             </div>
-          </>
+          </SettingsPage>
         ) : nav === "search" ? (
-          <>
-            <header className="stage-head">
-              <h1>Search</h1>
-            </header>
-            <div className="feed">
-              <input
-                ref={searchRef}
-                className="search search-main"
-                value={query}
-                placeholder="搜索对话、仓库、分支、状态或项目"
-                onChange={(event) => setQuery(event.target.value)}
-                autoFocus
-              />
-              {!query.trim() ? (
-                <div className="empty-copy">
-                  <p>从 /v1/runs 里搜已有对话。结果同时过滤左侧仓库树。</p>
-                </div>
+          <SearchPage
+            query={query}
+            setQuery={setQuery}
+            searchRef={searchRef}
+            empty={
+              !query.trim() ? (
+                <p className="empty-copy">从 /v1/runs 里搜已有对话。</p>
               ) : filtered.length === 0 ? (
-                <div className="empty-copy">
-                  <p>没有匹配「{query.trim()}」的对话。</p>
-                </div>
-              ) : (
-                filtered.map((run) => (
+                <p className="empty-copy">没有匹配「{query.trim()}」的对话。</p>
+              ) : null
+            }
+          >
+            {query.trim()
+              ? filtered.map((run) => (
                   <button key={run.id} type="button" className="search-hit" onClick={() => void openRun(run.id)}>
                     <strong>{preview(run.prompt, 72)}</strong>
                     <p className="pane-note">
@@ -787,11 +756,10 @@ export function App() {
                     </p>
                   </button>
                 ))
-              )}
-            </div>
-          </>
+              : null}
+          </SearchPage>
         ) : (
-          <>
+          <section className="page chat-page">
         <header className="stage-head">
           <h1>{title}</h1>
           {!current || isCloudRun(current) ? <IconCloud size={18} /> : null}
@@ -926,10 +894,44 @@ export function App() {
           {authError ? <p className="error toast-inline">{authError}</p> : null}
           {copied ? <p className="copied">Copied</p> : null}
         </footer>
-          </>
+          </section>
         )}
         </div>
       </main>
+      {projectModal
+        ? createPortal(
+            <Modal title="新建项目" onClose={() => setProjectModal(false)}>
+              <ProjectCreateForm
+                name={projectName}
+                setName={setProjectName}
+                instruction={projectInstruction}
+                setInstruction={setProjectInstruction}
+                busy={projectBusy}
+                error={authError || undefined}
+                onCancel={() => setProjectModal(false)}
+                onSubmit={() => void createProject()}
+              />
+            </Modal>,
+            document.body,
+          )
+        : null}
+      {autoModal
+        ? createPortal(
+            <Modal title="新建任务" onClose={() => setAutoModal(false)}>
+              <AutomationCreateForm
+                prompt={autoPrompt}
+                setPrompt={setAutoPrompt}
+                preset={autoPreset}
+                setPreset={setAutoPreset}
+                busy={autoBusy}
+                error={authError || undefined}
+                onCancel={() => setAutoModal(false)}
+                onSubmit={() => void createAutomation()}
+              />
+            </Modal>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
