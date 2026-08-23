@@ -16,6 +16,14 @@
 | 和 Neo 现有设计冲突吗 | **有一处真冲突**，但不是「loop 在云还是在本机」，而是 **loop 和工具是否解耦** |
 | 桌面端技术选型 | **Electron**。决定性理由是本地执行需要 Node 跑 pi |
 
+### 已确认的决策（2026-08-23）
+
+1. **现阶段不做 loop 与工具解耦。** 本机执行走 **desk worker 同址**（整份 `packages/worker` 跑在用户机器上）。依据见 [§12](#12-决策记录工具外置的价值与代价)。
+2. **解耦推迟到真的要做 Remote Control 那类能力时再单独立项**，前置条件是 [§12.7](#127-想提可靠性先做这三件更便宜的) 三件加固先落地。
+3. **本阶段的可靠性和速度靠加固拿，不靠换架构。** 见 [§10](#10-最终执行方案) 的 P0。
+
+契约上仍按两轴写（`ExecutionTarget { loop, tools }`），但**只允许 `loop === tools`**，把门留着不等于现在开门。
+
 ---
 
 ## 2. 冲突分析
@@ -432,37 +440,75 @@ packages/
 
 ---
 
-## 10. 分期
+## 10. 最终执行方案
 
-### P0：桌面壳 + 云端权威（不含本机执行）
+四期，每期都能独立发布，都不依赖库机。**P0 的两条并行**：加固不碰桌面代码，桌面壳不碰控制面。
 
-- Electron 包现有对话页；登录进 keychain
-- 托盘、系统通知（IDLE / ERROR）、深链、记住上次 Run
-- composer 加目标选择器，**只有「云端」可选**，「本机」灰掉写「即将支持」
-- 验收：关掉桌面用网页打开同一条 Run，transcript 一致；桌面收到完成通知
+### P0-A 稳定性加固（控制面 / 现网，独立于桌面）
 
-### P1：UI 对齐
+| 交付物 | 内容 |
+| --- | --- |
+| 发版不打断在跑的对话 | `neo-control-plane.service` 从 `KillMode=control-group` 改 `KillMode=process`。worker 是子进程且落在 `<delegated>/workers/pid-N`，现在会被整组杀掉。`adopt()` 已经会按 pid 认领并重新 `applyWorkerMemoryLimit`，所以重启后能把 worker 迁进新 cgroup |
+| 缩小 session 丢失窗口 | `backupSession` 现在只在 `agent.end` 和退出时触发，进行中那一轮会整段丢。加按时间（或按 N 个工具调用）增量备份 |
+| 恢复后自动续 | `detachOrQueue` 已经标 IDLE / 排队，但要用户手动再发一句。把中断时那条未完成 prompt 自动放回跟进队列 |
 
-- 侧栏置顶 + 分组（置顶 / 进行中 / 最近）
-- 会话标签：对话 / Diff / 终端 / 产物
-- 模式（Agent / Ask）+ 模型选择器移到 composer
-- 快捷键表（§7.5）
-- 验收：不进设置页就能看 diff、提交、开 PR；快捷键和 Cursor 一致
+验收：`systemctl restart neo-control-plane` 时有一条 RUNNING 对话，重启后该对话仍是 RUNNING 且能继续输出；`journalctl` 能看到 `Reattached existing worker`。
 
-### P2：This Computer
+风险与对策：`KillMode=process` 让 `systemctl stop` 会留下在跑的 worker。要么接受（下次启动 `adopt` 收回），要么后续改成把 worker 起成 transient scope（`systemd-run --scope`）彻底脱离 unit cgroup——后者更干净但工作量大，不进 P0。
 
-- `contracts` 加 `ExecutionTarget`；`Run` 记录目标
-- 控制面 `DeskRuntime`（认领型）+ `/v1/desks` 登记 + lease
-- 桌面 fork `packages/worker`，工作区限定在选定 git 文件夹 + worktree
-- 双向移交，含「脏文件不跟随」警告
-- 掉线走 `detachOrQueue`，不报 ERROR
-- 验收：本机 Run 能改本地未提交文件并跑测试；关掉桌面后该 Run 变 IDLE 而非 ERROR；切到云端能接着聊
+### P0-B 桌面壳（云端权威，不含本机执行）
 
-### P3：并行
+| 交付物 | 内容 |
+| --- | --- |
+| `packages/desk` | Electron 主进程 + preload + 打包（`contextIsolation: true`、`nodeIntegration: false`） |
+| 渲染进程 | 直接加载 `packages/web` 的 Vite 产物，不改 UI 逻辑 |
+| 凭据 | `safeStorage` → OS keychain，替掉 `localStorage` 里的 token |
+| 系统集成 | 托盘、完成/失败通知、深链 `neo://runs/<id>`、记住上次 Run |
+| 目标选择器 | composer 下方就位，**只有「云端」可选**，「本机」灰掉标「P2」 |
 
-- Tiled panes、多会话并排
-- 远程机（SSH）目标
-- 每机 worktree 上限与清理
+验收：桌面登录后开一条云端 Run，关掉桌面用浏览器打开同一条，transcript 一致；Run 进 IDLE 时桌面弹通知。
+
+### P1 UI 对齐 Agents Window
+
+| 交付物 | 内容 |
+| --- | --- |
+| 侧栏 | 置顶 + 分组（置顶 / 进行中 / 最近） |
+| 会话标签 | 对话 / Diff / 终端 / 产物，替掉现在的抽屉 |
+| composer | 模式（Agent / Ask）+ 模型选择器从设置页移出来 |
+| 快捷键 | 按 §7.5 那张表，补 `Ctrl+Enter` 排队 |
+
+验收：不进设置页就能看 diff、提交、开 PR；`Cmd+T` / `Cmd+[` / `Cmd+]` / `Cmd+.` / `Cmd+/` 行为和 Cursor 一致。
+
+### P2 This Computer（本机 worker，同址）
+
+| 交付物 | 内容 |
+| --- | --- |
+| 契约 | `ExecutionTarget { loop, tools, deskId? }`，只允许 `loop === tools`；`Run.executionTarget`；`RunSource` 加 `desk` |
+| 控制面 | `DeskRuntime`（认领型，不 provision）+ `/v1/desks` 登记 + lease 长轮询 |
+| 桌面 | fork 现有 `packages/worker`（Electron 自带 Node），工作区限定在选定 git 文件夹，默认开 worktree |
+| 移交 | 双向。本机 → 云端要明确提示「未提交改动不跟随」 |
+| 掉线 | 复用 `detachOrQueue`，标 IDLE / 排队，不报 ERROR |
+| 安全 | 首次授权文件夹要确认；运行期间阻止睡眠；desk 侧 egress 约束 |
+
+验收：本机 Run 能改本地未提交文件并跑测试；关掉桌面后该 Run 变 IDLE 而非 ERROR；把它切到云端能从上一轮边界接着聊。
+
+### P3 并行与远程
+
+Tiled panes、多会话并排、远程机（SSH）目标、worktree 上限与清理。
+
+### 提速项（按期落）
+
+| 提速点 | 现状 | 怎么改 | 期 |
+| --- | --- | --- | --- |
+| 首屏秒开 | 已有编译好的 transcript 快照（`snapshotForRun`） | 桌面本地缓存上次 Run 的快照，先渲染再对齐 SSE | P0-B |
+| 跟进延迟 | `WORKER_POLL_MS` 默认 400ms 轮询 | 本机 target 没有网络成本，可调低或改事件驱动 | P2 |
+| worker 冷启动 | 走 `tsx` 现场转译 TypeScript | desk 侧预编译成 JS 再 fork，省掉转译 | P2 |
+| 不重复拷仓库 | 本地 `repoUrls` 走 `copyWorkspaceTree` 整树复制 | desk 直接用用户已有 checkout + `git worktree`，零拷贝 | P2 |
+| 工具零网络 | 云端 target 每个工具调用都在服务器侧 | 本机 target 的 25 次工具调用全部落在本地盘，这是本机执行最大的收益 | P2 |
+
+### 不排期：持久化 loop + 工具解耦
+
+只有 §12.5 的翻案条件成立才立项，且要先做完 P0-A。真做时按 §12.5 的顺序：先只路由 `bash`。
 
 ---
 
