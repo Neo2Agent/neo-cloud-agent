@@ -408,6 +408,23 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!authed) return;
+    const poll = () => {
+      void refreshRuns();
+    };
+    poll();
+    const timer = window.setInterval(poll, 8000);
+    const onFocus = () => poll();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [authed, refreshRuns]);
+
+  useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [messages, runId]);
 
@@ -701,6 +718,7 @@ export function App() {
               }
               setSearchOpen(true);
               setSearchFilter("all");
+              void refreshRuns();
               requestAnimationFrame(() => searchRef.current?.focus());
             }}
           >
