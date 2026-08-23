@@ -748,7 +748,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 
 - Firecracker / Cloud Hypervisor live-fork（正在跑的 VM 热分叉）
 - 失败 Build 不影响 fleets
-- 多仓、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），事件进现有跟进队列，单订阅最多唤醒 10 次。对话页可建每天 / 每小时任务（`source: automation`）。Telegram / 微信公众号发一句开新对话；做完可推企业微信机器人、Telegram 或 HTTP。
+- 多仓、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），事件进现有跟进队列，单订阅最多唤醒 10 次。对话页可建每天 / 每小时任务（`source: automation`），现状见 [automations.md](./automations.md)。Telegram / 微信公众号发一句开新对话；做完可推企业微信机器人、Telegram 或 HTTP。项目空间（共享指令 / 成员 / 转交）见 [projects.md](./projects.md)。
 - 子 Agent：已落地 `neo_subagent`。契约对齐 pi 官方 `subagent` 扩展（scout / planner / reviewer / worker，single / parallel / chain，`.pi/agents/*.md`）。实现走 worker 内二次 `createAgentSession`，不 spawn `pi` CLI，也不把 loop 打回控制面。子会话的 `agent.end` 不会把父 Run 标成 IDLE。子工具事件收进父卡片的 `details.steps`，不在 transcript 里铺成平级卡片。scout 用 `neo_browse` 做公开网页，不再带 bash。
 
 ---

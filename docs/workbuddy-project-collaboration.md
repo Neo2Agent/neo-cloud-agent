@@ -1,5 +1,7 @@
 # WorkBuddy 项目协作调研
 
+落地现状（对照代码，不是本调研）：[定时任务](./automations.md) · [项目空间](./projects.md)。
+
 调研日期：2026-08-22。  
 对象：腾讯云 WorkBuddy（CodeBuddy 文档站里的「从入门到精通 / 项目」这一支，不是 IDE 里的 Plan Mode）。  
 目的：弄清它的「项目协作」到底卖什么，再对照 Neo Cloud Agent 现在能做什么，给出一份能跟着做、又不照抄办公套件的落地顺序。
