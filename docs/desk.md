@@ -58,7 +58,11 @@
 
 > 不要在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）
 
-pi 的 `createAgentSession` 在 worker 进程内直接调本地工具。要照抄 Cursor 那条「云 loop + 本机工具」，就得把 pi 的工具改成远程 RPC——正好是 §2 点名不做的事。
+pi 的 `createAgentSession` 默认在 worker 进程内直接调本地工具。
+
+**但「工具外置」不需要改 pi。** pi 官方把这条做成一等扩展点：七个内置工具各有一个 `*Operations` 接口，`pi.registerTool` 可以覆盖同名内置工具，官方 `docs/containerization.md` 明确写了第二种模式 *run `pi` on the host and route tool execution into an isolated environment*，并给了 Gondolin 示例（531 行，把 `read` / `write` / `edit` / `bash` / `grep` / `find` / `ls` 全部路由进微 VM）。
+
+所以这不是「能不能改 pi」的问题，是**要不要付那条传输和语义的代价**。价值与代价的实测评估见 [§12](#12-决策记录工具外置的价值与代价)。
 
 ### 2.4 解法：把「权威」和「loop 进程位置」拆开
 
@@ -95,7 +99,7 @@ Cursor 用「loop 放 Temporal」实现这些；Neo 用「loop 放 worker，但�
 
 桌面端不管做到哪一期，这三条不能破：
 
-1. **loop 和工具同址。** 要么都在云端 worker，要么都在 desk worker。不做「云 loop 逐个 RPC 本机工具」。
+1. **loop 和工具同址。** 要么都在云端 worker，要么都在 desk worker。P0–P2 不做「云 loop 逐个 RPC 本机工具」——这是**成本判断**，不是技术不可行（pi 支持），依据和翻案条件见 [§12](#12-决策记录工具外置的价值与代价)。
 2. **Provider Key 只在 gateway。** desk 拿到的是 run JWT，不是 DeepSeek Key。桌面设置页可以保存 Key，但保存动作是 `POST /v1/settings/llm`，值落在服务端。
 3. **会话权威在控制面。** 桌面不做本地会话库。断网时只做只读缓存和待发队列，不产生「本地才有的对话」。
 
@@ -453,7 +457,7 @@ packages/
 
 ## 11. 不做的事
 
-1. **不做云 loop + 本机工具逐调用 RPC。** 违反 §2。要本机执行就整个 worker 下来。
+1. **P0–P2 不做云 loop + 本机工具逐调用 RPC。** 要本机执行就整个 worker 下来。技术上可行（pi 原生支持），是成本判断，翻案条件见 §12.5。
 2. **不在桌面嵌第二份 pi 当独立产品。** desk worker 是同一份 `packages/worker`，同一套事件和会话备份。
 3. **不做本地会话库。** 桌面不产生「只有本地有」的对话。
 4. **不把 Provider Key 放桌面。**
@@ -461,7 +465,126 @@ packages/
 
 ---
 
-## 12. 未定项
+## 12. 决策记录：工具外置的价值与代价
+
+问题：要不要照 Cursor 那样把 loop 放云端、把 `read` / `edit` / `bash` 路由到用户机器。
+
+### 12.1 pi 已经给了扩展点，不需要 fork
+
+七个内置工具全部可换实现（`dist/core/tools/index.d.ts` 的 `ToolsOptions`）：
+
+| 工具 | Operations 接口 | 粒度 |
+| --- | --- | --- |
+| `read` | `readFile` / `access` / `detectImageMimeType?` | 整文件 |
+| `write` | `writeFile` / `mkdir` | 整文件 |
+| `edit` | `readFile` / `writeFile` / `access` | 整文件 |
+| `bash` | `exec(command, cwd, { onData, signal, timeout, env })` | **流式 + 可取消** |
+| `grep` | `isDirectory` / `readFile` | 只给了这两个 |
+| `find` | `exists` / `glob(pattern, cwd, { ignore, limit })` | glob 可整体外置 |
+| `ls` | `exists` / `stat` / `readdir` | 单目录 |
+
+另有 `executeBashWithOperations(...)`，注释写明 *Used for remote execution (SSH, containers, etc.)*，以及 `withFileMutationQueue` 管写入顺序。官方示例 `examples/extensions/gondolin/index.ts` 用 `pi.registerTool` 覆盖这七个，**531 行**打通「pi 在宿主机 + 工具在微 VM」。
+
+所以门槛比想象低：**是写一个 pi 扩展 + 一条传输，不是改 pi。**
+
+### 12.2 实测：一轮 turn 要跨多少次网
+
+在本机 `pnpm dev`（DeepSeek v4-flash）上跑一次**只读**调研任务，工作区是 `packages/contracts`（约 20 个文件）：
+
+| 指标 | 值 |
+| --- | --- |
+| 工具调用总数 | **25** |
+| 其中内置文件工具 | **25**（`bash` 10、`read` 10、`grep` 3、`ls` 1、`find` 1） |
+| 其中 `neo_*` 云工具 | 0 |
+| 工具输出合计 | **52,729 字节** |
+| 工具入参合计 | 2,205 字节 |
+| assistant 消息 | 15 |
+
+两个结论直接来自这组数字：
+
+1. **需要外置的就是那七个内置工具。** `neo_*` 云工具本来就是 HTTP，放哪都一样。
+2. **纯 RTT 不是杀手。** 25 次调用 × RTT：30ms → 多 0.75s，80ms → 2s，200ms → 5s。对一次 40 多秒的 turn，可接受。
+
+写代码的任务（改文件 + 跑测试 + 修）调用数会明显高于 25，但量级仍是几十到几百次，不是每秒上千。
+
+### 12.3 真正的代价不在 RTT
+
+| 代价 | 说明 | 严重度 |
+| --- | --- | --- |
+| `bash` 流式带宽 | 10/25 是 bash。`onData` 每个 chunk 都要过网。一次 `pnpm test` 打几 MB 日志就全量上行，而 pi 的截断发生在 loop 侧——等于先传完再丢掉。要在 desk 侧截断又得复刻 pi 的截断语义 | 高 |
+| `grep` / `find` 必须远端原生实现 | `GrepOperations` 只给 `isDirectory` + `readFile`，pi 自己走目录、逐个读文件。照抄接口 = 每个候选文件一次 RPC。Gondolin 正是为此另写了 `executeGondolinGrep` | 高 |
+| 扩展跑在 pi 所在的一侧 | pi 文档原话：*Extensions run wherever the `pi` process runs.* loop 上云后 `neo_browse` / MCP stdio 都在云端跑，**不在用户机器上**。想连用户内网数据库的 stdio MCP 会失效——这和 Cursor My Machines 的语义相反（他们的 worker 在你机器上，所以 stdio 也在） | 中，但会改变产品承诺 |
+| 会话与压缩位置 | loop 上云则 session JSONL 在云。对持久化是**好事**，但现有 `downloadSession` / `uploadSession` 备份链路要重画 | 中 |
+| egress 守卫要加一份 | 现在是 worker 内拦 `fetch`。desk 侧执行任意 bash，需要本机侧的对应约束 | 中 |
+| `neo_subagent` 也要路由 | 嵌套 `createAgentSession` 的子会话同样得带远端工具 | 中 |
+| 断线语义变复杂 | 写成功但 ack 丢失这类部分失败要幂等化 | 中 |
+
+### 12.4 价值：Cursor 上云 loop 的真实动机不是远程工具
+
+工程博客 [cloud-agent-lessons](https://cursor.com/blog/cloud-agent-lessons) 给的理由是**可靠性和持久化**：work-stealing 架构早期只有「一个 9」，迁到 Temporal 后过了两个 9；loop 不绑 VM 才能独立管 pod 生命周期、支持 hibernation、跑几天几周、让子 Agent 跨机甚至比父 Agent 活得久。
+
+**工具路由是 loop 解耦之后的副产品**，不是上云的目的。所以照抄这条能拿到的价值要分开看：
+
+| 收益 | 值多少 | Neo 有没有更便宜的替代 |
+| --- | --- | --- |
+| turn 能扛住执行面挂掉 / 卸槽 | **真实**。现网 loop 槽在 turn 中间被回收，现在这轮就废了 | 没有等价替代。这是唯一真正需要解耦的理由 |
+| 桌面「This Computer」共享同一份云端会话 | 中 | **有**：desk worker 同址（§2.4），代价低一个数量级 |
+| 以后卖企业自建池 | 低（还没这个需求） | 到时再说 |
+| 集中控制 prompt 组装 / 策略 | 低 | 现在 system prompt 已在 worker 侧可控 |
+
+### 12.5 结论
+
+**现在不做。** 理由不是做不到，而是：为桌面端付这笔账不值——同址的 desk worker 能拿到同样的产品语义（会话权威在云、工具在本机、只出站、不进密钥），代价小一个数量级。
+
+**翻案条件（满足任一就重开这个议题）：**
+
+1. 现网出现「turn 被卸槽/重启打断」的实际投诉，且 `WORKER_IDLE_RELEASE_MS` 和心跳恢复压不住——那时要的是**持久化 loop**，按 §12.4 第一行立项，和桌面无关。
+2. 要做企业自建执行池。
+3. 出现「必须让云端 Agent 摸用户内网」的需求，且不能靠 desk worker 满足。
+
+真做的时候按这个顺序：先只路由 `bash`（`BashOperations` 是唯一原生支持流式和取消的），验证带宽与截断；再补 `read` / `write` / `edit`；`grep` / `find` 一定写远端原生实现，不要用接口默认的逐文件读。
+
+---
+
+## 13. 本地 loop 的离线行为
+
+「模型推理还在云端，所以消息还能实时 SSE 同步，但本地离线执行就会失败？」——分四件事看，数字来自代码。
+
+### 13.1 会断的
+
+- **进行中那一轮会断。** 不只是工具：worker 要打 gateway 才能推理，离线连推理也停。所以「推理在云」并不能让离线的 turn 继续。
+- **未上行的事件会滞后。** `enqueueEvents` 是出站 POST，失败就攒着。
+
+### 13.2 不会丢的
+
+- **已推事件在云。** 其他客户端拉 transcript / SSE 照常，看到的是断点前的内容。
+- **上一轮的会话在云。** `backupSession` 在每次 `agent.end` 触发，`finally` 里再兜一次。所以最近一个完成的 turn 是安全的；**正在跑那一轮的 session 可能丢**。
+- **跟进不丢。** 排在控制面，worker 回来再取。
+
+### 13.3 能扛多久
+
+worker 的 inbox 轮询有重试：`WORKER_INBOX_MAX_FAILURES` 默认 **75** 次，`WORKER_POLL_MS` 默认 **400ms**，即约 **30 秒**网络抖动可以直接扛过去，什么都不用做。超过就抛 `control plane unreachable` 退出。
+
+之后控制面心跳超时 → `detachOrQueue`：
+
+| 情况 | 结果 |
+| --- | --- |
+| 有待发跟进 | `NOT_YET_STARTED`，排队等执行面 |
+| 没有待发跟进 | `IDLE`，提示「本机已断开，发送即可继续」 |
+
+**不标 ERROR。** 回到线上后发一句就继续；或者把这条 Run 移交云端，从上次 session 备份 + 干净 git 续（未提交改动不跟随，见 §5.2）。
+
+### 13.4 和 Cursor 的差距
+
+Cursor 云端 loop 的状态是持久的，能精确从中断点续；Neo 从**上一轮边界**续。差距只在恢复粒度。
+
+但要注意 Cursor 自己也逃不掉这件事：My Machines / Remote Control 的工具在你机器上，文档明确要求 **Keep this computer awake**。机器离线时它的 turn 一样推不动——只是 loop 状态还在，回来能接上。
+
+**所以「本机 target」这件事上，Neo 和 Cursor 的可用性差别是「回来后从上一轮续」vs「回来后从中断点续」，不是「能用」vs「不能用」。** 补齐这个粒度的正确做法是 §12.4 第一行（持久化 loop），不是为了桌面端去拆工具。
+
+---
+
+## 14. 未定项
 
 文档查不到的，别当事实写进实现：
 
@@ -474,7 +597,7 @@ packages/
 
 ---
 
-## 13. 参考
+## 15. 参考
 
 - [Cloud Agents](https://cursor.com/docs/cloud-agent.md) / [capabilities](https://cursor.com/docs/cloud-agent/capabilities.md) / [security](https://cursor.com/docs/cloud-agent/security.md)
 - [Choose where Cloud Agents run](https://cursor.com/docs/cloud-agent/self-hosted-guides/choose-runtime.md)（图里那张表）
@@ -485,3 +608,5 @@ packages/
 - [TypeScript SDK](https://cursor.com/docs/sdk/typescript.md)（`local` = loop 在你的 Node 进程）
 - [What we've learned building cloud agents](https://cursor.com/blog/cloud-agent-lessons)（loop / 机器 / 会话三层解耦，Temporal）
 - 本仓库：[architecture.md](./architecture.md) §2、[cli.md](./cli.md) §1
+- pi 包内文档（`node_modules/@earendil-works/pi-coding-agent/`）：`docs/containerization.md`（宿主机跑 pi + 工具外置）、`docs/extensions.md`、`examples/extensions/gondolin/index.ts`（覆盖七个内置工具的官方示例）
+- pi 类型：`dist/core/tools/index.d.ts`（`ToolsOptions` / 各 `*Operations`）、`dist/core/bash-executor.d.ts`（`executeBashWithOperations`）
