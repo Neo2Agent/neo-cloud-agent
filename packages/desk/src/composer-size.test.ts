@@ -8,9 +8,9 @@ import {
 } from "./composer-size.js";
 
 test("composer max width follows 80% of the stage up to the fig-2 cap", () => {
-  assert.equal(composerMaxWidth(1000), 800);
+  assert.equal(composerMaxWidth(1000), 920);
   assert.equal(composerMaxWidth(1600), COMPOSER_MAX_PX);
-  assert.equal(composerMaxWidth(400), 320);
+  assert.equal(composerMaxWidth(400), 368);
   assert.equal(composerMaxWidth(0), COMPOSER_MAX_PX);
 });
 

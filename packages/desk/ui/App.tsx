@@ -40,7 +40,6 @@ import {
   IconForward,
   IconGear,
   IconNewChat,
-  IconPeople,
   IconProjects,
   IconSearch,
   IconSort,
@@ -851,7 +850,6 @@ export function App() {
                           <span className={`chat-dot${active ? " on" : ""}`} />
                           <span className="chat-title">{preview(run.prompt, 40)}</span>
                           <span className="chat-meta">
-                            <IconPeople size={13} />
                             {isCloudRun(run) ? <IconCloud size={13} /> : null}
                             <span>{formatRel(run.updatedAt)}</span>
                           </span>
@@ -1050,19 +1048,21 @@ export function App() {
             ) : null}
 
             <footer className={`composer-wrap${current ? "" : " home-wrap"}`}>
-              <ContextBar
-                repoLabel={contextRepoName}
-                repos={repoChoices}
-                repoUrl={contextRepoUrl}
-                onRepo={setComposerRepo}
-                branch={current?.branchName || branch || "main"}
-                targetKind={current ? (isCloudRun(current) ? "cloud" : "desk") : target.kind}
-                canRunLocal={canRunLocal}
-                onTarget={(kind) => applyTarget({ ...target, kind, folder: kind === "desk" ? folder : target.folder })}
-                open={contextOpen}
-                setOpen={setContextOpen}
-                locked={Boolean(current)}
-              />
+              {current ? null : (
+                <ContextBar
+                  repoLabel={contextRepoName}
+                  repos={repoChoices}
+                  repoUrl={contextRepoUrl}
+                  onRepo={setComposerRepo}
+                  branch={branch || "main"}
+                  targetKind={target.kind}
+                  canRunLocal={canRunLocal}
+                  onTarget={(kind) => applyTarget({ ...target, kind, folder: kind === "desk" ? folder : target.folder })}
+                  open={contextOpen}
+                  setOpen={setContextOpen}
+                  locked={false}
+                />
+              )}
               {current && diff && (diff.added > 0 || diff.removed > 0) ? (
                 <div className="chips">
                   <button type="button" className="chip">

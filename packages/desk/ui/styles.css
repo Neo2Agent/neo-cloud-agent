@@ -139,6 +139,21 @@ button:disabled {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
   background: var(--bg);
+  scrollbar-width: none;
+}
+
+.agents-app *,
+.agents-app *::before,
+.agents-app *::after {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.agents-app *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent;
 }
 
 .rail {
@@ -149,7 +164,6 @@ button:disabled {
   height: 100%;
   overflow: hidden;
   background: var(--rail);
-  border-right: 1px solid var(--line);
 }
 
 .rail-history {
@@ -795,7 +809,7 @@ button:disabled {
 }
 
 .feed > * {
-  width: min(760px, calc(100% - 64px));
+  width: min(860px, calc(100% - 48px));
   margin-left: auto;
   margin-right: auto;
 }
@@ -1014,7 +1028,7 @@ button:disabled {
   position: sticky;
   bottom: 0;
   z-index: 3;
-  padding: 8px 24px 16px;
+  padding: 8px 32px 20px;
   background: var(--stage);
   border-top: 0;
 }

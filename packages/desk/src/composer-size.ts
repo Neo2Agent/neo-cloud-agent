@@ -1,5 +1,5 @@
 export const COMPOSER_MAX_PX = 1120;
-export const COMPOSER_MAX_RATIO = 0.8;
+export const COMPOSER_MAX_RATIO = 0.92;
 export const COMPOSER_FOLLOW_MIN = 400;
 export const COMPOSER_CHROME = 96;
 export const COMPOSER_HOME_TEXTAREA_MIN = 128;
