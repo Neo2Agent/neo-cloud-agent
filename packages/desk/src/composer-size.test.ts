@@ -7,7 +7,7 @@ import {
   composerTextareaHeight,
 } from "./composer-size.js";
 
-test("composer max width follows 80% of the stage up to the fig-2 cap", () => {
+test("composer max width follows 92% of the stage up to the fig-2 cap", () => {
   assert.equal(composerMaxWidth(1000), 920);
   assert.equal(composerMaxWidth(1600), COMPOSER_MAX_PX);
   assert.equal(composerMaxWidth(400), 368);
