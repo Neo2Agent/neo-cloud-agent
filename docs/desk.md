@@ -140,7 +140,7 @@ flowchart TB
 // contracts/src/run.ts
 /**
  * 两个轴分开写。P0–P2 恒有 loop === tools；
- * 以后要「云 loop + 本机工具」只是多一种合法组合，不用改结构。见 §12.6。
+ * 以后要「云 loop + 本机工具」只是多一种合法组合，不用改结构。见 §12.8。
  */
 export interface ExecutionTarget {
   /** Agent loop 跑在哪 */
@@ -549,13 +549,49 @@ packages/
 
 **翻案条件（满足任一就重开这个议题）：**
 
-1. 现网出现「turn 被卸槽/重启打断」的实际投诉，且 `WORKER_IDLE_RELEASE_MS` 和心跳恢复压不住——那时要的是**持久化 loop**，按 §12.4 第一行立项，和桌面无关。
+1. 现网出现「turn 被打断」的实际投诉，**并且 §12.7 那三件便宜的先做完了还压不住**——那时要的是**持久化 loop**，按 §12.4 第一行立项，和桌面无关。
 2. 要做企业自建执行池。
 3. 出现「必须让云端 Agent 摸用户内网」的需求，且不能靠 desk worker 满足。
 
 真做的时候按这个顺序：先只路由 `bash`（`BashOperations` 是唯一原生支持流式和取消的），验证带宽与截断；再补 `read` / `write` / `edit`；`grep` / `find` 一定写远端原生实现，不要用接口默认的逐文件读。
 
-### 12.6 预留：怎样让以后好改
+### 12.6 如果本阶段就做，可靠性会怎样
+
+结论：**本阶段就外置工具，只会买到代价，买不到可靠性。** 因为可靠性由两件事决定，都不是「loop 在哪」：
+
+1. 一个回合里**必须成功的网络操作数**
+2. **loop 状态是否持久**
+
+按故障类型拆开看（第三列假设 loop 放进控制面进程，不另做持久化引擎）：
+
+| 故障 | 今天：同址 desk worker | 本阶段就外置工具 | 外置 + 持久化 loop |
+| --- | --- | --- | --- |
+| 用户机器离线 / 睡眠 | 本轮断，回来从上一轮边界续 | **一样断**。没有工具就没有进展 | 断，但回来能从中断那一步续 |
+| 网络抖动 < 30 秒 | 扛过去（`75 × 400ms` inbox 重试），工具完全不受影响 | **每次工具调用都可能失败**，要逐个重试 + 幂等 | 同左 |
+| 控制面重启 / 发版 | 本轮断（现网 unit 是 `KillMode=control-group`，worker 是子进程，会被一起杀） | 本轮断（loop 在同一进程，一起死） | **不断**，重启后接着跑 |
+| 执行面 OOM / 崩溃 | 本轮断 | desk 崩才断 | 会话位置不丢 |
+| 每回合必须成功的网络操作 | ~15 次推理 + 事件上报（可攒可重试） | **~40 次**（15 推理 + 25 工具） | 同左 |
+
+第一行就是你说的那点，Cursor 也逃不掉：My Machines / Remote Control 的工具在你机器上，文档明确要求 *Keep this computer awake*。**上云 loop 换来的是恢复粒度，不是可用性。**
+
+还有两个容易被忽略的反向效应：
+
+- **有副作用的调用比只读调用难重试。** pi 只给模型调用内置了重试（`retry: { enabled: true, maxRetries: 2 }`）；工具调用没有这层。`write` 成功但 ack 丢失、`bash` 跑了一半连接断，都要自己做幂等和「是否已执行」的判定。
+- **loop 放进控制面进程 = 和 API 同生共死。** 现网是 4C/4G，`WORKER_MEMORY_MIB=512` 就是为了把 worker 的堆和控制面隔开。loop 搬进控制面后这层隔离没了。
+
+### 12.7 想提可靠性，先做这三件更便宜的
+
+都和 loop 位置无关，收益立刻可见：
+
+| 做什么 | 为什么 |
+| --- | --- |
+| 让发版不杀在跑的 turn | 现网 `neo-control-plane.service` 是 `KillMode=control-group`，而 `LocalProcessRuntime` 把 worker 作为子进程 `spawn`。所以**每次 `systemctl restart` 都会打断所有进行中的对话**。改 `KillMode=mixed` 或把 worker 移出该 cgroup，是当前最便宜的可靠性提升 |
+| 缩小 session 丢失窗口 | `backupSession` 只在 `agent.end` 和退出时触发，所以进行中那一轮可能整段丢。加按时间或按关键步备份即可 |
+| 恢复后自动续上未完成的 prompt | 已有 `detachOrQueue` 会把 Run 标成 IDLE / 排队，但用户要手动再发一句。可以把中断时那条 prompt 自动放回跟进队列 |
+
+这三件做完，「turn 被打断」的实际发生率会显著下降；那时再看还剩多少故障非要持久化 loop 才能解，再决定是否立项。
+
+### 12.8 预留：怎样让以后好改
 
 接缝已经很窄。pi 的工具配置只有**一个调用点**：`openPiSession` 里的 `createAgentSession({ tools: toolNames, customTools })`（`packages/worker/src/session.ts`），工具名单来自 `sessionToolNames()`（`cloud-tools.ts`）。要外置就是把那七个内置名换成 `createToolDefinition(name, cwd, { bash: { operations }, … })` 生成的覆盖版。
 
