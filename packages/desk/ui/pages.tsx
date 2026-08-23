@@ -6,6 +6,7 @@ import {
   COMPOSER_MAX_PX,
   composerMaxWidth,
   composerTextareaHeight,
+  transcriptColumnWidth,
 } from "../src/composer-size";
 import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
 
@@ -551,14 +552,17 @@ export function ChatComposer({
   const [maxWidth, setMaxWidth] = useState(COMPOSER_MAX_PX);
 
   useLayoutEffect(() => {
-    const stage = boxRef.current?.closest(".stage") ?? boxRef.current?.closest(".composer-wrap");
-    if (!stage) return;
-    const apply = () => setMaxWidth(composerMaxWidth(stage.clientWidth));
+    const page = boxRef.current?.closest(".chat-page") ?? boxRef.current?.closest(".stage") ?? boxRef.current?.closest(".composer-wrap");
+    if (!page) return;
+    const apply = () => {
+      const width = page.clientWidth;
+      setMaxWidth(home ? composerMaxWidth(width) : transcriptColumnWidth(width));
+    };
     apply();
     const observer = new ResizeObserver(apply);
-    observer.observe(stage);
+    observer.observe(page);
     return () => observer.disconnect();
-  }, []);
+  }, [home]);
 
   useLayoutEffect(() => {
     const ta = taRef && typeof taRef !== "function" ? taRef.current : null;

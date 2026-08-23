@@ -14,6 +14,8 @@
   --green: #16a34a;
   --red: #dc2626;
   --shadow: 0 8px 28px rgba(17, 17, 16, 0.06);
+  --transcript-max: 860px;
+  --transcript-gutter: 48px;
   font-family: "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -809,7 +811,7 @@ button:disabled {
 }
 
 .feed > * {
-  width: min(860px, calc(100% - 48px));
+  width: min(var(--transcript-max), calc(100% - var(--transcript-gutter)));
   margin-left: auto;
   margin-right: auto;
 }
@@ -1028,9 +1030,10 @@ button:disabled {
   position: sticky;
   bottom: 0;
   z-index: 3;
-  padding: 8px 32px 20px;
-  background: var(--stage);
+  padding: 8px 0 16px;
+  background: #fff;
   border-top: 0;
+  box-shadow: none;
 }
 
 .composer-wrap.home-wrap {
@@ -1118,15 +1121,15 @@ button:disabled {
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
-  width: 100%;
+  width: min(var(--transcript-max), calc(100% - var(--transcript-gutter)));
   min-width: 320px;
-  min-height: 132px;
+  min-height: 0;
   margin: 0 auto;
-  padding: 16px 16px 12px;
+  padding: 8px 12px 8px;
   background: #fff;
-  border: 1px solid #e8e8e4;
-  border-radius: 18px;
-  box-shadow: 0 8px 24px rgba(17, 17, 16, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: none;
   transition: width 0.12s ease;
 }
 
@@ -1136,7 +1139,8 @@ button:disabled {
   min-height: 216px;
   padding: 20px 20px 14px;
   border-radius: 20px;
-  box-shadow: 0 10px 28px rgba(17, 17, 16, 0.05);
+  box-shadow: none;
+  border: 1px solid var(--line);
 }
 
 .composer.composer-stack.home textarea {
@@ -1417,13 +1421,14 @@ button:disabled {
 }
 
 .composer.composer-stack textarea {
-  min-height: 72px;
+  min-height: 24px;
+  max-height: 240px;
 }
 
 .composer textarea {
   flex: 1;
   min-height: 24px;
-  max-height: 160px;
+  max-height: 240px;
   resize: none;
   border: 0;
   outline: none;
