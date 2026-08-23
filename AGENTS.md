@@ -12,10 +12,11 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
   ```
 - The update script already installs the `.nvmrc` node (`22.23.2`) via nvm, so the path above exists after startup. `pnpm` then resolves to the pinned `pnpm@10.33.3` via corepack.
 
-### Services (started by `pnpm dev`)
-- `control-plane` on `:8080` — API + orchestration + SCM + events, and serves the web chat UI at `http://localhost:8080`.
-- Desk client is Electron (`pnpm --filter @neo-cloud-agent/desk start`) after `pnpm build:web`. It loads `packages/web/dist` via `neo-desk://` and talks to the control plane. Browser preview on `:8082` (`pnpm dev:desk`) is only a fallback when there is no desktop session.
-- `llm-gateway` on `:8081` — holds provider keys. With no `DEEPSEEK_API_KEY`/`OPENAI_API_KEY` set it runs `upstream=mock`, which is enough to exercise runs end-to-end.
+### Services
+- `pnpm dev` — backend only: `control-plane` `:8080` + `llm-gateway` `:8081`.
+- `pnpm dev:web` — Web UI on `:5173` (reuses backend on `:8080` if already up). This is `packages/web`.
+- `pnpm dev:desk` — Desk UI Vite on `:5174` plus the Electron window. This is `packages/desk/ui`, a different UI that talks to the same `/v1`. Do not confuse with the old `:8082` browser preview (`pnpm preview:desk`).
+- `llm-gateway` holds provider keys. With no `DEEPSEEK_API_KEY`/`OPENAI_API_KEY` set it runs `upstream=mock`, which is enough to exercise runs end-to-end.
 - Default `WORKER_RUNTIME=local`: `POST /v1/runs` spawns an in-process worker (no Docker needed). `docker`/`firecracker` runtimes need extra assets (see `README.md`).
 
 ### Testing
@@ -27,4 +28,4 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 - The repo root `.env` (gitignored) is auto-loaded by both control-plane and gateway; existing environment variables take precedence. See `.env.example` for all keys.
 
 ### Web UI testing note
-- The chat UI at `http://localhost:8080` is a React app. Login is required: type `admin` / `123456` (the form is empty and cannot be skipped). Prefer the API (`POST /v1/runs`) for scripted checks; `pnpm neo` is the terminal client against the same `/v1`.
+- Web chat UI: `http://localhost:5173` via `pnpm dev:web` (control-plane still serves a copy at `:8080`). Login is `admin` / `123456` (the form is empty and cannot be skipped). Prefer the API (`POST /v1/runs`) for scripted checks; `pnpm neo` is the terminal client against the same `/v1`.

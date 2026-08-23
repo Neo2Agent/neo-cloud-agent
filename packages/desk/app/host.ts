@@ -79,13 +79,13 @@ function rememberFolder(folder: string): void {
   writeJson(stateFile("folders.json"), [...new Set([...authorizedFolders(), folder])]);
 }
 
-function webDist(): string {
-  return path.join(deskRepoRoot(), "packages/web/dist");
+function uiDist(): string {
+  return path.join(deskRepoRoot(), "packages/desk/ui/dist");
 }
 
 function registerRendererProtocol(): void {
   protocol.handle("neo-desk", (request) => {
-    const dist = webDist();
+    const dist = uiDist();
     const url = new URL(request.url);
     let relative = decodeURIComponent(url.pathname || "/");
     if (relative === "/" || relative === "") {
@@ -104,7 +104,7 @@ function rendererEntry(): string {
   if (process.env.NEO_DESK_URL) {
     return deskRendererUrl();
   }
-  if (existsSync(path.join(webDist(), "index.html"))) {
+  if (existsSync(path.join(uiDist(), "index.html"))) {
     return "neo-desk://app/";
   }
   return rendererUrl;
@@ -286,7 +286,7 @@ app.whenReady().then(() => {
     deskId = saved.deskId ?? "";
     deskToken = saved.token ? decodeSecret(saved.token) : "";
   }
-  if (existsSync(path.join(webDist(), "index.html"))) {
+  if (existsSync(path.join(uiDist(), "index.html"))) {
     registerRendererProtocol();
   }
   wireIpc();

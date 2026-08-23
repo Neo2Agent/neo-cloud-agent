@@ -1,0 +1,248 @@
+:root {
+  color-scheme: dark;
+  --bg: #141414;
+  --bg-2: #1c1c1c;
+  --bg-3: #242424;
+  --line: #2f2f2f;
+  --text: #e8e8e8;
+  --muted: #9a9a9a;
+  --accent: #82c7ff;
+  --accent-2: #3b82f6;
+  font-family: "Segoe UI", "SF Pro Text", Inter, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.desk-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.desk-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  background: #101010;
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+
+.desk-wordmark {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.desk-chip {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #1f3b57;
+  color: var(--accent);
+}
+
+.desk-user {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.desk-spacer {
+  flex: 1;
+}
+
+.desk-login {
+  width: min(420px, calc(100% - 48px));
+  margin: auto;
+  display: grid;
+  gap: 12px;
+}
+
+.desk-login h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.desk-login p,
+.desk-empty,
+.desk-kicker,
+.desk-section,
+.desk-error {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.desk-login label,
+.desk-composer-row label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+input,
+select {
+  padding: 8px 10px;
+}
+
+button {
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.desk-error {
+  color: #f0a0a0;
+}
+
+.desk-body {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+}
+
+.desk-sidebar {
+  border-right: 1px solid var(--line);
+  background: #161616;
+  padding: 12px;
+  overflow: auto;
+}
+
+.desk-new {
+  width: 100%;
+  background: var(--accent-2);
+  border-color: transparent;
+  font-weight: 650;
+}
+
+.desk-section {
+  margin: 16px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+
+.desk-sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.desk-sidebar button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  margin-bottom: 6px;
+}
+
+.desk-sidebar button.active,
+.desk-sidebar button:hover {
+  background: var(--bg-3);
+}
+
+.desk-sidebar strong,
+.desk-sidebar em {
+  display: block;
+}
+
+.desk-sidebar em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.desk-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.desk-session {
+  padding: 16px 20px 8px;
+}
+
+.desk-session h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.desk-transcript {
+  overflow: auto;
+  padding: 8px 20px 16px;
+}
+
+.desk-transcript article {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.desk-transcript span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.desk-transcript pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.desk-composer {
+  border-top: 1px solid var(--line);
+  padding: 12px 16px 16px;
+  background: var(--bg-2);
+}
+
+.desk-composer textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: none;
+  padding: 10px;
+}
+
+.desk-composer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.desk-send {
+  background: var(--accent-2);
+  border-color: transparent;
+  font-weight: 650;
+}

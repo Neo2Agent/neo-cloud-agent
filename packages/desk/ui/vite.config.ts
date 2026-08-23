@@ -1,5 +1,7 @@
-import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+const port = Number(process.env.NEO_DESK_UI_PORT || 5174);
 
 export default defineConfig({
   plugins: [react()],
@@ -11,7 +13,7 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
-    port: 5173,
+    port,
     strictPort: true,
     proxy: {
       "/v1": "http://127.0.0.1:8080",

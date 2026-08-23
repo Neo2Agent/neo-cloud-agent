@@ -6,15 +6,22 @@
   "main": "app/main.cjs",
   "scripts": {
     "start": "electron app/main.cjs",
-    "dev": "electron app/main.cjs",
+    "dev": "tsx scripts/dev.ts",
     "preview": "tsx src/serve.ts",
-    "compile": "tsc -p tsconfig.json --noEmit",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "vite build --config ui/vite.config.ts",
+    "compile": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@neo-cloud-agent/contracts": "workspace:*"
+    "@neo-cloud-agent/contracts": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "electron": "^43.4.1"
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^43.4.1",
+    "vite": "^6.4.3"
   }
 }
