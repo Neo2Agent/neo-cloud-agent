@@ -1517,11 +1517,7 @@ export function abortRun(runId: string): Run {
     return run;
   }
   clearActiveTurn(runId);
-  const queued = inbound.get(runId) ?? [];
-  inbound.set(
-    runId,
-    queued.filter((item) => item.type !== "abort"),
-  );
+  inbound.set(runId, []);
   run.status = "IDLE";
   run.errorMessage = null;
   run.workerHandle = null;

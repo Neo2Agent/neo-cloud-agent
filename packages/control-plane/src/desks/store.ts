@@ -186,7 +186,7 @@ export function offerDeskAssignment(deskId: string, runId: string): void {
   if (waiter) {
     clearTimeout(waiter.timer);
     waiters.set(deskId, pending);
-    waiter.resolve(runId);
+    waiter.resolve(takeDeskAssignment(deskId));
   }
 }
 

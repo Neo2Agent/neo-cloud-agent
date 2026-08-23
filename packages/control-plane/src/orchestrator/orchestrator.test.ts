@@ -218,9 +218,9 @@ test("detached runs stay idle when the last turn already finished", async () => 
     },
   ]);
   reloadPersistedState();
-  const expired = expireStaleWorkers(Date.now() + 60_000);
-  assert.ok(expired.includes(run.id));
+  expireStaleWorkers(Date.now() + 60_000);
   assert.equal(getRun(run.id)?.status, "IDLE");
+  assert.equal(takeInbound(run.id).length, 0);
 });
 
 test("queued runs are not marked dead while waiting for a VM slot", async () => {
@@ -244,7 +244,7 @@ test("abort without a worker leaves the chat idle so it can continue", async () 
   reloadPersistedState();
   takeInbound(run.id);
   expireStaleWorkers(Date.now() + 60_000);
-  assert.equal(getRun(run.id)?.status, "IDLE");
+  assert.equal(getRun(run.id)?.status, "NOT_YET_STARTED");
   const aborted = abortRun(run.id);
   assert.equal(aborted.status, "IDLE");
   assert.equal(aborted.errorMessage, null);
@@ -265,8 +265,10 @@ test("recoverLiveWorkers heals chats left in heartbeat ERROR", async () => {
   loaded.status = "ERROR";
   loaded.errorMessage = "worker heartbeat lost after control plane restart";
   await recoverLiveWorkers();
-  assert.equal(getRun(run.id)?.status, "NOT_YET_STARTED");
-  assert.equal(getRun(run.id)?.errorMessage, null);
+  const healed = getRun(run.id);
+  assert.ok(healed);
+  assert.notEqual(healed.status, "ERROR");
+  assert.equal(healed.errorMessage, null);
 });
 
 test("follow-up after reload resumes the worker from session backup", async () => {

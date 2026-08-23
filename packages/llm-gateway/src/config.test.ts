@@ -23,7 +23,7 @@ test("deepseek preset uses official base URL and chat model", () => {
   process.env.DEEPSEEK_API_KEY = "sk-test-deepseek";
 
   try {
-    const config = getConfig();
+    const config = getConfig(mkdtempSync(path.join(tmpdir(), "neo-llm-preset-")));
     assert.equal(config.upstream, "deepseek");
     assert.equal(config.upstreamBaseUrl, "https://api.deepseek.com/v1");
     assert.equal(config.upstreamModel, "deepseek-v4-flash");
