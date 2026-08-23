@@ -4,7 +4,7 @@ import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
 
-const COMPOSER_MIN = 400;
+const COMPOSER_MIN = 320;
 const COMPOSER_MAX = 680;
 
 export type ContextMenuId = "repo" | "target" | null;
@@ -551,7 +551,7 @@ export function ChatComposer({
   useLayoutEffect(() => {
     const node = measureRef.current;
     if (!node) return;
-    const grown = Math.ceil(node.getBoundingClientRect().width) + 72;
+    const grown = Math.ceil(node.scrollWidth) + 88;
     setWidth(Math.min(COMPOSER_MAX, Math.max(COMPOSER_MIN, grown)));
   }, [prompt]);
 
