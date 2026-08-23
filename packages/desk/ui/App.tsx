@@ -1,5 +1,6 @@
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
+import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
@@ -12,22 +13,21 @@ import {
   IconChevron,
   IconCloud,
   IconCopy,
-  IconCustomize,
   IconForward,
   IconGear,
   IconMic,
   IconNewChat,
   IconPeople,
   IconPlus,
+  IconProjects,
   IconSearch,
-  IconSlack,
   IconSort,
   IconSync,
   IconThumbsDown,
   IconThumbsUp,
 } from "./icons";
 
-type NavId = "chats" | "search" | "automations" | "customize";
+type NavId = "chats" | "search" | "automations" | "projects" | "settings";
 
 function preview(text: string, n = 56): string {
   return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
@@ -112,6 +112,11 @@ export function App() {
   const [user, setUser] = useState("");
   const [runs, setRuns] = useState<Run[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [projectName, setProjectName] = useState("");
+  const [projectInstruction, setProjectInstruction] = useState("");
+  const [projectBusy, setProjectBusy] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
   const [current, setCurrent] = useState<Run | null>(null);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
@@ -131,6 +136,7 @@ export function App() {
   const sourceRef = useRef<EventSource | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const canRunLocal = Boolean(deskBridge()?.canRunLocal);
 
   const persist = useCallback((next: string) => {
@@ -151,6 +157,13 @@ export function App() {
     if (!response.ok) return;
     const body = await readJson<{ automations?: Automation[] }>(response);
     setAutomations(body.automations ?? []);
+  }, []);
+
+  const refreshProjects = useCallback(async () => {
+    const response = await api(tokenRef.current, "/v1/projects");
+    if (!response.ok) return;
+    const body = await readJson<{ projects?: Project[] }>(response);
+    setProjects(body.projects ?? []);
   }, []);
 
   const listen = useCallback(
@@ -222,8 +235,8 @@ export function App() {
         if (saved.folder) setFolder(saved.folder);
       }
     }
-    await Promise.all([refreshRuns(), refreshAutomations()]);
-  }, [refreshAutomations, refreshRuns]);
+    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects()]);
+  }, [refreshAutomations, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     void (async () => {
@@ -278,7 +291,13 @@ export function App() {
             body: JSON.stringify({
               prompt: `${askPrefix}${text}`,
               source: "desk",
-              repoUrls: target.kind === "desk" && folder ? [folder] : [],
+              projectId: activeProject?.id,
+              repoUrls:
+                target.kind === "desk" && folder
+                  ? [folder]
+                  : activeProject?.defaultRepoUrls?.length
+                    ? activeProject.defaultRepoUrls
+                    : [],
               target:
                 target.kind === "desk"
                   ? { loop: "desk", tools: "desk", deskId: target.deskId }
@@ -313,10 +332,25 @@ export function App() {
 
   const visible = displayTranscriptMessages(messages);
   const filtered = useMemo(() => {
+    let list = runs;
+    if (activeProject) {
+      list = list.filter((run) => run.projectId === activeProject.id);
+    }
     const q = query.trim().toLowerCase();
-    if (!q) return runs;
-    return runs.filter((run) => run.prompt.toLowerCase().includes(q) || run.id.toLowerCase().includes(q));
-  }, [query, runs]);
+    if (nav !== "search" || !q) return list;
+    return list.filter((run) => {
+      const repo = repoLabel(run.repoUrls[0]).toLowerCase();
+      const projectName = projects.find((item) => item.id === run.projectId)?.name.toLowerCase() ?? "";
+      return (
+        run.prompt.toLowerCase().includes(q) ||
+        run.id.toLowerCase().includes(q) ||
+        repo.includes(q) ||
+        (run.branchName ?? "").toLowerCase().includes(q) ||
+        run.status.toLowerCase().includes(q) ||
+        projectName.includes(q)
+      );
+    });
+  }, [activeProject, nav, projects, query, runs]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Run[]>();
@@ -349,8 +383,29 @@ export function App() {
     requestAnimationFrame(() => taRef.current?.focus());
   };
 
-  const startedSteps = 1 + (runs.length > 0 ? 1 : 0);
   const title = current ? preview(current.prompt, 42) : "New Agent";
+
+  const createProject = async () => {
+    if (!projectName.trim() || projectBusy) return;
+    setProjectBusy(true);
+    setAuthError("");
+    try {
+      const response = await api(token, "/v1/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: projectName.trim(), instruction: projectInstruction }),
+      });
+      const body = await readJson<Project & { error?: string }>(response);
+      if (!response.ok) throw new Error(body.error || "创建失败");
+      setProjectName("");
+      setProjectInstruction("");
+      await refreshProjects();
+      setActiveProject(body);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "创建失败");
+    } finally {
+      setProjectBusy(false);
+    }
+  };
   const branch = current?.branchName || "";
   const statusPlace = current ? (isCloudRun(current) ? "Cloud" : "This Computer") : target.kind === "desk" ? "This Computer" : "Cloud";
 
@@ -449,7 +504,14 @@ export function App() {
             </span>
             New Chat
           </button>
-          <button type="button" className={`rail-item${nav === "search" ? " on" : ""}`} onClick={() => setNav("search")}>
+          <button
+            type="button"
+            className={`rail-item${nav === "search" ? " on" : ""}`}
+            onClick={() => {
+              setNav("search");
+              requestAnimationFrame(() => searchRef.current?.focus());
+            }}
+          >
             <span className="rail-icon">
               <IconSearch />
             </span>
@@ -467,18 +529,18 @@ export function App() {
           </button>
           <button
             type="button"
-            className={`rail-item${nav === "customize" ? " on" : ""}`}
-            onClick={() => setNav("customize")}
+            className={`rail-item${nav === "projects" ? " on" : ""}`}
+            onClick={() => setNav("projects")}
           >
             <span className="rail-icon">
-              <IconCustomize />
+              <IconProjects />
             </span>
-            Customize
+            Projects
           </button>
         </nav>
 
         <div className="repo-head">
-          <span>Repositories</span>
+          <span>{activeProject ? activeProject.name : "Repositories"}</span>
           <div className="repo-head-actions">
             <button type="button" className="icon-btn" aria-label="Filter repositories" onClick={() => setNav("search")}>
               <IconSort />
@@ -496,7 +558,6 @@ export function App() {
               value={query}
               placeholder="Search agents"
               onChange={(event) => setQuery(event.target.value)}
-              autoFocus
             />
           ) : null}
 
@@ -540,26 +601,10 @@ export function App() {
         </div>
 
         <div className="rail-foot">
-          <div className="getting-started">
-            <div className="gs-row">
-              <span>Getting Started</span>
-              <span className="gs-count">
-                {startedSteps}/3
-              </span>
-            </div>
-            <div className="gs-bar">
-              <i style={{ width: `${(startedSteps / 3) * 100}%` }} />
-            </div>
-            <span className="gs-dot" />
-          </div>
-          <button type="button" className="slack-btn" onClick={() => setNav("customize")}>
-            <IconSlack />
-            Connect Slack
-          </button>
           <div className="profile">
             <span className="avatar">{initials(user)}</span>
             <span className="profile-name">{user}</span>
-            <button type="button" className="icon-btn" aria-label="Settings" onClick={() => setNav("customize")}>
+            <button type="button" className="icon-btn" aria-label="Settings" onClick={() => setNav("settings")}>
               <IconGear />
             </button>
           </div>
@@ -567,6 +612,7 @@ export function App() {
       </aside>
 
       <main className="stage">
+        <div className="stage-col">
         {nav === "automations" ? (
           <>
             <header className="stage-head">
@@ -589,13 +635,83 @@ export function App() {
               )}
             </div>
           </>
-        ) : nav === "customize" ? (
+        ) : nav === "projects" ? (
           <>
             <header className="stage-head">
-              <h1>Customize</h1>
+              <h1>Projects</h1>
             </header>
             <div className="feed">
-              <div className="customize wide">
+              <form
+                className="project-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void createProject();
+                }}
+              >
+                <p className="user-card-text">新建项目</p>
+                <label>
+                  名称
+                  <input
+                    value={projectName}
+                    onChange={(event) => setProjectName(event.target.value)}
+                    placeholder="例如：官网改版"
+                    autoComplete="off"
+                  />
+                </label>
+                <label>
+                  项目指令
+                  <textarea
+                    value={projectInstruction}
+                    onChange={(event) => setProjectInstruction(event.target.value)}
+                    placeholder="给这个项目里所有对话看的规则，可先留空"
+                  />
+                </label>
+                <button type="submit" disabled={projectBusy || !projectName.trim()}>
+                  {projectBusy ? "创建中…" : "创建项目"}
+                </button>
+              </form>
+              {projects.length === 0 ? (
+                <div className="empty-copy">
+                  <p>还没有项目。建一个之后，新对话可以带上同一套仓库和指令。</p>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className={`project-card${!activeProject ? " active" : ""}`}
+                    onClick={() => setActiveProject(null)}
+                  >
+                    <strong>全部对话</strong>
+                    <p className="pane-note">不按项目过滤侧栏。</p>
+                  </button>
+                  {projects.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`project-card${activeProject?.id === item.id ? " active" : ""}`}
+                      onClick={() => {
+                        setActiveProject(item);
+                        setNav("chats");
+                      }}
+                    >
+                      <strong>{item.name}</strong>
+                      <p className="pane-note">
+                        {item.members.length} 人 · {item.instruction || "还没写指令"}
+                      </p>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          </>
+        ) : nav === "settings" ? (
+          <>
+            <header className="stage-head">
+              <h1>Settings</h1>
+            </header>
+            <div className="feed">
+              <div className="project-form">
+                <p className="user-card-text">Desk 执行目标</p>
                 <label>
                   Target
                   <select
@@ -635,8 +751,43 @@ export function App() {
                     <option value="ask">Ask</option>
                   </select>
                 </label>
-                <p className="pane-note">Ask 只加提示前缀。Provider key 仍在 gateway。</p>
+                <p className="pane-note">Ask 只加提示前缀。Provider key 仍在 gateway 的设置里。</p>
               </div>
+            </div>
+          </>
+        ) : nav === "search" ? (
+          <>
+            <header className="stage-head">
+              <h1>Search</h1>
+            </header>
+            <div className="feed">
+              <input
+                ref={searchRef}
+                className="search search-main"
+                value={query}
+                placeholder="搜索对话、仓库、分支、状态或项目"
+                onChange={(event) => setQuery(event.target.value)}
+                autoFocus
+              />
+              {!query.trim() ? (
+                <div className="empty-copy">
+                  <p>从 /v1/runs 里搜已有对话。结果同时过滤左侧仓库树。</p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="empty-copy">
+                  <p>没有匹配「{query.trim()}」的对话。</p>
+                </div>
+              ) : (
+                filtered.map((run) => (
+                  <button key={run.id} type="button" className="search-hit" onClick={() => void openRun(run.id)}>
+                    <strong>{preview(run.prompt, 72)}</strong>
+                    <p className="pane-note">
+                      {repoLabel(run.repoUrls[0])} · {isCloudRun(run) ? "Cloud" : "This Computer"} · {run.status} ·{" "}
+                      {formatRel(run.updatedAt)}
+                    </p>
+                  </button>
+                ))
+              )}
             </div>
           </>
         ) : (
@@ -738,6 +889,10 @@ export function App() {
               onKeyDown={onComposerKey}
               rows={1}
             />
+            <select className="model" value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")} aria-label="Mode">
+              <option value="agent">Agent</option>
+              <option value="ask">Ask</option>
+            </select>
             <select className="model" value={model} onChange={(event) => setModel(event.target.value)} aria-label="Model">
               <option>Extra High Fast</option>
               <option>High Fast</option>
@@ -773,6 +928,7 @@ export function App() {
         </footer>
           </>
         )}
+        </div>
       </main>
     </div>
   );

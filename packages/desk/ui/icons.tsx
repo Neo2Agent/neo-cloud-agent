@@ -57,7 +57,7 @@ export function IconAutomations(props: IconProps) {
   );
 }
 
-export function IconCustomize(props: IconProps) {
+export function IconProjects(props: IconProps) {
   return (
     <Svg {...props}>
       <rect x="4" y="4" width="7" height="7" rx="1.5" />
@@ -183,17 +183,3 @@ export function IconSync(props: IconProps) {
   );
 }
 
-export function IconSlack({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
-      <path fill="#E01E5A" d="M3.6 10.1a1.5 1.5 0 1 1-1.5-1.5h1.5z" />
-      <path fill="#E01E5A" d="M4.3 10.1a1.5 1.5 0 1 1 3 0v3.8a1.5 1.5 0 1 1-3 0z" />
-      <path fill="#36C5F0" d="M5.9 3.6a1.5 1.5 0 1 1 1.5-1.5v1.5z" />
-      <path fill="#36C5F0" d="M5.9 4.3a1.5 1.5 0 1 1 0 3H2.1a1.5 1.5 0 0 1 0-3z" />
-      <path fill="#2EB67D" d="M12.4 5.9a1.5 1.5 0 1 1 1.5 1.5h-1.5z" />
-      <path fill="#2EB67D" d="M11.7 5.9a1.5 1.5 0 1 1-3 0V2.1a1.5 1.5 0 0 1 3 0z" />
-      <path fill="#ECB22E" d="M10.1 12.4a1.5 1.5 0 1 1-1.5 1.5v-1.5z" />
-      <path fill="#ECB22E" d="M10.1 11.7a1.5 1.5 0 1 1 0-3h3.8a1.5 1.5 0 0 1 0 3z" />
-    </svg>
-  );
-}
