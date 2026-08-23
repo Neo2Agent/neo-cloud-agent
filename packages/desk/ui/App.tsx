@@ -683,7 +683,7 @@ export function App() {
         </div>
 
         <nav className="rail-nav">
-          <button type="button" className={`rail-item${nav === "chats" && !searchOpen ? " on" : ""}`} onClick={newChat}>
+          <button type="button" className={`rail-item${nav === "chats" ? " on" : ""}`} onClick={newChat}>
             <span className="rail-icon">
               <IconNewChat />
             </span>
@@ -691,8 +691,14 @@ export function App() {
           </button>
           <button
             type="button"
-            className={`rail-item${searchOpen ? " on" : ""}`}
+            className="rail-item"
+            aria-expanded={searchOpen}
+            aria-haspopup="dialog"
             onClick={() => {
+              if (searchOpen) {
+                setSearchOpen(false);
+                return;
+              }
               setSearchOpen(true);
               setSearchFilter("all");
               requestAnimationFrame(() => searchRef.current?.focus());
@@ -705,8 +711,11 @@ export function App() {
           </button>
           <button
             type="button"
-            className={`rail-item${nav === "automations" && !searchOpen ? " on" : ""}`}
-            onClick={() => setNav("automations")}
+            className={`rail-item${nav === "automations" ? " on" : ""}`}
+            onClick={() => {
+              setSearchOpen(false);
+              setNav("automations");
+            }}
           >
             <span className="rail-icon">
               <IconAutomations />
@@ -715,8 +724,11 @@ export function App() {
           </button>
           <button
             type="button"
-            className={`rail-item${nav === "projects" && !searchOpen ? " on" : ""}`}
-            onClick={() => setNav("projects")}
+            className={`rail-item${nav === "projects" ? " on" : ""}`}
+            onClick={() => {
+              setSearchOpen(false);
+              setNav("projects");
+            }}
           >
             <span className="rail-icon">
               <IconProjects />
@@ -993,26 +1005,23 @@ export function App() {
           </section>
         )}
         </div>
+        {searchOpen ? (
+          <SearchPalette
+            query={query}
+            setQuery={setQuery}
+            filter={searchFilter}
+            setFilter={setSearchFilter}
+            hits={searchHits}
+            searchRef={searchRef}
+            onOpenRun={(id) => {
+              setSearchOpen(false);
+              void openRun(id);
+            }}
+            onOpenSettings={openSettings}
+            onClose={() => setSearchOpen(false)}
+          />
+        ) : null}
       </main>
-      {searchOpen
-        ? createPortal(
-            <SearchPalette
-              query={query}
-              setQuery={setQuery}
-              filter={searchFilter}
-              setFilter={setSearchFilter}
-              hits={searchHits}
-              searchRef={searchRef}
-              onOpenRun={(id) => {
-                setSearchOpen(false);
-                void openRun(id);
-              }}
-              onOpenSettings={openSettings}
-              onClose={() => setSearchOpen(false)}
-            />,
-            document.body,
-          )
-        : null}
       {projectModal
         ? createPortal(
             <Modal title="新建项目" onClose={() => setProjectModal(false)}>

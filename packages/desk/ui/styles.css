@@ -443,6 +443,7 @@ button:disabled {
 }
 
 .stage {
+  position: relative;
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -896,8 +897,12 @@ button:disabled {
   flex-direction: column;
   justify-content: center;
   border-top: 0;
-  padding: 0 72px 96px;
-  background: #fff;
+  padding: 0 40px 72px;
+  background: var(--stage);
+}
+
+.chat-page:has(.home-wrap) {
+  background: var(--stage);
 }
 
 .context-bar {
@@ -905,8 +910,8 @@ button:disabled {
   justify-content: center;
   align-items: center;
   gap: 20px;
+  width: min(1120px, 80%);
   margin: 0 auto 16px;
-  max-width: 720px;
 }
 
 .context-item-wrap {
@@ -971,7 +976,7 @@ button:disabled {
   align-items: stretch;
   gap: 8px;
   min-width: 320px;
-  max-width: 680px;
+  max-width: min(1120px, 80%);
   margin: 0 auto;
   padding: 10px 12px 8px;
   background: #fff;
@@ -982,7 +987,15 @@ button:disabled {
 }
 
 .composer.composer-stack.home {
-  min-height: 0;
+  min-height: 188px;
+  padding: 18px 18px 12px;
+  border-radius: 20px;
+  box-shadow: 0 10px 28px rgba(17, 17, 16, 0.05);
+}
+
+.composer.composer-stack.home textarea {
+  flex: 1;
+  min-height: 104px;
 }
 
 
@@ -1066,10 +1079,10 @@ button:disabled {
 }
 
 .palette-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 30;
-  background: transparent;
+  background: rgba(250, 250, 248, 0.28);
 }
 
 .palette {
@@ -1083,11 +1096,12 @@ button:disabled {
 
 .palette-float {
   position: absolute;
-  top: 36px;
-  left: 248px;
-  right: 0;
-  width: min(540px, calc(100vw - 296px));
-  margin: 0 auto;
+  top: 28px;
+  left: 50%;
+  right: auto;
+  width: min(540px, calc(100% - 48px));
+  margin: 0;
+  transform: translateX(-50%);
   border-radius: 14px;
   box-shadow: 0 12px 40px rgba(17, 17, 16, 0.12);
 }
