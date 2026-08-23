@@ -304,6 +304,12 @@ button:disabled {
   margin-bottom: 8px;
 }
 
+.search:focus {
+  outline: none;
+  border-color: #cfcfca;
+  box-shadow: 0 0 0 3px rgba(47, 109, 246, 0.12);
+}
+
 .customize {
   display: grid;
   gap: 10px;
