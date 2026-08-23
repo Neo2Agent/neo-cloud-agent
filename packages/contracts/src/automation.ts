@@ -10,6 +10,8 @@ export type Automation = {
   prompt: string;
   repoUrls: string[];
   schedule: AutomationSchedule;
+  userId: string;
+  orgId: string;
   nextRunAt: string;
   lastRunAt: string | null;
   lastRunId: string | null;

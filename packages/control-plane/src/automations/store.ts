@@ -58,6 +58,8 @@ function normalize(value: unknown): Automation | null {
     prompt: record.prompt,
     repoUrls: repos,
     schedule,
+    userId: typeof record.userId === "string" ? record.userId : "",
+    orgId: typeof record.orgId === "string" ? record.orgId : "",
     nextRunAt: typeof record.nextRunAt === "string" ? record.nextRunAt : nextAutomationRunAt(schedule).toISOString(),
     lastRunAt: typeof record.lastRunAt === "string" ? record.lastRunAt : null,
     lastRunId: typeof record.lastRunId === "string" ? record.lastRunId : null,
@@ -71,7 +73,10 @@ export function listAutomations(): Automation[] {
   return readAll().sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
-export function createAutomation(input: CreateAutomationRequest): Automation {
+export function createAutomation(
+  input: CreateAutomationRequest,
+  owner?: { userId?: string; orgId?: string },
+): Automation {
   const items = readAll();
   if (items.length >= MAX_AUTOMATIONS) {
     throw new Error(`at most ${MAX_AUTOMATIONS} automations`);
@@ -87,6 +92,8 @@ export function createAutomation(input: CreateAutomationRequest): Automation {
     prompt,
     repoUrls: (input.repoUrls ?? []).map((item) => item.trim()).filter(Boolean),
     schedule,
+    userId: owner?.userId?.trim() || "",
+    orgId: owner?.orgId?.trim() || "",
     nextRunAt: nextAutomationRunAt(schedule, now).toISOString(),
     lastRunAt: null,
     lastRunId: null,
@@ -101,7 +108,7 @@ export function createAutomation(input: CreateAutomationRequest): Automation {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "repoUrls" | "enabled" | "schedule" | "lastRunAt" | "lastRunId" | "lastError" | "nextRunAt">>,
+  patch: Partial<Pick<Automation, "name" | "prompt" | "repoUrls" | "enabled" | "schedule" | "userId" | "orgId" | "lastRunAt" | "lastRunId" | "lastError" | "nextRunAt">>,
 ): Automation | null {
   const items = readAll();
   const index = items.findIndex((item) => item.id === id);
@@ -114,6 +121,8 @@ export function updateAutomation(
     prompt: patch.prompt !== undefined ? patch.prompt.trim() || current.prompt : current.prompt,
     repoUrls: patch.repoUrls ?? current.repoUrls,
     enabled: patch.enabled ?? current.enabled,
+    userId: patch.userId !== undefined ? patch.userId : current.userId,
+    orgId: patch.orgId !== undefined ? patch.orgId : current.orgId,
     schedule,
     nextRunAt: patch.nextRunAt ?? (patch.schedule ? nextAutomationRunAt(schedule).toISOString() : current.nextRunAt),
     lastRunAt: patch.lastRunAt !== undefined ? patch.lastRunAt : current.lastRunAt,

@@ -854,6 +854,21 @@ export function getRun(id: string): Run | undefined {
   return runs.get(id);
 }
 
+export function adoptRun(runId: string, userId: string, orgId?: string): Run | undefined {
+  const run = runs.get(runId);
+  if (!run || !userId) {
+    return undefined;
+  }
+  run.userId = userId;
+  run.assigneeUserId = userId;
+  if (orgId) {
+    run.orgId = orgId;
+  }
+  run.updatedAt = now();
+  flushRun(runId);
+  return run;
+}
+
 export async function loadRunIntoMemory(runId: string): Promise<Run | undefined> {
   const existing = runs.get(runId);
   if (existing) {

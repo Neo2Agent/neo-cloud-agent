@@ -458,7 +458,14 @@ export function createApiServer() {
             return;
           }
           try {
-            send(res, 201, createAutomation((await readJson(req)) as CreateAutomationRequest));
+            send(
+              res,
+              201,
+              createAutomation((await readJson(req)) as CreateAutomationRequest, {
+                userId: actor.userId,
+                orgId: actor.orgId,
+              }),
+            );
           } catch (error) {
             const message = error instanceof Error ? error.message : "invalid_automation";
             send(res, 400, { error: message });

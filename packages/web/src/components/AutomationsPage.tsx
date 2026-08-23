@@ -135,7 +135,7 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
               <li key={item.id} className={item.enabled ? "on" : "off"}>
                 <div className="auto-item-top">
                   <strong>{item.name}</strong>
-                  <span className={item.enabled ? "auto-badge on" : "auto-badge"}>{item.enabled ? "进行中" : "已暂停"}</span>
+                  <span className={item.enabled ? "auto-badge on" : "auto-badge"}>{item.enabled ? "已开启" : "已暂停"}</span>
                 </div>
                 <p className="auto-item-prompt">{item.prompt}</p>
                 <dl className="auto-meta">
@@ -156,7 +156,7 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
                 <div className="auto-item-actions">
                   {item.lastRunId && onOpenRun ? (
                     <button className="ghost" type="button" onClick={() => onOpenRun(item.lastRunId!)}>
-                      看上次
+                      打开上次对话
                     </button>
                   ) : null}
                   <button
@@ -286,5 +286,12 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
 function formatWhen(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  return date.toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
