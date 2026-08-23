@@ -1084,6 +1084,9 @@ button:disabled {
   position: absolute;
   inset: 0;
   z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 28px;
   background: rgba(250, 250, 248, 0.28);
 }
 
@@ -1097,15 +1100,18 @@ button:disabled {
 }
 
 .palette-float {
-  position: absolute;
-  top: 28px;
-  left: 50%;
+  position: relative;
+  top: auto;
+  left: auto;
   right: auto;
-  width: min(540px, calc(100% - 48px));
+  width: min(640px, 100%);
+  height: min(680px, 100%);
   margin: 0;
-  transform: translateX(-50%);
-  border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(17, 17, 16, 0.12);
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(17, 17, 16, 0.14);
 }
 
 .palette-input {
@@ -1115,6 +1121,7 @@ button:disabled {
   padding: 16px 18px 10px;
   font-size: 15px;
   background: transparent;
+  flex: none;
 }
 
 .palette-tabs {
@@ -1122,6 +1129,7 @@ button:disabled {
   gap: 4px;
   padding: 0 12px 8px;
   border-bottom: 1px solid var(--line);
+  flex: none;
 }
 
 .palette-tabs button {
@@ -1138,7 +1146,9 @@ button:disabled {
 }
 
 .palette-body {
-  max-height: 360px;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   padding: 8px 8px 4px;
 }
@@ -1181,6 +1191,7 @@ button:disabled {
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 11px;
+  flex: none;
 }
 
 .settings-card {
