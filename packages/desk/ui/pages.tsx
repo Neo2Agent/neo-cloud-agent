@@ -2,7 +2,10 @@ import { describeAutomationSchedule, type Automation, type AutomationSchedule } 
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import type { FormEvent, KeyboardEvent, ReactNode, Ref } from "react";
-import { IconArrowUp, IconPlus, IconProjects, IconSearch } from "./icons";
+import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
+
+export type ContextMenuId = "repo" | "target" | null;
+export type RepoChoice = { url: string; label: string };
 
 export type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
 export type SearchFilter = "all" | "agents" | "files" | "actions" | "settings";
@@ -400,6 +403,110 @@ export function ProjectsPage({
         )}
       </div>
     </Page>
+  );
+}
+
+export function ContextBar({
+  repoLabel,
+  repos,
+  repoUrl,
+  onRepo,
+  branch,
+  targetKind,
+  canRunLocal,
+  onTarget,
+  open,
+  setOpen,
+  locked,
+}: {
+  repoLabel: string;
+  repos: RepoChoice[];
+  repoUrl: string;
+  onRepo: (url: string) => void;
+  branch: string;
+  targetKind: "cloud" | "desk" | "remote";
+  canRunLocal: boolean;
+  onTarget: (kind: "cloud" | "desk") => void;
+  open: ContextMenuId;
+  setOpen: (id: ContextMenuId) => void;
+  locked?: boolean;
+}) {
+  const targetLabel = targetKind === "desk" ? "This Computer" : "Cloud";
+  return (
+    <div className="context-bar">
+      <div className="context-item-wrap">
+        <button
+          type="button"
+          className="context-item"
+          disabled={locked}
+          onClick={() => setOpen(open === "repo" ? null : "repo")}
+        >
+          <span>{repoLabel}</span>
+          <em>▾</em>
+        </button>
+        {open === "repo" && !locked ? (
+          <div className="context-menu" role="menu">
+            {repos.map((item) => (
+              <button
+                key={item.url || "inbox"}
+                type="button"
+                className={item.url === repoUrl ? "on" : ""}
+                onClick={() => {
+                  onRepo(item.url);
+                  setOpen(null);
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <button type="button" className="context-item" disabled>
+        <span>{branch}</span>
+        <em>▾</em>
+      </button>
+      <div className="context-item-wrap">
+        <button
+          type="button"
+          className="context-item"
+          disabled={locked}
+          onClick={() => setOpen(open === "target" ? null : "target")}
+        >
+          {targetKind === "desk" ? <IconComputer size={14} /> : <IconCloud size={14} />}
+          <span>{targetLabel}</span>
+          <em>▾</em>
+        </button>
+        {open === "target" && !locked ? (
+          <div className="context-menu" role="menu">
+            <button
+              type="button"
+              className={targetKind === "cloud" ? "on" : ""}
+              onClick={() => {
+                onTarget("cloud");
+                setOpen(null);
+              }}
+            >
+              <IconCloud size={14} />
+              Cloud
+            </button>
+            <button
+              type="button"
+              className={targetKind === "desk" ? "on" : ""}
+              disabled={!canRunLocal}
+              onClick={() => {
+                if (!canRunLocal) return;
+                onTarget("desk");
+                setOpen(null);
+              }}
+            >
+              <IconComputer size={14} />
+              {canRunLocal ? "This Computer" : "This Computer（需要 Desk）"}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

@@ -12,6 +12,7 @@ import {
   AutomationCreateForm,
   AutomationsPage,
   ChatComposer,
+  ContextBar,
   loadSavedModels,
   Modal,
   ModelSettingsPage,
@@ -22,6 +23,7 @@ import {
   runSearchMeta,
   SCHEDULE_PRESETS,
   SearchPalette,
+  type ContextMenuId,
   type SavedModel,
   type ScheduleKind,
   type SearchFilter,
@@ -58,6 +60,17 @@ function repoLabel(url?: string): string {
   } catch {
     const clean = url.replace(/\/$/, "").replace(/\.git$/, "");
     return clean.split("/").filter(Boolean).pop() || clean;
+  }
+}
+
+function repoPath(url?: string): string {
+  if (!url) return "Inbox";
+  try {
+    const parts = new URL(url).pathname.replace(/\.git$/, "").split("/").filter(Boolean);
+    return parts.slice(-2).join("/") || repoLabel(url);
+  } catch {
+    const parts = url.replace(/\/$/, "").replace(/\.git$/, "").split("/").filter(Boolean);
+    return parts.slice(-2).join("/") || repoLabel(url);
   }
 }
 
@@ -159,6 +172,8 @@ export function App() {
   const [modelKey, setModelKey] = useState("");
   const [modelBaseUrl, setModelBaseUrl] = useState(OPENAI_BASE_URL);
   const [modelBusy, setModelBusy] = useState(false);
+  const [composerRepo, setComposerRepo] = useState("");
+  const [contextOpen, setContextOpen] = useState<ContextMenuId>(null);
   const [repoOpen, setRepoOpen] = useState<Record<string, boolean>>({});
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
   const [copied, setCopied] = useState("");
@@ -347,9 +362,11 @@ export function App() {
               repoUrls:
                 target.kind === "desk" && folder
                   ? [folder]
-                  : activeProject?.defaultRepoUrls?.length
-                    ? activeProject.defaultRepoUrls
-                    : [],
+                  : composerRepo
+                    ? [composerRepo]
+                    : activeProject?.defaultRepoUrls?.length
+                      ? activeProject.defaultRepoUrls
+                      : [],
               target:
                 target.kind === "desk"
                   ? { loop: "desk", tools: "desk", deskId: target.deskId }
@@ -383,6 +400,7 @@ export function App() {
       if (event.key === "Escape") {
         setSearchOpen(false);
         setModelMenu(false);
+        setContextOpen(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -450,6 +468,7 @@ export function App() {
     setDiff(null);
     setSearchOpen(false);
     setModelMenu(false);
+    setContextOpen(null);
     setNav("chats");
     sourceRef.current?.close();
     requestAnimationFrame(() => taRef.current?.focus());
@@ -556,8 +575,24 @@ export function App() {
     return [...new Set(names)];
   }, [llm.model, savedModels, selectedModel]);
 
+  const repoChoices = useMemo(() => {
+    const map = new Map<string, string>();
+    map.set("", "Inbox");
+    for (const run of runs) {
+      const url = run.repoUrls[0] || "";
+      if (url) map.set(url, repoPath(url));
+    }
+    if (folder) map.set(folder, repoPath(folder));
+    for (const url of activeProject?.defaultRepoUrls ?? []) {
+      if (url) map.set(url, repoPath(url));
+    }
+    return [...map.entries()].map(([url, label]) => ({ url, label }));
+  }, [activeProject, folder, runs]);
+
+  const contextRepoUrl = current?.repoUrls[0] || composerRepo;
+  const contextRepoName = current ? repoPath(current.repoUrls[0]) : repoPath(composerRepo) || repoChoices.find((item) => item.url === composerRepo)?.label || "Inbox";
+
   const branch = current?.branchName || "";
-  const statusPlace = current ? (isCloudRun(current) ? "Cloud" : "This Computer") : target.kind === "desk" ? "This Computer" : "Cloud";
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -910,28 +945,19 @@ export function App() {
             ) : null}
 
             <footer className={`composer-wrap${current ? "" : " home-wrap"}`}>
-              <div className="context-bar">
-                <button type="button" className="context-chip">
-                  {current ? repoLabel(current.repoUrls[0]) : folder.split("/").filter(Boolean).pop() || "Inbox"}
-                </button>
-                <button type="button" className="context-chip" onClick={() => (branch ? void copyText(branch) : undefined)}>
-                  {branch || "main"}
-                </button>
-                <button
-                  type="button"
-                  className="context-chip"
-                  onClick={() => {
-                    if (current) return;
-                    applyTarget({
-                      ...target,
-                      kind: target.kind === "cloud" && canRunLocal ? "desk" : "cloud",
-                    });
-                  }}
-                >
-                  <IconCloud size={14} />
-                  {statusPlace}
-                </button>
-              </div>
+              <ContextBar
+                repoLabel={contextRepoName}
+                repos={repoChoices}
+                repoUrl={contextRepoUrl}
+                onRepo={setComposerRepo}
+                branch={current?.branchName || branch || "main"}
+                targetKind={current ? (isCloudRun(current) ? "cloud" : "desk") : target.kind}
+                canRunLocal={canRunLocal}
+                onTarget={(kind) => applyTarget({ ...target, kind, folder: kind === "desk" ? folder : target.folder })}
+                open={contextOpen}
+                setOpen={setContextOpen}
+                locked={Boolean(current)}
+              />
               {current && diff && (diff.added > 0 || diff.removed > 0) ? (
                 <div className="chips">
                   <button type="button" className="chip">
@@ -947,7 +973,10 @@ export function App() {
                 models={modelNames}
                 selected={selectedModel}
                 menuOpen={modelMenu}
-                setMenuOpen={setModelMenu}
+                setMenuOpen={(next) => {
+                  setModelMenu(next);
+                  if (next) setContextOpen(null);
+                }}
                 onSelectModel={(name) => {
                   setSelectedModel(name);
                   setModelMenu(false);

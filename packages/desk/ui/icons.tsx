@@ -76,6 +76,15 @@ export function IconCloud(props: IconProps) {
   );
 }
 
+export function IconComputer(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="5" width="18" height="12" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </Svg>
+  );
+}
+
 export function IconPeople(props: IconProps) {
   return (
     <Svg {...props}>
