@@ -409,18 +409,15 @@ export function App() {
 
   useEffect(() => {
     if (!authed) return;
-    const poll = () => {
+    const onShow = () => {
+      if (document.visibilityState === "hidden") return;
       void refreshRuns();
     };
-    poll();
-    const timer = window.setInterval(poll, 8000);
-    const onFocus = () => poll();
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onShow);
+    document.addEventListener("visibilitychange", onShow);
     return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onShow);
+      document.removeEventListener("visibilitychange", onShow);
     };
   }, [authed, refreshRuns]);
 
