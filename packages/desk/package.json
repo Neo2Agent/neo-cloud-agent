@@ -1,0 +1,15 @@
+{
+  "name": "@neo-cloud-agent/desk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "app/main.cjs",
+  "scripts": {
+    "start": "electron app/main.cjs",
+    "dev": "electron app/main.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@neo-cloud-agent/contracts": "workspace:*"
+  }
+}
