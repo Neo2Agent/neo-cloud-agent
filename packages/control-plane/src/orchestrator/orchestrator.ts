@@ -388,6 +388,9 @@ function queueRun(run: Run, title = "两台云端电脑都在忙，已排队，�
   run.workerHandle = null;
   run.vmSlotId = null;
   run.updatedAt = now();
+  handles.delete(run.id);
+  deleteWorkerLease(run.id);
+  heartbeats.delete(run.id);
   publish(event(run.id, "run.queued", title));
   flushRun(run.id);
 }

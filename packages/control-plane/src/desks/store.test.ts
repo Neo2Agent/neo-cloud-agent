@@ -13,6 +13,7 @@ const {
   listDesks,
   offerDeskAssignment,
   resetDeskAssignmentsForTests,
+  takeDeskAssignment,
   waitDeskAssignment,
 } = await import("./store.js");
 
@@ -35,5 +36,5 @@ test("waitDeskAssignment resolves when a run is offered", async () => {
   const pending = waitDeskAssignment(created.desk.id, 2_000);
   offerDeskAssignment(created.desk.id, "run-1");
   assert.equal(await pending, "run-1");
-  assert.equal(await waitDeskAssignment(created.desk.id, 20), null);
+  assert.equal(takeDeskAssignment(created.desk.id), null);
 });
