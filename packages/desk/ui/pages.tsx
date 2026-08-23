@@ -581,7 +581,11 @@ export function ChatComposer({
   }, [home, prompt, taRef]);
 
   return (
-    <div ref={boxRef} className={`composer composer-stack${home ? " home" : ""}`} style={{ width }}>
+    <div
+      ref={boxRef}
+      className={`composer composer-stack${home ? " home" : ""}`}
+      style={home ? { width: "100%", maxWidth } : { width, maxWidth }}
+    >
       <textarea
         ref={taRef}
         value={prompt}

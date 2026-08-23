@@ -897,7 +897,7 @@ button:disabled {
   flex-direction: column;
   justify-content: center;
   border-top: 0;
-  padding: 0 40px 72px;
+  padding: 0 10% 72px;
   background: var(--stage);
 }
 
@@ -910,7 +910,8 @@ button:disabled {
   justify-content: center;
   align-items: center;
   gap: 20px;
-  width: min(1120px, 80%);
+  width: 100%;
+  max-width: 1120px;
   margin: 0 auto 16px;
 }
 
@@ -976,7 +977,6 @@ button:disabled {
   align-items: stretch;
   gap: 8px;
   min-width: 320px;
-  max-width: min(1120px, 80%);
   margin: 0 auto;
   padding: 10px 12px 8px;
   background: #fff;
@@ -987,15 +987,17 @@ button:disabled {
 }
 
 .composer.composer-stack.home {
-  min-height: 188px;
-  padding: 18px 18px 12px;
+  width: 100%;
+  max-width: 1120px;
+  min-height: 216px;
+  padding: 20px 20px 14px;
   border-radius: 20px;
   box-shadow: 0 10px 28px rgba(17, 17, 16, 0.05);
 }
 
 .composer.composer-stack.home textarea {
   flex: 1;
-  min-height: 104px;
+  min-height: 128px;
 }
 
 

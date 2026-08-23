@@ -26,7 +26,7 @@ test("follow-up composer grows from a floor to the same max width", () => {
 });
 
 test("home textarea starts taller than the follow-up bar", () => {
-  assert.equal(composerTextareaHeight(20, true), 104);
+  assert.equal(composerTextareaHeight(20, true), 128);
   assert.equal(composerTextareaHeight(20, false), 22);
   assert.equal(composerTextareaHeight(300, true), 240);
 });
