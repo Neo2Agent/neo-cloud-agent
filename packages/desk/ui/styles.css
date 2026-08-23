@@ -500,6 +500,7 @@ button:disabled {
 
 .dash-head > .dash-create {
   margin-left: auto;
+  margin-top: 4px;
 }
 
 .dash-head.compact {
@@ -883,6 +884,254 @@ button:disabled {
   padding: 8px 24px 10px;
   background: var(--stage);
   border-top: 1px solid var(--line);
+}
+
+.composer-wrap.home-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-top: 0;
+  padding: 48px 48px 64px;
+}
+
+.context-bar {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.composer.composer-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12px 14px 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+.composer.composer-stack.home {
+  min-height: 148px;
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.model-wrap {
+  position: relative;
+}
+
+.model-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 4px 6px;
+}
+
+.model-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 280px;
+  padding: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  z-index: 8;
+}
+
+.composer-stack.home .model-menu {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
+.model-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.model-menu button.on,
+.model-menu button:hover {
+  background: var(--hover);
+}
+
+.model-menu .add-model {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  color: var(--muted);
+}
+
+.model-menu .check {
+  color: var(--blue);
+}
+
+.send-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+}
+
+.send-btn:disabled {
+  opacity: 0.25;
+}
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+  background: rgba(20, 20, 18, 0.18);
+}
+
+.palette {
+  width: min(640px, calc(100vw - 48px));
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.palette-input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  padding: 16px 18px 10px;
+  font-size: 15px;
+  background: transparent;
+}
+
+.palette-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.palette-tabs button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.palette-tabs button.on,
+.palette-tabs button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.palette-body {
+  max-height: 360px;
+  overflow: auto;
+  padding: 8px 8px 4px;
+}
+
+.palette-label {
+  margin: 6px 10px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.palette-row {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.palette-row:hover {
+  background: var(--hover);
+}
+
+.palette-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.palette-empty {
+  margin: 18px 12px;
+  color: var(--muted);
+}
+
+.palette-foot {
+  display: flex;
+  gap: 14px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settings-card {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 18px 18px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.settings-card h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.settings-card label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-card input,
+.settings-card select {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  padding: 9px 11px;
+  color: var(--text);
 }
 
 .chips {

@@ -1,3 +1,4 @@
+import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -10,16 +11,22 @@ import { deskBridge, withApiBase, type DeskTarget } from "./desk";
 import {
   AutomationCreateForm,
   AutomationsPage,
+  ChatComposer,
+  loadSavedModels,
   Modal,
+  ModelSettingsPage,
+  OPENAI_BASE_URL,
   ProjectCreateForm,
   ProjectsPage,
+  rememberSavedModel,
+  runSearchMeta,
   SCHEDULE_PRESETS,
-  SearchPage,
-  SettingsPage,
+  SearchPalette,
+  type SavedModel,
   type ScheduleKind,
+  type SearchFilter,
 } from "./pages";
 import {
-  IconAddRepo,
   IconAutomations,
   IconBack,
   IconChevron,
@@ -27,19 +34,16 @@ import {
   IconCopy,
   IconForward,
   IconGear,
-  IconMic,
   IconNewChat,
   IconPeople,
-  IconPlus,
   IconProjects,
   IconSearch,
   IconSort,
-  IconSync,
   IconThumbsDown,
   IconThumbsUp,
 } from "./icons";
 
-type NavId = "chats" | "search" | "automations" | "projects" | "settings";
+type NavId = "chats" | "automations" | "projects" | "settings";
 
 function preview(text: string, n = 56): string {
   return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
@@ -141,11 +145,20 @@ export function App() {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFilter, setSearchFilter] = useState<SearchFilter>("all");
   const [nav, setNav] = useState<NavId>("chats");
   const [target, setTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [folder, setFolder] = useState("");
-  const [mode, setMode] = useState<"agent" | "ask">("agent");
-  const [model, setModel] = useState("Extra High Fast");
+  const [mode] = useState<"agent" | "ask">("agent");
+  const [llm, setLlm] = useState<PublicLlmSettings>({ configured: false, upstream: "mock", model: null, baseUrl: null });
+  const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
+  const [modelMenu, setModelMenu] = useState(false);
+  const [modelName, setModelName] = useState("");
+  const [modelKey, setModelKey] = useState("");
+  const [modelBaseUrl, setModelBaseUrl] = useState(OPENAI_BASE_URL);
+  const [modelBusy, setModelBusy] = useState(false);
   const [repoOpen, setRepoOpen] = useState<Record<string, boolean>>({});
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
   const [copied, setCopied] = useState("");
@@ -182,6 +195,26 @@ export function App() {
     if (!response.ok) return;
     const body = await readJson<{ projects?: Project[] }>(response);
     setProjects(body.projects ?? []);
+  }, []);
+
+  const refreshLlm = useCallback(async () => {
+    const response = await api(tokenRef.current, "/v1/settings/llm");
+    if (!response.ok) return;
+    const settings = await readJson<PublicLlmSettings & { error?: string }>(response);
+    if (settings.error) return;
+    const next: PublicLlmSettings = {
+      configured: Boolean(settings.configured),
+      upstream: settings.upstream || "mock",
+      model: settings.model ?? null,
+      baseUrl: settings.baseUrl ?? null,
+    };
+    setLlm(next);
+    const stored = loadSavedModels();
+    setSavedModels(stored);
+    const names = [next.model, ...stored.map((item) => item.name)].filter((item): item is string => Boolean(item));
+    setSelectedModel((cur) => (cur && names.includes(cur) ? cur : names[0] || ""));
+    if (next.model) setModelName(next.model);
+    if (next.baseUrl) setModelBaseUrl(next.baseUrl);
   }, []);
 
   const listen = useCallback(
@@ -253,8 +286,8 @@ export function App() {
         if (saved.folder) setFolder(saved.folder);
       }
     }
-    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects()]);
-  }, [refreshAutomations, refreshProjects, refreshRuns]);
+    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshLlm()]);
+  }, [refreshAutomations, refreshLlm, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     void (async () => {
@@ -308,6 +341,7 @@ export function App() {
             method: "POST",
             body: JSON.stringify({
               prompt: `${askPrefix}${text}`,
+              model: selectedModel || undefined,
               source: "desk",
               projectId: activeProject?.id,
               repoUrls:
@@ -345,41 +379,59 @@ export function App() {
   };
 
   useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSearchOpen(false);
+        setModelMenu(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [messages, runId]);
 
   const visible = displayTranscriptMessages(messages);
-  const filtered = useMemo(() => {
+  const grouped = useMemo(() => {
     let list = runs;
     if (activeProject) {
       list = list.filter((run) => run.projectId === activeProject.id);
     }
-    const q = query.trim().toLowerCase();
-    if (nav !== "search" || !q) return list;
-    return list.filter((run) => {
-      const repo = repoLabel(run.repoUrls[0]).toLowerCase();
-      const projectName = projects.find((item) => item.id === run.projectId)?.name.toLowerCase() ?? "";
-      return (
-        run.prompt.toLowerCase().includes(q) ||
-        run.id.toLowerCase().includes(q) ||
-        repo.includes(q) ||
-        (run.branchName ?? "").toLowerCase().includes(q) ||
-        run.status.toLowerCase().includes(q) ||
-        projectName.includes(q)
-      );
-    });
-  }, [activeProject, nav, projects, query, runs]);
-
-  const grouped = useMemo(() => {
     const map = new Map<string, Run[]>();
-    for (const run of filtered) {
+    for (const run of list) {
       const key = repoLabel(run.repoUrls[0]);
-      const list = map.get(key) ?? [];
-      list.push(run);
-      map.set(key, list);
+      const bucket = map.get(key) ?? [];
+      bucket.push(run);
+      map.set(key, bucket);
     }
     return [...map.entries()];
-  }, [filtered]);
+  }, [activeProject, runs]);
+
+  const searchHits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return runs
+      .filter((run) => {
+        if (!q) return true;
+        const repo = repoLabel(run.repoUrls[0]).toLowerCase();
+        const projectName = projects.find((item) => item.id === run.projectId)?.name.toLowerCase() ?? "";
+        return (
+          run.prompt.toLowerCase().includes(q) ||
+          run.id.toLowerCase().includes(q) ||
+          repo.includes(q) ||
+          (run.branchName ?? "").toLowerCase().includes(q) ||
+          run.status.toLowerCase().includes(q) ||
+          projectName.includes(q)
+        );
+      })
+      .slice(0, 12)
+      .map((run) => ({
+        id: run.id,
+        title: preview(run.prompt, 72),
+        meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRel(run.updatedAt)),
+      }));
+  }, [projects, query, runs]);
 
   useEffect(() => {
     setRepoOpen((cur) => {
@@ -396,6 +448,8 @@ export function App() {
     setCurrent(null);
     setMessages([]);
     setDiff(null);
+    setSearchOpen(false);
+    setModelMenu(false);
     setNav("chats");
     sourceRef.current?.close();
     requestAnimationFrame(() => taRef.current?.focus());
@@ -455,6 +509,52 @@ export function App() {
     });
     await refreshAutomations();
   };
+
+  const saveModel = async () => {
+    if (!modelName.trim() || modelBusy) return;
+    if (!llm.configured && !modelKey.trim()) return;
+    setModelBusy(true);
+    setAuthError("");
+    try {
+      const response = await api(token, "/v1/settings/llm", {
+        method: "POST",
+        body: JSON.stringify({
+          upstream: "openai",
+          model: modelName.trim(),
+          baseUrl: (modelBaseUrl.trim() || OPENAI_BASE_URL).replace(/\/$/, ""),
+          ...(modelKey.trim() ? { apiKey: modelKey.trim() } : {}),
+        }),
+      });
+      const body = await readJson<PublicLlmSettings & { error?: string }>(response);
+      if (!response.ok) throw new Error(body.error || "保存失败");
+      setModelKey("");
+      setSavedModels(
+        rememberSavedModel({
+          name: modelName.trim(),
+          baseUrl: (modelBaseUrl.trim() || OPENAI_BASE_URL).replace(/\/$/, ""),
+        }),
+      );
+      setSelectedModel(modelName.trim());
+      await refreshLlm();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setModelBusy(false);
+    }
+  };
+
+  const openSettings = () => {
+    setSearchOpen(false);
+    setModelMenu(false);
+    setNav("settings");
+  };
+
+  const modelNames = useMemo(() => {
+    const names = [llm.model, selectedModel, ...savedModels.map((item) => item.name)].filter(
+      (item): item is string => Boolean(item),
+    );
+    return [...new Set(names)];
+  }, [llm.model, savedModels, selectedModel]);
 
   const branch = current?.branchName || "";
   const statusPlace = current ? (isCloudRun(current) ? "Cloud" : "This Computer") : target.kind === "desk" ? "This Computer" : "Cloud";
@@ -548,7 +648,7 @@ export function App() {
         </div>
 
         <nav className="rail-nav">
-          <button type="button" className={`rail-item${nav === "chats" ? " on" : ""}`} onClick={newChat}>
+          <button type="button" className={`rail-item${nav === "chats" && !searchOpen ? " on" : ""}`} onClick={newChat}>
             <span className="rail-icon">
               <IconNewChat />
             </span>
@@ -556,9 +656,10 @@ export function App() {
           </button>
           <button
             type="button"
-            className={`rail-item${nav === "search" ? " on" : ""}`}
+            className={`rail-item${searchOpen ? " on" : ""}`}
             onClick={() => {
-              setNav("search");
+              setSearchOpen(true);
+              setSearchFilter("all");
               requestAnimationFrame(() => searchRef.current?.focus());
             }}
           >
@@ -569,7 +670,7 @@ export function App() {
           </button>
           <button
             type="button"
-            className={`rail-item${nav === "automations" ? " on" : ""}`}
+            className={`rail-item${nav === "automations" && !searchOpen ? " on" : ""}`}
             onClick={() => setNav("automations")}
           >
             <span className="rail-icon">
@@ -579,7 +680,7 @@ export function App() {
           </button>
           <button
             type="button"
-            className={`rail-item${nav === "projects" ? " on" : ""}`}
+            className={`rail-item${nav === "projects" && !searchOpen ? " on" : ""}`}
             onClick={() => setNav("projects")}
           >
             <span className="rail-icon">
@@ -589,78 +690,77 @@ export function App() {
           </button>
         </nav>
 
-        {nav === "chats" ? (
-          <>
-            <div className="repo-head">
-              {activeProject ? (
-                <button type="button" className="repo-filter" onClick={() => setActiveProject(null)}>
-                  {activeProject.name}
-                  <span aria-hidden="true">×</span>
-                </button>
-              ) : (
-                <span>Repositories</span>
-              )}
-              <div className="repo-head-actions">
-                <button type="button" className="icon-btn" aria-label="Filter repositories" onClick={() => setNav("search")}>
-                  <IconSort />
-                </button>
-                <button type="button" className="icon-btn" aria-label="Add repository" onClick={newChat}>
-                  <IconAddRepo />
-                </button>
-              </div>
-            </div>
+        <div className="repo-head">
+          {activeProject ? (
+            <button type="button" className="repo-filter" onClick={() => setActiveProject(null)}>
+              {activeProject.name}
+              <span aria-hidden="true">×</span>
+            </button>
+          ) : (
+            <span>Repositories</span>
+          )}
+          <div className="repo-head-actions">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Search agents"
+              onClick={() => {
+                setSearchOpen(true);
+                requestAnimationFrame(() => searchRef.current?.focus());
+              }}
+            >
+              <IconSort />
+            </button>
+          </div>
+        </div>
 
-            <div className="repo-tree">
-              {grouped.length === 0 ? (
-                <p className="pane-note">
-                  {activeProject ? "这个项目还没有对话。从 New Chat 开始。" : "还没有对话。从 New Chat 开始。"}
-                </p>
-              ) : (
-                grouped.map(([name, list]) => (
-                  <div key={name} className="repo-group">
-                    <button
-                      type="button"
-                      className="repo-folder"
-                      onClick={() => setRepoOpen((cur) => ({ ...cur, [name]: cur[name] === false }))}
-                    >
-                      <IconChevron open={repoOpen[name] !== false} size={14} />
-                      <span>{name}</span>
-                    </button>
-                    {repoOpen[name] !== false
-                      ? list.map((run) => {
-                          const active = run.id === runId;
-                          return (
-                            <button
-                              key={run.id}
-                              type="button"
-                              className={`chat-row${active ? " active" : ""}`}
-                              onClick={() => void openRun(run.id)}
-                            >
-                              <span className={`chat-dot${active ? " on" : ""}`} />
-                              <span className="chat-title">{preview(run.prompt, 40)}</span>
-                              <span className="chat-meta">
-                                <IconPeople size={13} />
-                                {isCloudRun(run) ? <IconCloud size={13} /> : null}
-                                <span>{formatRel(run.updatedAt)}</span>
-                              </span>
-                            </button>
-                          );
-                        })
-                      : null}
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="rail-spacer" aria-hidden="true" />
-        )}
+        <div className="repo-tree">
+          {grouped.length === 0 ? (
+            <p className="pane-note">
+              {activeProject ? "这个项目还没有对话。从 New Chat 开始。" : "还没有对话。从 New Chat 开始。"}
+            </p>
+          ) : (
+            grouped.map(([name, list]) => (
+              <div key={name} className="repo-group">
+                <button
+                  type="button"
+                  className="repo-folder"
+                  onClick={() => setRepoOpen((cur) => ({ ...cur, [name]: cur[name] === false }))}
+                >
+                  <IconChevron open={repoOpen[name] !== false} size={14} />
+                  <span>{name}</span>
+                </button>
+                {repoOpen[name] !== false
+                  ? list.map((run) => {
+                      const active = run.id === runId;
+                      return (
+                        <button
+                          key={run.id}
+                          type="button"
+                          className={`chat-row${active ? " active" : ""}`}
+                          onClick={() => void openRun(run.id)}
+                        >
+                          <span className={`chat-dot${active ? " on" : ""}`} />
+                          <span className="chat-title">{preview(run.prompt, 40)}</span>
+                          <span className="chat-meta">
+                            <IconPeople size={13} />
+                            {isCloudRun(run) ? <IconCloud size={13} /> : null}
+                            <span>{formatRel(run.updatedAt)}</span>
+                          </span>
+                        </button>
+                      );
+                    })
+                  : null}
+              </div>
+            ))
+          )}
+        </div>
 
         <div className="rail-foot">
           <div className="profile">
             <span className="avatar">{initials(user)}</span>
             <span className="profile-name">{user}</span>
-            <button type="button" className="icon-btn" aria-label="Settings" onClick={() => setNav("settings")}>
+            <button type="button" className="icon-btn" aria-label="Settings" onClick={openSettings}>
               <IconGear />
             </button>
           </div>
@@ -694,11 +794,22 @@ export function App() {
             onSelect={setActiveProject}
           />
         ) : nav === "settings" ? (
-          <SettingsPage>
-            <div className="project-form">
-              <p className="user-card-text">Desk 执行目标</p>
+          <ModelSettingsPage
+            name={modelName}
+            setName={setModelName}
+            apiKey={modelKey}
+            setApiKey={setModelKey}
+            baseUrl={modelBaseUrl}
+            setBaseUrl={setModelBaseUrl}
+            configured={llm.configured}
+            busy={modelBusy}
+            error={authError || undefined}
+            onSave={() => void saveModel()}
+          >
+            <div className="settings-card">
+              <h2>This computer</h2>
               <label>
-                Target
+                <span>Target</span>
                 <select
                   value={target.kind}
                   onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}
@@ -729,181 +840,150 @@ export function App() {
                   {folder || "Folder…"}
                 </button>
               ) : null}
-              <label>
-                Mode
-                <select value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")}>
-                  <option value="agent">Agent</option>
-                  <option value="ask">Ask</option>
-                </select>
-              </label>
-              <p className="pane-note">Ask 只加提示前缀。Provider key 仍在 gateway 的设置里。</p>
             </div>
-          </SettingsPage>
-        ) : nav === "search" ? (
-          <SearchPage
-            query={query}
-            setQuery={setQuery}
-            searchRef={searchRef}
-            empty={
-              !query.trim() ? (
-                <p className="empty-copy">从 /v1/runs 里搜已有对话。</p>
-              ) : filtered.length === 0 ? (
-                <p className="empty-copy">没有匹配「{query.trim()}」的对话。</p>
-              ) : null
-            }
-          >
-            {query.trim()
-              ? filtered.map((run) => (
-                  <button key={run.id} type="button" className="search-hit" onClick={() => void openRun(run.id)}>
-                    <strong>{preview(run.prompt, 72)}</strong>
-                    <p className="pane-note">
-                      {repoLabel(run.repoUrls[0])} · {isCloudRun(run) ? "Cloud" : "This Computer"} · {run.status} ·{" "}
-                      {formatRel(run.updatedAt)}
-                    </p>
-                  </button>
-                ))
-              : null}
-          </SearchPage>
+          </ModelSettingsPage>
         ) : (
           <section className="page chat-page">
-        <header className="stage-head">
-          <h1>{title}</h1>
-          {!current || isCloudRun(current) ? <IconCloud size={18} /> : null}
-        </header>
-
-        <div className="feed" ref={feedRef}>
-          {!current && visible.length === 0 ? (
-            <div className="empty-copy">
-              <p>这是 Agents Window，不是完整编辑器。对话按仓库分组，右侧数据来自现有 /v1。</p>
-            </div>
-          ) : null}
-
-          {current && !visible.some((message) => message.role === "user") ? (
-            <article className="user-card">
-              <div className="user-card-text">{current.prompt}</div>
-            </article>
-          ) : null}
-
-          {visible.map((message) => {
-            if (message.role === "user") {
-              return (
-                <article key={message.id} className="user-card">
-                  <div className="user-card-text">{message.text || current?.prompt}</div>
-                  {message.images?.length ? (
-                    <div className="thumbs">
-                      {message.images.map((image, index) => (
-                        <img key={`${message.id}-${index}`} src={`data:${image.mediaType};base64,${image.data}`} alt="" />
-                      ))}
-                    </div>
+            {current ? (
+              <>
+                <header className="stage-head">
+                  <h1>{title}</h1>
+                  {isCloudRun(current) ? <IconCloud size={18} /> : null}
+                </header>
+                <div className="feed" ref={feedRef}>
+                  {!visible.some((message) => message.role === "user") ? (
+                    <article className="user-card">
+                      <div className="user-card-text">{current.prompt}</div>
+                    </article>
                   ) : null}
-                </article>
-              );
-            }
-            if (isThought(message)) {
-              return (
-                <details key={message.id} className="thought">
-                  <summary>Thought briefly.</summary>
-                  <p>{message.text}</p>
-                </details>
-              );
-            }
-            if (isStatus(message) || looksLikeCi(message.text)) {
-              return (
-                <div key={message.id} className={`status-line${looksLikeCi(message.text) ? " ok" : ""}`}>
-                  <span />
-                  <p>{message.text}</p>
+                  {visible.map((message) => {
+                    if (message.role === "user") {
+                      return (
+                        <article key={message.id} className="user-card">
+                          <div className="user-card-text">{message.text || current.prompt}</div>
+                          {message.images?.length ? (
+                            <div className="thumbs">
+                              {message.images.map((image, index) => (
+                                <img key={`${message.id}-${index}`} src={`data:${image.mediaType};base64,${image.data}`} alt="" />
+                              ))}
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    }
+                    if (isThought(message)) {
+                      return (
+                        <details key={message.id} className="thought">
+                          <summary>Thought briefly.</summary>
+                          <p>{message.text}</p>
+                        </details>
+                      );
+                    }
+                    if (isStatus(message) || looksLikeCi(message.text)) {
+                      return (
+                        <div key={message.id} className={`status-line${looksLikeCi(message.text) ? " ok" : ""}`}>
+                          <span />
+                          <p>{message.text}</p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <article key={message.id} className="assistant-block">
+                        <div className="assistant-text">{message.text}</div>
+                        <div className="assistant-actions">
+                          <button type="button" className="icon-btn" aria-label="Good response">
+                            <IconThumbsUp />
+                          </button>
+                          <button type="button" className="icon-btn" aria-label="Bad response">
+                            <IconThumbsDown />
+                          </button>
+                          <button type="button" className="icon-btn" aria-label="Copy" onClick={() => void copyText(message.text)}>
+                            <IconCopy />
+                          </button>
+                          <span className="ago">{formatRel(message.createdAt)}</span>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-              );
-            }
-            return (
-              <article key={message.id} className="assistant-block">
-                <div className="assistant-text">{message.text}</div>
-                <div className="assistant-actions">
-                  <button type="button" className="icon-btn" aria-label="Good response">
-                    <IconThumbsUp />
+              </>
+            ) : null}
+
+            <footer className={`composer-wrap${current ? "" : " home-wrap"}`}>
+              <div className="context-bar">
+                <button type="button" className="context-chip">
+                  {current ? repoLabel(current.repoUrls[0]) : folder.split("/").filter(Boolean).pop() || "Inbox"}
+                </button>
+                <button type="button" className="context-chip" onClick={() => (branch ? void copyText(branch) : undefined)}>
+                  {branch || "main"}
+                </button>
+                <button
+                  type="button"
+                  className="context-chip"
+                  onClick={() => {
+                    if (current) return;
+                    applyTarget({
+                      ...target,
+                      kind: target.kind === "cloud" && canRunLocal ? "desk" : "cloud",
+                    });
+                  }}
+                >
+                  <IconCloud size={14} />
+                  {statusPlace}
+                </button>
+              </div>
+              {current && diff && (diff.added > 0 || diff.removed > 0) ? (
+                <div className="chips">
+                  <button type="button" className="chip">
+                    Changes <em className="add">+{diff.added}</em> <em className="del">-{diff.removed}</em>
                   </button>
-                  <button type="button" className="icon-btn" aria-label="Bad response">
-                    <IconThumbsDown />
-                  </button>
-                  <button type="button" className="icon-btn" aria-label="Copy" onClick={() => void copyText(message.text)}>
-                    <IconCopy />
-                  </button>
-                  <span className="ago">{formatRel(message.createdAt)}</span>
                 </div>
-              </article>
-            );
-          })}
-        </div>
-
-        <footer className="composer-wrap">
-          {current ? (
-            <div className="chips">
-              {diff && (diff.added > 0 || diff.removed > 0) ? (
-                <button type="button" className="chip">
-                  Changes <em className="add">+{diff.added}</em> <em className="del">-{diff.removed}</em>
-                </button>
               ) : null}
-              {branch ? (
-                <button type="button" className="chip" onClick={() => void copyText(branch)}>
-                  Checkout {branch}
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="composer">
-            <button type="button" className="plus" aria-label="Attach">
-              <IconPlus />
-            </button>
-            <textarea
-              ref={taRef}
-              value={prompt}
-              placeholder={runId ? "Send follow-up" : "Describe a task"}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={onComposerKey}
-              rows={1}
-            />
-            <select className="model" value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")} aria-label="Mode">
-              <option value="agent">Agent</option>
-              <option value="ask">Ask</option>
-            </select>
-            <select className="model" value={model} onChange={(event) => setModel(event.target.value)} aria-label="Model">
-              <option>Extra High Fast</option>
-              <option>High Fast</option>
-              <option>Default</option>
-            </select>
-            <button type="button" className="icon-btn mic" aria-label="Voice">
-              <IconMic />
-            </button>
-          </div>
-
-          <div className="status-bar">
-            <span className="mono">{branch || "untracked"}</span>
-            <button
-              type="button"
-              className="cloud-pill"
-              onClick={() => {
-                if (current) return;
-                applyTarget({
-                  ...target,
-                  kind: target.kind === "cloud" && canRunLocal ? "desk" : "cloud",
-                });
-              }}
-            >
-              <IconCloud size={14} />
-              {statusPlace}
-            </button>
-            <span className={`sync${sending ? " spin" : ""}`} aria-hidden="true">
-              <IconSync size={14} />
-            </span>
-          </div>
-          {authError ? <p className="error toast-inline">{authError}</p> : null}
-          {copied ? <p className="copied">Copied</p> : null}
-        </footer>
+              <ChatComposer
+                prompt={prompt}
+                setPrompt={setPrompt}
+                placeholder={runId ? "Send follow-up" : "Plan, Build, / for skills, @ for context"}
+                sending={sending}
+                models={modelNames}
+                selected={selectedModel}
+                menuOpen={modelMenu}
+                setMenuOpen={setModelMenu}
+                onSelectModel={(name) => {
+                  setSelectedModel(name);
+                  setModelMenu(false);
+                }}
+                onAddModel={openSettings}
+                onSubmit={() => void send()}
+                taRef={taRef}
+                onComposerKey={onComposerKey}
+                home={!current}
+              />
+              {authError ? <p className="error toast-inline">{authError}</p> : null}
+              {copied ? <p className="copied">Copied</p> : null}
+            </footer>
           </section>
         )}
         </div>
       </main>
+      {searchOpen
+        ? createPortal(
+            <SearchPalette
+              query={query}
+              setQuery={setQuery}
+              filter={searchFilter}
+              setFilter={setSearchFilter}
+              hits={searchHits}
+              searchRef={searchRef}
+              onOpenRun={(id) => {
+                setSearchOpen(false);
+                void openRun(id);
+              }}
+              onOpenSettings={openSettings}
+              onClose={() => setSearchOpen(false)}
+            />,
+            document.body,
+          )
+        : null}
       {projectModal
         ? createPortal(
             <Modal title="新建项目" onClose={() => setProjectModal(false)}>

@@ -281,6 +281,7 @@ function wireIpc(): void {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   if (existsSync(stateFile("desk.json"))) {
     const saved = readJson<{ deskId?: string; token?: string }>(stateFile("desk.json"), {});
     deskId = saved.deskId ?? "";

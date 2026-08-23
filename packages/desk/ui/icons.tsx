@@ -97,11 +97,10 @@ export function IconGear(props: IconProps) {
   );
 }
 
-export function IconMic(props: IconProps) {
+export function IconArrowUp(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="9" y="3" width="6" height="11" rx="3" />
-      <path d="M6 11a6 6 0 0 0 12 0M12 17v4" />
+      <path d="M12 19V5M5 12l7-7 7 7" />
     </Svg>
   );
 }

@@ -1,9 +1,14 @@
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import type { FormEvent, ReactNode, Ref } from "react";
-import { IconPlus, IconProjects, IconSearch } from "./icons";
+import type { Run } from "@neo-cloud-agent/contracts/run";
+import type { FormEvent, KeyboardEvent, ReactNode, Ref } from "react";
+import { IconArrowUp, IconPlus, IconProjects, IconSearch } from "./icons";
 
 export type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
+export type SearchFilter = "all" | "agents" | "files" | "actions" | "settings";
+
+export const OPENAI_BASE_URL = "https://api.openai.com/v1";
+const MODELS_KEY = "neo-desk-models";
 
 export const SCHEDULE_PRESETS: Array<{ id: ScheduleKind; label: string; schedule: AutomationSchedule }> = [
   { id: "hourly", label: "每小时", schedule: { kind: "every", minutes: 60 } },
@@ -11,6 +16,32 @@ export const SCHEDULE_PRESETS: Array<{ id: ScheduleKind; label: string; schedule
   { id: "daily_09", label: "每天上午 9 点", schedule: { kind: "daily", hour: 9 } },
   { id: "weekly_mon_09", label: "每周一上午 9 点", schedule: { kind: "weekly", weekday: 1, hour: 9 } },
 ];
+
+export type SavedModel = { name: string; baseUrl: string };
+
+export function loadSavedModels(): SavedModel[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MODELS_KEY) || "[]") as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const row = item as { name?: unknown; baseUrl?: unknown };
+        const name = typeof row.name === "string" ? row.name.trim() : "";
+        const baseUrl = typeof row.baseUrl === "string" ? row.baseUrl.trim() : OPENAI_BASE_URL;
+        return name ? { name, baseUrl } : null;
+      })
+      .filter((item): item is SavedModel => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
+export function rememberSavedModel(model: SavedModel): SavedModel[] {
+  const next = [model, ...loadSavedModels().filter((item) => item.name !== model.name)];
+  localStorage.setItem(MODELS_KEY, JSON.stringify(next));
+  return next;
+}
 
 export function formatAddedAt(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -63,52 +94,181 @@ export function Modal({
   );
 }
 
-export function SearchPage({
+export function SearchPalette({
   query,
   setQuery,
-  empty,
-  children,
+  filter,
+  setFilter,
+  hits,
   searchRef,
+  onOpenRun,
+  onOpenSettings,
+  onClose,
 }: {
   query: string;
   setQuery: (value: string) => void;
-  empty: ReactNode;
-  children?: ReactNode;
+  filter: SearchFilter;
+  setFilter: (value: SearchFilter) => void;
+  hits: Array<{ id: string; title: string; meta: string }>;
   searchRef: Ref<HTMLInputElement>;
+  onOpenRun: (id: string) => void;
+  onOpenSettings: () => void;
+  onClose: () => void;
 }) {
+  const tabs: Array<{ id: SearchFilter; label: string }> = [
+    { id: "all", label: "All" },
+    { id: "agents", label: "Agents" },
+    { id: "files", label: "Files" },
+    { id: "actions", label: "Actions" },
+    { id: "settings", label: "Settings" },
+  ];
+  const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+    }
+    if (event.key === "Enter" && hits[0] && (filter === "all" || filter === "agents")) {
+      event.preventDefault();
+      onOpenRun(hits[0].id);
+    }
+  };
   return (
-    <Page>
-      <header className="dash-head compact">
-        <div>
-          <h1>搜索</h1>
-          <p>从已有对话里找标题、仓库、分支、状态或项目。</p>
-        </div>
-      </header>
-      <div className="page-body">
+    <div className="palette-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="palette"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search"
+        onClick={(event) => event.stopPropagation()}
+      >
         <input
           ref={searchRef}
-          className="search search-main"
+          className="palette-input"
           value={query}
-          placeholder="搜索对话、仓库、分支、状态或项目"
+          placeholder="Search agents, files, actions…"
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={onKey}
         />
-        {empty}
-        {children}
+        <div className="palette-tabs">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={filter === tab.id ? "on" : ""}
+              onClick={() => setFilter(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="palette-body">
+          {filter === "settings" ? (
+            <button type="button" className="palette-row" onClick={onOpenSettings}>
+              <strong>Models</strong>
+              <span>配置模型名、API Key、Base URL</span>
+            </button>
+          ) : filter === "files" || filter === "actions" ? (
+            <p className="palette-empty">还没有{filter === "files" ? "文件索引" : "快捷动作"}。</p>
+          ) : hits.length === 0 ? (
+            <p className="palette-empty">{query.trim() ? "没有匹配的对话。" : "还没有对话。"}</p>
+          ) : (
+            <>
+              <p className="palette-label">Recent Agents</p>
+              {hits.map((hit) => (
+                <button key={hit.id} type="button" className="palette-row" onClick={() => onOpenRun(hit.id)}>
+                  <strong>{hit.title}</strong>
+                  <span>{hit.meta}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+        <footer className="palette-foot">
+          <span>Esc 关闭</span>
+          <span>↑↓ 选择</span>
+          <span>⏎ 打开</span>
+        </footer>
       </div>
-    </Page>
+    </div>
   );
 }
 
-export function SettingsPage({ children }: { children: ReactNode }) {
+export function ModelSettingsPage({
+  name,
+  setName,
+  apiKey,
+  setApiKey,
+  baseUrl,
+  setBaseUrl,
+  configured,
+  busy,
+  error,
+  onSave,
+  children,
+}: {
+  name: string;
+  setName: (value: string) => void;
+  apiKey: string;
+  setApiKey: (value: string) => void;
+  baseUrl: string;
+  setBaseUrl: (value: string) => void;
+  configured: boolean;
+  busy: boolean;
+  error?: string;
+  onSave: () => void;
+  children?: ReactNode;
+}) {
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    onSave();
+  };
   return (
     <Page>
       <header className="dash-head compact">
         <div>
-          <h1>设置</h1>
-          <p>Desk 执行目标和问答模式。Provider key 仍在 gateway。</p>
+          <h1>Models</h1>
+          <p>先只支持 OpenAI 协议。填模型名、API Key 和 Base URL。</p>
         </div>
       </header>
-      <div className="page-body">{children}</div>
+      <div className="page-body">
+        <form className="settings-card" onSubmit={submit}>
+          <h2>OpenAI compatible</h2>
+          <label>
+            <span>模型名</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
+          </label>
+          <label>
+            <span>API Key</span>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder={configured ? "已保存，留空则保持" : "sk-…"}
+              autoComplete="new-password"
+            />
+          </label>
+          <label>
+            <span>Base URL</span>
+            <input
+              value={baseUrl}
+              onChange={(event) => setBaseUrl(event.target.value)}
+              placeholder={OPENAI_BASE_URL}
+              autoComplete="off"
+            />
+          </label>
+          <label>
+            <span>协议</span>
+            <select value="openai" disabled>
+              <option value="openai">OpenAI</option>
+            </select>
+          </label>
+          {error ? <p className="error">{error}</p> : null}
+          <button type="submit" className="dash-create" disabled={busy || !name.trim() || (!configured && !apiKey.trim())}>
+            {busy ? "保存中…" : "保存"}
+          </button>
+        </form>
+        {children}
+      </div>
     </Page>
   );
 }
@@ -193,12 +353,11 @@ export function ProjectsPage({
         <div className="dash-copy">
           <h1>项目</h1>
           <p>多人协同，打造超级团队</p>
-          <button type="button" className="dash-create" onClick={onCreate}>
-            <IconPlus size={16} />
-            新建项目
-          </button>
         </div>
-        <TeamArt />
+        <button type="button" className="dash-create" onClick={onCreate}>
+          <IconPlus size={16} />
+          新建项目
+        </button>
       </header>
       <div className="page-body">
         <div className="mine-head">
@@ -241,6 +400,78 @@ export function ProjectsPage({
         )}
       </div>
     </Page>
+  );
+}
+
+export function ChatComposer({
+  prompt,
+  setPrompt,
+  placeholder,
+  sending,
+  models,
+  selected,
+  menuOpen,
+  setMenuOpen,
+  onSelectModel,
+  onAddModel,
+  onSubmit,
+  taRef,
+  onComposerKey,
+  home,
+}: {
+  prompt: string;
+  setPrompt: (value: string) => void;
+  placeholder: string;
+  sending: boolean;
+  models: string[];
+  selected: string;
+  menuOpen: boolean;
+  setMenuOpen: (value: boolean) => void;
+  onSelectModel: (name: string) => void;
+  onAddModel: () => void;
+  onSubmit: () => void;
+  taRef: Ref<HTMLTextAreaElement>;
+  onComposerKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  home?: boolean;
+}) {
+  const label = selected || "Add Models";
+  return (
+    <div className={`composer composer-stack${home ? " home" : ""}`}>
+      <textarea
+        ref={taRef}
+        value={prompt}
+        placeholder={placeholder}
+        onChange={(event) => setPrompt(event.target.value)}
+        onKeyDown={onComposerKey}
+        rows={home ? 4 : 1}
+      />
+      <div className="composer-tools">
+        <div className="model-wrap">
+          <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
+            {label}
+            <span aria-hidden="true">▾</span>
+          </button>
+          {menuOpen ? (
+            <div className="model-menu" role="menu">
+              <p className="palette-label">Your models</p>
+              {models.length === 0 ? <p className="pane-note">还没有配置模型</p> : null}
+              {models.map((name) => (
+                <button key={name} type="button" className={name === selected ? "on" : ""} onClick={() => onSelectModel(name)}>
+                  <span>{name}</span>
+                  {name === selected ? <span className="check">✓</span> : null}
+                </button>
+              ))}
+              <button type="button" className="add-model" onClick={onAddModel}>
+                Add Models
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <button type="button" className="send-btn" aria-label="Send" disabled={sending || !prompt.trim()} onClick={onSubmit}>
+          <IconArrowUp size={16} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -360,27 +591,6 @@ export function AutomationCreateForm({
   );
 }
 
-function TeamArt() {
-  return (
-    <svg className="team-art" viewBox="0 0 260 110" aria-hidden="true">
-      <circle cx="32" cy="28" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M16 80c4-24 30-24 34 0" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <rect x="42" y="38" width="13" height="17" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="98" cy="26" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M82 80c4-24 30-24 34 0" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M84 58h28l-4 9H88z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="148" y="16" width="28" height="20" rx="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="157" cy="26" r="2" fill="currentColor" />
-      <circle cx="167" cy="26" r="2" fill="currentColor" />
-      <rect x="144" y="40" width="36" height="26" rx="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M154 54h16" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="226" cy="26" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M210 80c4-24 30-24 34 0" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <rect x="216" y="44" width="11" height="15" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="223" y="40" width="11" height="15" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M48 30C70 8 80 8 88 18" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" />
-      <path d="M116 30C132 8 146 8 158 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" />
-      <path d="M182 28C200 8 210 8 216 18" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" />
-    </svg>
-  );
+export function runSearchMeta(run: Run, repo: string, cloud: boolean, rel: string): string {
+  return `${repo} · ${cloud ? "Cloud" : "This Computer"} · ${rel}`;
 }
