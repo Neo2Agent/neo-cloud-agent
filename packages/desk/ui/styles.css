@@ -310,6 +310,10 @@ button:disabled {
   padding: 4px 2px;
 }
 
+.customize.wide {
+  padding: 12px 0 24px;
+}
+
 .customize label {
   display: grid;
   gap: 6px;

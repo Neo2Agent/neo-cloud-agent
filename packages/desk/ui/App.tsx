@@ -500,64 +500,7 @@ export function App() {
             />
           ) : null}
 
-          {nav === "customize" ? (
-            <div className="customize">
-              <label>
-                Target
-                <select
-                  value={target.kind}
-                  onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}
-                >
-                  <option value="cloud">Cloud</option>
-                  <option value="desk" disabled={!canRunLocal}>
-                    {canRunLocal ? "This Computer" : "This Computer (needs Electron)"}
-                  </option>
-                  <option value="remote" disabled>
-                    Remote SSH
-                  </option>
-                </select>
-              </label>
-              {target.kind === "desk" ? (
-                <button
-                  type="button"
-                  className="folder-btn"
-                  onClick={() => {
-                    void deskBridge()
-                      ?.pickFolder()
-                      .then((picked) => {
-                        if (!picked) return;
-                        setFolder(picked);
-                        applyTarget({ ...target, kind: "desk", folder: picked });
-                      });
-                  }}
-                >
-                  {folder || "Folder…"}
-                </button>
-              ) : null}
-              <label>
-                Mode
-                <select value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")}>
-                  <option value="agent">Agent</option>
-                  <option value="ask">Ask</option>
-                </select>
-              </label>
-              <p className="pane-note">Ask 只加提示前缀。Provider key 仍在 gateway。</p>
-            </div>
-          ) : nav === "automations" ? (
-            automations.length === 0 ? (
-              <p className="pane-note">还没有定时任务。Automations 走同一控制面。</p>
-            ) : (
-              automations.map((item) => (
-                <div key={item.id} className="chat-row static">
-                  <span className="chat-dot" />
-                  <span className="chat-title">{item.name || preview(item.prompt, 36)}</span>
-                  <span className="chat-meta">
-                    <span>{item.enabled ? "On" : "Off"}</span>
-                  </span>
-                </div>
-              ))
-            )
-          ) : grouped.length === 0 ? (
+          {grouped.length === 0 ? (
             <p className="pane-note">{query ? "没有匹配的对话。" : "还没有对话。从 New Chat 开始。"}</p>
           ) : (
             grouped.map(([name, list]) => (
@@ -624,6 +567,80 @@ export function App() {
       </aside>
 
       <main className="stage">
+        {nav === "automations" ? (
+          <>
+            <header className="stage-head">
+              <h1>Automations</h1>
+            </header>
+            <div className="feed">
+              {automations.length === 0 ? (
+                <div className="empty-copy">
+                  <p>还没有定时任务。Automations 走同一控制面 /v1/automations。</p>
+                </div>
+              ) : (
+                automations.map((item) => (
+                  <article key={item.id} className="user-card">
+                    <div className="user-card-text">{item.name || item.prompt}</div>
+                    <p className="pane-note">
+                      {item.enabled ? "On" : "Off"} · {item.schedule.kind}
+                    </p>
+                  </article>
+                ))
+              )}
+            </div>
+          </>
+        ) : nav === "customize" ? (
+          <>
+            <header className="stage-head">
+              <h1>Customize</h1>
+            </header>
+            <div className="feed">
+              <div className="customize wide">
+                <label>
+                  Target
+                  <select
+                    value={target.kind}
+                    onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}
+                  >
+                    <option value="cloud">Cloud</option>
+                    <option value="desk" disabled={!canRunLocal}>
+                      {canRunLocal ? "This Computer" : "This Computer (needs Electron)"}
+                    </option>
+                    <option value="remote" disabled>
+                      Remote SSH
+                    </option>
+                  </select>
+                </label>
+                {target.kind === "desk" ? (
+                  <button
+                    type="button"
+                    className="folder-btn"
+                    onClick={() => {
+                      void deskBridge()
+                        ?.pickFolder()
+                        .then((picked) => {
+                          if (!picked) return;
+                          setFolder(picked);
+                          applyTarget({ ...target, kind: "desk", folder: picked });
+                        });
+                    }}
+                  >
+                    {folder || "Folder…"}
+                  </button>
+                ) : null}
+                <label>
+                  Mode
+                  <select value={mode} onChange={(event) => setMode(event.target.value as "agent" | "ask")}>
+                    <option value="agent">Agent</option>
+                    <option value="ask">Ask</option>
+                  </select>
+                </label>
+                <p className="pane-note">Ask 只加提示前缀。Provider key 仍在 gateway。</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
         <header className="stage-head">
           <h1>{title}</h1>
           {!current || isCloudRun(current) ? <IconCloud size={18} /> : null}
@@ -754,6 +771,8 @@ export function App() {
           {authError ? <p className="error toast-inline">{authError}</p> : null}
           {copied ? <p className="copied">Copied</p> : null}
         </footer>
+          </>
+        )}
       </main>
     </div>
   );
