@@ -112,8 +112,8 @@ function rendererEntry(): string {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    width: 1440,
+    height: 900,
     title: "Neo Desk",
     autoHideMenuBar: true,
     show: false,
