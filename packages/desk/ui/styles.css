@@ -149,6 +149,10 @@ button:disabled {
   padding: 10px 10px 4px;
 }
 
+.rail-history .icon-btn {
+  color: #4a4a46;
+}
+
 .icon-btn {
   width: 28px;
   height: 28px;
@@ -244,12 +248,11 @@ button:disabled {
 }
 
 .chat-row {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
-  padding: 7px 8px 7px 6px;
+  padding: 6px 8px 6px 6px;
   border-radius: 8px;
   text-align: left;
 }
@@ -267,12 +270,11 @@ button:disabled {
 }
 
 .chat-dot {
-  grid-row: 1 / span 2;
-  align-self: center;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: transparent;
+  flex: none;
 }
 
 .chat-dot.on {
@@ -280,6 +282,7 @@ button:disabled {
 }
 
 .chat-title {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -293,6 +296,7 @@ button:disabled {
   gap: 5px;
   color: var(--muted);
   font-size: 11px;
+  flex: none;
 }
 
 .search {

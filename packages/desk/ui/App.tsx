@@ -126,6 +126,7 @@ export function App() {
   const [repoOpen, setRepoOpen] = useState<Record<string, boolean>>({});
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
   const [copied, setCopied] = useState("");
+  const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
   const tokenRef = useRef("");
   const sourceRef = useRef<EventSource | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -171,9 +172,17 @@ export function App() {
   );
 
   const openRun = useCallback(
-    async (id: string) => {
+    async (id: string, opts?: { record?: boolean }) => {
       setRunId(id);
       setNav("chats");
+      if (opts?.record !== false) {
+        setTrail((cur) => {
+          const clipped = cur.ids.slice(0, cur.at + 1);
+          if (clipped.at(-1) === id) return { ids: clipped, at: clipped.length - 1 };
+          const ids = [...clipped, id];
+          return { ids, at: ids.length - 1 };
+        });
+      }
       const [runRes, transcriptRes, diffRes] = await Promise.all([
         api(tokenRef.current, `/v1/runs/${id}`),
         api(tokenRef.current, `/v1/runs/${id}/transcript?limit=80`),
@@ -401,10 +410,34 @@ export function App() {
     <div className="agents-app">
       <aside className="rail">
         <div className="rail-history">
-          <button type="button" className="icon-btn" aria-label="Back" disabled>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Back"
+            disabled={trail.at <= 0}
+            onClick={() => {
+              const at = trail.at - 1;
+              const id = trail.ids[at];
+              if (!id) return;
+              setTrail((cur) => ({ ...cur, at }));
+              void openRun(id, { record: false });
+            }}
+          >
             <IconBack />
           </button>
-          <button type="button" className="icon-btn" aria-label="Forward" disabled>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Forward"
+            disabled={trail.at < 0 || trail.at >= trail.ids.length - 1}
+            onClick={() => {
+              const at = trail.at + 1;
+              const id = trail.ids[at];
+              if (!id) return;
+              setTrail((cur) => ({ ...cur, at }));
+              void openRun(id, { record: false });
+            }}
+          >
             <IconForward />
           </button>
         </div>
@@ -593,7 +626,7 @@ export function App() {
       <main className="stage">
         <header className="stage-head">
           <h1>{title}</h1>
-          {!current || isCloudRun(current) ? <IconCloud /> : null}
+          {!current || isCloudRun(current) ? <IconCloud size={18} /> : null}
         </header>
 
         <div className="feed" ref={feedRef}>
@@ -601,6 +634,12 @@ export function App() {
             <div className="empty-copy">
               <p>这是 Agents Window，不是完整编辑器。对话按仓库分组，右侧数据来自现有 /v1。</p>
             </div>
+          ) : null}
+
+          {current && !visible.some((message) => message.role === "user") ? (
+            <article className="user-card">
+              <div className="user-card-text">{current.prompt}</div>
+            </article>
           ) : null}
 
           {visible.map((message) => {
