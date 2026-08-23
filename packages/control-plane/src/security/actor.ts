@@ -13,12 +13,15 @@ export function defaultActor(kind: "anonymous" | "service" = "anonymous"): Actor
 
 export function actorCanAccessRun(
   actor: Actor,
-  run: { userId: string; assigneeUserId?: string | null; projectId?: string | null },
+  run: { userId: string; assigneeUserId?: string | null; projectId?: string | null; source?: string },
 ): boolean {
   if (actor.kind !== "user") {
     return true;
   }
   if (actor.userId === run.userId || (run.assigneeUserId && actor.userId === run.assigneeUserId)) {
+    return true;
+  }
+  if (run.source === "automation" && run.userId === getConfig().userId) {
     return true;
   }
   return Boolean(run.projectId && projectHasMember(run.projectId, actor.userId));

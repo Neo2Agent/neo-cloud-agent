@@ -104,6 +104,8 @@ test("mysql store upserts run JSON, events, and users", async () => {
     repoUrls: ["fixtures/toy-repo"],
     schedule: { kind: "daily" as const, hour: 9 },
     nextRunAt: record.run.createdAt,
+    userId: "user-1",
+    orgId: "org_local",
     lastRunAt: null,
     lastRunId: null,
     lastError: null,

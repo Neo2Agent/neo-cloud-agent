@@ -7,13 +7,21 @@ import test from "node:test";
 process.env.WORKER_RUNTIME = "none";
 process.env.SPAWN_LOCAL_WORKER = "0";
 process.env.LLM_GATEWAY_JWT_SECRET = "auto-secret";
-process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-auto-"));
+const runsDir = mkdtempSync(path.join(tmpdir(), "neo-auto-"));
+process.env.RUNS_DIR = runsDir;
 process.env.LLM_SETTINGS_DIR = mkdtempSync(path.join(tmpdir(), "neo-auto-settings-"));
 delete process.env.CONTROL_PLANE_TOKEN;
+
+const { createFileAccountStore } = await import("../accounts/file.js");
+const { setAccountStore } = await import("../accounts/store.js");
+setAccountStore(createFileAccountStore(runsDir), "file");
 
 const { createAutomation, dueAutomations, listAutomations, replaceAutomations, updateAutomation } = await import("./store.js");
 const { fireDueAutomations } = await import("./runner.js");
 const { getRun } = await import("../orchestrator/orchestrator.js");
+const { actorCanAccessRun } = await import("../security/actor.js");
+const { claimOrphanAutomations } = await import("./claim.js");
+const { getAccountStore } = await import("../accounts/store.js");
 
 test("replaceAutomations reloads the saved list", () => {
   const first = createAutomation({
@@ -55,4 +63,59 @@ test("fireDueAutomations starts a run and pushes the next tick", async () => {
   assert.ok(later);
   assert.equal(later?.lastRunId, run?.id);
   assert.ok(Date.parse(later?.nextRunAt ?? "") > Date.now());
+  assert.equal(
+    actorCanAccessRun(
+      { kind: "user", userId: "someone-else", orgId: "org_local", email: "admin", sessionId: "s" },
+      run!,
+    ),
+    true,
+  );
+});
+
+test("fireDueAutomations owns the chat as the automation creator", async () => {
+  const item = createAutomation(
+    {
+      name: "owned",
+      prompt: "用登录账号开对话",
+      schedule: { kind: "every", minutes: 60 },
+      repoUrls: ["fixtures/toy-repo"],
+    },
+    { userId: "user_admin", orgId: "org_local" },
+  );
+  updateAutomation(item.id, { nextRunAt: new Date(Date.now() - 1000).toISOString() });
+  const started = await fireDueAutomations();
+  const run = getRun(started[started.length - 1] ?? "");
+  assert.equal(run?.userId, "user_admin");
+  assert.equal(run?.source, "automation");
+  assert.equal(
+    actorCanAccessRun(
+      { kind: "user", userId: "user_admin", orgId: "org_local", email: "admin", sessionId: "s" },
+      run!,
+    ),
+    true,
+  );
+});
+
+test("claimOrphanAutomations gives the default admin yesterday's system-owned chat", async () => {
+  const store = getAccountStore();
+  const admin = await store.createUser({
+    id: "admin-claim",
+    email: "admin",
+    passwordHash: "x",
+    orgId: "org_local",
+    createdAt: new Date().toISOString(),
+  });
+  const item = createAutomation({
+    prompt: "旧任务没有主人",
+    schedule: { kind: "every", minutes: 60 },
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  updateAutomation(item.id, { nextRunAt: new Date(Date.now() - 1000).toISOString() });
+  const started = await fireDueAutomations();
+  const run = getRun(started[started.length - 1] ?? "");
+  assert.equal(run?.userId, "user_local");
+  await claimOrphanAutomations();
+  const owned = listAutomations().find((row) => row.id === item.id);
+  assert.equal(owned?.userId, admin.id);
+  assert.equal(getRun(run!.id)?.userId, admin.id);
 });

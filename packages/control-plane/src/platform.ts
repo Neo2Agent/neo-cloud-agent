@@ -2,6 +2,7 @@ import { ensureDefaultAdmin } from "./accounts/accounts.js";
 import { setAccountStore } from "./accounts/store.js";
 import { importBuild, listBuilds } from "./env/builds.js";
 import { setEnvPersistHooks } from "./env/persist-hooks.js";
+import { claimOrphanAutomations } from "./automations/claim.js";
 import { listAutomations, replaceAutomations } from "./automations/store.js";
 import { setAutomationPersistHooks } from "./automations/persist-hooks.js";
 import { listProjects, replaceProjects } from "./projects/store.js";
@@ -126,6 +127,9 @@ async function doStart(): Promise<void> {
   if (!process.env.NODE_TEST_CONTEXT) {
     await ensureDefaultAdmin().catch((error) => {
       console.error("default admin account failed", error);
+    });
+    await claimOrphanAutomations().catch((error) => {
+      console.error("claim orphan automations failed", error);
     });
   }
 }
