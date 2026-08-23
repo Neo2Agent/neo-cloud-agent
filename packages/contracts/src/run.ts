@@ -27,7 +27,55 @@ export type RunSource =
   | "api"
   | "automation"
   | "telegram"
-  | "wechat";
+  | "wechat"
+  | "desk";
+
+export type ExecutionPlace = "cloud" | "desk";
+
+/**
+ * Two axes so a later "cloud loop + desk tools" combo does not rewrite the contract.
+ * P0–P2 only allow `loop === tools`.
+ */
+export interface ExecutionTarget {
+  loop: ExecutionPlace;
+  tools: ExecutionPlace;
+  deskId?: string;
+}
+
+export type AgentMode = "agent" | "ask";
+
+export function parseExecutionTarget(value: unknown): ExecutionTarget | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const loop = record.loop === "desk" || record.loop === "cloud" ? record.loop : null;
+  const tools = record.tools === "desk" || record.tools === "cloud" ? record.tools : null;
+  if (!loop || !tools) {
+    return undefined;
+  }
+  const deskId = typeof record.deskId === "string" && record.deskId.trim() ? record.deskId.trim() : undefined;
+  return { loop, tools, deskId };
+}
+
+export function colocatedTarget(place: ExecutionPlace, deskId?: string): ExecutionTarget {
+  return place === "desk" ? { loop: "desk", tools: "desk", deskId } : { loop: "cloud", tools: "cloud" };
+}
+
+export function assertColocatedTarget(target: ExecutionTarget): void {
+  if (target.loop !== target.tools) {
+    throw new Error("P0–P2 只允许 loop 与 tools 同址");
+  }
+  if (target.tools === "desk" && !target.deskId) {
+    throw new Error("本机执行需要 deskId");
+  }
+}
+
+export function isDeskTarget(
+  target?: ExecutionTarget | null,
+): target is ExecutionTarget & { loop: "desk"; tools: "desk" } {
+  return target?.loop === "desk" && target.tools === "desk";
+}
 
 export interface Run {
   id: string;
@@ -41,6 +89,7 @@ export interface Run {
   source: RunSource;
   projectId?: string | null;
   assigneeUserId?: string | null;
+  executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
   branchName: string | null;
@@ -113,6 +162,8 @@ export interface CreateRunRequest {
   source?: RunSource;
   projectId?: string;
   images?: ImageRef[];
+  target?: ExecutionTarget;
+  mode?: AgentMode;
 }
 
 export interface CreateFollowUpRequest {

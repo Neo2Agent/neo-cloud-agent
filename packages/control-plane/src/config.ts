@@ -8,7 +8,7 @@ function repoRoot(): string {
   return fileURLToPath(new URL("../../..", import.meta.url));
 }
 
-export type WorkerRuntimeKind = "local" | "docker" | "none" | "firecracker" | "vm";
+export type WorkerRuntimeKind = "local" | "docker" | "none" | "firecracker" | "vm" | "desk";
 
 export function workerRuntimeKind(): WorkerRuntimeKind {
   const explicit = process.env.WORKER_RUNTIME;

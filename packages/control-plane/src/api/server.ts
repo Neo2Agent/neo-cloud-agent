@@ -9,7 +9,9 @@ import type {
   CreateRunRequest,
   CreateSubscriptionRequest,
   CreateAutomationRequest,
+  CreateDeskRequest,
   CreateProjectRequest,
+  HandoffRequest,
   RunEvent,
   UpdateProjectRequest,
 } from "@neo-cloud-agent/contracts";
@@ -30,9 +32,12 @@ import { attachEventStream } from "../events/stream.js";
 import {
   abortRun,
   archiveRun,
+  claimDeskRun,
   commitRun,
   createRun,
   enqueueFollowUp,
+  handoffRun,
+  leaseDesk,
   ingestGitHubWebhook,
   getBootstrap,
   getRun,
@@ -75,6 +80,7 @@ import {
   accountsRequired,
   cookieHeader,
   matchApiToken,
+  readBearer,
   resolveActor,
   resolveApiToken,
   verifyWorkerJwt,
@@ -99,6 +105,7 @@ import {
   memberRole,
   updateProject,
 } from "../projects/store.js";
+import { createDesk, deleteDesk, findDeskByToken, listDesks } from "../desks/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
   publicNotifySettings,
@@ -114,7 +121,7 @@ import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slo
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
 } as const;
 
 async function requireRun(runId: string) {
@@ -370,6 +377,33 @@ export function createApiServer() {
           return;
         }
       } else if (path.startsWith("/v1/")) {
+        const deskAction = /^\/v1\/desks\/([^/]+)\/(lease|claim)$/.exec(path);
+        if (deskAction && method === "POST") {
+          const deskId = deskAction[1] ?? "";
+          const action = deskAction[2];
+          const token = readBearer(req);
+          const desk = token ? findDeskByToken(token) : undefined;
+          if (!desk || desk.id !== deskId) {
+            send(res, 401, { error: "unauthorized" });
+            return;
+          }
+          try {
+            if (action === "lease") {
+              const body = (await readJson(req)) as { waitMs?: number };
+              send(res, 200, await leaseDesk(deskId, Number(body.waitMs ?? 20_000)));
+              return;
+            }
+            const body = (await readJson(req)) as { runId?: string; workspaceDir?: string; pid?: number };
+            if (!body.runId || !body.workspaceDir) {
+              send(res, 400, { error: "runId and workspaceDir are required" });
+              return;
+            }
+            send(res, 200, await claimDeskRun(deskId, { runId: body.runId, workspaceDir: body.workspaceDir, pid: body.pid }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "desk_action_failed" });
+          }
+          return;
+        }
         const actor = await resolveActor(req, url);
         if (!actor) {
           send(res, 401, { error: "unauthorized" });
@@ -661,6 +695,32 @@ export function createApiServer() {
           }
           return;
         }
+        if (method === "GET" && path === "/v1/desks") {
+          send(res, 200, { desks: listDesks(actor.kind === "user" ? actor.userId : undefined) });
+          return;
+        }
+        if (method === "POST" && path === "/v1/desks") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 201, createDesk((await readJson(req)) as CreateDeskRequest, { userId: actor.userId, orgId: actor.orgId }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "create_desk_failed" });
+          }
+          return;
+        }
+        const deskDelete = /^\/v1\/desks\/([^/]+)$/.exec(path);
+        if (deskDelete && method === "DELETE") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const ok = deleteDesk(deskDelete[1] ?? "", actor.kind === "user" ? actor.userId : undefined);
+          send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
+          return;
+        }
         if (method === "POST" && path === "/v1/runs") {
           const body = (await readJson(req)) as CreateRunRequest;
           if (!body.prompt || !Array.isArray(body.repoUrls)) {
@@ -738,6 +798,20 @@ export function createApiServer() {
         } catch (error) {
           const message = error instanceof Error ? error.message : "subscribe failed";
           send(res, message.includes("not found") ? 404 : 400, { error: message });
+        }
+        return;
+      }
+
+      const handoffMatch = /^\/v1\/runs\/([^/]+)\/handoff$/.exec(path);
+      if (handoffMatch && method === "POST") {
+        const run = await requireRun(handoffMatch[1] ?? "");
+        if (!actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        try {
+          send(res, 200, await handoffRun(handoffMatch[1] ?? "", (await readJson(req)) as HandoffRequest));
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "handoff_failed" });
         }
         return;
       }

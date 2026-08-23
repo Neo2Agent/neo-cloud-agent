@@ -7,10 +7,14 @@ import type {
   CreatePullRequestRequest,
   CreateRunRequest,
   CreateSubscriptionRequest,
+  DeskAssignment,
+  DeskLeaseResponse,
   DiskCloneMethod,
   EgressPolicy,
+  ExecutionTarget,
   FollowUp,
   FollowUpDelivery,
+  HandoffRequest,
   Run,
   RunDiagnostics,
   RunEvent,
@@ -20,10 +24,13 @@ import type {
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
 import {
+  assertColocatedTarget,
   evaluateEgress,
+  isDeskTarget,
   MAX_SUBSCRIPTION_WAKES,
   mintRunToken,
   parseContextUsage,
+  parseExecutionTarget,
   parseSubscriptionEvents,
   redactText,
   SUBSCRIPTION_COALESCE_MS,
@@ -66,11 +73,19 @@ import {
   persistWorkerLease,
   replacePersistedEvents,
   restoreSessionToDir,
+  type ActiveTurn,
 } from "../store/persist.js";
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 import { getProject, projectHasMember, recordProjectEvent } from "../projects/store.js";
+import {
+  getDesk,
+  isDeskOnline,
+  offerDeskAssignment,
+  touchDesk,
+  waitDeskAssignment,
+} from "../desks/store.js";
 
 const runs = new Map<string, Run>();
 const followUps = new Map<string, FollowUp[]>();
@@ -81,6 +96,8 @@ const handles = new Map<string, RuntimeHandle>();
 const heartbeats = new Map<string, number>();
 const runEgress = new Map<string, EgressPolicy>();
 const releasingIdle = new Set<string>();
+const activeTurns = new Map<string, ActiveTurn>();
+const deskWorkspaces = new Map<string, string>();
 let startingQueued = false;
 let leaseWatch: ReturnType<typeof setInterval> | null = null;
 
@@ -107,6 +124,7 @@ function flushRun(runId: string): void {
     followUps: followUps.get(runId) ?? [],
     inbound: inbound.get(runId) ?? [],
     subscriptions: subscriptions.get(runId) ?? [],
+    activeTurn: activeTurns.get(runId) ?? null,
   });
 }
 
@@ -129,14 +147,21 @@ function hydrateRecord(record: {
   followUps?: FollowUp[];
   inbound?: WorkerInbound[];
   subscriptions?: RunSubscription[];
+  activeTurn?: ActiveTurn | null;
 }): void {
   const run = record.run;
   run.pullRequests = Array.isArray(run.pullRequests) ? run.pullRequests : [];
   run.baseBranch = run.baseBranch ?? null;
+  run.executionTarget = run.executionTarget ?? null;
   runs.set(run.id, run);
   followUps.set(run.id, record.followUps ?? []);
   inbound.set(run.id, record.inbound ?? []);
   subscriptions.set(run.id, record.subscriptions ?? []);
+  if (record.activeTurn?.text) {
+    activeTurns.set(run.id, record.activeTurn);
+  } else {
+    activeTurns.delete(run.id);
+  }
   if (keepHotHistory(run.status)) {
     seedEvents(run.id, loadPersistedEvents(run.id));
   }
@@ -158,6 +183,8 @@ export function reloadPersistedState(): void {
   heartbeats.clear();
   runEgress.clear();
   releasingIdle.clear();
+  activeTurns.clear();
+  deskWorkspaces.clear();
   startingQueued = false;
   resetHistory();
   hydrateFromDisk();
@@ -183,6 +210,44 @@ function hasPendingUserInbound(runId: string): boolean {
   return (inbound.get(runId) ?? []).some((item) => item.type === "prompt" || item.type === "steer" || item.type === "follow_up");
 }
 
+function asActiveTurn(item: WorkerInbound): ActiveTurn | null {
+  if (item.type !== "prompt" && item.type !== "steer" && item.type !== "follow_up") {
+    return null;
+  }
+  return { type: item.type, text: item.text, images: item.images };
+}
+
+function rememberActiveTurns(runId: string, queued: WorkerInbound[]): void {
+  for (let index = queued.length - 1; index >= 0; index -= 1) {
+    const active = asActiveTurn(queued[index] ?? { type: "abort" });
+    if (active) {
+      activeTurns.set(runId, active);
+      return;
+    }
+  }
+}
+
+function clearActiveTurn(runId: string): void {
+  activeTurns.delete(runId);
+}
+
+function requeueActiveTurn(run: Run): boolean {
+  if (hasPendingUserInbound(run.id)) {
+    return true;
+  }
+  const active = activeTurns.get(run.id);
+  if (!active) {
+    return false;
+  }
+  inbound.get(run.id)?.push({ type: active.type, text: active.text, images: active.images });
+  publish(
+    event(run.id, "followup.queued", "中断的回合已自动排队继续", {
+      data: { resume: true, delivery: active.type },
+    }),
+  );
+  return true;
+}
+
 function settleDetachedRun(run: Run, title: string): void {
   run.status = "IDLE";
   run.errorMessage = null;
@@ -198,8 +263,12 @@ function settleDetachedRun(run: Run, title: string): void {
 }
 
 function detachOrQueue(run: Run, queuedTitle: string, idleTitle: string): void {
+  const resumed = requeueActiveTurn(run);
+  if (isDeskTarget(run.executionTarget)) {
+    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
+  }
   if (hasPendingUserInbound(run.id)) {
-    queueRun(run, queuedTitle);
+    queueRun(run, resumed ? "中断的回合已自动排队，空出来会继续" : queuedTitle);
     return;
   }
   settleDetachedRun(run, idleTitle);
@@ -244,7 +313,8 @@ export async function recoverLiveWorkers(): Promise<void> {
     }
     const lease = loadWorkerLease(run.id);
     try {
-      const handle = await getRuntime().adopt(run.id, lease, { onExit: bindWorkerExit(run.id) });
+      const runtime = lease?.runtime === "desk" ? getRuntime("desk") : getRuntime();
+      const handle = await runtime.adopt(run.id, lease, { onExit: bindWorkerExit(run.id) });
       if (handle) {
         handles.set(run.id, handle);
         run.workerHandle = handle.id;
@@ -331,6 +401,7 @@ export async function tryStartQueued(): Promise<string | null> {
     const waiting = [...runs.values()]
       .filter(
         (run) =>
+          !isDeskTarget(run.executionTarget) &&
           !handles.has(run.id) &&
           (run.status === "NOT_YET_STARTED" ||
             ((run.status === "IDLE" || run.status === "ERROR") && hasPendingUserInbound(run.id))),
@@ -585,6 +656,22 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
       repoUrls = [...project.defaultRepoUrls];
     }
   }
+  const target = parseExecutionTarget(input.target);
+  if (target) {
+    assertColocatedTarget(target);
+  }
+  if (isDeskTarget(target)) {
+    const desk = getDesk(target.deskId ?? "");
+    if (!desk) {
+      throw new Error("本机未登记");
+    }
+    if (owner?.userId && desk.userId !== owner.userId) {
+      throw new Error("不是这台本机的主人");
+    }
+    if (!isDeskOnline(desk)) {
+      throw new Error("本机未在线");
+    }
+  }
   const run: Run = {
     id: crypto.randomUUID(),
     orgId: owner?.orgId ?? config.orgId,
@@ -596,7 +683,8 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     buildId: null,
     status: "PROVISIONING",
     setupStatus: null,
-    source: input.source ?? "api",
+    source: input.source ?? (isDeskTarget(target) ? "desk" : "api"),
+    executionTarget: target ?? { loop: "cloud", tools: "cloud" },
     model: input.model ?? config.defaultModel,
     prompt: input.prompt,
     branchName: null,
@@ -625,6 +713,12 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   );
   mintJwtForRun(run);
   flushRun(run.id);
+
+  if (isDeskTarget(run.executionTarget)) {
+    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
+    queueRun(run, "等待本机 Desk 认领");
+    return run;
+  }
 
   const fingerprint = environmentFingerprint({ repoUrls: run.repoUrls, ref: input.ref ?? null });
   let restoredFromBuild = false;
@@ -825,6 +919,11 @@ export async function resumeRun(runId: string): Promise<Run> {
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
+  if (isDeskTarget(run.executionTarget)) {
+    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
+    queueRun(run, "等待本机 Desk 认领");
+    return run;
+  }
   restoreSessionToDir(runId, path.join(workspaceFor(runId), "sessions"));
   run.status = "PROVISIONING";
   run.updatedAt = now();
@@ -926,6 +1025,137 @@ export function listRuns(): Run[] {
   return [...runs.values()];
 }
 
+function assignmentFor(run: Run): DeskAssignment {
+  const config = getConfig();
+  return {
+    runId: run.id,
+    jwt: runJwts.get(run.id) ?? mintJwtForRun(run),
+    model: run.model,
+    prompt: run.prompt,
+    repoUrls: run.repoUrls,
+    controlPlaneUrl: config.controlPlaneUrl,
+    llmGatewayUrl: config.workerLlmGatewayUrl,
+    target: run.executionTarget ?? { loop: "desk", tools: "desk" },
+  };
+}
+
+export async function leaseDesk(deskId: string, waitMs = 20_000): Promise<DeskLeaseResponse> {
+  const desk = touchDesk(deskId);
+  if (!desk) {
+    throw new Error("desk not found");
+  }
+  const runId = await waitDeskAssignment(deskId, waitMs);
+  if (!runId) {
+    return { assignment: null };
+  }
+  const run = runs.get(runId);
+  if (!run || run.status === "ARCHIVED" || run.status === "EXPIRED") {
+    return { assignment: null };
+  }
+  return { assignment: assignmentFor(run) };
+}
+
+export async function claimDeskRun(
+  deskId: string,
+  input: { runId: string; workspaceDir: string; pid?: number },
+): Promise<Run> {
+  const run = requireRun(input.runId);
+  if (!isDeskTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
+    throw new Error("run is not assigned to this desk");
+  }
+  const workspaceDir = input.workspaceDir.trim();
+  if (!workspaceDir) {
+    throw new Error("workspaceDir is required");
+  }
+  deskWorkspaces.set(run.id, workspaceDir);
+  touchDesk(deskId);
+  const handle =
+    (await getRuntime("desk").adopt(
+      run.id,
+      {
+        runId: run.id,
+        runtime: "desk",
+        handleId: `desk-${run.id}`,
+        pid: input.pid ?? null,
+        updatedAt: now(),
+      },
+      { onExit: bindWorkerExit(run.id) },
+    )) ?? { id: `desk-${run.id}`, runtime: "desk" as const, ip: null, pid: input.pid ?? null };
+  handles.set(run.id, handle);
+  run.workerHandle = handle.id;
+  run.status = "RUNNING";
+  run.errorMessage = null;
+  run.updatedAt = now();
+  noteWorkerHeartbeat(run.id);
+  persistWorkerLease({
+    runId: run.id,
+    runtime: "desk",
+    handleId: handle.id,
+    pid: handle.pid ?? input.pid ?? null,
+    container: null,
+    socket: null,
+    cid: null,
+    updatedAt: now(),
+  });
+  publish(event(run.id, "run.running", "Desk worker claimed this run"));
+  flushRun(run.id);
+  return run;
+}
+
+function looksRemoteRepo(url: string): boolean {
+  return /^(https?:\/\/|git@|github\.com\/)/i.test(url);
+}
+
+export async function handoffRun(runId: string, input: HandoffRequest): Promise<Run> {
+  const run = requireRun(runId);
+  const target = parseExecutionTarget(input.target);
+  if (!target) {
+    throw new Error("invalid execution target");
+  }
+  assertColocatedTarget(target);
+  if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
+    throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
+  }
+  const handle = handles.get(runId);
+  if (handle) {
+    inbound.get(runId)?.push({ type: "shutdown", reason: "idle" });
+    await getRuntime(handle.runtime === "desk" ? "desk" : undefined).destroy(handle);
+    handles.delete(runId);
+    deleteWorkerLease(runId);
+    heartbeats.delete(runId);
+    run.workerHandle = null;
+    run.vmSlotId = null;
+  }
+  run.executionTarget = target;
+  run.updatedAt = now();
+  if (isDeskTarget(target)) {
+    const desk = getDesk(target.deskId ?? "");
+    if (!desk) {
+      throw new Error("本机未登记");
+    }
+    if (!isDeskOnline(desk)) {
+      throw new Error("本机未在线");
+    }
+    offerDeskAssignment(target.deskId ?? "", run.id);
+    queueRun(run, "已交给本机，等待 Desk 认领");
+    return run;
+  }
+  if (!run.repoUrls.some(looksRemoteRepo)) {
+    throw new Error("切到云端需要可 clone 的远端仓库。未提交的改动不会带过去。");
+  }
+  restoreSessionToDir(runId, path.join(workspaceFor(runId), "sessions"));
+  const remotes = run.repoUrls.filter(looksRemoteRepo);
+  publish(
+    event(run.id, "scm.clone_started", "Handoff: cloning clean remote", {
+      data: { repoUrls: remotes },
+    }),
+  );
+  await materializeRepos(remotes, workspaceFor(run.id), repoRoot());
+  publish(event(run.id, "scm.clone_succeeded", "Handoff workspace ready"));
+  await attachWorker(run, "Handed off to cloud worker");
+  return run;
+}
+
 export function getBootstrap(runId: string) {
   const run = runs.get(runId);
   if (!run) {
@@ -936,7 +1166,11 @@ export function getBootstrap(runId: string) {
     run,
     jwt: runJwts.get(runId) ?? mintJwtForRun(run),
     llmGatewayUrl: config.workerLlmGatewayUrl,
-    workspaceDir: config.workerRuntime === "docker" ? config.workerWorkspaceMount : workspaceFor(runId),
+    workspaceDir: isDeskTarget(run.executionTarget)
+      ? (deskWorkspaces.get(runId) ?? "")
+      : config.workerRuntime === "docker"
+        ? config.workerWorkspaceMount
+        : workspaceFor(runId),
     egress: egressForRun(run),
   };
 }
@@ -976,6 +1210,7 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
     if (item.kind === "agent.end") {
       const run = runs.get(runId);
       if (run && run.status === "RUNNING") {
+        clearActiveTurn(runId);
         run.status = "IDLE";
         run.idleAt = now();
         run.updatedAt = now();
@@ -1227,6 +1462,7 @@ export function takeInbound(runId: string): WorkerInbound[] {
   noteWorkerHeartbeat(runId);
   const queued = inbound.get(runId) ?? [];
   inbound.set(runId, []);
+  rememberActiveTurns(runId, queued);
   const deliveredAt = now();
   for (const item of followUps.get(runId) ?? []) {
     if (item.status === "queued") {
@@ -1275,10 +1511,12 @@ export function abortRun(runId: string): Run {
   }
   if (isWorkerAttached(runId)) {
     inbound.get(runId)?.push({ type: "abort" });
+    clearActiveTurn(runId);
     run.updatedAt = now();
     flushRun(runId);
     return run;
   }
+  clearActiveTurn(runId);
   const queued = inbound.get(runId) ?? [];
   inbound.set(
     runId,

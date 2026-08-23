@@ -5,6 +5,7 @@ import { DockerRuntime, type RuntimeHooks } from "./docker.js";
 import { FirecrackerRuntime } from "./firecracker.js";
 import { LocalProcessRuntime } from "./local.js";
 import { NoneRuntime } from "./none.js";
+import { DeskRuntime } from "./desk.js";
 import { VmSlotRuntime } from "./vm.js";
 
 export interface AgentRuntime {
@@ -18,6 +19,7 @@ const docker = new DockerRuntime();
 const none = new NoneRuntime();
 const firecracker = new FirecrackerRuntime();
 const vm = new VmSlotRuntime();
+const desk = new DeskRuntime();
 let override: AgentRuntime | undefined;
 
 export function setRuntimeForTests(next?: AgentRuntime): void {
@@ -39,6 +41,9 @@ export function getRuntime(kind: WorkerRuntimeKind = workerRuntimeKind()): Agent
   }
   if (kind === "vm") {
     return vm;
+  }
+  if (kind === "desk") {
+    return desk;
   }
   return local;
 }
