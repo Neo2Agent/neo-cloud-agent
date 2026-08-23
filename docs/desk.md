@@ -138,9 +138,18 @@ flowchart TB
 
 ```ts
 // contracts/src/run.ts
-export type ExecutionTarget =
-  | { kind: "cloud" }
-  | { kind: "desk"; deskId: string };
+/**
+ * 两个轴分开写。P0–P2 恒有 loop === tools；
+ * 以后要「云 loop + 本机工具」只是多一种合法组合，不用改结构。见 §12.6。
+ */
+export interface ExecutionTarget {
+  /** Agent loop 跑在哪 */
+  loop: "cloud" | "desk";
+  /** read / edit / bash 跑在哪 */
+  tools: "cloud" | "desk";
+  /** tools === "desk" 时必填 */
+  deskId?: string;
+}
 
 // Run 增加
 executionTarget?: ExecutionTarget | null;
@@ -148,6 +157,8 @@ executionTarget?: ExecutionTarget | null;
 target?: ExecutionTarget;
 // RunSource 增加 "desk"
 ```
+
+UI 上只暴露「本机 / 云端」两个选项（即 `loop === tools`），第三种组合先不进选择器。
 
 ---
 
@@ -543,6 +554,24 @@ packages/
 3. 出现「必须让云端 Agent 摸用户内网」的需求，且不能靠 desk worker 满足。
 
 真做的时候按这个顺序：先只路由 `bash`（`BashOperations` 是唯一原生支持流式和取消的），验证带宽与截断；再补 `read` / `write` / `edit`；`grep` / `find` 一定写远端原生实现，不要用接口默认的逐文件读。
+
+### 12.6 预留：怎样让以后好改
+
+接缝已经很窄。pi 的工具配置只有**一个调用点**：`openPiSession` 里的 `createAgentSession({ tools: toolNames, customTools })`（`packages/worker/src/session.ts`），工具名单来自 `sessionToolNames()`（`cloud-tools.ts`）。要外置就是把那七个内置名换成 `createToolDefinition(name, cwd, { bash: { operations }, … })` 生成的覆盖版。
+
+一个结构性便利：**子代理走同一个函数**。`executeNestedSubagent` 是 `openPiSession({ ...input, tools, … })`，所以主会话拿到路由工具，嵌套会话自动继承，不用单独改。
+
+现在就该做对的三件事（成本近似为零，做错了以后要返工）：
+
+| 预留 | 怎么做 | 不这么做的后果 |
+| --- | --- | --- |
+| 目标契约用两个轴 | `ExecutionTarget { loop, tools }`，见 §4 | 用单枚举 `cloud \| desk`，以后加第三种组合要改契约、迁数据 |
+| session I/O 只走两个函数 | 桌面和 worker 一律用 `downloadSession` / `uploadSession`，不直接读 `sessionDir` | loop 上云时 session 位置变了，要翻遍调用点 |
+| desk 通道留升级位 | lease / 生命周期用现有轮询没问题，但协议层别把语义押死在 400ms 轮询上 | 路由工具必须换低延迟流式通道；协议写死了就得推倒 |
+
+retrofit 时**不需要**动的部分：Run 状态机、事件与 transcript 管线、SCM 受控 commit / PR、子代理代码、桌面 UI。
+
+retrofit 时真正要写的部分：七个 `*Operations` 的 pi 扩展（同类参考是 Gondolin 的 531 行，但那是本机微 VM，没有跨网重连）、远端原生 `grep` / `find`、可流式可取消可重连的通道、session 位置迁移、desk 侧 egress 约束、以及 MCP / 扩展该在哪一侧的产品决策。
 
 ---
 
