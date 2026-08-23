@@ -125,6 +125,10 @@ function createWindow(): void {
     },
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.webContents.on("did-finish-load", () => {
+    void mainWindow?.webContents.executeJavaScript(`document.title = "Neo Desk"`);
+    mainWindow?.setTitle("Neo Desk");
+  });
   void mainWindow.loadURL(rendererEntry());
   mainWindow.on("closed", () => {
     mainWindow = null;
