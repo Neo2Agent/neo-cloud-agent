@@ -371,7 +371,7 @@ export function SettingsPanel({
       <p className="hint" id="mcp-status">
         {mcpHint}
       </p>
-      <div className="env-row llm-row">
+      <div className="env-row">
         <label>
           <span>完成通知邮箱</span>
           <input
@@ -394,17 +394,6 @@ export function SettingsPanel({
             placeholder="smtp.example.com"
             value={smtpHost}
             onChange={(event) => setSmtpHost(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>SMTP 用户</span>
-          <input
-            id="smtp-user"
-            name="smtp-user"
-            type="text"
-            autoComplete="off"
-            value={smtpUser}
-            onChange={(event) => setSmtpUser(event.target.value)}
           />
         </label>
         <button
@@ -438,6 +427,17 @@ export function SettingsPanel({
         </button>
       </div>
       <div className="env-row">
+        <label>
+          <span>SMTP 用户</span>
+          <input
+            id="smtp-user"
+            name="smtp-user"
+            type="text"
+            autoComplete="off"
+            value={smtpUser}
+            onChange={(event) => setSmtpUser(event.target.value)}
+          />
+        </label>
         <label>
           <span>SMTP 密码</span>
           <input
