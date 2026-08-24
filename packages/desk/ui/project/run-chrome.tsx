@@ -28,6 +28,8 @@ export function RunChrome({
   const [note, setNote] = useState("");
   const [handoffTitle, setHandoffTitle] = useState("");
   const [artifactName, setArtifactName] = useState("");
+  const [artifacts, setArtifacts] = useState<Array<{ name: string }>>([]);
+  const [pickedArtifacts, setPickedArtifacts] = useState<string[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,10 +37,19 @@ export function RunChrome({
   useEffect(() => {
     let cancelled = false;
     const pull = async () => {
-      const response = await api(token, `/v1/runs/${run.id}/follow-ups`);
-      if (!response.ok || cancelled) return;
-      const body = await readJson<{ followUps?: FollowUp[] }>(response);
-      setFollowUps(body.followUps ?? []);
+      const [queueRes, artifactRes] = await Promise.all([
+        api(token, `/v1/runs/${run.id}/follow-ups`),
+        api(token, `/v1/runs/${run.id}/artifacts`),
+      ]);
+      if (cancelled) return;
+      if (queueRes.ok) {
+        const body = await readJson<{ followUps?: FollowUp[] }>(queueRes);
+        setFollowUps(body.followUps ?? []);
+      }
+      if (artifactRes.ok) {
+        const body = await readJson<{ artifacts?: Array<{ name: string }> }>(artifactRes);
+        setArtifacts(body.artifacts ?? []);
+      }
     };
     void pull();
     const timer = window.setInterval(() => void pull(), 2500);
@@ -148,6 +159,25 @@ export function RunChrome({
           >
             保存到项目
           </button>
+          {artifacts.length > 0 ? (
+            <fieldset className="handoff-artifacts">
+              <legend>一并保存到项目</legend>
+              {artifacts.map((item) => (
+                <label key={item.name}>
+                  <input
+                    type="checkbox"
+                    checked={pickedArtifacts.includes(item.name)}
+                    onChange={(event) => {
+                      setPickedArtifacts((cur) =>
+                        event.target.checked ? [...cur, item.name] : cur.filter((name) => name !== item.name),
+                      );
+                    }}
+                  />
+                  {item.name}
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
           <button
             type="button"
             className="ghost"
@@ -157,12 +187,21 @@ export function RunChrome({
               setError("");
               void api(token, `/v1/projects/${run.projectId}/todos`, {
                 method: "POST",
-                body: JSON.stringify({ title: handoffTitle.trim(), runId: run.id, source: "handoff" }),
+                body: JSON.stringify({
+                  title: handoffTitle.trim(),
+                  runId: run.id,
+                  source: "handoff",
+                  artifactNames: pickedArtifacts,
+                }),
               })
                 .then(async (response) => {
-                  const body = await readJson<{ error?: string }>(response);
+                  const body = await readJson<{ error?: string; failedAttachments?: string[] }>(response);
                   if (!response.ok) throw new Error(body.error || "流转失败");
                   setHandoffTitle("");
+                  setPickedArtifacts([]);
+                  if (body.failedAttachments?.length) {
+                    setError(`有 ${body.failedAttachments.length} 个附件没保存上，待办还在`);
+                  }
                 })
                 .catch((item) => setError(item instanceof Error ? item.message : "流转失败"))
                 .finally(() => setBusy(false));

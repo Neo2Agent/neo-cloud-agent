@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { FollowUp, Project, Run } from "@neo-cloud-agent/contracts";
+import type { FollowUp, InboxItem, Project, Run } from "@neo-cloud-agent/contracts";
 
 process.env.WORKER_RUNTIME = "none";
 process.env.SPAWN_LOCAL_WORKER = "0";
@@ -75,6 +75,9 @@ test("cloud project runs invite collaborators without a second worker", async (t
 
   const hidden = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(mate.token) });
   assert.equal(hidden.status, 404);
+  assert.equal((await fetch(`${base}/v1/runs/${run.id}/transcript`, { headers: auth(mate.token) })).status, 404);
+  assert.equal((await fetch(`${base}/v1/runs/${run.id}/follow-ups`, { headers: auth(mate.token) })).status, 404);
+  assert.equal((await fetch(`${base}/v1/runs/${run.id}/events`, { headers: auth(mate.token) })).status, 404);
   const listed = await fetch(`${base}/v1/runs`, { headers: auth(mate.token) });
   const listBody = (await listed.json()) as { runs: Run[] };
   assert.equal(listBody.runs.some((item) => item.id === run.id), false);
@@ -109,6 +112,12 @@ test("cloud project runs invite collaborators without a second worker", async (t
 
   const visible = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(mate.token) });
   assert.equal(visible.status, 200);
+  assert.equal((await fetch(`${base}/v1/runs/${run.id}/transcript`, { headers: auth(mate.token) })).status, 200);
+  const mateInbox = await fetch(`${base}/v1/inbox`, { headers: auth(mate.token) });
+  assert.equal(
+    ((await mateInbox.json()) as { items: InboxItem[] }).items.some((item) => item.kind === "invited" && item.runId === run.id),
+    true,
+  );
   const mateCards = await fetch(`${base}/v1/projects/${project.id}/runs`, { headers: auth(mate.token) });
   assert.equal(((await mateCards.json()) as { runs: Array<{ id: string }> }).runs.some((item) => item.id === run.id), true);
 
@@ -129,8 +138,10 @@ test("cloud project runs invite collaborators without a second worker", async (t
   assert.equal(queued.actorUserId, mate.user.id);
   const queue = await fetch(`${base}/v1/runs/${run.id}/follow-ups`, { headers: auth(mate.token) });
   const followUps = ((await queue.json()) as { followUps: FollowUp[] }).followUps;
+  const actors = new Set(followUps.map((item) => item.actorUserId).filter(Boolean));
   assert.equal(followUps.filter((item) => item.status === "queued").length >= 1, true);
-  assert.equal(new Set(followUps.map((item) => item.actorUserId).filter(Boolean)).size >= 1, true);
+  assert.equal(actors.has(mate.user.id), true);
+  assert.equal(followUps.some((item) => item.actorUserId === admin.user.id || item.actorUserId === mate.user.id), true);
 
   const own = await fetch(`${base}/v1/runs`, {
     method: "POST",

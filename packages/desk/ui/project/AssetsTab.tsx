@@ -1,11 +1,13 @@
+import { canManageProject } from "@neo-cloud-agent/contracts/project";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson } from "../api";
 
-export function AssetsTab({ token, project }: { token: string; project: Project }) {
+export function AssetsTab({ token, project, userId }: { token: string; project: Project; userId: string }) {
   const [items, setItems] = useState<ProjectAsset[]>([]);
   const [error, setError] = useState("");
+  const manage = canManageProject(project.members.find((item) => item.userId === userId)?.role);
 
   const refresh = useCallback(async () => {
     const response = await api(token, `/v1/projects/${project.id}/assets`);
@@ -82,6 +84,23 @@ export function AssetsTab({ token, project }: { token: string; project: Project 
               >
                 下载
               </button>
+              {manage ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    void api(token, `/v1/projects/${project.id}/assets/${item.id}`, { method: "DELETE" }).then(async (response) => {
+                      if (!response.ok) {
+                        setError((await readJson<{ error?: string }>(response)).error || "删除失败");
+                        return;
+                      }
+                      await refresh();
+                    });
+                  }}
+                >
+                  删除
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

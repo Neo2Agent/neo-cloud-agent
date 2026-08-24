@@ -892,6 +892,29 @@ button:disabled {
   padding: 6px 8px;
 }
 
+.handoff-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 0;
+}
+
+.handoff-artifacts legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.handoff-artifacts label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
 .workbench-tabs {
   display: flex;
   flex-wrap: wrap;

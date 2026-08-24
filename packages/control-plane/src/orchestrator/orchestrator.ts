@@ -735,6 +735,13 @@ export function inviteRunCollaborator(
   run.updatedAt = now();
   flushRun(run.id);
   recordProjectEvent(run.projectId, actor, "run_invite", `邀请 ${invitee.email} 加入了一条对话`);
+  pushInbox({
+    userId: invitee.userId,
+    kind: "invited",
+    title: `${actor.email} 邀请你加入一条云端对话`,
+    projectId: run.projectId,
+    runId: run.id,
+  });
   return run;
 }
 

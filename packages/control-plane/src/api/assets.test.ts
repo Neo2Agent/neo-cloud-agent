@@ -99,4 +99,15 @@ test("project assets persist after a new run and can copy artifacts", async (t) 
   const todo = (await handoff.json()) as { attachments: Array<{ name: string }>; failedAttachments: string[] };
   assert.equal(todo.attachments.some((item) => item.name === "notes.txt"), true);
   assert.deepEqual(todo.failedAttachments, ["missing.bin"]);
+
+  const denied = await fetch(`${base}/v1/projects/${project.id}/assets/${asset.id}`, {
+    method: "DELETE",
+    headers: auth(reader.token),
+  });
+  assert.equal(denied.status, 400);
+  const removed = await fetch(`${base}/v1/projects/${project.id}/assets/${asset.id}`, {
+    method: "DELETE",
+    headers: auth(admin.token),
+  });
+  assert.equal(removed.status, 200);
 });
