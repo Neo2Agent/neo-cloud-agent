@@ -25,8 +25,14 @@ export function MarkdownBody({ text, className, streaming }: Props) {
   }, [text, streaming]);
   return (
     <div className={className ? `md ${className}` : "md"}>
-      {renderBlocks(prepareMarkdown(shown, streaming))}
-      {streaming ? <span className="md-caret" aria-hidden="true" /> : null}
+      {streaming ? (
+        <>
+          <div className="md-stream">{shown}</div>
+          <span className="md-caret" aria-hidden="true" />
+        </>
+      ) : (
+        renderBlocks(shown)
+      )}
     </div>
   );
 }

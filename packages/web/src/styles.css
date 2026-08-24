@@ -1146,6 +1146,11 @@ button.stop:hover {
   border-radius: 6px;
 }
 
+.md-stream {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .md-caret {
   display: inline-block;
   width: 6px;
