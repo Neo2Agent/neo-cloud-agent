@@ -68,7 +68,16 @@ test("projects share runs, inject instruction, and keep registration closed", as
   assert.equal(created.status, 201);
   const project = (await created.json()) as Project;
   assert.equal(project.name, "官网改版");
+  assert.equal(project.invitePolicy, "approve");
   assert.equal(project.members[0]?.role, "owner");
+
+  const openCreated = await fetch(`${base}/v1/projects`, {
+    method: "POST",
+    headers: auth(admin.token),
+    body: JSON.stringify({ name: "公开加入", invitePolicy: "open" }),
+  });
+  assert.equal(openCreated.status, 201);
+  assert.equal(((await openCreated.json()) as Project).invitePolicy, "open");
 
   await assert.rejects(
     () => createTeammateAccount({ email: "admin", password: "654321", orgId: admin.user.id }),
@@ -125,8 +134,68 @@ test("projects share runs, inject instruction, and keep registration closed", as
   assert.equal(existsSync(memory), true);
   assert.match(readFileSync(memory, "utf8"), /用中文回复，先跑测试/);
 
-  const mateRun = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(mate.token) });
-  assert.equal(mateRun.status, 200);
+  const mateHidden = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(mate.token) });
+  assert.equal(mateHidden.status, 404);
+  const mateList = await fetch(`${base}/v1/runs`, { headers: auth(mate.token) });
+  assert.equal(mateList.status, 200);
+  const mateRuns = (await mateList.json()) as { runs: Run[] };
+  assert.equal(mateRuns.runs.some((item) => item.id === run.id), false);
+
+  const patched = await fetch(`${base}/v1/projects/${project.id}`, {
+    method: "POST",
+    headers: auth(admin.token),
+    body: JSON.stringify({ instruction: "用中文回复，先跑测试。保存后给同事看。" }),
+  });
+  assert.equal(patched.status, 200);
+  const afterPatch = (await patched.json()) as Project;
+  assert.match(afterPatch.instruction, /保存后给同事看/);
+
+  const inviteRes = await fetch(`${base}/v1/projects/${project.id}/invites`, {
+    method: "POST",
+    headers: auth(admin.token),
+    body: JSON.stringify({}),
+  });
+  assert.equal(inviteRes.status, 201);
+  const invite = (await inviteRes.json()) as { token: string };
+  assert.ok(invite.token);
+  await createTeammateAccount({ email: "joiner", password: "654321", orgId: "org_local" });
+  const joiner = await login(base, "joiner", "654321");
+  const requested = await fetch(`${base}/v1/invites/${invite.token}`, {
+    method: "POST",
+    headers: auth(joiner.token),
+    body: JSON.stringify({}),
+  });
+  assert.equal(requested.status, 200);
+  assert.equal(((await requested.json()) as Project).members.some((item) => item.email === "joiner"), false);
+  const approved = await fetch(`${base}/v1/projects/${project.id}/invites/${invite.token}/approve`, {
+    method: "POST",
+    headers: auth(admin.token),
+  });
+  assert.equal(approved.status, 200);
+  const otherProjectPeek = await fetch(`${base}/v1/projects/${otherProject.id}`, { headers: auth(joiner.token) });
+  assert.equal(otherProjectPeek.status, 404);
+
+  const mateOwn = await fetch(`${base}/v1/runs`, {
+    method: "POST",
+    headers: auth(mate.token),
+    body: JSON.stringify({
+      prompt: "同事自己开的对话",
+      repoUrls: ["fixtures/toy-repo"],
+      projectId: project.id,
+    }),
+  });
+  assert.equal(mateOwn.status, 201);
+  const mateRun = (await mateOwn.json()) as Run;
+  assert.equal(mateRun.projectId, project.id);
+  assert.equal(mateRun.assigneeUserId, mate.user.id);
+  const mateSeesOwn = await fetch(`${base}/v1/runs/${mateRun.id}`, { headers: auth(mate.token) });
+  assert.equal(mateSeesOwn.status, 200);
+  const adminHiddenMate = await fetch(`${base}/v1/runs/${mateRun.id}`, { headers: auth(admin.token) });
+  assert.equal(adminHiddenMate.status, 404);
+
+  const sameInstruction = await fetch(`${base}/v1/projects/${project.id}`, { headers: auth(mate.token) });
+  assert.equal(sameInstruction.status, 200);
+  assert.match(((await sameInstruction.json()) as Project).instruction, /保存后给同事看/);
 
   const transferred = await fetch(`${base}/v1/runs/${run.id}/transfer`, {
     method: "POST",
@@ -140,7 +209,9 @@ test("projects share runs, inject instruction, and keep registration closed", as
 
   const after = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(mate.token) });
   assert.equal(after.status, 200);
+  const adminLost = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(admin.token) });
+  assert.equal(adminLost.status, 404);
 
   const health = (await (await fetch(`${base}/health`)).json()) as { projects?: number };
-  assert.equal(health.projects, 2);
+  assert.equal(health.projects, 3);
 });

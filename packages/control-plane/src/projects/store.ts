@@ -197,7 +197,7 @@ export function createProject(input: {
     name,
     instruction: (input.instruction ?? "").trim(),
     defaultRepoUrls: (input.defaultRepoUrls ?? []).map((item) => item.trim()).filter(Boolean),
-    invitePolicy: input.invitePolicy === "approve" ? "approve" : "open",
+    invitePolicy: input.invitePolicy === "open" ? "open" : "approve",
     createdBy: input.actor.userId,
     createdAt: now,
     updatedAt: now,
