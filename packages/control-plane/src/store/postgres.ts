@@ -1,4 +1,4 @@
-import type { Automation, Build, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
+import type { Automation, Build, Desk, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
 import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS projects (
   body JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS desks (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -88,6 +93,9 @@ export interface PostgresMetadataStore extends AccountStore {
   saveProject(item: Project): Promise<void>;
   loadProjects(): Promise<Project[]>;
   deleteProject(id: string): Promise<void>;
+  saveDesk(item: Desk): Promise<void>;
+  loadDesks(): Promise<Desk[]>;
+  deleteDesk(id: string): Promise<void>;
 }
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -136,6 +144,14 @@ function asAutomation(value: unknown): Automation | null {
   }
   const item = value as Automation;
   return item.id && item.prompt && item.schedule ? item : null;
+}
+
+function asDesk(value: unknown): Desk | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Desk;
+  return item.id && item.userId ? item : null;
 }
 
 function asProject(value: unknown): Project | null {
@@ -285,6 +301,21 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async deleteProject(id) {
       await query(`DELETE FROM projects WHERE id = $1`, [id]);
+    },
+    async saveDesk(item) {
+      await query(
+        `INSERT INTO desks (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.lastSeenAt || item.createdAt],
+      );
+    },
+    async loadDesks() {
+      const result = await query(`SELECT body FROM desks ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asDesk)).filter((item): item is Desk => Boolean(item));
+    },
+    async deleteDesk(id) {
+      await query(`DELETE FROM desks WHERE id = $1`, [id]);
     },
     async createUser(user) {
       try {

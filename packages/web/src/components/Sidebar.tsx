@@ -1,5 +1,6 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
+import { groupRuns } from "../pins";
 import { isActiveRunStatus } from "../turn";
 
 export type VmSlotView = {
@@ -17,8 +18,10 @@ type Props = {
   authed: boolean;
   authBusy: boolean;
   health: string;
+  pinnedIds?: string[];
   onNewChat: () => void;
   onOpenRun: (id: string) => void;
+  onPin?: (id: string) => void;
   onLogin: () => void;
   onLogout: () => void;
   onClose?: () => void;
@@ -33,8 +36,10 @@ export function Sidebar({
   authed,
   authBusy,
   health,
+  pinnedIds = [],
   onNewChat,
   onOpenRun,
+  onPin,
   onLogin,
   onLogout,
   onClose,
@@ -44,6 +49,7 @@ export function Sidebar({
     const rightAt = right.updatedAt || right.createdAt;
     return rightAt.localeCompare(leftAt) || right.createdAt.localeCompare(left.createdAt);
   });
+  const grouped = groupRuns(items, pinnedIds);
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -106,39 +112,66 @@ export function Sidebar({
         </div>
       </section>
       <div className="run-list" id="run-list">
-        {items.map((run) => {
-          const running = isActiveRunStatus(run.status);
-          return (
-            <div
-              key={run.id}
-              className={`run-item${run.id === currentRunId ? " active" : ""}${running ? " busy" : ""}`}
-              data-id={run.id}
-              data-busy={running ? "true" : "false"}
-              role="button"
-              tabIndex={0}
-              aria-current={run.id === currentRunId ? "true" : undefined}
-              onClick={() => onOpenRun(run.id)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onOpenRun(run.id);
-                }
-              }}
-            >
-              <span className="run-title">
-                {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
-                {preview(run.prompt)}
-              </span>
-              <small>
-                {STATUS_LABELS[run.status] ?? run.status}
-                {run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
-              </small>
-              <time className="run-time" dateTime={run.updatedAt || run.createdAt}>
-                {formatRunTime(run.createdAt, run.updatedAt)}
-              </time>
-            </div>
-          );
-        })}
+        {(
+          [
+            ["置顶", grouped.pinned],
+            ["进行中", grouped.active],
+            ["最近", grouped.recent],
+          ] as const
+        ).map(([label, group]) =>
+          group.length === 0 ? null : (
+            <section key={label} className="run-group">
+              <p className="eyebrow">{label}</p>
+              {group.map((run) => {
+                const running = isActiveRunStatus(run.status);
+                const pinned = pinnedIds.includes(run.id);
+                return (
+                  <div
+                    key={run.id}
+                    className={`run-item${run.id === currentRunId ? " active" : ""}${running ? " busy" : ""}`}
+                    data-id={run.id}
+                    data-busy={running ? "true" : "false"}
+                    role="button"
+                    tabIndex={0}
+                    aria-current={run.id === currentRunId ? "true" : undefined}
+                    onClick={() => onOpenRun(run.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onOpenRun(run.id);
+                      }
+                    }}
+                  >
+                    <span className="run-title">
+                      {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
+                      {preview(run.prompt)}
+                    </span>
+                    <small>
+                      {STATUS_LABELS[run.status] ?? run.status}
+                      {run.executionTarget?.loop === "desk" ? " · 本机" : run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
+                    </small>
+                    <time className="run-time" dateTime={run.updatedAt || run.createdAt}>
+                      {formatRunTime(run.createdAt, run.updatedAt)}
+                    </time>
+                    {onPin ? (
+                      <button
+                        type="button"
+                        className={pinned ? "pin is-on" : "pin"}
+                        aria-label={pinned ? "取消置顶" : "置顶"}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onPin(run.id);
+                        }}
+                      >
+                        {pinned ? "★" : "☆"}
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </section>
+          ),
+        )}
       </div>
       <footer className="sidebar-foot">
         <div className="account" id="account">

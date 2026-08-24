@@ -98,7 +98,10 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /tool-stack/);
   assert.match(appText, /artifact/);
   assert.match(appText, /deepseek-v4-flash/);
-  assert.match(appText, /文件树/);
+  assert.match(appText, /工作区/);
+  assert.match(appText, /置顶/);
+  assert.match(appText, /session-tabs/);
+  assert.match(appText, /产物/);
   assert.match(appText, /归档/);
   assert.match(appText, /settings-panel/);
   assert.match(appText, /workspace-drawer/);

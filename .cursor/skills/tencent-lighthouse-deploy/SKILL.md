@@ -151,7 +151,7 @@ LLM_UPSTREAM=mock
 | 页面显示已配置 Key，回复仍是 mock | 根目录是否有 `.neo/llm-upstream.env`；`curl -s localhost:8081/health` 的 `configured` |
 | `git pull` SSL timeout | 走「日常更新 B」 |
 | 新对话失败 / 槽满 | `curl -s localhost:8080/v1/vms`，同时最多 2 个任务 |
-| unit 重启卡住 | `KillMode=control-group`；旧 worker 可能残留，`journalctl -u neo-control-plane -n 80` |
+| unit 重启卡住 | `KillMode=process`：重启控制面不会杀掉已 spawn 的 worker，下次启动 `adopt()` 收回。若 unit 停不住，看 `journalctl -u neo-control-plane -n 80` |
 | 想上真 VM | 轻量没有 `/dev/kvm`，要换带嵌套虚拟化的 CVM，再 `pnpm fc:assets && pnpm fc:rootfs` |
 
 看日志（不要把 Environment 打出来）：

@@ -10,10 +10,17 @@ export function isNarrowViewport(
 }
 
 export function shouldSendOnEnter(
-  event: { key: string; shiftKey: boolean },
+  event: { key: string; shiftKey: boolean; ctrlKey?: boolean; metaKey?: boolean },
   options?: { narrow?: boolean },
 ): boolean {
+  if (event.ctrlKey || event.metaKey) {
+    return false;
+  }
   return event.key === "Enter" && !event.shiftKey && options?.narrow !== true;
+}
+
+export function shouldQueueOnCtrlEnter(event: { key: string; ctrlKey?: boolean; shiftKey?: boolean }): boolean {
+  return event.key === "Enter" && event.ctrlKey === true && event.shiftKey !== true;
 }
 
 export function applyVisualViewport(

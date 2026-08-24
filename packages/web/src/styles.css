@@ -373,6 +373,16 @@ button[type="submit"]:disabled {
   color: var(--accent);
 }
 
+.desk-badge {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: var(--accent);
+}
+
 .main {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
@@ -1060,6 +1070,19 @@ button.stop:hover {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg-2);
+}
+
+.diff-commit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.diff-commit input {
+  flex: 1 1 180px;
+  min-width: 0;
 }
 
 .file-tree-bar,
@@ -2311,6 +2334,102 @@ textarea {
     min-height: 48px;
     font-size: 18px;
   }
+}
+
+.composer-pickers,
+.session-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.composer-pickers {
+  padding: 4px 2px 0;
+}
+
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker select {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--bg-2);
+}
+
+.picker-extra {
+  font-size: 12px;
+}
+
+.session-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+.session-tabs button.active {
+  background: #eef1ff;
+  color: var(--accent);
+}
+
+.run-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.run-item {
+  position: relative;
+}
+
+.run-item .pin {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.run-item .pin.is-on {
+  color: #c9a227;
+}
+
+.terminal-panel,
+.artifacts-panel {
+  padding: 16px 20px 24px;
+  overflow: auto;
+}
+
+.terminal-log {
+  white-space: pre-wrap;
+  font-size: 12px;
+  background: var(--bg-2);
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.artifact-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.artifact-list li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
 }
 
 @media (max-width: 400px) {

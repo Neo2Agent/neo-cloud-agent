@@ -14,6 +14,7 @@ delete process.env.WORKER_WORKSPACE_MOUNT;
 const {
   abortRun,
   archiveRun,
+  claimDeskRun,
   commitRun,
   createRun,
   enqueueFollowUp,
@@ -21,7 +22,9 @@ const {
   getRun,
   getRunDiagnostics,
   getRunSession,
+  handoffRun,
   ingestEvents,
+  leaseDesk,
   listRuns,
   listRunSubscriptions,
   mintRunGitToken,
@@ -33,6 +36,7 @@ const {
   saveRunSession,
   takeInbound,
 } = await import("./orchestrator.js");
+const { createDesk } = await import("../desks/store.js");
 const { eventsForRun, listEvents } = await import("../events/bus.js");
 
 test("createRun mints a bootstrap JWT, copies the local repo, and queues the first prompt", async () => {
@@ -179,7 +183,7 @@ test("live runs are reattached after a control-plane reload", async () => {
   assert.equal(expireStaleWorkers(Date.now() + 60_000).includes(run.id), false);
 });
 
-test("detached live runs settle to idle so the chat can continue", async () => {
+test("detached live runs requeue the unfinished prompt", async () => {
   const run = await createRun({
     prompt: "lost worker",
     repoUrls: ["fixtures/toy-repo"],
@@ -188,9 +192,35 @@ test("detached live runs settle to idle so the chat can continue", async () => {
   takeInbound(run.id);
   const expired = expireStaleWorkers(Date.now() + 60_000);
   assert.ok(expired.includes(run.id));
-  assert.equal(getRun(run.id)?.status, "IDLE");
+  assert.equal(getRun(run.id)?.status, "NOT_YET_STARTED");
   assert.equal(getRun(run.id)?.errorMessage, null);
-  assert.ok(listEvents(run.id).some((item) => item.kind === "run.idle"));
+  const inbox = takeInbound(run.id);
+  assert.equal(inbox[0]?.type, "prompt");
+  assert.equal("text" in (inbox[0] ?? {}) ? inbox[0]?.text : "", "lost worker");
+  assert.ok(listEvents(run.id).some((item) => item.kind === "run.queued"));
+});
+
+test("detached runs stay idle when the last turn already finished", async () => {
+  const run = await createRun({
+    prompt: "already done",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  ingestEvents(run.id, [
+    {
+      id: "agent-end-idle",
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "agent.end",
+      title: "done",
+    },
+  ]);
+  reloadPersistedState();
+  expireStaleWorkers(Date.now() + 60_000);
+  assert.equal(getRun(run.id)?.status, "IDLE");
+  assert.equal(takeInbound(run.id).length, 0);
 });
 
 test("queued runs are not marked dead while waiting for a VM slot", async () => {
@@ -214,7 +244,7 @@ test("abort without a worker leaves the chat idle so it can continue", async () 
   reloadPersistedState();
   takeInbound(run.id);
   expireStaleWorkers(Date.now() + 60_000);
-  assert.equal(getRun(run.id)?.status, "IDLE");
+  assert.equal(getRun(run.id)?.status, "NOT_YET_STARTED");
   const aborted = abortRun(run.id);
   assert.equal(aborted.status, "IDLE");
   assert.equal(aborted.errorMessage, null);
@@ -235,8 +265,10 @@ test("recoverLiveWorkers heals chats left in heartbeat ERROR", async () => {
   loaded.status = "ERROR";
   loaded.errorMessage = "worker heartbeat lost after control plane restart";
   await recoverLiveWorkers();
-  assert.equal(getRun(run.id)?.status, "IDLE");
-  assert.equal(getRun(run.id)?.errorMessage, null);
+  const healed = getRun(run.id);
+  assert.ok(healed);
+  assert.notEqual(healed.status, "ERROR");
+  assert.equal(healed.errorMessage, null);
 });
 
 test("follow-up after reload resumes the worker from session backup", async () => {
@@ -440,4 +472,45 @@ test("subscriptions persist across control-plane reload", async () => {
   assert.equal(restored.length, 1);
   assert.equal(restored[0]?.repo, "acme/app");
   assert.equal(restored[0]?.prNumber, 4);
+});
+
+test("desk target waits for a claim instead of spawning a server worker", async () => {
+  const registered = createDesk({ name: "test box", hostname: "box", platform: "linux" }, {
+    userId: process.env.DEFAULT_USER_ID ?? "user_local",
+    orgId: process.env.DEFAULT_ORG_ID ?? "org_local",
+  });
+  const waiting = leaseDesk(registered.desk.id, 2_000);
+  const run = await createRun({
+    prompt: "edit the local file",
+    repoUrls: [],
+    source: "desk",
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  assert.equal(run.status, "NOT_YET_STARTED");
+  assert.equal(run.executionTarget?.loop, "desk");
+  const leased = await waiting;
+  assert.equal(leased.assignment?.runId, run.id);
+  const claimed = await claimDeskRun(registered.desk.id, {
+    runId: run.id,
+    workspaceDir: "/tmp/neo-desk-ws",
+    pid: process.pid,
+  });
+  assert.equal(claimed.status, "RUNNING");
+  assert.equal(getBootstrap(run.id).workspaceDir, "/tmp/neo-desk-ws");
+});
+
+test("handoff to cloud without a remote repo is rejected", async () => {
+  const registered = createDesk({ hostname: "box-2", platform: "linux" }, {
+    userId: process.env.DEFAULT_USER_ID ?? "user_local",
+    orgId: process.env.DEFAULT_ORG_ID ?? "org_local",
+  });
+  const run = await createRun({
+    prompt: "stay local",
+    repoUrls: ["/tmp/only-local"],
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  await assert.rejects(
+    () => handoffRun(run.id, { target: { loop: "cloud", tools: "cloud" } }),
+    /远端仓库/,
+  );
 });
