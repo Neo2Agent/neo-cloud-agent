@@ -108,6 +108,10 @@ function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTo
   return tool;
 }
 
+function touch(message: TranscriptMessage, at: string): void {
+  message.updatedAt = at;
+}
+
 function appendText(assistant: TranscriptMessage, delta: string): void {
   if (!delta) {
     return;
@@ -334,6 +338,7 @@ function ensureAssistant(state: BuildState, event: RunEvent): TranscriptMessage 
       role: "assistant",
       text: "",
       createdAt: event.createdAt,
+      updatedAt: event.createdAt,
       streaming: true,
       tools: [],
       blocks: [],
@@ -343,10 +348,14 @@ function ensureAssistant(state: BuildState, event: RunEvent): TranscriptMessage 
   return state.open;
 }
 
-function settleAll(state: BuildState): void {
+function settleAll(state: BuildState, at?: string): void {
   for (const message of state.messages) {
     if (message.role === "assistant") {
+      const open = message.streaming || Boolean(message.tools?.some((tool) => tool.status === "running"));
       message.streaming = false;
+      if (at && open) {
+        touch(message, at);
+      }
       markToolsDone(message);
     }
   }
@@ -448,6 +457,7 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
       role: "user",
       text: String(event.data?.text ?? ""),
       createdAt: event.createdAt,
+      updatedAt: event.createdAt,
       images: images?.length ? images : undefined,
     });
     return;
@@ -460,19 +470,24 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     if (state.open && hasAssistantContent(state.open)) {
       finishAssistant(state);
     }
-    ensureAssistant(state, event).streaming = true;
+    const assistant = ensureAssistant(state, event);
+    assistant.streaming = true;
+    touch(assistant, event.createdAt);
     return;
   }
   if (event.kind === "message.delta") {
     if (state.open?.tools?.length && !state.open.streaming) {
       finishAssistant(state);
     }
-    appendText(ensureAssistant(state, event), String(event.data?.delta ?? ""));
+    const assistant = ensureAssistant(state, event);
+    appendText(assistant, String(event.data?.delta ?? ""));
+    touch(assistant, event.createdAt);
     return;
   }
   if (event.kind === "message.end") {
     if (state.open) {
       state.open.streaming = false;
+      touch(state.open, event.createdAt);
       const busy = state.open.tools?.some((tool) => tool.status === "running");
       if (state.open.text.trim() && !busy) {
         finishAssistant(state);
@@ -481,7 +496,7 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     return;
   }
   if (event.kind === "agent.end" || event.kind === "run.idle") {
-    settleAll(state);
+    settleAll(state, event.createdAt);
     return;
   }
   if (event.kind === "tool.start" || event.kind === "tool.update" || event.kind === "tool.end") {
@@ -492,22 +507,26 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
       }
       upsertNestedStep(parent.tool, event);
       state.open = parent.message;
+      touch(parent.message, event.createdAt);
       return;
     }
     const existing = assistantForTool(state, event);
     if (existing) {
       state.open = existing;
       upsertTool(existing, event);
+      touch(existing, event.createdAt);
       return;
     }
     if (state.open?.text.trim() && state.open.streaming === false) {
       finishAssistant(state);
     }
-    upsertTool(ensureAssistant(state, event), event);
+    const assistant = ensureAssistant(state, event);
+    upsertTool(assistant, event);
+    touch(assistant, event.createdAt);
     return;
   }
   if (event.kind === "run.error") {
-    settleAll(state);
+    settleAll(state, event.createdAt);
     state.messages.push({
       id: event.id,
       role: "setup",

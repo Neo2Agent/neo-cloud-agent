@@ -51,6 +51,56 @@ export function slotLabel(id?: string | null): string {
   return raw || "未分配";
 }
 
+const SHANGHAI = "Asia/Shanghai";
+
+export function sameClockMinute(left: string, right: string): boolean {
+  const start = Date.parse(left);
+  const end = Date.parse(right);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return left === right;
+  return Math.floor(start / 60_000) === Math.floor(end / 60_000);
+}
+
+function shanghaiYear(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: SHANGHAI, year: "numeric" }).format(date);
+}
+
+/** Asia/Shanghai wall clock, e.g. `8/24 17:30`. Drops the year when it matches `now`. */
+export function formatWhen(value: string, now = new Date()): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const sameYear = shanghaiYear(date) === shanghaiYear(now);
+  return date.toLocaleString("zh-CN", {
+    timeZone: SHANGHAI,
+    year: sameYear ? undefined : "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function formatRunTime(createdAt: string, updatedAt?: string | null, now = new Date()): string {
+  const created = formatWhen(createdAt, now);
+  if (!updatedAt || sameClockMinute(createdAt, updatedAt)) {
+    return created;
+  }
+  return `创建 ${created} · 更新 ${formatWhen(updatedAt, now)}`;
+}
+
+export function formatMessageTime(
+  createdAt: string,
+  updatedAt?: string | null,
+  streaming = false,
+  now = new Date(),
+): string {
+  const created = formatWhen(createdAt, now);
+  if (streaming || !updatedAt || sameClockMinute(createdAt, updatedAt)) {
+    return created;
+  }
+  return `${created} · 完成 ${formatWhen(updatedAt, now)}`;
+}
+
 export function toolArgPreview(args: unknown): string {
   if (!args || typeof args !== "object") {
     return args == null ? "" : String(args);

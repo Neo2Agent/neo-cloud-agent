@@ -341,3 +341,39 @@ test("applyRunEventsToMessages continues a streaming assistant without replaying
   assert.equal(next[1]?.text, "Hello");
   assert.equal(next[1]?.streaming, false);
 });
+
+test("transcript messages keep createdAt and bump updatedAt on later events", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", createdAt: "2026-08-21T00:00:00.000Z", data: { text: "hi" } }),
+    ev({ id: "s1", kind: "message.start", createdAt: "2026-08-21T00:00:01.000Z" }),
+    ev({ id: "d1", kind: "message.delta", createdAt: "2026-08-21T00:00:02.000Z", data: { delta: "hello" } }),
+    ev({ id: "e1", kind: "message.end", createdAt: "2026-08-21T00:00:05.000Z" }),
+  ]);
+  const user = snapshot.messages.find((item) => item.role === "user");
+  const assistant = snapshot.messages.find((item) => item.role === "assistant");
+  assert.equal(user?.createdAt, "2026-08-21T00:00:00.000Z");
+  assert.equal(user?.updatedAt, "2026-08-21T00:00:00.000Z");
+  assert.equal(assistant?.createdAt, "2026-08-21T00:00:01.000Z");
+  assert.equal(assistant?.updatedAt, "2026-08-21T00:00:05.000Z");
+  assert.equal(assistant?.streaming, false);
+});
+
+test("later agent.end does not rewrite an already finished assistant updatedAt", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", createdAt: "2026-08-21T00:00:00.000Z", data: { text: "one" } }),
+    ev({ id: "s1", kind: "message.start", createdAt: "2026-08-21T00:00:01.000Z" }),
+    ev({ id: "d1", kind: "message.delta", createdAt: "2026-08-21T00:00:02.000Z", data: { delta: "first" } }),
+    ev({ id: "e1", kind: "message.end", createdAt: "2026-08-21T00:00:03.000Z" }),
+    ev({ id: "z1", kind: "agent.end", createdAt: "2026-08-21T00:00:04.000Z" }),
+    ev({ id: "u2", kind: "user.message", createdAt: "2026-08-21T01:00:00.000Z", data: { text: "two" } }),
+    ev({ id: "s2", kind: "message.start", createdAt: "2026-08-21T01:00:01.000Z" }),
+    ev({ id: "d2", kind: "message.delta", createdAt: "2026-08-21T01:00:02.000Z", data: { delta: "second" } }),
+    ev({ id: "e2", kind: "message.end", createdAt: "2026-08-21T01:00:03.000Z" }),
+    ev({ id: "z2", kind: "agent.end", createdAt: "2026-08-21T01:00:04.000Z" }),
+  ]);
+  const assistants = snapshot.messages.filter((item) => item.role === "assistant");
+  assert.equal(assistants[0]?.text, "first");
+  assert.equal(assistants[0]?.updatedAt, "2026-08-21T00:00:03.000Z");
+  assert.equal(assistants[1]?.text, "second");
+  assert.equal(assistants[1]?.updatedAt, "2026-08-21T01:00:03.000Z");
+});

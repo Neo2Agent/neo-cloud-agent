@@ -26,7 +26,7 @@ import {
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
+import { formatRunTime, formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
 import {
   activityLabel,
   isActiveRunStatus,
@@ -1003,9 +1003,14 @@ export function App() {
                     : mainTab === "automations"
                       ? "定时任务"
                       : currentRun
-                        ? currentRun.buildId
-                          ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
-                          : currentRun.branchName ?? shortId(currentRun.id)
+                        ? [
+                            currentRun.buildId
+                              ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
+                              : currentRun.branchName ?? shortId(currentRun.id),
+                            formatRunTime(currentRun.createdAt, currentRun.updatedAt),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
                         : activeProject
                           ? `项目 · ${activeProject.name}`
                           : "新对话"}

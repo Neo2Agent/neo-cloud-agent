@@ -268,6 +268,29 @@ button[type="submit"]:disabled {
   color: var(--run);
 }
 
+.run-time,
+.bubble-time {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-item .run-time {
+  margin-top: 2px;
+}
+
+.bubble.user .bubble-time {
+  text-align: right;
+}
+
+.bubble-time.assistant-time {
+  align-self: flex-start;
+  padding: 0 4px 2px;
+}
+
 .sidebar-foot {
   display: flex;
   flex-direction: column;
@@ -828,6 +851,14 @@ h1 {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.setup .setup-time {
+  margin-top: 0;
 }
 
 .setup.err {

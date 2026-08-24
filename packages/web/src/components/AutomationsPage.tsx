@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { api, readJson } from "../api";
+import { formatWhen } from "../format";
 
 type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
 
@@ -283,15 +284,3 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
   );
 }
 
-function formatWhen(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}

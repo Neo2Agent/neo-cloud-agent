@@ -2,7 +2,7 @@ import { Fragment, useLayoutEffect, useRef } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { fileToolDiff, toolArgPreview } from "../format";
+import { fileToolDiff, formatMessageTime, formatWhen, toolArgPreview } from "../format";
 import { MarkdownBody } from "../markdown";
 import { shouldShowThinking } from "../turn";
 
@@ -116,6 +116,14 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
   );
 }
 
+function MessageTime({ message, className = "" }: { message: TranscriptMessage; className?: string }) {
+  return (
+    <time className={`bubble-time ${className}`.trim()} dateTime={message.updatedAt || message.createdAt}>
+      {formatMessageTime(message.createdAt, message.updatedAt, Boolean(message.streaming))}
+    </time>
+  );
+}
+
 function ArtifactCard({ message }: { message: TranscriptMessage }) {
   const href = message.href;
   const image = Boolean(href && message.mediaType?.startsWith("image/"));
@@ -210,7 +218,10 @@ export function Transcript({
             if (message.role === "setup") {
               return (
                 <p key={message.id} className={message.level === "error" || String(message.kind).endsWith("_failed") ? "setup err" : "setup"}>
-                  {message.text}
+                  <span>{message.text}</span>
+                  <time className="bubble-time setup-time" dateTime={message.createdAt}>
+                    {formatWhen(message.createdAt)}
+                  </time>
                 </p>
               );
             }
@@ -230,6 +241,7 @@ export function Transcript({
                       ))}
                     </div>
                   ) : null}
+                  <MessageTime message={message} />
                 </article>
               );
             }
@@ -240,13 +252,17 @@ export function Transcript({
             return (
               <Fragment key={message.id}>
                 {groups.map((group, index) => {
+                  const last = index === groups.length - 1;
                   if (group.type === "tools") {
                     return (
-                      <div key={`${message.id}-tools-${index}`} className="tool-stack">
-                        {group.tools.map((tool, toolIndex) => (
-                          <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
-                        ))}
-                      </div>
+                      <Fragment key={`${message.id}-tools-${index}`}>
+                        <div className="tool-stack">
+                          {group.tools.map((tool, toolIndex) => (
+                            <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
+                          ))}
+                        </div>
+                        {last ? <MessageTime message={message} className="assistant-time" /> : null}
+                      </Fragment>
                     );
                   }
                   const lastText = !groups.slice(index + 1).some((item) => item.type === "text");
@@ -257,6 +273,7 @@ export function Transcript({
                         className="body"
                         streaming={Boolean(message.streaming && lastText)}
                       />
+                      {last ? <MessageTime message={message} /> : null}
                     </article>
                   );
                 })}
