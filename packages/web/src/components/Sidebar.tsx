@@ -1,5 +1,5 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { preview, slotLabel, STATUS_LABELS } from "../format";
+import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
 import { isActiveRunStatus } from "../turn";
 
 export type VmSlotView = {
@@ -39,7 +39,11 @@ export function Sidebar({
   onLogout,
   onClose,
 }: Props) {
-  const items = [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  const items = [...runs].sort((left, right) => {
+    const leftAt = left.updatedAt || left.createdAt;
+    const rightAt = right.updatedAt || right.createdAt;
+    return rightAt.localeCompare(leftAt) || right.createdAt.localeCompare(left.createdAt);
+  });
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -129,6 +133,9 @@ export function Sidebar({
                 {STATUS_LABELS[run.status] ?? run.status}
                 {run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
               </small>
+              <time className="run-time" dateTime={run.updatedAt || run.createdAt}>
+                {formatRunTime(run.createdAt, run.updatedAt)}
+              </time>
             </div>
           );
         })}

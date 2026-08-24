@@ -2,7 +2,7 @@ import { Fragment, useLayoutEffect, useRef } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { fileToolDiff, toolArgPreview } from "../format";
+import { fileToolDiff, formatMessageTime, toolArgPreview } from "../format";
 import { MarkdownBody } from "../markdown";
 import { shouldShowThinking } from "../turn";
 
@@ -230,6 +230,9 @@ export function Transcript({
                       ))}
                     </div>
                   ) : null}
+                  <time className="bubble-time" dateTime={message.updatedAt || message.createdAt}>
+                    {formatMessageTime(message.createdAt, message.updatedAt, false)}
+                  </time>
                 </article>
               );
             }
@@ -260,6 +263,12 @@ export function Transcript({
                     </article>
                   );
                 })}
+                <time
+                  className="bubble-time assistant-time"
+                  dateTime={message.updatedAt || message.createdAt}
+                >
+                  {formatMessageTime(message.createdAt, message.updatedAt, Boolean(message.streaming))}
+                </time>
               </Fragment>
             );
           })

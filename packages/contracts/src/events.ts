@@ -91,6 +91,8 @@ export interface TranscriptMessage {
   role: TranscriptRole;
   text: string;
   createdAt: string;
+  /** Last event time that changed this bubble (deltas, tools, message.end). */
+  updatedAt?: string;
   streaming?: boolean;
   kind?: string;
   level?: RunEventLevel;

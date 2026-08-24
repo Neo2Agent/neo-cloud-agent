@@ -101,6 +101,10 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /已压缩对话/);
   assert.match(cssText, /pulse-dot/);
   assert.match(cssText, /think-bounce/);
+  assert.match(cssText, /\.run-time/);
+  assert.match(cssText, /\.bubble-time/);
+  assert.match(appText, /创建 /);
+  assert.match(appText, /完成 /);
   assert.match(cssText, /\.workspace-drawer\{[^}]*max-height:\s*min\(48vh/);
   assert.match(cssText, /\.main\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/);
   assert.match(cssText, /\.main\{[^}]*grid-template-areas/);
