@@ -1,4 +1,4 @@
-import type { RunEvent, TranscriptGroup, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
+import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 
 export const ACTIVE_RUN_STATUSES = [
   "NOT_YET_STARTED",
@@ -61,13 +61,31 @@ export function liveActivityLabel(messages: TranscriptMessage[]): string | null 
   return null;
 }
 
-/** Thumbs/copy stay on settled text, even while bash cards are still running below. */
-export function shouldShowAssistantActions(
-  message: TranscriptMessage,
-  groups: TranscriptGroup[],
-  groupIndex: number,
-): boolean {
-  if (groups[groupIndex]?.type !== "text") return false;
-  const laterText = groups.slice(groupIndex + 1).some((item) => item.type === "text");
-  return laterText || !message.streaming;
+function turnMessages(messages: TranscriptMessage[], messageIndex: number): TranscriptMessage[] {
+  let start = 0;
+  for (let index = 0; index <= messageIndex && index < messages.length; index += 1) {
+    if (messages[index]?.role === "user") start = index + 1;
+  }
+  let end = messages.length;
+  for (let index = messageIndex + 1; index < messages.length; index += 1) {
+    if (messages[index]?.role === "user") {
+      end = index;
+      break;
+    }
+  }
+  return messages.slice(start, end);
+}
+
+export function turnIsLive(messages: TranscriptMessage[]): boolean {
+  return messages.some(messageIsLive) || Boolean(liveActivityLabel(messages));
+}
+
+/** One thumbs/copy bar, only after the whole turn is idle, on the last assistant message. */
+export function shouldShowAssistantActions(messages: TranscriptMessage[], messageIndex: number): boolean {
+  const message = messages[messageIndex];
+  if (!message || message.role !== "assistant") return false;
+  const turn = turnMessages(messages, messageIndex);
+  if (turnIsLive(turn)) return false;
+  const lastAssistant = [...turn].reverse().find((item) => item.role === "assistant");
+  return lastAssistant?.id === message.id;
 }

@@ -974,7 +974,7 @@ export function App() {
                       <div className="user-card-text">{current.prompt}</div>
                     </article>
                   ) : null}
-                  {visible.map((message) => {
+                  {visible.map((message, messageIndex) => {
                     if (message.role === "user") {
                       return (
                         <article key={message.id} className="user-card">
@@ -1006,10 +1006,31 @@ export function App() {
                       );
                     }
                     const groups = transcriptGroups(message);
+                    const showActions = shouldShowAssistantActions(visible, messageIndex);
+                    const actions = showActions ? (
+                      <div className="assistant-actions">
+                        <button type="button" className="icon-btn" aria-label="Good response">
+                          <IconThumbsUp />
+                        </button>
+                        <button type="button" className="icon-btn" aria-label="Bad response">
+                          <IconThumbsDown />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label="Copy"
+                          onClick={() => void copyText(message.text)}
+                        >
+                          <IconCopy />
+                        </button>
+                        <span className="ago">{formatRel(message.createdAt)}</span>
+                      </div>
+                    ) : null;
                     if (groups.length === 0) {
                       return message.text ? (
                         <article key={message.id} className="assistant-block">
                           <div className="assistant-text">{message.text}</div>
+                          {actions}
                         </article>
                       ) : null;
                     }
@@ -1028,28 +1049,10 @@ export function App() {
                           return (
                             <article key={`${message.id}-text-${index}`} className="assistant-block">
                               <div className="assistant-text">{group.text}</div>
-                              {shouldShowAssistantActions(message, groups, index) ? (
-                                <div className="assistant-actions">
-                                  <button type="button" className="icon-btn" aria-label="Good response">
-                                    <IconThumbsUp />
-                                  </button>
-                                  <button type="button" className="icon-btn" aria-label="Bad response">
-                                    <IconThumbsDown />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="icon-btn"
-                                    aria-label="Copy"
-                                    onClick={() => void copyText(group.text)}
-                                  >
-                                    <IconCopy />
-                                  </button>
-                                  <span className="ago">{formatRel(message.createdAt)}</span>
-                                </div>
-                              ) : null}
                             </article>
                           );
                         })}
+                        {actions}
                       </div>
                     );
                   })}

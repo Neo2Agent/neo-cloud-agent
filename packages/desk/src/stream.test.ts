@@ -111,13 +111,14 @@ test("tool.start during a live turn shows a running bash card before idle", () =
   const tools = assistant.flatMap((item) => transcriptGroups(item)).flatMap((group) => (group.type === "tools" ? group.tools : []));
   assert.equal(tools[0]?.name, "bash");
   assert.equal(tools[0]?.status, "running");
-  const textMessage = assistant.find((item) => item.text.trim());
-  const textGroups = textMessage ? transcriptGroups(textMessage) : [];
-  const textIndex = textGroups.findIndex((group) => group.type === "text");
-  assert.equal(textMessage ? shouldShowAssistantActions(textMessage, textGroups, textIndex) : false, true);
+  for (const [index, message] of live.entries()) {
+    if (message.role === "assistant") {
+      assert.equal(shouldShowAssistantActions(live, index), false);
+    }
+  }
 });
 
-test("assistant actions stay on settled text while a later bash card is running", () => {
+test("assistant actions stay hidden until the whole turn is idle", () => {
   const message = {
     id: "a1",
     role: "assistant" as const,
@@ -130,10 +131,46 @@ test("assistant actions stay on settled text while a later bash card is running"
     ],
     tools: [{ id: "b1", name: "bash", status: "running" as const, args: { command: "pwd" } }],
   };
+  const live = [
+    { id: "u1", role: "user" as const, text: "pwd", createdAt: "2026-08-21T00:00:00.000Z" },
+    message,
+  ];
   const groups = transcriptGroups(message);
   assert.equal(groups[0]?.type, "text");
   assert.equal(groups[1]?.type, "tools");
-  assert.equal(shouldShowAssistantActions(message, groups, 0), true);
-  assert.equal(shouldShowAssistantActions(message, groups, 1), false);
-  assert.equal(shouldShowAssistantActions({ ...message, streaming: true }, groups, 0), false);
+  assert.equal(shouldShowAssistantActions(live, 1), false);
+});
+
+test("assistant actions appear once at the bottom after the turn is idle", () => {
+  const done = applyRunEventsToMessages([], [
+    ev({ id: "u1", kind: "user.message", data: { text: "pwd" } }),
+    ev({ id: "a1", kind: "agent.start" }),
+    ev({ id: "m1", kind: "message.delta", data: { delta: "我来看一下" } }),
+    ev({ id: "e1", kind: "message.end" }),
+    ev({
+      id: "t1",
+      kind: "tool.start",
+      data: { toolCallId: "bash-1", toolName: "bash", args: { command: "pwd" } },
+    }),
+    ev({
+      id: "t2",
+      kind: "tool.end",
+      data: { toolCallId: "bash-1", toolName: "bash", output: "/tmp", isError: false },
+    }),
+    ev({ id: "m2", kind: "message.delta", data: { delta: "当前目录是 /tmp" } }),
+    ev({ id: "e2", kind: "message.end" }),
+    ev({ id: "z1", kind: "run.idle" }),
+  ]);
+  const first = done.findIndex((item) => item.role === "assistant");
+  let last = -1;
+  for (let index = done.length - 1; index >= 0; index -= 1) {
+    if (done[index]?.role === "assistant") {
+      last = index;
+      break;
+    }
+  }
+  assert.equal(shouldShowAssistantActions(done, last), true);
+  if (first !== last) {
+    assert.equal(shouldShowAssistantActions(done, first), false);
+  }
 });
