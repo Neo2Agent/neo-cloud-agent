@@ -2,7 +2,7 @@
 
 设计原文见先前的 desk-client-design 分支。这里只记**已经落地**的部分。
 
-项目协同（工作台、分享/转交、看板、资产）的 Desk 设计计划见 [desk-project-design.md](./desk-project-design.md)。Web 适配排在那份计划冻结之后。
+项目协同（工作台、云端共享 Agent、看板、资产）的 Desk 设计计划见 [desk-project-design.md](./desk-project-design.md)。只有云端项目对话能邀请成员加入同一条会话；不新开 BTRFS 服务器。Web 适配排在那份计划冻结之后。
 
 ## 不变量
 

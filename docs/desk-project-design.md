@@ -1,8 +1,9 @@
 # Desk 项目协同设计计划
 
-> 版本：v1.0 / 2026-08-24  
+> 版本：v1.1 / 2026-08-24  
 > 范围：**Desk 端先做完**。Web 只复用同一套 `/v1` 合约，界面适配放到 Desk 设计冻结之后。  
-> 对照：WorkBuddy 项目 / 任务 / 看板 / 资料库 / 留言板，以及现网 Desk 壳（`packages/desk/ui`）。
+> 对照：WorkBuddy 项目 / 任务 / 看板 / 资料库 / 留言板，以及现网 Desk 壳（`packages/desk/ui`）。  
+> v1.1：锁定「只要云端项目对话才能拉人进同一条会话」；**不新开 BTRFS 服务器**。
 
 本文是落地计划，不是调研摘抄。WorkBuddy 的产品调研见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。Desk 已落地的执行面见 [desk.md](./desk.md)。
 
@@ -12,7 +13,11 @@
 
 **项目是共享规范，Run 是一次干活。Desk 是项目的主工作台。**
 
-一个人或一组成员进同一个项目，共用指令、成员、看板、资产。真正改代码、跑 Agent 的还是现在的 `Run`：云端占 VM 槽，本机占 git worktree。两个人默认**各开各的 Run**，不要抢同一块未提交工作区。只有明确点「分享这条对话」时，才多人进同一个 Run，并且跟进必须排队。
+一个人或一组成员进同一个项目，共用指令、成员、看板、资产。真正改代码、跑 Agent 的还是现在的 `Run`。
+
+**完整项目协作（对齐 WB 实测）只发生在云端项目对话里：** 发起人邀请项目成员加入**这一条** Run。加入之后，两端读同一份 session / transcript，订同一条 SSE，用发起人的 workspace 和发起人那一个云端 Agent loop。两人同时发消息必须进 FIFO，同一时刻只有一条在跑。本机 This Computer 对话不能拉人进会话。
+
+两个人要并行做不同模块时，仍然各开各的云端 Run，不要抢同一块未提交工作区。
 
 Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项目页先维持原样。
 
@@ -27,7 +32,7 @@ Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项�
 | 共享的是项目，隔离的是 Run | 并行靠「各开各的对话」。同 Run 协作是例外，必须串行。 |
 | 产物进项目是显式动作 | Run 工作区里的文件不会自动变成项目资产。对话历史已经持久，文件必须「保存到项目」或「流转为待办」。 |
 | 看板给人排期，Agent 不擅自改列 | 卡片可以「开对话」。Agent 改状态只走用户明确触发的工具。 |
-| 本机 Run 和云 Run 权限不同 | 云端可以共享工作区；本机 worktree 只活在登记那台 Desk 上。 |
+| 只有云端项目对话能拉人进会话 | 本机 Run、无 `projectId` 的对话，都没有「邀请加入这条对话」。 |
 | 不抄办公套件 | 专家中心、技能市场、在线表格、人机双写、公开整段会话、公共 OAuth 票据共享，全部后置。 |
 
 现网硬约束（设计时不许假装没有）：
@@ -37,6 +42,7 @@ Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项�
 - Provider Key 只在 gateway。转交、分享、资产都不得带出密钥。
 - Desk 本机路径：`POST /v1/desks` → lease → `target: { loop: "desk", tools: "desk" }` → 本地 git worktree。P0–P2 不允许拆开 loop / tools。
 - 会话权威在控制面。Desk 不做本地项目库、本地待办库。
+- **不要为了「模拟 WB」再买一台 BTRFS / NBD 机器。** 协作语义挂在现有云端 Run 上，隔离盘用现成的 VM loop 槽。理由见 [§4.1](#41-要不要新开一台-btrfs-服务器)。
 
 ---
 
@@ -55,7 +61,7 @@ Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项�
 | Run 归属 | `projectId`、`assigneeUserId` |
 | 指令注入 | 创建 Run 时写 `.neo/PROJECT.md`，worker 拼进 system prompt |
 | 默认仓库 | 项目里开对话且没选手动仓库时，用 `defaultRepoUrls` |
-| 可见性 | 项目成员能看该项目下别人的 Run |
+| 可见性 | 项目成员现在能读该项目下所有 Run 的 transcript（**过宽**，D2 要收到 collaborators） |
 | 转交 | `POST /v1/runs/:id/transfer` 只改 `userId` / `assigneeUserId`，**不复制 transcript，不打包产物** |
 | 跟进队列 | `enqueueFollowUp` 已是 FIFO；RUNNING 走 `follow_up`，否则 `prompt` |
 | 动态 | 项目对象里嵌 `events`，最多 40 条 |
@@ -151,6 +157,38 @@ Project
 
 ---
 
+## 4.1 要不要新开一台 BTRFS 服务器
+
+**不要。** WorkBuddy 沙箱里看到的 BTRFS 子卷 + NBD，是 CloudStudio Spacelet 的隔离盘实现，不是「多人协作」本身。协作测出来的事实是：
+
+- 拉人进来之后 **sessionId / cwd / JSONL 文件都不变**（原地升级，不是搬到新工作区）
+- 协作者 **没有自己的 Agent**，消息进发起人的队列，由发起人的 loop 执行
+- `/workspace` 是这一条会话的盘，不是项目盘
+- 对话历史自动持久；文件产物要显式上传
+
+Neo 已经有对等物，不必再仿一套文件系统：
+
+| WB 实测 | Neo 已经有的 | 还要补的 |
+| --- | --- | --- |
+| 一条对话 = 一个 BTRFS 子卷 | 一条云端 `Run` = 一个工作区。现网 `WORKER_RUNTIME=vm` 是 **loop ext4 槽**（默认 2 个），空闲写回再卸载；本地开发是 `RUNS_DIR/<runId>` | 不要换成 BTRFS |
+| 同一份 session JSONL | worker 里 `SessionManager.create(cwd, sessionDir)` 只开 **一个** pi session；控制面还有同一条 Run 的 transcript | 协作者不要第二份 session |
+| 流式同步 | 多客户端订同一条 `GET /v1/runs/:id/events` SSE，先拉 transcript 再跟 token | Desk 打开被邀请的 Run 时走这条，不要另开 WS |
+| 发起人 workspace | `workspaceFor(runId)` / VM 槽挂载点，工具只打这份盘 | 协作者客户端不 mount 这台盘 |
+| 发起人 Agent loop | 该 Run 上已有的那一个 worker + pi；`ACC` 等价物是 Run 的 `userId` / JWT | 不要给协作者再 spawn 一个 worker |
+| FIFO 队列 | `enqueueFollowUp`：RUNNING 走 `follow_up`，否则 `prompt`；`session.isStreaming` 时后来者进 pi 队列 | Follow-up 补 `actorUserId`，UI 画出谁在跑、谁在等 |
+| 邀请进当前会话 | **没有。** 现在是项目成员就能读该项目所有 Run | 只有 **云端 + 带 `projectId`** 的 Run 能邀请；进会话的人进 `Run.collaborators` |
+
+新开一台「BTRFS 协作模拟机」会错在：
+
+1. Agent loop 必须留在现有 worker / VM 槽里，不能再拆一个执行面。
+2. 现网已经用 loop 槽做会话级隔离，再上 BTRFS/NBD/K8s Spacelet 是抄 CloudStudio 基础设施，不是抄项目协作。
+3. 两端「共用 JSONL」是 **同一条 Run 的同一份 session + 同一份 transcript**，不是两台机器挂同一子卷。协作者的 Desk 只订 SSE，不 ssh、不挂载发起人磁盘。
+4. 2 个槽已经被并行 Run 用着。协作 **不占第二槽**：加入的人挤进发起人已经占着的那一个。
+
+本机 `This Computer` 对话：worktree 在房主电脑上，**禁止**「邀请加入这条对话」。要一起干活，先把对话开在 Cloud，或各开各的云端 Run。
+
+---
+
 ## 5. 三层存储（对着 Neo 重画）
 
 WorkBuddy 实测是沙箱子卷 / 对话历史上云 / 项目云盘三层。Neo 对齐成：
@@ -233,7 +271,7 @@ Desk 本机还有第四个物理位置：用户选中的 git 文件夹。它**�
 [分享] [转交] [流转为待办] [保存产物到项目]
 ```
 
-本机 Run 在分享按钮旁写一句死文案：**「协作者能看记录、能排队留言；改文件仍只在这台电脑上。」**
+本机 Run **没有**「邀请加入这条对话」。按钮隐藏，或点了只提示：改到 Cloud 再拉人。
 
 用户气泡要能看出是谁发的（`follow-up` 带 `actorUserId` / `actorEmail`）。现在 transcript 里 user 消息没有发送者，协作对话会糊成一个人在说。
 
@@ -267,7 +305,8 @@ Desk 本机还有第四个物理位置：用户选中的 git 文件夹。它**�
 | 改名称 / 指令 / 默认仓库 / 邀请策略 | ✅ | ✅ | ❌ |
 | 加成员、审批、踢人（不能踢 owner） | ✅ | ✅ | ❌ |
 | 发邀请链接 | ✅ | ✅ | ✅ |
-| 开对话、看项目内 Run | ✅ | ✅ | ✅ |
+| 开自己的对话；工作台看到他人对话卡片 | ✅ | ✅ | ✅ |
+| 被邀请后进入云端项目对话（共用 session） | ✅ | ✅ | ✅ |
 | 建待办、留言、上传资产 | ✅ | ✅ | ✅ |
 | 改别人的待办 / 删别人的留言 | ✅ | ✅ | ❌（自己的可以） |
 | 转交任意对话 | ✅ | ✅ | 自己是房主的可以 |
@@ -285,32 +324,55 @@ Desk 本机还有第四个物理位置：用户选中的 git 文件夹。它**�
 
 ## 8. 三种任务协作（必须拆开）
 
-WorkBuddy 的「分享 / 转交 / 多人协作」不是同一种操作。Desk 按执行目标再拆一层。
+WorkBuddy 的「分享 / 转交 / 多人协作」不是同一种操作。**进同一条会话干活**只允许发生在云端项目对话上，执行模型按 WB 沙箱实测锁死。
 
-### 8.1 并行（默认，也是该主推的）
+### 8.0 云端项目对话 = 共享 Agent（完整协作）
 
-同一项目下，两个人各自 `POST /v1/runs`。文件系统隔离，互不抢槽语义上的「同一块未提交工作区」。
+前置条件，缺一条就不给「邀请加入」：
 
-这是公开实战里能跑通的模式：按模块拆，不按职能拆；最后一次整合。
+1. Run 带 `projectId`，且被邀请人已经是该项目成员  
+2. `executionTarget.loop === "cloud"`（云端，不是 This Computer）  
+3. 邀请人是这条对话的房主（`userId` / `assigneeUserId`）或项目 admin  
 
-Desk 要做的产品提示：
+加入之后，两端看到的是**同一条会话**，不是复制出来的第二条：
 
-- 概览上写「各开各的对话，互不影响」
-- 槽满时沿用现有排队，不报错，文案写成「云端席位忙，已排队」
-- 不要引导两个人点进同一条本机 Run 去改文件
+```text
+发起人 Desk / Web          协作者 Desk / Web
+        │                         │
+        │   同一 runId             │
+        ├──── GET /transcript ────┤   先拉已有消息（控制面编译稿）
+        ├──── SSE /events ────────┤   同一条事件流，token 两边一起长
+        │                         │
+        └──── POST /follow-ups ───┘   都进同一 FIFO
+                         │
+                         ▼
+              控制面 inbound 队列
+                         │
+                         ▼
+         发起人的那一个 worker + pi session
+         cwd = 发起人云端 workspace（VM 槽）
+         SessionManager 只写这一份 JSONL
+                         │
+                         ▼
+              工具打发起人的 /workspace
+```
 
-### 8.2 分享（进同一条 Run）
+产品规则（和 WB 一一对应）：
 
-项目成员打开同一 `runId`，订阅同一条 SSE。跟进全部进现有 FIFO，禁止两个人同时 `steer`。
+| WB 实测 | Neo 锁定 |
+| --- | --- |
+| 拉人后 sessionId / cwd / JSONL 不变 | `runId` 不变，不新建 Run，不拷 session |
+| 协作者没有独立 Agent | 不给协作者 spawn worker，不另占 VM 槽 |
+| 消息进 creator 的 queue | `POST /v1/runs/:id/follow-ups`，带 `actorUserId` |
+| 同时只有一条 running | 现有 FIFO；RUNNING 时后来者排队 |
+| JSONL 里没有稳定 sender 字段 | 发送者写在 Follow-up / `user.message` 上，不写进 pi JSONL 冒充系统字段 |
+| 流式两边同步 | 只扇出控制面 SSE，不让两端各读一份 worker JSONL |
 
-| | Cloud Run | Desk（本机）Run |
-| --- | --- | --- |
-| 看 transcript | 项目成员 | 项目成员 |
-| 往队列里跟进 | 项目成员 | **仅房主**（worker 只挂在登记的那台 Desk） |
-| 停当前回合 | 房主 / admin | 房主 |
-| 改工作区文件 | 同 VM `/workspace` | 只在房主这台电脑 |
+「共用 JSONL」的准确含义：
 
-同 Run 协作是「共享 Agent + 共享队列」，不是 OT、不是双光标。协作者没有自己的 Agent 实例。房主是 `assigneeUserId`（转交后跟着走）。
+- **权威会话**是发起人 workspace 里那一份 pi session（`SessionManager.create(cwd, sessionDir)`）。
+- **两端 UI** 不直接打开这个文件。它们读控制面 transcript + SSE。控制面事件就是这份 session 的投影。
+- 不要做「两个客户端 mount 同一 BTRFS、一起 tail JSONL」。那是把 CloudStudio 的盘协议搬过来，Desk 没有这条路径。
 
 Desk 队列条（对话页顶部，有人排队或正在跑时出现）：
 
@@ -320,13 +382,39 @@ Desk 队列条（对话页顶部，有人排队或正在跑时出现）：
 房主可见：[停止当前回合]
 ```
 
-控制面要补的不是另一套队列，而是：
+控制面增量：
 
-- `FollowUp` 增加 `actorUserId` / `actorEmail`
-- `user.message` / `followup.queued` 带上发送者
-- `GET /v1/runs/:id/follow-ups` 给 UI 画队列（接口已有，字段不够）
+- `Run.collaborators[]`：`userId` + `role`（`host` / `editor`）+ `joinedAt`  
+- 创建云端项目 Run 时，发起人自动是 `host`  
+- `POST /v1/runs/:id/collaborators`：只接受项目成员；非云端或无 `projectId` 返回 400  
+- `FollowUp` 增加 `actorUserId` / `actorEmail`  
+- `user.message` / `followup.queued` 带上发送者  
+- `GET /v1/runs/:id/follow-ups` 给 UI 画队列  
+- 写跟进、订 SSE、看 transcript：房主或 `collaborators` 里的人。项目成员但没被拉进这条对话的，只能在项目工作台看到卡片（标题 / 房主 / 状态），点开提示「请让发起人邀请你加入」
 
-不做：插队、重排、暂停整条队列。现网 2 槽 + pi 单会话，先把「能看见谁在等」做稳。
+现在 `actorCanAccessRun` 对项目成员一律放行，**D2 要收紧**：没进 `collaborators` 的成员不能跟进、不能拉完整 transcript。否则「邀请加入」没有意义。
+
+不做：插队、重排、暂停整条队列、给协作者第二份 JSONL、第二槽、第二 Agent。
+
+### 8.1 并行（各开各的云端 Run）
+
+同一项目下，两个人各自 `POST /v1/runs`（都走 Cloud）。文件系统隔离，各占各的槽（或排队等槽）。
+
+这是公开实战里能跑通的「按模块拆」。概览上两句话并列：
+
+- 同一件事一起改：邀请加入这条云端对话  
+- 不同模块同时做：各开各的云端对话  
+
+槽满时沿用现有排队，文案写成「云端席位忙，已排队」。不要引导两个人点进同一条本机 Run。
+
+### 8.2 谁不能被拉进会话
+
+| 对象 | 邀请加入这条对话 |
+| --- | --- |
+| 云端 + `projectId` 的 Run | ✅ 项目成员 |
+| 本机 This Computer Run | ❌ |
+| 没有项目的 Inbox / 个人对话 | ❌ |
+| 非项目成员 | ❌ 先加入项目 |
 
 ### 8.3 转交（交接，不是改个字段）
 
@@ -570,7 +658,7 @@ Desk 放在工作台「动态」旁的子视图，或动态页上半留言、下
 
 **`runs` 增量**
 
-`todoId?`。`FollowUp` 增加 `actorUserId` / `actorEmail`。
+`todoId?`。`collaborators[]`（`userId` / `role: host|editor` / `joinedAt`）。`FollowUp` 增加 `actorUserId` / `actorEmail`。
 
 **`automations` 增量（可并行、不挡看板）**
 
@@ -589,11 +677,15 @@ POST     /v1/projects/:id/invites/:token/approve
 POST     /v1/projects/:id/members
 GET/POST /v1/invites/:token
 
+# 云端项目对话：邀请加入（仅 cloud + projectId）
+GET/POST /v1/runs/:id/collaborators
+DELETE   /v1/runs/:id/collaborators/:userId
+
 # 转交补包
 POST /v1/runs/:id/transfer
      { toUserId, note?, mode: "reassign" | "fork" }
 
-# 跟进（已有，补 actor）
+# 跟进（已有，补 actor；仅 collaborators 可写）
 GET/POST /v1/runs/:id/follow-ups
 
 # 看板
@@ -625,7 +717,7 @@ Webhook、Telegram、GitHub 仍不进登录 `/v1`。要开进某项目，用项�
 
 ### D0 — 语义冻结（本文件）
 
-锁对象、三层存储、三种协作、本机/云差异、非目标。不改大 UI。
+锁对象、三层存储、云端共享 Agent、**不新开 BTRFS 机**、本机/云差异、非目标。不改大 UI。
 
 ### D1 — 项目工作台
 
@@ -637,17 +729,19 @@ Webhook、Telegram、GitHub 仍不进登录 `/v1`。要开进某项目，用项�
 - 左侧胶囊 + 对话列表带房主 / Cloud 标记
 - 邀请深链
 
-验收：A 建项目写指令，B 用邀请进来；B 在 Desk 看到同一条项目对话和同一段指令；B 在项目里开的新对话，worker 的 `PROJECT.md` 里有这段指令。
+验收：A 建项目写指令，B 用邀请进来；B 在 Desk 看到同一段指令，能在项目里开自己的对话；A 的云端对话在工作台只显示卡片，B 未加入前看不到完整 transcript。
 
-### D2 — 同一条对话能协作
+### D2 — 云端项目对话能拉人（共享 Agent）
 
+- `Run.collaborators`；只有 `cloud + projectId` 能邀请项目成员
+- 收紧 `actorCanAccessRun`：完整 transcript / SSE / 跟进只给 collaborators
 - Follow-up 带发送者；对话气泡分人
-- 队列条：谁在跑、谁在等
-- 分享：项目成员打开同一 Run（云可跟进，本机只读 + 说明）
-- 转交：`reassign` / `fork` + 交接摘要；本机默认 `fork`
-- 文案写明对话记录会交给对方
+- 队列条：谁在跑、谁在等；不新开 worker、不占第二槽
+- 两端订同一条 SSE，读同一份 transcript（pi JSONL 只在发起人 workspace）
+- 本机 Run 没有「邀请加入」
+- 转交：云端 `reassign` 把 host 交给对方，session 还是这一份；本机默认 `fork`
 
-验收：云 Run 上 A 说话时 B 跟进进入队列，B 能看见自己在等；A 把对话转给 B，B 接着说不用重讲仓库。本机 Run 转交后 B 拿到的是新的云（或自己的 Desk）会话 + 摘要，不是 A 的脏 worktree。
+验收：A 在云端项目对话里邀请 B；B 打开后看到 A 已经打出来的字和正在流的 token；B 发跟进时若 A 的回合还在跑，B 进队列；worker 只有一份，cwd 仍是 A 的槽。本机对话上没有邀请按钮。
 
 ### D3 — 看板
 
@@ -687,8 +781,8 @@ D1 + D2 做完，Desk 就已经是「项目」而不只是过滤器：
 1. 能建项目、写指令  
 2. 能邀请第二个账号  
 3. 在项目里开对话，指令自动带上  
-4. 对方看得到这次对话；云 Run 能排队跟进  
-5. 能把对话转交给对方（本机走 fork）  
+4. A 把 B 拉进**同一条云端项目对话**：共用 transcript / SSE / 发起人 workspace / 发起人 Agent；并发跟进排队  
+5. 本机对话不能拉人；要一起改文件，先开在 Cloud  
 
 看板和资产是放大器。没有这五步，网格再好看也只是标签。
 
@@ -699,7 +793,10 @@ D1 + D2 做完，Desk 就已经是「项目」而不只是过滤器：
 | 风险 | 为什么 | 怎么收 |
 | --- | --- | --- |
 | 两人同时跟进打乱 pi | 双 `steer` | 全部入现有队列；UI 显示对方正在说 |
-| 把本机 worktree 当成可分享沙箱 | WB 云端子卷可以共享，Desk 不能 | 本机分享只读；转交默认 fork |
+| 为模拟 WB 新开 BTRFS 机 | 抄的是 Spacelet 磁盘，不是协作语义 | 用现有 VM loop 槽 + 同一 Run；协作者只订 SSE |
+| 给协作者第二份 JSONL / 第二槽 | 变成两条会话 | 禁止 spawn 第二个 worker |
+| 项目成员自动能跟进所有对话 | 现在 `actorCanAccessRun` 过宽 | D2 收到 `collaborators` |
+| 把本机 worktree 当成可分享沙箱 | 文件只在房主电脑上 | 本机禁止邀请加入；转交默认 fork |
 | 转交拷走密钥 | transcript / 工作区可能有 `.env` | 沿用打码；交接不拷 `.env` / `llm-upstream.env` |
 | 产物当永久盘 | WB artifact 管道关着，子卷会丢；Neo 槽会卸 | 显式保存到项目；文案写「对话文件不会自动进项目」 |
 | 2 个槽被并行打满 | 各开各的 Run 是对的，但会排队 | 产品写排队，不写无限并行 |
@@ -745,6 +842,9 @@ Desk 的 D1–D5 冻结后，Web 再做：
 
 ## 19. 实现时不要做的事
 
+- 不要新开 BTRFS / NBD / Spacelet「协作模拟服务器」。
+- 不要给协作者第二份 session JSONL、第二个 worker、第二槽。
+- 不要让两端直接 mount 或 tail 发起人磁盘上的 JSONL；UI 只走 transcript + SSE。
 - 不要在 Desk 主进程做待办 SQLite「加速缓存」当权威源。
 - 不要为了协作把两个人的本机 Agent 指到同一 worktree。
 - 不要自动把 `/workspace` 或 worktree 同步进项目资产。
