@@ -136,6 +136,11 @@ export async function findPublicUserByEmail(email: string): Promise<PublicUser |
   return user ? toPublicUser(user) : null;
 }
 
+export async function findPublicUserById(id: string): Promise<PublicUser | null> {
+  const user = await getAccountStore().findUserById(id);
+  return user ? toPublicUser(user) : null;
+}
+
 export async function lookupSession(token: string): Promise<{ user: PublicUser; session: SessionRecord } | null> {
   if (!token.startsWith("neo_sess_")) {
     return null;

@@ -209,8 +209,8 @@ test("projects share runs, inject instruction, and keep registration closed", as
 
   const after = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(mate.token) });
   assert.equal(after.status, 200);
-  const adminLost = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(admin.token) });
-  assert.equal(adminLost.status, 404);
+  const adminStill = await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(admin.token) });
+  assert.equal(adminStill.status, 200);
 
   const health = (await (await fetch(`${base}/health`)).json()) as { projects?: number };
   assert.equal(health.projects, 3);

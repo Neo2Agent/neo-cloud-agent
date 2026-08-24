@@ -777,6 +777,35 @@ button:disabled {
   opacity: 1;
 }
 
+.run-chrome {
+  padding: 0 28px 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.run-chrome-tags,
+.run-chrome-actions,
+.queue-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-bar {
+  background: #f6f6f2;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.run-chrome-actions select,
+.run-chrome-actions input {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
 .workbench-tabs {
   display: flex;
   flex-wrap: wrap;

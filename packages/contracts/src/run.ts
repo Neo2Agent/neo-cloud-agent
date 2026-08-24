@@ -89,6 +89,8 @@ export interface Run {
   source: RunSource;
   projectId?: string | null;
   assigneeUserId?: string | null;
+  collaborators?: RunCollaborator[];
+  todoId?: string | null;
   executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
@@ -139,6 +141,35 @@ export type FollowUpStatus = "queued" | "delivered" | "cancelled";
 
 export type FollowUpSource = "user" | "subscription" | "autofix";
 
+export type RunCollaboratorRole = "host" | "editor";
+
+export type RunCollaborator = {
+  userId: string;
+  email: string;
+  role: RunCollaboratorRole;
+  joinedAt: string;
+};
+
+export type TransferRunMode = "reassign" | "fork";
+
+export type TransferRunRequest = {
+  toUserId: string;
+  note?: string;
+  mode?: TransferRunMode;
+};
+
+export type ProjectRunCard = {
+  id: string;
+  title: string;
+  status: RunStatus;
+  projectId: string;
+  hostUserId: string;
+  hostEmail: string;
+  loop: ExecutionPlace;
+  updatedAt: string;
+  role: RunCollaboratorRole | null;
+};
+
 export interface FollowUp {
   id: string;
   runId: string;
@@ -147,6 +178,8 @@ export interface FollowUp {
   delivery: FollowUpDelivery;
   status: FollowUpStatus;
   source?: FollowUpSource;
+  actorUserId?: string;
+  actorEmail?: string;
   createdAt: string;
   deliveredAt: string | null;
 }
@@ -168,6 +201,7 @@ export interface CreateRunRequest {
   model?: string;
   source?: RunSource;
   projectId?: string;
+  todoId?: string;
   images?: ImageRef[];
   notifyChatId?: string;
   target?: ExecutionTarget;

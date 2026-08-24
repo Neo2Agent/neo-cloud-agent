@@ -36,6 +36,8 @@ import {
   commitRun,
   createRun,
   enqueueFollowUp,
+  inviteRunCollaborator,
+  canInviteRunCollaborator,
   handoffRun,
   leaseDesk,
   ingestGitHubWebhook,
@@ -46,8 +48,10 @@ import {
   getRunSession,
   ingestEvents,
   listFollowUps,
+  listProjectRunCards,
   listRunSubscriptions,
   listRuns,
+  removeRunCollaborator,
   subscribeRun,
   transferRun,
   loadRunIntoMemory,
@@ -66,6 +70,7 @@ import {
   bootstrapEmail,
   createTeammateAccount,
   findPublicUserByEmail,
+  findPublicUserById,
   loginAccount,
   logoutSession,
   sessionCookieHeader,
@@ -813,6 +818,17 @@ export function createApiServer() {
           }
           return;
         }
+        const projectRunsMatch = /^\/v1\/projects\/([^/]+)\/runs$/.exec(path);
+        if (projectRunsMatch && method === "GET") {
+          const project = getProject(projectRunsMatch[1] ?? "");
+          if (!project || (actor.kind === "user" && !memberRole(project.id, actor.userId))) {
+            notFound(res);
+            return;
+          }
+          const userId = actor.kind === "user" ? actor.userId : "";
+          send(res, 200, { runs: listProjectRunCards(project.id, userId) });
+          return;
+        }
         const projectMemberMatch = /^\/v1\/projects\/([^/]+)\/members$/.exec(path);
         if (projectMemberMatch && method === "POST") {
           if (actor.kind !== "user") {
@@ -879,7 +895,15 @@ export function createApiServer() {
             return;
           }
           try {
-            send(res, 201, await createRun(body, { userId: actor.userId, orgId: actor.orgId }));
+            send(
+              res,
+              201,
+              await createRun(body, {
+                userId: actor.kind === "user" ? actor.userId : undefined,
+                orgId: actor.orgId,
+                email: actor.kind === "user" ? actor.email : undefined,
+              }),
+            );
           } catch (error) {
             if (error instanceof QuotaError) {
               send(res, 429, { error: error.message });
@@ -920,7 +944,15 @@ export function createApiServer() {
           send(res, 400, { error: "text is required" });
           return;
         }
-        send(res, 201, await enqueueFollowUp(runId, body));
+        send(
+          res,
+          201,
+          await enqueueFollowUp(
+            runId,
+            body,
+            actor.kind === "user" ? { userId: actor.userId, email: actor.email } : undefined,
+          ),
+        );
         return;
       }
       if (followMatch && method === "GET") {
@@ -981,6 +1013,64 @@ export function createApiServer() {
         return;
       }
 
+      const collaboratorsMatch = /^\/v1\/runs\/([^/]+)\/collaborators$/.exec(path);
+      if (collaboratorsMatch && (method === "GET" || method === "POST")) {
+        const run = await requireRun(collaboratorsMatch[1] ?? "");
+        if (!run || !actor || actor.kind !== "user") {
+          if (actor && actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          notFound(res);
+          return;
+        }
+        if (!actorCanAccessRun(actor, run) && !canInviteRunCollaborator(run, actor)) {
+          notFound(res);
+          return;
+        }
+        if (method === "GET") {
+          send(res, 200, { collaborators: run.collaborators ?? [] });
+          return;
+        }
+        try {
+          const body = (await readJson(req)) as { userId?: string; email?: string };
+          let user = body.userId ? await findPublicUserById(body.userId) : null;
+          if (!user && body.email) {
+            user = await findPublicUserByEmail(body.email);
+          }
+          if (!user) {
+            send(res, 400, { error: "找不到这个账号" });
+            return;
+          }
+          send(res, 200, inviteRunCollaborator(run.id, { userId: user.id, email: user.email }, { userId: actor.userId, email: actor.email }));
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "invite_failed" });
+        }
+        return;
+      }
+      const collaboratorDelete = /^\/v1\/runs\/([^/]+)\/collaborators\/([^/]+)$/.exec(path);
+      if (collaboratorDelete && method === "DELETE") {
+        const run = await requireRun(collaboratorDelete[1] ?? "");
+        if (!run || !actor || actor.kind !== "user" || !actorCanAccessRun(actor, run)) {
+          if (actor && actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          notFound(res);
+          return;
+        }
+        try {
+          send(
+            res,
+            200,
+            removeRunCollaborator(run.id, collaboratorDelete[2] ?? "", { userId: actor.userId, email: actor.email }),
+          );
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "remove_failed" });
+        }
+        return;
+      }
+
       const transferMatch = /^\/v1\/runs\/([^/]+)\/transfer$/.exec(path);
       if (transferMatch && method === "POST") {
         const run = await requireRun(transferMatch[1] ?? "");
@@ -992,12 +1082,16 @@ export function createApiServer() {
           return;
         }
         try {
-          const body = (await readJson(req)) as { toUserId?: string; note?: string };
+          const body = (await readJson(req)) as { toUserId?: string; note?: string; mode?: "reassign" | "fork" };
           if (!body.toUserId) {
             send(res, 400, { error: "toUserId is required" });
             return;
           }
-          send(res, 200, transferRun(run.id, body.toUserId, { userId: actor.userId, email: actor.email }, body.note));
+          send(
+            res,
+            200,
+            await transferRun(run.id, body.toUserId, { userId: actor.userId, email: actor.email }, body.note, body.mode),
+          );
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : "transfer_failed" });
         }

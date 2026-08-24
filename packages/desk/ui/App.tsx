@@ -19,6 +19,7 @@ import {
 } from "../src/protocol";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
+import { RunChrome } from "./project/run-chrome";
 import {
   isActiveRunStatus,
   isTerminalTurnEvent,
@@ -339,6 +340,13 @@ export function App() {
       if (!runRes.ok) return;
       const run = await readJson<Run>(runRes);
       setCurrent(run);
+      if (run.projectId) {
+        const projectRes = await api(tokenRef.current, `/v1/projects/${run.projectId}`);
+        if (projectRes.ok) {
+          const project = await readJson<Project>(projectRes);
+          setActiveProject(project);
+        }
+      }
       if (transcriptRes.ok) {
         const body = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
         const snapshot = body.snapshot;
@@ -1080,6 +1088,24 @@ export function App() {
                   <h1>{title}</h1>
                   {isCloudRun(current) ? <IconCloud size={18} /> : null}
                 </header>
+                {current.projectId ? (
+                  <RunChrome
+                    token={token}
+                    run={current}
+                    project={activeProject?.id === current.projectId ? activeProject : null}
+                    userId={userId}
+                    onAbort={() => {
+                      void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
+                    }}
+                    onTransferred={(next) => {
+                      setCurrent(next);
+                      setRuns((prev) => [next, ...prev.filter((item) => item.id !== next.id && item.id !== current.id)]);
+                      if (next.id !== current.id) {
+                        void openRun(next.id);
+                      }
+                    }}
+                  />
+                ) : null}
                 <div className="feed" ref={feedRef}>
                   {!visible.some((message) => message.role === "user") ? (
                     <article className="user-card">
