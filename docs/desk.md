@@ -2,6 +2,8 @@
 
 设计原文见先前的 desk-client-design 分支。这里只记**已经落地**的部分。
 
+项目协同（工作台、分享/转交、看板、资产）的 Desk 设计计划见 [desk-project-design.md](./desk-project-design.md)。Web 适配排在那份计划冻结之后。
+
 ## 不变量
 
 1. `ExecutionTarget { loop, tools }` 两轴分开写，P0–P2 只允许 `loop === tools`。
