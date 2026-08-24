@@ -13,9 +13,17 @@ export const STATUS_LABELS: Record<string, string> = {
   EXPIRED: "已过期",
 };
 
+export function resolveChatModel(upstream?: string | null, model?: string | null, hasImages = false): string {
+  if (upstream === "openai") return "gpt-4o-mini";
+  if (/pro/i.test(model ?? "") && !/vision/i.test(model ?? "")) return "deepseek-v4-pro";
+  if (hasImages || /vision/i.test(model ?? "")) return "deepseek-v4-flash-vision-exp";
+  return "deepseek-v4-flash";
+}
+
 export function modelLabel(upstream?: string | null, model?: string | null): string {
   if (upstream === "openai") return "OpenAI";
   if (upstream === "deepseek" || /deepseek/i.test(model ?? "")) {
+    if (/vision/i.test(model ?? "")) return "DeepSeek Flash Vision";
     return /pro/i.test(model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash";
   }
   return upstream || "LLM";

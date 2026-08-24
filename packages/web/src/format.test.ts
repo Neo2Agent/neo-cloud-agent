@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fileToolDiff, formatUsage, modelLabel, parseUnifiedDiff, toolArgPreview } from "./format.js";
+import { fileToolDiff, formatUsage, modelLabel, parseUnifiedDiff, resolveChatModel, toolArgPreview } from "./format.js";
 
-test("modelLabel distinguishes DeepSeek Flash and Pro", () => {
+test("modelLabel distinguishes DeepSeek Flash, Vision, and Pro", () => {
   assert.equal(modelLabel("deepseek", "deepseek-v4-flash"), "DeepSeek Flash");
   assert.equal(modelLabel("deepseek", "deepseek-v4-pro"), "DeepSeek Pro");
+  assert.equal(modelLabel("deepseek", "deepseek-v4-flash-vision-exp"), "DeepSeek Flash Vision");
+  assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash"), "deepseek-v4-flash");
+  assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-v4-flash-vision-exp");
+});
   assert.equal(formatUsage({ promptTokens: 10, completionTokens: 5, totalTokens: 15 }), "15 tok");
 });
 

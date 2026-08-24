@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { mintRunToken } from "@neo-cloud-agent/contracts";
 import { buildMockSse, rewriteBody } from "./proxy.js";
-import { resolveUpstreamModel } from "./routes.js";
+import { messagesHaveImages, resolveUpstreamModel } from "./routes.js";
 import { createGatewayServer } from "./server.js";
 
 test("rewrites public model ids to the upstream fallback", () => {
@@ -20,6 +20,32 @@ test("maps DeepSeek public ids and retired aliases to v4-flash", () => {
   assert.equal(resolveUpstreamModel("deepseek-chat", "gpt-4o-mini"), "deepseek-v4-flash");
   assert.equal(resolveUpstreamModel("deepseek-reasoner", "deepseek-chat"), "deepseek-v4-flash");
   assert.equal(resolveUpstreamModel("deepseek-v4-pro", "deepseek-v4-flash"), "deepseek-v4-pro");
+  assert.equal(resolveUpstreamModel("deepseek-v4-flash-vision-exp", "deepseek-v4-flash"), "deepseek-v4-flash-vision-exp");
+});
+
+test("rewriteBody upgrades text Flash to vision when messages carry images", () => {
+  const textOnly = rewriteBody({ model: "deepseek-v4-flash", messages: [{ role: "user", content: "hi" }] }, "deepseek-v4-flash");
+  assert.equal(textOnly.model, "deepseek-v4-flash");
+  const withImage = rewriteBody(
+    {
+      model: "deepseek-v4-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "see" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,xx" } },
+          ],
+        },
+      ],
+    },
+    "deepseek-v4-flash",
+  );
+  assert.equal(withImage.model, "deepseek-v4-flash-vision-exp");
+  assert.equal(
+    messagesHaveImages([{ role: "user", content: [{ type: "image", data: "xx" }] }]),
+    true,
+  );
 });
 
 test("mock SSE is OpenAI-compatible", () => {
