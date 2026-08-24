@@ -8,6 +8,7 @@ import {
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson, readToken, writeToken } from "./api";
+import { hasSavedSession } from "./session";
 import { parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
@@ -141,7 +142,7 @@ export function App() {
   const [vms, setVms] = useState<VmSummary>({ total: 0, busy: 0, backend: "none", slots: [] });
   const [userEmail, setUserEmail] = useState("");
   const [userId, setUserId] = useState("");
-  const [authOpen, setAuthOpen] = useState(true);
+  const [authOpen, setAuthOpen] = useState(() => !hasSavedSession(readToken()));
   const [authMode, setAuthMode] = useState<"login" | "token">("login");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -724,6 +725,7 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    const saved = tokenRef.current;
     void (async () => {
       try {
         const payload = await readJson<Health>(await fetch("/health"));
@@ -733,24 +735,26 @@ export function App() {
         setAuthPassword("");
         applyVms(payload.vmSlots);
         setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
-        const saved = tokenRef.current;
-        if (saved.startsWith("neo_sess_")) {
-          try {
-            await applySession(saved);
-            await finishLogin();
-            return;
-          } catch {
-            persistToken("");
-            setAuthError("请重新登录");
-            setAuthOpen(true);
-            return;
-          }
-        }
-        persistToken("");
-        setAuthOpen(true);
       } catch {
         if (!cancelled) setHealthText("控制面不可达");
       }
+    })();
+    void (async () => {
+      if (hasSavedSession(saved)) {
+        try {
+          await applySession(saved);
+          if (cancelled) return;
+          await finishLogin();
+        } catch {
+          if (cancelled) return;
+          persistToken("");
+          setAuthError("请重新登录");
+          setAuthOpen(true);
+        }
+        return;
+      }
+      persistToken("");
+      setAuthOpen(true);
     })();
     return () => {
       cancelled = true;
@@ -1418,7 +1422,7 @@ export function App() {
               if (!response.ok) throw new Error(body.error || "unauthorized");
               await applySession(body.token ?? "", body.user);
             }
-            await finishLogin();
+            void finishLogin();
           })()
             .catch((error) => {
               persistToken("");

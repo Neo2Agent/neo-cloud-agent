@@ -22,18 +22,29 @@ export function projectsFile(): string {
   return path.join(controlStateDir(), "projects.json");
 }
 
+let projectMemo: { file: string; items: Project[] } | null = null;
+
 function readAll(): Project[] {
+  const file = projectsFile();
+  if (projectMemo?.file === file) {
+    return projectMemo.items;
+  }
   try {
-    const parsed = JSON.parse(readFileSync(projectsFile(), "utf8")) as { projects?: unknown };
-    return Array.isArray(parsed.projects) ? parsed.projects.map(normalize).filter(Boolean) as Project[] : [];
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { projects?: unknown };
+    const items = Array.isArray(parsed.projects) ? parsed.projects.map(normalize).filter(Boolean) as Project[] : [];
+    projectMemo = { file, items };
+    return items;
   } catch {
-    return [];
+    projectMemo = { file, items: [] };
+    return projectMemo.items;
   }
 }
 
 function writeAll(items: Project[], options?: { mirror?: boolean }): void {
-  mkdirSync(path.dirname(projectsFile()), { recursive: true });
-  writeFileSync(projectsFile(), `${JSON.stringify({ version: 1, projects: items }, null, 2)}\n`, { mode: 0o600 });
+  const file = projectsFile();
+  projectMemo = { file, items };
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify({ version: 1, projects: items }, null, 2)}\n`, { mode: 0o600 });
   if (options?.mirror !== false) {
     projectPersistHooks().onWrite?.(items);
   }
@@ -150,7 +161,7 @@ function save(project: Project): Project {
 }
 
 export function listProjects(): Project[] {
-  return readAll().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  return [...readAll()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function listProjectsForUser(userId: string): Project[] {

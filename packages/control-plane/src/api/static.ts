@@ -1,4 +1,5 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -19,12 +20,39 @@ const MIME: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+const COMPRESSIBLE = new Set([".html", ".css", ".js", ".svg", ".json", ".map"]);
+const HASHED_ASSET = /^[a-zA-Z0-9_-]+-[A-Za-z0-9_-]{8}\.(js|css)$/;
+
 /** Serve the Vite production build when present; source HTML is not runnable without Vite. */
 export function webRoot(): string {
   return existsSync(path.join(WEB_DIST, "index.html")) ? WEB_DIST : WEB_PACKAGE;
 }
 
 export const WEB_ROOT = WEB_PACKAGE;
+
+export function isHashedWebAsset(file: string): boolean {
+  return HASHED_ASSET.test(path.basename(file));
+}
+
+export function webCacheControl(file: string): string {
+  if (isHashedWebAsset(file)) {
+    return "public, max-age=31536000, immutable";
+  }
+  const ext = path.extname(file);
+  if (ext === ".html" || ext === ".js" || ext === ".css") {
+    return "no-cache";
+  }
+  return "public, max-age=86400";
+}
+
+export function acceptsGzip(req: IncomingMessage): boolean {
+  const raw = req.headers["accept-encoding"];
+  if (!raw) {
+    return false;
+  }
+  const value = Array.isArray(raw) ? raw.join(",") : raw;
+  return value.split(",").some((part) => part.trim().toLowerCase().startsWith("gzip"));
+}
 
 export function resolveWebFile(requestPath: string): string | null {
   const relative = requestPath === "/" ? "/index.html" : requestPath;
@@ -58,10 +86,23 @@ export function serveWebFile(req: IncomingMessage, res: ServerResponse): boolean
   const ext = path.extname(file);
   const headers: Record<string, string> = {
     "content-type": MIME[ext] ?? "application/octet-stream",
+    "cache-control": webCacheControl(file),
   };
-  if (ext === ".html" || ext === ".js" || ext === ".css") {
-    headers["cache-control"] = "no-store";
+  const gzip = COMPRESSIBLE.has(ext) && acceptsGzip(req);
+  if (gzip) {
+    const body = gzipSync(readFileSync(file));
+    headers["content-encoding"] = "gzip";
+    headers.vary = "Accept-Encoding";
+    headers["content-length"] = String(body.length);
+    res.writeHead(200, headers);
+    if (req.method === "HEAD") {
+      res.end();
+      return true;
+    }
+    res.end(body);
+    return true;
   }
+  headers["content-length"] = String(statSync(file).size);
   res.writeHead(200, headers);
   if (req.method === "HEAD") {
     res.end();

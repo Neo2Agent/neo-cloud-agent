@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createServer, request as httpRequest } from "node:http";
+import type { IncomingHttpHeaders } from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { resolveWebFile, WEB_ROOT, webRoot } from "./static.js";
+import { gunzipSync } from "node:zlib";
+import {
+  acceptsGzip,
+  isHashedWebAsset,
+  resolveWebFile,
+  serveWebFile,
+  WEB_ROOT,
+  webCacheControl,
+  webRoot,
+} from "./static.js";
 
 function ensureWebBuild(): void {
   const index = path.join(webRoot(), "index.html");
@@ -34,9 +46,9 @@ function readBuilt(name: string): string {
 function readBuiltAsset(ext: string): string {
   ensureWebBuild();
   const assets = path.join(webRoot(), "assets");
-  const file = readdirSync(assets).find((item) => item.endsWith(ext));
-  assert.ok(file, `missing ${ext} asset`);
-  return readFileSync(path.join(assets, file), "utf8");
+  const files = readdirSync(assets).filter((item) => item.endsWith(ext));
+  assert.ok(files.length > 0, `missing ${ext} asset`);
+  return files.map((file) => readFileSync(path.join(assets, file), "utf8")).join("\n");
 }
 
 test("serves the chat index and rejects path traversal", () => {
@@ -46,6 +58,8 @@ test("serves the chat index and rejects path traversal", () => {
   const html = readBuilt("/");
   assert.match(html, /Neo Cloud Agent/);
   assert.match(html, /id="root"/);
+  assert.match(html, /正在进入/);
+  assert.match(html, /boot-splash/);
   const cssText = readBuiltAsset(".css");
   assert.match(cssText, /--bg:\s*#ffffff/);
   assert.match(cssText, /color-scheme:\s*light/);
@@ -60,6 +74,7 @@ test("serves the chat index and rejects path traversal", () => {
   const appText = readBuiltAsset(".js");
   assert.match(appText, /requestSubmit/);
   assert.match(appText, /登录响应缺少会话|登录未生效/);
+  assert.match(appText, /neo_sess_/);
   assert.match(appText, /\/v1\/settings\/llm/);
   assert.match(appText, /\/v1\/settings\/scm/);
   assert.match(appText, /GitHub PAT/);
@@ -119,4 +134,60 @@ test("serves the chat index and rejects path traversal", () => {
 
 test("web assets live next to the control-plane package", () => {
   assert.ok(WEB_ROOT.endsWith(`${path.sep}web`) || WEB_ROOT.endsWith(`${path.sep}dist`));
+});
+
+test("hashed assets are cached; html stays no-cache", () => {
+  assert.equal(webCacheControl("/tmp/assets/index-Dszq1uEl.js"), "public, max-age=31536000, immutable");
+  assert.equal(webCacheControl("/tmp/assets/index-mpF7L9gG.css"), "public, max-age=31536000, immutable");
+  assert.equal(webCacheControl("/tmp/index.html"), "no-cache");
+  assert.equal(webCacheControl("/tmp/src/main.tsx"), "public, max-age=86400");
+  assert.equal(isHashedWebAsset("index-Dszq1uEl.js"), true);
+  assert.equal(isHashedWebAsset("index.html"), false);
+  assert.equal(acceptsGzip({ headers: { "accept-encoding": "gzip, deflate" } } as never), true);
+  assert.equal(acceptsGzip({ headers: {} } as never), false);
+});
+
+function rawGet(url: string, headers: Record<string, string>): Promise<{
+  status: number;
+  headers: IncomingHttpHeaders;
+  body: Buffer;
+}> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(url, { headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk) => chunks.push(chunk as Buffer));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+test("control-plane gzips hashed JS when the browser asks", async () => {
+  ensureWebBuild();
+  const assets = path.join(webRoot(), "assets");
+  const jsName = readdirSync(assets).find((item) => item.endsWith(".js") && isHashedWebAsset(item));
+  assert.ok(jsName, "missing hashed js");
+  const server = createServer((req, res) => {
+    if (!serveWebFile(req, res)) {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  try {
+    const gzipped = await rawGet(`http://127.0.0.1:${port}/assets/${jsName}`, { "accept-encoding": "gzip" });
+    assert.equal(gzipped.status, 200);
+    assert.equal(gzipped.headers["cache-control"], "public, max-age=31536000, immutable");
+    assert.equal(gzipped.headers["content-encoding"], "gzip");
+    const decoded = gunzipSync(gzipped.body).toString("utf8");
+    assert.match(decoded, /createRoot|React/);
+    assert.ok(gzipped.body.length < decoded.length);
+    const html = await rawGet(`http://127.0.0.1:${port}/`, {});
+    assert.equal(html.headers["cache-control"], "no-cache");
+    assert.match(html.body.toString("utf8"), /正在进入/);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
 });

@@ -17,18 +17,29 @@ export function automationsFile(): string {
   return path.join(controlStateDir(), "automations.json");
 }
 
+let automationMemo: { file: string; items: Automation[] } | null = null;
+
 function readAll(): Automation[] {
+  const file = automationsFile();
+  if (automationMemo?.file === file) {
+    return automationMemo.items;
+  }
   try {
-    const parsed = JSON.parse(readFileSync(automationsFile(), "utf8")) as { automations?: unknown };
-    return Array.isArray(parsed.automations) ? parsed.automations.map(normalize).filter(Boolean) as Automation[] : [];
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { automations?: unknown };
+    const items = Array.isArray(parsed.automations) ? parsed.automations.map(normalize).filter(Boolean) as Automation[] : [];
+    automationMemo = { file, items };
+    return items;
   } catch {
-    return [];
+    automationMemo = { file, items: [] };
+    return automationMemo.items;
   }
 }
 
 function writeAll(items: Automation[], options?: { mirror?: boolean }): void {
-  mkdirSync(path.dirname(automationsFile()), { recursive: true });
-  writeFileSync(automationsFile(), `${JSON.stringify({ version: 1, automations: items }, null, 2)}\n`, { mode: 0o600 });
+  const file = automationsFile();
+  automationMemo = { file, items };
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify({ version: 1, automations: items }, null, 2)}\n`, { mode: 0o600 });
   if (options?.mirror !== false) {
     automationPersistHooks().onWrite?.(items);
   }
@@ -70,7 +81,7 @@ function normalize(value: unknown): Automation | null {
 }
 
 export function listAutomations(): Automation[] {
-  return readAll().sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  return [...readAll()].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
 export function createAutomation(
