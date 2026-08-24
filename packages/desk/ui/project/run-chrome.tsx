@@ -26,6 +26,7 @@ export function RunChrome({
   const [invitee, setInvitee] = useState("");
   const [transferTo, setTransferTo] = useState("");
   const [note, setNote] = useState("");
+  const [handoffTitle, setHandoffTitle] = useState("");
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -110,6 +111,37 @@ export function RunChrome({
               停止当前回合
             </button>
           ) : null}
+        </div>
+      ) : null}
+      {run.projectId ? (
+        <div className="run-chrome-actions">
+          <input
+            value={handoffTitle}
+            onChange={(event) => setHandoffTitle(event.target.value)}
+            placeholder="流转为待办的标题"
+          />
+          <button
+            type="button"
+            className="ghost"
+            disabled={!handoffTitle.trim() || busy}
+            onClick={() => {
+              setBusy(true);
+              setError("");
+              void api(token, `/v1/projects/${run.projectId}/todos`, {
+                method: "POST",
+                body: JSON.stringify({ title: handoffTitle.trim(), runId: run.id, source: "handoff" }),
+              })
+                .then(async (response) => {
+                  const body = await readJson<{ error?: string }>(response);
+                  if (!response.ok) throw new Error(body.error || "流转失败");
+                  setHandoffTitle("");
+                })
+                .catch((item) => setError(item instanceof Error ? item.message : "流转失败"))
+                .finally(() => setBusy(false));
+            }}
+          >
+            流转为待办
+          </button>
         </div>
       ) : null}
       {canInvite ? (

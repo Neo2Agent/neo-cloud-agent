@@ -156,6 +156,7 @@ export function App() {
   const [user, setUser] = useState("");
   const [userId, setUserId] = useState("");
   const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [pendingTodo, setPendingTodo] = useState<{ id: string; title: string } | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -469,10 +470,11 @@ export function App() {
           await api(token, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
-              prompt: `${askPrefix}${text}`,
+              prompt: `${askPrefix}${pendingTodo ? `待办：${pendingTodo.title}\n\n` : ""}${text}`,
               model: selectedModel || undefined,
               source: "desk",
               projectId: activeProject?.id,
+              todoId: pendingTodo?.id,
               repoUrls:
                 target.kind === "desk" && folder
                   ? [folder]
@@ -489,6 +491,7 @@ export function App() {
           }),
         );
         if (created.error) throw new Error(created.error);
+        setPendingTodo(null);
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
         await openRun(created.id);
         return;
@@ -1004,7 +1007,8 @@ export function App() {
                 setActiveProject(null);
                 location.hash = "";
               }}
-              onStartChat={() => {
+              onStartChat={(todo) => {
+                setPendingTodo(todo ?? null);
                 void newChat();
               }}
               onOpenRun={(id) => void openRun(id)}

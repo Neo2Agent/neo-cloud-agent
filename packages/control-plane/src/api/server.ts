@@ -11,7 +11,10 @@ import type {
   CreateAutomationRequest,
   CreateDeskRequest,
   CreateProjectRequest,
+  CreateTodoRequest,
   HandoffRequest,
+  TransitionTodoRequest,
+  UpdateTodoRequest,
   RunEvent,
   UpdateProjectRequest,
 } from "@neo-cloud-agent/contracts";
@@ -116,6 +119,15 @@ import {
   memberRole,
   updateProject,
 } from "../projects/store.js";
+import {
+  addTodoComment,
+  createTodo,
+  getTodo,
+  listTodoComments,
+  listTodos,
+  transitionTodo,
+  updateTodo,
+} from "../projects/todos.js";
 import { createDesk, deleteDesk, findDeskByToken, listDesks } from "../desks/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
@@ -815,6 +827,86 @@ export function createApiServer() {
             );
           } catch (error) {
             send(res, 400, { error: error instanceof Error ? error.message : "approve_failed" });
+          }
+          return;
+        }
+        const todoCommentsMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)\/comments$/.exec(path);
+        if (todoCommentsMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todoCommentsMatch[1] ?? "";
+            const todoId = todoCommentsMatch[2] ?? "";
+            if (method === "GET") {
+              send(res, 200, { comments: listTodoComments(projectId, todoId, actor.userId) });
+              return;
+            }
+            const body = (await readJson(req)) as { body?: string };
+            send(res, 201, addTodoComment(projectId, todoId, body.body ?? "", { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_comment_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todoTransitionMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)\/transition$/.exec(path);
+        if (todoTransitionMatch && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as TransitionTodoRequest;
+            send(
+              res,
+              200,
+              transitionTodo(todoTransitionMatch[1] ?? "", todoTransitionMatch[2] ?? "", body.status, { userId: actor.userId, email: actor.email }, body.pauseReason),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_transition_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todoItemMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)$/.exec(path);
+        if (todoItemMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todoItemMatch[1] ?? "";
+            const todoId = todoItemMatch[2] ?? "";
+            if (method === "GET") {
+              const todo = getTodo(projectId, todoId, actor.userId);
+              if (!todo) {
+                notFound(res);
+                return;
+              }
+              send(res, 200, todo);
+              return;
+            }
+            send(
+              res,
+              200,
+              updateTodo(projectId, todoId, (await readJson(req)) as UpdateTodoRequest, { userId: actor.userId, email: actor.email }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todosMatch = /^\/v1\/projects\/([^/]+)\/todos$/.exec(path);
+        if (todosMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todosMatch[1] ?? "";
+            if (method === "GET") {
+              send(res, 200, { todos: listTodos(projectId, actor.userId) });
+              return;
+            }
+            send(
+              res,
+              201,
+              createTodo(projectId, (await readJson(req)) as CreateTodoRequest, { userId: actor.userId, email: actor.email }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
           }
           return;
         }

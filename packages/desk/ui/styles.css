@@ -777,6 +777,53 @@ button:disabled {
   opacity: 1;
 }
 
+.board {
+  display: grid;
+  gap: 14px;
+}
+
+.board-create {
+  display: flex;
+  gap: 8px;
+}
+
+.board-create input {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.board-columns {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.board-col {
+  background: #f6f6f2;
+  border-radius: 12px;
+  padding: 10px;
+  min-height: 220px;
+}
+
+.board-col h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.board-card {
+  margin-bottom: 8px;
+}
+
+.board-drawer {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
 .run-chrome {
   padding: 0 28px 10px;
   display: grid;

@@ -25,7 +25,7 @@ export function ProjectWorkbench({
   token: string;
   userId: string;
   onBack: () => void;
-  onStartChat: () => void;
+  onStartChat: (todo?: { id: string; title: string }) => void;
   onOpenRun: (id: string) => void;
   onProjectChange: (project: Project) => void;
 }) {
@@ -59,9 +59,11 @@ export function ProjectWorkbench({
         ))}
       </nav>
       <div className="page-body">
-        {tab === "overview" ? <OverviewTab project={project} onStartChat={onStartChat} /> : null}
-        {tab === "chats" ? <ChatsTab runs={mine} onOpenRun={onOpenRun} onStartChat={onStartChat} /> : null}
-        {tab === "board" ? <BoardTab /> : null}
+        {tab === "overview" ? <OverviewTab project={project} onStartChat={() => onStartChat()} /> : null}
+        {tab === "chats" ? <ChatsTab runs={mine} onOpenRun={onOpenRun} onStartChat={() => onStartChat()} /> : null}
+        {tab === "board" ? (
+          <BoardTab token={token} project={project} onStartChat={(id, title) => onStartChat({ id, title })} />
+        ) : null}
         {tab === "assets" ? <AssetsTab /> : null}
         {tab === "activity" ? <ActivityTab project={project} /> : null}
         {tab === "settings" ? (

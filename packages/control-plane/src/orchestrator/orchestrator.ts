@@ -86,6 +86,7 @@ import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
+import { bindTodoRun } from "../projects/todos.js";
 import {
   getDesk,
   isDeskOnline,
@@ -820,6 +821,9 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     todoId: input.todoId ?? null,
   };
   seedHostCollaborator(run, owner);
+  if (input.todoId && projectId) {
+    bindTodoRun(input.todoId, run.id, projectId);
+  }
   runs.set(run.id, run);
   followUps.set(run.id, []);
   inbound.set(run.id, [{ type: "prompt", text: input.prompt, images: input.images }]);

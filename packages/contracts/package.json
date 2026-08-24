@@ -12,6 +12,9 @@
     "./context-usage": "./src/context-usage.ts",
     "./automation": "./src/automation.ts",
     "./project": "./src/project.ts",
+    "./project-todo": "./src/project-todo.ts",
+    "./project-asset": "./src/project-asset.ts",
+    "./project-message": "./src/project-message.ts",
     "./desk": "./src/desk.ts"
   },
   "scripts": {

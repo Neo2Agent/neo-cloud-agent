@@ -192,6 +192,18 @@ export type {
   UpdateProjectRequest,
 } from "./project.js";
 export { appendProjectInstruction, canManageProject, formatProjectMemory } from "./project.js";
+export type {
+  CreateTodoRequest,
+  ProjectTodo,
+  ProjectTodoComment,
+  TodoAttachment,
+  TodoPriority,
+  TodoSource,
+  TodoStatus,
+  TransitionTodoRequest,
+  UpdateTodoRequest,
+} from "./project-todo.js";
+export { allowedTransitions, TODO_TRANSITIONS } from "./project-todo.js";
 export {
   describeAutomationSchedule,
   nextAutomationRunAt,
