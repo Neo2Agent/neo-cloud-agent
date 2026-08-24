@@ -106,7 +106,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now neo-llm-gateway neo-control-plane
 ```
 
-仓库里的副本也在本 skill 的 `units/`。`WorkingDirectory` 必须是仓库根，`EnvironmentFile` 指向根目录 `.env`。
+仓库里的副本也在本 skill 的 `units/`。`WorkingDirectory` 必须是仓库根，`EnvironmentFile` 指向根目录 `.env`。控制面 `ExecStart` 必须是 `node --import tsx packages/control-plane/src/index.ts`，不要用 `pnpm --filter … start`：否则 MainPID 是 pnpm，`KillMode=process` 停不掉真正听 `:8080` 的进程。
 
 控制面 `KillMode=process`：只杀控制面主进程，不杀它 spawn 的 worker。重启后 `adopt()` 按 pid 认领。`systemctl stop` 会留下在跑的 worker，下次启动收回。若 unit 停不住，看 `journalctl`，不要重启整机。
 
