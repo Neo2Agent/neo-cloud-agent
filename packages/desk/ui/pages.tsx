@@ -14,7 +14,7 @@ export type ContextMenuId = "repo" | "target" | null;
 export type RepoChoice = { url: string; label: string };
 
 export type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
-export type SearchFilter = "all" | "agents" | "files" | "actions" | "settings";
+export type SearchFilter = "all" | "agents" | "files" | "actions" | "todos" | "settings";
 
 export const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const MODELS_KEY = "neo-desk-models";
@@ -110,9 +110,11 @@ export function SearchPalette({
   setFilter,
   hits,
   projectHits,
+  todoHits,
   searchRef,
   onOpenRun,
   onOpenProject,
+  onOpenTodo,
   onOpenSettings,
   onClose,
 }: {
@@ -122,9 +124,11 @@ export function SearchPalette({
   setFilter: (value: SearchFilter) => void;
   hits: Array<{ id: string; title: string; meta: string }>;
   projectHits?: Array<{ id: string; title: string; meta: string }>;
+  todoHits?: Array<{ id: string; title: string; meta: string; projectId: string }>;
   searchRef: Ref<HTMLInputElement>;
   onOpenRun: (id: string) => void;
   onOpenProject?: (id: string) => void;
+  onOpenTodo?: (projectId: string, todoId: string) => void;
   onOpenSettings: () => void;
   onClose: () => void;
 }) {
@@ -133,6 +137,7 @@ export function SearchPalette({
     { id: "agents", label: "Agents" },
     { id: "files", label: "Files" },
     { id: "actions", label: "Actions" },
+    { id: "todos", label: "待办" },
     { id: "settings", label: "Settings" },
   ];
   const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -182,8 +187,24 @@ export function SearchPalette({
             </button>
           ) : filter === "files" || filter === "actions" ? (
             <p className="palette-empty">还没有{filter === "files" ? "文件索引" : "快捷动作"}。</p>
-          ) : hits.length === 0 && !projectHits?.length ? (
-            <p className="palette-empty">{query.trim() ? "没有匹配的对话或项目。" : "还没有对话。"}</p>
+          ) : filter === "todos" ? (
+            todoHits && todoHits.length > 0 ? (
+              todoHits.map((hit) => (
+                <button
+                  key={hit.id}
+                  type="button"
+                  className="palette-row"
+                  onClick={() => onOpenTodo?.(hit.projectId, hit.id)}
+                >
+                  <strong>{hit.title}</strong>
+                  <span>{hit.meta}</span>
+                </button>
+              ))
+            ) : (
+              <p className="palette-empty">{query.trim() ? "没有匹配的待办。" : "还没有待办。"}</p>
+            )
+          ) : hits.length === 0 && !projectHits?.length && !todoHits?.length ? (
+            <p className="palette-empty">{query.trim() ? "没有匹配的对话、项目或待办。" : "还没有对话。"}</p>
           ) : (
             <>
               {projectHits && projectHits.length > 0 ? (
@@ -195,6 +216,22 @@ export function SearchPalette({
                       type="button"
                       className="palette-row"
                       onClick={() => onOpenProject?.(hit.id)}
+                    >
+                      <strong>{hit.title}</strong>
+                      <span>{hit.meta}</span>
+                    </button>
+                  ))}
+                </>
+              ) : null}
+              {todoHits && todoHits.length > 0 ? (
+                <>
+                  <p className="palette-label">待办</p>
+                  {todoHits.map((hit) => (
+                    <button
+                      key={hit.id}
+                      type="button"
+                      className="palette-row"
+                      onClick={() => onOpenTodo?.(hit.projectId, hit.id)}
                     >
                       <strong>{hit.title}</strong>
                       <span>{hit.meta}</span>

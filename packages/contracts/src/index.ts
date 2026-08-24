@@ -205,6 +205,13 @@ export type {
 } from "./project-todo.js";
 export { allowedTransitions, TODO_TRANSITIONS } from "./project-todo.js";
 export type { CreateProjectAssetRequest, ProjectAsset, ProjectAssetSource } from "./project-asset.js";
+export type {
+  CreateProjectMessageRequest,
+  InboxItem,
+  InboxKind,
+  ProjectMessage,
+  ProjectMessageAttachment,
+} from "./project-message.js";
 export {
   describeAutomationSchedule,
   nextAutomationRunAt,

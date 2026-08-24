@@ -88,6 +88,7 @@ import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
 import { bindTodoRun } from "../projects/todos.js";
 import { listProjectAssetsUnchecked } from "../projects/assets.js";
+import { pushInbox } from "../projects/inbox.js";
 import {
   getDesk,
   isDeskOnline,
@@ -1153,6 +1154,7 @@ export async function transferRun(
       { userId: toUserId, orgId: run.orgId },
     );
     recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `分出了新对话：${note.trim()}` : "分出了一条新对话");
+    pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 给你开了一条新对话`, projectId: run.projectId, runId: forked.id });
     return forked;
   }
   const previous = run.collaborators ?? [];
@@ -1168,6 +1170,7 @@ export async function transferRun(
   run.updatedAt = now();
   flushRun(run.id);
   recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `转交了对话：${note.trim()}` : "转交了一条对话");
+  pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 把一条对话转交给你`, projectId: run.projectId, runId: run.id });
   return run;
 }
 

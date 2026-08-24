@@ -1,6 +1,6 @@
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Page } from "../pages";
 import { ActivityTab } from "./ActivityTab";
 import { AssetsTab } from "./AssetsTab";
@@ -15,6 +15,7 @@ export function ProjectWorkbench({
   runs,
   token,
   userId,
+  initialTab = "overview",
   onBack,
   onStartChat,
   onOpenRun,
@@ -24,12 +25,16 @@ export function ProjectWorkbench({
   runs: Run[];
   token: string;
   userId: string;
+  initialTab?: WorkbenchTab;
   onBack: () => void;
   onStartChat: (todo?: { id: string; title: string }) => void;
   onOpenRun: (id: string) => void;
   onProjectChange: (project: Project) => void;
 }) {
-  const [tab, setTab] = useState<WorkbenchTab>("overview");
+  const [tab, setTab] = useState<WorkbenchTab>(initialTab);
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab, project.id]);
   const mine = runs.filter((item) => item.projectId === project.id);
 
   return (
@@ -65,7 +70,7 @@ export function ProjectWorkbench({
           <BoardTab token={token} project={project} onStartChat={(id, title) => onStartChat({ id, title })} />
         ) : null}
         {tab === "assets" ? <AssetsTab token={token} project={project} /> : null}
-        {tab === "activity" ? <ActivityTab project={project} /> : null}
+        {tab === "activity" ? <ActivityTab project={project} token={token} userId={userId} /> : null}
         {tab === "settings" ? (
           <SettingsTab token={token} project={project} userId={userId} onChanged={onProjectChange} />
         ) : null}

@@ -11,6 +11,7 @@ import type {
   CreateAutomationRequest,
   CreateDeskRequest,
   CreateProjectRequest,
+  CreateProjectMessageRequest,
   CreateTodoRequest,
   HandoffRequest,
   TransitionTodoRequest,
@@ -130,6 +131,8 @@ import {
   updateTodo,
 } from "../projects/todos.js";
 import { deleteProjectAsset, listProjectAssets, putProjectAsset, readProjectAsset } from "../projects/assets.js";
+import { createProjectMessage, deleteProjectMessage, listProjectMessages, updateProjectMessage } from "../projects/messages.js";
+import { listInbox, markInboxRead, unreadInboxCount } from "../projects/inbox.js";
 import { createDesk, deleteDesk, findDeskByToken, listDesks } from "../desks/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
@@ -889,6 +892,70 @@ export function createApiServer() {
             );
           } catch (error) {
             const message = error instanceof Error ? error.message : "todo_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/inbox") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          send(res, 200, { items: listInbox(actor.userId), unread: unreadInboxCount(actor.userId) });
+          return;
+        }
+        const inboxRead = /^\/v1\/inbox\/([^/]+)\/read$/.exec(path);
+        if (inboxRead && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          markInboxRead(actor.userId, inboxRead[1]);
+          send(res, 200, { ok: true, unread: unreadInboxCount(actor.userId) });
+          return;
+        }
+        const messageItemMatch = /^\/v1\/projects\/([^/]+)\/messages\/([^/]+)$/.exec(path);
+        if (messageItemMatch && actor.kind === "user" && (method === "POST" || method === "DELETE")) {
+          try {
+            const projectId = messageItemMatch[1] ?? "";
+            const messageId = messageItemMatch[2] ?? "";
+            if (method === "DELETE") {
+              deleteProjectMessage(projectId, messageId, { userId: actor.userId });
+              send(res, 200, { ok: true });
+              return;
+            }
+            send(
+              res,
+              200,
+              updateProjectMessage(projectId, messageId, (await readJson(req)) as CreateProjectMessageRequest, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "message_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const messagesMatch = /^\/v1\/projects\/([^/]+)\/messages$/.exec(path);
+        if (messagesMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = messagesMatch[1] ?? "";
+            if (method === "GET") {
+              send(res, 200, { messages: listProjectMessages(projectId, actor.userId) });
+              return;
+            }
+            send(
+              res,
+              201,
+              createProjectMessage(projectId, (await readJson(req)) as CreateProjectMessageRequest, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "message_failed";
             send(res, message.includes("不存在") ? 404 : 400, { error: message });
           }
           return;

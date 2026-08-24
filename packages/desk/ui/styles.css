@@ -480,6 +480,45 @@ button:disabled {
   margin-left: auto;
 }
 
+.inbox-avatar {
+  position: relative;
+  border: 0;
+  padding: 0;
+}
+
+.inbox-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+.rail-foot {
+  position: relative;
+}
+
+.inbox-pop {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 56px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 10px;
+  max-height: 280px;
+  overflow: auto;
+  z-index: 8;
+}
+
+.palette-row.unread strong {
+  font-weight: 750;
+}
+
 .stage {
   position: relative;
   min-width: 0;

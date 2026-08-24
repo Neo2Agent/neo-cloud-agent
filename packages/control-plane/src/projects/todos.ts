@@ -12,6 +12,7 @@ import {
 } from "@neo-cloud-agent/contracts/project-todo";
 import { controlStateDir } from "../store/persist.js";
 import { getProject, projectHasMember, recordProjectEvent } from "./store.js";
+import { pushInbox } from "./inbox.js";
 
 type TodoFile = { todos: ProjectTodo[]; comments: ProjectTodoComment[] };
 
@@ -108,6 +109,10 @@ export function createTodo(projectId: string, input: CreateTodoRequest, actor: {
   };
   writeData({ ...data, todos: [...data.todos, todo] });
   recordProjectEvent(projectId, actor, "todo_created", `创建了待办「${title}」`);
+  for (const userId of todo.assigneeUserIds) {
+    if (userId === actor.userId) continue;
+    pushInbox({ userId, kind: "todo_assigned", title: `待办「${title}」派给了你`, projectId, todoId: todo.id });
+  }
   return todo;
 }
 
@@ -127,7 +132,7 @@ export function updateTodo(
     title: patch.title !== undefined ? patch.title.trim() || current.title : current.title,
     description: patch.description !== undefined ? patch.description : current.description,
     priority: patch.priority !== undefined ? asPriority(patch.priority) : current.priority,
-    assigneeUserIds: patch.assigneeUserIds ?? current.assigneeUserIds,
+    assigneeUserIds: (patch.assigneeUserIds ?? current.assigneeUserIds).filter((item) => projectHasMember(projectId, item)),
     startAt: patch.startAt !== undefined ? patch.startAt : current.startAt,
     dueAt: patch.dueAt !== undefined ? patch.dueAt : current.dueAt,
     labels: patch.labels ?? current.labels,
@@ -135,6 +140,10 @@ export function updateTodo(
   };
   data.todos[index] = next;
   writeData(data);
+  for (const userId of next.assigneeUserIds) {
+    if (userId === actor.userId || current.assigneeUserIds.includes(userId)) continue;
+    pushInbox({ userId, kind: "todo_assigned", title: `待办「${next.title}」派给了你`, projectId, todoId: next.id });
+  }
   return next;
 }
 

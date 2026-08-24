@@ -20,6 +20,7 @@ import {
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
 import { RunChrome } from "./project/run-chrome";
+import type { WorkbenchTab } from "./project/types";
 import {
   isActiveRunStatus,
   isTerminalTurnEvent,
@@ -67,6 +68,23 @@ import {
 } from "./icons";
 
 type NavId = "chats" | "automations" | "projects" | "settings";
+
+type InboxRow = {
+  id: string;
+  kind?: string;
+  title: string;
+  projectId?: string | null;
+  runId?: string | null;
+  todoId?: string | null;
+  read: boolean;
+};
+
+function workbenchTabForInbox(kind?: string): WorkbenchTab {
+  if (kind === "mention") return "activity";
+  if (kind === "todo_assigned") return "board";
+  if (kind === "invite_pending") return "settings";
+  return "overview";
+}
 
 function preview(text: string, n = 56): string {
   return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
@@ -157,6 +175,10 @@ export function App() {
   const [userId, setUserId] = useState("");
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [pendingTodo, setPendingTodo] = useState<{ id: string; title: string } | null>(null);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxItems, setInboxItems] = useState<InboxRow[]>([]);
+  const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("overview");
+  const [todoHits, setTodoHits] = useState<Array<{ id: string; title: string; meta: string; projectId: string }>>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -228,6 +250,13 @@ export function App() {
     setAutomations(body.automations ?? []);
   }, []);
 
+  const refreshInbox = useCallback(async () => {
+    const response = await api(tokenRef.current, "/v1/inbox");
+    if (!response.ok) return;
+    const body = await readJson<{ items?: InboxRow[] }>(response);
+    setInboxItems(body.items ?? []);
+  }, []);
+
   const refreshProjects = useCallback(async () => {
     const response = await api(tokenRef.current, "/v1/projects");
     if (!response.ok) return;
@@ -235,11 +264,12 @@ export function App() {
     setProjects(body.projects ?? []);
   }, []);
 
-  const openProject = useCallback(async (id: string) => {
+  const openProject = useCallback(async (id: string, tab: WorkbenchTab = "overview") => {
     const response = await api(tokenRef.current, `/v1/projects/${id}`);
     if (!response.ok) return;
     const detail = await readJson<Project>(response);
     setActiveProject(detail);
+    setWorkbenchTab(tab);
     setInviteToken(null);
     setRunId(null);
     setCurrent(null);
@@ -384,8 +414,8 @@ export function App() {
         if (saved.folder) setFolder(saved.folder);
       }
     }
-    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshLlm()]);
-  }, [refreshAutomations, refreshLlm, refreshProjects, refreshRuns]);
+    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshLlm(), refreshInbox()]);
+  }, [refreshAutomations, refreshInbox, refreshLlm, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     if (!authed) return;
@@ -540,14 +570,17 @@ export function App() {
     const onShow = () => {
       if (document.visibilityState === "hidden") return;
       void refreshRuns();
+      void refreshInbox();
     };
     window.addEventListener("focus", onShow);
     document.addEventListener("visibilitychange", onShow);
+    const timer = window.setInterval(() => void refreshInbox(), 20_000);
     return () => {
       window.removeEventListener("focus", onShow);
       document.removeEventListener("visibilitychange", onShow);
+      window.clearInterval(timer);
     };
-  }, [authed, refreshRuns]);
+  }, [authed, refreshInbox, refreshRuns]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
@@ -602,6 +635,31 @@ export function App() {
       .map((item) => ({ id: item.id, title: item.name, meta: "项目工作台" }));
   }, [projects, query]);
 
+  const visibleTodoHits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return todoHits.filter((item) => !q || item.title.toLowerCase().includes(q) || item.meta.toLowerCase().includes(q)).slice(0, 12);
+  }, [query, todoHits]);
+
+  useEffect(() => {
+    if (!searchOpen || !authed) return;
+    void (async () => {
+      const rows = await Promise.all(
+        projects.slice(0, 12).map(async (project) => {
+          const response = await api(tokenRef.current, `/v1/projects/${project.id}/todos`);
+          if (!response.ok) return [];
+          const body = await readJson<{ todos?: Array<{ id: string; title: string; status: string }> }>(response);
+          return (body.todos ?? []).map((todo) => ({
+            id: todo.id,
+            title: todo.title,
+            meta: `${project.name} · ${todo.status}`,
+            projectId: project.id,
+          }));
+        }),
+      );
+      setTodoHits(rows.flat());
+    })();
+  }, [authed, projects, searchOpen]);
+
   useEffect(() => {
     setRepoOpen((cur) => {
       const next = { ...cur };
@@ -647,6 +705,7 @@ export function App() {
       setProjectInstruction("");
       await refreshProjects();
       setActiveProject(body);
+      setWorkbenchTab("overview");
       setInviteToken(null);
       setNav("projects");
       setProjectModal(false);
@@ -965,13 +1024,48 @@ export function App() {
 
         <div className="rail-foot">
           <div className="profile">
-            <span className="avatar">{initials(user)}</span>
+            <button
+              type="button"
+              className="avatar inbox-avatar"
+              aria-label="收件箱"
+              onClick={() => {
+                setInboxOpen((cur) => !cur);
+                void refreshInbox();
+              }}
+            >
+              {initials(user)}
+              {inboxItems.some((item) => !item.read) ? <i className="inbox-dot" /> : null}
+            </button>
             <span className="profile-name">{user}</span>
             {remoteApiHost ? <span className="prod-tag">生产</span> : null}
             <button type="button" className="icon-btn" aria-label="Settings" onClick={openSettings}>
               <IconGear />
             </button>
           </div>
+          {inboxOpen ? (
+            <div className="inbox-pop">
+              <p className="palette-label">收件箱</p>
+              {inboxItems.length === 0 ? (
+                <p className="hint">没有通知。</p>
+              ) : (
+                inboxItems.slice(0, 12).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`palette-row${item.read ? "" : " unread"}`}
+                    onClick={() => {
+                      void api(token, `/v1/inbox/${item.id}/read`, { method: "POST" }).then(() => refreshInbox());
+                      setInboxOpen(false);
+                      if (item.runId) void openRun(item.runId);
+                      else if (item.projectId) void openProject(item.projectId, workbenchTabForInbox(item.kind));
+                    }}
+                  >
+                    <strong>{item.title}</strong>
+                  </button>
+                ))
+              )}
+            </div>
+          ) : null}
         </div>
       </aside>
 
@@ -1003,8 +1097,10 @@ export function App() {
               runs={runs}
               token={token}
               userId={userId}
+              initialTab={workbenchTab}
               onBack={() => {
                 setActiveProject(null);
+                setWorkbenchTab("overview");
                 location.hash = "";
               }}
               onStartChat={(todo) => {
@@ -1271,6 +1367,7 @@ export function App() {
             setFilter={setSearchFilter}
             hits={searchHits}
             projectHits={projectHits}
+            todoHits={visibleTodoHits}
             searchRef={searchRef}
             onOpenRun={(id) => {
               setSearchOpen(false);
@@ -1279,6 +1376,10 @@ export function App() {
             onOpenProject={(id) => {
               setSearchOpen(false);
               void openProject(id);
+            }}
+            onOpenTodo={(projectId) => {
+              setSearchOpen(false);
+              void openProject(projectId, "board");
             }}
             onOpenSettings={openSettings}
             onClose={() => setSearchOpen(false)}
