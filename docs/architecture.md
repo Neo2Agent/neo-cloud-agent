@@ -345,7 +345,7 @@ pi-ai                        ← 多 Provider 流式、用量、自定义 baseUr
 | --- | --- |
 | `neo-git` | `neo_git_commit` → `POST /internal/runs/:id/scm/commit`；签名和 push 走控制面，不把长期 token 给 bash |
 | `neo-pr` | `neo_pr_open` → `POST /internal/runs/:id/scm/pull-request` |
-| `neo-mcp` | `neo_mcp_list` / `neo_mcp_call`：读工作区 `.neo/environment.json` 的 `mcp`，打 HTTP 或拉起 stdio MCP。OAuth 交互登录未做 |
+| `neo-mcp` | `neo_mcp_list` / `neo_mcp_call`：读工作区 `.neo/environment.json` 的 `mcp`。HTTP 先走控制面 `/internal/runs/:id/mcp`（Bearer / OAuth 密钥不进 worker），失败再直连；stdio 仍在 worker |
 | `neo-browser` | `neo_browse`：抓公开 http(s) 页的 title + 可见文本。**不是** headed browser / computer-use |
 | `neo-artifact` | `neo_artifact_upload`：把工作区文件传到 `POST /internal/runs/:id/artifacts`，对话页用 `/v1/runs/:id/artifacts/:name` 下载或预览。录屏 / 远程桌面未做 |
 | `neo-diag` | `neo_diag` 读 `GET /internal/runs/:id/diagnostics` 和工作区 `.neo/logs` |
@@ -742,13 +742,13 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 - Warm pool（已落地：成功 Build 的工作区副本，reflink 优先；还不是 live-fork 一台正在跑的 VM）
 - Firecracker guest init / rootfs overlay（已落地配方；生产盘仍要内核 + 烤进 worker 的 ext4）
 - Egress 三模式（已落地应用层）
-- MCP / browse / artifacts（已落地 HTTP/stdio MCP、`neo_browse`、`/v1/runs/:id/artifacts`；headed 桌面未做）
+- MCP / browse / artifacts（已落地 HTTP MCP 控制面代理 + OAuth/Bearer、`neo_browse`、签名 artifact 链到 PR；headed 桌面未做）
 
 ### P3 — 生产隔离与规模
 
 - Firecracker / Cloud Hypervisor live-fork（正在跑的 VM 热分叉）
 - 失败 Build 不影响 fleets
-- 多仓、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），事件进现有跟进队列，单订阅最多唤醒 10 次。对话页可建每天 / 每小时任务（`source: automation`）。Telegram / 微信公众号发一句开新对话；做完可推企业微信机器人、Telegram 或 HTTP。
+- 多仓、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），开 PR 会自动订阅。CI 失败默认 autofix（最多 3 次）；人跟进或人 push 分支后停。对话页可建每天 / 每小时任务（`source: automation`）。Telegram / 微信公众号发一句开新对话；做完或 PR 开好了可推企业微信、Telegram、HTTP 或 SMTP。`QUOTA_MAX_*` / 设置页限制同时跑的对话和本月 token。
 - 子 Agent：已落地 `neo_subagent`。契约对齐 pi 官方 `subagent` 扩展（scout / planner / reviewer / worker，single / parallel / chain，`.pi/agents/*.md`）。实现走 worker 内二次 `createAgentSession`，不 spawn `pi` CLI，也不把 loop 打回控制面。子会话的 `agent.end` 不会把父 Run 标成 IDLE。子工具事件收进父卡片的 `details.steps`，不在 transcript 里铺成平级卡片。scout 用 `neo_browse` 做公开网页，不再带 bash。
 
 ---
@@ -765,8 +765,8 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Subagents / Task | `neo_subagent` | 对齐 pi 官方 subagent 契约；SDK 嵌套 session，不用 `pi --mode json` |
 | Cloud MCP | `neo-diag` extension | 动态工具，不必改 pi |
 | MCP / Hooks | 工作区 skills / `AGENTS.md` + `.cursor/hooks.json` command hooks | 不加载宿主机 `~/.pi` extensions |
-| GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 唤醒走跟进队列，不另开 loop |
-| Artifacts / 远程桌面 | artifact-service + 可选 sidecar | 桌面可后置 |
+| GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 开 PR 自动订阅；CI 失败 autofix 到绿 |
+| Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置 |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
 | Agent 内核（自研） | **pi-coding-agent** | 这是唯一故意不对齐的地方 |
@@ -791,7 +791,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 
 1. Firecracker 生产 rootfs / tap 回连已经落地（`pnpm fc:assets` / `pnpm fc:rootfs` / `pnpm test:firecracker`）。嵌套 KVM + AMX 的宿主机 `KVM_CREATE_VCPU` 会故障，live turn 需在真机或非 AMX 宿主上跑。
 2. 块设备 CoW 已落地接口：Build / 预热 / Firecracker rootfs 先 `cp --reflink=always`；文件系统不支持时工作区整树复制，生产 rootfs 只读共享原盘（不整份拷 1.5GiB）。不是 live-fork。
-3. 配额、多租户计费、组织成员
+3. 配额：同时跑的对话 / 本月 token 已落地（`GET /v1/quota`）；完整账务仍后置
 4. Egress 从应用层升级到 VM 出站代理 / iptables
 5. headed browser / computer-use sidecar（`neo_browse` 只抓静态页）
 6. CLI 交互 TUI、浏览器登录、本机 pi 模式——都单开，不要和 `neo run` 混语义。P0 headless 客户端见 [cli.md](./cli.md)

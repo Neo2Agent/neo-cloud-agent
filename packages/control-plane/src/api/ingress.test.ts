@@ -46,7 +46,10 @@ test("Telegram and WeChat webhooks create runs without login", async (t) => {
   assert.equal(telegram.status, 202);
   const telegramBody = (await telegram.json()) as { runId?: string };
   assert.ok(telegramBody.runId);
-  assert.equal(listRuns().some((run) => run.id === telegramBody.runId && run.source === "telegram"), true);
+  assert.equal(
+    listRuns().some((run) => run.id === telegramBody.runId && run.source === "telegram" && run.notifyChatId === "9"),
+    true,
+  );
 
   const timestamp = "1710000000";
   const nonce = "n1";

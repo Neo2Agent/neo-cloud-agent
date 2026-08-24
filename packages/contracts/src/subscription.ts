@@ -1,11 +1,14 @@
 export const SUBSCRIPTION_TOOL_NAME = "neo_subscribe";
 
 export const MAX_SUBSCRIPTION_WAKES = 10;
+export const MAX_CI_AUTOFIX = 3;
 export const SUBSCRIPTION_COALESCE_MS = 8_000;
 
 export type SubscriptionEventKind = "pr_activity" | "ci";
 
 export type RunSubscriptionKind = "github_pr" | "github_ci";
+
+export type SubscriptionMode = "watch" | "autofix";
 
 export interface RunSubscription {
   id: string;
@@ -18,10 +21,14 @@ export interface RunSubscription {
   wakeCount: number;
   lastDeliveryKey: string | null;
   lastDeliveredAt: string | null;
+  /** CI subscriptions default to autofix. PR comment subscriptions stay watch. */
+  mode?: SubscriptionMode;
+  autofixCount?: number;
 }
 
 export interface CreateSubscriptionRequest {
   events?: SubscriptionEventKind[] | SubscriptionEventKind | "all";
+  mode?: SubscriptionMode;
 }
 
 const EVENT_KINDS = new Set<SubscriptionEventKind>(["pr_activity", "ci"]);

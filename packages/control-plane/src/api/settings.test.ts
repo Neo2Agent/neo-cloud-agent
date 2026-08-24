@@ -12,6 +12,8 @@ process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-settings-runs-"));
 process.env.LLM_SETTINGS_DIR = mkdtempSync(path.join(tmpdir(), "neo-settings-llm-"));
 delete process.env.WORKER_WORKSPACE_MOUNT;
 process.env.ACCOUNTS_REQUIRED = "0";
+delete process.env.QUOTA_MAX_TOKENS_MONTH;
+delete process.env.QUOTA_MAX_CONCURRENT_RUNS;
 delete process.env.DATABASE_URL;
 delete process.env.REDIS_URL;
 delete process.env.GITHUB_APP_ID;
@@ -113,4 +115,40 @@ test("llm settings API stores a key without ever returning it", async (t) => {
   assert.equal(kept.configured, true);
   assert.equal(kept.upstream, "openai");
   assert.doesNotMatch(JSON.stringify(kept), /sk-never-echo/);
+
+  const quotaSaved = await fetch(`${base}/v1/settings/quota`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ maxConcurrentRuns: 1, maxTokensMonth: 0 }),
+  });
+  assert.equal(quotaSaved.status, 200);
+  const quota = (await quotaSaved.json()) as { maxConcurrentRuns?: number };
+  assert.equal(quota.maxConcurrentRuns, 1);
+  const first = await fetch(`${base}/v1/runs`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ prompt: "one", repoUrls: ["fixtures/toy-repo"] }),
+  });
+  assert.equal(first.status, 201);
+  const second = await fetch(`${base}/v1/runs`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ prompt: "two", repoUrls: ["fixtures/toy-repo"] }),
+  });
+  assert.equal(second.status, 429);
+  await fetch(`${base}/v1/settings/quota`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ maxConcurrentRuns: 0, maxTokensMonth: 0 }),
+  });
+
+  const mcpSaved = await fetch(`${base}/v1/settings/mcp`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ name: "docs", bearer: "sk-mcp-never-echo" }),
+  });
+  assert.equal(mcpSaved.status, 200);
+  const mcp = (await mcpSaved.json()) as { servers?: Array<{ name: string; connected?: boolean }> };
+  assert.equal(mcp.servers?.some((item) => item.name === "docs" && item.connected), true);
+  assert.doesNotMatch(JSON.stringify(mcp), /sk-mcp-never-echo/);
 });

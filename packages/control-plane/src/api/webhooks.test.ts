@@ -16,7 +16,7 @@ delete process.env.CONTROL_PLANE_TOKEN;
 const { createApiServer } = await import("./server.js");
 const { listen, close } = await import("../e2e/helpers.js");
 const { mintRunToken } = await import("@neo-cloud-agent/contracts");
-const { createRun, listFollowUps } = await import("../orchestrator/orchestrator.js");
+const { createRun, getRun, listFollowUps } = await import("../orchestrator/orchestrator.js");
 
 function sign(raw: string): string {
   return `sha256=${createHmac("sha256", "github-hook-secret").update(raw).digest("hex")}`;
@@ -108,4 +108,51 @@ test("GitHub webhook verifies the signature and wakes a subscribed run", async (
   assert.equal(deliveredBody.delivered, 1);
   const follows = listFollowUps(run.id);
   assert.equal(follows.some((item) => item.text.includes("please add a test")), true);
+  assert.equal(follows.some((item) => item.source === "subscription"), true);
+
+  const failed = JSON.stringify({
+    action: "completed",
+    workflow_run: {
+      id: 88,
+      name: "test",
+      conclusion: "failure",
+      status: "completed",
+      head_branch: run.branchName ?? "neo/watch",
+      html_url: "https://github.com/acme/app/actions/runs/88",
+      pull_requests: [{ number: 3 }],
+    },
+    repository: { full_name: "acme/app" },
+  });
+  const ci = await fetch(`${base}/webhooks/github`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-github-event": "workflow_run",
+      "x-github-delivery": "deliv-ci-fail",
+      "x-hub-signature-256": sign(failed),
+    },
+    body: failed,
+  });
+  assert.equal(ci.status, 202);
+  const afterCi = listFollowUps(run.id);
+  assert.equal(afterCi.some((item) => item.source === "autofix" && item.text.includes("autofix 1/3")), true);
+
+  const push = JSON.stringify({
+    ref: `refs/heads/${run.branchName ?? "neo/watch"}`,
+    after: "deadbeef",
+    repository: { full_name: "acme/app" },
+    sender: { login: "alice" },
+  });
+  const pushed = await fetch(`${base}/webhooks/github`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-github-event": "push",
+      "x-github-delivery": "deliv-push",
+      "x-hub-signature-256": sign(push),
+    },
+    body: push,
+  });
+  assert.equal(pushed.status, 202);
+  assert.equal(getRun(run.id)?.blockAutofix, true);
 });

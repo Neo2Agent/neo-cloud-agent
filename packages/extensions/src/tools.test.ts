@@ -248,6 +248,40 @@ test("neo_mcp_list and neo_mcp_call talk to an HTTP MCP server", async () => {
   assert.match(called.content, /found it/);
 });
 
+test("neo_mcp_call prefers the control-plane HTTP proxy", async () => {
+  const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-mcp-cp-"));
+  mkdirSync(path.join(workspaceDir, ".neo"), { recursive: true });
+  writeFileSync(
+    path.join(workspaceDir, ".neo/environment.json"),
+    JSON.stringify({
+      mcp: [{ name: "docs", transport: "http", url: "https://mcp.example/rpc" }],
+    }),
+  );
+  const fetchImpl: CloudToolFetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes("/internal/runs/run_1/mcp")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string };
+      if (body.action === "list") {
+        return new Response(
+          JSON.stringify({
+            servers: [{ name: "docs", transport: "http", tools: [{ name: "search", description: "via control plane" }] }],
+          }),
+        );
+      }
+      return new Response(JSON.stringify({ result: { content: [{ type: "text", text: "from control plane" }] } }));
+    }
+    return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+  };
+  const tools = createCloudTools(ctx(fetchImpl, workspaceDir));
+  const listed = await tools.find((item) => item.name === "neo_mcp_list")!.execute({});
+  assert.match(listed.content, /via control plane/);
+  const called = await tools.find((item) => item.name === "neo_mcp_call")!.execute({
+    server: "docs",
+    tool: "search",
+  });
+  assert.match(called.content, /from control plane/);
+});
+
 test("neo_subagent follows the pi single/parallel/chain contract", async () => {
   const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-subagent-"));
   mkdirSync(path.join(workspaceDir, ".pi", "agents"), { recursive: true });

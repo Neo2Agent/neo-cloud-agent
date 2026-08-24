@@ -1,17 +1,27 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { formatRunNotice } from "./dispatch.js";
+import { formatPrReadyNotice, formatRunNotice } from "./dispatch.js";
+import { smtpAuthPlain } from "./smtp.js";
 import { parseTelegramUpdate, verifyTelegramSecret } from "./telegram.js";
 import { parseWeChatXml, verifyWeChatSignature, weChatTextReply } from "./wechat.js";
 
 test("formatRunNotice keeps a short Chinese completion message", () => {
   const text = formatRunNotice(
-    { id: "run-12345678", prompt: "帮我看一下这段报错", status: "IDLE", errorMessage: null },
+    {
+      id: "run-12345678",
+      prompt: "帮我看一下这段报错",
+      status: "IDLE",
+      errorMessage: null,
+      pullRequests: [{ repoUrl: "https://github.com/acme/app", branch: "neo/x", url: "https://github.com/acme/app/pull/3", draft: true, number: 3, title: "fix" }],
+    },
     "idle",
   );
   assert.match(text, /做完了/);
   assert.match(text, /帮我看一下这段报错/);
+  assert.match(text, /github.com\/acme\/app\/pull\/3/);
+  assert.match(formatPrReadyNotice({ id: "run-12345678", prompt: "开 PR", status: "RUNNING", errorMessage: null, pullRequests: [{ repoUrl: "https://github.com/acme/app", branch: "neo/x", url: "https://github.com/acme/app/pull/3", draft: true, number: 3, title: "fix" }] }), /PR 开好了/);
+  assert.equal(smtpAuthPlain("u", "p"), Buffer.from("\0u\0p").toString("base64"));
 });
 
 test("Telegram parser ignores slash commands and keeps chat id", () => {
