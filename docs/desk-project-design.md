@@ -37,7 +37,7 @@ Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项�
 
 现网硬约束（设计时不许假装没有）：
 
-- 应用机大约 **2 个 VM 槽**。多人并行靠排队 + 各开各的 Run，不承诺无限沙箱。
+- 应用机大约 **2 个 VM 槽**。多人并行靠排队 + 各开各的 Run，不承诺无限沙箱。空闲默认 **15 分钟**卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）；槽会先把工作区写回 `hostRunsDir/<runId>` 再释放。下一任占用前会 `wipeMount`。详见 [附录 A](#附录-a运行时问答)。
 - Agent loop 只在 VM 或本机 worker 里跑，控制面只编排。
 - Provider Key 只在 gateway。转交、分享、资产都不得带出密钥。
 - Desk 本机路径：`POST /v1/desks` → lease → `target: { loop: "desk", tools: "desk" }` → 本地 git worktree。P0–P2 不允许拆开 loop / tools。
@@ -851,3 +851,87 @@ Desk 的 D1–D5 冻结后，Web 再做：
 - 不要把 Automations 画进看板列。
 - 不要在第一期做 MCP 工具完整集「对齐 27 个名字」。
 - 不要把 Web 项目页和 Desk 工作台做成两套字段名。
+
+---
+
+## 附录 A：运行时问答
+
+对照现网代码，不是推测。
+
+### A.1 槽到时间会不会自动释放？会不会有上一任文件干扰？
+
+会自动释放，默认 **15 分钟**空闲。`WORKER_IDLE_RELEASE_MS` 没设就是 `15 * 60_000`；设成 `0` 则不卸槽。控制面每 2 秒扫一次 `expireIdleWorkers`：Run 已是 `IDLE`、还挂着 worker、且 `now - idleAt >= ttl` 才释放。释放时 **不标 ERROR**，只发 `Released idle VM slot`。
+
+释放顺序：
+
+1. `persistRunWorkspace`：槽上的盘拷回 `hostRunsDir/<runId>`（按 Run 分目录，不是按槽）
+2. 给 worker 发 `shutdown`
+3. `destroy` worker，`releaseVmSlot`：`umount`，槽标 `idle`，`runId` 清空
+4. 有人在排队就 `tryStartQueued`
+
+下一任占用同一槽时，`VmSlotRuntime.provision` 会先 `wipeMount`（清掉挂载点里除 `lost+found` 以外的东西），再把 **这一条 Run** 自己的 host 工作区拷进去。所以：
+
+| 担心 | 现网怎么处理 |
+| --- | --- |
+| 槽卸了对话是不是没了 | 不是。对话在控制面，工作区文件在 `hostRunsDir/<runId>` |
+| 槽被 B 占用，A 的文件会不会混进 B | 正常路径不会。卸槽前按 runId 写回，占槽前 wipe，再只拷 B 的目录 |
+| 同一条 Run 过一会儿又说话 | `resumeRun`：session 备份还原进新工作区，再占槽、拉 worker。槽可能是另一块盘 |
+| 卸槽失败 / wipe 失败 | 上一任残留才可能干扰。这是运维故障，不是产品语义 |
+
+2 个槽限制的是 **同时挂着的执行面**，不是同时存在的对话数。空闲对话卸槽后，卡片还在，发跟进再排队占槽。
+
+### A.2 对话 JSONL 除了工作区还有没有持久化？
+
+有，而且 **UI 和恢复靠的是工作区外面那份**。工作区里的 pi session 只是 Agent 的热副本。
+
+| 层 | 位置 | 写什么 | 谁读 |
+| --- | --- | --- | --- |
+| 热 session | worker `SESSION_DIR`（工作区 `sessions/`） | pi `SessionManager` 的 jsonl/json | 仅这一条 Run 的 worker |
+| 控制面 session 备份 | `RUNS_DIR/.control/<runId>.session/` | worker 按工具次数 / 约 30s 增量上传；密钥会打码 | `resumeRun` / worker 启动时还原 |
+| 事件日志 | `.control/<runId>.events.jsonl` | 每个 RunEvent 追加 | 重放、归档 |
+| 编译稿 | `.control/<runId>.transcript.json` | 给 UI 的消息快照 | Desk/Web `GET /transcript` |
+| 对象存储 | 默认 `.neo/runs/.objects`，可 S3 | 事件 + snapshot + session 再归档一份 | 控制面重启 / 冷恢复 |
+| MySQL/Postgres | 设了 `DATABASE_URL` | Run 元数据镜像 | 现网权威元数据 |
+
+两端协作 **不要**去读工作区 JSONL。流式同步走 SSE（事件已经 persist）。槽卸了、工作区被 wipe 了，对话记录仍在 `.control` 和对象存储。工作区 JSONL 丢了，靠 session 备份还原后再继续跑 Agent。
+
+和 WB 的差别：WB 对话史每轮推到腾讯文档网盘，文件产物管道是关的。Neo 对话史已经在控制面 + 对象存储；文件产物同样要显式「保存到项目」。
+
+### A.3 串行动态：Neo 现在 vs WB 参考
+
+WB 实测（`queue.json`）：
+
+```text
+enqueued → dequeued → running（同一时刻只有这一条）→ prompt done
+后来者进 items[]，按 enqueuedAt 纳秒排序
+queueVersion 每次 +1，两边看到同一份
+senderUserId 在队列里，不在 JSONL 字段里
+creator 能停 / 重排 / 插队；editor 只能 send
+```
+
+279ms 内两条消息，后来者等了约 19s，等的是 **当前 Agent 回合跑完**，不是网络。
+
+Neo 现网已经是「一条 Run 一个 loop」，但队列形态更粗：
+
+```text
+POST /follow-ups
+  → inbound[] 追加（FIFO）
+  → 若 RUNNING：delivery=follow_up；否则 prompt
+  → worker pullInbox 一次把当前积压全取走
+  → 逐条 dispatchInbound
+       正在流：followUp / steer 交给 pi 内部排队
+       没在流：session.prompt 开新回合
+```
+
+和 WB 对齐时要补的是 **可见性和身份**，不是再做一套 BTRFS 队列文件：
+
+| | WB | Neo 现在 | Desk 协作要补 |
+| --- | --- | --- | --- |
+| 同时几条 running | 1 | 1（一个 pi session） | 保持 |
+| 后来者去哪 | `items[]` 等到当前 end_turn | `inbound[]` + pi `followUp` | 队列条显示「谁在跑 / 谁在等」 |
+| 发送者 | `queue.senderUserId` | Follow-up **没有** actor | `actorUserId` / 气泡分人 |
+| 两端同看一份队列 | `queueVersion` 广播 | 各订 SSE，没有队列快照 | `GET /follow-ups` + `followup.queued` |
+| 房主控制 | 停 / 重排 / 插队 | 有 abort，没有重排 | 第一期只做停止当前回合 |
+| 等待体验 | 长任务会堵住后面的人 | 一样 | 文案写「对方的回合还在跑」 |
+
+不要做成水位排序（两条跟进同时各跑一个 Agent）。不要在工作区里再写一份 `queue.json` 给两端去读。权威队列就是控制面 `inbound` / `followUps`，动态靠 SSE。
