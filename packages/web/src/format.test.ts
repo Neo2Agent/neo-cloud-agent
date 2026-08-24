@@ -9,6 +9,8 @@ test("modelLabel distinguishes DeepSeek Flash, Vision, and Pro", () => {
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash"), "deepseek-v4-flash");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-v4-flash-vision-exp");
 });
+
+test("formatUsage prints total tokens", () => {
   assert.equal(formatUsage({ promptTokens: 10, completionTokens: 5, totalTokens: 15 }), "15 tok");
 });
 

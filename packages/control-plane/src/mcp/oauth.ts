@@ -22,11 +22,16 @@ export function signMcpOAuthState(name: string, ttlMs = DEFAULT_TTL_MS): string 
 }
 
 export function verifyMcpOAuthState(state: string): string {
-  const parsed = JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as {
-    name?: string;
-    exp?: number;
-    sig?: string;
-  };
+  let parsed: { name?: string; exp?: number; sig?: string };
+  try {
+    parsed = JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as {
+      name?: string;
+      exp?: number;
+      sig?: string;
+    };
+  } catch {
+    throw new Error("invalid OAuth state");
+  }
   if (!parsed.name || typeof parsed.exp !== "number" || !parsed.sig) {
     throw new Error("invalid OAuth state");
   }
