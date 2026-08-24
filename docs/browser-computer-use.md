@@ -68,7 +68,57 @@ Neo 已经有对位零件：`neo_subagent`、`neo_artifact_upload`、SSE transcr
 
 因此：**一期必须能在「无视觉模型 + 无桌面 + 有限内存」下工作。** 这正好是 Playwright MCP 的 a11y snapshot 路线，不是 Anthropic computer-use 的截图+坐标路线。
 
+### 3.1 规格：一个 Run 要几核几 G
+
+先分清两笔账。现网 `WORKER_RUNTIME=vm` **不是**独立虚拟机：loop 槽只隔离磁盘，CPU/内存和宿主机上的 control-plane、gateway、Caddy 抢同一台 4C/4G。`WORKER_CPUS=1`、`WORKER_MEMORY_MIB=512` 只约束 **这个 worker 进程**（V8 堆打到约 409MiB；有 cgroup `Delegate=` 时再套 RSS）。Chromium 是子进程，**不会**吃进 Node 堆上限；要限 Chrome，必须把整个 worker 进程树放进同一个 cgroup。
+
+下面的「每槽」是 **一个带浏览器的 Run 自己**该预留的预算，不是整机规格。
+
+| 场景 | vCPU | 内存 | 磁盘 | 同时几个这样的槽 |
+| --- | --- | --- | --- | --- |
+| 现网默认（纯编码，不开浏览器） | 1 | 512MiB | 4GiB | 2（当前 4C/4G） |
+| **一期 browser-use**（无头 Chromium + a11y，测本机 Web） | **2** | **2GiB** | **8GiB** | 现网 4C/4G 只开 **1** 个；要 2 个并发换 8C/16G |
+| 一期 + 同槽里还跑 `pnpm dev` / 编译 | 2 | 2.5–3GiB | 8GiB | 同上 |
+| **二期 computer-use**（Xvfb + 轻量 WM + 坐标点击） | 2 | **4GiB** | 16GiB | 只开 1 个 |
+| 二期 + 录屏 | 2 | 4–5GiB | 16GiB | 只开 1 个 |
+| **三期 / 对标 Cursor**（桌面 + 接管 + 并行） | 4 | **8GiB** | 40GiB | 每槽一台真 VM；宿主机 16C/32G 才舒服跑 2 个 |
+
+内存是这样叠出来的（RSS，不是堆）：
+
+| 进程 | 一期无头 | 二期桌面 |
+| --- | --- | --- |
+| neo-worker + pi | 300–500MiB | 300–500MiB |
+| Playwright 驱动 | ~50MiB | ~50MiB |
+| Chromium（一页 React / 对话页） | 400–700MiB | 500–800MiB（headed 通常更肥） |
+| 被测 app 的 `start` / `pnpm dev` | 200–400MiB | 200–400MiB |
+| Xvfb + openbox | — | 50–80MiB |
+| ffmpeg 录屏 | — | 80–200MiB |
+| noVNC / websockify | — | 30–80MiB |
+| **合计（舒适）** | **约 1.5–2.2GiB** | **约 2.5–3.8GiB** |
+| **建议 cap** | **2GiB**（重页面提到 3GiB） | **4GiB** |
+
+核数：1 核能跑，但 Chrome 渲染线程 + `pnpm typecheck` 会互相饿死，snapshot/截图变慢。2 vCPU 是一期甜点。对标 Cursor 那种「编译 + 开浏览器 + 录屏」给 4 vCPU，不是因为浏览器要 4 核，而是同一台机器还要跑测试。
+
+整机（控制面和 worker 同机，像现在的轻量）还要再加：
+
+| 整机 | 能干什么 |
+| --- | --- |
+| **4C / 4G（现网）** | 控制面 + gateway 大约占 0.8–1.2GiB，剩下不够稳跑 **两个** 512MiB 编码槽 + Chrome。一期只能：**1 个 browser 槽（2GiB）**，第二个槽关掉或只跑纯文本；桌面不要开。能做 demo，不能当默认产品形态。 |
+| **4C / 8G** | 同机舒服的最小升级：1 个 2GiB browser 槽 + 1 个 512MiB 编码槽，控制面不挤。仍不要默认开桌面。 |
+| **8C / 16G** | 2 个一期 browser 槽并行，或 1 个 4GiB 桌面槽。这是「认真做 browser-use」的推荐宿主机。 |
+| **8C / 16G + Firecracker/KVM** | 每槽真 VM：2 vCPU / 2GiB（browser）或 4GiB（desktop）。隔离才接近 Cursor。 |
+| **16C / 32G** | 两个 4C/8G 桌面 VM + 接管，才谈得上对标 Cursor 云端并行。 |
+
+磁盘：Playwright 自带的 Chromium 大约 300–400MiB，不要打进每个项目 Build。现网 4GiB 槽装本仓库 `node_modules` 已经紧，一期把 `WORKER_DISK_GIB` / 槽大小提到 **8**。录屏再预留，16GiB 更稳。
+
+**直接建议：**
+
+1. 现网先试一期：`VM_SLOT_COUNT=1`、`WORKER_CPUS=2`、`WORKER_MEMORY_MIB=2048`（且 cgroup 套住 Chrome 子进程）。4G 整机能验证，不能双开。
+2. 要当常用能力：把应用机升到 **8C / 16G**，两槽各 2GiB，或一编码一浏览器。
+3. 要 Cursor 那种整桌面 + 远程接管：按 **每 Run 4C / 8G / 40G 盘** 规划独立 VM，不要继续挤在 4C/4G 轻量上。
+
 ---
+
 
 ## 4. 业界三条路
 
