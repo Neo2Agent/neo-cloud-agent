@@ -7,7 +7,16 @@ import {
 } from "./llm-ids.js";
 
 export type { LlmUpstreamMode } from "./llm-ids.js";
-export { canonicalizeLlmModel, DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL, defaultLlmModel, isDeepseekProModel } from "./llm-ids.js";
+export {
+  canonicalizeLlmModel,
+  DEEPSEEK_FLASH_MODEL,
+  DEEPSEEK_PRO_MODEL,
+  DEEPSEEK_VISION_MODEL,
+  defaultLlmModel,
+  isDeepseekProModel,
+  isDeepseekVisionModel,
+  visionModelFor,
+} from "./llm-ids.js";
 
 export interface LlmSettings {
   upstream: LlmUpstreamMode;

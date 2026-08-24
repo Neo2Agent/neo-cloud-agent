@@ -65,4 +65,12 @@ test("worker JWT can upload an artifact; the chat API can download it", async (t
   });
   assert.equal(file.status, 200);
   assert.equal(await file.text(), "boom\n");
+
+  const { signArtifactAccess } = await import("../artifacts/signed.js");
+  const token = signArtifactAccess(run.id, "out.log");
+  const signed = await fetch(`${base}/v1/runs/${run.id}/artifacts/out.log?token=${token}`);
+  assert.equal(signed.status, 200);
+  assert.equal(await signed.text(), "boom\n");
+  const deniedFile = await fetch(`${base}/v1/runs/${run.id}/artifacts/out.log?token=nope`);
+  assert.equal(deniedFile.status, 401);
 });

@@ -84,6 +84,12 @@ import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBui
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
 import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
+import { verifyArtifactAccess } from "../artifacts/signed.js";
+import { beginMcpOAuth, finishMcpOAuth } from "../mcp/oauth.js";
+import { proxyMcpCall, proxyMcpList } from "../mcp/proxy.js";
+import { deleteMcpSecret, publicMcpServers, upsertMcpSecret } from "../mcp/secrets.js";
+import { publicAppUrl } from "../notify/settings.js";
+import { quotaSnapshot, QuotaError, writeQuotaLimits } from "../quota/quota.js";
 import { GITHUB_WEBHOOK_PATH, publicGitHubWebhookInfo } from "../subscriptions/secret.js";
 import { createAutomation, deleteAutomation, listAutomations, updateAutomation } from "../automations/store.js";
 import {
@@ -176,6 +182,32 @@ function sendPlain(res: ServerResponse, status: number, body: string, contentTyp
     "content-length": Buffer.byteLength(body),
   });
   res.end(body);
+}
+
+async function sendArtifactBody(res: ServerResponse, runId: string, name: string): Promise<boolean> {
+  const file = await readRunArtifact(runId, name);
+  if (!file) {
+    return false;
+  }
+  res.writeHead(200, {
+    ...CORS,
+    "content-type": file.artifact.contentType,
+    "content-length": file.body.length,
+    "cache-control": "private, max-age=60",
+    "content-disposition": `inline; filename="${file.artifact.name}"`,
+  });
+  res.end(file.body);
+  return true;
+}
+
+function requestOrigin(req: IncomingMessage): string {
+  const configured = publicAppUrl();
+  if (configured) {
+    return configured;
+  }
+  const host = headerValue(req.headers.host);
+  const proto = headerValue(req.headers["x-forwarded-proto"]) || "http";
+  return host ? `${proto}://${host}` : getConfig().controlPlaneUrl;
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -299,6 +331,34 @@ export function createApiServer() {
         const result = await ingestWeChatXml(raw.toString("utf8"));
         sendPlain(res, result.status, result.xml, "application/xml");
         return;
+      }
+
+      if (method === "GET" && path === "/oauth/callback/mcp") {
+        try {
+          const name = await finishMcpOAuth({
+            code: url.searchParams.get("code") ?? "",
+            state: url.searchParams.get("state") ?? "",
+            origin: requestOrigin(req),
+          });
+          sendPlain(res, 200, `<!doctype html><title>MCP</title><p>已连接 ${name}。可以关掉这个标签。</p>`, "text/html");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "oauth_failed";
+          sendPlain(res, 400, `<!doctype html><title>MCP</title><p>${message}</p>`, "text/html");
+        }
+        return;
+      }
+
+      const signedArtifact = /^\/v1\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
+      if (method === "GET" && signedArtifact) {
+        const runId = signedArtifact[1] ?? "";
+        const name = decodeURIComponent(signedArtifact[2] ?? "");
+        const token = url.searchParams.get("token") ?? "";
+        if (token && verifyArtifactAccess(token, runId, name)) {
+          if (!(await sendArtifactBody(res, runId, name))) {
+            notFound(res);
+          }
+          return;
+        }
       }
 
       if (method === "POST" && path === "/v1/auth/register") {
@@ -435,6 +495,12 @@ export function createApiServer() {
               httpUrl?: string;
               wechatToken?: string;
               defaultRepo?: string;
+              smtpHost?: string;
+              smtpPort?: string | number;
+              smtpUser?: string;
+              smtpPass?: string;
+              smtpFrom?: string;
+              emailTo?: string;
               clear?: boolean;
             };
             const saved = writeNotifySettings(body);
@@ -445,6 +511,91 @@ export function createApiServer() {
           } catch (error) {
             const message = error instanceof Error ? error.message : "invalid_notify_settings";
             send(res, 400, { error: message });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/quota") {
+          send(res, 200, quotaSnapshot(listRuns(), actor.orgId));
+          return;
+        }
+        if (method === "GET" && path === "/v1/settings/quota") {
+          send(res, 200, quotaSnapshot(listRuns(), actor.orgId));
+          return;
+        }
+        if (method === "POST" && path === "/v1/settings/quota") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { maxTokensMonth?: number; maxConcurrentRuns?: number };
+            writeQuotaLimits(body);
+            send(res, 200, quotaSnapshot(listRuns(), actor.orgId));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invalid_quota" });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/settings/mcp") {
+          send(res, 200, { servers: publicMcpServers() });
+          return;
+        }
+        if (method === "POST" && path === "/v1/settings/mcp") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as {
+              name?: string;
+              bearer?: string;
+              headers?: Record<string, string>;
+              oauth?: {
+                authorizeUrl?: string;
+                tokenUrl?: string;
+                clientId?: string;
+                clientSecret?: string;
+                scopes?: string;
+              };
+              clear?: boolean;
+            };
+            const name = (body.name ?? "").trim();
+            if (body.clear) {
+              send(res, 200, { servers: deleteMcpSecret(name) });
+              return;
+            }
+            if (!name) {
+              send(res, 400, { error: "MCP server name is required" });
+              return;
+            }
+            const headers = { ...(body.headers ?? {}) };
+            if (body.bearer?.trim()) {
+              headers.authorization = body.bearer.trim().startsWith("Bearer ")
+                ? body.bearer.trim()
+                : `Bearer ${body.bearer.trim()}`;
+            }
+            send(res, 200, {
+              servers: upsertMcpSecret(name, {
+                headers: Object.keys(headers).length > 0 ? headers : undefined,
+                oauth: body.oauth,
+              }),
+            });
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invalid_mcp_settings" });
+          }
+          return;
+        }
+        const mcpOAuthStart = /^\/v1\/oauth\/mcp\/([^/]+)\/start$/.exec(path);
+        if (mcpOAuthStart && method === "GET") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const started = beginMcpOAuth(decodeURIComponent(mcpOAuthStart[1] ?? ""), requestOrigin(req));
+            send(res, 200, started);
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "oauth_start_failed" });
           }
           return;
         }
@@ -670,6 +821,10 @@ export function createApiServer() {
           try {
             send(res, 201, await createRun(body, { userId: actor.userId, orgId: actor.orgId }));
           } catch (error) {
+            if (error instanceof QuotaError) {
+              send(res, 429, { error: error.message });
+              return;
+            }
             send(res, 400, { error: error instanceof Error ? error.message : "create_run_failed" });
           }
           return;
@@ -827,6 +982,43 @@ export function createApiServer() {
           return;
         }
         send(res, 200, evaluateEgress(bootstrap.egress, body.url));
+        return;
+      }
+
+      const mcpProxyMatch = /^\/internal\/runs\/([^/]+)\/mcp$/.exec(path);
+      if (mcpProxyMatch && method === "POST") {
+        const runId = mcpProxyMatch[1] ?? "";
+        try {
+          const bootstrap = getBootstrap(runId);
+          const body = (await readJson(req)) as {
+            action?: "list" | "call";
+            server?: string;
+            tool?: string;
+            arguments?: Record<string, unknown>;
+          };
+          if (body.action === "list") {
+            send(res, 200, await proxyMcpList(runId, workspaceFor(runId), bootstrap.egress));
+            return;
+          }
+          if (body.action === "call") {
+            if (!body.server || !body.tool) {
+              send(res, 400, { error: "server and tool are required" });
+              return;
+            }
+            send(res, 200, {
+              result: await proxyMcpCall(
+                runId,
+                { server: body.server, tool: body.tool, arguments: body.arguments },
+                workspaceFor(runId),
+                bootstrap.egress,
+              ),
+            });
+            return;
+          }
+          send(res, 400, { error: "action must be list or call" });
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "mcp_proxy_failed" });
+        }
         return;
       }
 
@@ -993,19 +1185,9 @@ export function createApiServer() {
           return;
         }
         try {
-          const file = await readRunArtifact(runId, decodeURIComponent(artifactFileMatch[2] ?? ""));
-          if (!file) {
+          if (!(await sendArtifactBody(res, runId, decodeURIComponent(artifactFileMatch[2] ?? "")))) {
             notFound(res);
-            return;
           }
-          res.writeHead(200, {
-            ...CORS,
-            "content-type": file.artifact.contentType,
-            "content-length": file.body.length,
-            "cache-control": "private, max-age=60",
-            "content-disposition": `inline; filename="${file.artifact.name}"`,
-          });
-          res.end(file.body);
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : "invalid artifact" });
         }
@@ -1161,6 +1343,10 @@ export function createApiServer() {
 
       notFound(res);
     } catch (error) {
+      if (error instanceof QuotaError) {
+        send(res, 429, { error: error.message });
+        return;
+      }
       const message = error instanceof Error ? error.message : "internal_error";
       const status = message.includes("not found") ? 404 : 500;
       send(res, status, { error: message });

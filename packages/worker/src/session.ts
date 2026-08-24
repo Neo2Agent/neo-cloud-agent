@@ -10,7 +10,7 @@ import {
 import { appendProjectInstruction, deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
 import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { getWorkerConfig } from "./config.js";
-import { materializeInboundImages } from "./images.js";
+import { inboundPrompt } from "./images.js";
 import { gatewayModelSpec } from "./model-spec.js";
 import { abortNestedSubagents, executeNestedSubagent, type SubagentEventHandler } from "./subagent.js";
 import { createWorkspaceLoader, summarizeWorkspaceResources } from "./workspace-loader.js";
@@ -144,22 +144,18 @@ export async function dispatchInbound(session: AgentSession, message: WorkerInbo
   }
 
   const method = deliveryForPi(message.type);
-  const text = promptText(message);
+  const { text, images } = inboundPrompt(getWorkerConfig().workspaceDir, message);
+  const vision = images.length ? images : undefined;
   if (session.isStreaming) {
     if (method === "steer") {
-      await session.steer(text);
+      await session.steer(text, vision);
     } else {
-      await session.followUp(text);
+      await session.followUp(text, vision);
     }
     return "continue";
   }
-  await session.prompt(text);
+  await session.prompt(text, vision ? { images: vision } : undefined);
   return "continue";
-}
-
-function promptText(message: Extract<WorkerInbound, { text: string }>): string {
-  const attached = materializeInboundImages(getWorkerConfig().workspaceDir, message.images);
-  return attached.note ? `${message.text}\n\n${attached.note}` : message.text;
 }
 
 export function describeDispatch(message: WorkerInbound): string {

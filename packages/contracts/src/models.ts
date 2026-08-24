@@ -19,6 +19,7 @@ const GPT_4O: ModelLimits = {
 const LIMITS_BY_ID: Record<string, ModelLimits> = {
   "deepseek-v4-flash": DEEPSEEK_V4,
   "deepseek-v4-pro": DEEPSEEK_V4,
+  "deepseek-v4-flash-vision-exp": DEEPSEEK_V4,
   "gpt-4o-mini": GPT_4O,
   "gpt-4o": GPT_4O,
 };

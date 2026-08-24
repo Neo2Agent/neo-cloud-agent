@@ -1,43 +1,107 @@
-import type { Run } from "@neo-cloud-agent/contracts";
+import type { PullRequestRef, Run } from "@neo-cloud-agent/contracts";
 import { publicAppUrl, readNotifySecrets } from "./settings.js";
+import { sendSmtpMail } from "./smtp.js";
 
 const lastSent = new Map<string, number>();
 const COALESCE_MS = 15_000;
 
-export type NotifyKind = "idle" | "error";
+export type NotifyKind = "idle" | "error" | "pr";
 
-export function formatRunNotice(run: Pick<Run, "id" | "prompt" | "status" | "errorMessage">, kind: NotifyKind): string {
-  const title = run.prompt.replace(/\s+/g, " ").trim().slice(0, 80) || run.id.slice(0, 8);
-  const status = kind === "error" ? `失败${run.errorMessage ? `：${run.errorMessage.slice(0, 120)}` : ""}` : "做完了";
-  const url = publicAppUrl() ? `${publicAppUrl()}/#/runs/${run.id}` : "";
-  return [`对话${status}`, title, url].filter(Boolean).join("\n");
+type NoticeRun = Pick<Run, "id" | "prompt" | "status" | "errorMessage"> & {
+  pullRequests?: PullRequestRef[];
+  notifyChatId?: string | null;
+};
+
+function promptTitle(run: Pick<Run, "id" | "prompt">): string {
+  return run.prompt.replace(/\s+/g, " ").trim().slice(0, 80) || run.id.slice(0, 8);
 }
 
-export async function notifyRunFinished(run: Run, kind: NotifyKind): Promise<number> {
+function chatUrl(runId: string): string {
+  return publicAppUrl() ? `${publicAppUrl()}/#/runs/${runId}` : "";
+}
+
+function prLines(run: NoticeRun): string[] {
+  return (run.pullRequests ?? []).map((item) => item.url).filter(Boolean);
+}
+
+export function formatRunNotice(run: NoticeRun, kind: NotifyKind): string {
+  const status =
+    kind === "error"
+      ? `失败${run.errorMessage ? `：${run.errorMessage.slice(0, 120)}` : ""}`
+      : kind === "pr"
+        ? "PR 开好了"
+        : "做完了";
+  return [`对话${status}`, promptTitle(run), ...prLines(run), chatUrl(run.id)].filter(Boolean).join("\n");
+}
+
+export function formatPrReadyNotice(run: NoticeRun): string {
+  return formatRunNotice(run, "pr");
+}
+
+export async function notifyRunFinished(run: Run, kind: Exclude<NotifyKind, "pr">): Promise<number> {
+  return notifyKeyed(`${run.id}:${kind}`, formatRunNotice(run, kind), {
+    runId: run.id,
+    status: run.status,
+    kind,
+    prompt: run.prompt,
+    chatId: run.notifyChatId ?? undefined,
+  });
+}
+
+export async function notifyPrReady(run: Run): Promise<number> {
+  return notifyKeyed(`${run.id}:pr`, formatPrReadyNotice(run), {
+    runId: run.id,
+    status: run.status,
+    kind: "pr",
+    prompt: run.prompt,
+    chatId: run.notifyChatId ?? undefined,
+    pullRequest: run.pullRequests.at(-1)?.url,
+  });
+}
+
+async function notifyKeyed(
+  key: string,
+  text: string,
+  extra: Record<string, unknown> & { chatId?: string },
+): Promise<number> {
   const now = Date.now();
-  const prev = lastSent.get(run.id) ?? 0;
+  const prev = lastSent.get(key) ?? 0;
   if (now - prev < COALESCE_MS) {
     return 0;
   }
-  lastSent.set(run.id, now);
-  const text = formatRunNotice(run, kind);
-  return sendNotifyText(text, { runId: run.id, status: run.status, kind, prompt: run.prompt });
+  lastSent.set(key, now);
+  return sendNotifyText(text, extra);
 }
 
 export async function sendNotifyText(
   text: string,
-  extra?: Record<string, unknown>,
+  extra?: Record<string, unknown> & { chatId?: string },
 ): Promise<number> {
   const secrets = readNotifySecrets();
   const jobs: Array<Promise<void>> = [];
-  if (secrets.telegramBotToken && secrets.telegramChatId) {
-    jobs.push(postTelegram(secrets.telegramBotToken, secrets.telegramChatId, text));
+  const chatId = (typeof extra?.chatId === "string" && extra.chatId.trim()) || secrets.telegramChatId;
+  if (secrets.telegramBotToken && chatId) {
+    jobs.push(postTelegram(secrets.telegramBotToken, chatId, text));
   }
   if (secrets.wecomWebhook) {
     jobs.push(postJson(secrets.wecomWebhook, { msgtype: "text", text: { content: text } }));
   }
   if (secrets.httpUrl) {
     jobs.push(postJson(secrets.httpUrl, { text, ...extra }));
+  }
+  if (secrets.smtpHost && secrets.emailTo) {
+    jobs.push(
+      sendSmtpMail({
+        host: secrets.smtpHost,
+        port: secrets.smtpPort,
+        user: secrets.smtpUser,
+        pass: secrets.smtpPass,
+        from: secrets.smtpFrom || secrets.smtpUser || secrets.emailTo,
+        to: secrets.emailTo,
+        subject: text.split("\n")[0] || "Neo Cloud Agent",
+        text,
+      }),
+    );
   }
   const results = await Promise.allSettled(jobs);
   return results.filter((item) => item.status === "fulfilled").length;

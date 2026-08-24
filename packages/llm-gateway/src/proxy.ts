@@ -1,5 +1,5 @@
 import { getConfig } from "./config.js";
-import { resolveUpstreamModel } from "./routes.js";
+import { messagesHaveImages, resolveUpstreamModel, visionModelFor } from "./routes.js";
 
 export interface ChatCompletionBody {
   model?: string;
@@ -10,7 +10,11 @@ export interface ChatCompletionBody {
 
 export function rewriteBody(body: ChatCompletionBody, fallbackModel: string): ChatCompletionBody {
   const requested = typeof body.model === "string" ? body.model : fallbackModel;
-  return { ...body, model: resolveUpstreamModel(requested, fallbackModel) };
+  let model = resolveUpstreamModel(requested, fallbackModel);
+  if (messagesHaveImages(body.messages)) {
+    model = visionModelFor(model);
+  }
+  return { ...body, model };
 }
 
 export function buildMockSse(model: string, text: string): string {

@@ -60,6 +60,10 @@ export interface Run {
     completionTokens: number;
     totalTokens: number;
   } | null;
+  /** Telegram chat that started this run; completion notify prefers it. */
+  notifyChatId?: string | null;
+  /** Human push on the run branch disables further CI autofix. */
+  blockAutofix?: boolean;
   /** Latest model-context fill. Not cumulative billed tokens. */
   contextUsage?: {
     tokens: number;
@@ -84,6 +88,8 @@ export type FollowUpDelivery = "prompt" | "steer" | "follow_up";
 
 export type FollowUpStatus = "queued" | "delivered" | "cancelled";
 
+export type FollowUpSource = "user" | "subscription" | "autofix";
+
 export interface FollowUp {
   id: string;
   runId: string;
@@ -91,6 +97,7 @@ export interface FollowUp {
   images?: ImageRef[];
   delivery: FollowUpDelivery;
   status: FollowUpStatus;
+  source?: FollowUpSource;
   createdAt: string;
   deliveredAt: string | null;
 }
@@ -113,6 +120,7 @@ export interface CreateRunRequest {
   source?: RunSource;
   projectId?: string;
   images?: ImageRef[];
+  notifyChatId?: string;
 }
 
 export interface CreateFollowUpRequest {
@@ -120,6 +128,7 @@ export interface CreateFollowUpRequest {
   /** Omit to let the control plane pick prompt vs steer vs follow_up. */
   delivery?: FollowUpDelivery;
   images?: ImageRef[];
+  source?: FollowUpSource;
 }
 
 export interface CreateCommitRequest {

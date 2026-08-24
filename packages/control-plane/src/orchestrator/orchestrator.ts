@@ -31,6 +31,10 @@ import {
   formatProjectMemory,
   subscriptionTargetsFrom,
 } from "@neo-cloud-agent/contracts";
+import { listRunArtifacts } from "../artifacts/artifacts.js";
+import { formatPrArtifactMarkdown } from "../artifacts/signed.js";
+import { assertCreateRunAllowed } from "../quota/quota.js";
+import { decideSubscriptionWake } from "../subscriptions/autofix.js";
 import { defaultWorkerResources, getConfig } from "../config.js";
 import {
   canRestoreBuild,
@@ -569,6 +573,7 @@ function writeProjectMemory(run: Run): void {
 
 export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string }): Promise<Run> {
   const config = getConfig();
+  assertCreateRunAllowed([...runs.values()], owner?.orgId ?? config.orgId);
   const createdAt = now();
   let repoUrls = input.repoUrls;
   let projectId: string | null = null;
@@ -611,6 +616,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     expiresAt: null,
     errorMessage: null,
     usage: null,
+    notifyChatId: input.notifyChatId?.trim() || null,
   };
   runs.set(run.id, run);
   followUps.set(run.id, []);
@@ -1043,6 +1049,7 @@ export async function enqueueFollowUp(runId: string, input: CreateFollowUpReques
     images: input.images,
     delivery,
     status: "queued",
+    source: input.source ?? "user",
     createdAt: now(),
     deliveredAt: null,
   };
@@ -1122,6 +1129,8 @@ export function subscribeRun(
         wakeCount: 0,
         lastDeliveryKey: null,
         lastDeliveredAt: null,
+        mode: input.mode ?? (kind === "github_ci" ? "autofix" : "watch"),
+        autofixCount: 0,
       };
       existing.push(next);
       created.push(next);
@@ -1182,6 +1191,11 @@ export async function ingestGitHubWebhook(input: {
       if (!subscriptionMatchesIngress(item, ingress)) {
         continue;
       }
+      if (ingress.kind === "human_push") {
+        run.blockAutofix = true;
+        run.updatedAt = now();
+        continue;
+      }
       if (item.lastDeliveryKey === ingress.deliveryKey) {
         continue;
       }
@@ -1192,9 +1206,22 @@ export async function ingestGitHubWebhook(input: {
       if (lastAt && Date.now() - lastAt < SUBSCRIPTION_COALESCE_MS) {
         continue;
       }
+      const decision = decideSubscriptionWake({
+        subscription: item,
+        ingress,
+        pullRequests: run.pullRequests,
+        followUps: followUps.get(runId) ?? [],
+        blockAutofix: run.blockAutofix,
+      });
+      if (decision.action === "skip") {
+        continue;
+      }
       item.lastDeliveryKey = ingress.deliveryKey;
       item.lastDeliveredAt = now();
       item.wakeCount += 1;
+      if (decision.action === "autofix") {
+        item.autofixCount = (item.autofixCount ?? 0) + 1;
+      }
       publish(
         event(runId, "subscription.delivered", "GitHub subscription event", {
           category: "agent_setup",
@@ -1204,10 +1231,15 @@ export async function ingestGitHubWebhook(input: {
             repo: item.repo,
             deliveryKey: ingress.deliveryKey,
             wakeCount: item.wakeCount,
+            autofixCount: item.autofixCount ?? 0,
+            mode: decision.action,
           },
         }),
       );
-      await enqueueFollowUp(runId, { text: ingress.text });
+      await enqueueFollowUp(runId, {
+        text: decision.text,
+        source: decision.action === "autofix" ? "autofix" : "subscription",
+      });
       delivered += 1;
     }
   }
@@ -1337,7 +1369,11 @@ export async function commitRun(runId: string, input: CreateCommitRequest) {
 export async function openRunDraftPr(runId: string, input: CreatePullRequestRequest) {
   const run = requireRun(runId);
   try {
-    const result = await openRunPullRequest(workspaceFor(runId), run, input);
+    const extra = formatPrArtifactMarkdown(runId, await listRunArtifacts(runId));
+    const result = await openRunPullRequest(workspaceFor(runId), run, {
+      ...input,
+      body: [input.body, extra].filter((part) => part && part.trim()).join("\n\n"),
+    });
     run.pullRequests = [...run.pullRequests.filter((item) => item.branch !== result.pullRequest.branch), result.pullRequest];
     run.updatedAt = now();
     if (result.pushed) {
@@ -1357,7 +1393,15 @@ export async function openRunDraftPr(runId: string, input: CreatePullRequestRequ
         },
       }),
     );
+    try {
+      subscribeRun(runId, { events: ["pr_activity", "ci"] });
+    } catch {
+      // local-only repos have no GitHub slug
+    }
     flushRun(runId);
+    void import("../notify/dispatch.js")
+      .then(({ notifyPrReady }) => notifyPrReady(run))
+      .catch(() => undefined);
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "pull request failed";

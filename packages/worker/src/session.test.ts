@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CLOUD_SYSTEM_PROMPT, CLOUD_TOOL_NAMES, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
-import { gatewayModelSpec } from "./model-spec.js";
+import { gatewayModelSpec, supportsVision } from "./model-spec.js";
 
 test("session tools include filesystem tools plus neo-git, neo-pr, and neo-diag", () => {
   assert.deepEqual(sessionToolNames(), [
@@ -52,10 +52,14 @@ test("createPiCloudTools wraps extension execute into pi tool results", async ()
 });
 
 test("gateway model spec uses each model's advertised window", () => {
+  assert.equal(gatewayModelSpec("deepseek-v4-flash-vision-exp").contextWindow, 1_000_000);
   assert.equal(gatewayModelSpec("deepseek-v4-flash").contextWindow, 1_000_000);
   assert.equal(gatewayModelSpec("deepseek-v4-pro").contextWindow, 1_000_000);
   assert.equal(gatewayModelSpec("gpt-4o-mini").contextWindow, 128_000);
   assert.equal(gatewayModelSpec("mystery-local").contextWindow, 0);
   assert.equal(gatewayModelSpec("mystery-local").compactionEnabled, false);
   assert.notEqual(gatewayModelSpec("deepseek-v4-flash").contextWindow, gatewayModelSpec("gpt-4o-mini").contextWindow);
+  assert.equal(supportsVision("deepseek-v4-flash"), false);
+  assert.equal(supportsVision("deepseek-v4-flash-vision-exp"), true);
+  assert.equal(supportsVision("gpt-4o-mini"), true);
 });

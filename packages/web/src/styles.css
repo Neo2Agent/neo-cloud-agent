@@ -988,7 +988,7 @@ button.stop:hover {
 .workspace-drawer {
   flex: 0 1 auto;
   min-height: 0;
-  max-height: min(32vh, 360px);
+  max-height: min(48vh, 520px);
   overflow: auto;
   margin: 8px 20px 0;
   padding: 12px 14px 14px;
@@ -1130,8 +1130,10 @@ button.stop:hover {
   color: var(--muted);
 }
 
-.env-row select {
+.env-row select,
+.env-row input {
   width: 100%;
+  min-width: 0;
   border: 1px solid var(--line);
   background: #ffffff;
   color: var(--text);
@@ -1144,8 +1146,12 @@ button.stop:hover {
   padding-inline: 12px;
 }
 
-#llm-status {
-  margin: 2px 0 0;
+#llm-status,
+#scm-status,
+#quota-status,
+#mcp-status,
+#notify-status {
+  margin: 2px 0 8px;
 }
 
 .auto-page {

@@ -1,4 +1,5 @@
 import { createRun } from "../orchestrator/orchestrator.js";
+import { QuotaError } from "../quota/quota.js";
 import { readNotifySecrets } from "../notify/settings.js";
 import { parseTelegramUpdate, rememberChat, verifyTelegramSecret } from "../notify/telegram.js";
 import { parseWeChatXml, verifyWeChatSignature, weChatTextReply } from "../notify/wechat.js";
@@ -19,12 +20,20 @@ export async function ingestTelegramWebhook(input: {
   if (ingress.ignored || !ingress.text) {
     return { status: 200, body: { ok: true, ignored: true } };
   }
-  const run = await createRun({
-    prompt: ingress.text,
-    repoUrls: secrets.defaultRepo ? [secrets.defaultRepo] : [],
-    source: "telegram",
-  });
-  return { status: 202, body: { ok: true, runId: run.id } };
+  try {
+    const run = await createRun({
+      prompt: ingress.text,
+      repoUrls: secrets.defaultRepo ? [secrets.defaultRepo] : [],
+      source: "telegram",
+      notifyChatId: ingress.chatId,
+    });
+    return { status: 202, body: { ok: true, runId: run.id } };
+  } catch (error) {
+    if (error instanceof QuotaError) {
+      return { status: 429, body: { error: error.message } };
+    }
+    throw error;
+  }
 }
 
 export function verifyWeChatQuery(query: URLSearchParams): { ok: boolean; echo?: string } {
@@ -48,11 +57,22 @@ export async function ingestWeChatXml(xml: string): Promise<{ status: number; xm
       xml: weChatTextReply(message.fromUser, message.toUser, "发文字任务给我，例如：帮我看一下这段报错"),
     };
   }
-  const run = await createRun({
-    prompt: message.content,
-    repoUrls: secrets.defaultRepo ? [secrets.defaultRepo] : [],
-    source: "wechat",
-  });
+  let run;
+  try {
+    run = await createRun({
+      prompt: message.content,
+      repoUrls: secrets.defaultRepo ? [secrets.defaultRepo] : [],
+      source: "wechat",
+    });
+  } catch (error) {
+    if (error instanceof QuotaError) {
+      return {
+        status: 200,
+        xml: weChatTextReply(message.fromUser, message.toUser, "额度用完了，稍后再试。"),
+      };
+    }
+    throw error;
+  }
   return {
     status: 200,
     xml: weChatTextReply(message.fromUser, message.toUser, `已收到，正在做。对话 ${run.id.slice(0, 8)}`),

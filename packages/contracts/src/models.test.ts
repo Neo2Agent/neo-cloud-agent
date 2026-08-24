@@ -15,6 +15,10 @@ test("DeepSeek V4 flash and pro both advertise a 1M window", () => {
     contextWindow: 1_000_000,
     maxOutputTokens: 384_000,
   });
+  assert.deepEqual(resolveModelLimits("deepseek-v4-flash-vision-exp"), {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
+  });
 });
 
 test("OpenAI 4o family uses 128k, not DeepSeek's 1M", () => {

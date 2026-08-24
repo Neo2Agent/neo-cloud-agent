@@ -63,6 +63,8 @@ test("canonicalizeLlmModel remaps retired DeepSeek aliases to v4-flash", () => {
   assert.equal(canonicalizeLlmModel("deepseek", "deepseek-chat"), "deepseek-v4-flash");
   assert.equal(canonicalizeLlmModel("deepseek", "deepseek-reasoner"), "deepseek-v4-flash");
   assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-pro"), "deepseek-v4-pro");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-vision"), "deepseek-v4-flash-vision-exp");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-flash-vision-exp"), "deepseek-v4-flash-vision-exp");
 });
 
 test("readLlmSettings remaps a saved deepseek-chat id", () => {

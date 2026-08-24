@@ -1,6 +1,7 @@
 export type {
   CreateCommitRequest,
   CreateFollowUpRequest,
+  FollowUpSource,
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
@@ -98,9 +99,12 @@ export type { LlmSettings, LlmSettingsRequest, LlmUpstreamMode, PublicLlmSetting
 export {
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
+  DEEPSEEK_VISION_MODEL,
   canonicalizeLlmModel,
   defaultLlmModel,
   isDeepseekProModel,
+  isDeepseekVisionModel,
+  visionModelFor,
   llmSettingsFile,
   parseLlmSettingsRequest,
   resolveLlmSettingsRoot,
@@ -181,8 +185,10 @@ export type {
   RunSubscription,
   RunSubscriptionKind,
   SubscriptionEventKind,
+  SubscriptionMode,
 } from "./subscription.js";
 export {
+  MAX_CI_AUTOFIX,
   MAX_SUBSCRIPTION_WAKES,
   SUBSCRIPTION_COALESCE_MS,
   SUBSCRIPTION_TOOL_NAME,

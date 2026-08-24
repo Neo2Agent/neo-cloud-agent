@@ -26,7 +26,7 @@ import {
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatUsage, modelLabel, preview, shortId, slotLabel } from "./format";
+import { formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
 import {
   activityLabel,
   isActiveRunStatus,
@@ -195,9 +195,7 @@ export function App() {
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
 
-  const selectedModel =
-    currentRun?.model ||
-    (llm.upstream === "openai" ? "gpt-4o-mini" : /pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash");
+  const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
   const contextUsage = useMemo(() => {
     const reported = parseContextUsage(currentRun?.contextUsage ?? null);
     const base = reported ?? baselineContextUsage(selectedModel);
@@ -655,8 +653,7 @@ export function App() {
       patchRun(runId, (run) => ({ ...run, status: "RUNNING" }));
     }
     const repoUrls = repo.trim() ? [repo.trim()] : [];
-    const model =
-      llm.upstream === "openai" ? "gpt-4o-mini" : /pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash";
+    const model = resolveChatModel(llm.upstream, llm.model, attached.length > 0);
     const buildPayload = buildId === "cold" ? { reuseBuild: false } : buildId ? { buildId, reuseBuild: true } : { reuseBuild: true };
     try {
       if (!runId) {
@@ -1201,7 +1198,7 @@ export function App() {
                     setLlm((prev) => ({
                       ...prev,
                       upstream: value,
-                      model: value === "openai" ? "gpt-4o-mini" : /pro/i.test(prev.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash",
+                      model: resolveChatModel(value, prev.model),
                     }))
                   }
                   onLlmModel={(value) => setLlm((prev) => ({ ...prev, model: value }))}
@@ -1211,12 +1208,7 @@ export function App() {
                 if (!llmKey && !llm.configured) return;
                 const payload: Record<string, string> = {
                   upstream: llm.upstream || "deepseek",
-                  model:
-                    llm.upstream === "openai"
-                      ? "gpt-4o-mini"
-                      : /pro/i.test(llm.model ?? "")
-                        ? "deepseek-v4-pro"
-                        : "deepseek-v4-flash",
+                  model: resolveChatModel(llm.upstream, llm.model),
                 };
                 if (llmKey) payload.apiKey = llmKey;
                 const saved = await readJson<LlmSettings & { error?: string }>(
@@ -1272,6 +1264,7 @@ export function App() {
                 setHealthText(error instanceof Error ? error.message : "清除 GitHub 凭证失败");
               });
             }}
+                  token={token}
                   onWarm={() => {
                     void (async () => {
                       if (!repo.trim()) {
