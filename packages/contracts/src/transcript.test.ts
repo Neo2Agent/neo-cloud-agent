@@ -8,6 +8,7 @@ import {
   pageTranscriptMessages,
   pageTranscriptSnapshot,
   transcriptHasUnsettledWork,
+  transcriptGroups,
 } from "./transcript.js";
 
 function ev(partial: Partial<RunEvent> & Pick<RunEvent, "id" | "kind">): RunEvent {
@@ -340,4 +341,19 @@ test("applyRunEventsToMessages continues a streaming assistant without replaying
   assert.equal(seed[1]?.text, "Hel");
   assert.equal(next[1]?.text, "Hello");
   assert.equal(next[1]?.streaming, false);
+});
+
+test("transcriptGroups keeps bash tools that only live on message.tools", () => {
+  const groups = transcriptGroups({
+    id: "a1",
+    role: "assistant",
+    text: "我来查一下",
+    createdAt: "2026-08-21T00:00:01.000Z",
+    streaming: true,
+    blocks: [{ type: "text", text: "我来查一下" }],
+    tools: [{ id: "b1", name: "bash", status: "running", args: { command: "ls" } }],
+  });
+  assert.equal(groups[0]?.type, "text");
+  assert.equal(groups[1]?.type, "tools");
+  assert.equal(groups[1]?.type === "tools" ? groups[1].tools[0]?.name : "", "bash");
 });

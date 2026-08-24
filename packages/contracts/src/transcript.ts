@@ -127,17 +127,25 @@ function hasAssistantContent(assistant: TranscriptMessage): boolean {
 }
 
 export function transcriptBlocks(message: TranscriptMessage): TranscriptBlock[] {
-  if (message.blocks && message.blocks.length > 0) {
-    return message.blocks.filter((block) => block.type !== "text" || block.text.trim().length > 0);
+  const fromBlocks = (message.blocks ?? []).filter((block) => block.type !== "text" || block.text.trim().length > 0);
+  if (fromBlocks.length === 0) {
+    const blocks: TranscriptBlock[] = [];
+    if (message.text.trim()) {
+      blocks.push({ type: "text", text: message.text });
+    }
+    for (const tool of message.tools ?? []) {
+      blocks.push({ type: "tool", tool });
+    }
+    return blocks;
   }
-  const blocks: TranscriptBlock[] = [];
-  if (message.text.trim()) {
-    blocks.push({ type: "text", text: message.text });
+  const seen = new Set(
+    fromBlocks.filter((block) => block.type === "tool").map((block) => (block.type === "tool" ? block.tool.id || block.tool.name : "")),
+  );
+  const extra = (message.tools ?? []).filter((tool) => !seen.has(tool.id || tool.name));
+  if (extra.length === 0) {
+    return fromBlocks;
   }
-  for (const tool of message.tools ?? []) {
-    blocks.push({ type: "tool", tool });
-  }
-  return blocks;
+  return [...fromBlocks, ...extra.map((tool) => ({ type: "tool" as const, tool }))];
 }
 
 export function transcriptGroups(message: TranscriptMessage): TranscriptGroup[] {

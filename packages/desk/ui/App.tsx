@@ -9,7 +9,15 @@ import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
 import { isLoopbackOrigin } from "../src/ports";
-import { isActiveRunStatus, isTerminalTurnEvent, parseSse, runEventsQuery } from "../src/stream";
+import {
+  isActiveRunStatus,
+  isTerminalTurnEvent,
+  liveActivityLabel,
+  messageIsLive,
+  parseSse,
+  runEventsQuery,
+  shouldShowAssistantActions,
+} from "../src/stream";
 import { ToolCard } from "./ToolCard";
 import {
   AutomationCreateForm,
@@ -100,7 +108,9 @@ function isCloudRun(run?: Run | null): boolean {
 }
 
 function isThought(message: TranscriptMessage): boolean {
-  if (message.tools?.length || message.blocks?.some((block) => block.type === "tool")) return false;
+  if (messageIsLive(message) || message.tools?.length || message.blocks?.some((block) => block.type === "tool")) {
+    return false;
+  }
   const blob = `${message.kind ?? ""} ${message.text}`.toLowerCase();
   return blob.includes("thought") || blob.includes("thinking") || blob.includes("reasoning");
 }
@@ -470,6 +480,7 @@ export function App() {
   }, [messages, runId]);
 
   const visible = displayTranscriptMessages(messages);
+  const activity = liveActivityLabel(visible);
   const grouped = useMemo(() => {
     let list = runs;
     if (activeProject) {
@@ -1002,7 +1013,6 @@ export function App() {
                         </article>
                       ) : null;
                     }
-                    const lastText = [...groups].reverse().find((group) => group.type === "text");
                     return (
                       <div key={message.id} className="assistant-turn">
                         {groups.map((group, index) => {
@@ -1018,7 +1028,7 @@ export function App() {
                           return (
                             <article key={`${message.id}-text-${index}`} className="assistant-block">
                               <div className="assistant-text">{group.text}</div>
-                              {group === lastText ? (
+                              {shouldShowAssistantActions(message, groups, index) ? (
                                 <div className="assistant-actions">
                                   <button type="button" className="icon-btn" aria-label="Good response">
                                     <IconThumbsUp />
@@ -1043,6 +1053,16 @@ export function App() {
                       </div>
                     );
                   })}
+                  {activity ? (
+                    <div className="turn-progress">
+                      <span className="think-dots" aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      <span>{activity}</span>
+                    </div>
+                  ) : null}
                 </div>
               </>
             ) : null}

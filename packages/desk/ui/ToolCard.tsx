@@ -1,6 +1,6 @@
 import { readSubagentSteps } from "@neo-cloud-agent/contracts/subagent";
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { toolArgPreview } from "../src/format";
 
 function toolMark(tool: TranscriptTool): string {
@@ -16,12 +16,9 @@ function toolDisplayName(tool: TranscriptTool): string {
   return tool.name === "neo_subagent" ? "subagent" : tool.name;
 }
 
-export function ToolCard({ tool }: { tool: TranscriptTool }) {
-  const running = tool.status === "running" && !tool.output;
-  const preview = toolArgPreview(tool.args);
+function ToolBody({ tool, running }: { tool: TranscriptTool; running: boolean }) {
   const preRef = useRef<HTMLPreElement>(null);
   const parentSubagent = tool.name === "neo_subagent";
-  const subagent = parentSubagent || Boolean(tool.details?.subagent);
   const steps = parentSubagent ? readSubagentSteps(tool.details) : [];
   const omitted = parentSubagent ? Number(tool.details?.omittedSteps ?? 0) : 0;
 
@@ -31,13 +28,7 @@ export function ToolCard({ tool }: { tool: TranscriptTool }) {
   }, [running, tool.output]);
 
   return (
-    <details className={`${tool.isError ? "tool err" : running ? "tool run" : "tool"}${subagent ? " subagent" : ""}`} open={running}>
-      <summary>
-        <span>
-          {toolMark(tool)} {toolDisplayName(tool)}
-        </span>
-        {preview ? <span className="cmd">{preview}</span> : null}
-      </summary>
+    <>
       {steps.length > 0 ? (
         <ol className="subagent-steps">
           {steps.map((step) => (
@@ -56,6 +47,44 @@ export function ToolCard({ tool }: { tool: TranscriptTool }) {
       ) : running && steps.length === 0 ? (
         <pre ref={preRef}>执行中…</pre>
       ) : null}
+    </>
+  );
+}
+
+function ToolHead({ tool }: { tool: TranscriptTool }) {
+  const preview = toolArgPreview(tool.args);
+  return (
+    <div className="tool-head">
+      <span>
+        {toolMark(tool)} {toolDisplayName(tool)}
+      </span>
+      {preview ? <span className="cmd">{preview}</span> : null}
+    </div>
+  );
+}
+
+export function ToolCard({ tool }: { tool: TranscriptTool }) {
+  const running = tool.status === "running";
+  const parentSubagent = tool.name === "neo_subagent";
+  const subagent = parentSubagent || Boolean(tool.details?.subagent);
+  const className = `${tool.isError ? "tool err" : running ? "tool run" : "tool"}${subagent ? " subagent" : ""}`;
+  const body: ReactNode = <ToolBody tool={tool} running={running} />;
+
+  if (running) {
+    return (
+      <div className={className}>
+        <ToolHead tool={tool} />
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <details className={className}>
+      <summary>
+        <ToolHead tool={tool} />
+      </summary>
+      {body}
     </details>
   );
 }
