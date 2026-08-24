@@ -351,8 +351,9 @@ function ensureAssistant(state: BuildState, event: RunEvent): TranscriptMessage 
 function settleAll(state: BuildState, at?: string): void {
   for (const message of state.messages) {
     if (message.role === "assistant") {
+      const open = message.streaming || Boolean(message.tools?.some((tool) => tool.status === "running"));
       message.streaming = false;
-      if (at) {
+      if (at && open) {
         touch(message, at);
       }
       markToolsDone(message);

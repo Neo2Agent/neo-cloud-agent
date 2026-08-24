@@ -851,6 +851,14 @@ h1 {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.setup .setup-time {
+  margin-top: 0;
 }
 
 .setup.err {
