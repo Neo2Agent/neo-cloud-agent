@@ -13,7 +13,7 @@ import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
 import { cycle, shortcutAction } from "./shortcuts";
-import { parseSseData } from "./stream-apply";
+import { applyLiveEvents, parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { ArtifactsPanel } from "./components/ArtifactsPanel";
@@ -207,6 +207,7 @@ export function App() {
   const streamFrameRef = useRef(0);
   const streamTimerRef = useRef(0);
   const lastEventIdRef = useRef<string | null>(null);
+  const appliedEventIdsRef = useRef<Set<string>>(new Set());
   const openGenRef = useRef(0);
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
   const tokenRef = useRef(token);
@@ -287,7 +288,7 @@ export function App() {
         if (sourceRef.current !== source) {
           return;
         }
-        const batch = pending.splice(0);
+        const batch = applyLiveEvents([], pending.splice(0));
         if (batch.length === 0) {
           return;
         }
@@ -347,9 +348,10 @@ export function App() {
       };
       source.onmessage = (message) => {
         const event = parseSseData(message.data);
-        if (!event) {
+        if (!event || appliedEventIdsRef.current.has(event.id)) {
           return;
         }
+        appliedEventIdsRef.current.add(event.id);
         lastEventIdRef.current = event.id;
         pending.push(event);
         if (streamFrameRef.current || streamTimerRef.current) {
@@ -482,6 +484,7 @@ export function App() {
     setLoadingTranscript(false);
     setLoadingOlder(false);
     lastEventIdRef.current = null;
+    appliedEventIdsRef.current = new Set();
     setPrompt("");
     setImages([]);
     setFilesOpen(false);
@@ -504,6 +507,7 @@ export function App() {
       setRunId(id);
       setLoadingTranscript(true);
       setMessages([]);
+      appliedEventIdsRef.current = new Set();
       setRemaining(0);
       setNextBefore(null);
       setStopping(false);

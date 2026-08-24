@@ -97,7 +97,9 @@ export function listEventsAfter(runId: string, after?: string | null): RunEvent[
     return all;
   }
   const index = all.findIndex((item) => item.id === after || String(item.seq) === after);
-  return index === -1 ? all : all.slice(index + 1);
+  // A compacted delta id is gone from RAM. Replaying the whole log appends the
+  // story again and Chrome dies (error 5) on the next EventSource reconnect.
+  return index === -1 ? [] : all.slice(index + 1);
 }
 
 export function subscribe(runId: string, listener: (event: RunEvent) => void): () => void {

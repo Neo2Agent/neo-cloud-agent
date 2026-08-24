@@ -49,6 +49,9 @@ test("compactClosedDeltaRuns waits for a non-delta before folding tokens", () =>
   const open = [ev("d1", "message.delta", "Hel"), ev("d2", "message.delta", "lo")];
   compactClosedDeltaRuns(open);
   assert.equal(open.length, 2);
+  const usage = [...open, ev("u", "context.usage")];
+  compactClosedDeltaRuns(usage);
+  assert.equal(usage.length, 3);
   const closed = [...open, ev("e", "message.end")];
   compactClosedDeltaRuns(closed);
   assert.equal(closed.length, 2);
