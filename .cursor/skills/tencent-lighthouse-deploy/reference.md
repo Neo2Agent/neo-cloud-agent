@@ -108,7 +108,7 @@ sudo systemctl enable --now neo-llm-gateway neo-control-plane
 
 仓库里的副本也在本 skill 的 `units/`。`WorkingDirectory` 必须是仓库根，`EnvironmentFile` 指向根目录 `.env`。
 
-控制面 `KillMode=control-group`：重启时要杀掉它拉起的本地 worker。若 unit 停不住，看 `journalctl`，不要重启整机。
+控制面 `KillMode=process`：只杀控制面主进程，不杀它 spawn 的 worker。重启后 `adopt()` 按 pid 认领。`systemctl stop` 会留下在跑的 worker，下次启动收回。若 unit 停不住，看 `journalctl`，不要重启整机。
 
 ## Caddy
 

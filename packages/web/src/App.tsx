@@ -6,15 +6,21 @@ import {
   settleTranscriptMessages,
 } from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
-import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
-import { api, readJson, readToken, writeToken } from "./api";
+import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
+import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
+import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
+import { readPinnedRuns, togglePinnedRun } from "./pins";
+import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
+import { cycle, shortcutAction } from "./shortcuts";
 import { parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
+import { ArtifactsPanel } from "./components/ArtifactsPanel";
 import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { AutomationsPage } from "./components/AutomationsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
@@ -163,6 +169,20 @@ export function App() {
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sessionTab, setSessionTab] = useState<"chat" | "diff" | "terminal" | "artifacts">("chat");
+  const [agentMode, setAgentMode] = useState<AgentMode>("agent");
+  const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
+  const [deskFolder, setDeskFolder] = useState("");
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() => (typeof window === "undefined" ? [] : readPinnedRuns()));
+  const [diagLogs, setDiagLogs] = useState<Array<{ name: string; content?: string }>>([]);
+  const [diagError, setDiagError] = useState("");
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [artifacts, setArtifacts] = useState<Array<{ name: string; url?: string; contentType?: string }>>([]);
+  const [artifactsError, setArtifactsError] = useState("");
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [commitError, setCommitError] = useState("");
+  const [handoffError, setHandoffError] = useState("");
   const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects">(initialMainTab);
   const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
@@ -185,6 +205,7 @@ export function App() {
   const topMoreRef = useRef<HTMLDetailsElement>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const streamFrameRef = useRef(0);
+  const streamTimerRef = useRef(0);
   const lastEventIdRef = useRef<string | null>(null);
   const openGenRef = useRef(0);
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
@@ -234,6 +255,10 @@ export function App() {
       cancelAnimationFrame(streamFrameRef.current);
       streamFrameRef.current = 0;
     }
+    if (streamTimerRef.current) {
+      window.clearTimeout(streamTimerRef.current);
+      streamTimerRef.current = 0;
+    }
     sourceRef.current?.close();
     sourceRef.current = null;
   }, []);
@@ -251,10 +276,14 @@ export function App() {
       if (cursor) params.set("after", cursor);
       if (tokenRef.current) params.set("access_token", tokenRef.current);
       const query = params.toString() ? `?${params}` : "";
-      const source = new EventSource(`/v1/runs/${id}/events${query}`);
+      const source = new EventSource(withApiBase(`/v1/runs/${id}/events${query}`));
       const pending: RunEvent[] = [];
       const flush = () => {
         streamFrameRef.current = 0;
+        if (streamTimerRef.current) {
+          window.clearTimeout(streamTimerRef.current);
+          streamTimerRef.current = 0;
+        }
         if (sourceRef.current !== source) {
           return;
         }
@@ -279,6 +308,12 @@ export function App() {
           if (isTerminalTurnEvent(event.kind)) {
             setStopping(false);
             setSending(false);
+            if (event.kind === "run.idle" || event.kind === "agent.end") {
+              void deskBridge()?.notify("对话已完成", preview(currentRun?.prompt ?? "Neo"));
+            }
+            if (event.kind === "run.error") {
+              void deskBridge()?.notify("对话出错", event.title || "Run error");
+            }
           }
           if (event.kind === "scm.pr_opened" && event.data?.url) {
             patchRun(id, (run) => ({
@@ -317,9 +352,14 @@ export function App() {
         }
         lastEventIdRef.current = event.id;
         pending.push(event);
-        if (!streamFrameRef.current) {
-          streamFrameRef.current = requestAnimationFrame(flush);
+        if (streamFrameRef.current || streamTimerRef.current) {
+          return;
         }
+        if (typeof document !== "undefined" && document.hidden) {
+          streamTimerRef.current = window.setTimeout(flush, 16);
+          return;
+        }
+        streamFrameRef.current = requestAnimationFrame(flush);
       };
       source.onerror = () => {
         setHealthText("事件流已断开，正在重试");
@@ -446,6 +486,7 @@ export function App() {
     setImages([]);
     setFilesOpen(false);
     setDiffOpen(false);
+    setSessionTab("chat");
     setDiffStat("");
     setDiffPatch("");
     setDiffError("");
@@ -469,6 +510,7 @@ export function App() {
       setSending(false);
       if (!keepPendingRef.current) setPendingTurn(null);
       setMainTab("chat");
+      setSessionTab("chat");
       history.replaceState(null, "", `/#/runs/${id}`);
       const [runRes, transcriptRes] = await Promise.all([
         api(tokenRef.current, `/v1/runs/${id}`),
@@ -482,6 +524,7 @@ export function App() {
       const run = await readJson<Run>(runRes);
       if (openGenRef.current !== gen) return false;
       setCurrentRun(run);
+      writeLastRunId(id);
       const projectId = run.projectId ?? "";
       if (projectId) {
         setActiveProject((prev) => (prev?.id === projectId ? prev : { id: projectId, name: prev?.name ?? "项目对话" }));
@@ -561,6 +604,15 @@ export function App() {
   }, [runId]);
 
   const finishLogin = useCallback(async () => {
+    const desk = deskBridge();
+    if (desk) {
+      await desk.setToken(tokenRef.current).catch(() => undefined);
+      const target = await desk.getTarget().catch(() => undefined);
+      if (target) {
+        setDeskTarget(target);
+        if (target.folder) setDeskFolder(target.folder);
+      }
+    }
     const refreshShell = [refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()] as const;
     if (hashAutomations()) {
       setMainTab("automations");
@@ -576,7 +628,7 @@ export function App() {
       await Promise.all(refreshShell);
       return;
     }
-    const match = hashRunId();
+    const match = hashRunId() || readLastRunId();
     await Promise.all([
       refreshRuns(),
       match ? openRun(match) : Promise.resolve(),
@@ -640,6 +692,7 @@ export function App() {
     }
     const attached = images;
     const previousStatus = currentRun?.status;
+    const askPrefix = agentMode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     const pending: PendingUser = {
       id: `pending-${Date.now()}`,
       text: text || "（图片）",
@@ -662,13 +715,18 @@ export function App() {
           await api(tokenRef.current, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
-              prompt: text || "（图片）",
-              repoUrls,
-              source: "web",
+              prompt: `${askPrefix}${text || "（图片）"}`,
+              repoUrls: deskTarget.kind === "desk" ? (repoUrls.length ? repoUrls : deskFolder ? [deskFolder] : []) : repoUrls,
+              source: deskTarget.kind === "desk" ? "desk" : "web",
               envId: envId || undefined,
               model,
               images: attached.length ? attached : undefined,
               projectId: activeProject?.id,
+              mode: agentMode,
+              target:
+                deskTarget.kind === "desk"
+                  ? { loop: "desk", tools: "desk", deskId: deskTarget.deskId }
+                  : { loop: "cloud", tools: "cloud" },
               ...buildPayload,
             }),
           }),
@@ -687,7 +745,10 @@ export function App() {
       const follow = await readJson<{ error?: string }>(
         await api(tokenRef.current, `/v1/runs/${runId}/follow-ups`, {
           method: "POST",
-          body: JSON.stringify({ text: text || "（图片）", images: attached.length ? attached : undefined }),
+          body: JSON.stringify({
+            text: `${askPrefix}${text || "（图片）"}`,
+            images: attached.length ? attached : undefined,
+          }),
         }),
       );
       if (follow.error) throw new Error(follow.error);
@@ -702,7 +763,33 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, buildId, currentRun?.status, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, agentMode, buildId, currentRun?.status, deskFolder, deskTarget, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
+
+  const queueMessage = useCallback(async () => {
+    const text = prompt.trim();
+    if (!text && images.length === 0) return;
+    if (isComposerClosed(currentRun?.status) || !runId) return;
+    const attached = images;
+    const askPrefix = agentMode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
+    setPrompt("");
+    setImages([]);
+    try {
+      const follow = await readJson<{ error?: string }>(
+        await api(tokenRef.current, `/v1/runs/${runId}/follow-ups`, {
+          method: "POST",
+          body: JSON.stringify({
+            text: `${askPrefix}${text || "（图片）"}`,
+            images: attached.length ? attached : undefined,
+          }),
+        }),
+      );
+      if (follow.error) throw new Error(follow.error);
+    } catch (error) {
+      setPrompt(text);
+      setImages(attached);
+      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "排队失败")]);
+    }
+  }, [agentMode, currentRun?.status, images, prompt, runId]);
 
   const stopTurn = useCallback(() => {
     if (!runId) return;
@@ -723,12 +810,77 @@ export function App() {
     })();
   }, [patchRun, runId]);
 
+  const commitWorkspace = useCallback(
+    async (message: string) => {
+      if (!runId) return;
+      setCommitting(true);
+      setCommitError("");
+      try {
+        const body = await readJson<{ error?: string }>(
+          await api(tokenRef.current, `/v1/runs/${runId}/commit`, {
+            method: "POST",
+            body: JSON.stringify({ message }),
+          }),
+        );
+        if (body.error) throw new Error(body.error);
+        setDiffLoading(true);
+        const response = await api(tokenRef.current, `/v1/runs/${runId}/diff`);
+        const diff = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
+        if (!response.ok) throw new Error(diff.error || "读取 diff 失败");
+        setDiffStat(diff.stat ?? "");
+        setDiffPatch(diff.patch ?? "");
+      } catch (error) {
+        setCommitError(error instanceof Error ? error.message : "提交失败");
+      } finally {
+        setCommitting(false);
+        setDiffLoading(false);
+      }
+    },
+    [runId],
+  );
+
+  const handoffCurrent = useCallback(
+    async (kind: "cloud" | "desk") => {
+      if (!runId) return;
+      const warning = "未提交的改动不会带过去，先 commit 或 stash。确定？";
+      if (!window.confirm(kind === "cloud" ? `切到云端。${warning}` : `切到本机。${warning}`)) {
+        return;
+      }
+      setHandoffError("");
+      try {
+        const target =
+          kind === "desk"
+            ? { loop: "desk" as const, tools: "desk" as const, deskId: deskTarget.deskId }
+            : { loop: "cloud" as const, tools: "cloud" as const };
+        const body = await readJson<Run & { error?: string }>(
+          await api(tokenRef.current, `/v1/runs/${runId}/handoff`, {
+            method: "POST",
+            body: JSON.stringify({ target }),
+          }),
+        );
+        if (body.error) throw new Error(body.error);
+        setCurrentRun(body);
+        setRuns((prev) => prev.map((item) => (item.id === body.id ? { ...item, ...body } : item)));
+      } catch (error) {
+        setHandoffError(error instanceof Error ? error.message : "移交失败");
+      }
+    },
+    [deskTarget.deskId, runId],
+  );
+
+  const applyTarget = useCallback((next: DeskTarget) => {
+    setDeskTarget(next);
+    if (next.folder) setDeskFolder(next.folder);
+    writeLastTarget(next);
+    void deskBridge()?.setTarget(next);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const saved = tokenRef.current;
     void (async () => {
       try {
-        const payload = await readJson<Health>(await fetch("/health"));
+        const payload = await readJson<Health>(await fetch(withApiBase("/health")));
         if (cancelled) return;
         setHealth(payload);
         setAuthEmail("");
@@ -740,9 +892,18 @@ export function App() {
       }
     })();
     void (async () => {
-      if (hasSavedSession(saved)) {
+      const remembered = (await deskBridge()?.getTarget().catch(() => undefined)) ?? readLastTarget();
+      if (cancelled) return;
+      if (remembered) {
+        setDeskTarget(remembered);
+        if (remembered.folder) setDeskFolder(remembered.folder);
+      }
+      const session = (await hydrateDeskToken()) || saved;
+      if (cancelled) return;
+      persistToken(session);
+      if (hasSavedSession(session)) {
         try {
-          await applySession(saved);
+          await applySession(session);
           if (cancelled) return;
           await finishLogin();
         } catch {
@@ -768,7 +929,7 @@ export function App() {
       if (!tokenRef.current) return;
       void (async () => {
         try {
-          const payload = await readJson<Health>(await fetch("/health"));
+          const payload = await readJson<Health>(await fetch(withApiBase("/health")));
           setHealth(payload);
           applyVms(payload.vmSlots);
           setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
@@ -811,6 +972,61 @@ export function App() {
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
   }, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const el = event.target as HTMLElement | null;
+      const typing = Boolean(el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable));
+      const action = shortcutAction(event, deskBridge()?.platform === "darwin" ? "darwin" : "other");
+      if (!action) return;
+      if (typing && (action === "new-chat" || action === "prev-run" || action === "next-run" || action === "close")) {
+        return;
+      }
+      event.preventDefault();
+      if (action === "new-chat") {
+        setActiveProject(null);
+        setMainTab("chat");
+        resetComposer();
+        return;
+      }
+      if (action === "close") {
+        resetComposer();
+        return;
+      }
+      if (action === "queue") {
+        void queueMessage();
+        return;
+      }
+      if (action === "stop") {
+        stopTurn();
+        return;
+      }
+      if (action === "cycle-mode" || action === "mode-menu") {
+        setAgentMode((mode) => (mode === "agent" ? "ask" : "agent"));
+        return;
+      }
+      if (action === "cycle-model") {
+        setLlm((prev) => {
+          const next = cycle(["deepseek-v4-flash", "deepseek-v4-pro"], prev.model || "deepseek-v4-flash");
+          return { ...prev, model: next, upstream: "deepseek" };
+        });
+        return;
+      }
+      const ordered = [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      const index = ordered.findIndex((item) => item.id === runId);
+      if (action === "prev-run" && ordered[index + 1]) void openRun(ordered[index + 1]!.id);
+      if (action === "next-run" && ordered[index - 1]) void openRun(ordered[index - 1]!.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openRun, queueMessage, resetComposer, runId, runs, stopTurn]);
+
+  useEffect(() => {
+    return deskBridge()?.onDeepLink((url) => {
+      const match = /runs\/([^/?#]+)/.exec(url);
+      if (match?.[1]) void openRun(match[1]);
+    });
+  }, [openRun]);
 
   useEffect(() => {
     if (isNarrowViewport()) setSidebarOpen(false);
@@ -920,6 +1136,8 @@ export function App() {
           authed={Boolean(userEmail)}
           authBusy={authBusy}
           health={healthText}
+          pinnedIds={pinnedIds}
+          onPin={(id) => setPinnedIds(togglePinnedRun(id))}
           onClose={toggleSidebar}
           onNewChat={() => {
             setActiveProject(null);
@@ -1033,6 +1251,11 @@ export function App() {
               </div>
             </div>
             <div className="top-actions">
+              {isDeskApp() ? (
+                <span className="desk-badge" title="Desk 预览，本机执行可用">
+                  Desk
+                </span>
+              ) : null}
               <span className="status" id="status" data-state={statusView.state} data-busy={busy ? "true" : "false"}>
                 {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
                 {statusView.label}
@@ -1056,51 +1279,91 @@ export function App() {
                   {formatUsage(currentRun?.usage)}
                 </span>
               ) : null}
-              <button
-                className="ghost"
-                id="toggle-files"
-                type="button"
-                hidden={!runId}
-                aria-expanded={filesOpen}
-                onClick={() => {
-                  const next = !filesOpen;
-                  setFilesOpen(next);
-                  if (next) {
-                    setDiffOpen(false);
-                    setSettingsOpen(false);
-                  }
-                }}
-              >
-                {filesOpen ? "收起文件" : "文件树"}
-              </button>
-              <button
-                className="ghost"
-                id="toggle-diff"
-                type="button"
-                hidden={!runId}
-                aria-expanded={diffOpen}
-                onClick={() => {
-                  const next = !diffOpen;
-                  setDiffOpen(next);
-                  setFilesOpen(false);
-                  setSettingsOpen(false);
-                  if (next && runId) {
-                    setDiffLoading(true);
-                    setDiffError("");
-                    void (async () => {
-                      const response = await api(token, `/v1/runs/${runId}/diff`);
-                      const body = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
-                      if (!response.ok) throw new Error(body.error || "读取 diff 失败");
-                      setDiffStat(body.stat ?? "");
-                      setDiffPatch(body.patch ?? "");
-                    })()
-                      .catch((error) => setDiffError(error instanceof Error ? error.message : "读取 diff 失败"))
-                      .finally(() => setDiffLoading(false));
-                  }
-                }}
-              >
-                {diffOpen ? "收起 Diff" : "Diff"}
-              </button>
+              <nav className="session-tabs" hidden={!runId} aria-label="会话标签">
+                {(
+                  [
+                    ["chat", "对话"],
+                    ["diff", "Diff"],
+                    ["terminal", "终端"],
+                    ["artifacts", "产物"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={sessionTab === id ? "active" : ""}
+                    aria-current={sessionTab === id ? "page" : undefined}
+                    onClick={() => {
+                      setSessionTab(id);
+                      setFilesOpen(false);
+                      setDiffOpen(id === "diff");
+                      setSettingsOpen(false);
+                      if (id === "diff" && runId) {
+                        setDiffLoading(true);
+                        setDiffError("");
+                        void (async () => {
+                          const response = await api(token, `/v1/runs/${runId}/diff`);
+                          const body = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
+                          if (!response.ok) throw new Error(body.error || "读取 diff 失败");
+                          setDiffStat(body.stat ?? "");
+                          setDiffPatch(body.patch ?? "");
+                        })()
+                          .catch((error) => setDiffError(error instanceof Error ? error.message : "读取 diff 失败"))
+                          .finally(() => setDiffLoading(false));
+                      }
+                      if (id === "terminal" && runId) {
+                        setDiagLoading(true);
+                        setDiagError("");
+                        void (async () => {
+                          const response = await api(token, `/v1/runs/${runId}/diagnostics`);
+                          const body = await readJson<{ logs?: Array<{ name: string; content?: string }>; error?: string }>(response);
+                          if (!response.ok) throw new Error(body.error || "读取日志失败");
+                          setDiagLogs(body.logs ?? []);
+                        })()
+                          .catch((error) => setDiagError(error instanceof Error ? error.message : "读取日志失败"))
+                          .finally(() => setDiagLoading(false));
+                      }
+                      if (id === "artifacts" && runId) {
+                        setArtifactsLoading(true);
+                        setArtifactsError("");
+                        void (async () => {
+                          const response = await api(token, `/v1/runs/${runId}/artifacts`);
+                          const body = await readJson<{ artifacts?: Array<{ name: string; url?: string; contentType?: string }>; error?: string }>(
+                            response,
+                          );
+                          if (!response.ok) throw new Error(body.error || "读取产物失败");
+                          setArtifacts(body.artifacts ?? []);
+                        })()
+                          .catch((error) => setArtifactsError(error instanceof Error ? error.message : "读取产物失败"))
+                          .finally(() => setArtifactsLoading(false));
+                      }
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+              {runId && currentRun?.executionTarget?.loop === "desk" ? (
+                <button
+                  className="ghost"
+                  type="button"
+                  title="未提交的改动不会带过去，先 commit 或 stash"
+                  onClick={() => void handoffCurrent("cloud")}
+                >
+                  切到云端
+                </button>
+              ) : null}
+              {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
+                <button
+                  className="ghost"
+                  type="button"
+                  title="未提交的改动不会带过去，先 commit 或 stash"
+                  onClick={() => void handoffCurrent("desk")}
+                >
+                  切到本机
+                </button>
+              ) : null}
+              {handoffError ? <span className="setup err">{handoffError}</span> : null}
               <button
                 className="ghost"
                 id="archive-run"
@@ -1172,10 +1435,10 @@ export function App() {
             </div>
           </header>
           <div className="workspace-col">
-          {filesOpen || diffOpen || settingsOpen ? (
-            <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label={settingsOpen ? "设置" : filesOpen ? "文件树" : "Diff"}>
+          {settingsOpen ? (
+            <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label="设置">
               <div className="workspace-drawer-bar">
-                <strong>{settingsOpen ? "设置" : filesOpen ? "文件树" : "Diff"}</strong>
+                <strong>设置</strong>
                 <button
                   type="button"
                   className="ghost"
@@ -1189,7 +1452,6 @@ export function App() {
                   关闭
                 </button>
               </div>
-              {settingsOpen ? (
                 <SettingsPanel
                   repo={repo}
                   envId={envId}
@@ -1294,9 +1556,7 @@ export function App() {
                     });
                   }}
                 />
-              ) : null}
-              <FileTree token={token} runId={runId} open={filesOpen} />
-              <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
+              <FileTree token={token} runId={runId} open={Boolean(runId)} />
             </aside>
           ) : null}
             {mainTab === "projects" ? (
@@ -1319,6 +1579,33 @@ export function App() {
                   setMainTab("chat");
                   void openRun(id);
                 }}
+              />
+            ) : sessionTab === "diff" ? (
+              <DiffPanel
+                open
+                loading={diffLoading}
+                error={diffError}
+                stat={diffStat}
+                patch={diffPatch}
+                committing={committing}
+                commitError={commitError}
+                onCommit={(message) => void commitWorkspace(message)}
+              />
+            ) : sessionTab === "terminal" ? (
+              <TerminalPanel open loading={diagLoading} error={diagError} logs={diagLogs} />
+            ) : sessionTab === "artifacts" ? (
+              <ArtifactsPanel
+                open
+                loading={artifactsLoading}
+                error={artifactsError}
+                artifacts={artifacts}
+                onOpen={
+                  deskBridge()?.openPath
+                    ? (item) => {
+                        if (item.url) void deskBridge()?.openPath?.(item.url);
+                      }
+                    : undefined
+                }
               />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
@@ -1355,16 +1642,44 @@ export function App() {
             <Composer
               prompt={prompt}
               images={images}
-              vmHint={vmHint}
+              vmHint={
+                deskTarget.kind === "desk"
+                  ? deskFolder
+                    ? `本机 · ${deskFolder}`
+                    : "本机执行需要先选一个 git 文件夹。"
+                  : vmHint
+              }
               busy={busy}
               stopping={stopping}
               archived={archived}
               canStop={Boolean(runId)}
               activity={activity}
               contextUsage={contextUsage}
+              target={deskTarget}
+              canRunLocal={Boolean(deskBridge()?.canRunLocal)}
+              folder={deskFolder}
+              mode={agentMode}
+              model={selectedModel}
+              onTarget={applyTarget}
+              onPickFolder={() => {
+                void deskBridge()?.pickFolder().then((folder) => {
+                  if (folder) {
+                    applyTarget({ ...deskTarget, kind: "desk", folder });
+                  }
+                });
+              }}
+              onMode={setAgentMode}
+              onModel={(value) =>
+                setLlm((prev) => ({
+                  ...prev,
+                  model: value,
+                  upstream: /gpt/i.test(value) ? "openai" : "deepseek",
+                }))
+              }
               onPrompt={setPrompt}
               onImages={setImages}
               onSend={() => void sendMessage()}
+              onQueue={() => void queueMessage()}
               onStop={stopTurn}
             />
           ) : null}
@@ -1397,7 +1712,7 @@ export function App() {
           void (async () => {
             if (authMode === "token") {
               persistToken(authToken.trim());
-              const response = await fetch("/v1/auth", {
+              const response = await fetch(withApiBase("/v1/auth"), {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "content-type": "application/json" },
@@ -1412,7 +1727,7 @@ export function App() {
             } else {
               const email = authEmail.trim();
               const password = authPassword;
-              const response = await fetch("/v1/auth/login", {
+              const response = await fetch(withApiBase("/v1/auth/login"), {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "content-type": "application/json" },

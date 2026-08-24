@@ -1,8 +1,10 @@
 import { useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
-import type { ImageRef } from "@neo-cloud-agent/contracts/run";
-import { isNarrowViewport, shouldSendOnEnter } from "../viewport";
+import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
+import type { DeskTarget } from "../desk";
+import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
 import { ContextUsageControl } from "./ContextUsage";
+import { TargetPicker } from "./TargetPicker";
 
 export type { BuildOption, EnvOption, LlmSettings, ScmSettings } from "./SettingsPanel";
 
@@ -16,9 +18,20 @@ type Props = {
   canStop?: boolean;
   activity?: string;
   contextUsage?: ContextUsageSnapshot;
+  target: DeskTarget;
+  canRunLocal?: boolean;
+  folder?: string;
+  mode: AgentMode;
+  model: string;
+  models?: Array<{ id: string; label: string }>;
+  onTarget: (target: DeskTarget) => void;
+  onPickFolder?: () => void;
+  onMode: (mode: AgentMode) => void;
+  onModel: (model: string) => void;
   onPrompt: (value: string) => void;
   onImages: (images: ImageRef[]) => void;
   onSend: () => void;
+  onQueue?: () => void;
   onStop?: () => void;
 };
 
@@ -32,9 +45,23 @@ export function Composer({
   canStop = false,
   activity,
   contextUsage,
+  target,
+  canRunLocal = false,
+  folder,
+  mode,
+  model,
+  models = [
+    { id: "deepseek-v4-flash", label: "DeepSeek Flash" },
+    { id: "deepseek-v4-pro", label: "DeepSeek Pro" },
+  ],
+  onTarget,
+  onPickFolder,
+  onMode,
+  onModel,
   onPrompt,
   onImages,
   onSend,
+  onQueue,
   onStop,
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
@@ -90,6 +117,11 @@ export function Composer({
           });
         }}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+          if (shouldQueueOnCtrlEnter(event)) {
+            event.preventDefault();
+            if (!archived && onQueue) onQueue();
+            return;
+          }
           if (shouldSendOnEnter(event, { narrow: isNarrowViewport() })) {
             event.preventDefault();
             if (!busy && !archived) {
@@ -98,6 +130,32 @@ export function Composer({
           }
         }}
       />
+      <div className="composer-pickers">
+        <TargetPicker
+          target={target}
+          canRunLocal={canRunLocal}
+          folder={folder}
+          onTarget={onTarget}
+          onPickFolder={onPickFolder}
+        />
+        <label className="picker">
+          <span className="picker-label">模式</span>
+          <select id="agent-mode" value={mode} onChange={(event) => onMode(event.target.value as AgentMode)}>
+            <option value="agent">Agent</option>
+            <option value="ask">Ask</option>
+          </select>
+        </label>
+        <label className="picker">
+          <span className="picker-label">模型</span>
+          <select id="agent-model" value={model} onChange={(event) => onModel(event.target.value)}>
+            {models.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div className="composer-bar">
         {contextUsage ? (
           <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />

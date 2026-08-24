@@ -6,6 +6,7 @@ import { installEgressGuard, policyFromEnv } from "./egress.js";
 import { inspectSessionContext } from "./context-usage.js";
 import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
+import { readSessionBackupPolicy, shouldBackupSession } from "./session-backup-schedule.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
 import { abortNestedSubagents } from "./subagent.js";
 
@@ -39,7 +40,7 @@ async function main(): Promise<void> {
       }
     : await fetchBootstrap(config.runId);
 
-  const workspaceDir = bootstrap.workspaceDir || config.workspaceDir;
+  const workspaceDir = process.env.WORKSPACE_DIR || bootstrap.workspaceDir || config.workspaceDir;
   const egress: EgressPolicy = policyFromEnv(process.env, bootstrap.egress);
   installEgressGuard(egress, (decision) => {
     const event: RunEvent = {
@@ -109,20 +110,62 @@ async function main(): Promise<void> {
     }
   };
 
+  const backupPolicy = readSessionBackupPolicy();
+  let agentRunning = false;
+  let toolsSinceBackup = 0;
+  let lastBackupAt = 0;
+  let backupInFlight = false;
+
+  const requestBackup = (force = false) => {
+    if (backupInFlight) {
+      return;
+    }
+    if (
+      !force &&
+      !shouldBackupSession({
+        now: Date.now(),
+        lastBackupAt,
+        toolsSinceBackup,
+        agentRunning,
+        policy: backupPolicy,
+      })
+    ) {
+      return;
+    }
+    backupInFlight = true;
+    toolsSinceBackup = 0;
+    lastBackupAt = Date.now();
+    void backupSession(config.runId, config.sessionDir).finally(() => {
+      backupInFlight = false;
+    });
+  };
+
   const unsubscribe = session.subscribe((event) => {
     const mapped = stampWorkerSeq(toRunEvents(config.runId, event), workerSeq);
     enqueueEvents(config.runId, mapped).catch((error: unknown) => {
       console.error("failed to push events", error);
     });
+    if (event.type === "agent_start") {
+      agentRunning = true;
+    }
+    if (mapped.some((item) => item.kind === "tool.end")) {
+      toolsSinceBackup += mapped.filter((item) => item.kind === "tool.end").length;
+      requestBackup();
+    }
     if (event.type === "agent_start" || event.type === "agent_end" || event.type === "compaction_end") {
       const usage = mapped.find((item) => item.kind === "llm.usage")?.data;
       const promptTokens = Number(usage?.promptTokens ?? 0);
       pushContext(promptTokens > 0 ? promptTokens : undefined);
     }
     if (mapped.some((item) => item.kind === "agent.end")) {
-      void backupSession(config.runId, config.sessionDir);
+      agentRunning = false;
+      requestBackup(true);
     }
   });
+  const incrementalBackup = setInterval(() => {
+    requestBackup();
+  }, Math.max(5_000, Math.min(backupPolicy.intervalMs, 30_000)));
+  incrementalBackup.unref();
   pushContext();
 
   let running = true;
@@ -169,6 +212,7 @@ async function main(): Promise<void> {
       }
     }
   } finally {
+    clearInterval(incrementalBackup);
     unsubscribe();
     await backupSession(config.runId, config.sessionDir);
     stopTerminals(boot.terminals);

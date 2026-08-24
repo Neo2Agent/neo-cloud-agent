@@ -20,7 +20,7 @@ export type WorkerOutbound =
   | { type: "open_pull_request"; repoUrl: string; branch: string; title: string; body: string }
   | { type: "upload_artifact"; name: string; contentType: string; sizeBytes: number };
 
-export type RuntimeKind = "local" | "docker" | "none" | "firecracker" | "vm" | "cloud-hypervisor";
+export type RuntimeKind = "local" | "docker" | "none" | "firecracker" | "vm" | "cloud-hypervisor" | "desk";
 
 export interface RuntimeSpec {
   runId: string;

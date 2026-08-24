@@ -1,10 +1,13 @@
 export type {
+  AgentMode,
   CreateCommitRequest,
   CreateFollowUpRequest,
   FollowUpSource,
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
+  ExecutionPlace,
+  ExecutionTarget,
   FollowUp,
   FollowUpDelivery,
   FollowUpStatus,
@@ -16,6 +19,15 @@ export type {
   RunStatus,
   SetupStatus,
 } from "./run.js";
+export { assertColocatedTarget, colocatedTarget, isDeskTarget, parseExecutionTarget } from "./run.js";
+export type {
+  CreateDeskRequest,
+  Desk,
+  DeskAssignment,
+  DeskClaimRequest,
+  DeskLeaseResponse,
+  HandoffRequest,
+} from "./desk.js";
 
 export type {
   Build,

@@ -32,10 +32,11 @@ export function getConfig(settingsRoot?: string) {
     port: Number(process.env.LLM_GATEWAY_PORT ?? 8081),
     jwtSecret: process.env.LLM_GATEWAY_JWT_SECRET ?? "dev-only-change-me",
     upstream,
-    upstreamBaseUrl: (usingSaved ? preset.baseUrl : (process.env.LLM_UPSTREAM_BASE_URL ?? preset.baseUrl)).replace(
-      /\/$/,
-      "",
-    ),
+    upstreamBaseUrl: (
+      usingSaved
+        ? saved?.baseUrl || preset.baseUrl
+        : (process.env.LLM_UPSTREAM_BASE_URL ?? preset.baseUrl)
+    ).replace(/\/$/, ""),
     upstreamApiKey: apiKey,
     upstreamModel: canonicalizeLlmModel(
       upstream,

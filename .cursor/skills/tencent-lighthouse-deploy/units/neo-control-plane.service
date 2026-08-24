@@ -12,7 +12,7 @@ Environment=PATH=/usr/bin:/usr/local/bin
 ExecStart=/usr/bin/pnpm --filter @neo-cloud-agent/control-plane start
 Restart=on-failure
 RestartSec=3
-KillMode=control-group
+KillMode=process
 Delegate=yes
 DelegateSubgroup=main
 

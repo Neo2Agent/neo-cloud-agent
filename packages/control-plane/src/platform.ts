@@ -7,6 +7,8 @@ import { listAutomations, replaceAutomations } from "./automations/store.js";
 import { setAutomationPersistHooks } from "./automations/persist-hooks.js";
 import { listProjects, replaceProjects } from "./projects/store.js";
 import { setProjectPersistHooks } from "./projects/persist-hooks.js";
+import { listDesks, replaceDesks } from "./desks/store.js";
+import { setDeskPersistHooks } from "./desks/persist-hooks.js";
 import { listEnvironments, upsertEnvironment } from "./env/store.js";
 import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
 import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
@@ -55,6 +57,7 @@ export function resetPlatformForTests(): void {
   setEnvPersistHooks({});
   setAutomationPersistHooks({});
   setProjectPersistHooks({});
+  setDeskPersistHooks({});
   attachHotBus(null);
 }
 
@@ -91,6 +94,11 @@ async function doStart(): Promise<void> {
         void mirrorProjects(metadata, items).catch((error) => console.error("metadata saveProject failed", error));
       },
     });
+    setDeskPersistHooks({
+      onWrite: (items) => {
+        void mirrorDesks(metadata, items).catch((error) => console.error("metadata saveDesk failed", error));
+      },
+    });
     setEnvPersistHooks({
       onEnvironment: (env) => {
         void metadata?.saveEnvironment(env).catch((error) => console.error("metadata saveEnvironment failed", error));
@@ -103,6 +111,7 @@ async function doStart(): Promise<void> {
     await hydrateEnvFromStore(metadata);
     await hydrateAutomationsFromStore(metadata);
     await hydrateProjectsFromStore(metadata);
+    await hydrateDesksFromStore(metadata);
     reloadPersistedState();
     console.log(`control-plane metadata store: ${metadataKind}`);
   }
@@ -180,6 +189,36 @@ async function hydrateAutomationsFromStore(store: MetadataStore): Promise<void> 
   }
   for (const item of listAutomations()) {
     await store.saveAutomation(item);
+  }
+}
+
+async function hydrateDesksFromStore(store: MetadataStore): Promise<void> {
+  const local = listDesks();
+  if (local.length > 0) {
+    for (const item of local) {
+      await store.saveDesk(item);
+    }
+    return;
+  }
+  const remote = await store.loadDesks();
+  if (remote.length > 0) {
+    replaceDesks(remote, { mirror: false });
+  }
+}
+
+async function mirrorDesks(store: MetadataStore | null, items: import("@neo-cloud-agent/contracts").Desk[]): Promise<void> {
+  if (!store) {
+    return;
+  }
+  const remote = await store.loadDesks();
+  const keep = new Set(items.map((item) => item.id));
+  for (const item of items) {
+    await store.saveDesk(item);
+  }
+  for (const old of remote) {
+    if (!keep.has(old.id)) {
+      await store.deleteDesk(old.id);
+    }
   }
 }
 

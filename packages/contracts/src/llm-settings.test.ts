@@ -82,8 +82,29 @@ test("readLlmSettings remaps a saved deepseek-chat id", () => {
 test("parseLlmSettingsRequest rejects a missing upstream and multiline keys", () => {
   assert.throws(() => parseLlmSettingsRequest({}), /upstream/);
   assert.throws(() => parseLlmSettingsRequest({ upstream: "deepseek", apiKey: "sk-1\nsk-2" }), /single line/);
+  assert.throws(() => parseLlmSettingsRequest({ upstream: "openai", baseUrl: "not-a-url" }), /http\(s\)/);
   assert.deepEqual(parseLlmSettingsRequest({ upstream: "deepseek", apiKey: "  sk-ok  " }), {
     upstream: "deepseek",
     apiKey: "sk-ok",
   });
+});
+
+test("writeLlmSettings persists an OpenAI-compatible base URL", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "neo-llm-baseurl-"));
+  const published = writeLlmSettings(
+    {
+      upstream: "openai",
+      apiKey: "sk-openai",
+      model: "my-qwen",
+      baseUrl: "https://proxy.example/v1/",
+    },
+    root,
+  );
+  assert.equal(published.configured, true);
+  assert.equal(published.upstream, "openai");
+  assert.equal(published.model, "my-qwen");
+  assert.equal(published.baseUrl, "https://proxy.example/v1");
+  const stored = readFileSync(path.join(root, ".neo", "llm-upstream.env"), "utf8");
+  assert.match(stored, /LLM_UPSTREAM_BASE_URL=https:\/\/proxy.example\/v1/);
+  assert.equal(readLlmSettings(root)?.baseUrl, "https://proxy.example/v1");
 });

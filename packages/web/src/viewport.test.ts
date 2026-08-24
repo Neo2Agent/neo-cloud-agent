@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyVisualViewport, closeMobileSidebar, isNarrowViewport, shouldSendOnEnter } from "./viewport.js";
+import { applyVisualViewport, closeMobileSidebar, isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "./viewport.js";
 
 test("shouldSendOnEnter is off on a phone-sized viewport", () => {
   assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: false }), true);
   assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: false }, { narrow: true }), false);
   assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: true }, { narrow: false }), false);
   assert.equal(shouldSendOnEnter({ key: "a", shiftKey: false }, { narrow: false }), false);
+  assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: false, ctrlKey: true }), false);
+  assert.equal(shouldQueueOnCtrlEnter({ key: "Enter", ctrlKey: true }), true);
 });
 
 test("isNarrowViewport follows the 860px chat breakpoint", () => {

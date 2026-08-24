@@ -14,6 +14,7 @@ import {
 import path from "node:path";
 import type {
   FollowUp,
+  ImageRef,
   Run,
   RunEvent,
   RunSubscription,
@@ -23,12 +24,20 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 
+export type ActiveTurn = {
+  type: "prompt" | "steer" | "follow_up";
+  text: string;
+  images?: ImageRef[];
+};
+
 export type PersistedRun = {
   version: 1;
   run: Run;
   followUps: FollowUp[];
   inbound: WorkerInbound[];
   subscriptions?: RunSubscription[];
+  /** Last user turn the worker took but has not finished with agent.end. */
+  activeTurn?: ActiveTurn | null;
 };
 
 export function controlStateDir(runsDir = getConfig().runsDir): string {

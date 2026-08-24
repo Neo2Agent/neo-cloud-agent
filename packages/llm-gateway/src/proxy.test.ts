@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { mintRunToken } from "@neo-cloud-agent/contracts";
 import { buildMockSse, rewriteBody } from "./proxy.js";
@@ -56,6 +59,11 @@ test("mock SSE is OpenAI-compatible", () => {
 });
 
 test("gateway requires a run JWT and can forward to an OpenAI-compatible upstream", async () => {
+  const isolated = mkdtempSync(path.join(tmpdir(), "neo-gw-mock-"));
+  process.env.LLM_SETTINGS_DIR = isolated;
+  delete process.env.DEEPSEEK_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.LLM_UPSTREAM_API_KEY;
   process.env.LLM_GATEWAY_JWT_SECRET = "test-secret";
   process.env.LLM_UPSTREAM = "mock";
   const server = createGatewayServer();
@@ -99,6 +107,9 @@ test("gateway requires a run JWT and can forward to an OpenAI-compatible upstrea
 });
 
 test("openai upstream forwards the rewritten body and strips the run JWT", async () => {
+  process.env.LLM_SETTINGS_DIR = mkdtempSync(path.join(tmpdir(), "neo-gw-openai-"));
+  delete process.env.DEEPSEEK_API_KEY;
+  delete process.env.OPENAI_API_KEY;
   process.env.LLM_UPSTREAM = "openai";
   process.env.LLM_UPSTREAM_API_KEY = "sk-upstream";
   process.env.LLM_UPSTREAM_MODEL = "gpt-4o-mini";
