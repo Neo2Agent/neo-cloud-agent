@@ -109,8 +109,10 @@ export function SearchPalette({
   filter,
   setFilter,
   hits,
+  projectHits,
   searchRef,
   onOpenRun,
+  onOpenProject,
   onOpenSettings,
   onClose,
 }: {
@@ -119,8 +121,10 @@ export function SearchPalette({
   filter: SearchFilter;
   setFilter: (value: SearchFilter) => void;
   hits: Array<{ id: string; title: string; meta: string }>;
+  projectHits?: Array<{ id: string; title: string; meta: string }>;
   searchRef: Ref<HTMLInputElement>;
   onOpenRun: (id: string) => void;
+  onOpenProject?: (id: string) => void;
   onOpenSettings: () => void;
   onClose: () => void;
 }) {
@@ -178,11 +182,27 @@ export function SearchPalette({
             </button>
           ) : filter === "files" || filter === "actions" ? (
             <p className="palette-empty">还没有{filter === "files" ? "文件索引" : "快捷动作"}。</p>
-          ) : hits.length === 0 ? (
-            <p className="palette-empty">{query.trim() ? "没有匹配的对话。" : "还没有对话。"}</p>
+          ) : hits.length === 0 && !projectHits?.length ? (
+            <p className="palette-empty">{query.trim() ? "没有匹配的对话或项目。" : "还没有对话。"}</p>
           ) : (
             <>
-              <p className="palette-label">Recent Agents</p>
+              {projectHits && projectHits.length > 0 ? (
+                <>
+                  <p className="palette-label">项目</p>
+                  {projectHits.map((hit) => (
+                    <button
+                      key={hit.id}
+                      type="button"
+                      className="palette-row"
+                      onClick={() => onOpenProject?.(hit.id)}
+                    >
+                      <strong>{hit.title}</strong>
+                      <span>{hit.meta}</span>
+                    </button>
+                  ))}
+                </>
+              ) : null}
+              {hits.length > 0 ? <p className="palette-label">Recent Agents</p> : null}
               {hits.map((hit) => (
                 <button key={hit.id} type="button" className="palette-row" onClick={() => onOpenRun(hit.id)}>
                   <strong>{hit.title}</strong>

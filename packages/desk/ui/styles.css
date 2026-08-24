@@ -777,6 +777,117 @@ button:disabled {
   opacity: 1;
 }
 
+.workbench-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 28px 8px;
+}
+
+.workbench-tabs button {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.workbench-tabs button.on {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.workbench-tabs em {
+  margin-left: 6px;
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.workbench-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.workbench-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workbench-empty {
+  padding: 28px 4px;
+  color: var(--muted);
+}
+
+.workbench-empty strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.instruction-preview {
+  white-space: pre-wrap;
+  background: #f6f6f2;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font: inherit;
+  margin: 0 0 12px;
+}
+
+.member-list,
+.event-list,
+.chat-card-list,
+.pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.member-list li,
+.event-list li,
+.pending-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.event-list li {
+  flex-wrap: wrap;
+}
+
+.event-list em,
+.hint {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.role-badge {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  background: #efefe9;
+}
+
+.member-form,
+.invite-row {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.invite-row input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
 .stage-head {
   display: flex;
   align-items: center;

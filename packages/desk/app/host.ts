@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createLeaseClient } from "../src/lease.js";
 import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.js";
-import { hashForRun, runIdFromDeepLink } from "../src/protocol.js";
+import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap } from "../src/workspace.js";
 
@@ -311,11 +311,13 @@ app.whenReady().then(() => {
 });
 
 app.on("open-url", (_event, url) => {
+  if (!mainWindow) return;
   const runId = runIdFromDeepLink(url);
-  if (runId && mainWindow) {
-    void mainWindow.loadURL(`${rendererEntry().replace(/\/$/, "")}/${hashForRun(runId)}`);
-    mainWindow.webContents.send("desk:deep-link", url);
-  }
+  const inviteToken = inviteTokenFromDeepLink(url);
+  const hash = runId ? hashForRun(runId) : inviteToken ? hashForInvite(inviteToken) : "";
+  if (!hash) return;
+  void mainWindow.loadURL(`${rendererEntry().replace(/\/$/, "")}/${hash}`);
+  mainWindow.webContents.send("desk:deep-link", url);
 });
 
 app.on("window-all-closed", () => {

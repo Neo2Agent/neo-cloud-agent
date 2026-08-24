@@ -10,6 +10,16 @@ import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
 import { isLoopbackOrigin } from "../src/ports";
 import {
+  hashForProject,
+  inviteTokenFromDeepLink,
+  inviteTokenFromHash,
+  projectIdFromHash,
+  runIdFromDeepLink,
+  runIdFromHash,
+} from "../src/protocol";
+import { InviteAcceptPage } from "./project/InviteAcceptPage";
+import { ProjectWorkbench } from "./project/ProjectWorkbench";
+import {
   isActiveRunStatus,
   isTerminalTurnEvent,
   liveActivityLabel,
@@ -143,6 +153,8 @@ export function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [user, setUser] = useState("");
+  const [userId, setUserId] = useState("");
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -219,6 +231,20 @@ export function App() {
     if (!response.ok) return;
     const body = await readJson<{ projects?: Project[] }>(response);
     setProjects(body.projects ?? []);
+  }, []);
+
+  const openProject = useCallback(async (id: string) => {
+    const response = await api(tokenRef.current, `/v1/projects/${id}`);
+    if (!response.ok) return;
+    const detail = await readJson<Project>(response);
+    setActiveProject(detail);
+    setInviteToken(null);
+    setRunId(null);
+    setCurrent(null);
+    setNav("projects");
+    if (location.hash !== hashForProject(detail.id)) {
+      location.hash = hashForProject(detail.id);
+    }
   }, []);
 
   const refreshLlm = useCallback(async () => {
@@ -336,8 +362,9 @@ export function App() {
   const finishLogin = useCallback(async () => {
     const me = await api(tokenRef.current, "/v1/me");
     if (!me.ok) throw new Error("unauthorized");
-    const body = await readJson<{ user?: { email?: string; username?: string } }>(me);
+    const body = await readJson<{ user?: { id?: string; email?: string; username?: string } }>(me);
     setUser(body.user?.username || body.user?.email || "desk");
+    setUserId(body.user?.id || "");
     setAuthed(true);
     const desk = deskBridge();
     if (desk) {
@@ -350,6 +377,31 @@ export function App() {
     }
     await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshLlm()]);
   }, [refreshAutomations, refreshLlm, refreshProjects, refreshRuns]);
+
+  useEffect(() => {
+    if (!authed) return;
+    const applyHash = () => {
+      const hash = location.hash;
+      const invite = inviteTokenFromHash(hash) ?? inviteTokenFromDeepLink(hash);
+      if (invite) {
+        setInviteToken(invite);
+        setNav("projects");
+        return;
+      }
+      const projectId = projectIdFromHash(hash);
+      if (projectId) {
+        void openProject(projectId);
+        return;
+      }
+      const hashedRun = runIdFromHash(hash) ?? runIdFromDeepLink(hash);
+      if (hashedRun) {
+        void openRun(hashedRun);
+      }
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, [authed, openProject, openRun]);
 
   useEffect(() => {
     void (async () => {
@@ -456,10 +508,21 @@ export function App() {
         setModelMenu(false);
         setContextOpen(null);
       }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "w") {
+        if (!runId) return;
+        event.preventDefault();
+        setRunId(null);
+        setCurrent(null);
+        setMessages([]);
+        closeStream();
+        if (activeProject) {
+          setNav("projects");
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [activeProject, closeStream, runId]);
 
   useEffect(() => {
     if (!authed) return;
@@ -520,6 +583,14 @@ export function App() {
       }));
   }, [projects, query, runs]);
 
+  const projectHits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return projects
+      .filter((item) => !q || item.name.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((item) => ({ id: item.id, title: item.name, meta: "项目工作台" }));
+  }, [projects, query]);
+
   useEffect(() => {
     setRepoOpen((cur) => {
       const next = { ...cur };
@@ -553,7 +624,11 @@ export function App() {
     try {
       const response = await api(token, "/v1/projects", {
         method: "POST",
-        body: JSON.stringify({ name: projectName.trim(), instruction: projectInstruction }),
+        body: JSON.stringify({
+          name: projectName.trim(),
+          instruction: projectInstruction,
+          invitePolicy: "approve",
+        }),
       });
       const body = await readJson<Project & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || "创建失败");
@@ -561,7 +636,10 @@ export function App() {
       setProjectInstruction("");
       await refreshProjects();
       setActiveProject(body);
+      setInviteToken(null);
+      setNav("projects");
       setProjectModal(false);
+      location.hash = hashForProject(body.id);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "创建失败");
     } finally {
@@ -798,6 +876,7 @@ export function App() {
             className={`rail-item${nav === "projects" ? " on" : ""}`}
             onClick={() => {
               setSearchOpen(false);
+              setInviteToken(null);
               setNav("projects");
             }}
           >
@@ -898,19 +977,52 @@ export function App() {
             onOpenRun={(id) => void openRun(id)}
           />
         ) : nav === "projects" ? (
-          <ProjectsPage
-            items={projects}
-            query={projectQuery}
-            setQuery={setProjectQuery}
-            activeId={activeProject?.id}
-            onCreate={() => {
-              setAuthError("");
-              setProjectName("");
-              setProjectInstruction("");
-              setProjectModal(true);
-            }}
-            onSelect={setActiveProject}
-          />
+          inviteToken ? (
+            <InviteAcceptPage
+              token={token}
+              inviteToken={inviteToken}
+              onJoined={(project) => {
+                setProjects((cur) => [project, ...cur.filter((item) => item.id !== project.id)]);
+                void openProject(project.id);
+              }}
+            />
+          ) : activeProject ? (
+            <ProjectWorkbench
+              project={activeProject}
+              runs={runs}
+              token={token}
+              userId={userId}
+              onBack={() => {
+                setActiveProject(null);
+                location.hash = "";
+              }}
+              onStartChat={() => {
+                void newChat();
+              }}
+              onOpenRun={(id) => void openRun(id)}
+              onProjectChange={(project) => {
+                setActiveProject(project);
+                setProjects((cur) => cur.map((item) => (item.id === project.id ? project : item)));
+              }}
+            />
+          ) : (
+            <ProjectsPage
+              items={projects}
+              query={projectQuery}
+              setQuery={setProjectQuery}
+              activeId={null}
+              onCreate={() => {
+                setAuthError("");
+                setProjectName("");
+                setProjectInstruction("");
+                setProjectModal(true);
+              }}
+              onSelect={(item) => {
+                if (item) void openProject(item.id);
+                else setActiveProject(null);
+              }}
+            />
+          )
         ) : nav === "settings" ? (
           <ModelSettingsPage
             name={modelName}
@@ -1128,10 +1240,15 @@ export function App() {
             filter={searchFilter}
             setFilter={setSearchFilter}
             hits={searchHits}
+            projectHits={projectHits}
             searchRef={searchRef}
             onOpenRun={(id) => {
               setSearchOpen(false);
               void openRun(id);
+            }}
+            onOpenProject={(id) => {
+              setSearchOpen(false);
+              void openProject(id);
             }}
             onOpenSettings={openSettings}
             onClose={() => setSearchOpen(false)}
