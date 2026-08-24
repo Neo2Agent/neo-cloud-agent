@@ -1,0 +1,120 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
+import { getObjectStore } from "../objects/store.js";
+import { controlStateDir } from "../store/persist.js";
+import { canManageProject } from "@neo-cloud-agent/contracts";
+import { getProject, memberRole, projectHasMember, recordProjectEvent } from "./store.js";
+
+export const PROJECT_ASSET_QUOTA = 1024 * 1024 * 1024;
+
+let memo: { file: string; items: ProjectAsset[] } | null = null;
+
+function assetsFile(): string {
+  return path.join(controlStateDir(), "project-assets.json");
+}
+
+function readAll(): ProjectAsset[] {
+  const file = assetsFile();
+  if (memo?.file === file) return memo.items;
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { assets?: ProjectAsset[] };
+    const items = Array.isArray(parsed.assets) ? parsed.assets : [];
+    memo = { file, items };
+    return items;
+  } catch {
+    memo = { file, items: [] };
+    return memo.items;
+  }
+}
+
+function writeAll(items: ProjectAsset[]): void {
+  const file = assetsFile();
+  memo = { file, items };
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify({ version: 1, assets: items }, null, 2)}\n`, { mode: 0o600 });
+}
+
+function requireMember(projectId: string, userId: string): void {
+  if (!getProject(projectId) || !projectHasMember(projectId, userId)) {
+    throw new Error("项目不存在");
+  }
+}
+
+export function listProjectAssets(projectId: string, actorUserId: string): ProjectAsset[] {
+  requireMember(projectId, actorUserId);
+  return listProjectAssetsUnchecked(projectId);
+}
+
+export function listProjectAssetsUnchecked(projectId: string): ProjectAsset[] {
+  return readAll().filter((item) => item.projectId === projectId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export function projectAssetBytes(projectId: string): number {
+  return readAll().filter((item) => item.projectId === projectId).reduce((sum, item) => sum + item.size, 0);
+}
+
+export async function putProjectAsset(
+  projectId: string,
+  input: {
+    path: string;
+    body: Buffer;
+    contentType?: string;
+    source: "upload" | "run";
+    runId?: string | null;
+  },
+  actor: { userId: string; email: string },
+): Promise<ProjectAsset> {
+  requireMember(projectId, actor.userId);
+  const rel = input.path.trim().replaceAll("\\", "/").replace(/^\/+/, "");
+  if (!rel || rel.includes("..")) throw new Error("路径不合法");
+  if (input.body.length === 0) throw new Error("文件是空的");
+  if (projectAssetBytes(projectId) + input.body.length > PROJECT_ASSET_QUOTA) {
+    recordProjectEvent(projectId, actor, "asset_quota", "上传被配额拦住了");
+    throw new Error("项目资产超过 1 GB");
+  }
+  const now = new Date().toISOString();
+  const id = `asset_${randomUUID().slice(0, 8)}`;
+  const objectKey = `project/${projectId}/assets/${id}`;
+  await getObjectStore().put(objectKey, input.body.toString("base64"), input.contentType || "application/octet-stream");
+  const items = readAll().filter((item) => !(item.projectId === projectId && item.path === rel));
+  const asset: ProjectAsset = {
+    id,
+    projectId,
+    path: rel,
+    objectKey,
+    size: input.body.length,
+    contentType: input.contentType || "application/octet-stream",
+    createdBy: actor.userId,
+    createdEmail: actor.email,
+    source: input.source,
+    runId: input.runId ?? null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  writeAll([...items, asset]);
+  recordProjectEvent(projectId, actor, "asset_saved", `保存了 ${rel}`);
+  return asset;
+}
+
+export async function readProjectAsset(projectId: string, assetId: string, actorUserId: string): Promise<{ asset: ProjectAsset; body: Buffer } | null> {
+  requireMember(projectId, actorUserId);
+  const asset = readAll().find((item) => item.projectId === projectId && item.id === assetId);
+  if (!asset) return null;
+  const raw = await getObjectStore().get(asset.objectKey);
+  if (!raw) return null;
+  return { asset, body: Buffer.from(raw, "base64") };
+}
+
+export function deleteProjectAsset(projectId: string, assetId: string, actor: { userId: string; email: string }): void {
+  requireMember(projectId, actor.userId);
+  if (!canManageProject(memberRole(projectId, actor.userId))) {
+    throw new Error("没有权限删除资产");
+  }
+  const items = readAll();
+  const found = items.find((item) => item.projectId === projectId && item.id === assetId);
+  if (!found) throw new Error("资产不存在");
+  writeAll(items.filter((item) => item.id !== assetId));
+  recordProjectEvent(projectId, actor, "asset_deleted", `删除了 ${found.path}`);
+}

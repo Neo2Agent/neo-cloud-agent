@@ -121,6 +121,7 @@ import {
 } from "../projects/store.js";
 import {
   addTodoComment,
+  attachTodoFiles,
   createTodo,
   getTodo,
   listTodoComments,
@@ -128,6 +129,7 @@ import {
   transitionTodo,
   updateTodo,
 } from "../projects/todos.js";
+import { deleteProjectAsset, listProjectAssets, putProjectAsset, readProjectAsset } from "../projects/assets.js";
 import { createDesk, deleteDesk, findDeskByToken, listDesks } from "../desks/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
@@ -891,6 +893,68 @@ export function createApiServer() {
           }
           return;
         }
+        const assetItemMatch = /^\/v1\/projects\/([^/]+)\/assets\/([^/]+)$/.exec(path);
+        if (assetItemMatch && actor.kind === "user" && (method === "GET" || method === "DELETE")) {
+          const projectId = assetItemMatch[1] ?? "";
+          const assetId = assetItemMatch[2] ?? "";
+          try {
+            if (method === "DELETE") {
+              deleteProjectAsset(projectId, assetId, { userId: actor.userId, email: actor.email });
+              send(res, 200, { ok: true });
+              return;
+            }
+            const found = await readProjectAsset(projectId, assetId, actor.userId);
+            if (!found) {
+              notFound(res);
+              return;
+            }
+            res.writeHead(200, {
+              ...CORS,
+              "content-type": found.asset.contentType,
+              "content-length": String(found.body.length),
+              "content-disposition": `attachment; filename="${found.asset.path.split("/").pop() ?? "file"}"`,
+            });
+            res.end(found.body);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "asset_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const assetsMatch = /^\/v1\/projects\/([^/]+)\/assets$/.exec(path);
+        if (assetsMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          const projectId = assetsMatch[1] ?? "";
+          try {
+            if (method === "GET") {
+              send(res, 200, { assets: listProjectAssets(projectId, actor.userId) });
+              return;
+            }
+            const body = (await readJson(req)) as {
+              path?: string;
+              content?: string;
+              contentType?: string;
+              encoding?: "utf8" | "base64";
+            };
+            if (!body.path || typeof body.content !== "string") {
+              send(res, 400, { error: "path and content are required" });
+              return;
+            }
+            const raw = body.encoding === "base64" ? Buffer.from(body.content, "base64") : Buffer.from(body.content, "utf8");
+            send(
+              res,
+              201,
+              await putProjectAsset(
+                projectId,
+                { path: body.path, body: raw, contentType: body.contentType, source: "upload" },
+                { userId: actor.userId, email: actor.email },
+              ),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "asset_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
         const todosMatch = /^\/v1\/projects\/([^/]+)\/todos$/.exec(path);
         if (todosMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
           try {
@@ -899,11 +963,35 @@ export function createApiServer() {
               send(res, 200, { todos: listTodos(projectId, actor.userId) });
               return;
             }
-            send(
-              res,
-              201,
-              createTodo(projectId, (await readJson(req)) as CreateTodoRequest, { userId: actor.userId, email: actor.email }),
-            );
+            const body = (await readJson(req)) as CreateTodoRequest & { artifactNames?: string[] };
+            const todo = createTodo(projectId, body, { userId: actor.userId, email: actor.email });
+            const failedAttachments: string[] = [];
+            if (body.runId && body.artifactNames?.length) {
+              for (const name of body.artifactNames) {
+                try {
+                  const stored = await readRunArtifact(body.runId, name);
+                  if (!stored) {
+                    failedAttachments.push(name);
+                    continue;
+                  }
+                  const asset = await putProjectAsset(
+                    projectId,
+                    {
+                      path: stored.artifact.name,
+                      body: stored.body,
+                      contentType: stored.artifact.contentType,
+                      source: "run",
+                      runId: body.runId,
+                    },
+                    { userId: actor.userId, email: actor.email },
+                  );
+                  attachTodoFiles(todo.id, projectId, [{ kind: "asset", id: asset.id, name: asset.path }]);
+                } catch {
+                  failedAttachments.push(name);
+                }
+              }
+            }
+            send(res, 201, { ...getTodo(projectId, todo.id, actor.userId), failedAttachments });
           } catch (error) {
             const message = error instanceof Error ? error.message : "todo_failed";
             send(res, message.includes("不存在") ? 404 : 400, { error: message });
@@ -1429,6 +1517,49 @@ export function createApiServer() {
           }));
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : "upload failed" });
+        }
+        return;
+      }
+
+      const saveArtifactMatch = /^\/v1\/runs\/([^/]+)\/artifacts\/([^/]+)\/save-to-project$/.exec(path);
+      if (saveArtifactMatch && method === "POST") {
+        const run = await requireRun(saveArtifactMatch[1] ?? "");
+        if (!run || !actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        if (!run.projectId) {
+          send(res, 400, { error: "只有项目对话才能保存到项目" });
+          return;
+        }
+        if (actor.kind !== "user") {
+          send(res, 401, { error: "login_required" });
+          return;
+        }
+        try {
+          const name = decodeURIComponent(saveArtifactMatch[2] ?? "");
+          const stored = await readRunArtifact(run.id, name);
+          if (!stored) {
+            notFound(res);
+            return;
+          }
+          const body = (await readJson(req).catch(() => ({}))) as { path?: string };
+          send(
+            res,
+            201,
+            await putProjectAsset(
+              run.projectId,
+              {
+                path: body.path?.trim() || stored.artifact.name,
+                body: stored.body,
+                contentType: stored.artifact.contentType,
+                source: "run",
+                runId: run.id,
+              },
+              { userId: actor.userId, email: actor.email },
+            ),
+          );
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "save_failed" });
         }
         return;
       }

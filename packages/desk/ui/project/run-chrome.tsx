@@ -27,6 +27,7 @@ export function RunChrome({
   const [transferTo, setTransferTo] = useState("");
   const [note, setNote] = useState("");
   const [handoffTitle, setHandoffTitle] = useState("");
+  const [artifactName, setArtifactName] = useState("");
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,6 +121,33 @@ export function RunChrome({
             onChange={(event) => setHandoffTitle(event.target.value)}
             placeholder="流转为待办的标题"
           />
+          <input
+            value={artifactName}
+            onChange={(event) => setArtifactName(event.target.value)}
+            placeholder="产物文件名，保存到项目"
+          />
+          <button
+            type="button"
+            className="ghost"
+            disabled={!artifactName.trim() || busy}
+            onClick={() => {
+              setBusy(true);
+              setError("");
+              void api(token, `/v1/runs/${run.id}/artifacts/${encodeURIComponent(artifactName.trim())}/save-to-project`, {
+                method: "POST",
+                body: JSON.stringify({}),
+              })
+                .then(async (response) => {
+                  const body = await readJson<{ error?: string }>(response);
+                  if (!response.ok) throw new Error(body.error || "保存失败");
+                  setArtifactName("");
+                })
+                .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
+                .finally(() => setBusy(false));
+            }}
+          >
+            保存到项目
+          </button>
           <button
             type="button"
             className="ghost"

@@ -204,6 +204,7 @@ export type {
   UpdateTodoRequest,
 } from "./project-todo.js";
 export { allowedTransitions, TODO_TRANSITIONS } from "./project-todo.js";
+export type { CreateProjectAssetRequest, ProjectAsset, ProjectAssetSource } from "./project-asset.js";
 export {
   describeAutomationSchedule,
   nextAutomationRunAt,

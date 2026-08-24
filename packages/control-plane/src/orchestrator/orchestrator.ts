@@ -87,6 +87,7 @@ import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
 import { bindTodoRun } from "../projects/todos.js";
+import { listProjectAssetsUnchecked } from "../projects/assets.js";
 import {
   getDesk,
   isDeskOnline,
@@ -646,7 +647,7 @@ function writeProjectMemory(run: Run): void {
   if (!project) return;
   const dest = path.join(workspaceFor(run.id), ".neo");
   mkdirSync(dest, { recursive: true });
-  writeFileSync(path.join(dest, "PROJECT.md"), formatProjectMemory(project));
+  writeFileSync(path.join(dest, "PROJECT.md"), formatProjectMemory(project, listProjectAssetsUnchecked(project.id)));
 }
 
 function seedHostCollaborator(run: Run, owner?: { userId?: string; email?: string }): void {

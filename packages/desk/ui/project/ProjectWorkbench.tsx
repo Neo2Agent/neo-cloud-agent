@@ -64,7 +64,7 @@ export function ProjectWorkbench({
         {tab === "board" ? (
           <BoardTab token={token} project={project} onStartChat={(id, title) => onStartChat({ id, title })} />
         ) : null}
-        {tab === "assets" ? <AssetsTab /> : null}
+        {tab === "assets" ? <AssetsTab token={token} project={project} /> : null}
         {tab === "activity" ? <ActivityTab project={project} /> : null}
         {tab === "settings" ? (
           <SettingsTab token={token} project={project} userId={userId} onChanged={onProjectChange} />
