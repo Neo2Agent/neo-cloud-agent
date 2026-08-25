@@ -1,6 +1,6 @@
 ---
 name: tencent-lighthouse-deploy
-description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app host 62.234.211.200 (Halo建站-AFjg). Use when shipping code, restarting systemd units, fixing Caddy, saving API keys, checking VM slots, or when GitHub is unreachable. Domain bind is tencent-lighthouse-domain, not this skill. Not the MySQL/Redis host 101.42.105.230.
+description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app host 62.234.211.200 (Halo建站-AFjg). Use when shipping code, restarting systemd units, fixing Caddy, saving API keys, checking VM slots, SSHing as lighthouse, or wiring Cloud Agent Secrets (NEO_LIGHTHOUSE_SSH_KEY_B64 / TENCENTCLOUD_*). Domain bind is tencent-lighthouse-domain, not this skill. Not the MySQL/Redis host 101.42.105.230.
 ---
 
 # 腾讯云轻量部署
@@ -46,6 +46,37 @@ Host lighthouse
 
 控制台实例名可能还叫 `Halo建站-AFjg`，那只是显示名。镜像已是 **Ubuntu Server 24.04 LTS 64bit 系统镜像**。不要再重装，除非用户明确要求。
 
+## Cloud Agent 新对话（先做这个）
+
+新开的 Cursor Cloud Agent **不会**带着上一轮的 `~/.ssh`。要操作这台轻量，先看环境 Secrets，再跑引导脚本。密钥只配在 Cursor 环境里，**不要写进仓库、不要打印、不要发到聊天**。
+
+环境页：[6f60409c-9d84-11f1-a7d1-d6b4613131ce](https://cursor.com/dashboard/cloud-agents/environments/e/6f60409c-9d84-11f1-a7d1-d6b4613131ce) → Secrets。类型用 **Runtime Secret**。中途新加的 Secret **当前这轮读不到**，要再开一轮。
+
+| Secret | 类型 | 是什么 |
+| --- | --- | --- |
+| `NEO_LIGHTHOUSE_SSH_KEY_B64` | Runtime Secret | 操作者自己电脑 `ssh-keygen` 出来的**私钥文件**做 `base64` 后的单行（`base64 -w0 ~/.ssh/neo_lighthouse`）。不是腾讯云控制台里的 ID，也不是 `.pub`，也不是带换行的 PEM 原文 |
+| `TENCENTCLOUD_SECRET_ID` | Runtime Secret | 周栋账号下**子用户**的云 API SecretId（不要用主号） |
+| `TENCENTCLOUD_SECRET_KEY` | Runtime Secret | 对应 SecretKey |
+| `TENCENTCLOUD_REGION` | Environment Variable | `ap-beijing`（可以给模型看） |
+
+公钥必须已经在轻量 `ubuntu` 的 `authorized_keys`。追加用 TAT 或已有 SSH，**不要**控制台「绑定密钥」。子用户 CAM 只开 `lighthouse` / `tat` / `dnspod`，不要给 `ResetInstance` / `RebootInstances` / 重装 / 销毁。
+
+```bash
+# 1) 有 Secret 就写 ~/.ssh/neo_lighthouse 和 Host lighthouse；没有就跳过
+bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh
+
+# 2) 只报是否 set，不要 echo 值
+[ -n "${NEO_LIGHTHOUSE_SSH_KEY_B64:-}" ] && echo ssh_secret=set || echo ssh_secret=missing
+
+# 3) SSH
+ssh -o BatchMode=yes -o ConnectTimeout=10 lighthouse 'hostname; systemctl is-active neo-control-plane caddy'
+
+# 4) 云 API（有 ID/KEY 时）
+tccli lighthouse DescribeInstances --region ap-beijing --InstanceIds '["lhins-b0l0d8b2"]'
+```
+
+`ssh` 失败：公钥没在轻量上，或这轮没注入 `NEO_LIGHTHOUSE_SSH_KEY_B64`。不要重启实例。备案 / 微信扫码没有 API，仍要用户本人。库机 SSH 是另一把钥匙（`lighthouse-db`），不要拿这把去连 `101.42.105.230`。引导脚本仍兼容旧名 `NEO_LIGHTHOUSE_SSH_KEY`（PEM 原文），新对话只配 B64。
+
 ## 硬约束
 
 1. **不要重启或再次重装实例。** 系统镜像已经是官方 Ubuntu 24.04。再重装会清盘。
@@ -82,7 +113,7 @@ tar -C /path/to/neo-cloud-agent \
 | ssh lighthouse 'tar -C /home/ubuntu/neo-cloud-agent -xzf - && sudo systemctl restart neo-llm-gateway neo-control-plane'
 ```
 
-`pnpm-lock.yaml` 变了再在轻量上 `cd /home/ubuntu/neo-cloud-agent && pnpm install`（这台机 Node 够新，不必 `PNPM_IGNORE_ENGINE`）。覆盖管理台后在机上 `pnpm build:web` 和 `pnpm build:admin`（`ADMIN_BASE=/admin/`），再装 [units/neo-admin-api.service](units/neo-admin-api.service)。8090 只听本机，不要开防火墙。
+`pnpm-lock.yaml` 变了再在轻量上 `cd /home/ubuntu/neo-cloud-agent && pnpm install`（这台机 Node 够新，不必 `PNPM_IGNORE_ENGINE`）。覆盖管理台后在机上 `pnpm build:web` 和 `pnpm build:admin`（生产资源用相对 `./`，同一份 dist 能挂在 `/admin/` 也能直接开 `:8090`），再装 [units/neo-admin-api.service](units/neo-admin-api.service)。8090 只听本机，不要开防火墙。
 
 ### 重启后验收
 
@@ -164,7 +195,9 @@ ssh lighthouse 'journalctl -u neo-control-plane -u neo-llm-gateway -u neo-admin-
 
 ## 给 Cloud Agent 的注意点
 
-- SSH 目标就是 `lighthouse`。连不上先 TAT 追加当前公钥，不要重启。
+- 新对话先跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)。它读 `NEO_LIGHTHOUSE_SSH_KEY_B64`（私钥文件的单行 base64），写成 `~/.ssh/neo_lighthouse`。SSH 目标就是 `lighthouse`。
+- 连不上先看 Secret 是否注入；公钥不在就 TAT 追加，不要重启、不要绑密钥。
 - 同步代码默认用 tar，不要假设轻量能拉 GitHub。
 - 验收只报 `ok` / `configured` / `workerRuntime` / 槽位数字，不报密钥。
 - 改完代码照常 commit、push，再同步轻量并重启两个 unit。
+- 官方 `tccli` / SDK 只管云资源（实例、防火墙、TAT、DNS）。发版仍是 SSH + systemd，见上文「日常更新」。
