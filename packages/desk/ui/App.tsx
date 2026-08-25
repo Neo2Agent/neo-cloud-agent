@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
 import { isLoopbackOrigin } from "../src/ports";
+import { groupRailSessions } from "../src/rail";
 import {
   hashForProject,
   inviteTokenFromDeepLink,
@@ -18,6 +19,7 @@ import {
   runIdFromHash,
 } from "../src/protocol";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
+import { RailSessions } from "./chat/RailSessions";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
@@ -53,8 +55,6 @@ import {
 import {
   IconAutomations,
   IconBack,
-  IconChevron,
-  IconCloud,
   IconForward,
   IconGear,
   IconNewChat,
@@ -196,6 +196,9 @@ export function App() {
   const [composerRepo, setComposerRepo] = useState("");
   const [contextOpen, setContextOpen] = useState<ContextMenuId>(null);
   const [repoOpen, setRepoOpen] = useState<Record<string, boolean>>({});
+  const [railInboxOpen, setRailInboxOpen] = useState(true);
+  const [railSpacesOpen, setRailSpacesOpen] = useState(true);
+  const [railInboxExpanded, setRailInboxExpanded] = useState(false);
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
   const [copied, setCopied] = useState("");
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
@@ -574,20 +577,10 @@ export function App() {
 
   const visible = displayTranscriptMessages(messages);
   const activity = liveActivityLabel(visible);
-  const grouped = useMemo(() => {
-    let list = runs;
-    if (activeProject) {
-      list = list.filter((run) => run.projectId === activeProject.id);
-    }
-    const map = new Map<string, Run[]>();
-    for (const run of list) {
-      const key = repoLabel(run.repoUrls[0]);
-      const bucket = map.get(key) ?? [];
-      bucket.push(run);
-      map.set(key, bucket);
-    }
-    return [...map.entries()];
-  }, [activeProject, runs]);
+  const rail = useMemo(() => {
+    const names = new Map(projects.map((item) => [item.id, item.name]));
+    return groupRailSessions(runs, (id) => names.get(id));
+  }, [projects, runs]);
 
   const searchHits = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -713,12 +706,12 @@ export function App() {
   useEffect(() => {
     setRepoOpen((cur) => {
       const next = { ...cur };
-      for (const [name] of grouped) {
-        if (next[name] === undefined) next[name] = true;
+      for (const space of rail.spaces) {
+        if (next[space.key] === undefined) next[space.key] = true;
       }
       return next;
     });
-  }, [grouped]);
+  }, [rail]);
 
   const newChat = () => {
     setRunId(null);
@@ -1008,14 +1001,7 @@ export function App() {
         </nav>
 
         <div className="repo-head">
-          {activeProject ? (
-            <button type="button" className="repo-filter" onClick={() => setActiveProject(null)}>
-              {activeProject.name}
-              <span aria-hidden="true">×</span>
-            </button>
-          ) : (
-            <span>Repositories</span>
-          )}
+          <span>会话</span>
           <div className="repo-head-actions">
             <button
               type="button"
@@ -1032,44 +1018,21 @@ export function App() {
         </div>
 
         <div className="repo-tree">
-          {grouped.length === 0 ? (
-            <p className="pane-note">
-              {activeProject ? "这个项目还没有对话。从 New Chat 开始。" : "还没有对话。从 New Chat 开始。"}
-            </p>
-          ) : (
-            grouped.map(([name, list]) => (
-              <div key={name} className="repo-group">
-                <button
-                  type="button"
-                  className="repo-folder"
-                  onClick={() => setRepoOpen((cur) => ({ ...cur, [name]: cur[name] === false }))}
-                >
-                  <IconChevron open={repoOpen[name] !== false} size={14} />
-                  <span>{name}</span>
-                </button>
-                {repoOpen[name] !== false
-                  ? list.map((run) => {
-                      const active = run.id === runId;
-                      return (
-                        <button
-                          key={run.id}
-                          type="button"
-                          className={`chat-row${active ? " active" : ""}`}
-                          onClick={() => void openRun(run.id)}
-                        >
-                          <span className={`chat-dot${active ? " on" : ""}`} />
-                          <span className="chat-title">{preview(run.prompt, 40)}</span>
-                          <span className="chat-meta">
-                            {isCloudRun(run) ? <IconCloud size={13} /> : null}
-                            <span>{formatRel(run.updatedAt)}</span>
-                          </span>
-                        </button>
-                      );
-                    })
-                  : null}
-              </div>
-            ))
-          )}
+          <RailSessions
+            inbox={rail.inbox}
+            spaces={rail.spaces}
+            runId={runId}
+            inboxOpen={railInboxOpen}
+            spacesOpen={railSpacesOpen}
+            inboxExpanded={railInboxExpanded}
+            folderOpen={repoOpen}
+            formatRel={formatRel}
+            onToggleInbox={() => setRailInboxOpen((cur) => !cur)}
+            onToggleSpaces={() => setRailSpacesOpen((cur) => !cur)}
+            onToggleInboxExpanded={() => setRailInboxExpanded((cur) => !cur)}
+            onToggleFolder={(key) => setRepoOpen((cur) => ({ ...cur, [key]: cur[key] === false }))}
+            onOpenRun={(id) => void openRun(id)}
+          />
         </div>
 
         <div className="rail-foot">
