@@ -18,7 +18,7 @@ HTTPS 要不要花钱、怎么开，见 [docs/production-domain.md](../../../doc
 | 域名 | `neorun.cloud`（2026-08-25 新注 1 年，不续费也按此流程绑） |
 | NS | `scallop.dnspod.net` / `mooncake.dnspod.net` |
 | 应用机 | `Halo建站-AFjg` / `lhins-b0l0d8b2` / `62.234.211.200` / 北京 `rid=8` |
-| 解析 | `@` 与 `www` 的 A 记录 → `62.234.211.200`，TTL 600 |
+| 解析 | `@`、`www` 的 A 记录 → `62.234.211.200`，TTL 600。若有 `admin` A 记录，只 308 到 `/admin/`，不要当第三个站点 |
 | 入口 | https://neorun.cloud/ 对话（`:8080`）；https://neorun.cloud/admin/ 管理台（`:8090`）。同一域名路径，不要 `/a` `/b`，也不要再买子域 |
 | HTTPS | 已开。Let's Encrypt，Caddy 自动续。轻量控制台「设置 HTTPS」不要点 |
 | 库机 | **不要**绑到 `101.42.105.230` |

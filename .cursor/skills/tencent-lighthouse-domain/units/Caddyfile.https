@@ -3,9 +3,10 @@
 # 不要用轻量控制台一键 HTTPS（会按应用镜像改 Nginx）。
 # 域名走 443；IP http://62.234.211.200 仍听 :80，避免旧书签断掉。
 #
-# 同一域名两条路径，不要 /a /b，也不要再买子域：
+# 同一域名两条路径，不要 /a /b，也不要再买第二个域名：
 #   /        → 对话页  127.0.0.1:8080
 #   /admin/  → 管理台  127.0.0.1:8090（strip /admin 后 admin-api 仍听 /）
+# 若 DNS 里已有 admin A 记录，下面单独站点只做 308，不把管理台挂到子域。
 # 8090 不要开公网防火墙。
 
 neorun.cloud, www.neorun.cloud {
@@ -30,6 +31,10 @@ neorun.cloud, www.neorun.cloud {
 			flush_interval -1
 		}
 	}
+}
+
+admin.neorun.cloud {
+	redir https://neorun.cloud/admin/ 308
 }
 
 http://62.234.211.200 {

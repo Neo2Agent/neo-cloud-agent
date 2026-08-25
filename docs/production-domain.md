@@ -13,7 +13,7 @@
 | HTTP | `http://neorun.cloud` 308 到 HTTPS；`http://62.234.211.200/` 仍可用 |
 | HTTPS | **已开**（2026-08-25）。Let's Encrypt，CN `neorun.cloud` / `www.neorun.cloud`，Caddy 自动续 |
 
-Caddy 用 [Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https)：域名走 443，IP 仍走 `:80`。`/` 反代 `127.0.0.1:8080`（对话），`/admin/` 反代 `127.0.0.1:8090`（管理台，`handle_path` 去掉 `/admin`）。`flush_interval -1`。不要用 `https://neorun.cloud/a` 这种无意义路径，也不要再买第二个域名。
+Caddy 用 [Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https)：域名走 443，IP 仍走 `:80`。`/` 反代 `127.0.0.1:8080`（对话），`/admin/` 反代 `127.0.0.1:8090`（管理台，`handle_path` 去掉 `/admin`）。`flush_interval -1`。不要用 `https://neorun.cloud/a` 这种无意义路径，也不要再买第二个域名。DNS 里如果已经有 `admin` A 记录，Caddy 把 `https://admin.neorun.cloud` 308 到 `https://neorun.cloud/admin/`。
 
 ## 怎么绑（摘要）
 
