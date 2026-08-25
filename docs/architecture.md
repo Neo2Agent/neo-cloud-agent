@@ -57,6 +57,7 @@ flowchart TB
   subgraph clients [Clients]
     Web
     CLI
+    Mobile[iOS / Android]
     Slack
     GitHub
     PublicAPI[Public API]
@@ -525,7 +526,7 @@ User 1──* Run
 Run
   id, orgId, envId, envVersionId, buildId?
   status, setupStatus
-  source: web | cli | slack | github | api | automation
+  source: web | cli | slack | github | api | automation | telegram | wechat | desk | ios | android
   model, branchName, repoUrls[]
   workerHandle, llmJwtJti
   createdAt, idleAt, expiresAt
@@ -548,6 +549,10 @@ GET    /v1/me
 GET    /v1/vms
 GET    /v1/settings/llm
 POST   /v1/settings/llm          页面存 Key；响应永不回传明文
+
+POST   /v1/devices               登记手机推送 token（Expo）
+GET    /v1/devices
+DELETE /v1/devices/:id
 
 POST   /v1/runs                  创建并开始（槽满则 queued）
 GET    /v1/runs
@@ -576,7 +581,7 @@ GET    /v1/builds/:id
 GET    /v1/builds/:id/logs
 ```
 
-第一个非 Web 宿主是 `packages/cli`（`pnpm neo`）。它只消费上面这组 `/v1` 和 SSE，`source` 填 `"cli"`。协议、退出码和明确不做的本机 Agent / worker 桥见 [cli.md](./cli.md)。
+第一个非 Web 宿主是 `packages/cli`（`pnpm neo`）。它只消费上面这组 `/v1` 和 SSE，`source` 填 `"cli"`。协议、退出码和明确不做的本机 Agent / worker 桥见 [cli.md](./cli.md)。iOS / Android 是下一个同级宿主：同样只打 `/v1`，不在手机上跑 loop；方案见 [mobile.md](./mobile.md)。
 
 内部通道是 **HTTP `/internal/runs/:id/...`**（worker 带 run JWT），不是单独的 gRPC 服务：
 
@@ -680,11 +685,12 @@ neo-cloud-agent/                  ← 唯一应用仓库
     worker/                       打进 VM / 任务容器镜像
     extensions/                   打进同一张 worker 镜像
     cli/                          终端客户端（不是第四个进程）
+    mobile/                       手机客户端，见 [mobile.md](./mobile.md)
   infra/                          compose、helm、镜像配方（先放这里）
   .neo/environment.json
 ```
 
-控制面仍是四个运行时 package：`contracts`、`control-plane`、`llm-gateway`、`worker`。`packages/cli` 是第五个 **客户端** package，不部署成进程。`orchestrator` / `scm` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
+控制面仍是四个运行时 package：`contracts`、`control-plane`、`llm-gateway`、`worker`。`packages/cli` 是第五个 **客户端** package，不部署成进程。iOS / Android 以后是第六个客户端 package，同样不是 Deployment。`orchestrator` / `scm` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
 
 ### 14.4 和「微服务清单」的对照
 
@@ -769,6 +775,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置 |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
+| 手机查看 / 跟进 | `packages/mobile`（方案） | 与 CLI 同级的 `/v1` 宿主；见 [mobile.md](./mobile.md)。未实现 |
 | Agent 内核（自研） | **pi-coding-agent** | 这是唯一故意不对齐的地方 |
 
 不对齐是优点：pi 已经有 SDK、RPC、session、extensions。你们的差异化在 **编排、环境和安全**，不在再写一遍 tool loop。
@@ -795,6 +802,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 4. Egress 从应用层升级到 VM 出站代理 / iptables
 5. headed browser / computer-use sidecar（`neo_browse` 只抓静态页）
 6. CLI 交互 TUI、浏览器登录、本机 pi 模式——都单开，不要和 `neo run` 混语义。P0 headless 客户端见 [cli.md](./cli.md)
+7. iOS / Android：与 CLI 同级的 `/v1` 宿主，不在手机上跑 loop。先 HTTPS 域名和设备推送，再开 `packages/mobile`。方案见 [mobile.md](./mobile.md)
 
 控制面重启后续上 RUNNING Worker、以及对外 API 令牌鉴权已经落地。
 

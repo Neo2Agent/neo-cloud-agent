@@ -1,4 +1,6 @@
 import type { PullRequestRef, Run } from "@neo-cloud-agent/contracts";
+import { isExpoPushToken, listStoredDevices } from "../devices/store.js";
+import { formatExpoPushMessage, sendExpoPush } from "./expo.js";
 import { publicAppUrl, readNotifySecrets } from "./settings.js";
 import { sendSmtpMail } from "./smtp.js";
 
@@ -41,6 +43,7 @@ export function formatPrReadyNotice(run: NoticeRun): string {
 export async function notifyRunFinished(run: Run, kind: Exclude<NotifyKind, "pr">): Promise<number> {
   return notifyKeyed(`${run.id}:${kind}`, formatRunNotice(run, kind), {
     runId: run.id,
+    userId: run.userId,
     status: run.status,
     kind,
     prompt: run.prompt,
@@ -51,6 +54,7 @@ export async function notifyRunFinished(run: Run, kind: Exclude<NotifyKind, "pr"
 export async function notifyPrReady(run: Run): Promise<number> {
   return notifyKeyed(`${run.id}:pr`, formatPrReadyNotice(run), {
     runId: run.id,
+    userId: run.userId,
     status: run.status,
     kind: "pr",
     prompt: run.prompt,
@@ -62,7 +66,7 @@ export async function notifyPrReady(run: Run): Promise<number> {
 async function notifyKeyed(
   key: string,
   text: string,
-  extra: Record<string, unknown> & { chatId?: string },
+  extra: Record<string, unknown> & { chatId?: string; userId?: string; runId?: string; kind?: NotifyKind },
 ): Promise<number> {
   const now = Date.now();
   const prev = lastSent.get(key) ?? 0;
@@ -75,11 +79,15 @@ async function notifyKeyed(
 
 export async function sendNotifyText(
   text: string,
-  extra?: Record<string, unknown> & { chatId?: string },
+  extra?: Record<string, unknown> & { chatId?: string; userId?: string; runId?: string; kind?: NotifyKind },
 ): Promise<number> {
   const secrets = readNotifySecrets();
   const jobs: Array<Promise<void>> = [];
   const chatId = (typeof extra?.chatId === "string" && extra.chatId.trim()) || secrets.telegramChatId;
+  const userId = typeof extra?.userId === "string" ? extra.userId : "";
+  if (userId && extra?.runId && extra.kind) {
+    jobs.push(postExpoDevices(userId, text, extra.runId, extra.kind));
+  }
   if (secrets.telegramBotToken && chatId) {
     jobs.push(postTelegram(secrets.telegramBotToken, chatId, text));
   }
@@ -116,6 +124,20 @@ async function postTelegram(token: string, chatId: string, text: string): Promis
   if (!response.ok) {
     throw new Error(`telegram ${response.status}`);
   }
+}
+
+async function postExpoDevices(userId: string, text: string, runId: string, kind: NotifyKind): Promise<void> {
+  const tokens = listStoredDevices(userId)
+    .map((item) => item.pushToken)
+    .filter(isExpoPushToken);
+  if (tokens.length === 0) {
+    return;
+  }
+  const lines = text.split("\n").filter(Boolean);
+  const title = lines[0] || "Neo Cloud Agent";
+  const body = lines.slice(1).join("\n") || title;
+  const url = chatUrl(runId) || `neo://runs/${runId}`;
+  await sendExpoPush(tokens.map((token) => formatExpoPushMessage({ token, title, body, runId, kind, url })));
 }
 
 async function postJson(url: string, body: unknown): Promise<void> {
