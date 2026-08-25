@@ -1,6 +1,6 @@
 ---
 name: tencent-lighthouse-deploy
-description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app host 62.234.211.200 (Halo建站-AFjg). Use when shipping code, restarting systemd units, fixing Caddy, saving API keys, checking VM slots, or when GitHub is unreachable. Not the MySQL/Redis host 101.42.105.230.
+description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app host 62.234.211.200 (Halo建站-AFjg). Use when shipping code, restarting systemd units, fixing Caddy, saving API keys, checking VM slots, or when GitHub is unreachable. Domain bind is tencent-lighthouse-domain, not this skill. Not the MySQL/Redis host 101.42.105.230.
 ---
 
 # 腾讯云轻量部署
@@ -15,7 +15,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | 实例 | `Halo建站-AFjg` | `neo-mysql-redis` |
 | 职责 | 本仓库 + systemd + Caddy + VM 槽（Ubuntu 24.04 系统镜像） | Docker MySQL / Redis |
 
-库机操作见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。控制面要持久化时，在**本机**仓库根 `.env` 写 `DATABASE_URL` / `REDIS_URL` 指向库机，然后只重启 `neo-control-plane`。`/health` 应为 `metadataStore: "mysql"`、`eventBus: "redis"`。不要把库机密码打进聊天。
+库机操作见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。域名 `neorun.cloud` 解析见 [../tencent-lighthouse-domain/SKILL.md](../tencent-lighthouse-domain/SKILL.md) 和 [docs/production-domain.md](../../../docs/production-domain.md)。控制面要持久化时，在**本机**仓库根 `.env` 写 `DATABASE_URL` / `REDIS_URL` 指向库机，然后只重启 `neo-control-plane`。`/health` 应为 `metadataStore: "mysql"`、`eventBus: "redis"`。不要把库机密码打进聊天。
 
 ## 主机
 
@@ -27,7 +27,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | 规格 | 4C / 4G / 40G Ubuntu |
 | 登录用户 | `ubuntu`（有免密 sudo） |
 | 代码 | `/home/ubuntu/neo-cloud-agent` |
-| 入口 | http://62.234.211.200/ （Caddy `:80` → `127.0.0.1:8080`） |
+| 入口 | http://neorun.cloud/ 或 http://62.234.211.200/ （Caddy `:80` → `127.0.0.1:8080`） |
 | Node | 已装 **v22.23.1**（满足 `>=22.19`） |
 | Docker / KVM | **都没有**。`WORKER_RUNTIME=vm` 用 2 个 loop 挂载的 ext4 槽，不是 Firecracker |
 | 运行时栈 | **官方系统镜像** Ubuntu Server 24.04 LTS + Node 22 + pnpm + Caddy + systemd（`neo-llm-gateway` / `neo-control-plane`）。2026-08-22 已从爱马仕/Halo 应用镜像重装，不是应用模板 |
@@ -128,7 +128,7 @@ LLM_UPSTREAM=mock
 
 6. 安装 [units/](units/) 两个 systemd unit，`daemon-reload && enable --now`。
 7. Caddy `:80` 反代 `127.0.0.1:8080`，`flush_interval -1`（SSE）。
-8. 打开 http://62.234.211.200/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。
+8. 打开 http://neorun.cloud/ 或 http://62.234.211.200/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。域名还没解析时先走 IP，绑域名步骤见 domain skill。
 
 ## 线上运行时
 

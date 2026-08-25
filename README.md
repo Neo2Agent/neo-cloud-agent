@@ -2,7 +2,7 @@
 
 对标 [Cursor Cloud Agent](https://cursor.com/docs/cloud-agent) 的云端 Agent 服务：LLM 推理在云端网关，任务在隔离 VM 里执行，Agent 内核使用 [pi-agent](https://github.com/earendil-works/pi)。
 
-**设计见 [docs/architecture.md](docs/architecture.md)。** 现网两台轻量不要混：应用机（北京 `62.234.211.200`，部署本仓库）见 [.cursor/skills/tencent-lighthouse-deploy/SKILL.md](.cursor/skills/tencent-lighthouse-deploy/SKILL.md)；库机（`101.42.105.230`，Docker MySQL / Redis）见 [.cursor/skills/tencent-lighthouse-db/SKILL.md](.cursor/skills/tencent-lighthouse-db/SKILL.md)。
+**设计见 [docs/architecture.md](docs/architecture.md)。** 现网两台轻量不要混：应用机（北京 `62.234.211.200`，部署本仓库）见 [.cursor/skills/tencent-lighthouse-deploy/SKILL.md](.cursor/skills/tencent-lighthouse-deploy/SKILL.md)；库机（`101.42.105.230`，Docker MySQL / Redis）见 [.cursor/skills/tencent-lighthouse-db/SKILL.md](.cursor/skills/tencent-lighthouse-db/SKILL.md)。域名 `neorun.cloud` 的解析与 HTTPS 见 [docs/production-domain.md](docs/production-domain.md) 和 [.cursor/skills/tencent-lighthouse-domain/SKILL.md](.cursor/skills/tencent-lighthouse-domain/SKILL.md)。
 
 ## 怎么拆
 
