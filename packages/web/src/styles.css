@@ -1527,136 +1527,6 @@ button.stop:hover {
   cursor: not-allowed;
 }
 
-.admin-page {
-  min-height: 0;
-  overflow: auto;
-  padding: 16px 24px 28px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.admin-page-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.admin-page-head h2 {
-  margin: 0;
-  font-size: 22px;
-  letter-spacing: -0.02em;
-}
-
-.admin-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.admin-count {
-  margin: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg-2);
-  color: var(--muted);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.admin-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
-}
-
-.admin-card,
-.admin-block {
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.admin-card-label,
-.admin-card-hint,
-.admin-muted,
-.admin-sub {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.admin-card-value {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-}
-
-.admin-card-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.admin-error {
-  margin: 0;
-  color: var(--err);
-  font-size: 13px;
-}
-
-.admin-table-wrap {
-  overflow-x: auto;
-}
-
-.admin-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.admin-table th,
-.admin-table td {
-  text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
-  vertical-align: top;
-  white-space: nowrap;
-}
-
-.admin-table th {
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.admin-mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
-
-.admin-dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin: 0;
-}
-
-.admin-dl dt {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.admin-dl dd {
-  margin: 4px 0 0;
-  font-size: 14px;
-}
-
 .proj-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2269,14 +2139,12 @@ textarea {
   }
 
   .auto-page,
-  .proj-page,
-  .admin-page {
+  .proj-page {
     padding: 12px 16px max(20px, env(safe-area-inset-bottom));
   }
 
   .auto-page-head,
-  .proj-page-head,
-  .admin-page-head {
+  .proj-page-head {
     flex-direction: column;
   }
 

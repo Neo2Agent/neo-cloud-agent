@@ -1,0 +1,188 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --line: #e6e8ee;
+  --text: #111827;
+  --muted: #6b7280;
+  --accent: #111827;
+  --err: #b42318;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.gate {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth,
+.block,
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.auth {
+  width: min(420px, 100%);
+  padding: 24px;
+  display: grid;
+  gap: 12px;
+}
+
+.auth h1,
+.top h1,
+.block h2 {
+  margin: 0;
+}
+
+.auth label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auth input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-height: 42px;
+}
+
+.auth button,
+.ghost {
+  border: 0;
+  border-radius: 12px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.auth button {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.auth button:disabled {
+  opacity: 0.45;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+  display: grid;
+  gap: 16px;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.top-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.error {
+  color: var(--err);
+  margin: 0;
+}
+
+.pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 13px;
+}
+
+.ghost {
+  background: #fff;
+  border: 1px solid var(--line);
+  padding: 0 12px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.value {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.block {
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

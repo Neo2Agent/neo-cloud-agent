@@ -152,6 +152,8 @@ export function buildAdminOverview(input: {
   llm: PublicLlmSettings;
   orgId: string;
   workerRuntime: string;
+  platform?: { metadataStore: string; eventBus: string };
+  counts?: AdminOverview["counts"];
 }): AdminOverview {
   const byStatus: Record<string, number> = {};
   let live = 0;
@@ -176,8 +178,8 @@ export function buildAdminOverview(input: {
     rateLimit: { enabled: rateLimitEnabled(), store: rateLimitStoreKind() },
     llm: input.llm,
     newApi: newApiInfo(),
-    platform: { ...platformInfo(), workerRuntime: input.workerRuntime },
-    counts: {
+    platform: { ...(input.platform ?? platformInfo()), workerRuntime: input.workerRuntime },
+    counts: input.counts ?? {
       automations: listAutomations().length,
       projects: listProjects().length,
       builds: listBuilds().length,
@@ -191,7 +193,11 @@ export async function adminUsersPayload(runs: Run[]): Promise<{ users: AdminUser
   return { users: buildAdminUserRows(await listPublicUsers(), runs) };
 }
 
-export async function adminOverviewPayload(runs: Run[], llm: PublicLlmSettings): Promise<AdminOverview> {
+export async function adminOverviewPayload(
+  runs: Run[],
+  llm: PublicLlmSettings,
+  extras?: { platform?: { metadataStore: string; eventBus: string }; counts?: AdminOverview["counts"] },
+): Promise<AdminOverview> {
   const config = getConfig();
   return buildAdminOverview({
     users: await listPublicUsers(),
@@ -199,6 +205,8 @@ export async function adminOverviewPayload(runs: Run[], llm: PublicLlmSettings):
     llm,
     orgId: config.orgId,
     workerRuntime: config.workerRuntime,
+    platform: extras?.platform,
+    counts: extras?.counts,
   });
 }
 
