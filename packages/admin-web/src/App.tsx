@@ -1,75 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson, readToken, writeToken } from "./api";
+import { IconLogout, IconOverview, IconRefresh, IconRuns, IconSystem, IconUsers } from "./icons";
+import { PAGE_META, pageHref, readPage } from "./nav";
+import { LoginScreen } from "./screens/LoginScreen";
+import { OverviewScreen } from "./screens/OverviewScreen";
+import { RunsScreen } from "./screens/RunsScreen";
+import { SystemScreen } from "./screens/SystemScreen";
+import { UsersScreen } from "./screens/UsersScreen";
+import type { AdminOverview, AdminPage, AdminRun, AdminUser, RateLimitSnapshot } from "./types";
 
-type AdminOverview = {
-  users: { total: number; admins: number };
-  runs: { total: number; live: number };
-  tokens: { usedMonth: number };
-  quota: { maxTokensMonth: number; usedTokensMonth: number };
-  capacity: { backend: string; total: number; busy: number; slots: Array<{ id: string; status: string; runId: string | null; mounted: boolean }> };
-  rateLimit: { enabled: boolean; store: string };
-  llm: { configured: boolean; upstream: string; model: string | null; baseUrl: string | null };
-  newApi: { url: string | null; consoleUrl: string | null };
-  platform: { metadataStore: string; eventBus: string; workerRuntime: string };
-  counts: { automations: number; projects: number; builds: number; environments: number; desks: number };
-};
-
-type AdminUser = {
-  id: string;
-  email: string;
-  orgId: string;
-  admin: boolean;
-  runCount: number;
-  usedTokensMonth: number;
-  concurrentRuns: number;
-  lastActiveAt: string | null;
-};
-
-type AdminRun = {
-  id: string;
-  status: string;
-  prompt: string;
-  userId: string;
-  model: string;
-  updatedAt: string;
-  usage?: { totalTokens?: number } | null;
-};
-
-type RateLimitSnapshot = {
-  enabled: boolean;
-  store: string;
-  policies: Record<string, { remaining: number; limit: number; windowMs: number; kind: string }>;
-};
-
-const STATUS: Record<string, string> = {
-  NOT_YET_STARTED: "排队中",
-  PROVISIONING: "准备中",
-  INSTALLING: "安装中",
-  RUNNING: "运行中",
-  IDLE: "空闲",
-  WAITING_FOR_BACKGROUND_WORK: "后台任务",
-  ERROR: "出错",
-  ARCHIVED: "已归档",
-  EXPIRED: "已过期",
-};
-
-function card(label: string, value: string, hint?: string) {
-  return (
-    <div className="card" key={label}>
-      <p className="muted">{label}</p>
-      <p className="value">{value}</p>
-      {hint ? <p className="muted">{hint}</p> : null}
-    </div>
-  );
-}
+const NAV: Array<{ id: AdminPage; icon: typeof IconOverview }> = [
+  { id: "overview", icon: IconOverview },
+  { id: "users", icon: IconUsers },
+  { id: "runs", icon: IconRuns },
+  { id: "system", icon: IconSystem },
+];
 
 export function App() {
   const [token, setToken] = useState(readToken);
+  const [page, setPage] = useState<AdminPage>(readPage);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [authError, setAuthError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [runs, setRuns] = useState<AdminRun[]>([]);
@@ -104,229 +59,162 @@ export function App() {
     setUsers((await readJson<{ users?: AdminUser[] }>(usersRes)).users ?? []);
     setRuns((await readJson<{ runs?: AdminRun[] }>(runsRes)).runs ?? []);
     if (limitsRes.ok) setLimits(await readJson<RateLimitSnapshot>(limitsRes));
+    setError("");
+  }, []);
+
+  useEffect(() => {
+    const onHash = () => setPage(readPage());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
   useEffect(() => {
     if (!token) return;
-    void refresh(token).catch((err) => {
-      setAuthError(err instanceof Error ? err.message : "读取失败");
-      persist("");
-    });
+    setRefreshing(true);
+    void refresh(token)
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : "读取失败";
+        if (message === "请重新登录" || message === "需要平台管理员") {
+          setAuthError(message);
+          persist("");
+          return;
+        }
+        setError(message);
+      })
+      .finally(() => setRefreshing(false));
   }, [refresh, token]);
 
   if (!token) {
     return (
-      <div className="gate">
-        <form
-          className="auth"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (busy || !email.trim() || !password) return;
-            setBusy(true);
-            setAuthError("");
-            void (async () => {
-              const response = await api("", "/v1/auth/login", {
-                method: "POST",
-                body: JSON.stringify({ email: email.trim(), password }),
-              });
-              const body = await readJson<{ token?: string; error?: string; user?: { email?: string } }>(response);
-              if (!response.ok) throw new Error(body.error === "admin_required" ? "需要平台管理员" : body.error || "登录失败");
-              persist(body.token ?? "");
-              setUserEmail(body.user?.email ?? "");
-              setPassword("");
-            })()
-              .catch((err) => setAuthError(err instanceof Error ? err.message : "登录失败"))
-              .finally(() => setBusy(false));
-          }}
-        >
-          <p className="eyebrow">独立管理台</p>
-          <h1>Neo Admin</h1>
-          <p className="muted">这是单独的管理应用，不和对话页共用。只有平台管理员能登录。</p>
-          <label>
-            账号
-            <input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
-          </label>
-          <label>
-            密码
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
-          </label>
-          {authError ? <p className="error">{authError}</p> : null}
-          <button type="submit" disabled={busy}>
-            {busy ? "登录中…" : "登录"}
-          </button>
-        </form>
-      </div>
+      <LoginScreen
+        email={email}
+        password={password}
+        busy={busy}
+        error={authError}
+        onEmail={setEmail}
+        onPassword={setPassword}
+        onSubmit={() => {
+          if (busy || !email.trim() || !password) return;
+          setBusy(true);
+          setAuthError("");
+          void (async () => {
+            const response = await api("", "/v1/auth/login", {
+              method: "POST",
+              body: JSON.stringify({ email: email.trim(), password }),
+            });
+            const body = await readJson<{ token?: string; error?: string; user?: { email?: string } }>(response);
+            if (!response.ok) throw new Error(body.error === "admin_required" ? "需要平台管理员" : body.error || "登录失败");
+            persist(body.token ?? "");
+            setUserEmail(body.user?.email ?? "");
+            setPassword("");
+          })()
+            .catch((err) => setAuthError(err instanceof Error ? err.message : "登录失败"))
+            .finally(() => setBusy(false));
+        }}
+      />
     );
   }
 
+  const meta = PAGE_META[page];
+  const logout = () => {
+    void api(token, "/v1/auth/logout", { method: "POST" });
+    persist("");
+    setOverview(null);
+    setUsers([]);
+    setRuns([]);
+    setLimits(null);
+    setError("");
+  };
+
   return (
-    <div className="page">
-      <header className="top">
-        <div>
-          <p className="eyebrow">独立管理台</p>
-          <h1>平台用量和限流</h1>
+    <div className="app">
+      <aside className="rail" aria-label="管理台导航">
+        <div className="brand">
+          <span className="mark">N</span>
+          <div>
+            <strong>Neo 管理台</strong>
+            <span>平台用量</span>
+          </div>
         </div>
-        <div className="top-actions">
-          <span className="pill">{userEmail}</span>
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => {
-              void api(token, "/v1/auth/logout", { method: "POST" });
-              persist("");
-              setOverview(null);
-            }}
-          >
-            退出
-          </button>
-          <button type="button" className="ghost" onClick={() => void refresh(token).catch((err) => setError(err instanceof Error ? err.message : "刷新失败"))}>
-            刷新
-          </button>
-        </div>
-      </header>
-      {error ? <p className="error">{error}</p> : null}
-      {overview ? (
-        <div className="cards">
-          {card("用户", String(overview.users.total), `${overview.users.admins} 名管理员`)}
-          {card("对话", String(overview.runs.total), `${overview.runs.live} 个进行中`)}
-          {card("本月 token", overview.tokens.usedMonth.toLocaleString(), overview.quota.maxTokensMonth > 0 ? `额度 ${overview.quota.usedTokensMonth}/${overview.quota.maxTokensMonth}` : "未设上限")}
-          {card("VM", overview.capacity.total ? `${overview.capacity.busy}/${overview.capacity.total}` : "未启用", overview.capacity.backend)}
-          {card("限流", overview.rateLimit.enabled ? "已开启" : "已关闭", overview.rateLimit.store)}
-          {card("模型", overview.llm.configured ? overview.llm.upstream : "未配置", overview.llm.model ?? undefined)}
-        </div>
-      ) : (
-        <p className="muted">正在读取…</p>
-      )}
-
-      <section className="block">
-        <h2>用户</h2>
-        <p className="muted">按占用排序。密码不会出现在这里。对话页账号和这里是同一套用户库，但入口是分开的。</p>
-        <table>
-          <thead>
-            <tr>
-              <th>账号</th>
-              <th>管理员</th>
-              <th>对话</th>
-              <th>本月 token</th>
-              <th>进行中</th>
-              <th>最近活跃</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id}>
-                <td>
-                  <strong>{user.email}</strong>
-                  <div className="muted">{user.orgId}</div>
-                </td>
-                <td>{user.admin ? "是" : "否"}</td>
-                <td>{user.runCount}</td>
-                <td>{user.usedTokensMonth.toLocaleString()}</td>
-                <td>{user.concurrentRuns}</td>
-                <td>{user.lastActiveAt ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="block">
-        <h2>最近对话</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>状态</th>
-              <th>提示</th>
-              <th>用户</th>
-              <th>模型</th>
-              <th>用量</th>
-              <th>更新</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs.map((item) => (
-              <tr key={item.id}>
-                <td>{STATUS[item.status] ?? item.status}</td>
-                <td>{item.prompt.slice(0, 48)}</td>
-                <td className="mono">{item.userId.slice(0, 8)}</td>
-                <td>{item.model}</td>
-                <td>{item.usage?.totalTokens ? `${item.usage.totalTokens} tok` : "—"}</td>
-                <td>{item.updatedAt}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {overview ? (
-        <section className="block">
-          <h2>容量</h2>
-          <p className="muted">
-            {overview.capacity.total ? `${overview.capacity.backend} · ${overview.capacity.busy}/${overview.capacity.total} 忙碌` : "当前运行时没有 VM 槽。"}
-            {` · 定时任务 ${overview.counts.automations} · 项目 ${overview.counts.projects} · 快照 ${overview.counts.builds}`}
-          </p>
-        </section>
-      ) : null}
-
-      <section className="block">
-        <h2>限流</h2>
-        <p className="muted">只读快照。改阈值请改环境变量。</p>
-        {limits ? (
-          <table>
-            <thead>
-              <tr>
-                <th>策略</th>
-                <th>类型</th>
-                <th>剩余</th>
-                <th>上限</th>
-                <th>窗口</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(limits.policies).map(([name, policy]) => (
-                <tr key={name}>
-                  <td>{name}</td>
-                  <td>{policy.kind}</td>
-                  <td>{policy.remaining}</td>
-                  <td>{policy.limit}</td>
-                  <td>{Math.round(policy.windowMs / 1000)}s</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="muted">还没有限流快照。</p>
-        )}
-      </section>
-
-      {overview ? (
-        <section className="block">
-          <h2>模型 / New API</h2>
-          <p className="muted">渠道和定价在 New API。Neo 管理台不改渠道。</p>
-          <p>
-            上游 {overview.llm.configured ? overview.llm.upstream : "未配置"}
-            {overview.llm.model ? ` · ${overview.llm.model}` : ""}
-          </p>
-          <p>
-            {overview.newApi.consoleUrl || overview.newApi.url ? (
-              <a href={overview.newApi.consoleUrl || overview.newApi.url || undefined} target="_blank" rel="noreferrer">
-                打开 New API 控制台
+        <nav className="rail-nav">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            return (
+              <a key={item.id} href={pageHref(item.id)} className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined}>
+                <Icon />
+                <span>{PAGE_META[item.id].label}</span>
               </a>
-            ) : (
-              "未配置 NEW_API_CONSOLE_URL"
-            )}
-          </p>
-        </section>
-      ) : null}
+            );
+          })}
+        </nav>
+        <a className="chat-link" href="/">
+          返回对话页
+        </a>
+      </aside>
 
-      {overview ? (
-        <section className="block">
-          <h2>系统</h2>
-          <p className="muted">
-            元数据 {overview.platform.metadataStore} · 事件 {overview.platform.eventBus} · 运行时 {overview.platform.workerRuntime} · 限流 {overview.rateLimit.store}
-          </p>
-        </section>
-      ) : null}
+      <div className="workspace">
+        <header className="topbar">
+          <div className="topbar-copy">
+            <p className="eyebrow">独立管理台</p>
+            <h1>{meta.title}</h1>
+            <p className="muted topbar-hint">{meta.hint}</p>
+          </div>
+          <div className="top-actions">
+            <span className="pill" title={userEmail}>
+              {userEmail}
+            </span>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="刷新"
+              disabled={refreshing}
+              onClick={() => {
+                setRefreshing(true);
+                void refresh(token)
+                  .catch((err) => setError(err instanceof Error ? err.message : "刷新失败"))
+                  .finally(() => setRefreshing(false));
+              }}
+            >
+              <IconRefresh />
+            </button>
+            <button type="button" className="icon-btn" aria-label="退出" onClick={logout}>
+              <IconLogout />
+            </button>
+          </div>
+        </header>
+
+        {error ? <p className="banner">{error}</p> : null}
+
+        <main className="main">
+          {!overview ? (
+            <div className="stack">
+              <div className="skeleton metrics">
+                <div />
+                <div />
+                <div />
+                <div />
+              </div>
+              <div className="skeleton panel" />
+            </div>
+          ) : null}
+          {overview && page === "overview" ? <OverviewScreen overview={overview} runs={runs} /> : null}
+          {overview && page === "users" ? <UsersScreen users={users} /> : null}
+          {overview && page === "runs" ? <RunsScreen runs={runs} /> : null}
+          {overview && page === "system" ? <SystemScreen overview={overview} limits={limits} /> : null}
+        </main>
+      </div>
+
+      <nav className="dock" aria-label="管理台分页">
+        {NAV.map((item) => {
+          const Icon = item.icon;
+          return (
+            <a key={item.id} href={pageHref(item.id)} className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined}>
+              <Icon size={20} />
+              <span>{PAGE_META[item.id].label}</span>
+            </a>
+          );
+        })}
+      </nav>
     </div>
   );
 }
