@@ -1,6 +1,6 @@
 ---
 name: tencent-lighthouse-deploy
-description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app host 62.234.211.200 (Halo建站-AFjg). Use when shipping code, restarting systemd units, fixing Caddy, saving API keys, checking VM slots, SSHing as lighthouse, or wiring Cloud Agent Secrets (NEO_LIGHTHOUSE_SSH_KEY / TENCENTCLOUD_*). Domain bind is tencent-lighthouse-domain, not this skill. Not the MySQL/Redis host 101.42.105.230.
+description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app host 62.234.211.200 (Halo建站-AFjg). Use when shipping code, restarting systemd units, fixing Caddy, saving API keys, checking VM slots, SSHing as lighthouse, or wiring Cloud Agent Secrets (NEO_LIGHTHOUSE_SSH_KEY_B64 / TENCENTCLOUD_*). Domain bind is tencent-lighthouse-domain, not this skill. Not the MySQL/Redis host 101.42.105.230.
 ---
 
 # 腾讯云轻量部署
@@ -54,7 +54,7 @@ Host lighthouse
 
 | Secret | 类型 | 是什么 |
 | --- | --- | --- |
-| `NEO_LIGHTHOUSE_SSH_KEY` | Runtime Secret | 操作者自己电脑 `ssh-keygen` 出来的**私钥全文**（`BEGIN`…`END`），不是腾讯云控制台里的 ID，也不是 `.pub` |
+| `NEO_LIGHTHOUSE_SSH_KEY_B64` | Runtime Secret | 操作者自己电脑 `ssh-keygen` 出来的**私钥文件**做 `base64` 后的单行（`base64 -w0 ~/.ssh/neo_lighthouse`）。不是腾讯云控制台里的 ID，也不是 `.pub`，也不是带换行的 PEM 原文 |
 | `TENCENTCLOUD_SECRET_ID` | Runtime Secret | 周栋账号下**子用户**的云 API SecretId（不要用主号） |
 | `TENCENTCLOUD_SECRET_KEY` | Runtime Secret | 对应 SecretKey |
 | `TENCENTCLOUD_REGION` | Environment Variable | `ap-beijing`（可以给模型看） |
@@ -66,7 +66,7 @@ Host lighthouse
 bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh
 
 # 2) 只报是否 set，不要 echo 值
-[ -n "${NEO_LIGHTHOUSE_SSH_KEY:-}" ] && echo ssh_secret=set || echo ssh_secret=missing
+[ -n "${NEO_LIGHTHOUSE_SSH_KEY_B64:-}" ] && echo ssh_secret=set || echo ssh_secret=missing
 
 # 3) SSH
 ssh -o BatchMode=yes -o ConnectTimeout=10 lighthouse 'hostname; systemctl is-active neo-control-plane caddy'
@@ -75,7 +75,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 lighthouse 'hostname; systemctl is-act
 tccli lighthouse DescribeInstances --region ap-beijing --InstanceIds '["lhins-b0l0d8b2"]'
 ```
 
-`ssh` 失败：公钥没在轻量上，或这轮没注入 `NEO_LIGHTHOUSE_SSH_KEY`。不要重启实例。备案 / 微信扫码没有 API，仍要用户本人。库机 SSH 是另一把钥匙（`lighthouse-db`），不要拿这把去连 `101.42.105.230`。
+`ssh` 失败：公钥没在轻量上，或这轮没注入 `NEO_LIGHTHOUSE_SSH_KEY_B64`。不要重启实例。备案 / 微信扫码没有 API，仍要用户本人。库机 SSH 是另一把钥匙（`lighthouse-db`），不要拿这把去连 `101.42.105.230`。引导脚本仍兼容旧名 `NEO_LIGHTHOUSE_SSH_KEY`（PEM 原文），新对话只配 B64。
 
 ## 硬约束
 
@@ -193,7 +193,7 @@ ssh lighthouse 'journalctl -u neo-control-plane -u neo-llm-gateway -n 80 --no-pa
 
 ## 给 Cloud Agent 的注意点
 
-- 新对话先跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)。SSH 目标就是 `lighthouse`。
+- 新对话先跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)。它读 `NEO_LIGHTHOUSE_SSH_KEY_B64`（私钥文件的单行 base64），写成 `~/.ssh/neo_lighthouse`。SSH 目标就是 `lighthouse`。
 - 连不上先看 Secret 是否注入；公钥不在就 TAT 追加，不要重启、不要绑密钥。
 - 同步代码默认用 tar，不要假设轻量能拉 GitHub。
 - 验收只报 `ok` / `configured` / `workerRuntime` / 槽位数字，不报密钥。

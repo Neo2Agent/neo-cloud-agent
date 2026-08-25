@@ -24,13 +24,23 @@ normalize_key() {
   [[ "$raw" == *$'\n' ]] || printf '\n'
 }
 
-if [[ -n "${NEO_LIGHTHOUSE_SSH_KEY:-}" ]]; then
+decode_b64_key() {
+  local raw="$1"
+  raw="${raw%$'\r'}"
+  raw="${raw//$'\r'/}"
+  raw="${raw//[[:space:]]/}"
+  if [[ -z "$raw" ]]; then
+    return 1
+  fi
+  printf '%s' "$raw" | base64 --decode
+}
+
+install_lighthouse_identity() {
   mkdir -p "$SSH_DIR"
   chmod 700 "$SSH_DIR"
-  normalize_key "$NEO_LIGHTHOUSE_SSH_KEY" >"$KEY_FILE"
   chmod 600 "$KEY_FILE"
   if ! ssh-keygen -y -f "$KEY_FILE" >/dev/null 2>&1; then
-    echo "ssh: NEO_LIGHTHOUSE_SSH_KEY is set but is not a usable private key" >&2
+    echo "ssh: lighthouse secret is set but is not a usable private key" >&2
     exit 1
   fi
   if [[ -f "$CONFIG_FILE" ]]; then
@@ -51,6 +61,29 @@ Host lighthouse
 EOF
   chmod 600 "$CONFIG_FILE"
   wrote_ssh=1
+}
+
+if [[ -n "${NEO_LIGHTHOUSE_SSH_KEY_B64:-}" ]]; then
+  mkdir -p "$SSH_DIR"
+  chmod 700 "$SSH_DIR"
+  if ! decode_b64_key "$NEO_LIGHTHOUSE_SSH_KEY_B64" >"$KEY_FILE" 2>/dev/null; then
+    echo "ssh: NEO_LIGHTHOUSE_SSH_KEY_B64 is set but is not valid base64" >&2
+    exit 1
+  fi
+  if [[ ! -s "$KEY_FILE" ]]; then
+    echo "ssh: NEO_LIGHTHOUSE_SSH_KEY_B64 decoded to an empty key" >&2
+    exit 1
+  fi
+  # OpenSSH PEM needs a trailing newline; base64 payloads sometimes omit it.
+  if [[ "$(tail -c 1 "$KEY_FILE" | wc -l)" -eq 0 ]]; then
+    printf '\n' >>"$KEY_FILE"
+  fi
+  install_lighthouse_identity
+elif [[ -n "${NEO_LIGHTHOUSE_SSH_KEY:-}" ]]; then
+  mkdir -p "$SSH_DIR"
+  chmod 700 "$SSH_DIR"
+  normalize_key "$NEO_LIGHTHOUSE_SSH_KEY" >"$KEY_FILE"
+  install_lighthouse_identity
 fi
 
 if [[ -n "${TENCENTCLOUD_SECRET_ID:-}" && -n "${TENCENTCLOUD_SECRET_KEY:-}" ]]; then
@@ -61,7 +94,7 @@ fi
 if [[ "$wrote_ssh" -eq 1 ]]; then
   echo "ssh: lighthouse identity installed"
 else
-  echo "ssh: NEO_LIGHTHOUSE_SSH_KEY missing (skip)"
+  echo "ssh: NEO_LIGHTHOUSE_SSH_KEY_B64 missing (skip)"
 fi
 if [[ "$have_tccli" -eq 1 ]]; then
   echo "tccli: credentials present region=${REGION}"
