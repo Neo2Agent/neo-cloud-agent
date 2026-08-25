@@ -373,6 +373,12 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       );
       return mapUser(result.rows[0]);
     },
+    async listUsers() {
+      const result = await query(
+        `SELECT id, email, password_hash, org_id, created_at FROM users ORDER BY created_at ASC`,
+      );
+      return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
+    },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = ? WHERE id = ?`, [passwordHash, userId]);
     },

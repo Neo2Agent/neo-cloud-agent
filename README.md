@@ -30,6 +30,7 @@ neo-cloud-agent/
 | 面 | 行为 |
 | --- | --- |
 | 对话页 | React。工具调研和模型答复按时间拆行（工具在最终答复上面）。Markdown、Diff、文件树、粘贴图片、token 用量、归档 |
+| 管理台 | `#/admin`。仅平台管理员：用户占用、全部对话、VM 槽、限流快照、当前模型 / New API 入口。`ADMIN_EMAILS` 可追加管理员 |
 | 模型 | 默认 DeepSeek **v4-flash**；设置里可切 Pro。退役的 `deepseek-chat` / `deepseek-reasoner` 会改写成 flash |
 | 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错 |
 | CLI | `pnpm neo`，见 [docs/cli.md](docs/cli.md) |
@@ -139,6 +140,8 @@ GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVA
 # DEFAULT_ADMIN_PASSWORD=123456
 # BOOTSTRAP_EMAIL=you@example.com
 # BOOTSTRAP_PASSWORD=at-least-8-chars
+# ADMIN_EMAILS=ops@example.com
+# NEW_API_CONSOLE_URL=http://127.0.0.1:3000
 
 # MySQL 或 Postgres / Redis（不设则用 .control JSON + 进程内事件总线）
 # DATABASE_URL=mysql://app:app@127.0.0.1:3306/app

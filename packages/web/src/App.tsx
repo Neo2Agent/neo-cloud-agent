@@ -21,6 +21,7 @@ import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { AdminPage } from "./components/AdminPage";
 import { AutomationsPage } from "./components/AutomationsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
@@ -115,6 +116,10 @@ function hashAutomations(): boolean {
   return location.hash === "#/automations";
 }
 
+function hashAdmin(): boolean {
+  return location.hash === "#/admin";
+}
+
 function hashInviteToken(): string | null {
   return /^#\/invite\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
 }
@@ -127,7 +132,8 @@ function hashProjects(): boolean {
   return location.hash === "#/projects" || Boolean(hashProjectId()) || Boolean(hashInviteToken());
 }
 
-function initialMainTab(): "chat" | "automations" | "projects" {
+function initialMainTab(): "chat" | "automations" | "projects" | "admin" {
+  if (hashAdmin()) return "admin";
   if (hashAutomations()) return "automations";
   if (hashProjects()) return "projects";
   return "chat";
@@ -148,6 +154,7 @@ export function App() {
   const [vms, setVms] = useState<VmSummary>({ total: 0, busy: 0, backend: "none", slots: [] });
   const [userEmail, setUserEmail] = useState("");
   const [userId, setUserId] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
   const [authOpen, setAuthOpen] = useState(() => !hasSavedSession(readToken()));
   const [authMode, setAuthMode] = useState<"login" | "token">("login");
   const [authBusy, setAuthBusy] = useState(false);
@@ -183,7 +190,7 @@ export function App() {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
-  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects">(initialMainTab);
+  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "admin">(initialMainTab);
   const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
   const [inviteToken, setInviteToken] = useState<string | null>(hashInviteToken);
@@ -576,6 +583,14 @@ export function App() {
     history.replaceState(null, "", "/#/automations");
   }, []);
 
+  const openAdmin = useCallback(() => {
+    setMainTab("admin");
+    setFilesOpen(false);
+    setDiffOpen(false);
+    setSettingsOpen(false);
+    history.replaceState(null, "", "/#/admin");
+  }, []);
+
   const openProjects = useCallback((id?: string | null, invite?: string | null) => {
     setMainTab("projects");
     setFilesOpen(false);
@@ -602,7 +617,7 @@ export function App() {
 
   const openChat = useCallback(() => {
     setMainTab("chat");
-    if (hashAutomations() || hashProjects()) {
+    if (hashAutomations() || hashProjects() || hashAdmin()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
   }, [runId]);
@@ -618,6 +633,19 @@ export function App() {
       }
     }
     const refreshShell = [refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()] as const;
+    if (hashAdmin()) {
+      const me = await api(tokenRef.current, "/v1/me");
+      const body = me.ok ? await readJson<{ admin?: boolean }>(me) : { admin: false };
+      setIsAdmin(Boolean(body.admin));
+      if (body.admin) {
+        setMainTab("admin");
+      } else {
+        history.replaceState(null, "", "/");
+        setMainTab("chat");
+      }
+      await Promise.all(refreshShell);
+      return;
+    }
     if (hashAutomations()) {
       setMainTab("automations");
       await Promise.all(refreshShell);
@@ -648,30 +676,26 @@ export function App() {
     async (nextToken: string, user?: { id?: string; email?: string } | null) => {
       if (!nextToken) throw new Error("登录响应缺少会话");
       persistToken(nextToken);
-      if (user?.email) {
-        setUserEmail(user.email);
-        setUserId(user.id ?? "");
-        setAuthOpen(false);
-        setAuthError("");
-        setAuthPassword("");
-        return;
-      }
       const me = await api(nextToken, "/v1/me");
       if (!me.ok) {
         persistToken("");
         setUserEmail("");
         setUserId("");
+        setIsAdmin(false);
         throw new Error("unauthorized");
       }
-      const body = await readJson<{ user?: { id?: string; email?: string } }>(me);
-      if (!body.user) {
+      const body = await readJson<{ user?: { id?: string; email?: string }; admin?: boolean }>(me);
+      const nextUser = body.user ?? user;
+      if (!nextUser?.email && !body.admin) {
         persistToken("");
         setUserEmail("");
         setUserId("");
+        setIsAdmin(false);
         throw new Error("登录未生效，请再试一次");
       }
-      setUserEmail(body.user.email ?? "");
-      setUserId(body.user.id ?? "");
+      setUserEmail(nextUser?.email ?? "");
+      setUserId(nextUser?.id ?? "");
+      setIsAdmin(Boolean(body.admin));
       setAuthOpen(false);
       setAuthError("");
       setAuthPassword("");
@@ -953,6 +977,14 @@ export function App() {
     const syncHash = () => {
       const invite = hashInviteToken();
       const projectId = hashProjectId();
+      if (hashAdmin()) {
+        setMainTab("admin");
+        setInviteToken(null);
+        setFilesOpen(false);
+        setDiffOpen(false);
+        setSettingsOpen(false);
+        return;
+      }
       if (hashAutomations()) {
         setMainTab("automations");
         setInviteToken(null);
@@ -1175,6 +1207,7 @@ export function App() {
             persistToken("");
             setUserEmail("");
             setUserId("");
+            setIsAdmin(false);
             setActiveProject(null);
             setAuthEmail("");
             setAuthPassword("");
@@ -1221,6 +1254,16 @@ export function App() {
                 >
                   定时任务
                 </button>
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    className={mainTab === "admin" ? "active" : ""}
+                    aria-current={mainTab === "admin" ? "page" : undefined}
+                    onClick={openAdmin}
+                  >
+                    管理台
+                  </button>
+                ) : null}
               </nav>
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
@@ -1228,6 +1271,8 @@ export function App() {
                     ? "项目"
                     : mainTab === "automations"
                       ? "定时任务"
+                      : mainTab === "admin"
+                        ? "管理台"
                       : currentRun
                         ? [
                             currentRun.buildId
@@ -1246,6 +1291,8 @@ export function App() {
                     ? "人和 Agent 共用一份上下文"
                     : mainTab === "automations"
                       ? "到点自动开对话"
+                      : mainTab === "admin"
+                        ? "用户、容量和限流"
                       : currentRun
                         ? preview(currentRun.prompt)
                         : activeProject
@@ -1563,8 +1610,16 @@ export function App() {
               <FileTree token={token} runId={runId} open={Boolean(runId)} />
             </aside>
           ) : null}
-            {mainTab === "projects" ? (
-              <ProjectsPage
+            {mainTab === "admin" ? (
+              <AdminPage
+                token={token}
+                onOpenRun={(id) => {
+                  setMainTab("chat");
+                  void openRun(id);
+                }}
+              />
+            ) : mainTab === "projects" ? (
+              <ProjectsPage>
                 token={token}
                 userId={userId}
                 inviteToken={inviteToken}
@@ -1715,7 +1770,6 @@ export function App() {
           setAuthBusy(true);
           void (async () => {
             if (authMode === "token") {
-              persistToken(authToken.trim());
               const response = await fetch(withApiBase("/v1/auth"), {
                 method: "POST",
                 credentials: "same-origin",
@@ -1726,8 +1780,7 @@ export function App() {
                 persistToken("");
                 throw new Error("unauthorized");
               }
-              setUserEmail("");
-              setAuthOpen(false);
+              await applySession(authToken.trim());
             } else {
               const email = authEmail.trim();
               const password = authPassword;
@@ -1745,6 +1798,9 @@ export function App() {
           })()
             .catch((error) => {
               persistToken("");
+              setIsAdmin(false);
+              setUserEmail("");
+              setUserId("");
               setAuthError(error instanceof Error ? error.message : "登录失败");
               setAuthOpen(true);
             })

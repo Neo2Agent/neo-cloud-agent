@@ -86,7 +86,8 @@ import {
   resolveApiToken,
   verifyWorkerJwt,
 } from "../security/auth.js";
-import { actorCanAccessRun, type Actor } from "../security/actor.js";
+import { actorCanAccessRun, actorIsPlatformAdmin, isAdminLogin, type Actor } from "../security/actor.js";
+import { adminOverviewPayload, adminRunsLimit, adminRunsPayload, adminUsersPayload } from "../admin/overview.js";
 import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBuildLogs } from "../env/builds.js";
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
@@ -158,8 +159,14 @@ function denyUnless(run: { userId: string } | null | undefined, actor: Actor, re
   return true;
 }
 
-function sendAuthSession(res: ServerResponse, status: number, created: { user: unknown; token: string }): void {
-  const json = JSON.stringify({ ok: true, token: created.token, user: created.user, authRequired: true });
+function sendAuthSession(res: ServerResponse, status: number, created: { user: { email?: string }; token: string }): void {
+  const json = JSON.stringify({
+    ok: true,
+    token: created.token,
+    user: created.user,
+    authRequired: true,
+    admin: isAdminLogin(created.user.email),
+  });
   res.writeHead(status, {
     ...CORS,
     "content-type": "application/json; charset=utf-8",
@@ -513,8 +520,30 @@ export function createApiServer() {
           return;
         }
         if (method === "GET" && path === "/v1/me") {
-          send(res, 200, { user: actor.kind === "user" ? { id: actor.userId, email: actor.email, orgId: actor.orgId } : null, actor: actor.kind });
+          send(res, 200, {
+            user: actor.kind === "user" ? { id: actor.userId, email: actor.email, orgId: actor.orgId } : null,
+            actor: actor.kind,
+            admin: actorIsPlatformAdmin(actor),
+          });
           return;
+        }
+        if (path === "/v1/admin/overview" || path === "/v1/admin/users" || path === "/v1/admin/runs") {
+          if (!actorIsPlatformAdmin(actor)) {
+            send(res, 403, { error: "admin_required" });
+            return;
+          }
+          if (method === "GET" && path === "/v1/admin/overview") {
+            send(res, 200, await adminOverviewPayload(listRuns(), publicLlmSettings(readLlmSettings())));
+            return;
+          }
+          if (method === "GET" && path === "/v1/admin/users") {
+            send(res, 200, await adminUsersPayload(listRuns()));
+            return;
+          }
+          if (method === "GET" && path === "/v1/admin/runs") {
+            send(res, 200, adminRunsPayload(listRuns(), adminRunsLimit(url.searchParams.get("limit"))));
+            return;
+          }
         }
         if (method === "GET" && path === "/v1/vms") {
           send(res, 200, summarizeVmSlots(getConfig().workerRuntime));
