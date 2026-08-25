@@ -1,51 +1,78 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_DESK_UI_PORT, deskClientOrigin, isLoopbackOrigin } from "../src/ports.ts";
+import { resolveDeskDevLaunch } from "../src/dev-launch.ts";
 import { ensureBackend, waitForHttp } from "../../../scripts/ensure-backend.ts";
 
 const deskRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
+function stop(child: ChildProcess | null | undefined): void {
+  if (!child || child.killed || child.exitCode !== null) return;
+  child.kill("SIGTERM");
+}
+
 async function main(): Promise<void> {
-  const uiPort = Number(process.env.NEO_DESK_UI_PORT || DEFAULT_DESK_UI_PORT);
-  const uiUrl = `http://127.0.0.1:${uiPort}`;
-  const production = process.argv.includes("--prod");
-  const apiBase = deskClientOrigin(process.env, { production });
-  if (isLoopbackOrigin(apiBase)) {
-    await ensureBackend();
+  const launch = resolveDeskDevLaunch();
+  const children: ChildProcess[] = [];
+  let backend: ChildProcess | null = null;
+
+  if (launch.startLocalBackend) {
+    backend = await ensureBackend();
+    if (backend) children.push(backend);
   } else {
-    console.log(`desk client → ${apiBase} (not starting local :8080)`);
+    await waitForHttp(`${launch.apiBase}/health`);
   }
+
+  console.log(
+    `Desk ${launch.label} 完整服务：前端 ${launch.uiUrl} → 后端 ${launch.apiBase}${launch.startLocalBackend ? " （本机 control-plane :8080 + gateway :8081）" : ""}`,
+  );
 
   const vite = spawn("pnpm", ["exec", "vite", "--config", "ui/vite.config.ts"], {
     cwd: deskRoot,
     stdio: "inherit",
-    env: { ...process.env, NEO_DESK_UI_PORT: String(uiPort), NEO_CONTROL_PLANE_URL: apiBase },
-  });
-  await waitForHttp(uiUrl);
-  console.log(`desk UI vite on ${uiUrl}; opening Electron (not a browser tab)`);
-
-  const electron = spawn("pnpm", ["exec", "electron", "app/main.cjs"], {
-    cwd: deskRoot,
-    stdio: "inherit",
     env: {
       ...process.env,
-      NEO_DESK_URL: uiUrl,
-      NEO_CONTROL_PLANE_URL: apiBase,
-      DISPLAY: process.env.DISPLAY || ":1",
+      NEO_DESK_UI_PORT: String(launch.uiPort),
+      NEO_CONTROL_PLANE_URL: launch.apiBase,
     },
   });
+  children.push(vite);
+  await waitForHttp(launch.uiUrl);
 
-  const stop = () => {
-    electron.kill("SIGTERM");
-    vite.kill("SIGTERM");
+  const skipElectron = process.env.NEO_DESK_NO_ELECTRON === "1" || process.env.NEO_DESK_NO_ELECTRON === "true";
+  let electron: ChildProcess | null = null;
+  if (!skipElectron) {
+    electron = spawn("pnpm", ["exec", "electron", "app/main.cjs"], {
+      cwd: deskRoot,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        NEO_DESK_URL: launch.uiUrl,
+        NEO_CONTROL_PLANE_URL: launch.apiBase,
+        DISPLAY: process.env.DISPLAY || ":1",
+      },
+    });
+    electron.on("exit", (code) => {
+      console.log(`electron exited (${code ?? "?"}); Desk ${launch.label} 仍在 ${launch.uiUrl}`);
+    });
+    electron.on("error", (error) => {
+      console.log(`electron 未打开（${error.message}）；用浏览器打开 ${launch.uiUrl}`);
+    });
+  } else {
+    console.log(`NEO_DESK_NO_ELECTRON=1，用浏览器打开 ${launch.uiUrl}`);
+  }
+
+  let closed = false;
+  const shutdown = (code = 0) => {
+    if (closed) return;
+    closed = true;
+    stop(electron);
+    for (const child of children) stop(child);
+    process.exit(code);
   };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
-  electron.on("exit", (code) => {
-    vite.kill("SIGTERM");
-    process.exit(code ?? 0);
-  });
+  process.on("SIGINT", () => shutdown(0));
+  process.on("SIGTERM", () => shutdown(0));
+  vite.on("exit", (code) => shutdown(code ?? 0));
 }
 
 void main();

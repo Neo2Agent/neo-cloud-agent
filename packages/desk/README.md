@@ -6,11 +6,11 @@
 # 仓库根。
 export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"
 pnpm dev:web        # Web UI :5173，打本地 :8080
-pnpm dev:desk       # Desk Vite :5174 + Electron，打本地 :8080（没有就拉起）
-pnpm dev:desk:prod  # 同一套 Desk UI，API 打线上控制面，不启本地 :8080
+pnpm dev:desk       # 预发完整服务：本机 control-plane :8080 + gateway :8081 + Desk :5174
+pnpm dev:desk:prod  # 生产完整服务：Desk :5174 → 线上控制面（默认 http://62.234.211.200）
 ```
 
-`dev:desk` 打开的是原生窗口，不是浏览器页。登录账号和 Web 相同（默认 `admin` / `123456`）。
+一条命令同时拉起该环境的前端和后端。关掉 Electron 窗口不会停服务；浏览器也可打开 `:5174`。登录账号和 Web 相同（默认 `admin` / `123456`）。
 
 本地 `pnpm dev` / `pnpm dev:desk` 只连本机控制面（内存事件总线 + 本地 Run）。要和线上 MySQL / Redis / VM 槽是同一条总线，用 `pnpm dev:desk:prod`（默认 `http://62.234.211.200`，域名 `https://neorun.cloud`）。Web 看现网直接打开该地址，不必再起一份本地 Web。
 

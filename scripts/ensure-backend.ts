@@ -20,23 +20,36 @@ export async function waitForHttp(url: string, timeoutMs = 30_000): Promise<void
   throw new Error(`timed out waiting for ${url}`);
 }
 
-export async function ensureBackend(): Promise<ChildProcess | null> {
+export async function probeHttp(url: string): Promise<boolean> {
   try {
-    const response = await fetch("http://127.0.0.1:8080/health");
-    if (response.ok) {
-      console.log("backend already listening on :8080");
-      return null;
-    }
+    const response = await fetch(url);
+    return response.ok;
   } catch {
-    // start it
+    return false;
   }
-  console.log("starting control-plane :8080 and llm-gateway :8081");
-  const child = spawn(
-    "pnpm",
-    ["--parallel", "--filter", "@neo-cloud-agent/control-plane", "--filter", "@neo-cloud-agent/llm-gateway", "dev"],
-    { cwd: root, stdio: "inherit", env: process.env },
+}
+
+export async function ensureBackend(): Promise<ChildProcess | null> {
+  const controlOk = await probeHttp("http://127.0.0.1:8080/health");
+  const gatewayOk = await probeHttp("http://127.0.0.1:8081/health");
+  if (controlOk && gatewayOk) {
+    console.log("backend already listening on :8080 and :8081");
+    return null;
+  }
+
+  const filters: string[] = [];
+  if (!controlOk) filters.push("@neo-cloud-agent/control-plane");
+  if (!gatewayOk) filters.push("@neo-cloud-agent/llm-gateway");
+  console.log(
+    `starting ${!controlOk ? "control-plane :8080" : ""}${!controlOk && !gatewayOk ? " and " : ""}${!gatewayOk ? "llm-gateway :8081" : ""}`,
   );
-  await waitForHttp("http://127.0.0.1:8080/health");
+  const child = spawn("pnpm", ["--parallel", ...filters.flatMap((name) => ["--filter", name]), "dev"], {
+    cwd: root,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (!controlOk) await waitForHttp("http://127.0.0.1:8080/health");
+  if (!gatewayOk) await waitForHttp("http://127.0.0.1:8081/health");
   return child;
 }
 

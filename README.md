@@ -61,7 +61,8 @@ pnpm test
 pnpm dev                 # 只起后端：control-plane :8080 + llm-gateway :8081
 pnpm dev:web             # Web UI :5173（后端已在则复用 :8080）
 pnpm dev:admin           # 独立管理台：admin-api :8090 + admin-web :5176
-pnpm dev:desk            # Desk UI :5174 + Electron 窗口（另一套 UI，共用后端）
+pnpm dev:desk            # 预发完整服务：本机 :8080/:8081 + Desk :5174
+pnpm dev:desk:prod       # 生产完整服务：Desk :5174 → 线上控制面
 pnpm dev:mobile          # 手机客户端 :5175（共用 :8080）
 ```
 
