@@ -91,7 +91,7 @@ flowchart TB
 
 | 层 | 信任级 | 职责 |
 | --- | --- | --- |
-| 控制面 | 高（你的账号体系） | 鉴权、Run 状态机、环境/Build、密钥、模型路由、SCM、事件扇出 |
+| 控制面 | 高（你的账号体系） | 鉴权、限流、Run 状态机、环境/Build、密钥、模型路由、SCM、事件扇出 |
 | LLM Gateway | 高 | 唯一持有 Provider / GPU 凭证；计费、限流、审计、prompt cache |
 | 执行面 VM | 低（按 Run 隔离） | 跑 pi、操作磁盘和进程、遵守 egress；只拿短寿命 JWT |
 
@@ -136,11 +136,11 @@ sequenceDiagram
 
 | 职责 | 干什么 | P0 部署在 |
 | --- | --- | --- |
-| `api` | 对外 REST / SSE。创建 Run、跟进、取消、拉 transcript、artifacts | `control-plane` 模块 |
+| `api` | 对外 REST / SSE。创建 Run、跟进、取消、拉 transcript、artifacts。请求限流（IP / 登录 / 用户写操作 / SSE 并发） | `control-plane` 模块 |
 | `orchestrator` | Run 状态机；向 VM 调度器下发 provision / stop / snapshot | `control-plane` 模块 |
 | `env` | Environment 版本、`environment.json`、密钥绑定、egress 策略 | `control-plane` 模块 |
 | `build` | 后台 Build：clone + `install` + 打盘；维护 active / draft 快照 | `control-plane` 模块 |
-| `llm-gateway` | 模型代理，OpenAI-compatible + 原生 Anthropic 透传 | **独立进程** |
+| `llm-gateway` | 模型代理，OpenAI-compatible + 原生 Anthropic 透传。按 run JWT / org 做请求与并发限流 | **独立进程** |
 | `scm` | GitHub App / GitLab；短寿命 clone/push token；开 PR | `control-plane` 模块 |
 | `events` | 把 VM 上报的 AgentEvent 写成 RunEvent，SSE / WS 推给客户端 | `control-plane` 模块 |
 | `artifacts` | 签上传 URL；文件直传对象存储 | `control-plane` 模块 |
@@ -369,7 +369,7 @@ Gateway 是「推理在云端」的落点。VM 把它当成一个 OpenAI-compati
 pi-ai streamSimple
     → https://llm.<cluster>/v1/chat/completions
     → Authorization: Bearer <run JWT>
-    → Gateway: 验 JWT、配额、选路由、打点
+    → Gateway: 验 JWT、限流、配额、选路由、打点
     → Provider SDK / 内部 vLLM
 ```
 
@@ -547,6 +547,7 @@ Run 1──* PullRequestRef
 POST   /v1/auth/login|logout
 GET    /v1/me
 GET    /v1/vms
+GET    /v1/rate-limits
 GET    /v1/settings/llm
 POST   /v1/settings/llm          页面存 Key；响应永不回传明文
 
@@ -798,7 +799,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 
 1. Firecracker 生产 rootfs / tap 回连已经落地（`pnpm fc:assets` / `pnpm fc:rootfs` / `pnpm test:firecracker`）。嵌套 KVM + AMX 的宿主机 `KVM_CREATE_VCPU` 会故障，live turn 需在真机或非 AMX 宿主上跑。
 2. 块设备 CoW 已落地接口：Build / 预热 / Firecracker rootfs 先 `cp --reflink=always`；文件系统不支持时工作区整树复制，生产 rootfs 只读共享原盘（不整份拷 1.5GiB）。不是 live-fork。
-3. 配额：同时跑的对话 / 本月 token 已落地（`GET /v1/quota`）；完整账务仍后置
+3. 配额：同时跑的对话 / 本月 token 已落地（`GET /v1/quota`）；完整账务仍后置。请求限流已落地：控制面按 IP / 登录 / 用户写操作 / SSE 并发，Gateway 按 run JWT 与 org；`GET /v1/rate-limits` 看当前桶。设了 `REDIS_URL` 后计数走 Redis 固定窗口，否则进程内 token bucket。`RATE_LIMIT=0` 关闭。后管与模型网关怎么拆（New API 管渠道、Neo 管 Agent 用户）见 [admin-platform-research.md](./admin-platform-research.md)。
 4. Egress 从应用层升级到 VM 出站代理 / iptables
 5. headed browser / computer-use sidecar（`neo_browse` 只抓静态页）
 6. CLI 交互 TUI、浏览器登录、本机 pi 模式——都单开，不要和 `neo run` 混语义。P0 headless 客户端见 [cli.md](./cli.md)
@@ -814,8 +815,10 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
 - 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。已经挂上的 handle 以进程/容器退出为准，不会因为一次长工具调用没心跳就被标 ERROR。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
 - 对外 `/v1` 用用户 session（`POST /v1/auth/login`）或 `CONTROL_PLANE_TOKEN`。不支持注册。默认必须登录（`ACCOUNTS_REQUIRED=0` 才允许匿名）。账号写死为 `admin` / `123456`，登录时查账号库（接了 MySQL 就查 `users` 表）。对话页不预填、不跳过，必须手输账号和密码。Worker 走 `/internal`，只带 run JWT。`/health`、静态页和公开 webhook 不需要令牌。
+- 平台管理台是独立应用，不嵌进对话页：`packages/admin-api`（默认 `:8090`）+ `packages/admin-web`（默认 `:5176`，`pnpm dev:admin`）。只认 `admin` / `ADMIN_EMAILS` / 服务令牌。读同一套账号库和持久化 Run，不改控制面 `/v1` 登录。New API 只做控制台链接。
 - 设了 `DATABASE_URL` 后，Run / 事件 / 用户 / Environment / Build 写入 MySQL 或 Postgres（看 URL scheme）；没配则继续用 `.control` JSON。
-- 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。
+- 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。限流计数也复用这条 Redis（`INCR` 固定窗口）；没配则进程内 token bucket。
+- 对外 `/v1` 与 `/webhooks/*` 默认限流：IP、登录（含账号）、用户/组织读写、贵操作（Build / 设置 / commit / PR）、SSE 并发。`/health`、静态页、`/internal` 不限。Gateway `POST /v1/chat/completions` 按 run JWT 与 org 限 QPS 和在飞请求。超限返回 `429` + `Retry-After` / `X-RateLimit-*`。`GET /v1/rate-limits` 看当前桶。`RATE_LIMIT=0` 关闭。
 - `WORKER_RUNTIME=firecracker` 走 Firecracker HTTP API（kernel / rootfs / tap / vsock）。开发机没配内核时继续用 local / docker。没配 `FIRECRACKER_ROOTFS` 时：若 `infra/firecracker/.assets/rootfs.ext4` 是生产盘（`pnpm fc:rootfs`）就用它，否则用 overlay 打一张小 ext4（单测路径，需要 `mkfs.ext4`）。Guest 不能用 `127.0.0.1` 回连宿主机，provision 会把控制面 / Gateway URL 改成 tap 宿主机 IP。
 - Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot（`rename`），否则 reflink / 拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。对话页可以选环境 / 快照，或点「预热」。
 - Egress：`environment.json` 的 `egress.mode` 会进 worker（`NEO_EGRESS_*`）。`allowlist_only` 拦 clone 和不在名单里的 `fetch`；Gateway / GitHub 仍放行。

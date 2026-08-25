@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.base.json",
   "include": ["packages/*/src/**/*.ts"],
-  "exclude": ["packages/web/**", "packages/mobile/**"],
+  "exclude": ["packages/web/**", "packages/mobile/**", "packages/admin-web/**"],
   "compilerOptions": {
     "paths": {
       "@neo-cloud-agent/contracts": ["./packages/contracts/src/index.ts"],

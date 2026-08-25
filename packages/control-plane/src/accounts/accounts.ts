@@ -136,6 +136,11 @@ export async function findPublicUserByEmail(email: string): Promise<PublicUser |
   return user ? toPublicUser(user) : null;
 }
 
+export async function listPublicUsers(): Promise<PublicUser[]> {
+  const users = await getAccountStore().listUsers();
+  return users.map(toPublicUser);
+}
+
 export async function lookupSession(token: string): Promise<{ user: PublicUser; session: SessionRecord } | null> {
   if (!token.startsWith("neo_sess_")) {
     return null;
