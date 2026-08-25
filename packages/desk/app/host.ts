@@ -111,10 +111,17 @@ function rendererEntry(): string {
 }
 
 function createWindow(): void {
+  const title = process.env.NEO_DESK_TITLE?.trim() || "Neo Desk";
+  const width = Number(process.env.NEO_DESK_WINDOW_WIDTH || 1440);
+  const height = Number(process.env.NEO_DESK_WINDOW_HEIGHT || 900);
+  const x = Number(process.env.NEO_DESK_WINDOW_X);
+  const y = Number(process.env.NEO_DESK_WINDOW_Y);
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    title: "Neo Desk",
+    width: Number.isFinite(width) && width > 0 ? width : 1440,
+    height: Number.isFinite(height) && height > 0 ? height : 900,
+    ...(Number.isFinite(x) ? { x } : {}),
+    ...(Number.isFinite(y) ? { y } : {}),
+    title,
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -126,8 +133,8 @@ function createWindow(): void {
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.webContents.on("did-finish-load", () => {
-    void mainWindow?.webContents.executeJavaScript(`document.title = "Neo Desk"`);
-    mainWindow?.setTitle("Neo Desk");
+    void mainWindow?.webContents.executeJavaScript(`document.title = ${JSON.stringify(title)}`);
+    mainWindow?.setTitle(title);
   });
   void mainWindow.loadURL(rendererEntry());
   mainWindow.on("closed", () => {
