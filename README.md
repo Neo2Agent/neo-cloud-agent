@@ -18,6 +18,7 @@ neo-cloud-agent/
   packages/web              对话页，由 control-plane 托管
   packages/desk             Electron 桌面壳 + 本机 worker（可选）
   packages/cli              终端客户端 `neo`（打 /v1，不跑 Agent loop）
+  packages/mobile           未建。iOS / Android 方案见 docs/mobile.md
   infra/                    compose 与三份 Dockerfile
   .neo/environment.json     本仓库自己的环境描述
 ```
@@ -34,6 +35,7 @@ neo-cloud-agent/
 | CLI | `pnpm neo`，见 [docs/cli.md](docs/cli.md) |
 | 云工具 | `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` |
 | 桌面端 | Electron 壳 + 本机/云端目标。设计与落地见 [docs/desk.md](docs/desk.md) |
+| 手机端 | 未实现。iOS / Android 按 CLI 同级 `/v1` 客户端做，不在手机上跑 Agent。方案见 [docs/mobile.md](docs/mobile.md) |
 
 ```mermaid
 flowchart LR
