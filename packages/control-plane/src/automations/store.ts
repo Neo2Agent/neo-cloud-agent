@@ -84,6 +84,10 @@ export function listAutomations(): Automation[] {
   return [...readAll()].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
+export function getAutomation(id: string): Automation | undefined {
+  return readAll().find((item) => item.id === id);
+}
+
 export function createAutomation(
   input: CreateAutomationRequest,
   owner?: { userId?: string; orgId?: string },

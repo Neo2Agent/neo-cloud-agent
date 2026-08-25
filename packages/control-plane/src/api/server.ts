@@ -106,6 +106,7 @@ import { deleteMcpSecret, publicMcpServers, upsertMcpSecret } from "../mcp/secre
 import { publicAppUrl } from "../notify/settings.js";
 import { quotaSnapshot, QuotaError, writeQuotaLimits } from "../quota/quota.js";
 import { GITHUB_WEBHOOK_PATH, publicGitHubWebhookInfo } from "../subscriptions/secret.js";
+import { AutomationRunError, runAutomationNow } from "../automations/runner.js";
 import { createAutomation, deleteAutomation, listAutomations, updateAutomation } from "../automations/store.js";
 import {
   acceptInvite,
@@ -676,6 +677,34 @@ export function createApiServer() {
           } catch (error) {
             const message = error instanceof Error ? error.message : "invalid_automation";
             send(res, 400, { error: message });
+          }
+          return;
+        }
+        const automationRunMatch = /^\/v1\/automations\/([^/]+)\/run$/.exec(path);
+        if (automationRunMatch && method === "POST") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(
+              res,
+              201,
+              await runAutomationNow(automationRunMatch[1] ?? "", {
+                userId: actor.userId,
+                orgId: actor.orgId,
+              }),
+            );
+          } catch (error) {
+            if (error instanceof AutomationRunError) {
+              send(res, error.status, { error: error.message });
+              return;
+            }
+            if (error instanceof QuotaError) {
+              send(res, 429, { error: error.message });
+              return;
+            }
+            send(res, 400, { error: error instanceof Error ? error.message : "automation_run_failed" });
           }
           return;
         }
