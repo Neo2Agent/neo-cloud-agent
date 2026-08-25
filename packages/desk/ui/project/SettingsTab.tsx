@@ -1,7 +1,7 @@
 import { canManageProject, type InvitePolicy, type Project } from "@neo-cloud-agent/contracts/project";
 import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
-import { roleLabel } from "./OverviewTab";
+import { roleLabel } from "./helpers";
 
 export function SettingsTab({
   token,

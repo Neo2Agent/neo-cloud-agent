@@ -1,7 +1,9 @@
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectTodo, TodoStatus } from "@neo-cloud-agent/contracts/project-todo";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, readJson } from "../api";
+import { IconPlus, IconSearch } from "../icons";
+import { displayName, formatRel, initials } from "./helpers";
 
 const COLUMNS: Array<{ id: TodoStatus; label: string }> = [
   { id: "claim", label: "待开始" },
@@ -9,6 +11,22 @@ const COLUMNS: Array<{ id: TodoStatus; label: string }> = [
   { id: "paused", label: "暂停" },
   { id: "done", label: "完成" },
 ];
+
+const FILTERS: Array<{ id: "all" | TodoStatus; label: string }> = [
+  { id: "all", label: "全部任务" },
+  ...COLUMNS.map((item) => ({ id: item.id, label: item.label })),
+];
+
+function statusLabel(status: TodoStatus): string {
+  return COLUMNS.find((item) => item.id === status)?.label ?? status;
+}
+
+function sourceLabel(source: ProjectTodo["source"]): string {
+  if (source === "handoff") return "从对话流转";
+  if (source === "artifact") return "产物";
+  if (source === "agent") return "Agent";
+  return "手动";
+}
 
 export function BoardTab({
   token,
@@ -21,6 +39,9 @@ export function BoardTab({
 }) {
   const [todos, setTodos] = useState<ProjectTodo[]>([]);
   const [title, setTitle] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | TodoStatus>("all");
+  const [view, setView] = useState<"list" | "board">("list");
   const [openId, setOpenId] = useState<string | null>(null);
   const [pauseFor, setPauseFor] = useState<string | null>(null);
   const [pauseReason, setPauseReason] = useState("");
@@ -85,9 +106,48 @@ export function BoardTab({
   };
 
   const open = todos.find((item) => item.id === openId) ?? null;
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return todos.filter((item) => {
+      if (filter !== "all" && item.status !== filter) return false;
+      if (!q) return true;
+      return item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q);
+    });
+  }, [filter, query, todos]);
+
+  const memberById = useMemo(() => new Map(project.members.map((item) => [item.userId, item])), [project.members]);
 
   return (
     <div className="board">
+      <div className="task-toolbar">
+        <div className="task-filters">
+          {FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`filter-chip${filter === item.id ? " on" : ""}`}
+              onClick={() => setFilter(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="task-toolbar-end">
+          <label className="mine-search task-search">
+            <IconSearch size={14} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务标题" />
+          </label>
+          <div className="view-toggle" role="group" aria-label="任务视图">
+            <button type="button" className={view === "list" ? "on" : ""} onClick={() => setView("list")}>
+              列表
+            </button>
+            <button type="button" className={view === "board" ? "on" : ""} onClick={() => setView("board")}>
+              看板
+            </button>
+          </div>
+        </div>
+      </div>
+      <p className="hint task-privacy">对话默认只有你自己能看。要让同事进同一条会话，需要在云端对话里邀请。</p>
       <form
         className="board-create"
         onSubmit={(event) => {
@@ -95,55 +155,112 @@ export function BoardTab({
           void create();
         }}
       >
-        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="新待办标题" />
+        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="新任务标题" />
         <button type="submit" className="ghost" disabled={!title.trim()}>
-          建卡
+          新建
         </button>
       </form>
-      <div className="board-columns">
-        {COLUMNS.map((column) => (
-          <section
-            key={column.id}
-            className="board-col"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              const id = event.dataTransfer.getData("text/todo-id");
-              const todo = todos.find((item) => item.id === id);
-              if (todo) void move(todo, column.id);
-            }}
-          >
-            <h2>
-              {column.label} <em>{todos.filter((item) => item.status === column.id).length}</em>
-            </h2>
-            {todos
-              .filter((item) => item.status === column.id)
-              .map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="dash-card board-card"
-                  draggable
-                  onDragStart={(event) => event.dataTransfer.setData("text/todo-id", item.id)}
-                  onClick={() => setOpenId(item.id)}
-                >
-                  <strong>{item.title}</strong>
-                  <em>{item.source === "handoff" ? "从对话流转" : item.priority}</em>
-                </button>
-              ))}
-          </section>
-        ))}
-      </div>
+
+      {view === "list" ? (
+        visible.length === 0 ? (
+          <div className="workbench-empty">
+            <strong>{todos.length === 0 ? "还没有任务" : "没有匹配的任务"}</strong>
+            <p>新建一张卡，或从对话里点「流转为待办」。</p>
+          </div>
+        ) : (
+          <ul className="task-list">
+            {visible.map((item) => {
+              const people = item.assigneeUserIds
+                .map((id) => memberById.get(id))
+                .filter((row): row is NonNullable<typeof row> => Boolean(row));
+              return (
+                <li key={item.id}>
+                  <button type="button" className="task-row" onClick={() => setOpenId(item.id)}>
+                    <span className="task-plus" aria-hidden="true">
+                      <IconPlus size={16} />
+                    </span>
+                    <span className="task-copy">
+                      <strong>{item.title}</strong>
+                      <span className="task-tags">
+                        <em>{sourceLabel(item.source)}</em>
+                        {item.runId ? <em>已关联对话</em> : null}
+                      </span>
+                    </span>
+                    <span className={`status-dot ${item.status}`} title={statusLabel(item.status)} />
+                    <span className="avatar-stack compact">
+                      {people.slice(0, 3).map((member) => (
+                        <span key={member.userId} className="avatar" title={member.email}>
+                          {initials(member.email)}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="task-ago">{formatRel(item.updatedAt)}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )
+      ) : (
+        <div className="board-columns">
+          {COLUMNS.map((column) => (
+            <section
+              key={column.id}
+              className="board-col"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                const id = event.dataTransfer.getData("text/todo-id");
+                const todo = todos.find((item) => item.id === id);
+                if (todo) void move(todo, column.id);
+              }}
+            >
+              <h2>
+                {column.label} <em>{todos.filter((item) => item.status === column.id).length}</em>
+              </h2>
+              {todos
+                .filter((item) => item.status === column.id)
+                .map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="dash-card board-card"
+                    draggable
+                    onDragStart={(event) => event.dataTransfer.setData("text/todo-id", item.id)}
+                    onClick={() => setOpenId(item.id)}
+                  >
+                    <strong>{item.title}</strong>
+                    <em>{sourceLabel(item.source)}</em>
+                  </button>
+                ))}
+            </section>
+          ))}
+        </div>
+      )}
+
       {open ? (
         <aside className="board-drawer">
-          <h2>{open.title}</h2>
+          <div className="workbench-row">
+            <h2>{open.title}</h2>
+            <span className={`status-pill ${open.status}`}>{statusLabel(open.status)}</span>
+          </div>
           <p className="hint">{open.description || "还没有描述"}</p>
+          {open.assigneeUserIds.length > 0 ? (
+            <p className="hint">
+              负责人{" "}
+              {open.assigneeUserIds
+                .map((id) => displayName(memberById.get(id)?.email ?? id))
+                .join("、")}
+            </p>
+          ) : null}
           {open.runId ? <p className="hint">已关联对话 {open.runId.slice(0, 8)}</p> : null}
-          <button type="button" className="dash-create" onClick={() => onStartChat(open.id, open.title)}>
-            在这条待办上开对话
-          </button>
-          <button type="button" className="ghost" onClick={() => setOpenId(null)}>
-            关闭
-          </button>
+          <div className="card-actions">
+            <button type="button" className="dash-create" onClick={() => onStartChat(open.id, open.title)}>
+              在这条任务上开对话
+            </button>
+            <button type="button" className="ghost" onClick={() => setOpenId(null)}>
+              关闭
+            </button>
+          </div>
         </aside>
       ) : null}
       {pauseFor ? (

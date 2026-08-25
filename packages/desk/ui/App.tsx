@@ -83,7 +83,7 @@ function workbenchTabForInbox(kind?: string): WorkbenchTab {
   if (kind === "mention") return "activity";
   if (kind === "todo_assigned") return "board";
   if (kind === "invite_pending") return "settings";
-  return "overview";
+  return "board";
 }
 
 function preview(text: string, n = 56): string {
@@ -177,7 +177,7 @@ export function App() {
   const [pendingTodo, setPendingTodo] = useState<{ id: string; title: string } | null>(null);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxRow[]>([]);
-  const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("overview");
+  const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("board");
   const [todoHits, setTodoHits] = useState<Array<{ id: string; title: string; meta: string; projectId: string }>>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
@@ -264,7 +264,7 @@ export function App() {
     setProjects(body.projects ?? []);
   }, []);
 
-  const openProject = useCallback(async (id: string, tab: WorkbenchTab = "overview") => {
+  const openProject = useCallback(async (id: string, tab: WorkbenchTab = "board") => {
     const response = await api(tokenRef.current, `/v1/projects/${id}`);
     if (!response.ok) return;
     const detail = await readJson<Project>(response);
@@ -488,23 +488,25 @@ export function App() {
     }
   };
 
-  const send = async () => {
-    const text = prompt.trim();
+  const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
+    const text = (draft ?? prompt).trim();
     if (!text || sending) return;
     const askPrefix = mode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
+    const startNew = opts?.asNew || !runId;
+    const boundTodo = opts && "todo" in opts ? opts.todo : pendingTodo;
     setSending(true);
-    setPrompt("");
+    if (!draft) setPrompt("");
     try {
-      if (!runId) {
+      if (startNew) {
         const created = await readJson<Run & { error?: string }>(
           await api(token, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
-              prompt: `${askPrefix}${pendingTodo ? `待办：${pendingTodo.title}\n\n` : ""}${text}`,
+              prompt: `${askPrefix}${boundTodo ? `待办：${boundTodo.title}\n\n` : ""}${text}`,
               model: selectedModel || undefined,
               source: "desk",
               projectId: activeProject?.id,
-              todoId: pendingTodo?.id,
+              todoId: boundTodo?.id,
               repoUrls:
                 target.kind === "desk" && folder
                   ? [folder]
@@ -705,7 +707,7 @@ export function App() {
       setProjectInstruction("");
       await refreshProjects();
       setActiveProject(body);
-      setWorkbenchTab("overview");
+      setWorkbenchTab("board");
       setInviteToken(null);
       setNav("projects");
       setProjectModal(false);
@@ -1100,13 +1102,16 @@ export function App() {
               initialTab={workbenchTab}
               onBack={() => {
                 setActiveProject(null);
-                setWorkbenchTab("overview");
+                setWorkbenchTab("board");
                 location.hash = "";
               }}
+              composing={sending}
+              targetKind={target.kind}
               onStartChat={(todo) => {
                 setPendingTodo(todo ?? null);
                 void newChat();
               }}
+              onCompose={(text) => void send(text, { asNew: true, todo: null })}
               onOpenRun={(id) => void openRun(id)}
               onProjectChange={(project) => {
                 setActiveProject(project);

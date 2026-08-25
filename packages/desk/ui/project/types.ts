@@ -1,10 +1,13 @@
 export type WorkbenchTab = "overview" | "chats" | "board" | "assets" | "activity" | "settings";
 
-export const WORKBENCH_TABS: Array<{ id: WorkbenchTab; label: string; soon?: boolean }> = [
-  { id: "overview", label: "概览" },
-  { id: "chats", label: "对话" },
-  { id: "board", label: "看板" },
-  { id: "assets", label: "资产" },
+export const WORKBENCH_TABS: Array<{ id: Exclude<WorkbenchTab, "overview" | "settings">; label: string }> = [
   { id: "activity", label: "动态" },
-  { id: "settings", label: "设置" },
+  { id: "board", label: "任务" },
+  { id: "chats", label: "对话" },
+  { id: "assets", label: "资产" },
 ];
+
+export function resolveWorkbenchTab(tab?: WorkbenchTab): WorkbenchTab {
+  if (tab === "overview") return "board";
+  return tab ?? "board";
+}
