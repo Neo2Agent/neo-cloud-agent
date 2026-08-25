@@ -5,6 +5,8 @@ export type RedisHotClient = {
   pSubscribe(pattern: string, onMessage: (message: string, channel: string) => void): Promise<() => Promise<void>>;
   xAdd(key: string, payload: string): Promise<void>;
   xRange(key: string): Promise<string[]>;
+  incrWithTtl(key: string, ttlMs: number): Promise<number>;
+  get(key: string): Promise<string | null>;
 };
 
 export function runChannel(runId: string): string {
@@ -17,7 +19,17 @@ export function runStreamKey(runId: string): string {
 
 export function createMemoryRedis(): RedisHotClient {
   const streams = new Map<string, string[]>();
+  const counters = new Map<string, { value: number; expireAt: number }>();
   const patterns: Array<{ pattern: RegExp; fn: (message: string, channel: string) => void }> = [];
+
+  function liveCounter(key: string): { value: number; expireAt: number } | undefined {
+    const row = counters.get(key);
+    if (!row || row.expireAt <= Date.now()) {
+      counters.delete(key);
+      return undefined;
+    }
+    return row;
+  }
 
   return {
     async publish(channel, message) {
@@ -45,6 +57,19 @@ export function createMemoryRedis(): RedisHotClient {
     },
     async xRange(key) {
       return streams.get(key) ?? [];
+    },
+    async incrWithTtl(key, ttlMs) {
+      const existing = liveCounter(key);
+      if (!existing) {
+        counters.set(key, { value: 1, expireAt: Date.now() + Math.max(1, ttlMs) });
+        return 1;
+      }
+      existing.value += 1;
+      return existing.value;
+    },
+    async get(key) {
+      const existing = liveCounter(key);
+      return existing ? String(existing.value) : null;
     },
   };
 }
@@ -77,6 +102,16 @@ export async function connectRedis(url: string): Promise<RedisHotClient> {
       return entries
         .map((item) => item.message.event)
         .filter((item): item is string => typeof item === "string");
+    },
+    async incrWithTtl(key, ttlMs) {
+      const count = await client.incr(key);
+      if (count === 1) {
+        await client.pExpire(key, Math.max(1, ttlMs));
+      }
+      return count;
+    },
+    async get(key) {
+      return client.get(key);
     },
   };
 }

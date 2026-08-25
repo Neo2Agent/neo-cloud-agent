@@ -378,6 +378,12 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       );
       return mapUser(result.rows[0]);
     },
+    async listUsers() {
+      const result = await query(
+        `SELECT id, email, password_hash, org_id, created_at FROM users ORDER BY created_at ASC`,
+      );
+      return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
+    },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);
     },

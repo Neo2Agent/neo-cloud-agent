@@ -2,6 +2,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { verifyRunToken } from "./auth.js";
 import { getConfig } from "./config.js";
 import { proxyChatCompletions, type ChatCompletionBody } from "./proxy.js";
+import {
+  acquireGatewayConcurrency,
+  consumeGatewayRateLimit,
+  gatewayRateLimitEnabled,
+  gatewayRateLimitHeaders,
+  type GatewayRateLimitDecision,
+} from "./rate-limit.js";
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -14,13 +21,23 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function send(res: ServerResponse, status: number, body: unknown): void {
+function send(res: ServerResponse, status: number, body: unknown, extraHeaders?: Record<string, string>): void {
   const json = JSON.stringify(body);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(json),
+    ...extraHeaders,
   });
   res.end(json);
+}
+
+function sendRateLimited(res: ServerResponse, decision: GatewayRateLimitDecision): void {
+  send(
+    res,
+    429,
+    { error: "rate_limited", policy: decision.policy, retryAfterMs: decision.retryAfterMs, limit: decision.limit },
+    gatewayRateLimitHeaders(decision),
+  );
 }
 
 function bearer(req: IncomingMessage): string | undefined {
@@ -72,6 +89,7 @@ export function createGatewayServer() {
           upstream: config.upstream,
           upstreamModel: config.upstreamModel,
           configured: config.configured,
+          rateLimit: { enabled: gatewayRateLimitEnabled() },
         });
         return;
       }
@@ -82,10 +100,36 @@ export function createGatewayServer() {
           send(res, 401, { error: "missing_run_jwt" });
           return;
         }
-        verifyRunToken(token);
-        const body = (await readJson(req)) as ChatCompletionBody;
-        const result = await proxyChatCompletions(body);
-        await writePayload(res, result.status, result.headers, result.payload);
+        const claims = verifyRunToken(token);
+        const runRate = consumeGatewayRateLimit("llm_run", claims.runId);
+        if (!runRate.ok) {
+          sendRateLimited(res, runRate);
+          return;
+        }
+        const orgRate = consumeGatewayRateLimit("llm_org", claims.orgId);
+        if (!orgRate.ok) {
+          sendRateLimited(res, orgRate);
+          return;
+        }
+        const runLease = acquireGatewayConcurrency("llm_inflight_run", claims.runId);
+        if (!runLease.ok) {
+          sendRateLimited(res, runLease);
+          return;
+        }
+        const orgLease = acquireGatewayConcurrency("llm_inflight_org", claims.orgId);
+        if (!orgLease.ok) {
+          runLease.release();
+          sendRateLimited(res, orgLease);
+          return;
+        }
+        try {
+          const body = (await readJson(req)) as ChatCompletionBody;
+          const result = await proxyChatCompletions(body);
+          await writePayload(res, result.status, result.headers, result.payload);
+        } finally {
+          runLease.release();
+          orgLease.release();
+        }
         return;
       }
 
