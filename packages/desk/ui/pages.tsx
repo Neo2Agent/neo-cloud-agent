@@ -340,27 +340,21 @@ export function ModelSettingsPage({
 
 export function AutomationsPage({
   items,
-  error,
-  busy,
   onCreate,
   onToggle,
   onOpenRun,
-  onRunNow,
 }: {
   items: Automation[];
-  error?: string;
-  busy?: boolean;
   onCreate: () => void;
   onToggle: (item: Automation) => void;
   onOpenRun: (id: string) => void;
-  onRunNow: (item: Automation) => void;
 }) {
   return (
     <Page>
       <header className="dash-head">
         <div>
           <h1>定时任务</h1>
-          <p>到点自动开一轮对话，也可以立刻复用已有任务。走同一控制面 /v1/automations。</p>
+          <p>到点自动开一轮对话，走同一控制面 /v1/automations。</p>
         </div>
         <button type="button" className="dash-create" onClick={onCreate}>
           <IconPlus size={16} />
@@ -368,7 +362,6 @@ export function AutomationsPage({
         </button>
       </header>
       <div className="page-body">
-        {error ? <p className="error">{error}</p> : null}
         {items.length === 0 ? (
           <button type="button" className="empty-copy empty-cta" onClick={onCreate}>
             还没有定时任务。点这里或右上角新建。
@@ -385,9 +378,6 @@ export function AutomationsPage({
                   </p>
                 </div>
                 <div className="card-actions">
-                  <button type="button" disabled={busy} onClick={() => onRunNow(item)}>
-                    立即运行
-                  </button>
                   {item.lastRunId ? (
                     <button type="button" onClick={() => onOpenRun(item.lastRunId!)}>
                       打开上次对话
@@ -623,7 +613,6 @@ export function ChatComposer({
   onComposerKey,
   home,
   mentions,
-  onPickCommand,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -640,7 +629,6 @@ export function ChatComposer({
   onComposerKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   home?: boolean;
   mentions?: ComposerMention[];
-  onPickCommand?: (item: ComposerMention) => void;
 }) {
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
@@ -655,11 +643,6 @@ export function ChatComposer({
 
   const pickMention = (item: ComposerMention) => {
     const idx = Math.max(prompt.lastIndexOf("@"), prompt.lastIndexOf("/"));
-    if (item.kind === "command" && onPickCommand) {
-      setPrompt(prompt.slice(0, Math.max(0, idx)).trimEnd());
-      onPickCommand(item);
-      return;
-    }
     const next = `${prompt.slice(0, Math.max(0, idx))}${item.insert} `;
     setPrompt(next);
     requestAnimationFrame(() => {

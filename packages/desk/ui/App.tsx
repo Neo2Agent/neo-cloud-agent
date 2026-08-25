@@ -8,7 +8,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
-import { matchAutomationCommand } from "../src/automation-command";
 import { isLoopbackOrigin } from "../src/ports";
 import { groupRailSessions } from "../src/rail";
 import {
@@ -476,38 +475,9 @@ export function App() {
     }
   };
 
-  const runAutomation = async (id: string) => {
-    if (sending) return;
-    setSending(true);
-    setAuthError("");
-    try {
-      const created = await readJson<Run & { error?: string }>(
-        await api(tokenRef.current, `/v1/automations/${id}/run`, {
-          method: "POST",
-          body: "{}",
-        }),
-      );
-      if (created.error || !created.id) throw new Error(created.error || "无法运行自动化");
-      setPrompt("");
-      setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
-      await refreshAutomations();
-      await openRun(created.id);
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "无法运行自动化");
-    } finally {
-      setSending(false);
-    }
-  };
-
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
     const text = (draft ?? prompt).trim();
     if (!text || sending) return;
-    const reused = matchAutomationCommand(text, automations);
-    if (reused) {
-      if (!draft) setPrompt("");
-      await runAutomation(reused.id);
-      return;
-    }
     const askPrefix = mode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     const startNew = opts?.asNew || !runId;
     const boundTodo = opts && "todo" in opts ? opts.todo : pendingTodo;
@@ -656,20 +626,10 @@ export function App() {
     }
     let cancelled = false;
     void (async () => {
-      const commands = automations
-        .filter((item) => !item.userId || item.userId === userId)
-        .map((item) => ({
-          kind: "command" as const,
-          id: item.id,
-          label: item.name,
-          insert: `/自动化 ${item.name}`,
-        }));
-      if (!current?.projectId) {
-        const artifactRes = current
-          ? await api(tokenRef.current, `/v1/runs/${current.id}/artifacts`)
-          : null;
+      if (current && !current.projectId) {
+        const artifactRes = await api(tokenRef.current, `/v1/runs/${current.id}/artifacts`);
         if (cancelled) return;
-        const artifacts = artifactRes?.ok
+        const artifacts = artifactRes.ok
           ? ((await readJson<{ artifacts?: Array<{ name: string }> }>(artifactRes)).artifacts ?? [])
           : [];
         setMentions([
@@ -679,11 +639,16 @@ export function App() {
             label: item.name,
             insert: `@文件 ${item.name}`,
           })),
-          ...commands,
+          ...automations.map((item) => ({
+            kind: "command" as const,
+            id: item.id,
+            label: item.name,
+            insert: `/自动化 ${item.name}`,
+          })),
         ]);
         return;
       }
-      if (!activeProject || current.projectId !== activeProject.id) {
+      if (!activeProject || current?.projectId !== activeProject.id) {
         setMentions([]);
         return;
       }
@@ -716,7 +681,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeProject, authed, automations, current, userId]);
+  }, [activeProject, authed, automations, current]);
 
   useEffect(() => {
     if (!searchOpen || !authed) return;
@@ -1122,15 +1087,12 @@ export function App() {
         {nav === "automations" ? (
           <AutomationsPage
             items={automations}
-            error={authError || undefined}
-            busy={sending}
             onCreate={() => {
               setAuthError("");
               setAutoModal(true);
             }}
             onToggle={(item) => void toggleAutomation(item)}
             onOpenRun={(id) => void openRun(id)}
-            onRunNow={(item) => void runAutomation(item.id)}
           />
         ) : nav === "projects" ? (
           inviteToken ? (
@@ -1324,7 +1286,7 @@ export function App() {
                     ? "今天帮你做些什么？@ 引用资产文件或项目待办"
                     : current
                       ? "今天帮你做些什么？@ 引用对话文件，/ 调用已有自动化"
-                      : "今天帮你做些什么？/ 调用已有自动化"
+                      : "今天帮你做些什么？"
                 }
                 sending={sending}
                 models={modelNames}
@@ -1343,8 +1305,7 @@ export function App() {
                 taRef={taRef}
                 onComposerKey={onComposerKey}
                 home={!current}
-                mentions={mentions}
-                onPickCommand={(item) => void runAutomation(item.id)}
+                mentions={current ? mentions : []}
               />
               {current ? (
                 <p className="composer-note">

@@ -772,8 +772,6 @@ button:disabled {
 
 .card-actions {
   display: flex;
-  flex: none;
-  flex-wrap: wrap;
   gap: 8px;
 }
 

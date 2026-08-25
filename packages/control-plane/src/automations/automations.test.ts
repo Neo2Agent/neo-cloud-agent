@@ -16,8 +16,8 @@ const { createFileAccountStore } = await import("../accounts/file.js");
 const { setAccountStore } = await import("../accounts/store.js");
 setAccountStore(createFileAccountStore(runsDir), "file");
 
-const { createAutomation, dueAutomations, getAutomation, listAutomations, replaceAutomations, updateAutomation } = await import("./store.js");
-const { AutomationRunError, fireDueAutomations, runAutomationNow } = await import("./runner.js");
+const { createAutomation, dueAutomations, listAutomations, replaceAutomations, updateAutomation } = await import("./store.js");
+const { fireDueAutomations } = await import("./runner.js");
 const { getRun } = await import("../orchestrator/orchestrator.js");
 const { actorCanAccessRun } = await import("../security/actor.js");
 const { claimOrphanAutomations } = await import("./claim.js");
@@ -93,59 +93,6 @@ test("fireDueAutomations owns the chat as the automation creator", async () => {
       run!,
     ),
     true,
-  );
-});
-
-test("runAutomationNow starts a chat without moving the next tick", async () => {
-  const item = createAutomation(
-    {
-      name: "reuse-now",
-      prompt: "复用这条自动化立刻开对话",
-      schedule: { kind: "every", minutes: 60 },
-      repoUrls: ["fixtures/toy-repo"],
-    },
-    { userId: "user_admin", orgId: "org_local" },
-  );
-  const scheduled = item.nextRunAt;
-  const run = await runAutomationNow(item.id, { userId: "user_admin", orgId: "org_local" });
-  assert.equal(run.source, "automation");
-  assert.equal(run.prompt, "复用这条自动化立刻开对话");
-  assert.equal(run.userId, "user_admin");
-  assert.deepEqual(run.repoUrls, ["fixtures/toy-repo"]);
-  const later = getAutomation(item.id);
-  assert.equal(later?.lastRunId, run.id);
-  assert.equal(later?.nextRunAt, scheduled);
-});
-
-test("runAutomationNow rejects missing, foreign, and still-running automations", async () => {
-  await assert.rejects(
-    () => runAutomationNow("auto_missing", { userId: "user_admin", orgId: "org_local" }),
-    (error: unknown) => error instanceof AutomationRunError && error.status === 404,
-  );
-  const owned = createAutomation(
-    {
-      name: "owned-only",
-      prompt: "别人不能点",
-      schedule: { kind: "every", minutes: 60 },
-    },
-    { userId: "user_admin", orgId: "org_local" },
-  );
-  await assert.rejects(
-    () => runAutomationNow(owned.id, { userId: "user_ping", orgId: "org_local" }),
-    (error: unknown) => error instanceof AutomationRunError && error.status === 403,
-  );
-  const busy = createAutomation(
-    {
-      name: "busy",
-      prompt: "上一轮还在跑",
-      schedule: { kind: "every", minutes: 60 },
-    },
-    { userId: "user_admin", orgId: "org_local" },
-  );
-  await runAutomationNow(busy.id, { userId: "user_admin", orgId: "org_local" });
-  await assert.rejects(
-    () => runAutomationNow(busy.id, { userId: "user_admin", orgId: "org_local" }),
-    (error: unknown) => error instanceof AutomationRunError && error.status === 409,
   );
 });
 
