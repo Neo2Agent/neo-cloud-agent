@@ -26,6 +26,12 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 - `pnpm test:e2e` needs an already-running control-plane on `:8080`. Prefer `pnpm test` or `pnpm neo` against that server.
 - Production-shaped hosts use `WORKER_RUNTIME=vm` (loop slots, no Docker/KVM). Idle slots persist the workspace then unmount after `WORKER_IDLE_RELEASE_MS`.
 
+### Tencent Lighthouse (production host)
+- Operate the Beijing app host via `.cursor/skills/tencent-lighthouse-deploy/SKILL.md`. New Cloud Agent chats do **not** keep the previous `~/.ssh`.
+- If Cursor environment Secrets are set, run `bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh` then `ssh lighthouse`. Never print the secret values.
+- Runtime Secrets (environment [6f60409c-9d84-11f1-a7d1-d6b4613131ce](https://cursor.com/dashboard/cloud-agents/environments/e/6f60409c-9d84-11f1-a7d1-d6b4613131ce)): `NEO_LIGHTHOUSE_SSH_KEY` (operator-generated SSH **private** key, not a Tencent console ID), `TENCENTCLOUD_SECRET_ID`, `TENCENTCLOUD_SECRET_KEY`. Optional env var: `TENCENTCLOUD_REGION=ap-beijing`.
+- Secrets added mid-run are invisible until a **new** Cloud Agent starts on that environment. Do not reboot the Lighthouse or console-bind SSH keys. ICP 备案 / WeChat login have no API.
+
 ### Env
 - The repo root `.env` (gitignored) is auto-loaded by both control-plane and gateway; existing environment variables take precedence. See `.env.example` for all keys.
 

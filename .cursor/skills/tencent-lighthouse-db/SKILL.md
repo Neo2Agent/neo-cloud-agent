@@ -38,6 +38,7 @@ Host lighthouse-db
 - 用户：`ubuntu`（也有 `lighthouse` / `root`，默认用 `ubuntu`）
 - 密钥注释：`neo-db-deploy`
 - 首次装公钥用控制台 **TAT**，不要「绑定密钥」（会重启）。步骤见 [reference.md](reference.md)。
+- 应用机 Cloud Agent Secret 是 `NEO_LIGHTHOUSE_SSH_KEY`（`ssh lighthouse`）。**不要**拿那把钥匙连这台库机。
 
 ## 硬约束
 
