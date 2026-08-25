@@ -107,7 +107,8 @@ curl -sS --resolve neorun.cloud:443:62.234.211.200 https://neorun.cloud/ | grep 
 
 ## 给 Cloud Agent 的注意点
 
-- 未登录先给微信码，扫完再改解析。
+- 有 `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` 时优先 `tccli dnspod`（先跑 deploy skill 的 `bootstrap-agent-access.sh`），不要一上来就扫码。
+- 未登录且没有云 API 密钥时先给微信码，扫完再改解析。
 - 只动 DNS 和文档；不要重启实例、不要 TAT 乱改 Caddy，除非用户明确要上 HTTPS。
 - 验收只报解析 IP、HTTP 状态、页面标题，不报账号里的证书私钥或 `.env`。
 - HTTPS 用 Caddy + Let's Encrypt，**不花钱**。现网已经开着。不要买腾讯云付费证书，不要点轻量一键 HTTPS。细节在 `docs/production-domain.md`。

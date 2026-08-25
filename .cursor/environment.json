@@ -1,5 +1,5 @@
 {
   "name": "neo-cloud-agent",
   "install": "bash .cursor/install-docker.sh",
-  "start": "bash .cursor/start-docker.sh"
+  "start": "bash .cursor/start-docker.sh && bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh"
 }
