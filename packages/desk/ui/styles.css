@@ -1589,10 +1589,12 @@ button:disabled {
   padding: 0 24px 6px;
 }
 
-.chat-feed {
+.chat-feed,
+.feed.chat-feed {
   padding: 8px 24px 20px;
 }
 
+.feed.chat-feed > *,
 .chat-feed > * {
   width: 100%;
   max-width: none;
@@ -1763,6 +1765,10 @@ button:disabled {
   padding: 8px 0 20px;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.feed.chat-feed {
+  padding: 8px 24px 20px;
 }
 
 .feed::-webkit-scrollbar {
