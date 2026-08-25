@@ -297,7 +297,9 @@ button:disabled {
 
 .chat-row {
   display: flex;
+  flex-direction: row;
   align-items: center;
+  justify-content: flex-start;
   gap: 7px;
   width: 100%;
   padding: 6px 8px 6px 6px;
@@ -1586,23 +1588,37 @@ button:disabled {
 }
 
 .chat-feed {
-  padding-top: 4px;
+  padding: 8px 28px 20px;
 }
 
-.chat-row {
+.chat-feed > * {
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.msg-row {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
+  width: 100%;
 }
 
-.chat-row.user {
+.msg-row.assistant {
+  max-width: 760px;
+}
+
+.msg-row.user {
   flex-direction: row;
   justify-content: flex-end;
   align-items: flex-start;
   gap: 10px;
+  max-width: none;
 }
 
-.chat-row.user .chat-col {
+.msg-row.user .chat-col {
   max-width: min(560px, 82%);
 }
 
@@ -1639,11 +1655,33 @@ button:disabled {
 }
 
 .composer-note {
-  width: min(var(--transcript-max), calc(100% - var(--transcript-gutter)));
-  margin: 8px auto 0;
-  text-align: center;
+  margin: 8px 28px 0;
+  text-align: left;
   color: var(--muted);
   font-size: 11.5px;
+}
+
+.chat-page:not(:has(.home-wrap)) .composer.composer-stack {
+  margin-left: 28px;
+  margin-right: 28px;
+}
+
+.chat-feed .status-line {
+  display: flex;
+  justify-content: flex-start;
+  margin: 12px 0;
+}
+
+.chat-feed .status-line span {
+  display: none;
+}
+
+.chat-feed .thought {
+  margin: 10px 0;
+}
+
+.chat-feed .turn-progress {
+  margin-left: 0;
 }
 
 .mention-menu {
@@ -1700,6 +1738,13 @@ button:disabled {
   width: min(var(--transcript-max), calc(100% - var(--transcript-gutter)));
   margin-left: auto;
   margin-right: auto;
+}
+
+.feed.chat-feed > * {
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .empty-copy {

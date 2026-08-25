@@ -1280,7 +1280,7 @@ export function App() {
                 ) : null}
                 <div className="feed chat-feed" ref={feedRef}>
                   {!visible.some((message) => message.role === "user") ? (
-                    <article className="chat-row user">
+                    <article className="msg-row user">
                       <div className="chat-col">
                         <div className="chat-bubble user">{current.prompt}</div>
                       </div>
@@ -1290,7 +1290,7 @@ export function App() {
                   {visible.map((message, messageIndex) => {
                     if (message.role === "user") {
                       return (
-                        <article key={message.id} className="chat-row user">
+                        <article key={message.id} className="msg-row user">
                           <div className="chat-col">
                             <div className="chat-bubble user">{message.text || current.prompt}</div>
                             {message.images?.length ? (
@@ -1351,7 +1351,7 @@ export function App() {
                     );
                     if (groups.length === 0) {
                       return message.text ? (
-                        <article key={message.id} className="chat-row assistant">
+                        <article key={message.id} className="msg-row assistant">
                           {brand}
                           <div className="chat-bubble assistant">
                             <div className="assistant-text">{message.text}</div>
@@ -1361,7 +1361,7 @@ export function App() {
                       ) : null;
                     }
                     return (
-                      <div key={message.id} className="chat-row assistant">
+                      <div key={message.id} className="msg-row assistant">
                         {brand}
                         {groups.map((group, index) => {
                           if (group.type === "tools") {

@@ -6,7 +6,6 @@ import {
   COMPOSER_MAX_PX,
   composerMaxWidth,
   composerTextareaHeight,
-  transcriptColumnWidth,
 } from "../src/composer-size";
 import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
 
@@ -641,7 +640,7 @@ export function ChatComposer({
     if (!page) return;
     const apply = () => {
       const width = page.clientWidth;
-      setMaxWidth(home ? composerMaxWidth(width) : transcriptColumnWidth(width));
+      setMaxWidth(composerMaxWidth(width));
     };
     apply();
     const observer = new ResizeObserver(apply);
