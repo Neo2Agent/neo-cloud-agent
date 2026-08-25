@@ -10,6 +10,7 @@ WorkingDirectory=/home/ubuntu/neo-cloud-agent
 EnvironmentFile=/home/ubuntu/neo-cloud-agent/.env
 Environment=PATH=/usr/bin:/usr/local/bin
 Environment=ADMIN_API_PORT=8090
+Environment=ADMIN_API_HOST=127.0.0.1
 # Same host as chat; do not reuse neo_session / Path=/.
 Environment=SESSION_COOKIE_NAME=neo_admin_session
 Environment=SESSION_COOKIE_PATH=/admin
