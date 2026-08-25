@@ -636,6 +636,10 @@ export function ChatComposer({
   };
 
   useLayoutEffect(() => {
+    if (!home) {
+      setMaxWidth(COMPOSER_MAX_PX);
+      return;
+    }
     const page = boxRef.current?.closest(".chat-page") ?? boxRef.current?.closest(".stage") ?? boxRef.current?.closest(".composer-wrap");
     if (!page) return;
     const apply = () => {
@@ -656,7 +660,11 @@ export function ChatComposer({
   }, [home, prompt, taRef]);
 
   return (
-    <div ref={boxRef} className={`composer composer-stack${home ? " home" : ""}`} style={{ width: "100%", maxWidth }}>
+    <div
+      ref={boxRef}
+      className={`composer composer-stack${home ? " home" : " follow"}`}
+      style={home ? { width: "100%", maxWidth } : undefined}
+    >
       <textarea
         ref={taRef}
         value={prompt}

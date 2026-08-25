@@ -1345,8 +1345,13 @@ export function App() {
                     ) : null;
                     const brand = (
                       <div className="chat-brand">
-                        <strong>Neo</strong>
-                        <span>{live ? activity || "进行中" : `已完成${formatRel(message.createdAt) ? ` ${formatRel(message.createdAt)}` : ""}`}</span>
+                        <span className="avatar neo-avatar" aria-hidden="true">
+                          N
+                        </span>
+                        <div className="chat-brand-copy">
+                          <strong>Neo</strong>
+                          <span>{live ? activity || "进行中" : `已完成${formatRel(message.createdAt) ? ` ${formatRel(message.createdAt)}` : ""}`}</span>
+                        </div>
                       </div>
                     );
                     if (groups.length === 0) {

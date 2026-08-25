@@ -295,6 +295,7 @@ button:disabled {
   transform: rotate(90deg);
 }
 
+.repo-group .chat-row,
 .chat-row {
   display: flex;
   flex-direction: row;
@@ -338,6 +339,7 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  text-align: left;
 }
 
 .chat-meta {
@@ -1588,7 +1590,7 @@ button:disabled {
 }
 
 .chat-feed {
-  padding: 8px 28px 20px;
+  padding: 8px 24px 20px;
 }
 
 .chat-feed > * {
@@ -1601,13 +1603,16 @@ button:disabled {
 .msg-row {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 8px;
   width: 100%;
+  max-width: none;
+  text-align: left;
 }
 
 .msg-row.assistant {
-  max-width: 760px;
+  align-items: stretch;
+  max-width: none;
 }
 
 .msg-row.user {
@@ -1636,17 +1641,37 @@ button:disabled {
 }
 
 .chat-bubble.assistant {
+  width: 100%;
   padding: 2px 0 0;
   background: transparent;
   border-radius: 0;
+  text-align: left;
 }
 
 .chat-brand {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
   color: var(--muted);
   font-size: 12.5px;
+  text-align: left;
+}
+
+.neo-avatar {
+  width: 26px;
+  height: 26px;
+  background: #1a1a18;
+  color: #fff;
+  font-size: 11px;
+}
+
+.chat-brand-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 
 .chat-brand strong {
@@ -1655,15 +1680,27 @@ button:disabled {
 }
 
 .composer-note {
-  margin: 8px 28px 0;
+  margin: 8px 0 0;
   text-align: left;
   color: var(--muted);
   font-size: 11.5px;
 }
 
-.chat-page:not(:has(.home-wrap)) .composer.composer-stack {
-  margin-left: 28px;
-  margin-right: 28px;
+.chat-page:not(:has(.home-wrap)) .composer-wrap {
+  padding: 8px 24px 16px;
+}
+
+.chat-page:not(:has(.home-wrap)) .composer.composer-stack,
+.composer.composer-stack.follow {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+}
+
+.chat-page:not(:has(.home-wrap)) .chips {
+  justify-content: flex-start;
+  margin: 0 0 8px;
 }
 
 .chat-feed .status-line {
@@ -1917,6 +1954,7 @@ button:disabled {
 .assistant-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 2px;
   margin-top: 10px;
   color: var(--muted);
