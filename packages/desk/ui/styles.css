@@ -1521,6 +1521,14 @@ button:disabled {
   letter-spacing: -0.02em;
 }
 
+.project-chat-shell,
+.personal-chat-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .chat-head {
   display: flex;
   align-items: center;
@@ -1528,6 +1536,37 @@ button:disabled {
   gap: 12px;
   flex: none;
   padding: 12px 24px 8px;
+}
+
+.personal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: none;
+  padding: 16px 24px 10px;
+}
+
+.personal-head h1 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.personal-run-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 24px 8px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .chat-crumb {

@@ -572,14 +572,29 @@ export function ContextBar({
   );
 }
 
-export type ComposerMention = { kind: "asset" | "todo"; id: string; label: string; insert: string };
+export type ComposerMention = {
+  kind: "asset" | "todo" | "file" | "command";
+  id: string;
+  label: string;
+  insert: string;
+};
 
-function mentionQuery(text: string): string | null {
+export function mentionTrigger(text: string): { trigger: "@" | "/"; query: string } | null {
   const at = text.lastIndexOf("@");
-  if (at < 0) return null;
-  const after = text.slice(at + 1);
+  const slash = text.lastIndexOf("/");
+  const idx = Math.max(at, slash);
+  if (idx < 0) return null;
+  if (idx > 0 && !/\s/.test(text[idx - 1]!)) return null;
+  const after = text.slice(idx + 1);
   if (after.includes("\n") || after.includes(" ")) return null;
-  return after;
+  return { trigger: text[idx] as "@" | "/", query: after };
+}
+
+function mentionKindLabel(kind: ComposerMention["kind"]): string {
+  if (kind === "asset") return "资产";
+  if (kind === "todo") return "待办";
+  if (kind === "file") return "文件";
+  return "自动化";
 }
 
 export function ChatComposer({
@@ -618,16 +633,17 @@ export function ChatComposer({
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
   const [maxWidth, setMaxWidth] = useState(COMPOSER_MAX_PX);
-  const typed = mentionQuery(prompt);
+  const typed = mentionTrigger(prompt);
   const mentionHits = (mentions ?? []).filter((item) => {
     if (typed === null) return false;
-    const q = typed.toLowerCase();
+    if (typed.trigger === "/" ? item.kind !== "command" : item.kind === "command") return false;
+    const q = typed.query.toLowerCase();
     return !q || item.label.toLowerCase().includes(q) || item.kind.includes(q);
   }).slice(0, 8);
 
   const pickMention = (item: ComposerMention) => {
-    const at = prompt.lastIndexOf("@");
-    const next = `${prompt.slice(0, at)}${item.insert} `;
+    const idx = Math.max(prompt.lastIndexOf("@"), prompt.lastIndexOf("/"));
+    const next = `${prompt.slice(0, Math.max(0, idx))}${item.insert} `;
     setPrompt(next);
     requestAnimationFrame(() => {
       const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
@@ -673,7 +689,7 @@ export function ChatComposer({
         onKeyDown={(event) => {
           if (event.key === "Escape" && mentionHits.length > 0) {
             event.preventDefault();
-            setPrompt(prompt.replace(/@[^\s@]*$/, ""));
+            setPrompt(prompt.replace(/[@/][^\s@/]*$/, ""));
             return;
           }
           if (event.key === "Enter" && !event.shiftKey && mentionHits[0] && typed !== null) {
@@ -686,10 +702,10 @@ export function ChatComposer({
         rows={1}
       />
       {mentionHits.length > 0 ? (
-        <div className="mention-menu" role="listbox" aria-label="引用项目内容">
+        <div className="mention-menu" role="listbox" aria-label={typed?.trigger === "/" ? "调用已有自动化" : "引用文件或项目内容"}>
           {mentionHits.map((item) => (
             <button key={`${item.kind}-${item.id}`} type="button" onClick={() => pickMention(item)}>
-              <em>{item.kind === "asset" ? "资产" : "待办"}</em>
+              <em>{mentionKindLabel(item.kind)}</em>
               <span>{item.label}</span>
             </button>
           ))}

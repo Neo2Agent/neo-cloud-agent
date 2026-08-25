@@ -30,7 +30,7 @@ export function ChatHeader({
   onRunChange: (run: Run) => void;
 }) {
   const cloud = run.executionTarget?.loop !== "desk";
-  const canInvite = Boolean(run.projectId && cloud);
+  const canInvite = cloud;
   const members = project?.members ?? [];
   const others = members.filter(
     (item) => item.userId !== userId && !(run.collaborators ?? []).some((row) => row.userId === item.userId),
@@ -63,24 +63,15 @@ export function ChatHeader({
 
   return (
     <header className="chat-head">
-      <nav className="chat-crumb" aria-label="对话位置">
-        {project ? (
-          <>
-            <button type="button" className="crumb-link" onClick={onOpenProject}>
-              项目
-            </button>
-            <span aria-hidden="true">/</span>
-            <button type="button" className="crumb-link" onClick={onOpenProject}>
-              {project.name}
-            </button>
-            <span aria-hidden="true">/</span>
-          </>
-        ) : (
-          <>
-            <span>对话</span>
-            <span aria-hidden="true">/</span>
-          </>
-        )}
+      <nav className="chat-crumb" aria-label="项目对话位置">
+        <button type="button" className="crumb-link" onClick={onOpenProject}>
+          项目
+        </button>
+        <span aria-hidden="true">/</span>
+        <button type="button" className="crumb-link" onClick={onOpenProject}>
+          {project?.name ?? "…"}
+        </button>
+        <span aria-hidden="true">/</span>
         <strong>{title}</strong>
       </nav>
       <div className="chat-head-actions">
@@ -125,17 +116,15 @@ export function ChatHeader({
             ) : null}
           </div>
         ) : null}
-        {run.projectId ? (
-          <button
-            type="button"
-            className={`icon-btn${toolsOpen ? " on" : ""}`}
-            aria-label="对话工具"
-            aria-pressed={toolsOpen}
-            onClick={onToggleTools}
-          >
-            <SidebarGlyph />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className={`icon-btn${toolsOpen ? " on" : ""}`}
+          aria-label="对话工具"
+          aria-pressed={toolsOpen}
+          onClick={onToggleTools}
+        >
+          <SidebarGlyph />
+        </button>
       </div>
     </header>
   );
