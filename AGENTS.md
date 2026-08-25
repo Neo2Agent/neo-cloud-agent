@@ -29,6 +29,7 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 ### Tencent Lighthouse (production host)
 - Operate the Beijing app host via `.cursor/skills/tencent-lighthouse-deploy/SKILL.md`. New Cloud Agent chats do **not** keep the previous `~/.ssh`.
 - If Cursor environment Secrets are set, run `bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh` then `ssh lighthouse`. Never print the secret values.
+- Daily ship: `bash .cursor/skills/tencent-lighthouse-deploy/deploy.sh` (or `pnpm deploy:lighthouse`). Incremental; do not hand-roll tar. `--dry-run` prints the plan only.
 - Runtime Secrets (environment [6f60409c-9d84-11f1-a7d1-d6b4613131ce](https://cursor.com/dashboard/cloud-agents/environments/e/6f60409c-9d84-11f1-a7d1-d6b4613131ce)): `NEO_LIGHTHOUSE_SSH_KEY_B64` (base64 of the operator-generated SSH **private** key file, not a Tencent console ID), plus Tencent Cloud API SecretId/SecretKey. Optional env var: `TENCENTCLOUD_REGION=ap-beijing`.
 - Secrets added mid-run are invisible until a **new** Cloud Agent starts on that environment. Do not reboot the Lighthouse or console-bind SSH keys. ICP 备案 / WeChat login have no API.
 

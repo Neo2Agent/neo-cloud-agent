@@ -134,7 +134,7 @@ sudo systemctl reload caddy
 - 登录用户 `ubuntu`；部署公钥注释 `neo-cloud-agent-deploy`
 - 不要再选应用模板重装
 - 装软件：Node 22、pnpm 10、`apt install caddy e2fsprogs`；不要装 Docker / 爱马仕
-- 覆盖源码后必须 `pnpm --filter @neo-cloud-agent/web build`，控制面只跑得起来 `packages/web/dist`
+- 日常发版用 [deploy.sh](deploy.sh)，不要手搓全量 tar。覆盖源码后对话页必须有 `packages/web/dist`，管理台必须有 `packages/admin-web/dist`
 
 ## 验收命令
 

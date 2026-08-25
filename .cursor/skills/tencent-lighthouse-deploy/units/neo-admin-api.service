@@ -18,6 +18,7 @@ Environment=SESSION_COOKIE_PATH=/admin
 ExecStart=/usr/local/bin/node --import tsx packages/admin-api/src/index.ts
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=15
 KillMode=process
 
 [Install]

@@ -84,36 +84,23 @@ tccli lighthouse DescribeInstances --region ap-beijing --InstanceIds '["lhins-b0
 3. **不要读、打印、提交** `/home/ubuntu/neo-cloud-agent/.env` 或 `.neo/llm-upstream.env`。只改键名，不回传值。
 4. **不要把 Cloud Agent 的 GitHub token 拷到这台机。**
 5. **不要再装爱马仕 / OpenClaw / clawhub / qwen-code，也不要选应用模板重装。**
-6. 轻量访问 **GitHub 443 经常超时**（DNS 能解析到 `20.205.243.166`）。通了再用 `git pull`；不通就从能访问 GitHub 的机器 **tar/scp 覆盖源码**。覆盖后在机上 `pnpm --filter @neo-cloud-agent/web build`。
+6. 轻量访问 **GitHub 443 经常超时**（DNS 能解析到 `20.205.243.166`）。通了再用 `git pull`；不通就从能访问 GitHub 的机器跑 [deploy.sh](deploy.sh)（增量拷 + 本机构建）。不要在轻量上重试 `git pull` 干等。
 7. **MySQL / Redis 不在这台机。** 不要在这里 `docker compose` 库，也不要重启 `101.42.105.230`。
 
 ## 日常更新（已有 systemd）
 
-在能访问 GitHub 的机器上先 push，再同步到轻量。
-
-### A. GitHub 通
+在能访问 GitHub 的机器上先 checkout / push，再**一条命令**发到轻量。不要手搓 tar，也不要在轻量上 `git pull` 干等（GitHub 443 经常超时，现网目录也没有 `.git`）。
 
 ```bash
-ssh lighthouse 'cd /home/ubuntu/neo-cloud-agent && git fetch origin <branch> && git checkout <branch> && git pull --ff-only origin <branch> && sudo systemctl restart neo-llm-gateway neo-control-plane'
+bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh   # 新对话只需一次
+bash .cursor/skills/tencent-lighthouse-deploy/deploy.sh                   # 或 pnpm deploy:lighthouse
 ```
 
-先测：`ssh lighthouse 'curl -sS --connect-timeout 5 --max-time 8 -o /dev/null -w "%{http_code}\n" https://github.com/'`  
-`000` / timeout 就走 B。
+[deploy.sh](deploy.sh) 会对比现网 `.deploy-revision`，只拷变更，按路径决定要不要 `pnpm install` / 构建对话页和管理台 / 重启哪个 unit，然后等到 `/health` ok。前端默认在**本机**构建再带上 `dist`。只改管理台静态资源时**不重启**控制面。
 
-### B. GitHub 不通（常见）
+常用参数：`--dry-run` 只看计划；`--full` 全量覆盖（仍跳过 `.env` / `.neo` / `node_modules`）；`--remote-build` 改在轻量上 build；`--restart` 强制重启三个应用 unit。
 
-不要在轻量上重试 `git pull` 干等。从 **已经 checkout 好的仓库** 打包，排除密钥和运行时数据：
-
-```bash
-tar -C /path/to/neo-cloud-agent \
-  --exclude=node_modules --exclude=.git \
-  --exclude=.neo/runs --exclude=.neo/vms \
-  --exclude=.neo/llm-upstream.env --exclude=.env --exclude=dist \
-  -czf - . \
-| ssh lighthouse 'tar -C /home/ubuntu/neo-cloud-agent -xzf - && sudo systemctl restart neo-llm-gateway neo-control-plane'
-```
-
-`pnpm-lock.yaml` 变了再在轻量上 `cd /home/ubuntu/neo-cloud-agent && pnpm install`（这台机 Node 够新，不必 `PNPM_IGNORE_ENGINE`）。覆盖管理台后在机上 `pnpm build:web` 和 `pnpm build:admin`（生产资源用相对 `./`，同一份 dist 能挂在 `/admin/` 也能直接开 `:8090`），再装 [units/neo-admin-api.service](units/neo-admin-api.service)。8090 只听本机，不要开防火墙。
+手搓兜底（脚本坏了才用）：先测 `ssh lighthouse 'curl -sS --connect-timeout 5 --max-time 8 -o /dev/null -w "%{http_code}\n" https://github.com/'`。通了再 `git pull`；`000` / timeout 就 tar 覆盖，排除 `node_modules` `.git` `.neo` `.env` `dist`，然后按需 `pnpm install` / `pnpm build:web` / `pnpm build:admin`，只重启有改动的 unit。8090 只听本机，不要开防火墙。
 
 ### 重启后验收
 
@@ -197,7 +184,7 @@ ssh lighthouse 'journalctl -u neo-control-plane -u neo-llm-gateway -u neo-admin-
 
 - 新对话先跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)。它读 `NEO_LIGHTHOUSE_SSH_KEY_B64`（私钥文件的单行 base64），写成 `~/.ssh/neo_lighthouse`。SSH 目标就是 `lighthouse`。
 - 连不上先看 Secret 是否注入；公钥不在就 TAT 追加，不要重启、不要绑密钥。
-- 同步代码默认用 tar，不要假设轻量能拉 GitHub。
+- 同步代码用 [deploy.sh](deploy.sh)，不要假设轻量能拉 GitHub，也不要手搓全量 tar。
 - 验收只报 `ok` / `configured` / `workerRuntime` / 槽位数字，不报密钥。
-- 改完代码照常 commit、push，再同步轻量并重启两个 unit。
+- 改完代码照常 commit、push，再 `bash .cursor/skills/tencent-lighthouse-deploy/deploy.sh`。脚本自己决定重启哪个 unit。
 - 官方 `tccli` / SDK 只管云资源（实例、防火墙、TAT、DNS）。发版仍是 SSH + systemd，见上文「日常更新」。
