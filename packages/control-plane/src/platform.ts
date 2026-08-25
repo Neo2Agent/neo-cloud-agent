@@ -9,6 +9,8 @@ import { listProjects, replaceProjects } from "./projects/store.js";
 import { setProjectPersistHooks } from "./projects/persist-hooks.js";
 import { listDesks, replaceDesks } from "./desks/store.js";
 import { setDeskPersistHooks } from "./desks/persist-hooks.js";
+import { listStoredDevices, replaceDevices } from "./devices/store.js";
+import { setDevicePersistHooks } from "./devices/persist-hooks.js";
 import { listEnvironments, upsertEnvironment } from "./env/store.js";
 import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
 import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
@@ -58,6 +60,7 @@ export function resetPlatformForTests(): void {
   setAutomationPersistHooks({});
   setProjectPersistHooks({});
   setDeskPersistHooks({});
+  setDevicePersistHooks({});
   attachHotBus(null);
 }
 
@@ -99,6 +102,11 @@ async function doStart(): Promise<void> {
         void mirrorDesks(metadata, items).catch((error) => console.error("metadata saveDesk failed", error));
       },
     });
+    setDevicePersistHooks({
+      onWrite: (items) => {
+        void mirrorDevices(metadata, items).catch((error) => console.error("metadata saveDevice failed", error));
+      },
+    });
     setEnvPersistHooks({
       onEnvironment: (env) => {
         void metadata?.saveEnvironment(env).catch((error) => console.error("metadata saveEnvironment failed", error));
@@ -112,6 +120,7 @@ async function doStart(): Promise<void> {
     await hydrateAutomationsFromStore(metadata);
     await hydrateProjectsFromStore(metadata);
     await hydrateDesksFromStore(metadata);
+    await hydrateDevicesFromStore(metadata);
     reloadPersistedState();
     console.log(`control-plane metadata store: ${metadataKind}`);
   }
@@ -203,6 +212,36 @@ async function hydrateDesksFromStore(store: MetadataStore): Promise<void> {
   const remote = await store.loadDesks();
   if (remote.length > 0) {
     replaceDesks(remote, { mirror: false });
+  }
+}
+
+async function hydrateDevicesFromStore(store: MetadataStore): Promise<void> {
+  const local = listStoredDevices();
+  if (local.length > 0) {
+    for (const item of local) {
+      await store.saveDevice(item);
+    }
+    return;
+  }
+  const remote = await store.loadDevices();
+  if (remote.length > 0) {
+    replaceDevices(remote, { mirror: false });
+  }
+}
+
+async function mirrorDevices(store: MetadataStore | null, items: import("@neo-cloud-agent/contracts").Device[]): Promise<void> {
+  if (!store) {
+    return;
+  }
+  const remote = await store.loadDevices();
+  const keep = new Set(items.map((item) => item.id));
+  for (const item of items) {
+    await store.saveDevice(item);
+  }
+  for (const old of remote) {
+    if (!keep.has(old.id)) {
+      await store.deleteDevice(old.id);
+    }
   }
 }
 

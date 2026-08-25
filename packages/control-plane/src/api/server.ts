@@ -10,6 +10,7 @@ import type {
   CreateSubscriptionRequest,
   CreateAutomationRequest,
   CreateDeskRequest,
+  CreateDeviceRequest,
   CreateProjectRequest,
   HandoffRequest,
   RunEvent,
@@ -112,6 +113,7 @@ import {
   updateProject,
 } from "../projects/store.js";
 import { createDesk, deleteDesk, findDeskByToken, listDesks } from "../desks/store.js";
+import { deleteDevice, listDevices, upsertDevice } from "../devices/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
   publicNotifySettings,
@@ -872,12 +874,47 @@ export function createApiServer() {
           send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
           return;
         }
+        if (method === "GET" && path === "/v1/devices") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          send(res, 200, { devices: listDevices(actor.userId) });
+          return;
+        }
+        if (method === "POST" && path === "/v1/devices") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 201, upsertDevice((await readJson(req)) as CreateDeviceRequest, { userId: actor.userId, orgId: actor.orgId }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "create_device_failed" });
+          }
+          return;
+        }
+        const deviceDelete = /^\/v1\/devices\/([^/]+)$/.exec(path);
+        if (deviceDelete && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const ok = deleteDevice(deviceDelete[1] ?? "", actor.userId);
+          send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
+          return;
+        }
         if (method === "POST" && path === "/v1/runs") {
           const body = (await readJson(req)) as CreateRunRequest;
-          if (!body.prompt || !Array.isArray(body.repoUrls)) {
+          if (!body.prompt) {
+            send(res, 400, { error: "prompt is required" });
+            return;
+          }
+          if (!Array.isArray(body.repoUrls) && !body.envId) {
             send(res, 400, { error: "prompt and repoUrls are required" });
             return;
           }
+          body.repoUrls = Array.isArray(body.repoUrls) ? body.repoUrls : [];
           try {
             send(res, 201, await createRun(body, { userId: actor.userId, orgId: actor.orgId }));
           } catch (error) {

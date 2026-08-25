@@ -12,7 +12,8 @@
     "./context-usage": "./src/context-usage.ts",
     "./automation": "./src/automation.ts",
     "./project": "./src/project.ts",
-    "./desk": "./src/desk.ts"
+    "./desk": "./src/desk.ts",
+    "./device": "./src/device.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

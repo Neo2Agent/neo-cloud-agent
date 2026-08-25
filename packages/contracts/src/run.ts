@@ -28,7 +28,29 @@ export type RunSource =
   | "automation"
   | "telegram"
   | "wechat"
-  | "desk";
+  | "desk"
+  | "ios"
+  | "android";
+
+export const RUN_SOURCES: readonly RunSource[] = [
+  "web",
+  "cli",
+  "slack",
+  "github",
+  "api",
+  "automation",
+  "telegram",
+  "wechat",
+  "desk",
+  "ios",
+  "android",
+];
+
+export function parseRunSource(value: unknown): RunSource | undefined {
+  return typeof value === "string" && (RUN_SOURCES as readonly string[]).includes(value)
+    ? (value as RunSource)
+    : undefined;
+}
 
 export type ExecutionPlace = "cloud" | "desk";
 

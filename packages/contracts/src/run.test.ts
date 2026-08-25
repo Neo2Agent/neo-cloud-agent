@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertColocatedTarget, colocatedTarget, isDeskTarget, parseExecutionTarget } from "./run.js";
+import { assertColocatedTarget, colocatedTarget, isDeskTarget, parseExecutionTarget, parseRunSource } from "./run.js";
 
 test("parseExecutionTarget accepts the two-axis shape", () => {
   assert.deepEqual(parseExecutionTarget({ loop: "cloud", tools: "cloud" }), {
@@ -15,6 +15,13 @@ test("parseExecutionTarget accepts the two-axis shape", () => {
   });
   assert.equal(parseExecutionTarget({ loop: "cloud" }), undefined);
   assert.equal(parseExecutionTarget(null), undefined);
+});
+
+test("parseRunSource accepts mobile hosts", () => {
+  assert.equal(parseRunSource("ios"), "ios");
+  assert.equal(parseRunSource("android"), "android");
+  assert.equal(parseRunSource("web"), "web");
+  assert.equal(parseRunSource("phone"), undefined);
 });
 
 test("P0–P2 reject a split loop/tools target", () => {

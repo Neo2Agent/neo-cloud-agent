@@ -550,6 +550,10 @@ GET    /v1/vms
 GET    /v1/settings/llm
 POST   /v1/settings/llm          页面存 Key；响应永不回传明文
 
+POST   /v1/devices               登记手机推送 token（Expo）
+GET    /v1/devices
+DELETE /v1/devices/:id
+
 POST   /v1/runs                  创建并开始（槽满则 queued）
 GET    /v1/runs
 GET    /v1/runs/:id
@@ -681,7 +685,7 @@ neo-cloud-agent/                  ← 唯一应用仓库
     worker/                       打进 VM / 任务容器镜像
     extensions/                   打进同一张 worker 镜像
     cli/                          终端客户端（不是第四个进程）
-    mobile/                       未建。iOS / Android，见 [mobile.md](./mobile.md)
+    mobile/                       手机客户端，见 [mobile.md](./mobile.md)
   infra/                          compose、helm、镜像配方（先放这里）
   .neo/environment.json
 ```
