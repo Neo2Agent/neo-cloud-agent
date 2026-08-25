@@ -39,10 +39,11 @@ chmod 600 /home/ubuntu/.ssh/authorized_keys
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/neo_lighthouse -C neo-cloud-agent-deploy -N ""
 # 把 ~/.ssh/neo_lighthouse.pub 填进上面的 TAT
-# 私钥全文（BEGIN…END）放进 Cursor 环境 Runtime Secret：NEO_LIGHTHOUSE_SSH_KEY
+# 私钥文件做单行 base64，放进 Cursor 环境 Runtime Secret：NEO_LIGHTHOUSE_SSH_KEY_B64
+base64 -w0 ~/.ssh/neo_lighthouse; echo
 ```
 
-Cloud Agent 开机后跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)，会把该 Secret 写成 `~/.ssh/neo_lighthouse` 并补上 `Host lighthouse`。不要把私钥提交或打进聊天。云 API 另配 `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY`（子用户，地域 `ap-beijing`）。
+Cloud Agent 开机后跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)，会把 `NEO_LIGHTHOUSE_SSH_KEY_B64` 解码写成 `~/.ssh/neo_lighthouse` 并补上 `Host lighthouse`。不要把私钥提交或打进聊天。云 API 另配子用户 SecretId / SecretKey（地域 `ap-beijing`）。
 
 ## 软件
 
