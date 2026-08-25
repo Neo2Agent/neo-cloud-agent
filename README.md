@@ -32,7 +32,7 @@ neo-cloud-agent/
 | 面 | 行为 |
 | --- | --- |
 | 对话页 | React。工具调研和模型答复按时间拆行（工具在最终答复上面）。Markdown、Diff、文件树、粘贴图片、token 用量、归档 |
-| 管理台 | 独立应用：`pnpm dev:admin`（API `:8090` + UI `:5176`）。不和对话页共用。仅平台管理员 |
+| 管理台 | 独立应用：本地 `pnpm dev:admin`（API `:8090` + UI `:5176`）。现网 `https://neorun.cloud/admin/`，对话页仍是 `https://neorun.cloud/`。不和对话页共用。仅平台管理员 |
 | 模型 | 默认 DeepSeek **v4-flash**；设置里可切 Pro。退役的 `deepseek-chat` / `deepseek-reasoner` 会改写成 flash |
 | 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错 |
 | CLI | `pnpm neo`，见 [docs/cli.md](docs/cli.md) |
@@ -60,7 +60,7 @@ pnpm typecheck
 pnpm test
 pnpm dev                 # 只起后端：control-plane :8080 + llm-gateway :8081
 pnpm dev:web             # Web UI :5173（后端已在则复用 :8080）
-pnpm dev:admin           # 独立管理台：admin-api :8090 + admin-web :5176
+pnpm dev:admin           # 独立管理台：admin-api :8090 + admin-web :5176（现网是 /admin/）
 pnpm dev:desk            # Desk UI :5174 + Electron 窗口（另一套 UI，共用后端）
 pnpm dev:mobile          # 手机客户端 :5175（共用 :8080）
 ```

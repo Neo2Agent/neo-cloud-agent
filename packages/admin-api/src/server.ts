@@ -1,3 +1,4 @@
+import "./cookie-env.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { publicLlmSettings, readLlmSettings } from "@neo-cloud-agent/contracts";
 import {

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import path from "node:path";
 import { verifyRunToken } from "@neo-cloud-agent/contracts";
-import { lookupSession, SESSION_COOKIE } from "../accounts/accounts.js";
+import { lookupSession, sessionCookieName } from "../accounts/accounts.js";
 import { getConfig } from "../config.js";
 import { controlStateDir } from "../store/persist.js";
 import { defaultActor, type Actor } from "./actor.js";
@@ -91,7 +91,7 @@ export function readCookie(req: IncomingMessage, name: string): string | null {
 export function readApiCredential(req: IncomingMessage, url: URL): string | null {
   return (
     readBearer(req) ||
-    readCookie(req, SESSION_COOKIE) ||
+    readCookie(req, sessionCookieName()) ||
     readCookie(req, API_TOKEN_COOKIE) ||
     url.searchParams.get("access_token")?.trim() ||
     null

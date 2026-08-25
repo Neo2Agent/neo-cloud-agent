@@ -27,7 +27,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | 规格 | 4C / 4G / 40G Ubuntu |
 | 登录用户 | `ubuntu`（有免密 sudo） |
 | 代码 | `/home/ubuntu/neo-cloud-agent` |
-| 入口 | https://neorun.cloud/ （Caddy HTTPS → `127.0.0.1:8080`）；IP 仍可用 http://62.234.211.200/ |
+| 入口 | https://neorun.cloud/ 对话（Caddy → `:8080`）；https://neorun.cloud/admin/ 管理台（→ `:8090`）。IP 同样可用 `/` 与 `/admin/` |
 | Node | 已装 **v22.23.1**（满足 `>=22.19`） |
 | Docker / KVM | **都没有**。`WORKER_RUNTIME=vm` 用 2 个 loop 挂载的 ext4 槽，不是 Firecracker |
 | 运行时栈 | **官方系统镜像** Ubuntu Server 24.04 LTS + Node 22 + pnpm + Caddy + systemd（`neo-llm-gateway` / `neo-control-plane`）。2026-08-22 已从爱马仕/Halo 应用镜像重装，不是应用模板 |
@@ -113,22 +113,24 @@ tar -C /path/to/neo-cloud-agent \
 | ssh lighthouse 'tar -C /home/ubuntu/neo-cloud-agent -xzf - && sudo systemctl restart neo-llm-gateway neo-control-plane'
 ```
 
-`pnpm-lock.yaml` 变了再在轻量上 `cd /home/ubuntu/neo-cloud-agent && pnpm install`（这台机 Node 够新，不必 `PNPM_IGNORE_ENGINE`）。
+`pnpm-lock.yaml` 变了再在轻量上 `cd /home/ubuntu/neo-cloud-agent && pnpm install`（这台机 Node 够新，不必 `PNPM_IGNORE_ENGINE`）。覆盖管理台后在机上 `pnpm build:web` 和 `pnpm build:admin`（生产资源用相对 `./`，同一份 dist 能挂在 `/admin/` 也能直接开 `:8090`），再装 [units/neo-admin-api.service](units/neo-admin-api.service)。8090 只听本机，不要开防火墙。
 
 ### 重启后验收
 
 ```bash
 ssh lighthouse '
-  systemctl is-active neo-llm-gateway neo-control-plane
+  systemctl is-active neo-llm-gateway neo-control-plane neo-admin-api
   curl -sS http://127.0.0.1:8080/health; echo
   curl -sS http://127.0.0.1:8081/health; echo
+  curl -sS http://127.0.0.1:8090/health; echo
   curl -sS http://127.0.0.1:8080/ | grep -E "Neo Cloud Agent|API Key|vm-status" | head
+  curl -sS http://127.0.0.1:8090/ | grep -E "Neo 管理台|独立管理台" | head
 '
 ```
 
 期望：
 
-- 两个 unit `active`
+- 三个 unit `active`（gateway / control-plane / admin-api）
 - control-plane：`ok: true`，`workerRuntime: "vm"`，`vmSlots.total: 2`，`llmConfigured` 看是否已存 Key；接了库机后还应有 `metadataStore: "mysql"`、`eventBus: "redis"`
 - gateway：若已存 DeepSeek Key，则 `upstream: "deepseek"` 且 `configured: true`
 - `:80` 是对话页，不是 Caddy 欢迎页
@@ -157,15 +159,15 @@ WARM_POOL_SIZE=0
 LLM_UPSTREAM=mock
 ```
 
-6. 安装 [units/](units/) 两个 systemd unit，`daemon-reload && enable --now`。
-7. Caddy `:80` 反代 `127.0.0.1:8080`，`flush_interval -1`（SSE）。
-8. 打开 https://neorun.cloud/ 或 http://62.234.211.200/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。域名还没解析时先走 IP，绑域名与 HTTPS 见 domain skill。
+6. 安装 [units/](units/) 三个 systemd unit（gateway / control-plane / admin-api），`daemon-reload && enable --now`。
+7. 现网 Caddy 用 domain skill 的 HTTPS 模板：`/` → `:8080`，`/admin/` → `:8090`，`flush_interval -1`（SSE）。
+8. 打开 https://neorun.cloud/ 或 http://62.234.211.200/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。管理台是 https://neorun.cloud/admin/ 。域名还没解析时先走 IP，绑域名与 HTTPS 见 domain skill。
 
 ## 线上运行时
 
 | 项 | 现状 |
 | --- | --- |
-| 进程 | `neo-llm-gateway` `:8081`，`neo-control-plane` `:8080`，Caddy `:80` + `:443` |
+| 进程 | `neo-llm-gateway` `:8081`，`neo-control-plane` `:8080`，`neo-admin-api` `:8090`（本机），Caddy `:80` + `:443` |
 | 工作目录 | `/home/ubuntu/neo-cloud-agent`（unit 的 `WorkingDirectory`） |
 | 密钥 | 根目录 `.env` + `.neo/llm-upstream.env` + `.neo/scm-push.env`（gitignore） |
 | Worker | `WORKER_RUNTIME=vm`，2×4GiB ext4 在 `.neo/vms/`，无 KVM 则 loop 挂载。`WORKER_MEMORY_MIB` 会限制 heap；unit 需 `Delegate=` 才有 cgroup RSS |
@@ -188,7 +190,7 @@ LLM_UPSTREAM=mock
 看日志（不要把 Environment 打出来）：
 
 ```bash
-ssh lighthouse 'journalctl -u neo-control-plane -u neo-llm-gateway -n 80 --no-pager'
+ssh lighthouse 'journalctl -u neo-control-plane -u neo-llm-gateway -u neo-admin-api -n 80 --no-pager'
 ```
 
 ## 给 Cloud Agent 的注意点
