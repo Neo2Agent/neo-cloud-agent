@@ -64,7 +64,7 @@ iOS / Android / PWA
 
 ### A. 手机浏览器 + 现有 Web（现在就能用）
 
-`packages/web` 已经按窄屏做了侧栏、登录、Enter 发送策略和 `visualViewport`。现网是 `http://62.234.211.200/`。
+`packages/web` 已经按窄屏做了侧栏、登录、Enter 发送策略和 `visualViewport`。现网是 `https://neorun.cloud/`（IP 仍是 `http://62.234.211.200/`）。域名与证书见 [production-domain.md](./production-domain.md)。
 
 适合：验证「手机上能不能下任务」。  
 不适合：当 iOS / Android 产品。iOS 后台会杀掉页面；没有 APNs；现网还是明文 HTTP。
@@ -201,13 +201,15 @@ Session TTL 已是 30 天（`SESSION_TTL_MS`），手机钥匙串存同一条即
 
 ## 7. 现网阻塞：HTTPS 和域名
 
-现网入口是 `http://62.234.211.200/`（Caddy `:80` → `:8080`）。这对浏览器勉强能用，对商店包不行：
+域名和 TLS 已经齐：`https://neorun.cloud/`（Caddy + Let's Encrypt → `:8080`，IP 仍是 `http://62.234.211.200/`）。解析与证书见 [production-domain.md](./production-domain.md)。
+
+商店包 / TestFlight 用这个 HTTPS 主机名，不要再打明文 IP：
 
 - iOS App Transport Security 默认拒绝明文 HTTP
 - Android 9+ 同样默认清掉 cleartext
 - APNs / FCM 的 webhook、Universal Link / App Link 都要真实 HTTPS 域名
 
-上架或 TestFlight 真机之前，控制面必须有域名 + TLS。Caddy 已经在应用机上，补证书即可，不要为了 App 再开一个网关。
+不要为了 App 再开一个网关，不要买腾讯云付费证书，不要点轻量控制台一键 HTTPS（只支持应用镜像）。
 
 深链建议和现有 hash 对齐，方便推送 / 分享来回跳：
 

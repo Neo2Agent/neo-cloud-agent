@@ -5,7 +5,7 @@
 ## 控制台
 
 1. 打开 [Lighthouse 北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。
-2. 未登录会拦微信扫码；等用户扫完再继续，不要猜密码。
+2. 未登录会拦微信扫码；等用户扫完再继续，不要猜密码。扫码、DNSPod A 记录、绑 `neorun.cloud` 的完整步骤见 [../tencent-lighthouse-domain/SKILL.md](../tencent-lighthouse-domain/SKILL.md)。
 3. 确认实例 `Halo建站-AFjg`（`lhins-b0l0d8b2`）运行中，公网 `62.234.211.200`。
 4. **不要点重启、再次重装、绑定密钥。** 镜像已经是 Ubuntu 24.04 系统镜像。
 5. MySQL / Redis **不在这台机上**。库机是另一账号的 `neo-mysql-redis`（`101.42.105.230`），见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。
@@ -120,7 +120,7 @@ sudo cp units/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-必须 `flush_interval -1`，否则对话 SSE 会缓冲。对外只开 80 即可，不要让用户去记 `:8080`。
+必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，对外用 `https://neorun.cloud`，不要让用户去记 `:8080`。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
 
 ## 系统镜像
 
@@ -140,4 +140,4 @@ curl -sS http://127.0.0.1:8080/v1/vms
 curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1/
 ```
 
-浏览器：http://62.234.211.200/ → 登录 → 保存 DeepSeek/OpenAI Key → 新开对话。旧 mock 气泡不会改写。
+浏览器：https://neorun.cloud/ 或 http://62.234.211.200/ → 登录 → 保存 DeepSeek/OpenAI Key → 新开对话。旧 mock 气泡不会改写。
