@@ -231,11 +231,17 @@ if [[ "$(plan_get build_web)" == "1" || "$(plan_get build_admin)" == "1" ]]; the
   if [[ "$remote_build" -eq 0 ]] && command -v pnpm >/dev/null 2>&1; then
     if [[ "$(plan_get build_web)" == "1" ]]; then
       log "build: web (local)"
-      (cd "$ROOT" && pnpm --filter @neo-cloud-agent/web --config.engine-strict=false build)
+      if ! (cd "$ROOT" && pnpm --filter @neo-cloud-agent/web --config.engine-strict=false build); then
+        log "build: local web failed; will build on host"
+        remote_build=1
+      fi
     fi
-    if [[ "$(plan_get build_admin)" == "1" ]]; then
+    if [[ "$remote_build" -eq 0 && "$(plan_get build_admin)" == "1" ]]; then
       log "build: admin (local)"
-      (cd "$ROOT" && pnpm --filter @neo-cloud-agent/admin-web --config.engine-strict=false build)
+      if ! (cd "$ROOT" && pnpm --filter @neo-cloud-agent/admin-web --config.engine-strict=false build); then
+        log "build: local admin failed; will build on host"
+        remote_build=1
+      fi
     fi
   else
     remote_build=1
