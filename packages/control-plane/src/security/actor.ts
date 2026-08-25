@@ -49,9 +49,6 @@ export function actorCanAccessRun(actor: Actor, run: RunAccessShape): boolean {
   if (actor.kind !== "user") {
     return true;
   }
-  if (isAdminLogin(actor.email)) {
-    return true;
-  }
   if (actor.userId === run.userId || (run.assigneeUserId && actor.userId === run.assigneeUserId)) {
     return true;
   }
