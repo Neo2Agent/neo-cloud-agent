@@ -373,37 +373,8 @@ if [[ "$skip_health" -eq 0 ]]; then
   log "health: waiting"
   ok=0
   for _ in $(seq 1 45); do
-    health="$(ssh_h 'systemctl is-active neo-llm-gateway neo-control-plane neo-admin-api; echo ---; curl -sS --max-time 4 http://127.0.0.1:8080/health; echo; curl -sS --max-time 4 http://127.0.0.1:8081/health; echo; curl -sS --max-time 4 http://127.0.0.1:8090/health; echo' || true)"
-    if printf '%s\n' "$health" | grep -q '"service":"control-plane"' \
-      && printf '%s\n' "$health" | grep -q '"service":"llm-gateway"' \
-      && printf '%s\n' "$health" | grep -q '"service":"admin-api"'; then
-      printf '%s\n' "$health" | python3 -c '
-import json, sys
-units = []
-body = sys.stdin.read().split("---", 1)
-print("units", " ".join(body[0].split()))
-for line in body[1].splitlines() if len(body) > 1 else []:
-    line = line.strip()
-    if not line.startswith("{"):
-        continue
-    try:
-        data = json.loads(line)
-    except json.JSONDecodeError:
-        continue
-    svc = data.get("service", "?")
-    bits = [f"ok={data.get(\"ok\")}", f"service={svc}"]
-    if svc == "control-plane":
-        bits += [
-            f"runtime={data.get(\"workerRuntime\")}",
-            f"slots={(data.get(\"vmSlots\") or {}).get(\"total\")}",
-            f"store={data.get(\"metadataStore\")}",
-            f"bus={data.get(\"eventBus\")}",
-            f"llm={data.get(\"llmConfigured\")}",
-        ]
-    if svc == "llm-gateway":
-        bits += [f"upstream={data.get(\"upstream\")}", f"configured={data.get(\"configured\")}"]
-    print(" ".join(str(b) for b in bits))
-'
+    health="$(ssh_h 'systemctl is-active neo-llm-gateway neo-control-plane neo-admin-api; echo ---; curl -sS --max-time 4 http://127.0.0.1:8080/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8081/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8090/health 2>/dev/null; echo' || true)"
+    if printf '%s\n' "$health" | python3 "$HERE/deploy-health.py"; then
       ok=1
       break
     fi

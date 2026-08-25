@@ -81,6 +81,26 @@ expect full "$OUT" "restart_control_plane=1"
 expect full "$OUT" "update_units=1"
 pass "--full is the conservative path"
 
+HEALTH="$ROOT/.cursor/skills/tencent-lighthouse-deploy/deploy-health.py"
+SAMPLE="$(printf '%s\n' "active" "active" "active" "---" \
+  '{"ok":true,"service":"control-plane","workerRuntime":"vm","vmSlots":{"total":2},"metadataStore":"mysql","eventBus":"redis","llmConfigured":true}' \
+  '{"ok":true,"service":"llm-gateway","upstream":"deepseek","configured":true}' \
+  '{"ok":true,"service":"admin-api"}')"
+OUT="$(printf '%s\n' "$SAMPLE" | python3 "$HEALTH")"
+expect health "$OUT" "units active active active"
+expect health "$OUT" "service=control-plane"
+expect health "$OUT" "runtime=vm"
+expect health "$OUT" "slots=2"
+expect health "$OUT" "service=llm-gateway"
+expect health "$OUT" "service=admin-api"
+printf '%s\n' "$SAMPLE" | python3 "$HEALTH" >/dev/null
+pass "health summarizer accepts a full probe"
+
+if printf '%s\n' "active" "---" '{"ok":true,"service":"admin-api"}' | python3 "$HEALTH" >/dev/null; then
+  fail "partial health should fail"
+fi
+pass "health summarizer rejects a partial probe"
+
 OUT="$(bash "$ROOT/.cursor/skills/tencent-lighthouse-deploy/deploy.sh" --dry-run --from-rev HEAD)"
 expect same-rev "$OUT" "sync=none"
 expect same-rev "$OUT" "dry-run: no files copied"
