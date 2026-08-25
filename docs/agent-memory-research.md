@@ -217,6 +217,59 @@ Local plugin 的钩子是别人的运行时（`before_agent_start` / `agent_end`
 
 ---
 
+## 5.1 底层用什么库，要不要接 RAG
+
+两句先说清：
+
+1. **语义记忆引擎自带（或另起）向量库，不能复用现网业务 MySQL。** 文件记忆（第 0 期）只用现在的 MySQL / 落盘文件，不新开库。
+2. **不必再接一套文档 RAG 模型。** Mem0 / Hindsight 要的是「抽事实的聊天模型 + 向量 embedding」，不是把仓库打成知识库。代码检索继续用 pi 的 `read` / `grep`。
+
+### 各家默认存哪
+
+| 方案 | 事实 / 元数据 | 向量检索 | 图（可选） | 现网能不能复用 |
+| --- | --- | --- | --- | --- |
+| 第 0 期文件记忆 | 现网 MySQL 字段，或 `MEMORY.md` / `PROJECT.md` | 无。条数少就整段注入 | 无 | **能。零新库** |
+| Mem0 自托管 server | 它 compose 里的 **Postgres** | 同一套 Postgres 的 **pgvector** | 可选 **Neo4j** | 不能塞进 `101.42.105.230` 那台业务 MySQL。另起 Postgres，或向量改 **Qdrant** |
+| Mem0 当库 embed | 默认 SQLite history | Python 默认本地 Qdrant（`/tmp/qdrant`）；也可 pgvector / Redis / Milvus / Chroma 等 | 可选 Neo4j / Memgraph | 只适合本机试，不适合多租户云 |
+| Hindsight | 容器内嵌入式 **Postgres（pg0）**，也可外挂 Postgres | 同一套 PG，不另开 Qdrant | 内置实体图，不另开 Neo4j | 和生产 MySQL 是两套 |
+| Graphiti | **Neo4j / FalkorDB / Neptune** | 图库 + 全文（FalkorDB 可走 Redis 口） | 这就是主库 | 现网没有，要新开 |
+| MemOS local | 本机 **SQLite** | SQLite 里的向量 + FTS5 | 完整自托管才要 Neo4j+Qdrant | VM 卸槽会丢，云上不要 |
+
+Mem0 开源还声称能接 Redis、Elasticsearch、Weaviate、Pinecone、Azure MySQL 等。Azure MySQL 那条在 TypeScript 里是应用层算余弦，**不是** MySQL 原生向量索引，现网 8.4 不要走这条省事。
+
+第 1 期落地时推荐二选一，都放控制面旁边，别进 VM：
+
+- Mem0 官方 compose：一只 Postgres（带 pgvector），需要图再加 Neo4j。
+- 现网只想多一个小进程：一只 **Qdrant** 给 Mem0 当 `vector_store`，元数据仍由控制面 MySQL 管（见第 7 节 `MemoryItem`）。
+
+### 和 RAG 差在哪
+
+RAG 通常是：**稳定文档库 → embedding → 检索片段 → 塞进提示让模型答。** 仓库问答、说明书属于这一类。Neo 现在不缺这个：worker 已经在仓库旁边 `read` / `grep`。
+
+Agent 记忆是另一件事：
+
+```
+对话 / 用户手写
+    →（可选）聊天模型抽出短事实     ← 复用 llm-gateway，不是新 RAG 模型
+    → embedding 写成向量             ← 要 embedding 模型，不是 chat 模型
+    → 向量库检索最相关的几条
+    → 注入系统提示 / 工具返回
+```
+
+所以：
+
+| 要不要 | 说明 |
+| --- | --- |
+| 单独的「RAG 模型」或仓库向量库 | **不要。** 那是文档问答，和记忆叠会抢上下文。 |
+| embedding 模型 | **第 1 期要。** Mem0 / Hindsight 的 `search` / `recall` 靠向量。走 gateway，可用上游 embedding 或本机 bge；**换模型要重建向量，维度必须和表一致。** |
+| 聊天模型做抽取 | Mem0 默认 `add()` 会再打一轮 LLM 做 ADD/UPDATE/DELETE。可以复用现有 DeepSeek。用户手写记忆（第 0 期，或设置页 POST）可以不抽。 |
+| 重排模型 reranker | 可选。Mem0 默认关。Hindsight 自带交叉编码器，算在它容器里。 |
+| 第 0 期 | **模型和向量库都不要。** 偏好就几十条，MySQL 读出来拼进 prompt。 |
+
+个人 / 项目偏好条数少时，向量库的收益很小。先文件记忆；事实变多、要按这句话检索时，再上 embedding + pgvector/Qdrant。不要为了「接 RAG」把整个 monorepo 打进记忆引擎。
+
+---
+
 ## 6. 建议怎么跟：三期，由薄到厚
 
 原则：**文件规则继续手写；语义记忆是控制面旁路；worker 只多吃一段注入，或以后多两个工具。**
