@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createLeaseClient } from "../src/lease.js";
 import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.js";
-import { hashForRun, runIdFromDeepLink } from "../src/protocol.js";
+import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap } from "../src/workspace.js";
 
@@ -111,10 +111,17 @@ function rendererEntry(): string {
 }
 
 function createWindow(): void {
+  const title = process.env.NEO_DESK_TITLE?.trim() || "Neo Desk";
+  const width = Number(process.env.NEO_DESK_WINDOW_WIDTH || 1440);
+  const height = Number(process.env.NEO_DESK_WINDOW_HEIGHT || 900);
+  const x = Number(process.env.NEO_DESK_WINDOW_X);
+  const y = Number(process.env.NEO_DESK_WINDOW_Y);
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    title: "Neo Desk",
+    width: Number.isFinite(width) && width > 0 ? width : 1440,
+    height: Number.isFinite(height) && height > 0 ? height : 900,
+    ...(Number.isFinite(x) ? { x } : {}),
+    ...(Number.isFinite(y) ? { y } : {}),
+    title,
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -126,8 +133,8 @@ function createWindow(): void {
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.webContents.on("did-finish-load", () => {
-    void mainWindow?.webContents.executeJavaScript(`document.title = "Neo Desk"`);
-    mainWindow?.setTitle("Neo Desk");
+    void mainWindow?.webContents.executeJavaScript(`document.title = ${JSON.stringify(title)}`);
+    mainWindow?.setTitle(title);
   });
   void mainWindow.loadURL(rendererEntry());
   mainWindow.on("closed", () => {
@@ -311,11 +318,13 @@ app.whenReady().then(() => {
 });
 
 app.on("open-url", (_event, url) => {
+  if (!mainWindow) return;
   const runId = runIdFromDeepLink(url);
-  if (runId && mainWindow) {
-    void mainWindow.loadURL(`${rendererEntry().replace(/\/$/, "")}/${hashForRun(runId)}`);
-    mainWindow.webContents.send("desk:deep-link", url);
-  }
+  const inviteToken = inviteTokenFromDeepLink(url);
+  const hash = runId ? hashForRun(runId) : inviteToken ? hashForInvite(inviteToken) : "";
+  if (!hash) return;
+  void mainWindow.loadURL(`${rendererEntry().replace(/\/$/, "")}/${hash}`);
+  mainWindow.webContents.send("desk:deep-link", url);
 });
 
 app.on("window-all-closed", () => {

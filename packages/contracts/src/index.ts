@@ -13,8 +13,13 @@ export type {
   FollowUpStatus,
   GitTokenScope,
   ImageRef,
+  ProjectRunCard,
   PullRequestRef,
   Run,
+  RunCollaborator,
+  RunCollaboratorRole,
+  TransferRunMode,
+  TransferRunRequest,
   RunSource,
   RunStatus,
   SetupStatus,
@@ -196,6 +201,26 @@ export type {
   UpdateProjectRequest,
 } from "./project.js";
 export { appendProjectInstruction, canManageProject, formatProjectMemory } from "./project.js";
+export type {
+  CreateTodoRequest,
+  ProjectTodo,
+  ProjectTodoComment,
+  TodoAttachment,
+  TodoPriority,
+  TodoSource,
+  TodoStatus,
+  TransitionTodoRequest,
+  UpdateTodoRequest,
+} from "./project-todo.js";
+export { allowedTransitions, TODO_TRANSITIONS } from "./project-todo.js";
+export type { CreateProjectAssetRequest, ProjectAsset, ProjectAssetSource } from "./project-asset.js";
+export type {
+  CreateProjectMessageRequest,
+  InboxItem,
+  InboxKind,
+  ProjectMessage,
+  ProjectMessageAttachment,
+} from "./project-message.js";
 export {
   describeAutomationSchedule,
   nextAutomationRunAt,

@@ -15,7 +15,9 @@ import type {
   FollowUp,
   FollowUpDelivery,
   HandoffRequest,
+  ProjectRunCard,
   Run,
+  TransferRunMode,
   RunDiagnostics,
   RunEvent,
   RunSubscription,
@@ -37,6 +39,7 @@ import {
   SUBSCRIPTION_COALESCE_MS,
   subscriptionKindForEvent,
   formatProjectMemory,
+  canManageProject,
   subscriptionTargetsFrom,
 } from "@neo-cloud-agent/contracts";
 import { listRunArtifacts } from "../artifacts/artifacts.js";
@@ -83,7 +86,10 @@ import {
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
-import { getProject, projectHasMember, recordProjectEvent } from "../projects/store.js";
+import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
+import { bindTodoRun } from "../projects/todos.js";
+import { listProjectAssetsUnchecked } from "../projects/assets.js";
+import { pushInbox } from "../projects/inbox.js";
 import {
   getDesk,
   isDeskOnline,
@@ -643,10 +649,123 @@ function writeProjectMemory(run: Run): void {
   if (!project) return;
   const dest = path.join(workspaceFor(run.id), ".neo");
   mkdirSync(dest, { recursive: true });
-  writeFileSync(path.join(dest, "PROJECT.md"), formatProjectMemory(project));
+  writeFileSync(path.join(dest, "PROJECT.md"), formatProjectMemory(project, listProjectAssetsUnchecked(project.id)));
 }
 
-export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string }): Promise<Run> {
+function seedHostCollaborator(run: Run, owner?: { userId?: string; email?: string }): void {
+  if (!run.projectId) {
+    run.collaborators = [];
+    return;
+  }
+  const userId = owner?.userId ?? run.userId;
+  run.collaborators = [
+    {
+      userId,
+      email: owner?.email || userId,
+      role: "host",
+      joinedAt: run.createdAt,
+    },
+  ];
+}
+
+export function isRunHost(run: Run, userId: string): boolean {
+  if (run.collaborators?.some((item) => item.userId === userId && item.role === "host")) {
+    return true;
+  }
+  return run.userId === userId || run.assigneeUserId === userId;
+}
+
+export function canInviteRunCollaborator(run: Run, actor: { userId: string }): boolean {
+  if (isRunHost(run, actor.userId)) return true;
+  return Boolean(run.projectId && canManageProject(memberRole(run.projectId, actor.userId)));
+}
+
+export function projectRunCard(run: Run): ProjectRunCard {
+  const host = run.collaborators?.find((item) => item.role === "host");
+  return {
+    id: run.id,
+    title: (run.prompt || "对话").replace(/\s+/g, " ").slice(0, 72),
+    status: run.status,
+    projectId: run.projectId ?? "",
+    hostUserId: host?.userId ?? run.assigneeUserId ?? run.userId,
+    hostEmail: host?.email ?? "",
+    loop: run.executionTarget?.loop === "desk" ? "desk" : "cloud",
+    updatedAt: run.updatedAt,
+    role: host ? "host" : null,
+  };
+}
+
+export function listProjectRunCards(projectId: string, actorUserId: string): ProjectRunCard[] {
+  return listRuns()
+    .filter((run) => run.projectId === projectId)
+    .filter((run) => run.userId === actorUserId || run.assigneeUserId === actorUserId || run.collaborators?.some((item) => item.userId === actorUserId))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .map((run) => {
+      const card = projectRunCard(run);
+      const mine = run.collaborators?.find((item) => item.userId === actorUserId);
+      return { ...card, role: mine?.role ?? (isRunHost(run, actorUserId) ? "host" : "editor") };
+    });
+}
+
+export function inviteRunCollaborator(
+  runId: string,
+  invitee: { userId: string; email: string },
+  actor: { userId: string; email: string },
+): Run {
+  const run = requireRun(runId);
+  if (!run.projectId) {
+    throw new Error("只有项目里的对话才能邀请加入");
+  }
+  if (run.executionTarget?.loop === "desk") {
+    throw new Error("本机对话不能邀请加入");
+  }
+  if (!projectHasMember(run.projectId, invitee.userId)) {
+    throw new Error("对方还不是项目成员");
+  }
+  if (!canInviteRunCollaborator(run, actor)) {
+    throw new Error("没有权限邀请加入这条对话");
+  }
+  const existing = run.collaborators ?? [];
+  if (existing.some((item) => item.userId === invitee.userId)) {
+    return run;
+  }
+  run.collaborators = [
+    ...existing,
+    { userId: invitee.userId, email: invitee.email, role: "editor", joinedAt: now() },
+  ];
+  run.updatedAt = now();
+  flushRun(run.id);
+  recordProjectEvent(run.projectId, actor, "run_invite", `邀请 ${invitee.email} 加入了一条对话`);
+  pushInbox({
+    userId: invitee.userId,
+    kind: "invited",
+    title: `${actor.email} 邀请你加入一条云端对话`,
+    projectId: run.projectId,
+    runId: run.id,
+  });
+  return run;
+}
+
+export function removeRunCollaborator(runId: string, userId: string, actor: { userId: string; email: string }): Run {
+  const run = requireRun(runId);
+  if (!canInviteRunCollaborator(run, actor)) {
+    throw new Error("没有权限移出协作者");
+  }
+  const existing = run.collaborators ?? [];
+  const target = existing.find((item) => item.userId === userId);
+  if (!target) {
+    throw new Error("不是这条对话的协作者");
+  }
+  if (target.role === "host" && existing.filter((item) => item.role === "host").length <= 1) {
+    throw new Error("不能移出最后一位房主");
+  }
+  run.collaborators = existing.filter((item) => item.userId !== userId);
+  run.updatedAt = now();
+  flushRun(run.id);
+  return run;
+}
+
+export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string; email?: string }): Promise<Run> {
   const config = getConfig();
   assertCreateRunAllowed([...runs.values()], owner?.orgId ?? config.orgId);
   const createdAt = now();
@@ -712,7 +831,12 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     errorMessage: null,
     usage: null,
     notifyChatId: input.notifyChatId?.trim() || null,
+    todoId: input.todoId ?? null,
   };
+  seedHostCollaborator(run, owner);
+  if (input.todoId && projectId) {
+    bindTodoRun(input.todoId, run.id, projectId);
+  }
   runs.set(run.id, run);
   followUps.set(run.id, []);
   inbound.set(run.id, [{ type: "prompt", text: input.prompt, images: input.images }]);
@@ -1010,12 +1134,13 @@ export async function loadRunIntoMemory(runId: string): Promise<Run | undefined>
   return restoreArchivedRun(runId);
 }
 
-export function transferRun(
+export async function transferRun(
   runId: string,
   toUserId: string,
   actor: { userId: string; email: string },
   note = "",
-): Run {
+  mode?: TransferRunMode,
+): Promise<Run> {
   const run = requireRun(runId);
   if (!run.projectId) {
     throw new Error("只有项目里的对话才能转交");
@@ -1023,14 +1148,40 @@ export function transferRun(
   if (!projectHasMember(run.projectId, toUserId)) {
     throw new Error("对方还不是项目成员");
   }
-  if (run.userId !== actor.userId && !projectHasMember(run.projectId, actor.userId)) {
+  if (!isRunHost(run, actor.userId) && !canManageProject(memberRole(run.projectId, actor.userId))) {
     throw new Error("没有权限转交");
   }
+  const resolved: TransferRunMode = mode ?? (run.executionTarget?.loop === "desk" ? "fork" : "reassign");
+  if (resolved === "fork") {
+    const summary = [`交接自 ${run.id}`, note.trim(), `原任务：${run.prompt.slice(0, 800)}`].filter(Boolean).join("\n");
+    const forked = await createRun(
+      {
+        prompt: summary,
+        repoUrls: run.repoUrls,
+        projectId: run.projectId,
+        source: "desk",
+        todoId: run.todoId ?? undefined,
+      },
+      { userId: toUserId, orgId: run.orgId },
+    );
+    recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `分出了新对话：${note.trim()}` : "分出了一条新对话");
+    pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 给你开了一条新对话`, projectId: run.projectId, runId: forked.id });
+    return forked;
+  }
+  const previous = run.collaborators ?? [];
+  const toEmail = previous.find((item) => item.userId === toUserId)?.email || toUserId;
+  run.collaborators = [
+    ...previous
+      .filter((item) => item.userId !== toUserId)
+      .map((item) => (item.userId === run.userId || item.role === "host" ? { ...item, role: "editor" as const } : item)),
+    { userId: toUserId, email: toEmail, role: "host", joinedAt: previous.find((item) => item.userId === toUserId)?.joinedAt ?? now() },
+  ];
   run.userId = toUserId;
   run.assigneeUserId = toUserId;
   run.updatedAt = now();
   flushRun(run.id);
   recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `转交了对话：${note.trim()}` : "转交了一条对话");
+  pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 把一条对话转交给你`, projectId: run.projectId, runId: run.id });
   return run;
 }
 
@@ -1274,7 +1425,11 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
   }
 }
 
-export async function enqueueFollowUp(runId: string, input: CreateFollowUpRequest): Promise<FollowUp> {
+export async function enqueueFollowUp(
+  runId: string,
+  input: CreateFollowUpRequest,
+  actor?: { userId: string; email: string },
+): Promise<FollowUp> {
   const run = runs.get(runId);
   if (!run) {
     throw new Error(`run not found: ${runId}`);
@@ -1292,6 +1447,8 @@ export async function enqueueFollowUp(runId: string, input: CreateFollowUpReques
     delivery,
     status: "queued",
     source: input.source ?? "user",
+    actorUserId: actor?.userId,
+    actorEmail: actor?.email,
     createdAt: now(),
     deliveredAt: null,
   };
@@ -1303,13 +1460,20 @@ export async function enqueueFollowUp(runId: string, input: CreateFollowUpReques
   });
   publish(
     event(runId, "followup.queued", "Follow-up queued", {
-      data: { followUpId: item.id, delivery },
+      data: { followUpId: item.id, delivery, actorUserId: actor?.userId, actorEmail: actor?.email },
     }),
   );
   publish(
     event(runId, "user.message", "User message", {
       category: "agent_run",
-      data: { text: input.text, followUpId: item.id, delivery, images: input.images },
+      data: {
+        text: input.text,
+        followUpId: item.id,
+        delivery,
+        images: input.images,
+        actorUserId: actor?.userId,
+        actorEmail: actor?.email,
+      },
     }),
   );
   flushRun(runId);

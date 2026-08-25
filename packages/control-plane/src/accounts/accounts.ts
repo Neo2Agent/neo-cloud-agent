@@ -149,6 +149,11 @@ export async function findPublicUserByEmail(email: string): Promise<PublicUser |
   return user ? toPublicUser(user) : null;
 }
 
+export async function findPublicUserById(id: string): Promise<PublicUser | null> {
+  const user = await getAccountStore().findUserById(id);
+  return user ? toPublicUser(user) : null;
+}
+
 export async function listPublicUsers(): Promise<PublicUser[]> {
   const users = await getAccountStore().listUsers();
   return users.map(toPublicUser);

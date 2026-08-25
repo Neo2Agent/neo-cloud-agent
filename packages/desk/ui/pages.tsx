@@ -6,7 +6,6 @@ import {
   COMPOSER_MAX_PX,
   composerMaxWidth,
   composerTextareaHeight,
-  transcriptColumnWidth,
 } from "../src/composer-size";
 import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
 
@@ -14,7 +13,7 @@ export type ContextMenuId = "repo" | "target" | null;
 export type RepoChoice = { url: string; label: string };
 
 export type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
-export type SearchFilter = "all" | "agents" | "files" | "actions" | "settings";
+export type SearchFilter = "all" | "agents" | "files" | "actions" | "todos" | "settings";
 
 export const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const MODELS_KEY = "neo-desk-models";
@@ -109,8 +108,12 @@ export function SearchPalette({
   filter,
   setFilter,
   hits,
+  projectHits,
+  todoHits,
   searchRef,
   onOpenRun,
+  onOpenProject,
+  onOpenTodo,
   onOpenSettings,
   onClose,
 }: {
@@ -119,8 +122,12 @@ export function SearchPalette({
   filter: SearchFilter;
   setFilter: (value: SearchFilter) => void;
   hits: Array<{ id: string; title: string; meta: string }>;
+  projectHits?: Array<{ id: string; title: string; meta: string }>;
+  todoHits?: Array<{ id: string; title: string; meta: string; projectId: string }>;
   searchRef: Ref<HTMLInputElement>;
   onOpenRun: (id: string) => void;
+  onOpenProject?: (id: string) => void;
+  onOpenTodo?: (projectId: string, todoId: string) => void;
   onOpenSettings: () => void;
   onClose: () => void;
 }) {
@@ -129,6 +136,7 @@ export function SearchPalette({
     { id: "agents", label: "Agents" },
     { id: "files", label: "Files" },
     { id: "actions", label: "Actions" },
+    { id: "todos", label: "待办" },
     { id: "settings", label: "Settings" },
   ];
   const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -178,11 +186,59 @@ export function SearchPalette({
             </button>
           ) : filter === "files" || filter === "actions" ? (
             <p className="palette-empty">还没有{filter === "files" ? "文件索引" : "快捷动作"}。</p>
-          ) : hits.length === 0 ? (
-            <p className="palette-empty">{query.trim() ? "没有匹配的对话。" : "还没有对话。"}</p>
+          ) : filter === "todos" ? (
+            todoHits && todoHits.length > 0 ? (
+              todoHits.map((hit) => (
+                <button
+                  key={hit.id}
+                  type="button"
+                  className="palette-row"
+                  onClick={() => onOpenTodo?.(hit.projectId, hit.id)}
+                >
+                  <strong>{hit.title}</strong>
+                  <span>{hit.meta}</span>
+                </button>
+              ))
+            ) : (
+              <p className="palette-empty">{query.trim() ? "没有匹配的待办。" : "还没有待办。"}</p>
+            )
+          ) : hits.length === 0 && !projectHits?.length && !todoHits?.length ? (
+            <p className="palette-empty">{query.trim() ? "没有匹配的对话、项目或待办。" : "还没有对话。"}</p>
           ) : (
             <>
-              <p className="palette-label">Recent Agents</p>
+              {projectHits && projectHits.length > 0 ? (
+                <>
+                  <p className="palette-label">项目</p>
+                  {projectHits.map((hit) => (
+                    <button
+                      key={hit.id}
+                      type="button"
+                      className="palette-row"
+                      onClick={() => onOpenProject?.(hit.id)}
+                    >
+                      <strong>{hit.title}</strong>
+                      <span>{hit.meta}</span>
+                    </button>
+                  ))}
+                </>
+              ) : null}
+              {todoHits && todoHits.length > 0 ? (
+                <>
+                  <p className="palette-label">待办</p>
+                  {todoHits.map((hit) => (
+                    <button
+                      key={hit.id}
+                      type="button"
+                      className="palette-row"
+                      onClick={() => onOpenTodo?.(hit.projectId, hit.id)}
+                    >
+                      <strong>{hit.title}</strong>
+                      <span>{hit.meta}</span>
+                    </button>
+                  ))}
+                </>
+              ) : null}
+              {hits.length > 0 ? <p className="palette-label">Recent Agents</p> : null}
               {hits.map((hit) => (
                 <button key={hit.id} type="button" className="palette-row" onClick={() => onOpenRun(hit.id)}>
                   <strong>{hit.title}</strong>
@@ -516,6 +572,31 @@ export function ContextBar({
   );
 }
 
+export type ComposerMention = {
+  kind: "asset" | "todo" | "file" | "command";
+  id: string;
+  label: string;
+  insert: string;
+};
+
+export function mentionTrigger(text: string): { trigger: "@" | "/"; query: string } | null {
+  const at = text.lastIndexOf("@");
+  const slash = text.lastIndexOf("/");
+  const idx = Math.max(at, slash);
+  if (idx < 0) return null;
+  if (idx > 0 && !/\s/.test(text[idx - 1]!)) return null;
+  const after = text.slice(idx + 1);
+  if (after.includes("\n") || after.includes(" ")) return null;
+  return { trigger: text[idx] as "@" | "/", query: after };
+}
+
+function mentionKindLabel(kind: ComposerMention["kind"]): string {
+  if (kind === "asset") return "资产";
+  if (kind === "todo") return "待办";
+  if (kind === "file") return "文件";
+  return "自动化";
+}
+
 export function ChatComposer({
   prompt,
   setPrompt,
@@ -531,6 +612,7 @@ export function ChatComposer({
   taRef,
   onComposerKey,
   home,
+  mentions,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -546,17 +628,39 @@ export function ChatComposer({
   taRef: Ref<HTMLTextAreaElement>;
   onComposerKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   home?: boolean;
+  mentions?: ComposerMention[];
 }) {
-  const label = selected || "Add Models";
+  const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
   const [maxWidth, setMaxWidth] = useState(COMPOSER_MAX_PX);
+  const typed = mentionTrigger(prompt);
+  const mentionHits = (mentions ?? []).filter((item) => {
+    if (typed === null) return false;
+    if (typed.trigger === "/" ? item.kind !== "command" : item.kind === "command") return false;
+    const q = typed.query.toLowerCase();
+    return !q || item.label.toLowerCase().includes(q) || item.kind.includes(q);
+  }).slice(0, 8);
+
+  const pickMention = (item: ComposerMention) => {
+    const idx = Math.max(prompt.lastIndexOf("@"), prompt.lastIndexOf("/"));
+    const next = `${prompt.slice(0, Math.max(0, idx))}${item.insert} `;
+    setPrompt(next);
+    requestAnimationFrame(() => {
+      const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
+      ta?.focus();
+    });
+  };
 
   useLayoutEffect(() => {
+    if (!home) {
+      setMaxWidth(COMPOSER_MAX_PX);
+      return;
+    }
     const page = boxRef.current?.closest(".chat-page") ?? boxRef.current?.closest(".stage") ?? boxRef.current?.closest(".composer-wrap");
     if (!page) return;
     const apply = () => {
       const width = page.clientWidth;
-      setMaxWidth(home ? composerMaxWidth(width) : transcriptColumnWidth(width));
+      setMaxWidth(composerMaxWidth(width));
     };
     apply();
     const observer = new ResizeObserver(apply);
@@ -572,15 +676,41 @@ export function ChatComposer({
   }, [home, prompt, taRef]);
 
   return (
-    <div ref={boxRef} className={`composer composer-stack${home ? " home" : ""}`} style={{ width: "100%", maxWidth }}>
+    <div
+      ref={boxRef}
+      className={`composer composer-stack${home ? " home" : " follow"}`}
+      style={home ? { width: "100%", maxWidth } : undefined}
+    >
       <textarea
         ref={taRef}
         value={prompt}
         placeholder={placeholder}
         onChange={(event) => setPrompt(event.target.value)}
-        onKeyDown={onComposerKey}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && mentionHits.length > 0) {
+            event.preventDefault();
+            setPrompt(prompt.replace(/[@/][^\s@/]*$/, ""));
+            return;
+          }
+          if (event.key === "Enter" && !event.shiftKey && mentionHits[0] && typed !== null) {
+            event.preventDefault();
+            pickMention(mentionHits[0]);
+            return;
+          }
+          onComposerKey(event);
+        }}
         rows={1}
       />
+      {mentionHits.length > 0 ? (
+        <div className="mention-menu" role="listbox" aria-label={typed?.trigger === "/" ? "调用已有自动化" : "引用文件或项目内容"}>
+          {mentionHits.map((item) => (
+            <button key={`${item.kind}-${item.id}`} type="button" onClick={() => pickMention(item)}>
+              <em>{mentionKindLabel(item.kind)}</em>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="composer-tools">
         <div className="model-wrap">
           <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>

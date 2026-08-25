@@ -12,6 +12,7 @@ import {
 } from "@neo-cloud-agent/contracts";
 import { controlStateDir } from "../store/persist.js";
 import { projectPersistHooks } from "./persist-hooks.js";
+import { pushInbox } from "./inbox.js";
 
 const MAX_PROJECTS = 40;
 const MAX_MEMBERS = 20;
@@ -197,7 +198,7 @@ export function createProject(input: {
     name,
     instruction: (input.instruction ?? "").trim(),
     defaultRepoUrls: (input.defaultRepoUrls ?? []).map((item) => item.trim()).filter(Boolean),
-    invitePolicy: input.invitePolicy === "approve" ? "approve" : "open",
+    invitePolicy: input.invitePolicy === "open" ? "open" : "approve",
     createdBy: input.actor.userId,
     createdAt: now,
     updatedAt: now,
@@ -260,12 +261,23 @@ export function acceptInvite(token: string, actor: { userId: string; email: stri
   if (project.invitePolicy === "approve" && invite.status === "active") {
     const pending: ProjectInvite = { ...invite, status: "pending", requestedBy: actor.userId, requestedEmail: actor.email };
     const invites = project.invites.map((item) => (item.token === token ? pending : item));
-    return save(pushEvent({ ...project, invites }, actor, "join_requested", `${actor.email} 申请加入`));
+    const next = save(pushEvent({ ...project, invites }, actor, "join_requested", `${actor.email} 申请加入`));
+    for (const member of next.members.filter((item) => item.role === "owner" || item.role === "admin")) {
+      pushInbox({
+        userId: member.userId,
+        kind: "invite_pending",
+        title: `${actor.email} 申请加入「${project.name}」`,
+        projectId: project.id,
+      });
+    }
+    return next;
   }
   if (project.members.length >= MAX_MEMBERS) throw new Error(`一个项目最多 ${MAX_MEMBERS} 人`);
   const member: ProjectMember = { userId: actor.userId, email: actor.email, role: "member", joinedAt: new Date().toISOString() };
   const invites = project.invites.map((item) => (item.token === token ? { ...item, status: "accepted" as const } : item));
-  return save(pushEvent({ ...project, members: [...project.members, member], invites }, actor, "joined", `${actor.email} 加入了项目`));
+  const next = save(pushEvent({ ...project, members: [...project.members, member], invites }, actor, "joined", `${actor.email} 加入了项目`));
+  pushInbox({ userId: actor.userId, kind: "invited", title: `你加入了「${project.name}」`, projectId: project.id });
+  return next;
 }
 
 export function approveInvite(projectId: string, token: string, actor: { userId: string; email: string }): Project {
@@ -286,7 +298,9 @@ export function approveInvite(projectId: string, token: string, actor: { userId:
     joinedAt: new Date().toISOString(),
   };
   const invites = project.invites.map((item) => (item.token === token ? { ...item, status: "accepted" as const } : item));
-  return save(pushEvent({ ...project, members: [...project.members, member], invites }, actor, "approved", `通过了 ${invite.requestedEmail}`));
+  const next = save(pushEvent({ ...project, members: [...project.members, member], invites }, actor, "approved", `通过了 ${invite.requestedEmail}`));
+  pushInbox({ userId: invite.requestedBy, kind: "invited", title: `你已加入「${project.name}」`, projectId: project.id });
+  return next;
 }
 
 export function addProjectMember(
@@ -305,7 +319,9 @@ export function addProjectMember(
     role: member.role === "admin" ? "admin" : "member",
     joinedAt: new Date().toISOString(),
   };
-  return save(pushEvent({ ...project, members: [...project.members, next] }, actor, "member_added", `加入了 ${member.email}`));
+  const saved = save(pushEvent({ ...project, members: [...project.members, next] }, actor, "member_added", `加入了 ${member.email}`));
+  pushInbox({ userId: member.userId, kind: "invited", title: `你被加入了「${project.name}」`, projectId: project.id });
+  return saved;
 }
 
 export function recordProjectEvent(projectId: string, actor: { userId: string; email: string }, kind: string, detail: string): void {

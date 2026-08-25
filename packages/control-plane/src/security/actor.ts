@@ -1,12 +1,18 @@
 import { DEFAULT_ADMIN_LOGIN } from "../accounts/accounts.js";
 import { normalizeEmail } from "../accounts/types.js";
-import { projectHasMember } from "../projects/store.js";
 import { getConfig } from "../config.js";
 
 export type Actor =
   | { kind: "anonymous"; userId: string; orgId: string }
   | { kind: "service"; userId: string; orgId: string }
   | { kind: "user"; userId: string; orgId: string; email: string; sessionId: string };
+
+export type RunAccessShape = {
+  userId: string;
+  assigneeUserId?: string | null;
+  source?: string;
+  collaborators?: Array<{ userId: string }> | null;
+};
 
 export function defaultActor(kind: "anonymous" | "service" = "anonymous"): Actor {
   const config = getConfig();
@@ -39,21 +45,18 @@ export function actorIsPlatformAdmin(actor: Actor): boolean {
   return false;
 }
 
-export function actorCanAccessRun(
-  actor: Actor,
-  run: { userId: string; assigneeUserId?: string | null; projectId?: string | null; source?: string },
-): boolean {
+export function actorCanAccessRun(actor: Actor, run: RunAccessShape): boolean {
   if (actor.kind !== "user") {
-    return true;
-  }
-  if (isAdminLogin(actor.email)) {
     return true;
   }
   if (actor.userId === run.userId || (run.assigneeUserId && actor.userId === run.assigneeUserId)) {
     return true;
   }
+  if (run.collaborators?.some((item) => item.userId === actor.userId)) {
+    return true;
+  }
   if (run.source === "automation" && run.userId === getConfig().userId) {
     return true;
   }
-  return Boolean(run.projectId && projectHasMember(run.projectId, actor.userId));
+  return false;
 }

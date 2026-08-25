@@ -12,7 +12,11 @@ import type {
   CreateDeskRequest,
   CreateDeviceRequest,
   CreateProjectRequest,
+  CreateProjectMessageRequest,
+  CreateTodoRequest,
   HandoffRequest,
+  TransitionTodoRequest,
+  UpdateTodoRequest,
   RunEvent,
   UpdateProjectRequest,
 } from "@neo-cloud-agent/contracts";
@@ -37,6 +41,8 @@ import {
   commitRun,
   createRun,
   enqueueFollowUp,
+  inviteRunCollaborator,
+  canInviteRunCollaborator,
   handoffRun,
   leaseDesk,
   ingestGitHubWebhook,
@@ -47,8 +53,10 @@ import {
   getRunSession,
   ingestEvents,
   listFollowUps,
+  listProjectRunCards,
   listRunSubscriptions,
   listRuns,
+  removeRunCollaborator,
   subscribeRun,
   transferRun,
   loadRunIntoMemory,
@@ -67,6 +75,7 @@ import {
   bootstrapEmail,
   createTeammateAccount,
   findPublicUserByEmail,
+  findPublicUserById,
   loginAccount,
   logoutSession,
   sessionCookieHeader,
@@ -124,6 +133,19 @@ import {
   memberRole,
   updateProject,
 } from "../projects/store.js";
+import {
+  addTodoComment,
+  attachTodoFiles,
+  createTodo,
+  getTodo,
+  listTodoComments,
+  listTodos,
+  transitionTodo,
+  updateTodo,
+} from "../projects/todos.js";
+import { deleteProjectAsset, listProjectAssets, putProjectAsset, readProjectAsset } from "../projects/assets.js";
+import { createProjectMessage, deleteProjectMessage, listProjectMessages, updateProjectMessage } from "../projects/messages.js";
+import { listInbox, markInboxRead, unreadInboxCount } from "../projects/inbox.js";
 import { createDesk, deleteDesk, findDeskByToken, listDesks } from "../desks/store.js";
 import { deleteDevice, listDevices, upsertDevice } from "../devices/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
@@ -856,6 +878,247 @@ export function createApiServer() {
           }
           return;
         }
+        const todoCommentsMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)\/comments$/.exec(path);
+        if (todoCommentsMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todoCommentsMatch[1] ?? "";
+            const todoId = todoCommentsMatch[2] ?? "";
+            if (method === "GET") {
+              send(res, 200, { comments: listTodoComments(projectId, todoId, actor.userId) });
+              return;
+            }
+            const body = (await readJson(req)) as { body?: string };
+            send(res, 201, addTodoComment(projectId, todoId, body.body ?? "", { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_comment_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todoTransitionMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)\/transition$/.exec(path);
+        if (todoTransitionMatch && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as TransitionTodoRequest;
+            send(
+              res,
+              200,
+              transitionTodo(todoTransitionMatch[1] ?? "", todoTransitionMatch[2] ?? "", body.status, { userId: actor.userId, email: actor.email }, body.pauseReason),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_transition_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todoItemMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)$/.exec(path);
+        if (todoItemMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todoItemMatch[1] ?? "";
+            const todoId = todoItemMatch[2] ?? "";
+            if (method === "GET") {
+              const todo = getTodo(projectId, todoId, actor.userId);
+              if (!todo) {
+                notFound(res);
+                return;
+              }
+              send(res, 200, todo);
+              return;
+            }
+            send(
+              res,
+              200,
+              updateTodo(projectId, todoId, (await readJson(req)) as UpdateTodoRequest, { userId: actor.userId, email: actor.email }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/inbox") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          send(res, 200, { items: listInbox(actor.userId), unread: unreadInboxCount(actor.userId) });
+          return;
+        }
+        const inboxRead = /^\/v1\/inbox\/([^/]+)\/read$/.exec(path);
+        if (inboxRead && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          markInboxRead(actor.userId, inboxRead[1]);
+          send(res, 200, { ok: true, unread: unreadInboxCount(actor.userId) });
+          return;
+        }
+        const messageItemMatch = /^\/v1\/projects\/([^/]+)\/messages\/([^/]+)$/.exec(path);
+        if (messageItemMatch && actor.kind === "user" && (method === "POST" || method === "DELETE")) {
+          try {
+            const projectId = messageItemMatch[1] ?? "";
+            const messageId = messageItemMatch[2] ?? "";
+            if (method === "DELETE") {
+              deleteProjectMessage(projectId, messageId, { userId: actor.userId });
+              send(res, 200, { ok: true });
+              return;
+            }
+            send(
+              res,
+              200,
+              updateProjectMessage(projectId, messageId, (await readJson(req)) as CreateProjectMessageRequest, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "message_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const messagesMatch = /^\/v1\/projects\/([^/]+)\/messages$/.exec(path);
+        if (messagesMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = messagesMatch[1] ?? "";
+            if (method === "GET") {
+              send(res, 200, { messages: listProjectMessages(projectId, actor.userId) });
+              return;
+            }
+            send(
+              res,
+              201,
+              createProjectMessage(projectId, (await readJson(req)) as CreateProjectMessageRequest, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "message_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const assetItemMatch = /^\/v1\/projects\/([^/]+)\/assets\/([^/]+)$/.exec(path);
+        if (assetItemMatch && actor.kind === "user" && (method === "GET" || method === "DELETE")) {
+          const projectId = assetItemMatch[1] ?? "";
+          const assetId = assetItemMatch[2] ?? "";
+          try {
+            if (method === "DELETE") {
+              deleteProjectAsset(projectId, assetId, { userId: actor.userId, email: actor.email });
+              send(res, 200, { ok: true });
+              return;
+            }
+            const found = await readProjectAsset(projectId, assetId, actor.userId);
+            if (!found) {
+              notFound(res);
+              return;
+            }
+            res.writeHead(200, {
+              ...CORS,
+              "content-type": found.asset.contentType,
+              "content-length": String(found.body.length),
+              "content-disposition": `attachment; filename="${found.asset.path.split("/").pop() ?? "file"}"`,
+            });
+            res.end(found.body);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "asset_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const assetsMatch = /^\/v1\/projects\/([^/]+)\/assets$/.exec(path);
+        if (assetsMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          const projectId = assetsMatch[1] ?? "";
+          try {
+            if (method === "GET") {
+              send(res, 200, { assets: listProjectAssets(projectId, actor.userId) });
+              return;
+            }
+            const body = (await readJson(req)) as {
+              path?: string;
+              content?: string;
+              contentType?: string;
+              encoding?: "utf8" | "base64";
+            };
+            if (!body.path || typeof body.content !== "string") {
+              send(res, 400, { error: "path and content are required" });
+              return;
+            }
+            const raw = body.encoding === "base64" ? Buffer.from(body.content, "base64") : Buffer.from(body.content, "utf8");
+            send(
+              res,
+              201,
+              await putProjectAsset(
+                projectId,
+                { path: body.path, body: raw, contentType: body.contentType, source: "upload" },
+                { userId: actor.userId, email: actor.email },
+              ),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "asset_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todosMatch = /^\/v1\/projects\/([^/]+)\/todos$/.exec(path);
+        if (todosMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todosMatch[1] ?? "";
+            if (method === "GET") {
+              send(res, 200, { todos: listTodos(projectId, actor.userId) });
+              return;
+            }
+            const body = (await readJson(req)) as CreateTodoRequest & { artifactNames?: string[] };
+            const todo = createTodo(projectId, body, { userId: actor.userId, email: actor.email });
+            const failedAttachments: string[] = [];
+            if (body.runId && body.artifactNames?.length) {
+              for (const name of body.artifactNames) {
+                try {
+                  const stored = await readRunArtifact(body.runId, name);
+                  if (!stored) {
+                    failedAttachments.push(name);
+                    continue;
+                  }
+                  const asset = await putProjectAsset(
+                    projectId,
+                    {
+                      path: stored.artifact.name,
+                      body: stored.body,
+                      contentType: stored.artifact.contentType,
+                      source: "run",
+                      runId: body.runId,
+                    },
+                    { userId: actor.userId, email: actor.email },
+                  );
+                  attachTodoFiles(todo.id, projectId, [{ kind: "asset", id: asset.id, name: asset.path }]);
+                } catch {
+                  failedAttachments.push(name);
+                }
+              }
+            }
+            send(res, 201, { ...getTodo(projectId, todo.id, actor.userId), failedAttachments });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const projectRunsMatch = /^\/v1\/projects\/([^/]+)\/runs$/.exec(path);
+        if (projectRunsMatch && method === "GET") {
+          const project = getProject(projectRunsMatch[1] ?? "");
+          if (!project || (actor.kind === "user" && !memberRole(project.id, actor.userId))) {
+            notFound(res);
+            return;
+          }
+          const userId = actor.kind === "user" ? actor.userId : "";
+          send(res, 200, { runs: listProjectRunCards(project.id, userId) });
+          return;
+        }
         const projectMemberMatch = /^\/v1\/projects\/([^/]+)\/members$/.exec(path);
         if (projectMemberMatch && method === "POST") {
           if (actor.kind !== "user") {
@@ -957,7 +1220,15 @@ export function createApiServer() {
           }
           body.repoUrls = Array.isArray(body.repoUrls) ? body.repoUrls : [];
           try {
-            send(res, 201, await createRun(body, { userId: actor.userId, orgId: actor.orgId }));
+            send(
+              res,
+              201,
+              await createRun(body, {
+                userId: actor.kind === "user" ? actor.userId : undefined,
+                orgId: actor.orgId,
+                email: actor.kind === "user" ? actor.email : undefined,
+              }),
+            );
           } catch (error) {
             if (error instanceof QuotaError) {
               send(res, 429, { error: error.message });
@@ -998,7 +1269,15 @@ export function createApiServer() {
           send(res, 400, { error: "text is required" });
           return;
         }
-        send(res, 201, await enqueueFollowUp(runId, body));
+        send(
+          res,
+          201,
+          await enqueueFollowUp(
+            runId,
+            body,
+            actor.kind === "user" ? { userId: actor.userId, email: actor.email } : undefined,
+          ),
+        );
         return;
       }
       if (followMatch && method === "GET") {
@@ -1059,6 +1338,64 @@ export function createApiServer() {
         return;
       }
 
+      const collaboratorsMatch = /^\/v1\/runs\/([^/]+)\/collaborators$/.exec(path);
+      if (collaboratorsMatch && (method === "GET" || method === "POST")) {
+        const run = await requireRun(collaboratorsMatch[1] ?? "");
+        if (!run || !actor || actor.kind !== "user") {
+          if (actor && actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          notFound(res);
+          return;
+        }
+        if (!actorCanAccessRun(actor, run) && !canInviteRunCollaborator(run, actor)) {
+          notFound(res);
+          return;
+        }
+        if (method === "GET") {
+          send(res, 200, { collaborators: run.collaborators ?? [] });
+          return;
+        }
+        try {
+          const body = (await readJson(req)) as { userId?: string; email?: string };
+          let user = body.userId ? await findPublicUserById(body.userId) : null;
+          if (!user && body.email) {
+            user = await findPublicUserByEmail(body.email);
+          }
+          if (!user) {
+            send(res, 400, { error: "找不到这个账号" });
+            return;
+          }
+          send(res, 200, inviteRunCollaborator(run.id, { userId: user.id, email: user.email }, { userId: actor.userId, email: actor.email }));
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "invite_failed" });
+        }
+        return;
+      }
+      const collaboratorDelete = /^\/v1\/runs\/([^/]+)\/collaborators\/([^/]+)$/.exec(path);
+      if (collaboratorDelete && method === "DELETE") {
+        const run = await requireRun(collaboratorDelete[1] ?? "");
+        if (!run || !actor || actor.kind !== "user" || !actorCanAccessRun(actor, run)) {
+          if (actor && actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          notFound(res);
+          return;
+        }
+        try {
+          send(
+            res,
+            200,
+            removeRunCollaborator(run.id, collaboratorDelete[2] ?? "", { userId: actor.userId, email: actor.email }),
+          );
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "remove_failed" });
+        }
+        return;
+      }
+
       const transferMatch = /^\/v1\/runs\/([^/]+)\/transfer$/.exec(path);
       if (transferMatch && method === "POST") {
         const run = await requireRun(transferMatch[1] ?? "");
@@ -1070,12 +1407,16 @@ export function createApiServer() {
           return;
         }
         try {
-          const body = (await readJson(req)) as { toUserId?: string; note?: string };
+          const body = (await readJson(req)) as { toUserId?: string; note?: string; mode?: "reassign" | "fork" };
           if (!body.toUserId) {
             send(res, 400, { error: "toUserId is required" });
             return;
           }
-          send(res, 200, transferRun(run.id, body.toUserId, { userId: actor.userId, email: actor.email }, body.note));
+          send(
+            res,
+            200,
+            await transferRun(run.id, body.toUserId, { userId: actor.userId, email: actor.email }, body.note, body.mode),
+          );
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : "transfer_failed" });
         }
@@ -1329,6 +1670,49 @@ export function createApiServer() {
           }));
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : "upload failed" });
+        }
+        return;
+      }
+
+      const saveArtifactMatch = /^\/v1\/runs\/([^/]+)\/artifacts\/([^/]+)\/save-to-project$/.exec(path);
+      if (saveArtifactMatch && method === "POST") {
+        const run = await requireRun(saveArtifactMatch[1] ?? "");
+        if (!run || !actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        if (!run.projectId) {
+          send(res, 400, { error: "只有项目对话才能保存到项目" });
+          return;
+        }
+        if (actor.kind !== "user") {
+          send(res, 401, { error: "login_required" });
+          return;
+        }
+        try {
+          const name = decodeURIComponent(saveArtifactMatch[2] ?? "");
+          const stored = await readRunArtifact(run.id, name);
+          if (!stored) {
+            notFound(res);
+            return;
+          }
+          const body = (await readJson(req).catch(() => ({}))) as { path?: string };
+          send(
+            res,
+            201,
+            await putProjectAsset(
+              run.projectId,
+              {
+                path: body.path?.trim() || stored.artifact.name,
+                body: stored.body,
+                contentType: stored.artifact.contentType,
+                source: "run",
+                runId: run.id,
+              },
+              { userId: actor.userId, email: actor.email },
+            ),
+          );
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "save_failed" });
         }
         return;
       }
