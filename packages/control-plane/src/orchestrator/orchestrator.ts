@@ -33,6 +33,7 @@ import {
   mintRunToken,
   parseContextUsage,
   parseExecutionTarget,
+  parseRunSource,
   parseSubscriptionEvents,
   redactText,
   SUBSCRIPTION_COALESCE_MS,
@@ -768,7 +769,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   const config = getConfig();
   assertCreateRunAllowed([...runs.values()], owner?.orgId ?? config.orgId);
   const createdAt = now();
-  let repoUrls = input.repoUrls;
+  let repoUrls = Array.isArray(input.repoUrls) ? [...input.repoUrls] : [];
   let projectId: string | null = null;
   if (input.projectId) {
     const project = getProject(input.projectId);
@@ -782,6 +783,9 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     if (repoUrls.length === 0 && project.defaultRepoUrls.length > 0) {
       repoUrls = [...project.defaultRepoUrls];
     }
+  }
+  if (repoUrls.length === 0 && input.envId) {
+    repoUrls = [...(getEnvironment(input.envId)?.config.repos ?? [])];
   }
   const target = parseExecutionTarget(input.target);
   if (target) {
@@ -810,7 +814,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     buildId: null,
     status: "PROVISIONING",
     setupStatus: null,
-    source: input.source ?? (isDeskTarget(target) ? "desk" : "api"),
+    source: parseRunSource(input.source) ?? (isDeskTarget(target) ? "desk" : "api"),
     executionTarget: target ?? { loop: "cloud", tools: "cloud" },
     model: input.model ?? config.defaultModel,
     prompt: input.prompt,

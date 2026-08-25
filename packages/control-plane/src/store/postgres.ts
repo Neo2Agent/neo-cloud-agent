@@ -1,4 +1,4 @@
-import type { Automation, Build, Desk, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
+import type { Automation, Build, Desk, Device, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
 import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS desks (
   body JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -96,6 +101,9 @@ export interface PostgresMetadataStore extends AccountStore {
   saveDesk(item: Desk): Promise<void>;
   loadDesks(): Promise<Desk[]>;
   deleteDesk(id: string): Promise<void>;
+  saveDevice(item: Device): Promise<void>;
+  loadDevices(): Promise<Device[]>;
+  deleteDevice(id: string): Promise<void>;
 }
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -152,6 +160,14 @@ function asDesk(value: unknown): Desk | null {
   }
   const item = value as Desk;
   return item.id && item.userId ? item : null;
+}
+
+function asDevice(value: unknown): Device | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Device;
+  return item.id && item.userId && (item.platform === "ios" || item.platform === "android") ? item : null;
 }
 
 function asProject(value: unknown): Project | null {
@@ -317,6 +333,21 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     async deleteDesk(id) {
       await query(`DELETE FROM desks WHERE id = $1`, [id]);
     },
+    async saveDevice(item) {
+      await query(
+        `INSERT INTO devices (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.lastSeenAt || item.createdAt],
+      );
+    },
+    async loadDevices() {
+      const result = await query(`SELECT body FROM devices ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asDevice)).filter((item): item is Device => Boolean(item));
+    },
+    async deleteDevice(id) {
+      await query(`DELETE FROM devices WHERE id = $1`, [id]);
+    },
     async createUser(user) {
       try {
         await query(
@@ -346,6 +377,12 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         [id],
       );
       return mapUser(result.rows[0]);
+    },
+    async listUsers() {
+      const result = await query(
+        `SELECT id, email, password_hash, org_id, created_at FROM users ORDER BY created_at ASC`,
+      );
+      return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
     },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);

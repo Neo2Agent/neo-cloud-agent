@@ -15,7 +15,9 @@
     "./project-todo": "./src/project-todo.ts",
     "./project-asset": "./src/project-asset.ts",
     "./project-message": "./src/project-message.ts",
-    "./desk": "./src/desk.ts"
+    "./desk": "./src/desk.ts",
+    "./device": "./src/device.ts",
+    "./environment": "./src/environment.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

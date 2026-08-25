@@ -10,6 +10,19 @@ export const DEFAULT_ADMIN_PASSWORD = "123456";
 export const SESSION_COOKIE = "neo_session";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+export function sessionCookieName(): string {
+  const raw = process.env.SESSION_COOKIE_NAME?.trim();
+  return raw || SESSION_COOKIE;
+}
+
+export function sessionCookiePath(): string {
+  const raw = process.env.SESSION_COOKIE_PATH?.trim();
+  if (!raw) {
+    return "/";
+  }
+  return raw.startsWith("/") ? raw : `/${raw}`;
+}
+
 export function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -19,11 +32,11 @@ export function mintSessionToken(): string {
 }
 
 export function sessionCookieHeader(token: string): string {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`;
+  return `${sessionCookieName()}=${encodeURIComponent(token)}; Path=${sessionCookiePath()}; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`;
 }
 
 export function clearSessionCookieHeader(): string {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  return `${sessionCookieName()}=; Path=${sessionCookiePath()}; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
 
 export class AccountError extends Error {
@@ -139,6 +152,11 @@ export async function findPublicUserByEmail(email: string): Promise<PublicUser |
 export async function findPublicUserById(id: string): Promise<PublicUser | null> {
   const user = await getAccountStore().findUserById(id);
   return user ? toPublicUser(user) : null;
+}
+
+export async function listPublicUsers(): Promise<PublicUser[]> {
+  const users = await getAccountStore().listUsers();
+  return users.map(toPublicUser);
 }
 
 export async function lookupSession(token: string): Promise<{ user: PublicUser; session: SessionRecord } | null> {

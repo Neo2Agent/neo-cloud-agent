@@ -24,7 +24,16 @@ export type {
   RunStatus,
   SetupStatus,
 } from "./run.js";
-export { assertColocatedTarget, colocatedTarget, isDeskTarget, parseExecutionTarget } from "./run.js";
+export {
+  RUN_SOURCES,
+  assertColocatedTarget,
+  colocatedTarget,
+  isDeskTarget,
+  parseExecutionTarget,
+  parseRunSource,
+} from "./run.js";
+export type { CreateDeviceRequest, Device, DevicePlatform } from "./device.js";
+export { parseDevicePlatform } from "./device.js";
 export type {
   CreateDeskRequest,
   Desk,

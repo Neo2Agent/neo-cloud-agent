@@ -25,6 +25,7 @@ export interface AccountStore {
   createUser(user: UserRecord): Promise<UserRecord>;
   findUserByEmail(email: string): Promise<UserRecord | null>;
   findUserById(id: string): Promise<UserRecord | null>;
+  listUsers(): Promise<UserRecord[]>;
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
   createSession(session: SessionRecord): Promise<void>;
   findSessionByTokenHash(hash: string): Promise<SessionRecord | null>;

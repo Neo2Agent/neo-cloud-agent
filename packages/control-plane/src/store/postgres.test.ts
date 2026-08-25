@@ -41,7 +41,9 @@ test("postgres store upserts run JSON, events, and users", async () => {
         ? "events"
         : text.includes("FROM users WHERE email")
           ? "user"
-          : "other";
+          : text.includes("FROM users ORDER BY")
+            ? "users"
+            : "other";
     return { rows: rowsByQuery[key] ?? [] };
   });
 
@@ -87,6 +89,10 @@ test("postgres store upserts run JSON, events, and users", async () => {
   ];
   const user = await store.findUserByEmail("ada@example.com");
   assert.equal(user?.id, "user-1");
+  rowsByQuery.users = rowsByQuery.user;
+  const listed = await store.listUsers();
+  assert.equal(listed[0]?.email, "ada@example.com");
+  assert.match(calls.at(-1)?.text ?? "", /FROM users ORDER BY created_at/);
 
   await store.saveEnvironment({
     id: "env-1",

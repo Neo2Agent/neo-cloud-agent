@@ -10,6 +10,7 @@ import type {
   CreateSubscriptionRequest,
   CreateAutomationRequest,
   CreateDeskRequest,
+  CreateDeviceRequest,
   CreateProjectRequest,
   CreateProjectMessageRequest,
   CreateTodoRequest,
@@ -105,6 +106,18 @@ import { proxyMcpCall, proxyMcpList } from "../mcp/proxy.js";
 import { deleteMcpSecret, publicMcpServers, upsertMcpSecret } from "../mcp/secrets.js";
 import { publicAppUrl } from "../notify/settings.js";
 import { quotaSnapshot, QuotaError, writeQuotaLimits } from "../quota/quota.js";
+import {
+  acquireSseLease,
+  clientIp,
+  loginAccountKey,
+  rateLimitSnapshot,
+  rejectActorRateLimits,
+  rejectPublicRateLimits,
+  rejectRateLimits,
+  sendRateLimited,
+  shouldLimitSse,
+} from "../security/rate-limit-http.js";
+import { rateLimitEnabled, rateLimitStoreKind } from "../security/rate-limit.js";
 import { GITHUB_WEBHOOK_PATH, publicGitHubWebhookInfo } from "../subscriptions/secret.js";
 import { createAutomation, deleteAutomation, listAutomations, updateAutomation } from "../automations/store.js";
 import {
@@ -134,6 +147,7 @@ import { deleteProjectAsset, listProjectAssets, putProjectAsset, readProjectAsse
 import { createProjectMessage, deleteProjectMessage, listProjectMessages, updateProjectMessage } from "../projects/messages.js";
 import { listInbox, markInboxRead, unreadInboxCount } from "../projects/inbox.js";
 import { createDesk, deleteDesk, findDeskByToken, listDesks } from "../desks/store.js";
+import { deleteDevice, listDevices, upsertDevice } from "../devices/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
   publicNotifySettings,
@@ -150,6 +164,8 @@ const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization",
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-expose-headers":
+    "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Policy",
 } as const;
 
 async function requireRun(runId: string) {
@@ -277,6 +293,10 @@ export function createApiServer() {
         return;
       }
 
+      if (await rejectPublicRateLimits(req, res, method, path)) {
+        return;
+      }
+
       if (method === "GET" && path === "/health") {
         const config = getConfig();
         const llm = publicLlmSettings(readLlmSettings());
@@ -307,6 +327,7 @@ export function createApiServer() {
           notify: publicNotifySettings(),
           automations: listAutomations().length,
           projects: listProjects().length,
+          rateLimit: { enabled: rateLimitEnabled(), store: rateLimitStoreKind() },
         });
         return;
       }
@@ -397,6 +418,13 @@ export function createApiServer() {
 
       if (method === "POST" && path === "/v1/auth/login") {
         const body = (await readJson(req)) as { email?: string; password?: string };
+        if (
+          await rejectRateLimits(res, [
+            { policy: "login_account", key: loginAccountKey(body.email, clientIp(req)) },
+          ])
+        ) {
+          return;
+        }
         try {
           const created = await loginAccount(body);
           sendAuthSession(res, 200, created);
@@ -469,6 +497,14 @@ export function createApiServer() {
             send(res, 401, { error: "unauthorized" });
             return;
           }
+          if (
+            await rejectRateLimits(res, [
+              { policy: "api", key: `desk:${deskId}` },
+              { policy: "write", key: `desk:${deskId}` },
+            ])
+          ) {
+            return;
+          }
           try {
             if (action === "lease") {
               const body = (await readJson(req)) as { waitMs?: number };
@@ -489,6 +525,13 @@ export function createApiServer() {
         const actor = await resolveActor(req, url);
         if (!actor) {
           send(res, 401, { error: "unauthorized" });
+          return;
+        }
+        if (await rejectActorRateLimits(req, res, actor, method, path)) {
+          return;
+        }
+        if (method === "GET" && path === "/v1/rate-limits") {
+          send(res, 200, await rateLimitSnapshot(actor, clientIp(req)));
           return;
         }
         if (method === "GET" && path === "/v1/me") {
@@ -1135,12 +1178,47 @@ export function createApiServer() {
           send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
           return;
         }
+        if (method === "GET" && path === "/v1/devices") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          send(res, 200, { devices: listDevices(actor.userId) });
+          return;
+        }
+        if (method === "POST" && path === "/v1/devices") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 201, upsertDevice((await readJson(req)) as CreateDeviceRequest, { userId: actor.userId, orgId: actor.orgId }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "create_device_failed" });
+          }
+          return;
+        }
+        const deviceDelete = /^\/v1\/devices\/([^/]+)$/.exec(path);
+        if (deviceDelete && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const ok = deleteDevice(deviceDelete[1] ?? "", actor.userId);
+          send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
+          return;
+        }
         if (method === "POST" && path === "/v1/runs") {
           const body = (await readJson(req)) as CreateRunRequest;
-          if (!body.prompt || !Array.isArray(body.repoUrls)) {
+          if (!body.prompt) {
+            send(res, 400, { error: "prompt is required" });
+            return;
+          }
+          if (!Array.isArray(body.repoUrls) && !body.envId) {
             send(res, 400, { error: "prompt and repoUrls are required" });
             return;
           }
+          body.repoUrls = Array.isArray(body.repoUrls) ? body.repoUrls : [];
           try {
             send(
               res,
@@ -1361,6 +1439,14 @@ export function createApiServer() {
         const run = await requireRun(runId);
         if (!actor || !denyUnless(run, actor, res)) {
           return;
+        }
+        if (shouldLimitSse(method, path)) {
+          const lease = await acquireSseLease(req, actor);
+          if (!lease.ok) {
+            sendRateLimited(res, lease);
+            return;
+          }
+          req.on("close", () => lease.release());
         }
         attachEventStream(req, res, runId, url);
         return;
