@@ -172,12 +172,12 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [closeStream, listen, route.runId, route.screen]);
 
-  const login = async () => {
+  const loginWith = async (nextEmail: string, nextPassword: string, nextUrl = apiUrl) => {
     setBusy(true);
     setAuthError("");
     try {
-      const next = new MobileClient(apiUrl, "");
-      const session = await next.login(email.trim(), password);
+      const next = new MobileClient(nextUrl, "");
+      const session = await next.login(nextEmail.trim(), nextPassword);
       await persistToken(session.token);
       setPassword("");
     } catch (error) {
@@ -234,30 +234,33 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
           className="auth-card"
           onSubmit={(event) => {
             event.preventDefault();
-            void login();
+            const form = event.currentTarget;
+            const nextUrl = (form.elements.namedItem("apiUrl") as HTMLInputElement | null)?.value ?? apiUrl;
+            const nextEmail = (form.elements.namedItem("account") as HTMLInputElement | null)?.value ?? email;
+            const nextPassword = (form.elements.namedItem("secret") as HTMLInputElement | null)?.value ?? password;
+            setApiUrl(nextUrl);
+            setEmail(nextEmail);
+            setPassword(nextPassword);
+            void store.setApiUrl(nextUrl);
+            void loginWith(nextEmail, nextPassword, nextUrl);
           }}
         >
           <h1>Neo</h1>
           <p>手机端只打云端 /v1，不在本机跑 Agent。</p>
           <label>
             控制面地址
-            <input value={apiUrl} placeholder="留空则走本机代理" onChange={(event) => setApiUrl(event.target.value)} />
+            <input name="apiUrl" defaultValue={apiUrl} placeholder="留空则走本机代理" />
           </label>
           <label>
             账号
-            <input value={email} autoComplete="username" placeholder="admin" onChange={(event) => setEmail(event.target.value)} />
+            <input name="account" autoComplete="username" defaultValue={email} placeholder="admin" />
           </label>
           <label>
             密码
-            <input type="password" value={password} autoComplete="current-password" onChange={(event) => setPassword(event.target.value)} />
+            <input name="secret" type="password" autoComplete="current-password" defaultValue={password} />
           </label>
           {authError ? <p className="error">{authError}</p> : null}
-          <button
-            className="primary"
-            type="submit"
-            disabled={busy || !email.trim() || !password}
-            onClick={() => void store.setApiUrl(apiUrl)}
-          >
+          <button className="primary" type="submit" disabled={busy}>
             {busy ? "登录中…" : "登录"}
           </button>
         </form>

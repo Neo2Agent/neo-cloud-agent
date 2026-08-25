@@ -3,13 +3,14 @@ import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { RunEvent, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, Run } from "@neo-cloud-agent/contracts/run";
 
+import { readSseEvents } from "./sse.js";
+
 export type PublicLlmSettings = {
   configured: boolean;
   upstream: string;
   model: string | null;
   baseUrl: string | null;
 };
-import { readSseEvents } from "./sse.js";
 
 export class MobileApiError extends Error {
   constructor(
@@ -26,11 +27,15 @@ export interface TranscriptResponse {
 }
 
 export class MobileClient {
+  private readonly fetchImpl: typeof fetch;
+
   constructor(
     readonly url: string,
     readonly token: string,
-    private readonly fetchImpl: typeof fetch = fetch,
-  ) {}
+    fetchImpl?: typeof fetch,
+  ) {
+    this.fetchImpl = fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
+  }
 
   headers(json = false, extra?: Record<string, string>): Record<string, string> {
     const headers: Record<string, string> = { ...extra };
