@@ -1,3 +1,5 @@
+import { joinAdminApiPath } from "./base";
+
 const TOKEN_KEY = "neo.admin.token.v1";
 
 export function readToken(): string {
@@ -10,7 +12,7 @@ export function writeToken(token: string): void {
 }
 
 export async function api(token: string, url: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(url, {
+  return fetch(joinAdminApiPath(import.meta.env.BASE_URL, url), {
     ...options,
     credentials: "same-origin",
     headers: {

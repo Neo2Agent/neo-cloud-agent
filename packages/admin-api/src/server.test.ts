@@ -31,6 +31,7 @@ async function login(base: string, email: string, password: string) {
   });
   return {
     status: response.status,
+    cookie: response.headers.get("set-cookie") ?? "",
     body: (await response.json()) as {
       token?: string;
       user?: { id: string; email: string; orgId: string };
@@ -60,6 +61,8 @@ test("admin-api is a separate app and only platform admins can use it", async (t
   assert.equal(admin.status, 200);
   assert.equal(admin.body.admin, true);
   assert.ok(admin.body.token);
+  assert.match(admin.cookie, /neo_admin_session=/);
+  assert.doesNotMatch(admin.cookie, /neo_session=/);
 
   const mateUser = await createTeammateAccount({
     email: "mate",

@@ -97,13 +97,14 @@ API Key **不要**写进 `.env` 也可以：上线后在对话页保存，落到
 
 ## systemd
 
-模板：[units/neo-llm-gateway.service](units/neo-llm-gateway.service)、[units/neo-control-plane.service](units/neo-control-plane.service)。
+模板：[units/neo-llm-gateway.service](units/neo-llm-gateway.service)、[units/neo-control-plane.service](units/neo-control-plane.service)、[units/neo-admin-api.service](units/neo-admin-api.service)。
 
 ```bash
 sudo cp infra-or-skill-units/neo-llm-gateway.service /etc/systemd/system/
 sudo cp infra-or-skill-units/neo-control-plane.service /etc/systemd/system/
+sudo cp infra-or-skill-units/neo-admin-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now neo-llm-gateway neo-control-plane
+sudo systemctl enable --now neo-llm-gateway neo-control-plane neo-admin-api
 ```
 
 仓库里的副本也在本 skill 的 `units/`。`WorkingDirectory` 必须是仓库根，`EnvironmentFile` 指向根目录 `.env`。控制面 `ExecStart` 必须是 `node --import tsx packages/control-plane/src/index.ts`，不要用 `pnpm --filter … start`：否则 MainPID 是 pnpm，`KillMode=process` 停不掉真正听 `:8080` 的进程。
@@ -120,7 +121,7 @@ sudo cp units/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，对外用 `https://neorun.cloud`，不要让用户去记 `:8080`。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
+必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，对外用 `https://neorun.cloud/` 对话、`https://neorun.cloud/admin/` 管理台，不要让用户去记 `:8080` / `:8090`。8090 只听本机。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
 
 ## 系统镜像
 

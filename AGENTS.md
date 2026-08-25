@@ -15,7 +15,7 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 ### Services
 - `pnpm dev` — backend only: `control-plane` `:8080` + `llm-gateway` `:8081`.
 - `pnpm dev:web` — Web UI on `:5173` (reuses backend on `:8080` if already up). This is `packages/web`.
-- `pnpm dev:admin` — standalone admin console: `admin-api` `:8090` + `admin-web` `:5176`. Not the chat UI. Login is still `admin` / `123456` (or `ADMIN_EMAILS`).
+- `pnpm dev:admin` — standalone admin console: `admin-api` `:8090` + `admin-web` `:5176`. Not the chat UI. Login is still `admin` / `123456` (or `ADMIN_EMAILS`). Production path is `https://neorun.cloud/admin/` (same host as chat, not `/a` `/b` and not a second domain).
 - `pnpm dev:desk` — Desk UI Vite on `:5174` plus the Electron window, against local `:8080`. This is `packages/desk/ui`, a different UI that talks to the same `/v1`. Do not confuse with the old `:8082` browser preview (`pnpm preview:desk`).
 - `pnpm dev:desk:prod` — same Desk window, API is the production control plane (`https://neorun.cloud` or `http://62.234.211.200` unless `NEO_CONTROL_PLANE_URL` is a non-loopback override). Does not start local `:8080`. Web against production is just opening that URL. Domain bind / HTTPS: `.cursor/skills/tencent-lighthouse-domain/SKILL.md` and `docs/production-domain.md`.
 - `llm-gateway` holds provider keys. With no `DEEPSEEK_API_KEY`/`OPENAI_API_KEY` set it runs `upstream=mock`, which is enough to exercise runs end-to-end.

@@ -1,3 +1,6 @@
+# HTTP-only fallback（现网用 domain skill 的 Caddyfile.https）。
+# / → 对话 :8080；/admin/ → 管理台 :8090。8090 不要对公网开放。
+
 :80 {
 	encode gzip zstd {
 		match {
@@ -9,7 +12,15 @@
 			header Content-Type image/svg+xml*
 		}
 	}
-	reverse_proxy 127.0.0.1:8080 {
-		flush_interval -1
+	redir /admin /admin/ 308
+	handle_path /admin/* {
+		reverse_proxy 127.0.0.1:8090 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8080 {
+			flush_interval -1
+		}
 	}
 }
