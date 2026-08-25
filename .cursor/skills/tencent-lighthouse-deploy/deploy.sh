@@ -78,7 +78,10 @@ use_repo_node() {
   [[ -f "$ROOT/.nvmrc" ]] || return 0
   ver="$(tr -d '[:space:]' <"$ROOT/.nvmrc")"
   bin="$HOME/.nvm/versions/node/v${ver}/bin"
-  if [[ -x "$bin/node" ]]; then
+  if [[ ! -x "$bin/node" ]]; then
+    bin="$(ls -d "$HOME/.nvm/versions/node"/v22.*/bin 2>/dev/null | tail -n 1 || true)"
+  fi
+  if [[ -n "${bin:-}" && -x "${bin}/node" ]]; then
     export PATH="$bin:$PATH"
   fi
 }
