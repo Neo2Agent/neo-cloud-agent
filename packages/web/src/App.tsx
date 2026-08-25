@@ -1619,7 +1619,7 @@ export function App() {
                 }}
               />
             ) : mainTab === "projects" ? (
-              <ProjectsPage>
+              <ProjectsPage
                 token={token}
                 userId={userId}
                 inviteToken={inviteToken}
