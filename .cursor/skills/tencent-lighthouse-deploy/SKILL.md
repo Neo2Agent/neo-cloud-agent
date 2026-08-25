@@ -27,7 +27,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | 规格 | 4C / 4G / 40G Ubuntu |
 | 登录用户 | `ubuntu`（有免密 sudo） |
 | 代码 | `/home/ubuntu/neo-cloud-agent` |
-| 入口 | http://neorun.cloud/ 或 http://62.234.211.200/ （Caddy `:80` → `127.0.0.1:8080`） |
+| 入口 | https://neorun.cloud/ （Caddy HTTPS → `127.0.0.1:8080`）；IP 仍可用 http://62.234.211.200/ |
 | Node | 已装 **v22.23.1**（满足 `>=22.19`） |
 | Docker / KVM | **都没有**。`WORKER_RUNTIME=vm` 用 2 个 loop 挂载的 ext4 槽，不是 Firecracker |
 | 运行时栈 | **官方系统镜像** Ubuntu Server 24.04 LTS + Node 22 + pnpm + Caddy + systemd（`neo-llm-gateway` / `neo-control-plane`）。2026-08-22 已从爱马仕/Halo 应用镜像重装，不是应用模板 |
@@ -128,13 +128,13 @@ LLM_UPSTREAM=mock
 
 6. 安装 [units/](units/) 两个 systemd unit，`daemon-reload && enable --now`。
 7. Caddy `:80` 反代 `127.0.0.1:8080`，`flush_interval -1`（SSE）。
-8. 打开 http://neorun.cloud/ 或 http://62.234.211.200/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。域名还没解析时先走 IP，绑域名步骤见 domain skill。
+8. 打开 https://neorun.cloud/ 或 http://62.234.211.200/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。域名还没解析时先走 IP，绑域名与 HTTPS 见 domain skill。
 
 ## 线上运行时
 
 | 项 | 现状 |
 | --- | --- |
-| 进程 | `neo-llm-gateway` `:8081`，`neo-control-plane` `:8080`，Caddy `:80` |
+| 进程 | `neo-llm-gateway` `:8081`，`neo-control-plane` `:8080`，Caddy `:80` + `:443` |
 | 工作目录 | `/home/ubuntu/neo-cloud-agent`（unit 的 `WorkingDirectory`） |
 | 密钥 | 根目录 `.env` + `.neo/llm-upstream.env` + `.neo/scm-push.env`（gitignore） |
 | Worker | `WORKER_RUNTIME=vm`，2×4GiB ext4 在 `.neo/vms/`，无 KVM 则 loop 挂载。`WORKER_MEMORY_MIB` 会限制 heap；unit 需 `Delegate=` 才有 cgroup RSS |

@@ -19,8 +19,8 @@ HTTPS 要不要花钱、怎么开，见 [docs/production-domain.md](../../../doc
 | NS | `scallop.dnspod.net` / `mooncake.dnspod.net` |
 | 应用机 | `Halo建站-AFjg` / `lhins-b0l0d8b2` / `62.234.211.200` / 北京 `rid=8` |
 | 解析 | `@` 与 `www` 的 A 记录 → `62.234.211.200`，TTL 600 |
-| 入口 | http://neorun.cloud/ （Caddy `:80` → `127.0.0.1:8080`） |
-| HTTPS | 未开。控制台「设置 HTTPS」是灰的/未设置 |
+| 入口 | https://neorun.cloud/ （Caddy 自动 HTTPS → `127.0.0.1:8080`） |
+| HTTPS | 已开。Let's Encrypt，Caddy 自动续。轻量控制台「设置 HTTPS」不要点 |
 | 库机 | **不要**绑到 `101.42.105.230` |
 
 还有一个库机账号（UIN `100047610252`）。Chrome 若登着那个号，**看不到**这台应用机，也看不到 `neorun.cloud`。扫码前确认是买域名的号。
@@ -67,7 +67,7 @@ HTTPS 要不要花钱、怎么开，见 [docs/production-domain.md](../../../doc
 | 端口 | 用途 |
 | --- | --- |
 | 80 | 现网对话页（必须开） |
-| 443 | 以后 HTTPS（现网已开，Caddy 还没听） |
+| 443 | HTTPS（Caddy 已听，Let's Encrypt） |
 | 22 | SSH，不要关 |
 | 3306 / 6379 | **不要**在应用机放行；库在另一台 |
 
@@ -75,9 +75,9 @@ HTTPS 要不要花钱、怎么开，见 [docs/production-domain.md](../../../doc
 
 ### 4. 主机侧
 
-现网 Caddy 是 `:80` 对所有 Host 反代 `:8080`，`flush_interval -1`。DNS 一生效，`http://neorun.cloud` 就能开，**不必改 Caddyfile**。
+现网 Caddy 用 [units/Caddyfile.https](units/Caddyfile.https)：`neorun.cloud` / `www.neorun.cloud` 走 443（Let's Encrypt），HTTP 308 到 HTTPS；`http://62.234.211.200` 仍听 `:80`。`flush_interval -1`。不要点控制台一键 HTTPS。
 
-模板：[../tencent-lighthouse-deploy/units/Caddyfile](../tencent-lighthouse-deploy/units/Caddyfile)。上 HTTPS 用 [units/Caddyfile.https](units/Caddyfile.https)，不要点控制台一键 HTTPS。
+改证书配置：备份 `/etc/caddy/Caddyfile`，覆盖模板，`sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`，再 `sudo systemctl reload caddy`。看 `journalctl -u caddy` 里是否有 `certificate obtained successfully`。只听 `:80` 的旧模板在 [../tencent-lighthouse-deploy/units/Caddyfile](../tencent-lighthouse-deploy/units/Caddyfile)。
 
 ## 验收
 
@@ -88,13 +88,12 @@ dig +short A neorun.cloud @1.1.1.1
 dig +short A www.neorun.cloud @1.1.1.1
 # 期望两行都是 62.234.211.200
 
-curl -sS -o /dev/null -w "%{http_code}\n" --resolve neorun.cloud:80:62.234.211.200 http://neorun.cloud/
-curl -sS --resolve neorun.cloud:80:62.234.211.200 http://neorun.cloud/ | grep -E "<title>|Neo Cloud Agent"
+curl -sS -o /dev/null -w "%{http_code}\n" --resolve neorun.cloud:443:62.234.211.200 https://neorun.cloud/
+curl -sS --resolve neorun.cloud:443:62.234.211.200 https://neorun.cloud/ | grep -E "<title>|Neo Cloud Agent"
+# 机上：HTTP 主机名应 308 到 https://neorun.cloud/
 ```
 
-期望：`200`，标题 `Neo Cloud Agent`。登录仍是手输 `admin` / `123456`，不要把密码写进新文档以外的聊天。
-
-`https://neorun.cloud` 在未改 Caddy 前会 TLS 失败，这是现状，不是解析坏了。
+期望：HTTPS `200`，标题 `Neo Cloud Agent`，证书 CN `neorun.cloud`。登录仍是手输 `admin` / `123456`，不要把密码写进新文档以外的聊天。
 
 ## 排障
 
@@ -111,4 +110,4 @@ curl -sS --resolve neorun.cloud:80:62.234.211.200 http://neorun.cloud/ | grep -E
 - 未登录先给微信码，扫完再改解析。
 - 只动 DNS 和文档；不要重启实例、不要 TAT 乱改 Caddy，除非用户明确要上 HTTPS。
 - 验收只报解析 IP、HTTP 状态、页面标题，不报账号里的证书私钥或 `.env`。
-- HTTPS 默认 **不花钱**（Caddy + Let's Encrypt）。细节写在 `docs/production-domain.md`，不要先买腾讯云付费证书。
+- HTTPS 用 Caddy + Let's Encrypt，**不花钱**。现网已经开着。不要买腾讯云付费证书，不要点轻量一键 HTTPS。细节在 `docs/production-domain.md`。

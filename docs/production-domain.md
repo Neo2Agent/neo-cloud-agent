@@ -10,10 +10,10 @@
 | 账号 | 周栋 / UIN `100046045274` |
 | 解析 | `@`、`www` → A `62.234.211.200`（DNSPod，TTL 600） |
 | 应用机 | `Halo建站-AFjg` / `lhins-b0l0d8b2`，北京六区 |
-| HTTP | http://neorun.cloud/ 、http://www.neorun.cloud/ 、http://62.234.211.200/ |
-| HTTPS | 未开。轻量「域名解析」里 HTTPS 列为未设置 |
+| HTTP | `http://neorun.cloud` 308 到 HTTPS；`http://62.234.211.200/` 仍可用 |
+| HTTPS | **已开**（2026-08-25）。Let's Encrypt，CN `neorun.cloud` / `www.neorun.cloud`，Caddy 自动续 |
 
-Caddy 只听 `:80`，对任意 `Host` 反代 `127.0.0.1:8080`（`flush_interval -1`）。DNS 生效后不必改主机就能用域名访问。
+Caddy 用 [Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https)：域名走 443，IP 仍走 `:80`，反代 `127.0.0.1:8080`（`flush_interval -1`）。
 
 ## 怎么绑（摘要）
 
@@ -26,10 +26,10 @@ Caddy 只听 `:80`，对任意 `Host` 反代 `127.0.0.1:8080`（`flush_interval 
 
 ```bash
 dig +short A neorun.cloud @1.1.1.1
-curl -sS -o /dev/null -w "%{http_code}\n" --resolve neorun.cloud:80:62.234.211.200 http://neorun.cloud/
+curl -sS -o /dev/null -w "%{http_code}\n" --resolve neorun.cloud:443:62.234.211.200 https://neorun.cloud/
 ```
 
-期望 `62.234.211.200` 和 HTTP `200`，页面标题 `Neo Cloud Agent`。
+期望 `62.234.211.200` 和 HTTPS `200`，页面标题 `Neo Cloud Agent`。
 
 ## HTTPS 要不要花钱
 
@@ -39,21 +39,19 @@ curl -sS -o /dev/null -w "%{http_code}\n" --resolve neorun.cloud:80:62.234.211.2
 
 | 做法 | 钱 | 和现网的关系 | 建议 |
 | --- | --- | --- | --- |
-| **Caddy + Let's Encrypt** | **0 元**，约 90 天一张，Caddy 自动续 | 现网已经是 Caddy。把站点块改成主机名即可申请。模板：[Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https) | **首选。** 用户明确说要 HTTPS 再改，先备份 `/etc/caddy/Caddyfile` |
+| **Caddy + Let's Encrypt** | **0 元**，约 90 天一张，Caddy 自动续 | **现网已用这个。** 模板：[Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https) | 保持即可。证书坏了先看 `journalctl -u caddy`，不要买付费证书 |
 | 腾讯云免费 DV（TrustAsia） | **0 元** | 每账号最多 50 张；有效期 **90 天**；不能续费，要重新申请；单域名，不含泛域名。见 [免费 SSL 概述](https://cloud.tencent.com/document/product/400/89868) | 能用，但要每季度重签，还得手动塞进 Caddy |
 | 轻量控制台「设置 HTTPS」 | 证书可以免费 | **只支持** WordPress / LAMP / Typecho 等**应用镜像**，靠 TAT 改 Nginx。[官方说明](https://cloud.tencent.com/document/product/1207/84359)。北京地域还不能「在线申请」；在线申请仅香港及境外 | **不要点。** 现网是 Ubuntu 24.04 **系统镜像** + Caddy，一点会和现栈冲突 |
 | 腾讯云付费 DV | 约 **318～560 元/年** 起（WoTrus 318、Rapid 405、DNSPod 560；[价格总览](https://cloud.tencent.com/document/product/400/7994)，2026-01 文档） | 品牌证书、控制台托管；泛域名更贵（DNSPod DV 通配符 2260 元/年） | 只有要发票、OV/EV、或官方托管时才买 |
 
-Let's Encrypt / Caddy 自动 HTTPS 也不收腾讯云的钱。前提：解析已指向这台机、80 和 443 通、Caddy 用域名当 site address（不能只写 `:80`）。申请失败先看解析和防火墙，不要先去买证书。
+Let's Encrypt / Caddy 自动 HTTPS 也不收腾讯云的钱。现网 2026-08-25 已按此签发。证书坏了先查解析、443、以及 `journalctl -u caddy` 里有没有 `certificate obtained successfully`，不要先去买证书。
 
 付费证书 2026-01-01 起 Rapid / GeoTrust / SecureSite 又调过价（[公告](https://cloud.tencent.com/announce/detail/2176)）。下单以购买页为准。
 
-## 上 HTTPS 时（还没做）
-
-用户明确要求后再做：
+## 以后改 Caddy / 换证书
 
 1. 确认 `dig +short A neorun.cloud @1.1.1.1` 仍是 `62.234.211.200`，443 已放行。
 2. SSH 到应用机（TAT 写公钥，不要控制台绑密钥）。
-3. 备份 `/etc/caddy/Caddyfile`，换成 `Caddyfile.https`，`sudo systemctl reload caddy`。
-4. 验 `https://neorun.cloud/` 为 200，标题仍是对话页。
+3. 备份 `/etc/caddy/Caddyfile`，改完 `sudo caddy validate` 再 `sudo systemctl reload caddy`。
+4. 验 `https://neorun.cloud/` 为 200。
 5. 不要重装系统，不要让 TAT 按应用镜像装 Nginx。

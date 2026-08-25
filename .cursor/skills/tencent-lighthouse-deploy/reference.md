@@ -120,7 +120,7 @@ sudo cp units/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-必须 `flush_interval -1`，否则对话 SSE 会缓冲。对外只开 80 即可，不要让用户去记 `:8080`。`:80` 对所有 Host 反代，DNS 指过来就能用 `http://neorun.cloud`。不要用轻量控制台一键 HTTPS（只支持应用镜像）。Caddy 自动 HTTPS 模板见 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
+必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，对外用 `https://neorun.cloud`，不要让用户去记 `:8080`。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
 
 ## 系统镜像
 
@@ -140,4 +140,4 @@ curl -sS http://127.0.0.1:8080/v1/vms
 curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1/
 ```
 
-浏览器：http://neorun.cloud/ 或 http://62.234.211.200/ → 登录 → 保存 DeepSeek/OpenAI Key → 新开对话。旧 mock 气泡不会改写。
+浏览器：https://neorun.cloud/ 或 http://62.234.211.200/ → 登录 → 保存 DeepSeek/OpenAI Key → 新开对话。旧 mock 气泡不会改写。
