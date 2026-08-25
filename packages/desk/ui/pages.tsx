@@ -573,6 +573,16 @@ export function ContextBar({
   );
 }
 
+export type ComposerMention = { kind: "asset" | "todo"; id: string; label: string; insert: string };
+
+function mentionQuery(text: string): string | null {
+  const at = text.lastIndexOf("@");
+  if (at < 0) return null;
+  const after = text.slice(at + 1);
+  if (after.includes("\n") || after.includes(" ")) return null;
+  return after;
+}
+
 export function ChatComposer({
   prompt,
   setPrompt,
@@ -588,6 +598,7 @@ export function ChatComposer({
   taRef,
   onComposerKey,
   home,
+  mentions,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -603,10 +614,27 @@ export function ChatComposer({
   taRef: Ref<HTMLTextAreaElement>;
   onComposerKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   home?: boolean;
+  mentions?: ComposerMention[];
 }) {
-  const label = selected || "Add Models";
+  const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
   const [maxWidth, setMaxWidth] = useState(COMPOSER_MAX_PX);
+  const typed = mentionQuery(prompt);
+  const mentionHits = (mentions ?? []).filter((item) => {
+    if (typed === null) return false;
+    const q = typed.toLowerCase();
+    return !q || item.label.toLowerCase().includes(q) || item.kind.includes(q);
+  }).slice(0, 8);
+
+  const pickMention = (item: ComposerMention) => {
+    const at = prompt.lastIndexOf("@");
+    const next = `${prompt.slice(0, at)}${item.insert} `;
+    setPrompt(next);
+    requestAnimationFrame(() => {
+      const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
+      ta?.focus();
+    });
+  };
 
   useLayoutEffect(() => {
     const page = boxRef.current?.closest(".chat-page") ?? boxRef.current?.closest(".stage") ?? boxRef.current?.closest(".composer-wrap");
@@ -635,9 +663,31 @@ export function ChatComposer({
         value={prompt}
         placeholder={placeholder}
         onChange={(event) => setPrompt(event.target.value)}
-        onKeyDown={onComposerKey}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && mentionHits.length > 0) {
+            event.preventDefault();
+            setPrompt(prompt.replace(/@[^\s@]*$/, ""));
+            return;
+          }
+          if (event.key === "Enter" && !event.shiftKey && mentionHits[0] && typed !== null) {
+            event.preventDefault();
+            pickMention(mentionHits[0]);
+            return;
+          }
+          onComposerKey(event);
+        }}
         rows={1}
       />
+      {mentionHits.length > 0 ? (
+        <div className="mention-menu" role="listbox" aria-label="引用项目内容">
+          {mentionHits.map((item) => (
+            <button key={`${item.kind}-${item.id}`} type="button" onClick={() => pickMention(item)}>
+              <em>{item.kind === "asset" ? "资产" : "待办"}</em>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="composer-tools">
         <div className="model-wrap">
           <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>

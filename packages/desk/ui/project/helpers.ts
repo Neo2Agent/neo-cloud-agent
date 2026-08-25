@@ -29,6 +29,15 @@ export function displayName(email: string): string {
   return email.split("@")[0] || email;
 }
 
+export function hostHint(
+  run: { assigneeUserId?: string | null; userId?: string; collaborators?: Array<{ role: string; email?: string }> },
+  members: Array<{ userId: string; email: string }>,
+): string {
+  const host = run.collaborators?.find((item) => item.role === "host");
+  const email = host?.email || members.find((item) => item.userId === (run.assigneeUserId || run.userId))?.email;
+  return email ? `房主 ${email}` : "房主";
+}
+
 export function repoShort(url: string): string {
   try {
     const path = new URL(url).pathname.replace(/\.git$/, "");

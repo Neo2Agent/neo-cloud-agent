@@ -1,8 +1,9 @@
 import type { FollowUp } from "@neo-cloud-agent/contracts";
-import type { Project, ProjectMember } from "@neo-cloud-agent/contracts/project";
+import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useEffect, useMemo, useState } from "react";
 import { api, readJson } from "../api";
+import { hostHint } from "./helpers";
 
 export function RunChrome({
   token,
@@ -11,6 +12,7 @@ export function RunChrome({
   userId,
   onAbort,
   onTransferred,
+  toolsOpen = false,
 }: {
   token: string;
   run: Run;
@@ -18,12 +20,10 @@ export function RunChrome({
   userId: string;
   onAbort: () => void;
   onTransferred: (run: Run) => void;
+  toolsOpen?: boolean;
 }) {
   const cloud = run.executionTarget?.loop !== "desk";
-  const canInvite = Boolean(run.projectId && cloud);
   const members = project?.members ?? [];
-  const others = members.filter((item) => item.userId !== userId && !(run.collaborators ?? []).some((row) => row.userId === item.userId));
-  const [invitee, setInvitee] = useState("");
   const [transferTo, setTransferTo] = useState("");
   const [note, setNote] = useState("");
   const [handoffTitle, setHandoffTitle] = useState("");
@@ -62,26 +62,6 @@ export function RunChrome({
   const queued = useMemo(() => followUps.filter((item) => item.status === "queued"), [followUps]);
   const running = run.status === "RUNNING";
 
-  const invite = async () => {
-    if (!invitee || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const response = await api(token, `/v1/runs/${run.id}/collaborators`, {
-        method: "POST",
-        body: JSON.stringify({ userId: invitee }),
-      });
-      const body = await readJson<Run & { error?: string }>(response);
-      if (!response.ok) throw new Error(body.error || "邀请失败");
-      setInvitee("");
-      onTransferred(body);
-    } catch (item) {
-      setError(item instanceof Error ? item.message : "邀请失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const transfer = async () => {
     if (!transferTo || busy) return;
     setBusy(true);
@@ -109,11 +89,6 @@ export function RunChrome({
 
   return (
     <div className="run-chrome">
-      <div className="run-chrome-tags">
-        {project ? <span className="role-badge">{project.name}</span> : null}
-        <span className="role-badge">{cloud ? "Cloud" : "This Computer"}</span>
-        <span className="hint">{hostLabel(run, members)}</span>
-      </div>
       {queued.length > 0 || running ? (
         <div className="queue-bar">
           <span>{running ? "正在处理当前回合" : "空闲"}</span>
@@ -124,8 +99,12 @@ export function RunChrome({
             </button>
           ) : null}
         </div>
-      ) : null}
-      {run.projectId ? (
+      ) : (
+        <p className="hint run-host-hint">
+          {cloud ? "云端" : "本机"} · {hostHint(run, members)}
+        </p>
+      )}
+      {toolsOpen && run.projectId ? (
         <div className="run-chrome-actions">
           <input
             value={handoffTitle}
@@ -211,24 +190,10 @@ export function RunChrome({
           </button>
         </div>
       ) : null}
-      {canInvite ? (
+      {toolsOpen && run.projectId && cloud ? (
         <div className="run-chrome-actions">
           <label>
-            <span>邀请加入这条对话</span>
-            <select value={invitee} onChange={(event) => setInvitee(event.target.value)}>
-              <option value="">选择项目成员</option>
-              {others.map((item) => (
-                <option key={item.userId} value={item.userId}>
-                  {item.email}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" className="ghost" disabled={!invitee || busy} onClick={() => void invite()}>
-            邀请
-          </button>
-          <label>
-            <span>{cloud ? "把房主交给" : "给对方开新对话"}</span>
+            <span>把房主交给</span>
             <select value={transferTo} onChange={(event) => setTransferTo(event.target.value)}>
               <option value="">选择成员</option>
               {members
@@ -242,19 +207,32 @@ export function RunChrome({
           </label>
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="交接备注（可选）" />
           <button type="button" className="ghost" disabled={!transferTo || busy} onClick={() => void transfer()}>
-            {cloud ? "转交房主" : "开新对话"}
+            转交房主
           </button>
         </div>
-      ) : run.projectId ? (
-        <p className="hint">本机对话不能拉人进会话。要一起改文件，先开在 Cloud。</p>
+      ) : toolsOpen && run.projectId ? (
+        <div className="run-chrome-actions">
+          <p className="hint">本机对话不能拉人进会话。要一起改文件，先开在 Cloud。</p>
+          <label>
+            <span>给对方开新对话</span>
+            <select value={transferTo} onChange={(event) => setTransferTo(event.target.value)}>
+              <option value="">选择成员</option>
+              {members
+                .filter((item) => item.userId !== userId)
+                .map((item) => (
+                  <option key={item.userId} value={item.userId}>
+                    {item.email}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="交接备注（可选）" />
+          <button type="button" className="ghost" disabled={!transferTo || busy} onClick={() => void transfer()}>
+            开新对话
+          </button>
+        </div>
       ) : null}
       {error ? <p className="error">{error}</p> : null}
     </div>
   );
-}
-
-function hostLabel(run: Run, members: ProjectMember[]): string {
-  const host = run.collaborators?.find((item) => item.role === "host");
-  const email = host?.email || members.find((item) => item.userId === (run.assigneeUserId || run.userId))?.email;
-  return email ? `房主 ${email}` : "房主";
 }

@@ -17,10 +17,12 @@ import {
   runIdFromDeepLink,
   runIdFromHash,
 } from "../src/protocol";
+import { ChatHeader } from "./project/ChatHeader";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
 import { RunChrome } from "./project/run-chrome";
 import type { WorkbenchTab } from "./project/types";
+import { initials as memberInitials } from "./project/helpers";
 import {
   isActiveRunStatus,
   isTerminalTurnEvent,
@@ -36,6 +38,7 @@ import {
   AutomationsPage,
   ChatComposer,
   ContextBar,
+  type ComposerMention,
   loadSavedModels,
   Modal,
   ModelSettingsPage,
@@ -178,6 +181,8 @@ export function App() {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxRow[]>([]);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("board");
+  const [chatToolsOpen, setChatToolsOpen] = useState(false);
+  const [mentions, setMentions] = useState<ComposerMention[]>([]);
   const [todoHits, setTodoHits] = useState<Array<{ id: string; title: string; meta: string; projectId: string }>>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
@@ -371,6 +376,7 @@ export function App() {
       if (!runRes.ok) return;
       const run = await readJson<Run>(runRes);
       setCurrent(run);
+      setChatToolsOpen(false);
       if (run.projectId) {
         const projectRes = await api(tokenRef.current, `/v1/projects/${run.projectId}`);
         if (projectRes.ok) {
@@ -641,6 +647,44 @@ export function App() {
     const q = query.trim().toLowerCase();
     return todoHits.filter((item) => !q || item.title.toLowerCase().includes(q) || item.meta.toLowerCase().includes(q)).slice(0, 12);
   }, [query, todoHits]);
+
+  useEffect(() => {
+    if (!authed || !activeProject) {
+      setMentions([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const [todoRes, assetRes] = await Promise.all([
+        api(tokenRef.current, `/v1/projects/${activeProject.id}/todos`),
+        api(tokenRef.current, `/v1/projects/${activeProject.id}/assets`),
+      ]);
+      if (cancelled) return;
+      const todos = todoRes.ok
+        ? ((await readJson<{ todos?: Array<{ id: string; title: string }> }>(todoRes)).todos ?? [])
+        : [];
+      const assets = assetRes.ok
+        ? ((await readJson<{ assets?: Array<{ id: string; path: string }> }>(assetRes)).assets ?? [])
+        : [];
+      setMentions([
+        ...todos.map((item) => ({
+          kind: "todo" as const,
+          id: item.id,
+          label: item.title,
+          insert: `@待办 ${item.title}`,
+        })),
+        ...assets.map((item) => ({
+          kind: "asset" as const,
+          id: item.id,
+          label: item.path,
+          insert: `@资产 ${item.path}`,
+        })),
+      ]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject, authed]);
 
   useEffect(() => {
     if (!searchOpen || !authed) return;
@@ -1189,16 +1233,39 @@ export function App() {
           <section className="page chat-page">
             {current ? (
               <>
-                <header className="stage-head">
-                  <h1>{title}</h1>
-                  {isCloudRun(current) ? <IconCloud size={18} /> : null}
-                </header>
-                {current.projectId ? (
+                <ChatHeader
+                  title={title}
+                  project={activeProject?.id === current.projectId ? activeProject : null}
+                  run={current}
+                  token={token}
+                  userId={userId}
+                  toolsOpen={chatToolsOpen}
+                  onOpenProject={() => {
+                    if (current.projectId) {
+                      void openProject(current.projectId);
+                      return;
+                    }
+                    setNav("projects");
+                  }}
+                  onSearch={() => {
+                    setSearchOpen(true);
+                    setSearchFilter("all");
+                    requestAnimationFrame(() => searchRef.current?.focus());
+                  }}
+                  onRefresh={() => void openRun(current.id, { record: false })}
+                  onToggleTools={() => setChatToolsOpen((cur) => !cur)}
+                  onRunChange={(next) => {
+                    setCurrent(next);
+                    setRuns((prev) => [next, ...prev.filter((item) => item.id !== next.id)]);
+                  }}
+                />
+                {current.projectId || current.status === "RUNNING" ? (
                   <RunChrome
                     token={token}
                     run={current}
                     project={activeProject?.id === current.projectId ? activeProject : null}
                     userId={userId}
+                    toolsOpen={chatToolsOpen}
                     onAbort={() => {
                       void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
                     }}
@@ -1211,31 +1278,37 @@ export function App() {
                     }}
                   />
                 ) : null}
-                <div className="feed" ref={feedRef}>
+                <div className="feed chat-feed" ref={feedRef}>
                   {!visible.some((message) => message.role === "user") ? (
-                    <article className="user-card">
-                      <div className="user-card-text">{current.prompt}</div>
+                    <article className="chat-row user">
+                      <div className="chat-col">
+                        <div className="chat-bubble user">{current.prompt}</div>
+                      </div>
+                      <span className="avatar">{memberInitials(user)}</span>
                     </article>
                   ) : null}
                   {visible.map((message, messageIndex) => {
                     if (message.role === "user") {
                       return (
-                        <article key={message.id} className="user-card">
-                          <div className="user-card-text">{message.text || current.prompt}</div>
-                          {message.images?.length ? (
-                            <div className="thumbs">
-                              {message.images.map((image, index) => (
-                                <img key={`${message.id}-${index}`} src={`data:${image.mediaType};base64,${image.data}`} alt="" />
-                              ))}
-                            </div>
-                          ) : null}
+                        <article key={message.id} className="chat-row user">
+                          <div className="chat-col">
+                            <div className="chat-bubble user">{message.text || current.prompt}</div>
+                            {message.images?.length ? (
+                              <div className="thumbs">
+                                {message.images.map((image, index) => (
+                                  <img key={`${message.id}-${index}`} src={`data:${image.mediaType};base64,${image.data}`} alt="" />
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          <span className="avatar">{memberInitials(user)}</span>
                         </article>
                       );
                     }
                     if (isThought(message)) {
                       return (
                         <details key={message.id} className="thought">
-                          <summary>Thought briefly.</summary>
+                          <summary>思考过程</summary>
                           <p>{message.text}</p>
                         </details>
                       );
@@ -1250,35 +1323,46 @@ export function App() {
                     }
                     const groups = transcriptGroups(message);
                     const showActions = shouldShowAssistantActions(visible, messageIndex);
+                    const live = messageIsLive(message) || Boolean(activity && messageIndex === visible.length - 1);
                     const actions = showActions ? (
                       <div className="assistant-actions">
-                        <button type="button" className="icon-btn" aria-label="Good response">
-                          <IconThumbsUp />
-                        </button>
-                        <button type="button" className="icon-btn" aria-label="Bad response">
-                          <IconThumbsDown />
-                        </button>
                         <button
                           type="button"
                           className="icon-btn"
-                          aria-label="Copy"
+                          aria-label="复制"
                           onClick={() => void copyText(message.text)}
                         >
                           <IconCopy />
                         </button>
+                        <button type="button" className="icon-btn" aria-label="有用">
+                          <IconThumbsUp />
+                        </button>
+                        <button type="button" className="icon-btn" aria-label="没用">
+                          <IconThumbsDown />
+                        </button>
                         <span className="ago">{formatRel(message.createdAt)}</span>
                       </div>
                     ) : null;
+                    const brand = (
+                      <div className="chat-brand">
+                        <strong>Neo</strong>
+                        <span>{live ? activity || "进行中" : `已完成${formatRel(message.createdAt) ? ` ${formatRel(message.createdAt)}` : ""}`}</span>
+                      </div>
+                    );
                     if (groups.length === 0) {
                       return message.text ? (
-                        <article key={message.id} className="assistant-block">
-                          <div className="assistant-text">{message.text}</div>
+                        <article key={message.id} className="chat-row assistant">
+                          {brand}
+                          <div className="chat-bubble assistant">
+                            <div className="assistant-text">{message.text}</div>
+                          </div>
                           {actions}
                         </article>
                       ) : null;
                     }
                     return (
-                      <div key={message.id} className="assistant-turn">
+                      <div key={message.id} className="chat-row assistant">
+                        {brand}
                         {groups.map((group, index) => {
                           if (group.type === "tools") {
                             return (
@@ -1290,7 +1374,7 @@ export function App() {
                             );
                           }
                           return (
-                            <article key={`${message.id}-text-${index}`} className="assistant-block">
+                            <article key={`${message.id}-text-${index}`} className="chat-bubble assistant">
                               <div className="assistant-text">{group.text}</div>
                             </article>
                           );
@@ -1299,7 +1383,7 @@ export function App() {
                       </div>
                     );
                   })}
-                  {activity ? (
+                  {activity && !visible.some((item) => messageIsLive(item)) ? (
                     <div className="turn-progress">
                       <span className="think-dots" aria-hidden="true">
                         <i />
@@ -1339,7 +1423,13 @@ export function App() {
               <ChatComposer
                 prompt={prompt}
                 setPrompt={setPrompt}
-                placeholder={runId ? "Send follow-up" : "Plan, Build, / for skills, @ for context"}
+                placeholder={
+                  activeProject || current?.projectId
+                    ? "今天帮你做些什么？@ 引用资产文件或项目待办"
+                    : runId
+                      ? "继续这条对话"
+                      : "今天帮你做些什么？"
+                }
                 sending={sending}
                 models={modelNames}
                 selected={selectedModel}
@@ -1357,7 +1447,9 @@ export function App() {
                 taRef={taRef}
                 onComposerKey={onComposerKey}
                 home={!current}
+                mentions={activeProject || current?.projectId ? mentions : []}
               />
+              {current ? <p className="composer-note">内容由模型生成，请核实重要信息</p> : null}
               {authError ? <p className="error toast-inline">{authError}</p> : null}
               {copied ? <p className="copied">Copied</p> : null}
             </footer>
