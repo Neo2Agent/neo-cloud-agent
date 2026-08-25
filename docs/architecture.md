@@ -798,7 +798,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 
 1. Firecracker 生产 rootfs / tap 回连已经落地（`pnpm fc:assets` / `pnpm fc:rootfs` / `pnpm test:firecracker`）。嵌套 KVM + AMX 的宿主机 `KVM_CREATE_VCPU` 会故障，live turn 需在真机或非 AMX 宿主上跑。
 2. 块设备 CoW 已落地接口：Build / 预热 / Firecracker rootfs 先 `cp --reflink=always`；文件系统不支持时工作区整树复制，生产 rootfs 只读共享原盘（不整份拷 1.5GiB）。不是 live-fork。
-3. 配额：同时跑的对话 / 本月 token 已落地（`GET /v1/quota`）；完整账务仍后置
+3. 配额：同时跑的对话 / 本月 token 已落地（`GET /v1/quota`）；完整账务仍后置。后管与模型网关怎么拆（New API 管渠道、Neo 管 Agent 用户）见 [admin-platform-research.md](./admin-platform-research.md)。
 4. Egress 从应用层升级到 VM 出站代理 / iptables
 5. headed browser / computer-use sidecar（`neo_browse` 只抓静态页）
 6. CLI 交互 TUI、浏览器登录、本机 pi 模式——都单开，不要和 `neo run` 混语义。P0 headless 客户端见 [cli.md](./cli.md)
