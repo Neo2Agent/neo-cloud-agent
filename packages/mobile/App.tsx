@@ -13,7 +13,7 @@ import { MobileClient } from "./src/api/client";
 import { memoryCredentials } from "./src/api/credentials";
 import { detectMobileSource } from "./src/api/source";
 import { preview, STATUS_LABELS } from "./src/format";
-import type { Run } from "@neo-cloud-agent/contracts";
+import type { Run } from "@neo-cloud-agent/contracts/run";
 
 export default function NativeApp() {
   const store = useMemo(() => memoryCredentials(), []);

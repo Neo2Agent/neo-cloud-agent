@@ -82,7 +82,7 @@ test("devices API registers, lists without the token, and fans out Expo push", a
   resetNotifyCoalesceForTests();
   const pushed: unknown[] = [];
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === EXPO_PUSH_URL) {
       pushed.push(JSON.parse(String(init?.body ?? "[]")));

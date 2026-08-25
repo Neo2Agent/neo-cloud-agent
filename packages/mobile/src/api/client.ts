@@ -1,15 +1,14 @@
-import type {
-  CreateDeviceRequest,
-  CreateFollowUpRequest,
-  CreateRunRequest,
-  Device,
-  Environment,
-  FollowUp,
-  PublicLlmSettings,
-  Run,
-  RunEvent,
-  TranscriptSnapshot,
-} from "@neo-cloud-agent/contracts";
+import type { CreateDeviceRequest, Device } from "@neo-cloud-agent/contracts/device";
+import type { Environment } from "@neo-cloud-agent/contracts/environment";
+import type { RunEvent, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
+import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, Run } from "@neo-cloud-agent/contracts/run";
+
+export type PublicLlmSettings = {
+  configured: boolean;
+  upstream: string;
+  model: string | null;
+  baseUrl: string | null;
+};
 import { readSseEvents } from "./sse.js";
 
 export class MobileApiError extends Error {

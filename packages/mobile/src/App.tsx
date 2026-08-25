@@ -4,8 +4,9 @@ import {
   settleTranscriptMessages,
   transcriptGroups,
 } from "@neo-cloud-agent/contracts/transcript";
-import type { Environment, Run, TranscriptMessage } from "@neo-cloud-agent/contracts";
-import type { RunEvent } from "@neo-cloud-agent/contracts/events";
+import type { Environment } from "@neo-cloud-agent/contracts/environment";
+import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
+import type { Run } from "@neo-cloud-agent/contracts/run";
 import { MobileApiError, MobileClient } from "./api/client";
 import { webCredentials, type CredentialStore } from "./api/credentials";
 import { detectMobileSource, parseRunIdFromHref } from "./api/source";

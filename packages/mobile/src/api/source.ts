@@ -1,4 +1,4 @@
-import type { RunSource } from "@neo-cloud-agent/contracts";
+import type { RunSource } from "@neo-cloud-agent/contracts/run";
 
 export function detectMobileSource(userAgent = ""): Extract<RunSource, "ios" | "android"> {
   return /iPhone|iPad|iPod/i.test(userAgent) ? "ios" : "android";

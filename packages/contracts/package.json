@@ -13,7 +13,8 @@
     "./automation": "./src/automation.ts",
     "./project": "./src/project.ts",
     "./desk": "./src/desk.ts",
-    "./device": "./src/device.ts"
+    "./device": "./src/device.ts",
+    "./environment": "./src/environment.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
