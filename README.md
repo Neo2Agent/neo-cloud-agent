@@ -145,6 +145,15 @@ GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVA
 # DATABASE_URL=postgres://neo:neo@127.0.0.1:5432/neo
 # REDIS_URL=redis://:pass@127.0.0.1:6379
 
+# 接口限流（控制面 + LLM Gateway）。单测默认关；现网默认开。0 = 该档不限。
+# RATE_LIMIT=1
+# RATE_LIMIT_TRUST_PROXY=1
+# RATE_LIMIT_IP=240
+# RATE_LIMIT_LOGIN=20
+# RATE_LIMIT_CREATE_RUN=12
+# RATE_LIMIT_SSE=6
+# RATE_LIMIT_LLM_RUN=90
+
 # Firecracker（需要 /dev/kvm、内核和 rootfs）
 # WORKER_RUNTIME=firecracker
 # FIRECRACKER_BIN=infra/firecracker/.assets/firecracker

@@ -14,6 +14,7 @@ import { setDevicePersistHooks } from "./devices/persist-hooks.js";
 import { listEnvironments, upsertEnvironment } from "./env/store.js";
 import { attachHotBus, ingestRemoteEvent } from "./events/bus.js";
 import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotClient } from "./events/redis.js";
+import { attachRateLimitRedis, resetRateLimitStore } from "./security/rate-limit.js";
 import { reloadPersistedState } from "./orchestrator/orchestrator.js";
 import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
@@ -62,6 +63,8 @@ export function resetPlatformForTests(): void {
   setDeskPersistHooks({});
   setDevicePersistHooks({});
   attachHotBus(null);
+  attachRateLimitRedis(null);
+  resetRateLimitStore();
 }
 
 async function doStart(): Promise<void> {
@@ -127,6 +130,7 @@ async function doStart(): Promise<void> {
   if (redisUrl) {
     redis = await connectRedis(redisUrl);
     eventBusKind = "redis";
+    attachRateLimitRedis(redis);
     attachHotBus({
       publish(event) {
         const payload = JSON.stringify(event);
