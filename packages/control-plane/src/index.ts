@@ -26,6 +26,10 @@ void startPlatform()
 const shutdown = () => {
   scheduler.stop();
   server.close();
+  if (typeof server.closeAllConnections === "function") {
+    server.closeAllConnections();
+  }
+  setTimeout(() => process.exit(0), 4000).unref();
 };
 
 process.on("SIGINT", shutdown);

@@ -14,6 +14,7 @@ Environment=PATH=/usr/bin:/usr/local/bin
 ExecStart=/usr/local/bin/node --import tsx packages/control-plane/src/index.ts
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=15
 KillMode=process
 Delegate=yes
 DelegateSubgroup=main
