@@ -531,7 +531,7 @@ Desk 本机路径（已落地）：
 
 ## 14. 协作面：Project / Todo / Automation
 
-对话是一次 Run。项目是共享上下文 + 看板 + 成员。分层对齐 WorkBuddy 调研里「项目包上下文、任务包一次 Run」，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。
+对话是一次 Run。项目是共享上下文 + 看板 + 成员。分层对齐 WorkBuddy 调研里「项目包上下文、任务包一次 Run」，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。专家 / 专家团（角色包绑到 Run，团走现有 `neo_subagent`）见 [workbuddy-experts.md](./workbuddy-experts.md)。
 
 | 实体 | 作用 |
 | --- | --- |
@@ -756,6 +756,7 @@ pnpm typecheck && pnpm test
 | [mobile.md](./mobile.md) | 手机端蓝图与 P0 |
 | [admin-platform-research.md](./admin-platform-research.md) | 后管 vs New API 怎么拆 |
 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) | 项目协作对标 |
+| [workbuddy-experts.md](./workbuddy-experts.md) | WorkBuddy 专家 / 专家团调研与落地顺序 |
 | [production-domain.md](./production-domain.md) | `neorun.cloud` / HTTPS / Caddy |
 | [README.md](../README.md) | 命令、环境变量、不要做的五件事 |
 | `packages/contracts` | 类型的权威来源 |
