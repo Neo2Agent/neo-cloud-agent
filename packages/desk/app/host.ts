@@ -9,7 +9,7 @@ import { createLeaseClient } from "../src/lease.js";
 import { openDeskInboxStream, type DeskInboxHandle } from "../src/inbox.js";
 import { listLocalPath } from "../src/local-fs.js";
 import { createLocalShell, type LocalShell } from "../src/local-shell.js";
-import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.js";
+import { controlPlaneOrigin, deskRendererUrl, isDeskPackaged, productionControlPlaneCandidates } from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import {
@@ -35,7 +35,7 @@ type BoundWorkspace = { id: string; folder: string; name: string; repoKey: strin
 
 type DeskPrefs = { requireApproval?: boolean };
 
-const controlPlaneUrl = controlPlaneOrigin();
+let controlPlaneUrl = controlPlaneOrigin();
 const stateDir = () => path.join(app.getPath("userData"), "neo-desk");
 const stateFile = (name: string) => path.join(stateDir(), name);
 
@@ -129,7 +129,42 @@ function currentTarget(): DeskTarget {
 }
 
 function uiDist(): string {
+  if (isDeskPackaged()) {
+    return path.join(process.env.NEO_DESK_RESOURCES || process.resourcesPath, "ui");
+  }
   return path.join(deskRepoRoot(), "packages/desk/ui/dist");
+}
+
+async function healthOk(origin: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const response = await net.fetch(`${origin.replace(/\/$/, "")}/health`, { signal: controller.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Packaged builds prefer HTTPS, then fall back to the IP if 443 is blocked. */
+async function resolvePackedControlPlane(): Promise<void> {
+  if (!isDeskPackaged()) {
+    return;
+  }
+  process.env.NEO_DESK_RESOURCES = process.resourcesPath;
+  for (const origin of productionControlPlaneCandidates()) {
+    if (await healthOk(origin)) {
+      process.env.NEO_CONTROL_PLANE_URL = origin;
+      controlPlaneUrl = origin;
+      console.log(`desk client → ${origin}`);
+      return;
+    }
+  }
+  controlPlaneUrl = controlPlaneOrigin();
+  process.env.NEO_CONTROL_PLANE_URL = controlPlaneUrl;
+  console.warn(`desk client → ${controlPlaneUrl} (health check failed, using default)`);
 }
 
 function registerRendererProtocol(): void {
@@ -583,7 +618,11 @@ function wireIpc(): void {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (isDeskPackaged()) {
+    process.env.NEO_DESK_RESOURCES = process.resourcesPath;
+  }
+  await resolvePackedControlPlane();
   Menu.setApplicationMenu(null);
   if (existsSync(stateFile("desk.json"))) {
     const saved = readJson<{ deskId?: string; token?: string }>(stateFile("desk.json"), {});

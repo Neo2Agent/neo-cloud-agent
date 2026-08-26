@@ -1,0 +1,42 @@
+appId: cloud.neorun.desk
+productName: Neo Desk
+copyright: Neo
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+  buildResources: build
+files:
+  - from: out
+    filter:
+      - "**/*"
+extraMetadata:
+  main: out/launch.cjs
+asar: true
+npmRebuild: false
+electronLanguages:
+  - en
+  - zh-CN
+extraResources:
+  - from: ui/dist
+    to: ui
+  - from: out/worker.cjs
+    to: worker.cjs
+mac:
+  category: public.app-category.developer-tools
+  identity: null
+  target:
+    - target: zip
+      arch:
+        - x64
+        - arm64
+win:
+  target:
+    - target: zip
+      arch:
+        - x64
+linux:
+  category: Development
+  target:
+    - target: zip
+      arch:
+        - x64

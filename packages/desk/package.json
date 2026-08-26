@@ -8,6 +8,7 @@
     "start": "electron app/main.cjs",
     "dev": "tsx scripts/dev.ts",
     "build": "vite build --config ui/vite.config.ts",
+    "pack": "tsx scripts/pack.ts",
     "compile": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json --noEmit"
   },
@@ -24,6 +25,8 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
     "electron": "^43.4.1",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.12",
     "vite": "^6.4.3"
   }
 }

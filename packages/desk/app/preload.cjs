@@ -1,9 +1,11 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-const apiBase = (process.env.NEO_CONTROL_PLANE_URL || process.env.CONTROL_PLANE_URL || "http://127.0.0.1:8080").replace(
-  /\/$/,
-  "",
-);
+const packaged = process.env.NEO_DESK_PACKAGED === "1";
+const apiBase = (
+  process.env.NEO_CONTROL_PLANE_URL ||
+  process.env.CONTROL_PLANE_URL ||
+  (packaged ? "https://neorun.cloud" : "http://127.0.0.1:8080")
+).replace(/\/$/, "");
 
 function on(channel, cb) {
   const listen = (_event, payload) => cb(payload);

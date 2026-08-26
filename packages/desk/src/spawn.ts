@@ -2,9 +2,40 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SECRET_ENV_KEYS } from "@neo-cloud-agent/contracts";
+import { isDeskPackaged } from "./ports.js";
+
+export { isDeskPackaged };
 
 export function deskRepoRoot(): string {
   return fileURLToPath(new URL("../../..", import.meta.url));
+}
+
+export function deskResourcesRoot(env: NodeJS.ProcessEnv = process.env): string {
+  if (isDeskPackaged(env) && env.NEO_DESK_RESOURCES) {
+    return env.NEO_DESK_RESOURCES;
+  }
+  return deskRepoRoot();
+}
+
+export function deskWorkerLaunch(input: {
+  execPath: string;
+  env?: NodeJS.ProcessEnv;
+}): { command: string; args: string[]; cwd: string } {
+  const env = input.env ?? process.env;
+  if (isDeskPackaged(env)) {
+    const resources = deskResourcesRoot(env);
+    return {
+      command: input.execPath,
+      args: [path.join(resources, "worker.cjs")],
+      cwd: resources,
+    };
+  }
+  const root = deskRepoRoot();
+  return {
+    command: input.execPath,
+    args: [path.join(root, "node_modules/tsx/dist/cli.mjs"), path.join(root, "packages/worker/src/index.ts")],
+    cwd: root,
+  };
 }
 
 export function spawnDeskWorker(input: {
@@ -18,9 +49,7 @@ export function spawnDeskWorker(input: {
   model: string;
   nodePath?: string;
 }): ChildProcess {
-  const root = deskRepoRoot();
-  const tsxCli = path.join(root, "node_modules/tsx/dist/cli.mjs");
-  const workerEntry = path.join(root, "packages/worker/src/index.ts");
+  const launch = deskWorkerLaunch({ execPath: input.nodePath ?? process.execPath });
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     RUN_ID: input.runId,
@@ -42,9 +71,8 @@ export function spawnDeskWorker(input: {
   }
   delete env.DEEPSEEK_API_KEY;
   delete env.OPENAI_API_KEY;
-  const nodePath = input.nodePath ?? process.execPath;
-  return spawn(nodePath, [tsxCli, workerEntry], {
-    cwd: root,
+  return spawn(launch.command, launch.args, {
+    cwd: launch.cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
