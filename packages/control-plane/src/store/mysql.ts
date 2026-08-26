@@ -1,5 +1,16 @@
 import mysql from "mysql2/promise";
-import type { Automation, Build, Desk, Device, Environment, Expert, Project, RunEvent } from "@neo-cloud-agent/contracts";
+import type {
+  Automation,
+  Build,
+  BundledExpertPolicyDocument,
+  Desk,
+  Device,
+  Environment,
+  Expert,
+  Project,
+  RunEvent,
+} from "@neo-cloud-agent/contracts";
+import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
 import type { SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
@@ -84,6 +95,11 @@ CREATE TABLE IF NOT EXISTS experts (
   body JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL
 );
+CREATE TABLE IF NOT EXISTS expert_policies (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
 `;
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -156,6 +172,14 @@ function asExpert(value: unknown): Expert | null {
   }
   const item = value as Expert;
   return item.id && item.name && item.persona ? item : null;
+}
+
+function asExpertPolicy(value: unknown): BundledExpertPolicyDocument | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as BundledExpertPolicyDocument;
+  return item.version === 1 && item.experts && typeof item.experts === "object" ? item : null;
 }
 
 function asAutomation(value: unknown): Automation | null {
@@ -341,6 +365,18 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async deleteExpert(id) {
       await query(`DELETE FROM experts WHERE id = ?`, [id]);
+    },
+    async saveExpertPolicy(item) {
+      await query(
+        `INSERT INTO expert_policies (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [BUNDLED_EXPERT_POLICY_ID, JSON.stringify(item), mysqlDateTime(item.updatedAt)],
+      );
+    },
+    async loadExpertPolicy() {
+      const result = await query(`SELECT body FROM expert_policies WHERE id = ?`, [BUNDLED_EXPERT_POLICY_ID]);
+      return parseJson(result.rows[0]?.body, asExpertPolicy);
     },
     async saveDesk(item) {
       await query(

@@ -46,4 +46,50 @@ export type RateLimitSnapshot = {
   policies: Record<string, { remaining: number; limit: number; windowMs: number; kind: string }>;
 };
 
-export type AdminPage = "overview" | "users" | "runs" | "system";
+export type AdminBundledExpert = {
+  id: string;
+  slug: string;
+  baseline: {
+    id: string;
+    slug: string;
+    name: string;
+    title?: string;
+    description: string;
+    industry?: string;
+    persona: string;
+    methodology: string;
+    deliverables: string;
+    tools?: string[];
+    skillNames?: string[];
+    model?: string;
+    examplePrompts?: string[];
+  };
+  live: {
+    name: string;
+    title?: string;
+    description: string;
+    industry?: string;
+    persona: string;
+    methodology: string;
+    deliverables: string;
+    tools?: string[];
+    skillNames?: string[];
+    model?: string;
+    examplePrompts?: string[];
+  };
+  enabled: boolean;
+  audience: "all" | "allowlist";
+  userIds: string[];
+  users: Array<{ id: string; email: string }>;
+  override: Record<string, unknown>;
+  updatedAt: string;
+  publishedAt: string | null;
+  markdown: string;
+};
+
+export type AdminExpertsCatalog = {
+  experts: AdminBundledExpert[];
+  users: Array<{ id: string; email: string }>;
+};
+
+export type AdminPage = "overview" | "users" | "runs" | "system" | "experts";

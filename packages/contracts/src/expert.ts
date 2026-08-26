@@ -97,6 +97,118 @@ export const MAX_USER_EXPERTS = 40;
 
 const BUNDLED_AT = "2026-08-26T00:00:00.000Z";
 
+export const BUNDLED_EXPERT_POLICY_ID = "bundled";
+
+export const ADMIN_EXPERT_TOOL_CHOICES = [
+  "read",
+  "grep",
+  "find",
+  "ls",
+  "bash",
+  "write",
+  "edit",
+  "neo_browse",
+  "neo_subagent",
+] as const;
+
+export type BundledExpertAudience = "all" | "allowlist";
+
+export type BundledExpertOverrideFields = {
+  name?: string;
+  title?: string | null;
+  description?: string;
+  industry?: string | null;
+  persona?: string;
+  methodology?: string;
+  deliverables?: string;
+  tools?: string[] | null;
+  skillNames?: string[] | null;
+  model?: string | null;
+  examplePrompts?: string[] | null;
+};
+
+export type BundledExpertPolicyEntry = {
+  enabled: boolean;
+  audience: BundledExpertAudience;
+  userIds: string[];
+  override: BundledExpertOverrideFields;
+  updatedAt: string;
+  publishedAt: string | null;
+};
+
+export type BundledExpertPolicyDocument = {
+  version: 1;
+  updatedAt: string;
+  experts: Record<string, BundledExpertPolicyEntry>;
+};
+
+export type ConfigureBundledExpertRequest = BundledExpertOverrideFields & {
+  enabled?: boolean;
+};
+
+export type PublishBundledExpertRequest = {
+  audience: BundledExpertAudience;
+  userIds?: string[];
+};
+
+export function defaultBundledExpertPolicyEntry(): BundledExpertPolicyEntry {
+  return {
+    enabled: true,
+    audience: "all",
+    userIds: [],
+    override: {},
+    updatedAt: BUNDLED_AT,
+    publishedAt: null,
+  };
+}
+
+export function emptyBundledExpertPolicyDocument(updatedAt = BUNDLED_AT): BundledExpertPolicyDocument {
+  return { version: 1, updatedAt, experts: {} };
+}
+
+export function canAccessBundledExpertPolicy(
+  entry: Pick<BundledExpertPolicyEntry, "enabled" | "audience" | "userIds">,
+  userId?: string,
+): boolean {
+  if (!entry.enabled) return false;
+  if (!userId || entry.audience === "all") return true;
+  return entry.userIds.includes(userId);
+}
+
+export function applyBundledExpertOverride(base: Expert, override?: BundledExpertOverrideFields | null): Expert {
+  if (!override) return { ...base };
+  const name = override.name !== undefined ? override.name.trim() : base.name;
+  const description = override.description !== undefined ? override.description.trim() : base.description;
+  const persona = override.persona !== undefined ? override.persona : base.persona;
+  const methodology = override.methodology !== undefined ? override.methodology : base.methodology;
+  const deliverables = override.deliverables !== undefined ? override.deliverables : base.deliverables;
+  return {
+    ...base,
+    name: name || base.name,
+    title: override.title === null ? undefined : override.title !== undefined ? override.title.trim() || undefined : base.title,
+    description: description || base.description,
+    industry:
+      override.industry === null ? undefined : override.industry !== undefined ? override.industry.trim() || undefined : base.industry,
+    persona: persona.trim() ? persona : base.persona,
+    methodology: methodology.trim() ? methodology : base.methodology,
+    deliverables: deliverables.trim() ? deliverables : base.deliverables,
+    tools: override.tools === null ? undefined : override.tools !== undefined ? override.tools.map((item) => item.trim()).filter(Boolean) : base.tools,
+    skillNames:
+      override.skillNames === null
+        ? undefined
+        : override.skillNames !== undefined
+          ? override.skillNames.map((item) => item.trim()).filter(Boolean)
+          : base.skillNames,
+    model: override.model === null ? undefined : override.model !== undefined ? override.model.trim() || undefined : base.model,
+    examplePrompts:
+      override.examplePrompts === null
+        ? undefined
+        : override.examplePrompts !== undefined
+          ? override.examplePrompts.map((item) => item.trim()).filter(Boolean)
+          : base.examplePrompts,
+  };
+}
+
 function bundledExpert(partial: Omit<Expert, "visibility" | "createdAt" | "updatedAt">): Expert {
   return { ...partial, visibility: "bundled", createdAt: BUNDLED_AT, updatedAt: BUNDLED_AT };
 }

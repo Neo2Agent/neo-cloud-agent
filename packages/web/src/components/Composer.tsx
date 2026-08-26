@@ -4,6 +4,7 @@ import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } fro
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { DeskTarget } from "../desk";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
+import { Select } from "@neo-cloud-agent/ui";
 import { ContextUsageControl } from "./ContextUsage";
 import { TargetPicker } from "./TargetPicker";
 
@@ -151,49 +152,48 @@ export function Composer({
         />
         <label className="picker">
           <span className="picker-label">模式</span>
-          <select id="agent-mode" value={mode} onChange={(event) => onMode(event.target.value as AgentMode)}>
-            <option value="agent">Agent</option>
-            <option value="ask">Ask</option>
-          </select>
+          <Select
+            id="agent-mode"
+            size="pill"
+            aria-label="模式"
+            value={mode}
+            onValueChange={(value) => onMode(value as AgentMode)}
+            options={[
+              { value: "agent", label: "Agent" },
+              { value: "ask", label: "Ask" },
+            ]}
+          />
         </label>
         <label className="picker">
           <span className="picker-label">模型</span>
-          <select id="agent-model" value={model} onChange={(event) => onModel(event.target.value)}>
-            {models.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="agent-model"
+            size="pill"
+            aria-label="模型"
+            value={model}
+            onValueChange={onModel}
+            options={models.map((item) => ({ value: item.id, label: item.label }))}
+          />
         </label>
         <label className="picker">
           <span className="picker-label">专家</span>
-          <select
+          <Select
             id="agent-expert"
+            size="pill"
+            aria-label="专家"
             value={expertValue}
             disabled={expertLocked || !onExpert}
-            onChange={(event) => onExpert?.(event.target.value)}
-          >
-            <option value="">Neo</option>
-            {experts.length > 0 ? (
-              <optgroup label="专家">
-                {experts.map((item) => (
-                  <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
-                    {expertPickerLabel(item)}
-                  </option>
-                ))}
-              </optgroup>
-            ) : null}
-            {teams.length > 0 ? (
-              <optgroup label="专家团">
-                {teams.map((item) => (
-                  <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
-                    {item.name}
-                  </option>
-                ))}
-              </optgroup>
-            ) : null}
-          </select>
+            onValueChange={(value) => onExpert?.(value)}
+            groups={[
+              { label: "默认", options: [{ value: "", label: "Neo" }] },
+              ...(experts.length > 0
+                ? [{ label: "专家", options: experts.map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
+                : []),
+              ...(teams.length > 0
+                ? [{ label: "专家团", options: teams.map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: item.name })) }]
+                : []),
+            ]}
+          />
         </label>
       </div>
       <div className="composer-bar">

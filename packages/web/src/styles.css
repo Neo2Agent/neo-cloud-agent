@@ -1201,7 +1201,7 @@ button.stop:hover {
 }
 
 .env-row .ghost {
-  height: 38px;
+  height: 42px;
   padding-inline: 12px;
 }
 
@@ -1566,7 +1566,7 @@ button.stop:hover {
   gap: 8px;
 }
 
-.proj-card .expert-pin-list label {
+.proj-card .expert-pin-list .neo-check {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -2425,6 +2425,10 @@ textarea {
   gap: 6px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.picker .neo-select-pill {
+  max-width: 220px;
 }
 
 .picker select {

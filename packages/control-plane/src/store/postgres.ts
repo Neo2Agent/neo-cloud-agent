@@ -1,4 +1,15 @@
-import type { Automation, Build, Desk, Device, Environment, Expert, Project, RunEvent } from "@neo-cloud-agent/contracts";
+import type {
+  Automation,
+  Build,
+  BundledExpertPolicyDocument,
+  Desk,
+  Device,
+  Environment,
+  Expert,
+  Project,
+  RunEvent,
+} from "@neo-cloud-agent/contracts";
+import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
 import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
@@ -81,6 +92,11 @@ CREATE TABLE IF NOT EXISTS experts (
   body JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS expert_policies (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -106,6 +122,8 @@ export interface PostgresMetadataStore extends AccountStore {
   saveExpert(item: Expert): Promise<void>;
   loadExperts(): Promise<Expert[]>;
   deleteExpert(id: string): Promise<void>;
+  saveExpertPolicy(item: BundledExpertPolicyDocument): Promise<void>;
+  loadExpertPolicy(): Promise<BundledExpertPolicyDocument | null>;
   saveDesk(item: Desk): Promise<void>;
   loadDesks(): Promise<Desk[]>;
   deleteDesk(id: string): Promise<void>;
@@ -192,6 +210,14 @@ function asExpert(value: unknown): Expert | null {
   }
   const item = value as Expert;
   return item.id && item.name && item.persona ? item : null;
+}
+
+function asExpertPolicy(value: unknown): BundledExpertPolicyDocument | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as BundledExpertPolicyDocument;
+  return item.version === 1 && item.experts && typeof item.experts === "object" ? item : null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -348,6 +374,18 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async deleteExpert(id) {
       await query(`DELETE FROM experts WHERE id = $1`, [id]);
+    },
+    async saveExpertPolicy(item) {
+      await query(
+        `INSERT INTO expert_policies (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [BUNDLED_EXPERT_POLICY_ID, JSON.stringify(item), item.updatedAt],
+      );
+    },
+    async loadExpertPolicy() {
+      const result = await query(`SELECT body FROM expert_policies WHERE id = $1`, [BUNDLED_EXPERT_POLICY_ID]);
+      return parseJson(result.rows[0]?.body, asExpertPolicy);
     },
     async saveDesk(item) {
       await query(
