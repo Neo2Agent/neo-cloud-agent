@@ -31,6 +31,7 @@ import {
   parseLlmSettingsRequest,
   publicLlmSettings,
   readLlmSettings,
+  readNewApiInfo,
   resolveModelLimits,
   writeLlmSettings,
 } from "@neo-cloud-agent/contracts";
@@ -319,6 +320,7 @@ export function createApiServer() {
           llmModel: llm.model,
           llmContextWindow: resolveModelLimits(llm.model)?.contextWindow ?? null,
           llmConfigured: llm.configured,
+          newApi: readNewApiInfo(),
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           vmSlots: summarizeVmSlots(config.workerRuntime),

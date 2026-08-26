@@ -193,6 +193,7 @@ flowchart LR
 | 执行面 | `WORKER_RUNTIME=vm`：2 个 loop 挂 ext4 槽，不是真 VM |
 | 元数据 | 库机 MySQL |
 | 直播事件 | 库机 Redis Pub/Sub + Stream |
+| 模型渠道 | 库机 New API `:3000`；Gateway 打 `http://101.42.105.230:3000/v1` |
 | 对象存储 | 应用机 `RUNS_DIR/.objects`，现网不切 S3 |
 | systemd | `neo-control-plane`、`neo-llm-gateway`、Caddy |
 

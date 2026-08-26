@@ -88,6 +88,7 @@ type Health = {
   llmConfigured?: boolean;
   llmUpstream?: string;
   llmModel?: string | null;
+  newApi?: { url?: string | null; consoleUrl?: string | null };
   workerRuntime?: string;
   objectStore?: string;
   scmPush?: ScmSettings;
@@ -99,9 +100,11 @@ type PullRequest = { url?: string; draft?: boolean };
 
 function formatHealth(health: Health | null, vms: VmSummary): string {
   if (!health?.ok) return "控制面异常";
-  const provider = health.llmConfigured
-    ? modelLabel(health.llmUpstream, health.llmModel)
-    : "未配置 Key";
+  const provider = health.newApi?.consoleUrl || health.newApi?.url
+    ? `New API · ${modelLabel(health.llmUpstream, health.llmModel)}`
+    : health.llmConfigured
+      ? modelLabel(health.llmUpstream, health.llmModel)
+      : "未配置 Key";
   const total = vms.total || health.vmSlots?.total || 0;
   const busy = vms.busy ?? health.vmSlots?.busy ?? 0;
   const vm = total > 0 ? ` · VM ${busy}/${total}` : health.workerRuntime === "vm" ? " · VM" : "";
@@ -495,6 +498,7 @@ export function App() {
           configured: settings.configured,
           upstream: settings.upstream || "deepseek",
           model: settings.model,
+          newApi: settings.newApi,
         });
         setLlmKey("");
       }
@@ -1578,7 +1582,7 @@ export function App() {
                   onLlmKey={setLlmKey}
                   onSaveLlm={() => {
               void (async () => {
-                if (!llmKey && !llm.configured) return;
+                if (!llmKey && !llm.configured && !(llm.newApi?.consoleUrl || llm.newApi?.url)) return;
                 const payload: Record<string, string> = {
                   upstream: llm.upstream || "deepseek",
                   model: resolveChatModel(llm.upstream, llm.model),
@@ -1589,7 +1593,12 @@ export function App() {
                 );
                 if (saved.error === "login_required") throw new Error("请先登录再保存 API Key");
                 if (saved.error) throw new Error(saved.error);
-                setLlm({ configured: saved.configured, upstream: saved.upstream, model: saved.model });
+                setLlm({
+                  configured: saved.configured,
+                  upstream: saved.upstream,
+                  model: saved.model,
+                  newApi: saved.newApi ?? llm.newApi,
+                });
                 setLlmKey("");
                 const nextHealth = await readJson<Health>(await fetch("/health"));
                 setHealth(nextHealth);

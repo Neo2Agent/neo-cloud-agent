@@ -5,6 +5,7 @@ export type LlmSettings = {
   configured: boolean;
   upstream: string;
   model: string | null;
+  newApi?: { url: string | null; consoleUrl: string | null };
 };
 
 export type ScmSettings = {
@@ -64,6 +65,8 @@ export function SettingsPanel({
 }: Props) {
   const envBuilds = builds.filter((item) => item.status === "SUCCEEDED" && (!envId || item.envId === envId));
   const deepseek = llm.upstream !== "openai";
+  const newApiConsole = llm.newApi?.consoleUrl || llm.newApi?.url || "";
+  const newApiManaged = Boolean(newApiConsole);
   const [quotaHint, setQuotaHint] = useState("配额未加载");
   const [quotaTokens, setQuotaTokens] = useState("");
   const [quotaConcurrent, setQuotaConcurrent] = useState("");
@@ -196,32 +199,40 @@ export function SettingsPanel({
             <option value="deepseek-v4-pro">Pro</option>
           </select>
         </label>
-        <label>
-          <span>API Key</span>
-          <input
-            id="llm-key"
-            name="llm-key"
-            type="password"
-            autoComplete="new-password"
-            placeholder={llm.configured ? "已保存，留空则保持" : "sk-…"}
-            value={llmKey}
-            onChange={(event) => onLlmKey(event.target.value)}
-            onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                onSaveLlm();
-              }
-            }}
-          />
-        </label>
+        {newApiManaged ? (
+          <a className="ghost llm-console-link" href={newApiConsole} target="_blank" rel="noreferrer">
+            New API
+          </a>
+        ) : (
+          <label>
+            <span>API Key</span>
+            <input
+              id="llm-key"
+              name="llm-key"
+              type="password"
+              autoComplete="new-password"
+              placeholder={llm.configured ? "已保存，留空则保持" : "sk-…"}
+              value={llmKey}
+              onChange={(event) => onLlmKey(event.target.value)}
+              onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onSaveLlm();
+                }
+              }}
+            />
+          </label>
+        )}
         <button className="ghost" id="save-llm" type="button" onClick={onSaveLlm}>
           保存
         </button>
       </div>
       <p className="hint" id="llm-status">
-        {llm.configured
-          ? `已配置 ${deepseek ? (/vision/i.test(llm.model ?? "") ? "DeepSeek Flash Vision" : /pro/i.test(llm.model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash") : "OpenAI"}，对话走真实模型。贴图时会自动走视觉模型。`
-          : "未配置 API Key，当前是 mock 回复。"}
+        {newApiManaged
+          ? `渠道在 New API。这里只选型号；贴图时会自动走视觉模型。`
+          : llm.configured
+            ? `已配置 ${deepseek ? (/vision/i.test(llm.model ?? "") ? "DeepSeek Flash Vision" : /pro/i.test(llm.model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash") : "OpenAI"}，对话走真实模型。贴图时会自动走视觉模型。`
+            : "未配置 API Key，当前是 mock 回复。"}
       </p>
       <div className="env-row llm-row">
         <label>

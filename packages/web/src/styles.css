@@ -1180,6 +1180,12 @@ button.stop:hover {
   margin-top: 2px;
 }
 
+.llm-console-link {
+  align-self: end;
+  text-align: center;
+  text-decoration: none;
+}
+
 .env-row label {
   display: grid;
   gap: 4px;

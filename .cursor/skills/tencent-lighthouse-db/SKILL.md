@@ -19,7 +19,7 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
 | 制品 | **系统镜像 Ubuntu 24.04 LTS**（已从爱马仕/Halo 应用镜像重装） | **系统镜像 Ubuntu 24.04 LTS**（`lhbp-1l4ptuvm`，`PURE_OS`）。2026-08-22 已从 OpenClaw 应用镜像重装 |
-| 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`） |
+| 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`）、`new-api`（`:3000`） |
 | 同机还有 | Ubuntu 24.04 + systemd + Caddy + Node。不要再装爱马仕 | 无。不要再装 OpenClaw |
 
 控制台列表：[北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。  
@@ -74,7 +74,7 @@ Host lighthouse-db
 3. **不要读、打印、提交** `/home/ubuntu/db/.env`。只报键名和连通性。
 4. **不要再装 OpenClaw。** 盘已重装成纯 Ubuntu，没有 gateway / 20041。
 5. **不要**在这台机上部署 neo-cloud-agent / 改 Caddy / 动应用机 systemd。
-6. 3306 / 6379 现在对 `0.0.0.0/0` 开放，只靠密码。不要再把明文密码写进聊天或 git。
+6. 3306 / 6379 现在对 `0.0.0.0/0` 开放，只靠密码。3000 是 New API，靠它自己的登录。不要再把明文密码写进聊天或 git。
 7. 换系统镜像（`ResetInstance`）要账号微信 MFA。不要用控制台「绑定密钥」。SSH 用 TAT 写公钥。
 
 ## 现场
@@ -85,10 +85,10 @@ Host lighthouse-db
 | Compose | `/home/ubuntu/db/docker-compose.yml`（仓库模板：[docker-compose.yml](docker-compose.yml)） |
 | 密钥 | `/home/ubuntu/db/.env`（`chmod 600`） |
 | 网络 | Docker `dbnet` |
-| 数据卷 | `db_mysql_data`、`db_redis_data` |
-| 库名 / 用户 | `app` / `app` |
+| 数据卷 | `db_mysql_data`、`db_redis_data`、`db_new_api_data`、`db_new_api_logs` |
+| 库名 / 用户 | `app` / `app`（Neo）；`newapi` / 同一 `app` 用户（New API） |
 | 镜像源 | `/etc/docker/daemon.json` → `https://mirror.ccs.tencentyun.com`（Docker Hub 直连常超时） |
-| 主机 ufw | inactive；轻量防火墙：22、3306、6379、ICMP（20041 可删） |
+| 主机 ufw | inactive；轻量防火墙：22、3306、6379、3000、ICMP（20041 可删） |
 | 制品 | `lhbp-1l4ptuvm` Ubuntu 24.04 LTS 系统镜像 |
 
 `.env` 键（值留在机上）：
@@ -99,7 +99,13 @@ MYSQL_DATABASE
 MYSQL_USER
 MYSQL_PASSWORD
 REDIS_PASSWORD
+NEW_API_SQL_DSN
+NEW_API_REDIS_CONN_STRING
+NEW_API_SESSION_SECRET
+NEW_API_CRYPTO_SECRET
 ```
+
+New API 控制台：`http://101.42.105.230:3000`（它自己的 root 登录）。Gateway 上游：`http://101.42.105.230:3000/v1`。首次拉起用 [provision-new-api.sh](provision-new-api.sh)，再 `docker compose up -d`。root 口令只写在机上 `/home/ubuntu/db/.new-api-admin`，不要回传。
 
 控制面用的 URL **在应用机** 仓库根 `.env` 里，不要在本机拼进 git：
 
@@ -115,7 +121,7 @@ REDIS_URL=redis://:<REDIS_PASSWORD>@101.42.105.230:6379/0
 
 ```bash
 ssh lighthouse-db 'cd /home/ubuntu/db && docker compose ps'
-ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql redis'
+ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql redis new-api'
 ```
 
 重启（容器挂了才用；不要重启整机）：
@@ -186,7 +192,7 @@ ORDER BY seq;
 看容器日志，不要 `cat .env`：
 
 ```bash
-ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql redis'
+ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql redis new-api'
 ```
 
 ## 给 Cloud Agent 的注意点

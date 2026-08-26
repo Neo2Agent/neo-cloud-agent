@@ -1,4 +1,4 @@
-import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
+import { readNewApiInfo, type PublicLlmSettings } from "@neo-cloud-agent/contracts";
 import type { Run } from "@neo-cloud-agent/contracts";
 import { listPublicUsers } from "../accounts/accounts.js";
 import type { PublicUser } from "../accounts/types.js";
@@ -65,9 +65,7 @@ export type AdminOverview = {
 };
 
 export function newApiInfo(): { url: string | null; consoleUrl: string | null } {
-  const url = (process.env.NEW_API_URL ?? "").trim() || null;
-  const consoleUrl = (process.env.NEW_API_CONSOLE_URL ?? "").trim() || null;
-  return { url, consoleUrl };
+  return readNewApiInfo();
 }
 
 export function adminRunsLimit(raw: string | null): number {
