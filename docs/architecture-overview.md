@@ -141,7 +141,7 @@ neo-cloud-agent/
 | `extensions` | `neo_*` 云工具 | 打进 worker |
 | `web` | 对话页 | 开发 `:5173`；生产由 `:8080` 托管 |
 | `admin-api` + `admin-web` | 平台管理台 | `:8090` + `:5176`；现网 `/admin/` |
-| `desk` | 桌面壳 + 本机执行目标 | UI `:5174` + Electron |
+| `desk` | 桌面壳 + 本机执行目标 | UI `:5174` + Electron（无 `:8082` 浏览器预览） |
 | `cli` | headless `/v1` 宿主 | `pnpm neo` |
 | `mobile` | 手机 `/v1` 宿主 | `:5175` |
 
@@ -537,13 +537,13 @@ Desk 本机路径（已落地）：
 | --- | --- |
 | `Project` | 名称、项目指令（注入 Run）、默认仓库、邀请策略、成员、动态 |
 | `ProjectTodo` | 看板上的任务；可绑一条 Run |
-| `ProjectAsset` | 人上传或 Run 产物回写 |
+| `ProjectAsset` | 用户手动上云；工作区不会自动进来 |
 | `ProjectMessage` | 项目内消息 |
 | Inbox | 邀请、转交、评论等通知 |
 | `Automation` | 每天 / 每小时按调度 `POST /v1/runs`，`source: automation` |
 | Collaborator / Transfer | 单条 Run 可邀请 editor，或 reassign / fork 给别人 |
 
-Desk UI 有独立的项目工作台（看板 / 资产 / 消息 / 设置）。Web 对话页也有 Projects / Automations 页。
+Desk UI 是 Agents Window：transcript + composer，项目工作台默认停在任务（任务 / 对话 / 资产 / 动态 / 设置）。Web 对话页也有 Projects / Automations 页。
 
 ---
 
