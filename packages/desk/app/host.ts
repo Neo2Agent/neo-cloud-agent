@@ -19,7 +19,6 @@ protocol.registerSchemesAsPrivileged([
 type DeskTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?: string };
 
 const controlPlaneUrl = controlPlaneOrigin();
-const rendererUrl = deskRendererUrl() || controlPlaneUrl;
 const stateDir = () => path.join(app.getPath("userData"), "neo-desk");
 const stateFile = (name: string) => path.join(stateDir(), name);
 
@@ -101,13 +100,14 @@ function registerRendererProtocol(): void {
 }
 
 function rendererEntry(): string {
-  if (process.env.NEO_DESK_URL) {
-    return deskRendererUrl();
+  const devUrl = deskRendererUrl();
+  if (devUrl) {
+    return devUrl;
   }
   if (existsSync(path.join(uiDist(), "index.html"))) {
     return "neo-desk://app/";
   }
-  return rendererUrl;
+  throw new Error("Desk UI is missing. Use pnpm dev:desk or build packages/desk/ui first.");
 }
 
 function createWindow(): void {
