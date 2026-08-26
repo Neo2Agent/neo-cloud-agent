@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { canManageProject, expertPickerLabel, type Expert } from "@neo-cloud-agent/contracts";
 import type { Project, ProjectInvite, ProjectMember } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
@@ -27,6 +28,8 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
   const [inviteInfo, setInviteInfo] = useState<{ projectName: string; status: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [catalog, setCatalog] = useState<Expert[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
 
   const selected = detail ?? items.find((item) => item.id === selectedId) ?? null;
   const members = selected?.members ?? [];
@@ -46,6 +49,11 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
       const project = await readJson<Project>(projectRes);
       setDetail(project);
       setInstruction(project.instruction);
+      setPinnedIds(project.expertIds ?? []);
+    }
+    const expertRes = await api(token, `/v1/experts?projectId=${encodeURIComponent(id)}`);
+    if (expertRes.ok) {
+      setCatalog((await readJson<{ experts?: Expert[] }>(expertRes)).experts ?? []);
     }
     if (runsRes.ok) {
       const body = await readJson<{ runs?: Run[] }>(runsRes);
@@ -163,6 +171,54 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
           <button className="proj-add" type="submit" disabled={busy}>
             保存指令
           </button>
+        </form>
+
+        <form
+          className="proj-card"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setBusy(true);
+            setError("");
+            void api(token, `/v1/projects/${selected.id}`, {
+              method: "POST",
+              body: JSON.stringify({ expertIds: pinnedIds }),
+            })
+              .then(async (res) => {
+                if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "保存失败");
+                await loadDetail(selected.id);
+              })
+              .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
+              .finally(() => setBusy(false));
+          }}
+        >
+          <p className="proj-card-title">项目专家</p>
+          <p className="hint">置顶后，这个项目里开对话时专家选择器会把它们排在前面。</p>
+          <ul className="expert-pin-list">
+            {catalog.map((item) => (
+              <li key={item.id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={pinnedIds.includes(item.id)}
+                    disabled={!canManageProject(members.find((member) => member.userId === userId)?.role)}
+                    onChange={(event) => {
+                      setPinnedIds((prev) =>
+                        event.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id),
+                      );
+                    }}
+                  />
+                  <span>{expertPickerLabel(item)}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          {canManageProject(members.find((member) => member.userId === userId)?.role) ? (
+            <button className="proj-add" type="submit" disabled={busy}>
+              保存置顶
+            </button>
+          ) : (
+            <p className="hint">只有所有者或管理员能改置顶。</p>
+          )}
         </form>
 
         <div className="proj-grid">

@@ -1,5 +1,6 @@
 import { useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
+import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts";
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { DeskTarget } from "../desk";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
@@ -24,10 +25,15 @@ type Props = {
   mode: AgentMode;
   model: string;
   models?: Array<{ id: string; label: string }>;
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
   onTarget: (target: DeskTarget) => void;
   onPickFolder?: () => void;
   onMode: (mode: AgentMode) => void;
   onModel: (model: string) => void;
+  onExpert?: (value: string) => void;
   onPrompt: (value: string) => void;
   onImages: (images: ImageRef[]) => void;
   onSend: () => void;
@@ -54,10 +60,15 @@ export function Composer({
     { id: "deepseek-v4-flash", label: "DeepSeek Flash" },
     { id: "deepseek-v4-pro", label: "DeepSeek Pro" },
   ],
+  experts = [],
+  teams = [],
+  expertValue = "",
+  expertLocked = false,
   onTarget,
   onPickFolder,
   onMode,
   onModel,
+  onExpert,
   onPrompt,
   onImages,
   onSend,
@@ -153,6 +164,35 @@ export function Composer({
                 {item.label}
               </option>
             ))}
+          </select>
+        </label>
+        <label className="picker">
+          <span className="picker-label">专家</span>
+          <select
+            id="agent-expert"
+            value={expertValue}
+            disabled={expertLocked || !onExpert}
+            onChange={(event) => onExpert?.(event.target.value)}
+          >
+            <option value="">Neo</option>
+            {experts.length > 0 ? (
+              <optgroup label="专家">
+                {experts.map((item) => (
+                  <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
+                    {expertPickerLabel(item)}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {teams.length > 0 ? (
+              <optgroup label="专家团">
+                {teams.map((item) => (
+                  <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
+                    {item.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
         </label>
       </div>

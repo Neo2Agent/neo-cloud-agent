@@ -6,6 +6,7 @@ import {
   settleTranscriptMessages,
 } from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
+import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts";
 import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
@@ -22,6 +23,7 @@ import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { AutomationsPage } from "./components/AutomationsPage";
+import { ExpertsPage } from "./components/ExpertsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -127,10 +129,31 @@ function hashProjects(): boolean {
   return location.hash === "#/projects" || Boolean(hashProjectId()) || Boolean(hashInviteToken());
 }
 
-function initialMainTab(): "chat" | "automations" | "projects" {
+function hashExpertId(): string | null {
+  return /^#\/experts\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
+}
+
+function hashExperts(): boolean {
+  return location.hash === "#/experts" || Boolean(hashExpertId());
+}
+
+function initialMainTab(): "chat" | "automations" | "projects" | "experts" {
   if (hashAutomations()) return "automations";
   if (hashProjects()) return "projects";
+  if (hashExperts()) return "experts";
   return "chat";
+}
+
+function runRoleLabel(run: Run | null, experts: Expert[], teams: ExpertTeam[]): string {
+  if (!run) return "";
+  if (run.expertTeamId) {
+    return teams.find((item) => item.id === run.expertTeamId || item.slug === run.expertTeamId)?.name ?? "专家团";
+  }
+  if (run.expertId) {
+    const expert = experts.find((item) => item.id === run.expertId || item.slug === run.expertId);
+    return expert ? expertPickerLabel(expert) : "专家";
+  }
+  return "";
 }
 
 export function App() {
@@ -183,7 +206,11 @@ export function App() {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
-  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects">(initialMainTab);
+  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts">(initialMainTab);
+  const [selectedExpertId, setSelectedExpertId] = useState<string | null>(hashExpertId);
+  const [experts, setExperts] = useState<Expert[]>([]);
+  const [teams, setTeams] = useState<ExpertTeam[]>([]);
+  const [expertPick, setExpertPick] = useState<ExpertPick>({});
   const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
   const [inviteToken, setInviteToken] = useState<string | null>(hashInviteToken);
@@ -390,6 +417,25 @@ export function App() {
     }
   }, [applyVms]);
 
+  const refreshExperts = useCallback(async (projectId?: string | null) => {
+    if (!tokenRef.current) return;
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    try {
+      const [expertRes, teamRes] = await Promise.all([
+        api(tokenRef.current, `/v1/experts${query}`),
+        api(tokenRef.current, "/v1/expert-teams"),
+      ]);
+      if (expertRes.ok) {
+        setExperts((await readJson<{ experts?: Expert[] }>(expertRes)).experts ?? []);
+      }
+      if (teamRes.ok) {
+        setTeams((await readJson<{ teams?: ExpertTeam[] }>(teamRes)).teams ?? []);
+      }
+    } catch {
+      // optional catalog
+    }
+  }, []);
+
   const refreshRuns = useCallback(async () => {
     const response = await api(tokenRef.current, "/v1/runs");
     if (!response.ok) return;
@@ -498,6 +544,7 @@ export function App() {
     setPendingTurn(null);
     setEnvId("");
     setBuildId("");
+    setExpertPick({});
     history.replaceState(null, "", "/");
   }, [closeStream]);
 
@@ -576,6 +623,15 @@ export function App() {
     history.replaceState(null, "", "/#/automations");
   }, []);
 
+  const openExperts = useCallback((id?: string | null) => {
+    setMainTab("experts");
+    setFilesOpen(false);
+    setDiffOpen(false);
+    setSettingsOpen(false);
+    setSelectedExpertId(id ?? null);
+    history.replaceState(null, "", id ? `/#/experts/${id}` : "/#/experts");
+  }, []);
+
   const openProjects = useCallback((id?: string | null, invite?: string | null) => {
     setMainTab("projects");
     setFilesOpen(false);
@@ -596,13 +652,14 @@ export function App() {
       setActiveProject({ id: project.id, name: project.name });
       if (project.defaultRepoUrls[0]) setRepo(project.defaultRepoUrls[0]);
       setMainTab("chat");
+      void refreshExperts(project.id);
     },
-    [resetComposer],
+    [refreshExperts, resetComposer],
   );
 
   const openChat = useCallback(() => {
     setMainTab("chat");
-    if (hashAutomations() || hashProjects()) {
+    if (hashAutomations() || hashProjects() || hashExperts()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
   }, [runId]);
@@ -617,9 +674,15 @@ export function App() {
         if (target.folder) setDeskFolder(target.folder);
       }
     }
-    const refreshShell = [refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()] as const;
+    const refreshShell = [refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms(), refreshExperts()] as const;
     if (hashAutomations()) {
       setMainTab("automations");
+      await Promise.all(refreshShell);
+      return;
+    }
+    if (hashExperts()) {
+      setMainTab("experts");
+      setSelectedExpertId(hashExpertId());
       await Promise.all(refreshShell);
       return;
     }
@@ -641,8 +704,8 @@ export function App() {
       refreshScm(),
       refreshVms(),
     ]);
-    if (!match && !hashRunId() && !hashProjects()) resetComposer();
-  }, [openRun, refreshEnvironments, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
+    if (!match && !hashRunId() && !hashProjects() && !hashExperts()) resetComposer();
+  }, [openRun, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
     async (nextToken: string, user?: { id?: string; email?: string } | null) => {
@@ -726,6 +789,8 @@ export function App() {
               model,
               images: attached.length ? attached : undefined,
               projectId: activeProject?.id,
+              expertId: expertPick.expertId,
+              expertTeamId: expertPick.expertTeamId,
               mode: agentMode,
               target:
                 deskTarget.kind === "desk"
@@ -767,7 +832,7 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, agentMode, buildId, currentRun?.status, deskFolder, deskTarget, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, agentMode, buildId, currentRun?.status, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
 
   const queueMessage = useCallback(async () => {
     const text = prompt.trim();
@@ -955,6 +1020,15 @@ export function App() {
       const projectId = hashProjectId();
       if (hashAutomations()) {
         setMainTab("automations");
+        setInviteToken(null);
+        setFilesOpen(false);
+        setDiffOpen(false);
+        setSettingsOpen(false);
+        return;
+      }
+      if (hashExperts()) {
+        setMainTab("experts");
+        setSelectedExpertId(hashExpertId());
         setInviteToken(null);
         setFilesOpen(false);
         setDiffOpen(false);
@@ -1215,6 +1289,14 @@ export function App() {
                 </button>
                 <button
                   type="button"
+                  className={mainTab === "experts" ? "active" : ""}
+                  aria-current={mainTab === "experts" ? "page" : undefined}
+                  onClick={() => openExperts()}
+                >
+                  专家
+                </button>
+                <button
+                  type="button"
                   className={mainTab === "automations" ? "active" : ""}
                   aria-current={mainTab === "automations" ? "page" : undefined}
                   onClick={openAutomations}
@@ -1226,29 +1308,46 @@ export function App() {
                 <p className="eyebrow" id="run-label">
                   {mainTab === "projects"
                     ? "项目"
-                    : mainTab === "automations"
+                    : mainTab === "experts"
+                      ? "专家"
+                      : mainTab === "automations"
                       ? "定时任务"
                       : currentRun
                         ? [
                             currentRun.buildId
                               ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
                               : currentRun.branchName ?? shortId(currentRun.id),
+                            runRoleLabel(currentRun, experts, teams),
                             formatRunTime(currentRun.createdAt, currentRun.updatedAt),
                           ]
                             .filter(Boolean)
                             .join(" · ")
-                        : activeProject
+                        : expertPick.expertTeamId || expertPick.expertId
+                          ? `专家 · ${
+                              teams.find((item) => item.id === expertPick.expertTeamId)?.name ||
+                              experts.find((item) => item.id === expertPick.expertId)?.name ||
+                              "已选"
+                            }`
+                          : activeProject
                           ? `项目 · ${activeProject.name}`
                           : "新对话"}
                 </p>
                 <h1 id="run-title">
                   {mainTab === "projects"
                     ? "人和 Agent 共用一份上下文"
-                    : mainTab === "automations"
+                    : mainTab === "experts"
+                      ? "换角色干活"
+                      : mainTab === "automations"
                       ? "到点自动开对话"
                       : currentRun
                         ? preview(currentRun.prompt)
-                        : activeProject
+                        : expertPick.expertTeamId || expertPick.expertId
+                          ? `以「${
+                              teams.find((item) => item.id === expertPick.expertTeamId)?.name ||
+                              experts.find((item) => item.id === expertPick.expertId)?.name ||
+                              "专家"
+                            }」开对话`
+                          : activeProject
                           ? `在「${activeProject.name}」里开对话`
                           : "和云端 Agent 说话"}
                 </h1>
@@ -1576,6 +1675,19 @@ export function App() {
                   void openRun(id);
                 }}
               />
+            ) : mainTab === "experts" ? (
+              <ExpertsPage
+                token={token}
+                userId={userId}
+                selectedId={selectedExpertId}
+                projectId={activeProject?.id}
+                onOpenExpert={(id) => openExperts(id)}
+                onSummon={(pick) => {
+                  resetComposer();
+                  setExpertPick({ expertId: pick.expertId, expertTeamId: pick.expertTeamId });
+                  setMainTab("chat");
+                }}
+              />
             ) : mainTab === "automations" ? (
               <AutomationsPage
                 token={token}
@@ -1626,20 +1738,34 @@ export function App() {
               </ChatErrorBoundary>
             )}
           </div>
-          {mainTab === "chat" && activeProject ? (
+          {mainTab === "chat" && (activeProject || expertPick.expertId || expertPick.expertTeamId) ? (
             <div className="proj-chip-bar" id="project-chip">
-              <span className="proj-chip">
-                {runId ? `项目对话 · ${activeProject.name}` : `将在项目「${activeProject.name}」中开对话`}
-              </span>
-              {runId ? (
+              {activeProject ? (
+                <span className="proj-chip">
+                  {runId ? `项目对话 · ${activeProject.name}` : `将在项目「${activeProject.name}」中开对话`}
+                </span>
+              ) : null}
+              {expertPick.expertTeamId || expertPick.expertId ? (
+                <span className="proj-chip">
+                  {expertPick.expertTeamId
+                    ? `专家团 · ${teams.find((item) => item.id === expertPick.expertTeamId)?.name ?? "已选"}`
+                    : `专家 · ${experts.find((item) => item.id === expertPick.expertId)?.name ?? "已选"}`}
+                </span>
+              ) : null}
+              {runId && activeProject ? (
                 <button type="button" className="ghost" onClick={() => openProjects(activeProject.id)}>
                   打开项目
                 </button>
-              ) : (
+              ) : !runId && activeProject ? (
                 <button type="button" className="ghost" onClick={() => setActiveProject(null)}>
                   不用项目
                 </button>
-              )}
+              ) : null}
+              {!runId && (expertPick.expertId || expertPick.expertTeamId) ? (
+                <button type="button" className="ghost" onClick={() => setExpertPick({})}>
+                  不用专家
+                </button>
+              ) : null}
             </div>
           ) : null}
           {mainTab === "chat" ? (
@@ -1664,6 +1790,17 @@ export function App() {
               folder={deskFolder}
               mode={agentMode}
               model={selectedModel}
+              experts={experts}
+              teams={teams}
+              expertValue={
+                runId
+                  ? encodeExpertPick({
+                      expertId: currentRun?.expertId ?? undefined,
+                      expertTeamId: currentRun?.expertTeamId ?? undefined,
+                    })
+                  : encodeExpertPick(expertPick)
+              }
+              expertLocked={Boolean(runId)}
               onTarget={applyTarget}
               onPickFolder={() => {
                 void deskBridge()?.pickFolder().then((folder) => {
@@ -1673,6 +1810,7 @@ export function App() {
                 });
               }}
               onMode={setAgentMode}
+              onExpert={(value) => setExpertPick(decodeExpertPick(value))}
               onModel={(value) =>
                 setLlm((prev) => ({
                   ...prev,
