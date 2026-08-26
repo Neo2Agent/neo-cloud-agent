@@ -6,6 +6,7 @@ directories:
   output: release
   buildResources: build
 files:
+  - package.json
   - from: out
     to: out
     filter:
