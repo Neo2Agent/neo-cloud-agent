@@ -9,7 +9,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { Select } from "@neo-cloud-agent/ui";
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
-import { deskBridge, withApiBase, type DeskRunStatus, type DeskTarget, type DeskWorkspaceRef } from "./desk";
+import {
+  asWorkspaceRef,
+  deskBridge,
+  STALE_DESK_HINT,
+  withApiBase,
+  type DeskRunStatus,
+  type DeskTarget,
+  type DeskWorkspaceRef,
+} from "./desk";
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 import { isLoopbackOrigin } from "../src/ports";
 import { groupRailSessions } from "../src/rail";
@@ -423,7 +431,7 @@ export function App() {
       if (run.executionTarget?.loop === "desk") {
         // The files live on this machine, so the control plane has nothing to diff.
         const localFolder = (await deskBridge()?.getTarget().catch(() => undefined))?.folder || run.repoUrls[0] || "";
-        setDiff(localFolder ? ((await deskBridge()?.diffStat(localFolder).catch(() => null)) ?? null) : null);
+        setDiff(localFolder ? ((await deskBridge()?.diffStat?.(localFolder).catch(() => null)) ?? null) : null);
       } else if (diffRes.ok) {
         setDiff(diffStats(await diffRes.text()));
       } else {
@@ -532,24 +540,27 @@ export function App() {
   const pickLocalFolder = useCallback(async () => {
     const bridge = deskBridge();
     if (!bridge) return;
-    const picked = await bridge.pickFolder();
+    const picked = asWorkspaceRef(await bridge.pickFolder());
     if (!picked) return;
     setFolder(picked.folder);
-    setWorkspaces(await bridge.listWorkspaces().catch(() => []));
-    applyTargetRef.current({ kind: "desk", folder: picked.folder, workspaceId: picked.id });
+    setWorkspaces((await bridge.listWorkspaces?.().catch(() => [])) ?? []);
+    applyTargetRef.current({ kind: "desk", folder: picked.folder, workspaceId: picked.id || undefined });
   }, []);
 
   /** Bring a local run's worker back on this machine, in the same folder. */
   const resumeLocalRun = useCallback(async (id: string) => {
-    const bridge = deskBridge();
-    if (!bridge) return;
+    const start = deskBridge()?.startRun;
+    if (!start) {
+      setAuthError(STALE_DESK_HINT);
+      return;
+    }
     const response = await api(tokenRef.current, `/v1/runs/${id}/desk-start`, { method: "POST" });
     const body = await readJson<{ assignment?: DeskAssignment; error?: string }>(response);
     if (!response.ok || !body.assignment) {
       setAuthError(body.error || "本机启动失败");
       return;
     }
-    await bridge.startRun(body.assignment);
+    await start(body.assignment);
   }, []);
 
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
@@ -601,7 +612,12 @@ export function App() {
         setPendingTodo(null);
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
         if (created.assignment) {
-          await deskBridge()?.startRun(created.assignment);
+          const start = deskBridge()?.startRun;
+          if (start) {
+            await start(created.assignment);
+          } else {
+            setAuthError(STALE_DESK_HINT);
+          }
         }
         await openRun(created.id);
         return;
@@ -664,9 +680,9 @@ export function App() {
   useEffect(() => {
     const bridge = deskBridge();
     if (!bridge || !authed) return;
-    void bridge.listWorkspaces().then(setWorkspaces).catch(() => undefined);
+    void bridge.listWorkspaces?.().then(setWorkspaces).catch(() => undefined);
     void bridge
-      .getPrefs()
+      .getPrefs?.()
       .then((value) => setRequireApproval(value.requireApproval === true))
       .catch(() => undefined);
   }, [authed, folder]);
@@ -1467,8 +1483,8 @@ export function App() {
                         className="ghost"
                         onClick={() => {
                           void deskBridge()
-                            ?.unbindWorkspace(item.id)
-                            .then(() => deskBridge()?.listWorkspaces())
+                            ?.unbindWorkspace?.(item.id)
+                            .then(() => deskBridge()?.listWorkspaces?.())
                             .then((next) => setWorkspaces(next ?? []));
                           if (path0(folder) === path0(item.folder)) {
                             setFolder("");
@@ -1489,7 +1505,7 @@ export function App() {
                   onChange={(event) => {
                     const next = event.target.checked;
                     setRequireApproval(next);
-                    void deskBridge()?.setPrefs({ requireApproval: next });
+                    void deskBridge()?.setPrefs?.({ requireApproval: next });
                   }}
                 />
                 <span>远程派来的对话，每次都先问我</span>
@@ -1522,7 +1538,7 @@ export function App() {
                   <button
                     type="button"
                     className="ghost"
-                    onClick={() => current && void deskBridge()?.stopRun(current.id)}
+                    onClick={() => current && void deskBridge()?.stopRun?.(current.id)}
                   >
                     停止本机 worker
                   </button>

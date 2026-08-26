@@ -35,6 +35,13 @@ export type LocalFsListing = {
   error?: string;
 };
 
+/**
+ * The preload bridge. Everything added after the first release is optional:
+ * the main process and preload only reload when Electron restarts, so a hot
+ * renderer can be talking to an older bridge. Calling a method that is not
+ * there would throw inside an effect and blank the window, so every new call
+ * has to tolerate a missing one.
+ */
 export type NeoDeskBridge = {
   platform: string;
   apiBase: string;
@@ -42,22 +49,22 @@ export type NeoDeskBridge = {
   getToken(): Promise<string>;
   setToken(token: string): Promise<void>;
   clearToken(): Promise<void>;
-  pickFolder(): Promise<DeskWorkspaceRef | null>;
-  listWorkspaces(): Promise<DeskWorkspaceRef[]>;
-  unbindWorkspace(workspaceId: string): Promise<boolean>;
+  pickFolder(): Promise<DeskWorkspaceRef | string | null>;
   getTarget(): Promise<DeskTarget>;
   setTarget(target: DeskTarget): Promise<void>;
-  getPrefs(): Promise<{ requireApproval?: boolean; deskId?: string }>;
-  setPrefs(next: { requireApproval?: boolean }): Promise<{ requireApproval?: boolean }>;
-  startRun(assignment: DeskAssignment): Promise<boolean>;
-  stopRun(runId: string): Promise<boolean>;
   notify(title: string, body: string): Promise<void>;
   openPath(filePath: string): Promise<void>;
-  listDir(input: { folder: string; path?: string; content?: boolean }): Promise<LocalFsListing>;
-  diffStat(folder: string): Promise<{ added: number; removed: number } | null>;
-  termOpen(folder: string): Promise<{ id?: string; cwd?: string; error?: string }>;
-  termWrite(id: string, data: string): Promise<boolean>;
-  termClose(id: string): Promise<boolean>;
+  listWorkspaces?(): Promise<DeskWorkspaceRef[]>;
+  unbindWorkspace?(workspaceId: string): Promise<boolean>;
+  getPrefs?(): Promise<{ requireApproval?: boolean; deskId?: string }>;
+  setPrefs?(next: { requireApproval?: boolean }): Promise<{ requireApproval?: boolean }>;
+  startRun?(assignment: DeskAssignment): Promise<boolean>;
+  stopRun?(runId: string): Promise<boolean>;
+  listDir?(input: { folder: string; path?: string; content?: boolean }): Promise<LocalFsListing>;
+  diffStat?(folder: string): Promise<{ added: number; removed: number } | null>;
+  termOpen?(folder: string): Promise<{ id?: string; cwd?: string; error?: string }>;
+  termWrite?(id: string, data: string): Promise<boolean>;
+  termClose?(id: string): Promise<boolean>;
   onDeepLink?(cb: (url: string) => void): () => void;
   onRunStatus?(cb: (status: DeskRunStatus) => void): () => void;
   onDispatched?(cb: (payload: { runId: string; workspace: string }) => void): () => void;
@@ -65,6 +72,28 @@ export type NeoDeskBridge = {
   onTermData?(cb: (payload: { id: string; chunk: string }) => void): () => void;
   onTermExit?(cb: (payload: { id: string; code: number | null }) => void): () => void;
 };
+
+/**
+ * Shown when the renderer hot-reloaded past the preload it is talking to.
+ * Restarting the window is the only way to pick up a new bridge.
+ */
+export const STALE_DESK_HINT = "Desk 主进程还是旧版本，退出 Desk 再重新打开。";
+
+/** True when the running preload knows about local files and terminals. */
+export function hasLocalTools(bridge = deskBridge()): boolean {
+  return Boolean(bridge?.listDir && bridge.termOpen && bridge.startRun);
+}
+
+/** Older preloads answered pickFolder with just the path. */
+export function asWorkspaceRef(picked: DeskWorkspaceRef | string | null): DeskWorkspaceRef | null {
+  if (!picked) {
+    return null;
+  }
+  if (typeof picked === "string") {
+    return { id: "", folder: picked, name: picked.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || picked, git: false };
+  }
+  return picked;
+}
 
 declare global {
   interface Window {

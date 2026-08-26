@@ -2995,3 +2995,61 @@ button:disabled {
     width: 260px;
   }
 }
+
+/* Shown instead of a white window when the UI throws. */
+
+.crash {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 64px 28px;
+}
+
+.crash h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.crash p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.crash pre {
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #c0392b;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.crash-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.crash-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.crash-actions button.ghost {
+  background: #fff;
+  color: var(--text);
+}

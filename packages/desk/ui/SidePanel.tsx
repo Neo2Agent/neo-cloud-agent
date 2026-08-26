@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, readJson } from "./api";
-import { deskBridge, type LocalFsListing } from "./desk";
+import { deskBridge, STALE_DESK_HINT, type LocalFsListing } from "./desk";
 import { IconClose, IconComputer, IconSync } from "./icons";
 
 export type SidePanelTab = "files" | "terminal";
@@ -84,9 +84,12 @@ function FilesTab({
           setListing(null);
           return;
         }
-        const bridge = deskBridge();
-        if (!bridge) return;
-        const next = await bridge.listDir({ folder, path: rel, content: Boolean(rel) });
+        const listDir = deskBridge()?.listDir;
+        if (!listDir) {
+          setError(STALE_DESK_HINT);
+          return;
+        }
+        const next = await listDir({ folder, path: rel, content: Boolean(rel) });
         if (cancelled) return;
         if (next.error) {
           setError(next.error);
@@ -186,9 +189,13 @@ function TerminalTab({ folder }: { folder: string }) {
   const outRef = useRef<HTMLPreElement | null>(null);
 
   const open = useCallback(async () => {
-    const bridge = deskBridge();
-    if (!bridge || !folder) return;
-    const created = await bridge.termOpen(folder);
+    const termOpen = deskBridge()?.termOpen;
+    if (!folder) return;
+    if (!termOpen) {
+      setError(STALE_DESK_HINT);
+      return;
+    }
+    const created = await termOpen(folder);
     if (created.error || !created.id) {
       setError(created.error || "打不开终端");
       return;
@@ -256,7 +263,7 @@ function TerminalTab({ folder }: { folder: string }) {
             className="icon-btn"
             aria-label="关闭终端"
             onClick={() => {
-              void deskBridge()?.termClose(activeId);
+              void deskBridge()?.termClose?.(activeId);
               setSessions((prev) => prev.filter((item) => item.id !== activeId));
               setActiveId((prev) => (prev === activeId ? "" : prev));
             }}
@@ -274,7 +281,7 @@ function TerminalTab({ folder }: { folder: string }) {
         onSubmit={(event) => {
           event.preventDefault();
           if (!activeId) return;
-          void deskBridge()?.termWrite(activeId, `${line}\n`);
+          void deskBridge()?.termWrite?.(activeId, `${line}\n`);
           setOutput((prev) => ({ ...prev, [activeId]: `${prev[activeId] ?? ""}${line}\n` }));
           setLine("");
         }}
