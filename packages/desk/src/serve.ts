@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createLeaseClient } from "./lease.js";
 import { controlPlaneOrigin, deskPreviewListenPort } from "./ports.js";
 import { spawnDeskWorker } from "./spawn.js";
-import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap } from "./workspace.js";
+import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap, writeRunExpertFiles } from "./workspace.js";
 
 export type DeskPreviewTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?: string };
 
@@ -205,6 +205,7 @@ export async function startDeskPreview(options: DeskPreviewOptions = {}): Promis
           jwt: assignment.jwt,
           model: assignment.model,
         });
+        writeRunExpertFiles(workspaceDir, assignment);
         const child = spawnDeskWorker({
           runId: assignment.runId,
           jwt: assignment.jwt,
