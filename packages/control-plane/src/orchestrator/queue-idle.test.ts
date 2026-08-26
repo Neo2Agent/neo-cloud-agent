@@ -16,6 +16,7 @@ delete process.env.WORKER_WORKSPACE_MOUNT;
 const { createRun, expireIdleWorkers, getRun, ingestEvents, takeInbound, tryStartQueued } = await import("./orchestrator.js");
 const { setRuntimeForTests } = await import("../runtime/factory.js");
 const { listEvents } = await import("../events/bus.js");
+const { setPersistRunWorkspaceForTests } = await import("../runtime/persist-workspace.js");
 
 function fakeRuntime(opts: { busy?: boolean } = {}): AgentRuntime & { destroyed: string[]; busy: boolean } {
   const state = { busy: Boolean(opts.busy), destroyed: [] as string[] };
@@ -91,6 +92,38 @@ test("idle workers are released without marking ERROR", async () => {
     assert.ok(runtime.destroyed.some((id) => id.includes(run.id)));
     assert.equal(getRun(run.id)?.errorMessage, null);
   } finally {
+    setRuntimeForTests();
+  }
+});
+
+test("idle release keeps the worker when workspace persist fails", async () => {
+  const runtime = fakeRuntime();
+  setRuntimeForTests(runtime);
+  setPersistRunWorkspaceForTests(async () => ({ ok: false, error: "disk full" }));
+  try {
+    const run = await createRun({
+      prompt: "keep the files",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    takeInbound(run.id);
+    ingestEvents(run.id, [
+      {
+        id: "agent-end-keep",
+        runId: run.id,
+        createdAt: new Date().toISOString(),
+        category: "agent_run",
+        level: "info",
+        kind: "agent.end",
+        title: "done",
+      },
+    ]);
+    const released = await expireIdleWorkers(Date.now() + 50);
+    assert.equal(released.includes(run.id), false);
+    assert.ok(getRun(run.id)?.workerHandle);
+    assert.equal(runtime.destroyed.length, 0);
+    assert.ok(listEvents(run.id).some((item) => item.kind === "workspace.persist_failed"));
+  } finally {
+    setPersistRunWorkspaceForTests();
     setRuntimeForTests();
   }
 });

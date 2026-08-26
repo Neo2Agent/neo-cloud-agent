@@ -65,8 +65,15 @@ import { keepHotHistory } from "../events/history.js";
 import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
 import { persistRunWorkspace } from "../runtime/persist-workspace.js";
+import { vmWorkspaceFor } from "../runtime/vm-slots.js";
+import {
+  loadWorkspaceMeta,
+  markWorkspacePresent,
+  reclaimPersistedWorkspaces,
+  workspaceReclaimIntervalMs,
+} from "../runtime/workspace-store.js";
 import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
-import { materializeRepos, repoName } from "../scm/workspace.js";
+import { materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
   listSessionFiles,
@@ -113,6 +120,7 @@ const activeTurns = new Map<string, ActiveTurn>();
 const deskWorkspaces = new Map<string, string>();
 let startingQueued = false;
 let leaseWatch: ReturnType<typeof setInterval> | null = null;
+let lastWorkspaceReclaimAt = 0;
 
 const LIVE_STATUSES = new Set<Run["status"]>([
   "NOT_YET_STARTED",
@@ -447,6 +455,32 @@ export async function tryStartQueued(): Promise<string | null> {
   }
 }
 
+export function reclaimAndPublish(exceptRunId?: string, at = Date.now()): string[] {
+  const protectedIds = new Set<string>();
+  for (const run of runs.values()) {
+    if (LIVE_STATUSES.has(run.status) || handles.has(run.id) || vmWorkspaceFor(run.id)) {
+      protectedIds.add(run.id);
+    }
+  }
+  const result = reclaimPersistedWorkspaces({
+    runs: runs.values(),
+    protectedIds,
+    exceptRunId,
+    now: at,
+  });
+  for (const item of result.evicted) {
+    publish(
+      event(item.runId, "workspace.reclaimed", "Workspace reclaimed to free disk", {
+        data: { reason: item.reason, bytes: item.bytes },
+      }),
+    );
+    if (runs.has(item.runId)) {
+      flushRun(item.runId);
+    }
+  }
+  return result.evicted.map((item) => item.runId);
+}
+
 export async function releaseIdleWorker(runId: string): Promise<boolean> {
   const run = runs.get(runId);
   if (!run || run.status !== "IDLE" || !handles.has(runId)) {
@@ -458,9 +492,28 @@ export async function releaseIdleWorker(runId: string): Promise<boolean> {
   }
   releasingIdle.add(runId);
   try {
-    await persistRunWorkspace(runId).catch((error) => {
-      console.error(`failed to persist idle workspace for ${runId}`, error);
-    });
+    const persisted = await persistRunWorkspace(runId);
+    if (!persisted.ok) {
+      publish(
+        event(runId, "workspace.persist_failed", "Failed to persist workspace; keeping VM slot", {
+          level: "error",
+          data: { error: persisted.error },
+        }),
+      );
+      flushRun(runId);
+      return false;
+    }
+    if (!persisted.persisted && persisted.reason === "no-slot" && getConfig().workerRuntime === "vm") {
+      publish(
+        event(runId, "workspace.persist_failed", "VM slot binding missing; keeping worker", {
+          level: "error",
+          data: { reason: persisted.reason },
+        }),
+      );
+      flushRun(runId);
+      return false;
+    }
+    reclaimAndPublish(runId);
     inbound.get(runId)?.push({ type: "shutdown", reason: "idle" });
     const handle = handles.get(runId);
     if (handle) {
@@ -520,6 +573,11 @@ export function startWorkerLeaseWatch(): void {
   leaseWatch = setInterval(() => {
     expireStaleWorkers();
     void expireIdleWorkers();
+    const at = Date.now();
+    if (at - lastWorkspaceReclaimAt >= workspaceReclaimIntervalMs()) {
+      lastWorkspaceReclaimAt = at;
+      reclaimAndPublish();
+    }
   }, 2000);
   leaseWatch.unref();
 }
@@ -533,7 +591,10 @@ export function event(runId: string, kind: RunEvent["kind"], title: string, extr
       extra?.category ??
       (kind.startsWith("build.")
         ? "build"
-        : kind.startsWith("run.") || kind.startsWith("scm.") || kind.startsWith("subscription.")
+        : kind.startsWith("run.") ||
+            kind.startsWith("scm.") ||
+            kind.startsWith("subscription.") ||
+            kind.startsWith("workspace.")
           ? "agent_setup"
           : "agent_run"),
     level: extra?.level ?? (kind === "run.error" ? "error" : "info"),
@@ -1099,6 +1160,21 @@ export async function resumeRun(runId: string): Promise<Run> {
     offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
     queueRun(run, "等待本机 Desk 认领");
     return run;
+  }
+  if (loadWorkspaceMeta(runId)?.state === "evicted" && run.repoUrls.length > 0) {
+    try {
+      await materializeRepos(run.repoUrls, hostWorkspaceFor(runId), repoRoot());
+      markWorkspacePresent(runId, measureWorkspaceBytes(hostWorkspaceFor(runId)));
+      publish(event(runId, "workspace.restored", "Workspace restored from repo after reclaim"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "workspace restore failed";
+      publish(
+        event(runId, "workspace.persist_failed", "Failed to restore workspace from repo", {
+          level: "warn",
+          data: { error: message },
+        }),
+      );
+    }
   }
   restoreSessionToDir(runId, path.join(workspaceFor(runId), "sessions"));
   run.status = "PROVISIONING";
@@ -1768,9 +1844,16 @@ export async function archiveRun(runId: string): Promise<Run> {
   run.status = "ARCHIVED";
   run.updatedAt = now();
   inbound.get(runId)?.push({ type: "shutdown", reason: "archived" });
-  await persistRunWorkspace(runId).catch((error) => {
-    console.error(`failed to persist workspace before archive ${runId}`, error);
-  });
+  const persisted = await persistRunWorkspace(runId);
+  if (!persisted.ok) {
+    publish(
+      event(runId, "workspace.persist_failed", "Failed to persist workspace before archive", {
+        level: "error",
+        data: { error: persisted.error },
+      }),
+    );
+  }
+  reclaimAndPublish(runId);
   const handle = handles.get(runId);
   if (handle) {
     await getRuntime().destroy(handle);

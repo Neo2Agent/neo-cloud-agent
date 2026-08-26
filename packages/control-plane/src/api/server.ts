@@ -73,6 +73,7 @@ import {
   takeInbound,
 } from "../orchestrator/orchestrator.js";
 import { listWorkspacePath } from "../workspace-fs.js";
+import { loadWorkspaceMeta, summarizeWorkspaceStore } from "../runtime/workspace-store.js";
 import { workspaceFor } from "../worker-spawn.js";
 import {
   AccountError,
@@ -324,6 +325,7 @@ export function createApiServer() {
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           vmSlots: summarizeVmSlots(config.workerRuntime),
+          workspaceStore: summarizeWorkspaceStore(),
           objectStore: getObjectStore().kind,
           scmPush: publicScmSettings(),
           workerMemoryMiB: defaultWorkerResources(config.workerRuntime).memoryMiB,
@@ -552,7 +554,10 @@ export function createApiServer() {
           return;
         }
         if (method === "GET" && path === "/v1/vms") {
-          send(res, 200, summarizeVmSlots(getConfig().workerRuntime));
+          send(res, 200, {
+            ...summarizeVmSlots(getConfig().workerRuntime),
+            workspaceStore: summarizeWorkspaceStore(),
+          });
           return;
         }
         if (method === "GET" && path === "/v1/settings/llm") {
@@ -1856,13 +1861,17 @@ export function createApiServer() {
           return;
         }
         try {
-          send(
-            res,
-            200,
-            listWorkspacePath(workspaceFor(runId), url.searchParams.get("path") ?? "", {
+          send(res, 200, {
+            ...listWorkspacePath(workspaceFor(runId), url.searchParams.get("path") ?? "", {
               content: url.searchParams.get("content") === "1",
             }),
-          );
+            workspace: loadWorkspaceMeta(runId) ?? {
+              version: 1,
+              state: "missing",
+              bytes: 0,
+              persistedAt: null,
+            },
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : "fs failed";
           send(res, message.includes("not found") ? 404 : 400, { error: message });

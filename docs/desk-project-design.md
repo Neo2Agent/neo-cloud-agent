@@ -854,21 +854,23 @@ Desk 的 D1–D5 冻结后，Web 再做：
 
 会自动释放，默认 **15 分钟**空闲。`WORKER_IDLE_RELEASE_MS` 没设就是 `15 * 60_000`；设成 `0` 则不卸槽。控制面每 2 秒扫一次 `expireIdleWorkers`：Run 已是 `IDLE`、还挂着 worker、且 `now - idleAt >= ttl` 才释放。释放时 **不标 ERROR**，只发 `Released idle VM slot`。
 
-释放顺序：
+释放顺序（细则见 [workspace-persistence.md](./workspace-persistence.md)）：
 
-1. `persistRunWorkspace`：槽上的盘拷回 `hostRunsDir/<runId>`（按 Run 分目录，不是按槽）
+1. `persistRunWorkspace`：槽上的用户文件拷回 `hostRunsDir/<runId>`（跳过 `node_modules` 等缓存）。失败则**留下槽**，发 `workspace.persist_failed`
 2. 给 worker 发 `shutdown`
 3. `destroy` worker，`releaseVmSlot`：`umount`，槽标 `idle`，`runId` 清空
-4. 有人在排队就 `tryStartQueued`
+4. 按预算 / TTL 回收别的空闲工作区
+5. 有人在排队就 `tryStartQueued`
 
-下一任占用同一槽时，`VmSlotRuntime.provision` 会先 `wipeMount`（清掉挂载点里除 `lost+found` 以外的东西），再把 **这一条 Run** 自己的 host 工作区拷进去。所以：
+下一任占用同一槽时，`VmSlotRuntime.provision` 会先 `wipeMount`，再把 **这一条 Run** 自己的 host 工作区拷进去。所以：
 
 | 担心 | 现网怎么处理 |
 | --- | --- |
 | 槽卸了对话是不是没了 | 不是。对话在控制面，工作区文件在 `hostRunsDir/<runId>` |
 | 槽被 B 占用，A 的文件会不会混进 B | 正常路径不会。卸槽前按 runId 写回，占槽前 wipe，再只拷 B 的目录 |
 | 同一条 Run 过一会儿又说话 | `resumeRun`：session 备份还原进新工作区，再占槽、拉 worker。槽可能是另一块盘 |
-| 卸槽失败 / wipe 失败 | 上一任残留才可能干扰。这是运维故障，不是产品语义 |
+| 写回失败 | 空闲释放中止，槽还挂着，文件还在热盘上 |
+| 磁盘满了 | 先回收 ARCHIVED / 最老的 IDLE 工作区（对话留下）。见工作区持久化文档 |
 
 2 个槽限制的是 **同时挂着的执行面**，不是同时存在的对话数。空闲对话卸槽后，卡片还在，发跟进再排队占槽。
 

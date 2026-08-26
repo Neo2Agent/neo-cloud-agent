@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { ExecutionRuntime, RuntimeHandle, RuntimeSpec } from "@neo-cloud-agent/contracts";
 import type { WorkerLease } from "../store/persist.js";
-import { copyWorkspaceTree } from "../scm/workspace.js";
+import { restoreDurableWorkspace } from "../scm/workspace.js";
 import type { RuntimeHooks } from "./docker.js";
 import { firecrackerReady, FirecrackerRuntime } from "./firecracker.js";
 import { LocalProcessRuntime } from "./local.js";
@@ -52,8 +52,9 @@ export class VmSlotRuntime implements ExecutionRuntime {
         return { ...handle, runtime: "vm", slotId: slot.id };
       }
       wipeMount(slot.mountPath);
-      if (existsSync(spec.hostWorkspaceDir) && readdirSync(spec.hostWorkspaceDir).length > 0) {
-        await copyWorkspaceTree(spec.hostWorkspaceDir, slot.mountPath);
+      const hostDir = spec.hostWorkspaceBind || spec.hostWorkspaceDir;
+      if (existsSync(hostDir)) {
+        await restoreDurableWorkspace(hostDir, slot.mountPath);
       }
       const handle = await this.local.provision(
         { ...spec, hostWorkspaceDir: slot.mountPath, hostWorkspaceBind: slot.mountPath },

@@ -33,6 +33,9 @@ function resolveInside(root: string, rel = ""): string {
 export function listWorkspacePath(root: string, rel = "", options?: { content?: boolean }): WorkspaceFsListing {
   const target = resolveInside(root, rel);
   if (!existsSync(target)) {
+    if (!rel) {
+      return { path: ".", type: "dir", entries: [] };
+    }
     throw new Error("path not found");
   }
   const stat = statSync(target);

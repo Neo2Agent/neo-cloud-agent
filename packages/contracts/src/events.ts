@@ -47,7 +47,10 @@ export type RunEventKind =
   | "mcp.auth_error"
   | "egress.denied"
   | "build.used"
-  | "artifact.uploaded";
+  | "artifact.uploaded"
+  | "workspace.persist_failed"
+  | "workspace.reclaimed"
+  | "workspace.restored";
 
 export interface RunEvent {
   id: string;
