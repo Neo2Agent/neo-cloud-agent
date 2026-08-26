@@ -5,7 +5,7 @@ import {
   expertVisibilityLabel,
   type Expert,
   type ExpertTeam,
-} from "@neo-cloud-agent/contracts";
+} from "@neo-cloud-agent/contracts/expert";
 import { api, readJson } from "../api";
 
 type Props = {

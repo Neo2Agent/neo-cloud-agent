@@ -1,5 +1,5 @@
-import { canManageProject, expertPickerLabel, type Expert } from "@neo-cloud-agent/contracts";
-import { type InvitePolicy, type Project } from "@neo-cloud-agent/contracts/project";
+import { expertPickerLabel, type Expert } from "@neo-cloud-agent/contracts/expert";
+import { canManageProject, type InvitePolicy, type Project } from "@neo-cloud-agent/contracts/project";
 import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
 import { roleLabel } from "./helpers";

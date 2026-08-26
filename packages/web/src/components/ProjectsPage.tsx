@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { canManageProject, expertPickerLabel, type Expert } from "@neo-cloud-agent/contracts";
-import type { Project, ProjectInvite, ProjectMember } from "@neo-cloud-agent/contracts/project";
+import type { Expert } from "@neo-cloud-agent/contracts/expert";
+import { expertPickerLabel } from "@neo-cloud-agent/contracts/expert";
+import { canManageProject, type Project, type ProjectInvite, type ProjectMember } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
 

@@ -1,4 +1,4 @@
-import { canEditExpert, expertPickerLabel, expertVisibilityLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts";
+import { canEditExpert, expertPickerLabel, expertVisibilityLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { useEffect, useMemo, useState } from "react";
 import { api, readJson } from "./api";
 import { IconPlus } from "./icons";

@@ -189,6 +189,7 @@ export function createProject(input: {
   name: string;
   instruction?: string;
   defaultRepoUrls?: string[];
+  expertIds?: string[];
   invitePolicy?: InvitePolicy;
   actor: { userId: string; email: string };
 }): Project {
