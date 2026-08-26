@@ -107,6 +107,10 @@ function path0(value: string): string {
   return (value || "").replace(/[\\/]+$/, "");
 }
 
+function isLocalPathLike(value: string): boolean {
+  return value.startsWith("/") || value.startsWith("~") || /^[A-Za-z]:[\\/]/.test(value);
+}
+
 function folderName(value: string): string {
   return path0(value).split(/[\\/]/).pop() || value;
 }
@@ -1070,20 +1074,24 @@ export function App() {
 
   const repoChoices = useMemo(() => {
     const map = new Map<string, string>();
-    map.set("", "Inbox");
+    map.set("", "不关联仓库");
     for (const run of runs) {
       const url = run.repoUrls[0] || "";
-      if (url) map.set(url, repoPath(url));
+      // Local runs carry a path; those show up under 这台电脑 instead.
+      if (url && !isLocalPathLike(url)) map.set(url, repoPath(url));
     }
-    if (folder) map.set(folder, repoPath(folder));
     for (const url of activeProject?.defaultRepoUrls ?? []) {
       if (url) map.set(url, repoPath(url));
     }
     return [...map.entries()].map(([url, label]) => ({ url, label }));
-  }, [activeProject, folder, runs]);
+  }, [activeProject, runs]);
 
   const contextRepoUrl = current?.repoUrls[0] || composerRepo;
-  const contextRepoName = current ? repoPath(current.repoUrls[0]) : repoPath(composerRepo) || repoChoices.find((item) => item.url === composerRepo)?.label || "Inbox";
+  const contextRepoName = current
+    ? repoPath(current.repoUrls[0])
+    : composerRepo
+      ? repoPath(composerRepo)
+      : "选择仓库";
 
   const branch = current?.branchName || "";
 
@@ -1610,7 +1618,17 @@ export function App() {
                   repoLabel={contextRepoName}
                   repos={repoChoices}
                   repoUrl={contextRepoUrl}
-                  onRepo={setComposerRepo}
+                  onRepo={(url) => {
+                    setComposerRepo(url);
+                    applyTarget({ ...target, kind: "cloud" });
+                  }}
+                  workspaces={workspaces}
+                  folder={folder}
+                  onWorkspace={(picked) => {
+                    setFolder(picked.folder);
+                    applyTarget({ kind: "desk", folder: picked.folder, workspaceId: picked.id, deskId: target.deskId });
+                  }}
+                  onPickFolder={() => void pickLocalFolder()}
                   branch={branch || "main"}
                   targetKind={target.kind}
                   canRunLocal={canRunLocal}

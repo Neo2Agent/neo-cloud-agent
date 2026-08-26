@@ -2269,6 +2269,32 @@ button:disabled {
   background: #f4f4f1;
 }
 
+.context-menu button:disabled {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.context-menu-label {
+  margin: 6px 10px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.context-menu-label:first-child {
+  margin-top: 2px;
+}
+
+.context-menu-note {
+  margin: 6px 10px 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
 .composer.composer-stack {
   position: relative;
   display: flex;
@@ -2307,6 +2333,13 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+
+.composer-send-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .expert-pick {
@@ -2363,7 +2396,7 @@ button:disabled {
 
 .model-menu {
   position: absolute;
-  left: 0;
+  right: 0;
   bottom: calc(100% + 8px);
   width: 280px;
   padding: 8px;
