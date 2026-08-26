@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import type { DeskAssignment } from "@neo-cloud-agent/contracts";
 
 export function isGitRepo(folder: string): boolean {
   return existsSync(path.join(folder, ".git"));
@@ -30,6 +31,33 @@ export function writeRunBootstrap(
   const dest = path.join(workspaceDir, ".neo");
   mkdirSync(dest, { recursive: true });
   writeFileSync(path.join(dest, "run-bootstrap.json"), `${JSON.stringify(bootstrap, null, 2)}\n`);
+}
+
+export function writeRunExpertFiles(
+  workspaceDir: string,
+  assignment: Pick<DeskAssignment, "expertMarkdown" | "expertTeamMarkdown" | "expertMeta" | "expertAgents">,
+): void {
+  if (!assignment.expertMeta && !assignment.expertMarkdown && !assignment.expertTeamMarkdown && !assignment.expertAgents?.length) {
+    return;
+  }
+  const dest = path.join(workspaceDir, ".neo");
+  mkdirSync(dest, { recursive: true });
+  if (assignment.expertMeta) {
+    writeFileSync(path.join(dest, "expert.json"), assignment.expertMeta.endsWith("\n") ? assignment.expertMeta : `${assignment.expertMeta}\n`);
+  }
+  if (assignment.expertMarkdown) {
+    writeFileSync(path.join(dest, "EXPERT.md"), assignment.expertMarkdown);
+  }
+  if (assignment.expertTeamMarkdown) {
+    writeFileSync(path.join(dest, "EXPERT_TEAM.md"), assignment.expertTeamMarkdown);
+  }
+  if (assignment.expertAgents?.length) {
+    const agentsDir = path.join(dest, "agents");
+    mkdirSync(agentsDir, { recursive: true });
+    for (const agent of assignment.expertAgents) {
+      writeFileSync(path.join(agentsDir, `${agent.slug}.md`), agent.markdown);
+    }
+  }
 }
 
 function runGit(cwd: string, args: string[]): Promise<void> {

@@ -57,9 +57,11 @@ export function commandHelp(command: string): string {
   --email     账号登录
 密码可用 --password 或 NEO_PASSWORD；TTY 下会提示。`;
     case "run":
-      return `neo run [prompt…] --repo <url> [--env] [--build] [--model]
+      return `neo run [prompt…] --repo <url> [--env] [--build] [--model] [--expert] [--expert-team]
   --detach    打印 run id 后退出
   --timeout   等待上限，默认 10m
+  --expert    专家 id 或 slug，例如 reviewer
+  --expert-team 专家团 id 或 slug，例如 ship-change
 没有子命令时，剩余参数也当作 run 的 prompt。`;
     case "follow":
       return `neo follow <runId> [text…] [--delivery prompt|steer|follow_up]`;

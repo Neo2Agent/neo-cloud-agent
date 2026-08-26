@@ -33,7 +33,7 @@ Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项�
 | 产物进项目是显式动作 | Run 工作区里的文件不会自动变成项目资产。对话历史已经持久，文件必须「保存到项目」或「流转为待办」。 |
 | 看板给人排期，Agent 不擅自改列 | 卡片可以「开对话」。Agent 改状态只走用户明确触发的工具。 |
 | 只有云端项目对话能拉人进会话 | 本机 Run、无 `projectId` 的对话，都没有「邀请加入这条对话」。 |
-| 不抄办公套件 | 专家中心、技能市场、在线表格、人机双写、公开整段会话、公共 OAuth 票据共享，全部后置。 |
+| 不抄办公套件 | 专家**市场**、技能市场、在线表格、人机双写、公开整段会话、公共 OAuth 票据共享，全部后置。专家角色包见 [workbuddy-experts.md](./workbuddy-experts.md)。 |
 
 现网硬约束（设计时不许假装没有）：
 
@@ -119,7 +119,7 @@ Web 已经能改指令、加成员、生成邀请、转交、看动态。Desk �
 
 ### 3.2 先不跟
 
-专家中心、技能市场、连接器公共票据、腾讯文档双写、CSV/HTML 协同、`workbuddy.link`、锁屏远程本机、SSO / Credit、自定义工作流引擎、公开整站会话链接、本机待办 SQLite。
+专家**市场**、技能市场、连接器公共票据、腾讯文档双写、CSV/HTML 协同、`workbuddy.link`、锁屏远程本机、SSO / Credit、自定义工作流引擎、公开整站会话链接、本机待办 SQLite。Desk 专家选择器和项目钉住跟 [workbuddy-experts.md](./workbuddy-experts.md)，不另做市场。
 
 Desk 也不先做 P3 并排窗格和 SSH 远程机。项目协同叠在现有 Cloud / This Computer 两轴上。
 
@@ -622,7 +622,7 @@ Desk 放在工作台「动态」旁的子视图，或动态页上半留言、下
 
 第二期若做工具，走现有 worker 扩展（`neo_artifact_upload` 同款），挂控制面 `/internal`，**不要**在 Desk 主进程再开一套 MCP 代理。Desk 前端继续打 REST；Agent 打内部工具。两套入口同一张表。
 
-委派 AI（`todo_delegate`）更后。现有 `neo_subagent` 够用，不做专家团市场。
+委派 AI（`todo_delegate`）更后。现有 `neo_subagent` 够用。专家团召唤面见 [workbuddy-experts.md](./workbuddy-experts.md)，不做市场。
 
 ---
 
@@ -827,6 +827,7 @@ Desk 的 D1–D5 冻结后，Web 再做：
 | 主题 | 位置 |
 | --- | --- |
 | WorkBuddy 该跟 / 不该跟 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) |
+| WorkBuddy 专家 / 专家团 | [workbuddy-experts.md](./workbuddy-experts.md) |
 | Desk 已落地执行面 | [desk.md](./desk.md) |
 | 项目合约 | `packages/contracts/src/project.ts` |
 | 项目存储 / 邀请 | `packages/control-plane/src/projects/store.ts` |

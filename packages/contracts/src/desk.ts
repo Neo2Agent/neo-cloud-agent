@@ -27,6 +27,12 @@ export interface DeskAssignment {
   controlPlaneUrl: string;
   llmGatewayUrl: string;
   target: ExecutionTarget;
+  expertId?: string | null;
+  expertTeamId?: string | null;
+  expertMarkdown?: string;
+  expertTeamMarkdown?: string;
+  expertMeta?: string;
+  expertAgents?: Array<{ slug: string; markdown: string }>;
 }
 
 export interface DeskLeaseResponse {

@@ -1,4 +1,4 @@
-import type { Automation, Build, Desk, Device, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
+import type { Automation, Build, Desk, Device, Environment, Expert, Project, RunEvent } from "@neo-cloud-agent/contracts";
 import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
@@ -76,6 +76,11 @@ CREATE TABLE IF NOT EXISTS devices (
   body JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS experts (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -98,6 +103,9 @@ export interface PostgresMetadataStore extends AccountStore {
   saveProject(item: Project): Promise<void>;
   loadProjects(): Promise<Project[]>;
   deleteProject(id: string): Promise<void>;
+  saveExpert(item: Expert): Promise<void>;
+  loadExperts(): Promise<Expert[]>;
+  deleteExpert(id: string): Promise<void>;
   saveDesk(item: Desk): Promise<void>;
   loadDesks(): Promise<Desk[]>;
   deleteDesk(id: string): Promise<void>;
@@ -176,6 +184,14 @@ function asProject(value: unknown): Project | null {
   }
   const item = value as Project;
   return item.id && item.name ? item : null;
+}
+
+function asExpert(value: unknown): Expert | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Expert;
+  return item.id && item.name && item.persona ? item : null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -317,6 +333,21 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async deleteProject(id) {
       await query(`DELETE FROM projects WHERE id = $1`, [id]);
+    },
+    async saveExpert(item) {
+      await query(
+        `INSERT INTO experts (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.updatedAt],
+      );
+    },
+    async loadExperts() {
+      const result = await query(`SELECT body FROM experts ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asExpert)).filter((item): item is Expert => Boolean(item));
+    },
+    async deleteExpert(id) {
+      await query(`DELETE FROM experts WHERE id = $1`, [id]);
     },
     async saveDesk(item) {
       await query(

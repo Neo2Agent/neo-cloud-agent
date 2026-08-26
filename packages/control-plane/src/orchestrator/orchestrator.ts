@@ -86,6 +86,8 @@ import {
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
+import { assignmentExpertFields, buildExpertFiles, resolveTeam, writeExpertFiles } from "../experts/materialize.js";
+import { requireUsableExpert } from "../experts/store.js";
 import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
 import { bindTodoRun } from "../projects/todos.js";
 import { listProjectAssetsUnchecked } from "../projects/assets.js";
@@ -652,6 +654,29 @@ function writeProjectMemory(run: Run): void {
   writeFileSync(path.join(dest, "PROJECT.md"), formatProjectMemory(project, listProjectAssetsUnchecked(project.id)));
 }
 
+function expertFilesForRun(run: Run) {
+  try {
+    if (run.expertTeamId) {
+      const team = resolveTeam(run.expertTeamId);
+      return team ? buildExpertFiles({ team }) : null;
+    }
+    if (run.expertId) {
+      const expert = requireUsableExpert(run.expertId, { userId: run.userId, projectId: run.projectId });
+      return buildExpertFiles({ expert });
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function writeExpertRole(run: Run): void {
+  const files = expertFilesForRun(run);
+  if (files) {
+    writeExpertFiles(workspaceFor(run.id), files);
+  }
+}
+
 function seedHostCollaborator(run: Run, owner?: { userId?: string; email?: string }): void {
   if (!run.projectId) {
     run.collaborators = [];
@@ -803,6 +828,16 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
       throw new Error("本机未在线");
     }
   }
+  if (input.expertId && input.expertTeamId) {
+    throw new Error("一次对话只能选专家或专家团");
+  }
+  const expert = input.expertId
+    ? requireUsableExpert(input.expertId, { userId: owner?.userId, projectId: projectId ?? input.projectId })
+    : null;
+  const team = input.expertTeamId ? resolveTeam(input.expertTeamId) : null;
+  if (input.expertTeamId && !team) {
+    throw new Error("专家团不存在");
+  }
   const run: Run = {
     id: crypto.randomUUID(),
     orgId: owner?.orgId ?? config.orgId,
@@ -816,7 +851,9 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     setupStatus: null,
     source: parseRunSource(input.source) ?? (isDeskTarget(target) ? "desk" : "api"),
     executionTarget: target ?? { loop: "cloud", tools: "cloud" },
-    model: input.model ?? config.defaultModel,
+    expertId: expert?.id ?? null,
+    expertTeamId: team?.id ?? null,
+    model: input.model ?? expert?.model ?? config.defaultModel,
     prompt: input.prompt,
     branchName: null,
     baseBranch: null,
@@ -850,6 +887,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   );
   mintJwtForRun(run);
   flushRun(run.id);
+  writeExpertRole(run);
 
   if (isDeskTarget(run.executionTarget)) {
     offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
@@ -1010,6 +1048,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
 
   try {
     writeProjectMemory(run);
+    writeExpertRole(run);
     await attachWorker(run, runningTitle());
   } catch (error) {
     if (isSlotBusyError(error)) {
@@ -1191,6 +1230,7 @@ export function listRuns(): Run[] {
 
 function assignmentFor(run: Run): DeskAssignment {
   const config = getConfig();
+  const files = expertFilesForRun(run);
   return {
     runId: run.id,
     jwt: runJwts.get(run.id) ?? mintJwtForRun(run),
@@ -1200,6 +1240,9 @@ function assignmentFor(run: Run): DeskAssignment {
     controlPlaneUrl: config.controlPlaneUrl,
     llmGatewayUrl: config.workerLlmGatewayUrl,
     target: run.executionTarget ?? { loop: "desk", tools: "desk" },
+    expertId: run.expertId ?? null,
+    expertTeamId: run.expertTeamId ?? null,
+    ...assignmentExpertFields(files),
   };
 }
 

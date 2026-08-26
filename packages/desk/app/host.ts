@@ -7,7 +7,7 @@ import { createLeaseClient } from "../src/lease.js";
 import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
-import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap } from "../src/workspace.js";
+import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap, writeRunExpertFiles } from "../src/workspace.js";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -209,6 +209,7 @@ async function startLeaseLoop(): Promise<void> {
         jwt: assignment.jwt,
         model: assignment.model,
       });
+      writeRunExpertFiles(workspaceDir, assignment);
       if (!sleepBlocker) {
         sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
       }

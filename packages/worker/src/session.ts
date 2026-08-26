@@ -7,8 +7,15 @@ import {
   SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import { appendProjectInstruction, deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
+import {
+  appendExpertRole,
+  appendProjectInstruction,
+  deliveryForPi,
+  intersectSessionTools,
+  type WorkerInbound,
+} from "@neo-cloud-agent/contracts";
 import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
+import { readExpertWorkspace } from "./expert-workspace.js";
 import { getWorkerConfig } from "./config.js";
 import { inboundPrompt } from "./images.js";
 import { gatewayModelSpec } from "./model-spec.js";
@@ -73,7 +80,11 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
 
   const config = getWorkerConfig();
   const allowSubagent = input.allowSubagent !== false;
-  const toolNames = input.tools ?? sessionToolNames({ includeSubagent: allowSubagent });
+  const expert = readExpertWorkspace(input.cwd);
+  const toolNames = intersectSessionTools(
+    input.tools ?? sessionToolNames({ includeSubagent: allowSubagent }),
+    expert.tools,
+  );
   const customTools = createPiCloudTools({
     runId: input.runId,
     jwt: input.jwt,
@@ -95,7 +106,10 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
   const resourceLoader = await createWorkspaceLoader({
     cwd: input.cwd,
     agentDir,
-    systemPrompt: appendProjectInstruction(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, readProjectInstruction(input.cwd)),
+    systemPrompt: appendProjectInstruction(
+      appendExpertRole(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, expert.role),
+      readProjectInstruction(input.cwd),
+    ),
     settingsManager,
   });
   const loaded = summarizeWorkspaceResources(resourceLoader);

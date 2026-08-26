@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import type { Automation, Build, Desk, Device, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
+import type { Automation, Build, Desk, Device, Environment, Expert, Project, RunEvent } from "@neo-cloud-agent/contracts";
 import type { SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
@@ -79,6 +79,11 @@ CREATE TABLE IF NOT EXISTS devices (
   body JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL
 );
+CREATE TABLE IF NOT EXISTS experts (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
 `;
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -143,6 +148,14 @@ function asProject(value: unknown): Project | null {
   }
   const item = value as Project;
   return item.id && item.name ? item : null;
+}
+
+function asExpert(value: unknown): Expert | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Expert;
+  return item.id && item.name && item.persona ? item : null;
 }
 
 function asAutomation(value: unknown): Automation | null {
@@ -313,6 +326,21 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async deleteProject(id) {
       await query(`DELETE FROM projects WHERE id = ?`, [id]);
+    },
+    async saveExpert(item) {
+      await query(
+        `INSERT INTO experts (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [item.id, JSON.stringify(item), mysqlDateTime(item.updatedAt)],
+      );
+    },
+    async loadExperts() {
+      const result = await query(`SELECT body FROM experts ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asExpert)).filter((item): item is Expert => Boolean(item));
+    },
+    async deleteExpert(id) {
+      await query(`DELETE FROM experts WHERE id = ?`, [id]);
     },
     async saveDesk(item) {
       await query(

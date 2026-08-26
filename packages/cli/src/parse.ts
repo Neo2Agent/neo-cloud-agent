@@ -66,6 +66,8 @@ export interface CliFlags {
   envId?: string;
   buildId?: string;
   model?: string;
+  expertId?: string;
+  expertTeamId?: string;
   ref?: string;
   reuseBuild?: boolean;
   timeoutMs?: number;
@@ -260,6 +262,18 @@ export function parseArgv(argv: string[]): ParsedCli {
     if (arg === "--model" || arg.startsWith("--model=")) {
       const taken = takeValue(argv, i, "--model");
       flags.model = taken.value;
+      i = taken.next;
+      continue;
+    }
+    if (arg === "--expert" || arg.startsWith("--expert=")) {
+      const taken = takeValue(argv, i, "--expert");
+      flags.expertId = taken.value;
+      i = taken.next;
+      continue;
+    }
+    if (arg === "--expert-team" || arg.startsWith("--expert-team=")) {
+      const taken = takeValue(argv, i, "--expert-team");
+      flags.expertTeamId = taken.value;
       i = taken.next;
       continue;
     }

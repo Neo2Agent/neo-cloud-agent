@@ -113,6 +113,8 @@ export interface Run {
   assigneeUserId?: string | null;
   collaborators?: RunCollaborator[];
   todoId?: string | null;
+  expertId?: string | null;
+  expertTeamId?: string | null;
   executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
@@ -224,6 +226,8 @@ export interface CreateRunRequest {
   source?: RunSource;
   projectId?: string;
   todoId?: string;
+  expertId?: string;
+  expertTeamId?: string;
   images?: ImageRef[];
   notifyChatId?: string;
   target?: ExecutionTarget;

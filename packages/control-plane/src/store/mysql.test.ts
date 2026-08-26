@@ -126,6 +126,7 @@ test("mysql store upserts run JSON, events, and users", async () => {
     name: "官网改版",
     instruction: "用中文回复",
     defaultRepoUrls: [],
+    expertIds: [],
     invitePolicy: "open",
     createdBy: "user_ada",
     createdAt: record.run.createdAt,
@@ -135,4 +136,19 @@ test("mysql store upserts run JSON, events, and users", async () => {
     events: [],
   });
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO projects/);
+
+  await store.saveExpert({
+    id: "exp_mine",
+    slug: "release-check",
+    name: "发布检查",
+    description: "发版前核对",
+    persona: "You are a release checker.",
+    methodology: "Read the diff.",
+    deliverables: "## Notes",
+    visibility: "user",
+    ownerUserId: "user-1",
+    createdAt: record.run.createdAt,
+    updatedAt: record.run.createdAt,
+  });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO experts/);
 });

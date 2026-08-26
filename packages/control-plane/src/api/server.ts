@@ -11,6 +11,7 @@ import type {
   CreateAutomationRequest,
   CreateDeskRequest,
   CreateDeviceRequest,
+  CreateExpertRequest,
   CreateProjectRequest,
   CreateProjectMessageRequest,
   CreateTodoRequest,
@@ -18,9 +19,11 @@ import type {
   TransitionTodoRequest,
   UpdateTodoRequest,
   RunEvent,
+  UpdateExpertRequest,
   UpdateProjectRequest,
 } from "@neo-cloud-agent/contracts";
 import {
+  BUNDLED_EXPERT_TEAMS,
   canManageProject,
   evaluateEgress,
   pageTranscriptSnapshot,
@@ -133,6 +136,14 @@ import {
   memberRole,
   updateProject,
 } from "../projects/store.js";
+import {
+  createExpert,
+  deleteExpert,
+  listExpertsForActor,
+  resolveExpert,
+  updateExpert,
+} from "../experts/store.js";
+import { renderExpertRole } from "@neo-cloud-agent/contracts";
 import {
   addTodoComment,
   attachTodoFiles,
@@ -762,6 +773,87 @@ export function createApiServer() {
             return;
           }
           send(res, 200, updated);
+          return;
+        }
+        if (method === "GET" && path === "/v1/experts") {
+          if (actor.kind !== "user") {
+            send(res, 200, { experts: listExpertsForActor({ query: url.searchParams.get("q") ?? undefined }) });
+            return;
+          }
+          send(
+            res,
+            200,
+            {
+              experts: listExpertsForActor({
+                userId: actor.userId,
+                projectId: url.searchParams.get("projectId"),
+                query: url.searchParams.get("q") ?? undefined,
+              }),
+            },
+          );
+          return;
+        }
+        if (method === "POST" && path === "/v1/experts") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 201, createExpert((await readJson(req)) as CreateExpertRequest, { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invalid_expert" });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/expert-teams") {
+          send(res, 200, { teams: BUNDLED_EXPERT_TEAMS });
+          return;
+        }
+        const expertItem = /^\/v1\/experts\/([^/]+)$/.exec(path);
+        if (expertItem && method === "GET") {
+          const expert = resolveExpert(expertItem[1] ?? "");
+          if (!expert) {
+            notFound(res);
+            return;
+          }
+          if (actor.kind === "user") {
+            const visible = listExpertsForActor({ userId: actor.userId, projectId: expert.projectId }).some((item) => item.id === expert.id);
+            if (!visible) {
+              notFound(res);
+              return;
+            }
+          } else if (expert.visibility !== "bundled") {
+            notFound(res);
+            return;
+          }
+          send(res, 200, { ...expert, markdown: renderExpertRole(expert) });
+          return;
+        }
+        if (expertItem && (method === "PATCH" || method === "POST")) {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 200, updateExpert(expertItem[1] ?? "", (await readJson(req)) as UpdateExpertRequest, { userId: actor.userId }));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "update_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        if (expertItem && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            deleteExpert(expertItem[1] ?? "", { userId: actor.userId });
+            send(res, 200, { ok: true });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "delete_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
           return;
         }
         if (method === "GET" && path === "/v1/projects") {

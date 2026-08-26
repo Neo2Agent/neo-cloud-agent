@@ -1508,6 +1508,72 @@ button.stop:hover {
   line-height: 1.5;
 }
 
+.expert-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.expert-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-2);
+  text-align: left;
+}
+
+.expert-card-main {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.expert-card p,
+.expert-card-main p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.expert-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef1ff;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.expert-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.expert-pin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.proj-card .expert-pin-list label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
 .proj-add {
   display: inline-flex;
   align-items: center;

@@ -12,6 +12,7 @@
     "./context-usage": "./src/context-usage.ts",
     "./automation": "./src/automation.ts",
     "./project": "./src/project.ts",
+    "./expert": "./src/expert.ts",
     "./project-todo": "./src/project-todo.ts",
     "./project-asset": "./src/project-asset.ts",
     "./project-message": "./src/project-message.ts",

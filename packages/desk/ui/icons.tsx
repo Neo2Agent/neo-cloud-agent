@@ -68,6 +68,17 @@ export function IconProjects(props: IconProps) {
   );
 }
 
+export function IconExperts(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M4 18c0-2.5 2.2-4 5-4s5 1.5 5 4" />
+      <circle cx="16.5" cy="9" r="2.2" />
+      <path d="M20.5 17.5c0-1.8-1.6-3-3.8-3-.7 0-1.3.1-1.8.3" />
+    </Svg>
+  );
+}
+
 export function IconCloud(props: IconProps) {
   return (
     <Svg {...props}>
