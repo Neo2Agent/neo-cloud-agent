@@ -27,6 +27,13 @@
   text-align: left;
 }
 
+.neo-select-trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .neo-select-field {
   min-height: 42px;
   padding: 0 12px;

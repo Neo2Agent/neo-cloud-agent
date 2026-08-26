@@ -2427,6 +2427,10 @@ textarea {
   font-size: 12px;
 }
 
+.picker .neo-select-pill {
+  max-width: 220px;
+}
+
 .picker select {
   border: 1px solid var(--line);
   border-radius: 999px;
