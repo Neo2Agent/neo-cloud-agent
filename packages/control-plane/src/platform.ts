@@ -7,6 +7,8 @@ import { listAutomations, replaceAutomations } from "./automations/store.js";
 import { setAutomationPersistHooks } from "./automations/persist-hooks.js";
 import { listProjects, replaceProjects } from "./projects/store.js";
 import { setProjectPersistHooks } from "./projects/persist-hooks.js";
+import { listStoredExperts, replaceExperts } from "./experts/store.js";
+import { setExpertPersistHooks } from "./experts/persist-hooks.js";
 import { listDesks, replaceDesks } from "./desks/store.js";
 import { setDeskPersistHooks } from "./desks/persist-hooks.js";
 import { listStoredDevices, replaceDevices } from "./devices/store.js";
@@ -60,6 +62,7 @@ export function resetPlatformForTests(): void {
   setEnvPersistHooks({});
   setAutomationPersistHooks({});
   setProjectPersistHooks({});
+  setExpertPersistHooks({});
   setDeskPersistHooks({});
   setDevicePersistHooks({});
   attachHotBus(null);
@@ -100,6 +103,11 @@ async function doStart(): Promise<void> {
         void mirrorProjects(metadata, items).catch((error) => console.error("metadata saveProject failed", error));
       },
     });
+    setExpertPersistHooks({
+      onWrite: (items) => {
+        void mirrorExperts(metadata, items).catch((error) => console.error("metadata saveExpert failed", error));
+      },
+    });
     setDeskPersistHooks({
       onWrite: (items) => {
         void mirrorDesks(metadata, items).catch((error) => console.error("metadata saveDesk failed", error));
@@ -122,6 +130,7 @@ async function doStart(): Promise<void> {
     await hydrateEnvFromStore(metadata);
     await hydrateAutomationsFromStore(metadata);
     await hydrateProjectsFromStore(metadata);
+    await hydrateExpertsFromStore(metadata);
     await hydrateDesksFromStore(metadata);
     await hydrateDevicesFromStore(metadata);
     reloadPersistedState();
@@ -261,6 +270,33 @@ async function mirrorDesks(store: MetadataStore | null, items: import("@neo-clou
   for (const old of remote) {
     if (!keep.has(old.id)) {
       await store.deleteDesk(old.id);
+    }
+  }
+}
+
+async function hydrateExpertsFromStore(store: MetadataStore): Promise<void> {
+  const remote = await store.loadExperts();
+  if (remote.length > 0) {
+    replaceExperts(remote, { mirror: false });
+    return;
+  }
+  for (const item of listStoredExperts()) {
+    await store.saveExpert(item);
+  }
+}
+
+async function mirrorExperts(store: MetadataStore | null, items: import("@neo-cloud-agent/contracts").Expert[]): Promise<void> {
+  if (!store) {
+    return;
+  }
+  const remote = await store.loadExperts();
+  const keep = new Set(items.map((item) => item.id));
+  for (const item of items) {
+    await store.saveExpert(item);
+  }
+  for (const old of remote) {
+    if (!keep.has(old.id)) {
+      await store.deleteExpert(old.id);
     }
   }
 }
