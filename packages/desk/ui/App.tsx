@@ -6,7 +6,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Select } from "@neo-cloud-agent/ui";
+import { Select, Tooltip } from "@neo-cloud-agent/ui";
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import {
@@ -1166,36 +1166,44 @@ export function App() {
     <div className="agents-app" data-nav={nav}>
       <aside className="rail">
         <div className="rail-history">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Back"
-            disabled={trail.at <= 0}
-            onClick={() => {
-              const at = trail.at - 1;
-              const id = trail.ids[at];
-              if (!id) return;
-              setTrail((cur) => ({ ...cur, at }));
-              void openRun(id, { record: false });
-            }}
-          >
-            <IconBack />
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Forward"
-            disabled={trail.at < 0 || trail.at >= trail.ids.length - 1}
-            onClick={() => {
-              const at = trail.at + 1;
-              const id = trail.ids[at];
-              if (!id) return;
-              setTrail((cur) => ({ ...cur, at }));
-              void openRun(id, { record: false });
-            }}
-          >
-            <IconForward />
-          </button>
+          <Tooltip content="后退">
+            <span>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Back"
+                disabled={trail.at <= 0}
+                onClick={() => {
+                  const at = trail.at - 1;
+                  const id = trail.ids[at];
+                  if (!id) return;
+                  setTrail((cur) => ({ ...cur, at }));
+                  void openRun(id, { record: false });
+                }}
+              >
+                <IconBack />
+              </button>
+            </span>
+          </Tooltip>
+          <Tooltip content="前进">
+            <span>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Forward"
+                disabled={trail.at < 0 || trail.at >= trail.ids.length - 1}
+                onClick={() => {
+                  const at = trail.at + 1;
+                  const id = trail.ids[at];
+                  if (!id) return;
+                  setTrail((cur) => ({ ...cur, at }));
+                  void openRun(id, { record: false });
+                }}
+              >
+                <IconForward />
+              </button>
+            </span>
+          </Tooltip>
         </div>
 
         <nav className="rail-nav">
@@ -1272,17 +1280,19 @@ export function App() {
         <div className="repo-head">
           <span>会话</span>
           <div className="repo-head-actions">
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Search agents"
-              onClick={() => {
-                setSearchOpen(true);
-                requestAnimationFrame(() => searchRef.current?.focus());
-              }}
-            >
-              <IconSort />
-            </button>
+            <Tooltip content="筛选会话">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Search agents"
+                onClick={() => {
+                  setSearchOpen(true);
+                  requestAnimationFrame(() => searchRef.current?.focus());
+                }}
+              >
+                <IconSort />
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -1320,9 +1330,11 @@ export function App() {
             </button>
             <span className="profile-name">{user}</span>
             {remoteApiHost ? <span className="prod-tag">生产</span> : null}
-            <button type="button" className="icon-btn" aria-label="Settings" onClick={openSettings}>
-              <IconGear />
-            </button>
+            <Tooltip content="设置" side="top">
+              <button type="button" className="icon-btn" aria-label="Settings" onClick={openSettings}>
+                <IconGear />
+              </button>
+            </Tooltip>
           </div>
           {inboxOpen ? (
             <div className="inbox-pop">
@@ -1352,15 +1364,16 @@ export function App() {
       </aside>
 
       <main className="stage">
-        <button
-          type="button"
-          className={`panel-toggle${panelOpen ? " on" : ""}`}
-          aria-label={panelOpen ? "收起右侧栏" : "打开右侧栏"}
-          title={panelOpen ? "收起右侧栏" : "Files / Terminal"}
-          onClick={() => setPanelOpen((cur) => !cur)}
-        >
-          <IconPanelRight size={15} />
-        </button>
+        <Tooltip content={panelOpen ? "收起右侧栏" : "Files / Terminal"} side="left">
+          <button
+            type="button"
+            className={`panel-toggle${panelOpen ? " on" : ""}`}
+            aria-label={panelOpen ? "收起右侧栏" : "打开右侧栏"}
+            onClick={() => setPanelOpen((cur) => !cur)}
+          >
+            <IconPanelRight size={15} />
+          </button>
+        </Tooltip>
         <div className="stage-col" key={nav}>
         {nav === "automations" ? (
           <AutomationsPage

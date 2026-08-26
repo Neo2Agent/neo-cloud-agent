@@ -274,3 +274,17 @@
     transform: translateY(0);
   }
 }
+
+.neo-tooltip {
+  z-index: 80;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #18181b;
+  color: #fafafa;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  animation: neo-ui-in 100ms ease-out;
+}
