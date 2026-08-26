@@ -36,9 +36,10 @@ pass "web-only rebuilds chat UI without restarting control-plane"
 
 OUT="$(printf '%s\n' "packages/control-plane/src/index.ts" | bash "$PLAN")"
 expect cp "$OUT" "restart_control_plane=1"
+expect cp "$OUT" "restart_admin_api=1"
 expect cp "$OUT" "restart_gateway=0"
 expect cp "$OUT" "build_web=0"
-pass "control-plane source restarts only the API"
+pass "control-plane source restarts the API and admin-api"
 
 OUT="$(printf '%s\n' "packages/llm-gateway/src/proxy.ts" "pnpm-lock.yaml" | bash "$PLAN")"
 expect gw "$OUT" "install=1"

@@ -91,6 +91,7 @@ classify() {
       ;;
     packages/control-plane/*|packages/control-plane|packages/worker/*|packages/worker|packages/extensions/*|packages/extensions|tsconfig.json|tsconfig.base.json)
       mark restart_control_plane
+      mark restart_admin_api
       return 0
       ;;
     packages/admin-api/*|packages/admin-api)
