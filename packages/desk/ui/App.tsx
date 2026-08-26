@@ -292,6 +292,7 @@ export function App() {
       upstream: settings.upstream || "mock",
       model: settings.model ?? null,
       baseUrl: settings.baseUrl ?? null,
+      newApi: settings.newApi ?? { url: null, consoleUrl: null },
     };
     setLlm(next);
     const stored = loadSavedModels();
@@ -889,18 +890,23 @@ export function App() {
 
   const saveModel = async () => {
     if (!modelName.trim() || modelBusy) return;
-    if (!llm.configured && !modelKey.trim()) return;
+    const newApiManaged = Boolean(llm.newApi?.consoleUrl || llm.newApi?.url);
+    if (!newApiManaged && !llm.configured && !modelKey.trim()) return;
     setModelBusy(true);
     setAuthError("");
     try {
       const response = await api(token, "/v1/settings/llm", {
         method: "POST",
-        body: JSON.stringify({
-          upstream: "openai",
-          model: modelName.trim(),
-          baseUrl: (modelBaseUrl.trim() || OPENAI_BASE_URL).replace(/\/$/, ""),
-          ...(modelKey.trim() ? { apiKey: modelKey.trim() } : {}),
-        }),
+        body: JSON.stringify(
+          newApiManaged
+            ? { upstream: "deepseek", model: modelName.trim() }
+            : {
+                upstream: "openai",
+                model: modelName.trim(),
+                baseUrl: (modelBaseUrl.trim() || OPENAI_BASE_URL).replace(/\/$/, ""),
+                ...(modelKey.trim() ? { apiKey: modelKey.trim() } : {}),
+              },
+        ),
       });
       const body = await readJson<PublicLlmSettings & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || "保存失败");
@@ -1283,6 +1289,7 @@ export function App() {
             configured={llm.configured}
             busy={modelBusy}
             error={authError || undefined}
+            newApi={llm.newApi}
             onSave={() => void saveModel()}
           >
             <div className="settings-card">

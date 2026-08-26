@@ -272,6 +272,7 @@ export function ModelSettingsPage({
   busy,
   error,
   onSave,
+  newApi,
   children,
 }: {
   name: string;
@@ -284,52 +285,87 @@ export function ModelSettingsPage({
   busy: boolean;
   error?: string;
   onSave: () => void;
+  newApi?: { url: string | null; consoleUrl: string | null } | null;
   children?: ReactNode;
 }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onSave();
   };
+  const consoleUrl = newApi?.consoleUrl || newApi?.url || "";
+  const managed = Boolean(consoleUrl);
+  const selectedModel = /vision/i.test(name)
+    ? "deepseek-v4-flash-vision-exp"
+    : /pro/i.test(name)
+      ? "deepseek-v4-pro"
+      : "deepseek-v4-flash";
   return (
     <Page>
       <header className="dash-head compact">
         <div>
           <h1>Models</h1>
-          <p>先只支持 OpenAI 协议。填模型名、API Key 和 Base URL。</p>
+          <p>{managed ? "渠道和 Key 在 New API。这里只选对外型号。" : "先只支持 OpenAI 协议。填模型名、API Key 和 Base URL。"}</p>
         </div>
       </header>
       <div className="page-body">
         <form className="settings-card" onSubmit={submit}>
-          <h2>OpenAI compatible</h2>
-          <label>
-            <span>模型名</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
-          </label>
-          <label>
-            <span>API Key</span>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder={configured ? "已保存，留空则保持" : "sk-…"}
-              autoComplete="new-password"
-            />
-          </label>
-          <label>
-            <span>Base URL</span>
-            <input
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder={OPENAI_BASE_URL}
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            <span>协议</span>
-            <Select value="openai" disabled onValueChange={() => undefined} options={[{ value: "openai", label: "OpenAI" }]} />
-          </label>
+          <h2>{managed ? "New API" : "OpenAI compatible"}</h2>
+          {managed ? (
+            <>
+              <label>
+                <span>型号</span>
+                <Select
+                  value={selectedModel}
+                  onValueChange={setName}
+                  options={[
+                    { value: "deepseek-v4-flash", label: "Flash（便宜）" },
+                    { value: "deepseek-v4-flash-vision-exp", label: "Flash Vision（看图）" },
+                    { value: "deepseek-v4-pro", label: "Pro" },
+                  ]}
+                />
+              </label>
+              <p className="hint">对话走控制面 Gateway，再打 New API。不要在 Desk 里贴上游 Key。</p>
+              <a className="link-btn" href={consoleUrl} target="_blank" rel="noreferrer">
+                打开 New API 控制台
+              </a>
+            </>
+          ) : (
+            <>
+              <label>
+                <span>模型名</span>
+                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
+              </label>
+              <label>
+                <span>API Key</span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder={configured ? "已保存，留空则保持" : "sk-…"}
+                  autoComplete="new-password"
+                />
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input
+                  value={baseUrl}
+                  onChange={(event) => setBaseUrl(event.target.value)}
+                  placeholder={OPENAI_BASE_URL}
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                <span>协议</span>
+                <Select value="openai" disabled onValueChange={() => undefined} options={[{ value: "openai", label: "OpenAI" }]} />
+              </label>
+            </>
+          )}
           {error ? <p className="error">{error}</p> : null}
-          <button type="submit" className="dash-create" disabled={busy || !name.trim() || (!configured && !apiKey.trim())}>
+          <button
+            type="submit"
+            className="dash-create"
+            disabled={busy || !name.trim() || (!managed && !configured && !apiKey.trim())}
+          >
             {busy ? "保存中…" : "保存"}
           </button>
         </form>

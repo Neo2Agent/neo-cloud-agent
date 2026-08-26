@@ -121,7 +121,13 @@ export { deliveryForPi } from "./worker.js";
 
 export type { LlmRunTokenClaims, ModelRoute, Usage } from "./llm.js";
 export { mintRunToken, verifyRunToken } from "./jwt.js";
-export type { LlmSettings, LlmSettingsRequest, LlmUpstreamMode, PublicLlmSettings } from "./llm-settings.js";
+export type {
+  LlmSettings,
+  LlmSettingsRequest,
+  LlmUpstreamMode,
+  NewApiPublicInfo,
+  PublicLlmSettings,
+} from "./llm-settings.js";
 export {
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
@@ -136,6 +142,7 @@ export {
   resolveLlmSettingsRoot,
   publicLlmSettings,
   readLlmSettings,
+  readNewApiInfo,
   writeLlmSettings,
 } from "./llm-settings.js";
 export type { ModelLimits } from "./models.js";

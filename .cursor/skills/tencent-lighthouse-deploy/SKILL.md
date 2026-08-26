@@ -13,7 +13,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | --- | --- | --- |
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 实例 | `Halo建站-AFjg` | `neo-mysql-redis` |
-| 职责 | 本仓库 + systemd + Caddy + VM 槽（Ubuntu 24.04 系统镜像） | Docker MySQL / Redis |
+| 职责 | 本仓库 + systemd + Caddy + VM 槽（Ubuntu 24.04 系统镜像） | Docker MySQL / Redis / New API `:3000` |
 
 库机操作见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。域名 `neorun.cloud` 解析见 [../tencent-lighthouse-domain/SKILL.md](../tencent-lighthouse-domain/SKILL.md) 和 [docs/production-domain.md](../../../docs/production-domain.md)。控制面要持久化时，在**本机**仓库根 `.env` 写 `DATABASE_URL` / `REDIS_URL` 指向库机，然后只重启 `neo-control-plane`。`/health` 应为 `metadataStore: "mysql"`、`eventBus: "redis"`。不要把库机密码打进聊天。
 
@@ -162,7 +162,7 @@ LLM_UPSTREAM=mock
 | 对话 | 必须手输 `admin` / `123456`；默认 `ACCOUNTS_REQUIRED=1` |
 | 栈 | 官方 Ubuntu 24.04 系统镜像 + systemd + Caddy + Node 22 |
 
-改 `.env` 键值用脚本替换，不要 `cat` 整个文件。改完必须 `sudo systemctl restart neo-llm-gateway neo-control-plane`。只改 API Key 走页面即可，**不用重启**。
+改 `.env` 键值用脚本替换，不要 `cat` 整个文件。改完必须 `sudo systemctl restart neo-llm-gateway neo-control-plane`。只改 API Key 走页面即可，**不用重启**。接库机 New API 用 [../tencent-lighthouse-db/wire-new-api.sh](../tencent-lighthouse-db/wire-new-api.sh)，不要手改 `.neo/llm-upstream.env`。接上后 `/health` 还应有 `newApi.consoleUrl`，对话页不再收 Provider Key。
 
 ## 排障
 

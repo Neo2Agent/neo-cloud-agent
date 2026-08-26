@@ -193,6 +193,7 @@ flowchart LR
 | 执行面 | `WORKER_RUNTIME=vm`：2 个 loop 挂 ext4 槽，不是真 VM |
 | 元数据 | 库机 MySQL |
 | 直播事件 | 库机 Redis Pub/Sub + Stream |
+| 模型渠道 | 库机 New API `:3000`；Gateway 打 `http://101.42.105.230:3000/v1` |
 | 对象存储 | 应用机 `RUNS_DIR/.objects`，现网不切 S3 |
 | systemd | `neo-control-plane`、`neo-llm-gateway`、Caddy |
 
@@ -432,7 +433,7 @@ pi-ai streamSimple
 | 上游 | `.env` / `.neo/llm-upstream.env`；没 key 则 `upstream=mock` |
 | 不做 | 不执行工具、不看见磁盘、不持有 SCM 私钥 |
 
-对话页 `POST /v1/settings/llm` 写 key 到本机文件；**响应永不回传明文**。完整渠道 / 定价 / 上游故障切换适合以后交给 New API，但 New API 只能接在 Gateway **后面**。
+对话页 `POST /v1/settings/llm` 在未接 New API 时写 key 到本机文件；**响应永不回传明文**。现网 Gateway 上游是库机 New API `http://101.42.105.230:3000/v1`，对话页 / Desk 只选型号，渠道和 Provider Key 在 New API 控制台。New API 只能接在 Gateway **后面**，worker 不拿 `sk-`。
 
 ---
 
@@ -740,7 +741,7 @@ pnpm typecheck && pnpm test
 - Firecracker live-fork、headed browser / computer-use
 - Egress 从应用层升到 iptables / 出站代理
 - 完整多租户账务（只有配额打点）
-- Slack 宿主、New API 渠道后台（调研已写，未接）
+- Slack 宿主
 - 开放注册、第二套用户表
 
 ---

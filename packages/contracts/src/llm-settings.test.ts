@@ -89,6 +89,23 @@ test("parseLlmSettingsRequest rejects a missing upstream and multiline keys", ()
   });
 });
 
+test("publicLlmSettings includes New API console info from the environment", () => {
+  const previousUrl = process.env.NEW_API_URL;
+  const previousConsole = process.env.NEW_API_CONSOLE_URL;
+  process.env.NEW_API_URL = "http://127.0.0.1:3000";
+  process.env.NEW_API_CONSOLE_URL = "http://127.0.0.1:3000";
+  try {
+    const published = publicLlmSettings(null);
+    assert.equal(published.newApi?.url, "http://127.0.0.1:3000");
+    assert.equal(published.newApi?.consoleUrl, "http://127.0.0.1:3000");
+  } finally {
+    if (previousUrl === undefined) delete process.env.NEW_API_URL;
+    else process.env.NEW_API_URL = previousUrl;
+    if (previousConsole === undefined) delete process.env.NEW_API_CONSOLE_URL;
+    else process.env.NEW_API_CONSOLE_URL = previousConsole;
+  }
+});
+
 test("writeLlmSettings persists an OpenAI-compatible base URL", () => {
   const root = mkdtempSync(path.join(tmpdir(), "neo-llm-baseurl-"));
   const published = writeLlmSettings(

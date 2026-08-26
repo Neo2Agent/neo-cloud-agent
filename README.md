@@ -145,7 +145,8 @@ GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVA
 # BOOTSTRAP_EMAIL=you@example.com
 # BOOTSTRAP_PASSWORD=at-least-8-chars
 # ADMIN_EMAILS=ops@example.com
-# NEW_API_CONSOLE_URL=http://127.0.0.1:3000
+# NEW_API_URL=http://101.42.105.230:3000
+# NEW_API_CONSOLE_URL=http://101.42.105.230:3000
 
 # MySQL 或 Postgres / Redis（不设则用 .control JSON + 进程内事件总线）
 # DATABASE_URL=mysql://app:app@127.0.0.1:3306/app
