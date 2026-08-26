@@ -1,4 +1,5 @@
-import { canManageProject, type InvitePolicy, type Project } from "@neo-cloud-agent/contracts/project";
+import { canManageProject, expertPickerLabel, type Expert } from "@neo-cloud-agent/contracts";
+import { type InvitePolicy, type Project } from "@neo-cloud-agent/contracts/project";
 import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
 import { roleLabel } from "./helpers";
@@ -24,13 +25,25 @@ export function SettingsTab({
   const [inviteUrl, setInviteUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [catalog, setCatalog] = useState<Expert[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<string[]>(project.expertIds ?? []);
 
   useEffect(() => {
     setName(project.name);
     setInstruction(project.instruction);
     setRepos(project.defaultRepoUrls.join("\n"));
     setPolicy(project.invitePolicy);
+    setPinnedIds(project.expertIds ?? []);
   }, [project]);
+
+  useEffect(() => {
+    void api(token, `/v1/experts?projectId=${encodeURIComponent(project.id)}`)
+      .then(async (response) => {
+        if (!response.ok) return;
+        setCatalog((await readJson<{ experts?: Expert[] }>(response)).experts ?? []);
+      })
+      .catch(() => undefined);
+  }, [project.id, token]);
 
   const save = async () => {
     if (!manage || busy) return;
@@ -160,6 +173,54 @@ export function SettingsTab({
         ) : (
           <p className="hint">只有所有者或管理员能改设置。</p>
         )}
+      </form>
+
+      <form
+        className="settings-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!manage || busy) return;
+          setBusy(true);
+          setError("");
+          void api(token, `/v1/projects/${project.id}`, {
+            method: "POST",
+            body: JSON.stringify({ expertIds: pinnedIds }),
+          })
+            .then(async (response) => {
+              const body = await readJson<Project & { error?: string }>(response);
+              if (!response.ok) throw new Error(body.error || "保存失败");
+              onChanged(body);
+            })
+            .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <h2>项目专家</h2>
+        <p className="hint">置顶后，这个项目里开对话时专家选择器会把它们排在前面。</p>
+        <ul className="expert-pin-list">
+          {catalog.map((item) => (
+            <li key={item.id}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={pinnedIds.includes(item.id)}
+                  disabled={!manage}
+                  onChange={(event) => {
+                    setPinnedIds((prev) =>
+                      event.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id),
+                    );
+                  }}
+                />
+                <span>{expertPickerLabel(item)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        {manage ? (
+          <button type="submit" className="dash-create" disabled={busy}>
+            保存置顶
+          </button>
+        ) : null}
       </form>
 
       <section className="settings-card">

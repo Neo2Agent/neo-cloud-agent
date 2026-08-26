@@ -1,4 +1,5 @@
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
+import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
@@ -573,7 +574,7 @@ export function ContextBar({
 }
 
 export type ComposerMention = {
-  kind: "asset" | "todo" | "file" | "command";
+  kind: "asset" | "todo" | "file" | "command" | "expert" | "team";
   id: string;
   label: string;
   insert: string;
@@ -594,6 +595,8 @@ function mentionKindLabel(kind: ComposerMention["kind"]): string {
   if (kind === "asset") return "资产";
   if (kind === "todo") return "待办";
   if (kind === "file") return "文件";
+  if (kind === "expert") return "专家";
+  if (kind === "team") return "专家团";
   return "自动化";
 }
 
@@ -613,6 +616,12 @@ export function ChatComposer({
   onComposerKey,
   home,
   mentions,
+  experts,
+  teams,
+  expertValue,
+  expertLocked,
+  onExpert,
+  onMention,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -629,6 +638,12 @@ export function ChatComposer({
   onComposerKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   home?: boolean;
   mentions?: ComposerMention[];
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
+  onExpert?: (value: string) => void;
+  onMention?: (item: ComposerMention) => void;
 }) {
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
@@ -645,6 +660,7 @@ export function ChatComposer({
     const idx = Math.max(prompt.lastIndexOf("@"), prompt.lastIndexOf("/"));
     const next = `${prompt.slice(0, Math.max(0, idx))}${item.insert} `;
     setPrompt(next);
+    onMention?.(item);
     requestAnimationFrame(() => {
       const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
       ta?.focus();
@@ -712,6 +728,24 @@ export function ChatComposer({
         </div>
       ) : null}
       <div className="composer-tools">
+        {onExpert ? (
+          <label className="expert-pick">
+            <span>专家</span>
+            <select value={expertValue ?? ""} disabled={expertLocked} onChange={(event) => onExpert(event.target.value)}>
+              <option value="">Neo</option>
+              {(experts ?? []).map((item) => (
+                <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
+                  {expertPickerLabel(item)}
+                </option>
+              ))}
+              {(teams ?? []).map((item) => (
+                <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
+                  团 · {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <div className="model-wrap">
           <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
             {label}

@@ -1,4 +1,5 @@
 import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
+import { decodeExpertPick, encodeExpertPick, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -18,6 +19,7 @@ import {
   runIdFromDeepLink,
   runIdFromHash,
 } from "../src/protocol";
+import { ExpertsPage } from "./ExpertsPage";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
 import { RailSessions } from "./chat/RailSessions";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
@@ -55,6 +57,7 @@ import {
 import {
   IconAutomations,
   IconBack,
+  IconExperts,
   IconForward,
   IconGear,
   IconNewChat,
@@ -63,7 +66,7 @@ import {
   IconSort,
 } from "./icons";
 
-type NavId = "chats" | "automations" | "projects" | "settings";
+type NavId = "chats" | "automations" | "projects" | "experts" | "settings";
 
 type InboxRow = {
   id: string;
@@ -163,6 +166,9 @@ export function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [experts, setExperts] = useState<Expert[]>([]);
+  const [teams, setTeams] = useState<ExpertTeam[]>([]);
+  const [expertPick, setExpertPick] = useState<ExpertPick>({});
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [projectName, setProjectName] = useState("");
   const [projectInstruction, setProjectInstruction] = useState("");
@@ -246,6 +252,16 @@ export function App() {
     if (!response.ok) return;
     const body = await readJson<{ projects?: Project[] }>(response);
     setProjects(body.projects ?? []);
+  }, []);
+
+  const refreshExperts = useCallback(async (projectId?: string | null) => {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const [expertRes, teamRes] = await Promise.all([
+      api(tokenRef.current, `/v1/experts${query}`),
+      api(tokenRef.current, "/v1/expert-teams"),
+    ]);
+    if (expertRes.ok) setExperts((await readJson<{ experts?: Expert[] }>(expertRes)).experts ?? []);
+    if (teamRes.ok) setTeams((await readJson<{ teams?: ExpertTeam[] }>(teamRes)).teams ?? []);
   }, []);
 
   const openProject = useCallback(async (id: string, tab: WorkbenchTab = "board") => {
@@ -401,8 +417,8 @@ export function App() {
         if (saved.folder) setFolder(saved.folder);
       }
     }
-    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshLlm(), refreshInbox()]);
-  }, [refreshAutomations, refreshInbox, refreshLlm, refreshProjects, refreshRuns]);
+    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshExperts(), refreshLlm(), refreshInbox()]);
+  }, [refreshAutomations, refreshExperts, refreshInbox, refreshLlm, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     if (!authed) return;
@@ -494,6 +510,8 @@ export function App() {
               source: "desk",
               projectId: activeProject?.id,
               todoId: boundTodo?.id,
+              expertId: expertPick.expertId,
+              expertTeamId: expertPick.expertTeamId,
               repoUrls:
                 target.kind === "desk" && folder
                   ? [folder]
@@ -645,11 +663,42 @@ export function App() {
             label: item.name,
             insert: `/自动化 ${item.name}`,
           })),
+          ...experts.map((item) => ({
+            kind: "expert" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家 ${item.name}`,
+          })),
+          ...teams.map((item) => ({
+            kind: "team" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家团 ${item.name}`,
+          })),
         ]);
         return;
       }
       if (!activeProject || current?.projectId !== activeProject.id) {
-        setMentions([]);
+        setMentions([
+          ...automations.map((item) => ({
+            kind: "command" as const,
+            id: item.id,
+            label: item.name,
+            insert: `/自动化 ${item.name}`,
+          })),
+          ...experts.map((item) => ({
+            kind: "expert" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家 ${item.name}`,
+          })),
+          ...teams.map((item) => ({
+            kind: "team" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家团 ${item.name}`,
+          })),
+        ]);
         return;
       }
       const [todoRes, assetRes] = await Promise.all([
@@ -676,12 +725,24 @@ export function App() {
           label: item.path,
           insert: `@资产 ${item.path}`,
         })),
+        ...experts.map((item) => ({
+          kind: "expert" as const,
+          id: item.id,
+          label: item.name,
+          insert: `@专家 ${item.name}`,
+        })),
+        ...teams.map((item) => ({
+          kind: "team" as const,
+          id: item.id,
+          label: item.name,
+          insert: `@专家团 ${item.name}`,
+        })),
       ]);
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeProject, authed, automations, current]);
+  }, [activeProject, authed, automations, current, experts, teams]);
 
   useEffect(() => {
     if (!searchOpen || !authed) return;
@@ -998,6 +1059,20 @@ export function App() {
             </span>
             Projects
           </button>
+          <button
+            type="button"
+            className={`rail-item${nav === "experts" ? " on" : ""}`}
+            onClick={() => {
+              setSearchOpen(false);
+              setNav("experts");
+              void refreshExperts(activeProject?.id);
+            }}
+          >
+            <span className="rail-icon">
+              <IconExperts />
+            </span>
+            Experts
+          </button>
         </nav>
 
         <div className="repo-head">
@@ -1093,6 +1168,20 @@ export function App() {
             }}
             onToggle={(item) => void toggleAutomation(item)}
             onOpenRun={(id) => void openRun(id)}
+          />
+        ) : nav === "experts" ? (
+          <ExpertsPage
+            token={token}
+            userId={userId}
+            projectId={activeProject?.id}
+            onSummon={(pick) => {
+              setExpertPick({ expertId: pick.expertId, expertTeamId: pick.expertTeamId });
+              setRunId(null);
+              setCurrent(null);
+              setMessages([]);
+              closeStream();
+              setNav("chats");
+            }}
           />
         ) : nav === "projects" ? (
           inviteToken ? (
@@ -1305,7 +1394,23 @@ export function App() {
                 taRef={taRef}
                 onComposerKey={onComposerKey}
                 home={!current}
-                mentions={current ? mentions : []}
+                mentions={mentions}
+                experts={experts}
+                teams={teams}
+                expertValue={
+                  current
+                    ? encodeExpertPick({
+                        expertId: current.expertId ?? undefined,
+                        expertTeamId: current.expertTeamId ?? undefined,
+                      })
+                    : encodeExpertPick(expertPick)
+                }
+                expertLocked={Boolean(current)}
+                onExpert={(value) => setExpertPick(decodeExpertPick(value))}
+                onMention={(item) => {
+                  if (item.kind === "expert") setExpertPick({ expertId: item.id });
+                  if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
+                }}
               />
               {current ? (
                 <p className="composer-note">

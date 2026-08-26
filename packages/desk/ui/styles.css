@@ -2271,6 +2271,50 @@ button:disabled {
   justify-content: space-between;
 }
 
+.expert-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.expert-pick select {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--card);
+  color: inherit;
+  max-width: 160px;
+}
+
+.expert-section {
+  margin: 18px 0 10px;
+  font-size: 15px;
+}
+
+.expert-page-body .expert-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.expert-pin-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.expert-pin-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .model-wrap {
   position: relative;
 }
