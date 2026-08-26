@@ -1,5 +1,5 @@
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { IconCheck } from "./icons";
 
 type Props = {
@@ -12,10 +12,12 @@ type Props = {
 };
 
 export function Checkbox({ checked, onCheckedChange, disabled, label, id, className }: Props) {
+  const autoId = useId();
+  const inputId = id ?? autoId;
   return (
-    <label className={`neo-check${disabled ? " is-disabled" : ""}${className ? ` ${className}` : ""}`}>
+    <div className={`neo-check${disabled ? " is-disabled" : ""}${className ? ` ${className}` : ""}`}>
       <CheckboxPrimitive.Root
-        id={id}
+        id={inputId}
         className="neo-check-box"
         checked={checked}
         disabled={disabled}
@@ -25,7 +27,11 @@ export function Checkbox({ checked, onCheckedChange, disabled, label, id, classN
           <IconCheck size={12} />
         </CheckboxPrimitive.Indicator>
       </CheckboxPrimitive.Root>
-      {label ? <span className="neo-check-label">{label}</span> : null}
-    </label>
+      {label ? (
+        <label className="neo-check-label" htmlFor={inputId}>
+          {label}
+        </label>
+      ) : null}
+    </div>
   );
 }

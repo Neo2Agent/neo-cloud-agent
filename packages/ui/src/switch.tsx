@@ -1,5 +1,5 @@
 import * as SwitchPrimitive from "@radix-ui/react-switch";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 type Props = {
   checked: boolean;
@@ -11,11 +11,17 @@ type Props = {
 };
 
 export function Switch({ checked, onCheckedChange, disabled, label, id, className }: Props) {
+  const autoId = useId();
+  const inputId = id ?? autoId;
   return (
-    <label className={`neo-switch${disabled ? " is-disabled" : ""}${className ? ` ${className}` : ""}`}>
-      {label ? <span className="neo-switch-label">{label}</span> : null}
+    <div className={`neo-switch${disabled ? " is-disabled" : ""}${className ? ` ${className}` : ""}`}>
+      {label ? (
+        <label className="neo-switch-label" htmlFor={inputId}>
+          {label}
+        </label>
+      ) : null}
       <SwitchPrimitive.Root
-        id={id}
+        id={inputId}
         className="neo-switch-root"
         checked={checked}
         disabled={disabled}
@@ -23,6 +29,6 @@ export function Switch({ checked, onCheckedChange, disabled, label, id, classNam
       >
         <SwitchPrimitive.Thumb className="neo-switch-thumb" />
       </SwitchPrimitive.Root>
-    </label>
+    </div>
   );
 }

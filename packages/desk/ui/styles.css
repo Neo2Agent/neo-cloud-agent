@@ -995,7 +995,7 @@ button:disabled {
   font-size: 12px;
 }
 
-.handoff-artifacts label {
+.handoff-artifacts .neo-check {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2342,7 +2342,7 @@ button:disabled {
   gap: 8px;
 }
 
-.expert-pin-list label {
+.expert-pin-list .neo-check {
   display: flex;
   align-items: center;
   gap: 8px;
