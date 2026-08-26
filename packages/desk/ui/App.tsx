@@ -675,9 +675,15 @@ export function App() {
       void refreshRuns();
       void openRunRef.current(id);
     });
+    const offTarget = bridge.onTarget?.((saved) => {
+      setTarget(saved);
+      if (saved.folder) setFolder(saved.folder);
+      void bridge.listWorkspaces?.().then(setWorkspaces).catch(() => undefined);
+    });
     return () => {
       offStatus?.();
       offDispatch?.();
+      offTarget?.();
     };
   }, [refreshRuns]);
 

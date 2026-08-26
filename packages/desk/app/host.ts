@@ -399,20 +399,26 @@ async function connectInbox(): Promise<void> {
   }
   const client = createLeaseClient(controlPlaneUrl);
   if (!deskId || !deskToken) {
-    const registered = await client.register({
-      name: os.hostname(),
-      hostname: os.hostname(),
-      platform: process.platform,
-      userToken,
-    });
-    deskId = registered.deskId;
-    deskToken = registered.token;
-    writeJson(stateFile("desk.json"), { deskId, token: encodeSecret(deskToken) });
-    const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
-    writeJson(stateFile("target.json"), { ...saved, deskId });
-    // Re-register folders bound before this desk had an id.
-    for (const item of boundWorkspaces()) {
-      await bindWorkspace(item.folder).catch(() => undefined);
+    try {
+      const registered = await client.register({
+        name: os.hostname(),
+        hostname: os.hostname(),
+        platform: process.platform,
+        userToken,
+      });
+      deskId = registered.deskId;
+      deskToken = registered.token;
+      writeJson(stateFile("desk.json"), { deskId, token: encodeSecret(deskToken) });
+      const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
+      writeJson(stateFile("target.json"), { ...saved, deskId });
+      toRenderer("desk:target", { ...saved, deskId });
+      // Re-register folders bound before this desk had an id.
+      for (const item of boundWorkspaces()) {
+        await bindWorkspace(item.folder).catch(() => undefined);
+      }
+    } catch (error) {
+      console.error("failed to register desk", error);
+      return;
     }
   }
   if (inbox) {
@@ -424,6 +430,15 @@ async function connectInbox(): Promise<void> {
     deskToken,
     onEvent: (event) => void handleInboxEvent(event),
     onStateChange: (connected) => toRenderer("desk:inbox-state", { connected }),
+    onUnauthorized: () => {
+      // Local control plane is in-memory: a restart invalidates the saved
+      // desk token. Drop it and register again instead of retrying 401s.
+      deskId = "";
+      deskToken = "";
+      inbox?.close();
+      inbox = null;
+      void connectInbox();
+    },
   });
 }
 
@@ -449,8 +464,10 @@ function wireIpc(): void {
       return null;
     }
     const bound = await bindWorkspace(folder);
-    writeJson(stateFile("target.json"), { kind: "desk", folder: bound.folder, deskId, workspaceId: bound.id });
-    return { folder: bound.folder, name: bound.name, workspaceId: bound.id, git: bound.git };
+    const target = { kind: "desk" as const, folder: bound.folder, deskId, workspaceId: bound.id };
+    writeJson(stateFile("target.json"), target);
+    toRenderer("desk:target", target);
+    return { id: bound.id, folder: bound.folder, name: bound.name, git: bound.git };
   });
   ipcMain.handle("desk:listWorkspaces", () =>
     boundWorkspaces().map((item) => ({

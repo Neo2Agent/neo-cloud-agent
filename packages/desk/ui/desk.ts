@@ -68,6 +68,7 @@ export type NeoDeskBridge = {
   onDeepLink?(cb: (url: string) => void): () => void;
   onRunStatus?(cb: (status: DeskRunStatus) => void): () => void;
   onDispatched?(cb: (payload: { runId: string; workspace: string }) => void): () => void;
+  onTarget?(cb: (target: DeskTarget) => void): () => void;
   onInboxState?(cb: (payload: { connected: boolean }) => void): () => void;
   onTermData?(cb: (payload: { id: string; chunk: string }) => void): () => void;
   onTermExit?(cb: (payload: { id: string; code: number | null }) => void): () => void;
@@ -84,15 +85,27 @@ export function hasLocalTools(bridge = deskBridge()): boolean {
   return Boolean(bridge?.listDir && bridge.termOpen && bridge.startRun);
 }
 
-/** Older preloads answered pickFolder with just the path. */
-export function asWorkspaceRef(picked: DeskWorkspaceRef | string | null): DeskWorkspaceRef | null {
+/** Older preloads answered pickFolder with just the path, or `workspaceId` instead of `id`. */
+export function asWorkspaceRef(
+  picked: (DeskWorkspaceRef & { workspaceId?: string }) | string | null | undefined,
+): DeskWorkspaceRef | null {
   if (!picked) {
     return null;
   }
   if (typeof picked === "string") {
     return { id: "", folder: picked, name: picked.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || picked, git: false };
   }
-  return picked;
+  const id = picked.id || picked.workspaceId || "";
+  const folder = picked.folder || "";
+  if (!folder) {
+    return null;
+  }
+  return {
+    id,
+    folder,
+    name: picked.name || folder.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || folder,
+    git: Boolean(picked.git),
+  };
 }
 
 declare global {

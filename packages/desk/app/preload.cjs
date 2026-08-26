@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld("neoDesk", {
   onDeepLink: (cb) => on("desk:deep-link", cb),
   onRunStatus: (cb) => on("desk:run-status", cb),
   onDispatched: (cb) => on("desk:dispatched", cb),
+  onTarget: (cb) => on("desk:target", cb),
   onInboxState: (cb) => on("desk:inbox-state", cb),
   onTermData: (cb) => on("desk:term-data", cb),
   onTermExit: (cb) => on("desk:term-exit", cb),

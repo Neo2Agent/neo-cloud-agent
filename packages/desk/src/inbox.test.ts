@@ -62,6 +62,29 @@ test("a malformed frame is dropped without killing the stream", async () => {
   assert.deepEqual(seen.map((item) => item.kind), ["ping"]);
 });
 
+test("a 401 asks the host to re-register instead of retrying the dead token", async () => {
+  let calls = 0;
+  let unauthorized = 0;
+  const handle = openDeskInboxStream({
+    baseUrl: "http://cp.test",
+    deskId: "desk_1",
+    deskToken: "stale",
+    retryMs: 5,
+    onEvent: () => undefined,
+    onUnauthorized: () => {
+      unauthorized += 1;
+    },
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response("gone", { status: 401 });
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  handle.close();
+  assert.equal(calls, 1);
+  assert.equal(unauthorized, 1);
+});
+
 test("closing stops the reconnect loop", async () => {
   let calls = 0;
   const handle = openDeskInboxStream({
