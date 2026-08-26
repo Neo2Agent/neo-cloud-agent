@@ -544,7 +544,6 @@ export function App() {
     setPendingTurn(null);
     setEnvId("");
     setBuildId("");
-    setExpertPick({});
     history.replaceState(null, "", "/");
   }, [closeStream]);
 
