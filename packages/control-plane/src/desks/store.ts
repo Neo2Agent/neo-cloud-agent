@@ -12,7 +12,6 @@ import type {
 import { controlStateDir } from "../store/persist.js";
 import { deskPersistHooks } from "./persist-hooks.js";
 
-const ONLINE_MS = 45_000;
 const MAX_DESKS = 20;
 const MAX_WORKSPACES = 20;
 
@@ -45,9 +44,7 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function publicDesk(item: StoredDesk, at = Date.now()): Desk {
-  const lastSeen = Date.parse(item.lastSeenAt);
-  const recent = Number.isFinite(lastSeen) && at - lastSeen < ONLINE_MS;
+function publicDesk(item: StoredDesk, _at = Date.now()): Desk {
   return {
     id: item.id,
     userId: item.userId,
@@ -57,7 +54,7 @@ function publicDesk(item: StoredDesk, at = Date.now()): Desk {
     platform: item.platform,
     createdAt: item.createdAt,
     lastSeenAt: item.lastSeenAt,
-    online: hasInbox(item.id) || recent,
+    online: hasInbox(item.id),
     workspaces: item.workspaces ?? [],
     allowRemote: item.allowRemote !== false,
   };
@@ -151,12 +148,14 @@ export function getStoredDesk(id: string): StoredDesk | undefined {
   return readAll().find((item) => item.id === id);
 }
 
-export function isDeskOnline(desk: Pick<Desk, "id" | "lastSeenAt">, at = Date.now()): boolean {
-  if (desk.id && hasInbox(desk.id)) {
-    return true;
-  }
-  const lastSeen = Date.parse(desk.lastSeenAt);
-  return Number.isFinite(lastSeen) && at - lastSeen < ONLINE_MS;
+/**
+ * Reachable means "holding an inbox stream right now".
+ *
+ * A recent timestamp is not good enough: a desk that registered and quit would
+ * still look alive, and remote runs would queue against a machine that is gone.
+ */
+export function isDeskOnline(desk: Pick<Desk, "id">): boolean {
+  return Boolean(desk.id) && hasInbox(desk.id);
 }
 
 export function createDesk(

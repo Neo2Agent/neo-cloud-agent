@@ -36,8 +36,12 @@ const {
   expireStaleWorkers,
   saveRunSession,
   takeInbound,
+  deskAssignmentForRun,
+  rejectDeskRun,
 } = await import("./orchestrator.js");
-const { createDesk } = await import("../desks/store.js");
+const { bindDeskWorkspace, createDesk, openDeskInbox, takeDeskAssignment, updateDesk } = await import(
+  "../desks/store.js"
+);
 const { eventsForRun, listEvents } = await import("../events/bus.js");
 
 test("createRun mints a bootstrap JWT, copies the local repo, and queues the first prompt", async () => {
@@ -475,22 +479,32 @@ test("subscriptions persist across control-plane reload", async () => {
   assert.equal(restored[0]?.prNumber, 4);
 });
 
-test("desk target waits for a claim instead of spawning a server worker", async () => {
-  const registered = createDesk({ name: "test box", hostname: "box", platform: "linux" }, {
+function newDesk(hostname: string) {
+  return createDesk({ name: hostname, hostname, platform: "linux" }, {
     userId: process.env.DEFAULT_USER_ID ?? "user_local",
     orgId: process.env.DEFAULT_ORG_ID ?? "org_local",
   });
+}
+
+test("desk target waits for a claim instead of spawning a server worker", async () => {
+  const registered = newDesk("box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  // The desk is connected; lease is the catch-up path for anything already queued.
+  const detach = openDeskInbox(registered.desk.id, () => undefined);
   const waiting = leaseDesk(registered.desk.id, 2_000);
   const run = await createRun({
     prompt: "edit the local file",
     repoUrls: [],
     source: "desk",
+    deskWorkspaceId: bound.id,
     target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
   });
   assert.equal(run.status, "NOT_YET_STARTED");
   assert.equal(run.executionTarget?.loop, "desk");
+  assert.equal(run.executionTarget?.deskWorkspaceId, bound.id);
   const leased = await waiting;
   assert.equal(leased.assignment?.runId, run.id);
+  assert.equal(leased.assignment?.workspaceId, bound.id);
   const claimed = await claimDeskRun(registered.desk.id, {
     runId: run.id,
     workspaceDir: "/tmp/neo-desk-ws",
@@ -498,6 +512,168 @@ test("desk target waits for a claim instead of spawning a server worker", async 
   });
   assert.equal(claimed.status, "RUNNING");
   assert.equal(getBootstrap(run.id).workspaceDir, "/tmp/neo-desk-ws");
+  detach();
+});
+
+test("an inline desk run is handed its assignment instead of queueing for a claim", async () => {
+  const registered = newDesk("inline-box");
+  const events: unknown[] = [];
+  const detach = openDeskInbox(registered.desk.id, (event) => events.push(event));
+  const run = await createRun({
+    prompt: "edit in place",
+    repoUrls: ["/home/me/app"],
+    source: "desk",
+    start: "inline",
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  // The caller is the desk, so nothing is pushed to it and nothing is queued for pickup.
+  assert.equal(events.length, 0);
+  const assignment = deskAssignmentForRun(run.id);
+  assert.equal(assignment.runId, run.id);
+  assert.ok(assignment.jwt.split(".").length === 3);
+  assert.equal(takeDeskAssignment(registered.desk.id), null);
+  detach();
+});
+
+test("inline works without a bound workspace because the desk knows its own folder", async () => {
+  const registered = newDesk("unbound-box");
+  const run = await createRun({
+    prompt: "just this folder",
+    repoUrls: ["/home/me/scratch"],
+    source: "desk",
+    start: "inline",
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  assert.equal(run.executionTarget?.deskWorkspaceId, undefined);
+});
+
+test("remote dispatch needs a bound workspace and rides the desk inbox", async () => {
+  const registered = newDesk("remote-box");
+  const pushed: Array<{ kind: string }> = [];
+  const detach = openDeskInbox(registered.desk.id, (event) => pushed.push(event));
+  await assert.rejects(
+    () =>
+      createRun({
+        prompt: "from the web",
+        repoUrls: [],
+        source: "web",
+        target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+      }),
+    /还没有绑定本机工作区/,
+  );
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "github.com/acme/app", git: true });
+  const run = await createRun({
+    prompt: "from the web",
+    repoUrls: ["https://github.com/acme/app.git"],
+    source: "web",
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  assert.equal(run.status, "NOT_YET_STARTED");
+  assert.equal(run.executionTarget?.deskWorkspaceId, bound.id);
+  assert.equal(pushed.filter((item) => item.kind === "assignment").length, 1);
+  detach();
+});
+
+test("a dispatch for another repo is refused instead of running in the wrong folder", async () => {
+  const registered = newDesk("wrong-repo-box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "github.com/acme/app", git: true });
+  const detach = openDeskInbox(registered.desk.id, () => undefined);
+  await assert.rejects(
+    () =>
+      createRun({
+        prompt: "wrong repo",
+        repoUrls: ["https://github.com/acme/other.git"],
+        source: "web",
+        deskWorkspaceId: bound.id,
+        target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+      }),
+    /别的仓库/,
+  );
+  detach();
+});
+
+test("an offline desk or a closed remote switch fails fast, with no queued run", async () => {
+  const registered = newDesk("offline-box");
+  bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "github.com/acme/app", git: true });
+  const before = listRuns().length;
+  await assert.rejects(
+    () =>
+      createRun({
+        prompt: "nobody home",
+        repoUrls: ["https://github.com/acme/app.git"],
+        source: "web",
+        target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+      }),
+    /没打开 Desk/,
+  );
+  const detach = openDeskInbox(registered.desk.id, () => undefined);
+  updateDesk(registered.desk.id, { allowRemote: false });
+  await assert.rejects(
+    () =>
+      createRun({
+        prompt: "switch is off",
+        repoUrls: ["https://github.com/acme/app.git"],
+        source: "web",
+        target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+      }),
+    /关闭了远程派活/,
+  );
+  assert.equal(listRuns().length, before);
+  detach();
+});
+
+test("automations never land on a personal machine", async () => {
+  const registered = newDesk("automation-box");
+  bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "github.com/acme/app", git: true });
+  const detach = openDeskInbox(registered.desk.id, () => undefined);
+  await assert.rejects(
+    () =>
+      createRun({
+        prompt: "nightly",
+        repoUrls: ["https://github.com/acme/app.git"],
+        source: "automation",
+        target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+      }),
+    /定时任务不能派到本机/,
+  );
+  detach();
+});
+
+test("a rejected dispatch reports why instead of waiting forever", async () => {
+  const registered = newDesk("reject-box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  const detach = openDeskInbox(registered.desk.id, () => undefined);
+  const run = await createRun({
+    prompt: "will be refused",
+    repoUrls: [],
+    source: "web",
+    deskWorkspaceId: bound.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  const rejected = rejectDeskRun(registered.desk.id, run.id, "工作区已经不在了");
+  assert.equal(rejected.status, "ERROR");
+  assert.equal(rejected.errorMessage, "工作区已经不在了");
+  assert.equal(takeDeskAssignment(registered.desk.id), null);
+  detach();
+});
+
+test("a desk worker that stops answering is detached, not left running forever", async () => {
+  const registered = newDesk("stale-box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  const run = await createRun({
+    prompt: "local turn",
+    repoUrls: [],
+    source: "desk",
+    start: "inline",
+    deskWorkspaceId: bound.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  // pid 1 is alive on every host, so a pid check would call this healthy forever.
+  await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/neo-stale-ws", pid: 1 });
+  assert.equal(getRun(run.id)?.status, "RUNNING");
+  const expired = expireStaleWorkers(Date.now() + 10 * 60_000);
+  assert.ok(expired.includes(run.id));
+  assert.notEqual(getRun(run.id)?.status, "RUNNING");
 });
 
 test("queued follow-ups stay off the transcript until the worker takes them", async () => {
@@ -548,17 +724,36 @@ test("queued follow-ups stay off the transcript until the worker takes them", as
 });
 
 test("handoff to cloud without a remote repo is rejected", async () => {
-  const registered = createDesk({ hostname: "box-2", platform: "linux" }, {
-    userId: process.env.DEFAULT_USER_ID ?? "user_local",
-    orgId: process.env.DEFAULT_ORG_ID ?? "org_local",
-  });
+  const registered = newDesk("box-2");
   const run = await createRun({
     prompt: "stay local",
     repoUrls: ["/tmp/only-local"],
+    source: "desk",
+    start: "inline",
     target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
   });
   await assert.rejects(
     () => handoffRun(run.id, { target: { loop: "cloud", tools: "cloud" } }),
     /远端仓库/,
   );
+});
+
+test("handoff back to a machine needs that repo already bound there", async () => {
+  const registered = newDesk("handoff-box");
+  const detach = openDeskInbox(registered.desk.id, () => undefined);
+  const run = await createRun({
+    prompt: "cloud first",
+    repoUrls: ["https://github.com/acme/app.git"],
+    source: "web",
+  });
+  await assert.rejects(
+    () => handoffRun(run.id, { target: { loop: "desk", tools: "desk", deskId: registered.desk.id } }),
+    /还没有绑定本机工作区/,
+  );
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "github.com/acme/app", git: true });
+  const moved = await handoffRun(run.id, {
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  assert.equal(moved.executionTarget?.deskWorkspaceId, bound.id);
+  detach();
 });
