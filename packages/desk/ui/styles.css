@@ -931,19 +931,21 @@ button:disabled {
   gap: 8px;
 }
 
-.composer-hello {
-  margin: 0 6px 2px;
-  color: #8a8a86;
-  font-size: 13px;
-  line-height: 1.4;
+.composer-follow {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
 }
 
 .composer-queue {
   list-style: none;
-  margin: 0 6px 2px;
-  padding: 0;
+  margin: 0;
+  padding: 8px 12px;
   display: grid;
   gap: 4px;
+  background: #f3f3f0;
+  border-radius: 10px;
 }
 
 .composer-queue li {
@@ -953,16 +955,6 @@ button:disabled {
   white-space: nowrap;
   color: #8a8a86;
   font-size: 12px;
-}
-
-.composer-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
 }
 
 .chat-actor {
@@ -1821,11 +1813,6 @@ button:disabled {
   max-width: none;
   min-width: 0;
   margin: 0;
-  background: #f3f3f0;
-  border: 0;
-  border-radius: 22px;
-  padding: 12px;
-  gap: 8px;
 }
 
 .chat-page:not(:has(.home-wrap)) .chips {

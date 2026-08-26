@@ -1343,7 +1343,6 @@ export function App() {
                 onComposerKey={onComposerKey}
                 home={!current}
                 mentions={current ? mentions : []}
-                hello={current ? `你好 · ${user.includes("@") ? user.slice(0, user.indexOf("@")) : user}` : undefined}
                 queued={queuedFollowUps}
                 waiting={Boolean(current && (queuedFollowUps.length > 0 || current.status === "RUNNING"))}
                 onStop={

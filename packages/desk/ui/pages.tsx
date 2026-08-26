@@ -614,7 +614,6 @@ export function ChatComposer({
   onComposerKey,
   home,
   mentions,
-  hello,
   queued,
   waiting,
   onStop,
@@ -634,7 +633,6 @@ export function ChatComposer({
   onComposerKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   home?: boolean;
   mentions?: ComposerMention[];
-  hello?: string;
   queued?: FollowUp[];
   waiting?: boolean;
   onStop?: () => void;
@@ -762,8 +760,7 @@ export function ChatComposer({
   }
 
   return (
-    <div ref={boxRef} className="composer composer-stack follow">
-      {hello ? <p className="composer-hello">{hello}</p> : null}
+    <div ref={boxRef} className="composer-follow">
       {queuedNow.length > 0 ? (
         <ul className="composer-queue">
           {queuedNow.map((item) => (
@@ -773,7 +770,7 @@ export function ChatComposer({
           ))}
         </ul>
       ) : null}
-      <div className="composer-card">{inner}</div>
+      <div className="composer composer-stack follow">{inner}</div>
     </div>
   );
 }
