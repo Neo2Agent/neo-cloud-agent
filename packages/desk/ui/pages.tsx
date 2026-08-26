@@ -1,3 +1,4 @@
+import type { FollowUp } from "@neo-cloud-agent/contracts";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
@@ -7,7 +8,7 @@ import {
   composerMaxWidth,
   composerTextareaHeight,
 } from "../src/composer-size";
-import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
+import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop } from "./icons";
 
 export type ContextMenuId = "repo" | "target" | null;
 export type RepoChoice = { url: string; label: string };
@@ -613,6 +614,10 @@ export function ChatComposer({
   onComposerKey,
   home,
   mentions,
+  hello,
+  queued,
+  waiting,
+  onStop,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -629,6 +634,10 @@ export function ChatComposer({
   onComposerKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   home?: boolean;
   mentions?: ComposerMention[];
+  hello?: string;
+  queued?: FollowUp[];
+  waiting?: boolean;
+  onStop?: () => void;
 }) {
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
@@ -675,12 +684,10 @@ export function ChatComposer({
     ta.style.height = `${composerTextareaHeight(ta.scrollHeight, Boolean(home))}px`;
   }, [home, prompt, taRef]);
 
-  return (
-    <div
-      ref={boxRef}
-      className={`composer composer-stack${home ? " home" : " follow"}`}
-      style={home ? { width: "100%", maxWidth } : undefined}
-    >
+  const waitingNow = Boolean(waiting);
+  const queuedNow = queued?.filter((item) => item.status === "queued") ?? [];
+  const inner = (
+    <>
       <textarea
         ref={taRef}
         value={prompt}
@@ -733,10 +740,40 @@ export function ChatComposer({
             </div>
           ) : null}
         </div>
-        <button type="button" className="send-btn" aria-label="Send" disabled={sending || !prompt.trim()} onClick={onSubmit}>
-          <IconArrowUp size={16} />
-        </button>
+        {onStop && waitingNow && !prompt.trim() ? (
+          <button type="button" className="send-btn stop" aria-label="停止" onClick={onStop}>
+            <IconStop size={14} />
+          </button>
+        ) : (
+          <button type="button" className="send-btn" aria-label="Send" disabled={sending || !prompt.trim()} onClick={onSubmit}>
+            <IconArrowUp size={16} />
+          </button>
+        )}
       </div>
+    </>
+  );
+
+  if (home) {
+    return (
+      <div ref={boxRef} className="composer composer-stack home" style={{ width: "100%", maxWidth }}>
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={boxRef} className="composer composer-stack follow">
+      {hello ? <p className="composer-hello">{hello}</p> : null}
+      {queuedNow.length > 0 ? (
+        <ul className="composer-queue">
+          {queuedNow.map((item) => (
+            <li key={item.id}>
+              排队中 · {item.actorEmail || "跟进"} · {item.text}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="composer-card">{inner}</div>
     </div>
   );
 }

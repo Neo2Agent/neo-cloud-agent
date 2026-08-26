@@ -1,7 +1,7 @@
 import type { FollowUp } from "@neo-cloud-agent/contracts";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
 import { hostHint } from "./helpers";
 
@@ -10,7 +10,6 @@ export function RunChrome({
   run,
   project,
   userId,
-  onAbort,
   onTransferred,
   toolsOpen = false,
   refreshKey = 0,
@@ -34,7 +33,6 @@ export function RunChrome({
   const [artifactName, setArtifactName] = useState("");
   const [artifacts, setArtifacts] = useState<Array<{ name: string }>>([]);
   const [pickedArtifacts, setPickedArtifacts] = useState<string[]>([]);
-  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -48,9 +46,7 @@ export function RunChrome({
       if (cancelled) return;
       if (queueRes.ok) {
         const body = await readJson<{ followUps?: FollowUp[] }>(queueRes);
-        const next = body.followUps ?? [];
-        setFollowUps(next);
-        onQueuedChange?.(next.filter((item) => item.status === "queued"));
+        onQueuedChange?.((body.followUps ?? []).filter((item) => item.status === "queued"));
       }
       if (artifactRes.ok) {
         const body = await readJson<{ artifacts?: Array<{ name: string }> }>(artifactRes);
@@ -64,9 +60,6 @@ export function RunChrome({
       window.clearInterval(timer);
     };
   }, [onQueuedChange, refreshKey, run.id, token]);
-
-  const queued = useMemo(() => followUps.filter((item) => item.status === "queued"), [followUps]);
-  const running = run.status === "RUNNING";
 
   const transfer = async () => {
     if (!transferTo || busy) return;
@@ -95,34 +88,9 @@ export function RunChrome({
 
   return (
     <div className="run-chrome">
-      {queued.length > 0 || running ? (
-        <div className="queue-bar">
-          <div className="queue-bar-head">
-            <span>{running ? "正在处理当前回合" : "空闲"}</span>
-            {queued.length > 0 ? <span>排队 {queued.length} 条</span> : null}
-            {running ? (
-              <button type="button" className="ghost" onClick={onAbort}>
-                停止当前回合
-              </button>
-            ) : null}
-          </div>
-          {queued.length > 0 ? (
-            <ul className="queue-list">
-              {queued.map((item, index) => (
-                <li key={item.id}>
-                  <strong>{item.actorEmail || "跟进"}</strong>
-                  <span className="queue-text">{item.text}</span>
-                  <em>{index === 0 ? "下一条" : "排队中"}</em>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : (
-        <p className="hint run-host-hint">
-          {cloud ? "云端" : "本机"} · {hostHint(run, members)}
-        </p>
-      )}
+      <p className="hint run-host-hint">
+        {cloud ? "云端" : "本机"} · {hostHint(run, members)}
+      </p>
       {toolsOpen && run.projectId ? (
         <div className="run-chrome-actions">
           <input

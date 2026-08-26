@@ -597,6 +597,19 @@ export function App() {
       return items;
     });
   }, []);
+  useEffect(() => {
+    if (!authed || !current || current.projectId) return;
+    let cancelled = false;
+    void api(token, `/v1/runs/${current.id}/follow-ups`).then(async (response) => {
+      if (!response.ok || cancelled) return;
+      const body = await readJson<{ followUps?: FollowUp[] }>(response);
+      onQueuedChange((body.followUps ?? []).filter((item) => item.status === "queued"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authed, current, onQueuedChange, queueEpoch, token]);
+
   const visible = displayTranscriptMessages(messages, { hideFollowUpIds: queuedFollowUpIds });
   const activity = liveActivityLabel(visible);
   const rail = useMemo(() => {
@@ -1330,6 +1343,16 @@ export function App() {
                 onComposerKey={onComposerKey}
                 home={!current}
                 mentions={current ? mentions : []}
+                hello={current ? `你好 · ${user.includes("@") ? user.slice(0, user.indexOf("@")) : user}` : undefined}
+                queued={queuedFollowUps}
+                waiting={Boolean(current && (queuedFollowUps.length > 0 || current.status === "RUNNING"))}
+                onStop={
+                  current
+                    ? () => {
+                        void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
+                      }
+                    : undefined
+                }
               />
               {current ? (
                 <p className="composer-note">
