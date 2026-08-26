@@ -1,4 +1,4 @@
-import type { DeskAssignment, DeskLeaseResponse } from "@neo-cloud-agent/contracts";
+import type { BindDeskWorkspaceRequest, DeskAssignment, DeskLeaseResponse, DeskWorkspace } from "@neo-cloud-agent/contracts";
 
 export type LeaseClient = {
   register(input: { name?: string; hostname?: string; platform?: string; userToken: string }): Promise<{
@@ -13,10 +13,31 @@ export type LeaseClient = {
     workspaceDir: string;
     pid?: number;
   }): Promise<void>;
+  reject(input: { deskId: string; deskToken: string; runId: string; reason?: string }): Promise<void>;
+  bindWorkspace(input: { deskId: string; deskToken: string } & BindDeskWorkspaceRequest): Promise<DeskWorkspace>;
+  unbindWorkspace(input: { deskId: string; deskToken: string; workspaceId: string }): Promise<void>;
 };
 
 export function createLeaseClient(baseUrl: string, fetchImpl: typeof fetch = fetch): LeaseClient {
   const root = baseUrl.replace(/\/$/, "");
+  const deskPost = async (
+    deskId: string,
+    deskToken: string,
+    action: string,
+    body: unknown,
+    fallback: string,
+  ): Promise<Response> => {
+    const response = await fetchImpl(`${root}/v1/desks/${deskId}/${action}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${deskToken}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const failed = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(failed.error || fallback);
+    }
+    return response;
+  };
   return {
     async register(input) {
       const response = await fetchImpl(`${root}/v1/desks`, {
@@ -43,14 +64,41 @@ export function createLeaseClient(baseUrl: string, fetchImpl: typeof fetch = fet
       return body.assignment ?? null;
     },
     async claim(input) {
-      const response = await fetchImpl(`${root}/v1/desks/${input.deskId}/claim`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${input.deskToken}` },
-        body: JSON.stringify({ runId: input.runId, workspaceDir: input.workspaceDir, pid: input.pid }),
+      await deskPost(
+        input.deskId,
+        input.deskToken,
+        "claim",
+        { runId: input.runId, workspaceDir: input.workspaceDir, pid: input.pid },
+        "desk claim failed",
+      );
+    },
+    async reject(input) {
+      await deskPost(
+        input.deskId,
+        input.deskToken,
+        "reject",
+        { runId: input.runId, reason: input.reason },
+        "desk reject failed",
+      );
+    },
+    async bindWorkspace(input) {
+      const response = await deskPost(
+        input.deskId,
+        input.deskToken,
+        "workspaces",
+        { name: input.name, repoKey: input.repoKey, git: input.git },
+        "bind workspace failed",
+      );
+      return (await response.json()) as DeskWorkspace;
+    },
+    async unbindWorkspace(input) {
+      const response = await fetchImpl(`${root}/v1/desks/${input.deskId}/workspaces/${input.workspaceId}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${input.deskToken}` },
       });
       if (!response.ok) {
-        const body = (await response.json()) as { error?: string };
-        throw new Error(body.error || "desk claim failed");
+        const failed = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(failed.error || "unbind workspace failed");
       }
     },
   };

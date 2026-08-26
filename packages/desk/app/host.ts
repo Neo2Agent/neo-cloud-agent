@@ -3,11 +3,24 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import type { ChildProcess } from "node:child_process";
+import type { DeskAssignment, DeskInboxEvent } from "@neo-cloud-agent/contracts";
 import { createLeaseClient } from "../src/lease.js";
+import { openDeskInboxStream, type DeskInboxHandle } from "../src/inbox.js";
+import { listLocalPath } from "../src/local-fs.js";
+import { createLocalShell, type LocalShell } from "../src/local-shell.js";
 import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
-import { isGitRepo, prepareDeskWorkspace, writeRunBootstrap, writeRunExpertFiles } from "../src/workspace.js";
+import {
+  isGitRepo,
+  localWorkspaceDiffStat,
+  prepareDeskWorkspace,
+  readRepoIdentity,
+  runStateDir,
+  writeRunBootstrap,
+  writeRunExpertFiles,
+} from "../src/workspace.js";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -16,7 +29,11 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-type DeskTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?: string };
+type DeskTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?: string; workspaceId?: string };
+
+type BoundWorkspace = { id: string; folder: string; name: string; repoKey: string; git: boolean };
+
+type DeskPrefs = { requireApproval?: boolean };
 
 const controlPlaneUrl = controlPlaneOrigin();
 const stateDir = () => path.join(app.getPath("userData"), "neo-desk");
@@ -27,7 +44,11 @@ let tray: Tray | null = null;
 let sleepBlocker = 0;
 let deskId = "";
 let deskToken = "";
-let leaseLoop = false;
+let inbox: DeskInboxHandle | null = null;
+const workers = new Map<string, ChildProcess>();
+const shells = new Map<string, LocalShell>();
+/** Runs this process already started, so an inbox echo never double-spawns. */
+const startedRuns = new Set<string>();
 
 function readJson<T>(file: string, fallback: T): T {
   try {
@@ -70,12 +91,41 @@ function setToken(token: string): void {
   writeJson(stateFile("session.json"), { token: token ? encodeSecret(token) : "" });
 }
 
-function authorizedFolders(): string[] {
-  return readJson<string[]>(stateFile("folders.json"), []);
+function prefs(): DeskPrefs {
+  return readJson<DeskPrefs>(stateFile("prefs.json"), {});
 }
 
-function rememberFolder(folder: string): void {
-  writeJson(stateFile("folders.json"), [...new Set([...authorizedFolders(), folder])]);
+function setPrefs(next: DeskPrefs): void {
+  writeJson(stateFile("prefs.json"), { ...prefs(), ...next });
+}
+
+/**
+ * Folders this desk agreed to run agents in. The absolute path stays here; the
+ * control plane only ever sees the short name and repo key.
+ */
+function boundWorkspaces(): BoundWorkspace[] {
+  return readJson<BoundWorkspace[]>(stateFile("workspaces.json"), []);
+}
+
+function saveBoundWorkspaces(items: BoundWorkspace[]): void {
+  writeJson(stateFile("workspaces.json"), items);
+}
+
+function findBound(selector: { workspaceId?: string | null; folder?: string }): BoundWorkspace | undefined {
+  const items = boundWorkspaces();
+  if (selector.workspaceId) {
+    return items.find((item) => item.id === selector.workspaceId);
+  }
+  if (selector.folder) {
+    const folder = path.resolve(selector.folder);
+    return items.find((item) => path.resolve(item.folder) === folder);
+  }
+  return undefined;
+}
+
+function currentTarget(): DeskTarget {
+  const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
+  return { ...saved, deskId: saved.deskId || deskId || undefined };
 }
 
 function uiDist(): string {
@@ -142,8 +192,22 @@ function createWindow(): void {
   });
 }
 
+function toRenderer(channel: string, payload: unknown): void {
+  mainWindow?.webContents.send(channel, payload);
+}
+
+/** Tell the UI what happened to a local run instead of only logging it. */
+function reportRunStatus(payload: {
+  runId: string;
+  state: "starting" | "running" | "failed" | "stopped";
+  detail?: string;
+  workspace?: string;
+}): void {
+  toRenderer("desk:run-status", payload);
+}
+
 async function confirmFolder(folder: string): Promise<boolean> {
-  if (authorizedFolders().includes(folder)) {
+  if (findBound({ folder })) {
     return true;
   }
   const result = await dialog.showMessageBox({
@@ -152,20 +216,172 @@ async function confirmFolder(folder: string): Promise<boolean> {
     defaultId: 1,
     cancelId: 1,
     title: "授权本机文件夹",
-    message: "Agent 会在这个 git 仓库里跑命令、改文件。",
+    message: "Agent 会在这个文件夹里跑命令、直接改这里的文件。",
     detail: folder,
   });
-  if (result.response !== 0) {
-    return false;
-  }
-  rememberFolder(folder);
-  return true;
+  return result.response === 0;
 }
 
-async function startLeaseLoop(): Promise<void> {
-  if (leaseLoop) {
+/** Bind a folder locally and register its repo identity so remote dispatch can match it. */
+async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
+  const resolved = path.resolve(folder);
+  const existing = findBound({ folder: resolved });
+  if (existing) {
+    return existing;
+  }
+  const identity = await readRepoIdentity(resolved);
+  let id = `dws_local_${Buffer.from(resolved).toString("hex").slice(0, 12)}`;
+  if (deskId && deskToken) {
+    try {
+      const client = createLeaseClient(controlPlaneUrl);
+      const bound = await client.bindWorkspace({
+        deskId,
+        deskToken,
+        name: identity.name,
+        repoKey: identity.repoKey,
+        git: identity.git,
+      });
+      id = bound.id;
+    } catch (error) {
+      console.error("failed to register desk workspace", error);
+    }
+  }
+  const record: BoundWorkspace = { id, folder: resolved, name: identity.name, repoKey: identity.repoKey, git: identity.git };
+  saveBoundWorkspaces([...boundWorkspaces().filter((item) => item.id !== id), record]);
+  return record;
+}
+
+/**
+ * Start the worker for one run on this machine.
+ *
+ * Both paths land here: the user sending from this window, and a run dispatched
+ * from somewhere else. The only difference is who asked.
+ */
+async function startAssignment(assignment: DeskAssignment, folderHint?: string): Promise<void> {
+  const runId = assignment.runId;
+  if (startedRuns.has(runId) || workers.has(runId)) {
     return;
   }
+  const bound = findBound({ workspaceId: assignment.workspaceId, folder: folderHint }) ?? findBound({ folder: currentTarget().folder });
+  const folder = bound?.folder ?? folderHint ?? currentTarget().folder ?? "";
+  const client = createLeaseClient(controlPlaneUrl);
+  const fail = async (detail: string) => {
+    reportRunStatus({ runId, state: "failed", detail });
+    if (deskId && deskToken) {
+      await client.reject({ deskId, deskToken, runId, reason: detail }).catch((error) => {
+        console.error("failed to reject desk run", error);
+      });
+    }
+  };
+  if (!folder) {
+    await fail("这台电脑还没有绑定本机工作区");
+    return;
+  }
+  if (![...workers.keys()].every((id) => id === runId)) {
+    const busy = [...workers.keys()].find((id) => id !== runId);
+    if (busy) {
+      await fail("这台电脑已经有一条本机对话在跑，先停掉它再开新的");
+      return;
+    }
+  }
+  startedRuns.add(runId);
+  reportRunStatus({ runId, state: "starting", workspace: folder });
+  try {
+    const workspaceDir = await prepareDeskWorkspace({ repoDir: folder });
+    const stateDirForRun = runStateDir(stateDir(), runId);
+    writeRunBootstrap(stateDirForRun, {
+      runId,
+      controlPlaneUrl: assignment.controlPlaneUrl,
+      llmGatewayUrl: assignment.llmGatewayUrl,
+      jwt: assignment.jwt,
+      model: assignment.model,
+    });
+    writeRunExpertFiles(workspaceDir, assignment);
+    if (!sleepBlocker) {
+      sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
+    }
+    const child = spawnDeskWorker({
+      runId,
+      jwt: assignment.jwt,
+      controlPlaneUrl: assignment.controlPlaneUrl,
+      llmGatewayUrl: assignment.llmGatewayUrl,
+      workspaceDir,
+      stateDir: stateDirForRun,
+      model: assignment.model,
+    });
+    workers.set(runId, child);
+    await client.claim({ deskId, deskToken, runId, workspaceDir, pid: child.pid ?? undefined });
+    reportRunStatus({ runId, state: "running", workspace: workspaceDir });
+    child.stdout?.on("data", (chunk) => process.stdout.write(`[desk-worker ${runId}] ${chunk}`));
+    child.stderr?.on("data", (chunk) => process.stderr.write(`[desk-worker ${runId}] ${chunk}`));
+    child.on("exit", (code) => {
+      workers.delete(runId);
+      startedRuns.delete(runId);
+      reportRunStatus({ runId, state: "stopped", detail: code === 0 ? undefined : `worker 退出（${code}）` });
+      if (workers.size === 0 && sleepBlocker && powerSaveBlocker.isStarted(sleepBlocker)) {
+        powerSaveBlocker.stop(sleepBlocker);
+        sleepBlocker = 0;
+      }
+    });
+  } catch (error) {
+    startedRuns.delete(runId);
+    workers.delete(runId);
+    await fail(error instanceof Error ? error.message : "本机启动失败");
+  }
+}
+
+function stopRun(runId: string, reason?: string): void {
+  const child = workers.get(runId);
+  if (!child) {
+    startedRuns.delete(runId);
+    return;
+  }
+  child.kill("SIGTERM");
+  workers.delete(runId);
+  startedRuns.delete(runId);
+  reportRunStatus({ runId, state: "stopped", detail: reason });
+}
+
+async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
+  if (event.kind === "ping") {
+    return;
+  }
+  if (event.kind === "cancel") {
+    stopRun(event.runId, event.reason);
+    return;
+  }
+  const assignment = event.assignment;
+  if (startedRuns.has(assignment.runId) || workers.has(assignment.runId)) {
+    return;
+  }
+  const bound = findBound({ workspaceId: assignment.workspaceId });
+  const label = bound?.name ?? "本机工作区";
+  if (prefs().requireApproval) {
+    // The binding is the standing permission; this switch is for people who
+    // still want to see every remote task before it touches their disk.
+    const choice = await dialog.showMessageBox({
+      type: "question",
+      buttons: ["开始", "拒绝"],
+      defaultId: 0,
+      cancelId: 1,
+      title: "远程派来一条对话",
+      message: `${assignment.requestedBy || "你"} 要在 ${label} 里跑一条对话。`,
+      detail: assignment.prompt.slice(0, 400),
+    });
+    if (choice.response !== 0) {
+      await createLeaseClient(controlPlaneUrl)
+        .reject({ deskId, deskToken, runId: assignment.runId, reason: "这台电脑拒绝了这条派活" })
+        .catch((error) => console.error("failed to reject desk run", error));
+      return;
+    }
+  } else {
+    new Notification({ title: "本机开始一条对话", body: `${label} · ${assignment.prompt.slice(0, 80)}` }).show();
+  }
+  toRenderer("desk:dispatched", { runId: assignment.runId, workspace: label });
+  await startAssignment(assignment, bound?.folder);
+}
+
+async function connectInbox(): Promise<void> {
   const userToken = getToken();
   if (!userToken) {
     return;
@@ -183,65 +399,21 @@ async function startLeaseLoop(): Promise<void> {
     writeJson(stateFile("desk.json"), { deskId, token: encodeSecret(deskToken) });
     const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
     writeJson(stateFile("target.json"), { ...saved, deskId });
+    // Re-register folders bound before this desk had an id.
+    for (const item of boundWorkspaces()) {
+      await bindWorkspace(item.folder).catch(() => undefined);
+    }
   }
-  leaseLoop = true;
-  const tick = async () => {
-    if (!leaseLoop) {
-      return;
-    }
-    try {
-      const assignment = await client.waitAssignment({ deskId, deskToken, waitMs: 20_000 });
-      if (!assignment) {
-        setTimeout(() => void tick(), 250);
-        return;
-      }
-      const target = readJson<DeskTarget>(stateFile("target.json"), { kind: "desk" });
-      const folder = target.folder;
-      if (!folder || !isGitRepo(folder) || !(await confirmFolder(folder))) {
-        setTimeout(() => void tick(), 1000);
-        return;
-      }
-      const workspaceDir = await prepareDeskWorkspace({ repoDir: folder, runId: assignment.runId });
-      writeRunBootstrap(workspaceDir, {
-        runId: assignment.runId,
-        controlPlaneUrl: assignment.controlPlaneUrl,
-        llmGatewayUrl: assignment.llmGatewayUrl,
-        jwt: assignment.jwt,
-        model: assignment.model,
-      });
-      writeRunExpertFiles(workspaceDir, assignment);
-      if (!sleepBlocker) {
-        sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
-      }
-      const child = spawnDeskWorker({
-        runId: assignment.runId,
-        jwt: assignment.jwt,
-        controlPlaneUrl: assignment.controlPlaneUrl,
-        llmGatewayUrl: assignment.llmGatewayUrl,
-        workspaceDir,
-        model: assignment.model,
-      });
-      await client.claim({
-        deskId,
-        deskToken,
-        runId: assignment.runId,
-        workspaceDir,
-        pid: child.pid ?? undefined,
-      });
-      child.stdout?.on("data", (chunk) => process.stdout.write(`[desk-worker ${assignment.runId}] ${chunk}`));
-      child.stderr?.on("data", (chunk) => process.stderr.write(`[desk-worker ${assignment.runId}] ${chunk}`));
-      child.on("exit", () => {
-        if (sleepBlocker && powerSaveBlocker.isStarted(sleepBlocker)) {
-          powerSaveBlocker.stop(sleepBlocker);
-          sleepBlocker = 0;
-        }
-      });
-    } catch (error) {
-      console.error("desk lease loop", error);
-    }
-    setTimeout(() => void tick(), 400);
-  };
-  void tick();
+  if (inbox) {
+    return;
+  }
+  inbox = openDeskInboxStream({
+    baseUrl: controlPlaneUrl,
+    deskId,
+    deskToken,
+    onEvent: (event) => void handleInboxEvent(event),
+    onStateChange: (connected) => toRenderer("desk:inbox-state", { connected }),
+  });
 }
 
 function wireIpc(): void {
@@ -249,32 +421,64 @@ function wireIpc(): void {
   ipcMain.handle("desk:getToken", () => getToken());
   ipcMain.handle("desk:setToken", (_event, token: string) => {
     setToken(token);
-    void startLeaseLoop();
+    void connectInbox();
   });
-  ipcMain.handle("desk:clearToken", () => setToken(""));
+  ipcMain.handle("desk:clearToken", () => {
+    setToken("");
+    inbox?.close();
+    inbox = null;
+  });
   ipcMain.handle("desk:pickFolder", async () => {
     const picked = await dialog.showOpenDialog({ properties: ["openDirectory"] });
     const folder = picked.filePaths[0];
     if (!folder) {
       return null;
     }
-    if (!isGitRepo(folder)) {
-      await dialog.showErrorBox("需要 git 仓库", "本机执行只允许 git 仓库文件夹。");
-      return null;
-    }
     if (!(await confirmFolder(folder))) {
       return null;
     }
-    const target = { kind: "desk" as const, folder, deskId };
-    writeJson(stateFile("target.json"), target);
-    return folder;
+    const bound = await bindWorkspace(folder);
+    writeJson(stateFile("target.json"), { kind: "desk", folder: bound.folder, deskId, workspaceId: bound.id });
+    return { folder: bound.folder, name: bound.name, workspaceId: bound.id, git: bound.git };
   });
-  ipcMain.handle("desk:getTarget", () => {
-    const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
-    return { ...saved, deskId: saved.deskId || deskId || undefined };
+  ipcMain.handle("desk:listWorkspaces", () =>
+    boundWorkspaces().map((item) => ({
+      id: item.id,
+      folder: item.folder,
+      name: item.name,
+      git: item.git,
+    })),
+  );
+  ipcMain.handle("desk:unbindWorkspace", async (_event, workspaceId: string) => {
+    saveBoundWorkspaces(boundWorkspaces().filter((item) => item.id !== workspaceId));
+    if (deskId && deskToken) {
+      await createLeaseClient(controlPlaneUrl)
+        .unbindWorkspace({ deskId, deskToken, workspaceId })
+        .catch((error) => console.error("failed to unbind desk workspace", error));
+    }
+    return true;
   });
+  ipcMain.handle("desk:getTarget", () => currentTarget());
   ipcMain.handle("desk:setTarget", (_event, target: DeskTarget) => {
-    writeJson(stateFile("target.json"), { ...target, deskId: target.deskId || deskId || undefined });
+    const bound = findBound({ folder: target.folder });
+    writeJson(stateFile("target.json"), {
+      ...target,
+      deskId: target.deskId || deskId || undefined,
+      workspaceId: bound?.id ?? target.workspaceId,
+    });
+  });
+  ipcMain.handle("desk:getPrefs", () => ({ ...prefs(), deskId }));
+  ipcMain.handle("desk:setPrefs", (_event, next: DeskPrefs) => {
+    setPrefs(next);
+    return prefs();
+  });
+  ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment) => {
+    await startAssignment(assignment);
+    return true;
+  });
+  ipcMain.handle("desk:stopRun", (_event, runId: string) => {
+    stopRun(runId, "已在这台电脑上停止");
+    return true;
   });
   ipcMain.handle("desk:notify", (_event, title: string, body: string) => {
     new Notification({ title, body }).show();
@@ -285,6 +489,46 @@ function wireIpc(): void {
       return;
     }
     await shell.openPath(filePath);
+  });
+  ipcMain.handle("desk:listDir", (_event, input: { folder: string; path?: string; content?: boolean }) => {
+    try {
+      return listLocalPath(input.folder, input.path ?? "", { content: input.content === true });
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "读取失败" };
+    }
+  });
+  ipcMain.handle("desk:diffStat", async (_event, folder: string) => {
+    try {
+      return await localWorkspaceDiffStat(folder);
+    } catch {
+      return null;
+    }
+  });
+  ipcMain.handle("desk:termOpen", (_event, folder: string) => {
+    if (!folder || !existsSync(folder)) {
+      return { error: "本机工作区不存在" };
+    }
+    const shellSession = createLocalShell({
+      cwd: folder,
+      hooks: {
+        onData: (id, chunk) => toRenderer("desk:term-data", { id, chunk }),
+        onExit: (id, code) => {
+          shells.delete(id);
+          toRenderer("desk:term-exit", { id, code });
+        },
+      },
+    });
+    shells.set(shellSession.id, shellSession);
+    return { id: shellSession.id, cwd: shellSession.cwd };
+  });
+  ipcMain.handle("desk:termWrite", (_event, input: { id: string; data: string }) => {
+    shells.get(input.id)?.write(input.data);
+    return true;
+  });
+  ipcMain.handle("desk:termClose", (_event, id: string) => {
+    shells.get(id)?.kill();
+    shells.delete(id);
+    return true;
   });
 }
 
@@ -314,7 +558,7 @@ app.whenReady().then(() => {
       // tray icon is optional
     }
   }
-  void startLeaseLoop();
+  void connectInbox();
   app.setAsDefaultProtocolClient("neo");
 });
 
@@ -328,8 +572,17 @@ app.on("open-url", (_event, url) => {
   mainWindow.webContents.send("desk:deep-link", url);
 });
 
+app.on("before-quit", () => {
+  inbox?.close();
+  for (const shellSession of shells.values()) {
+    shellSession.kill();
+  }
+});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
+
+export { isGitRepo };

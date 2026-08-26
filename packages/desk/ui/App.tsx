@@ -9,7 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { Select } from "@neo-cloud-agent/ui";
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
-import { deskBridge, withApiBase, type DeskTarget } from "./desk";
+import { deskBridge, withApiBase, type DeskRunStatus, type DeskTarget, type DeskWorkspaceRef } from "./desk";
+import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 import { isLoopbackOrigin } from "../src/ports";
 import { groupRailSessions } from "../src/rail";
 import {
@@ -21,6 +22,7 @@ import {
   runIdFromHash,
 } from "../src/protocol";
 import { ExpertsPage } from "./ExpertsPage";
+import { SidePanel, type SidePanelTab } from "./SidePanel";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
 import { RailSessions } from "./chat/RailSessions";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
@@ -58,10 +60,12 @@ import {
 import {
   IconAutomations,
   IconBack,
+  IconComputer,
   IconExperts,
   IconForward,
   IconGear,
   IconNewChat,
+  IconPanelRight,
   IconProjects,
   IconSearch,
   IconSort,
@@ -88,6 +92,15 @@ function workbenchTabForInbox(kind?: string): WorkbenchTab {
 
 function preview(text: string, n = 56): string {
   return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
+}
+
+/** Compare folder paths without caring about a trailing separator. */
+function path0(value: string): string {
+  return (value || "").replace(/[\\/]+$/, "");
+}
+
+function folderName(value: string): string {
+  return path0(value).split(/[\\/]/).pop() || value;
 }
 
 function repoLabel(url?: string): string {
@@ -209,6 +222,14 @@ export function App() {
   const [railSpacesOpen, setRailSpacesOpen] = useState(true);
   const [railInboxExpanded, setRailInboxExpanded] = useState(false);
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
+  const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem("neo.desk.panel") === "1");
+  const [panelTab, setPanelTab] = useState<SidePanelTab>(
+    () => (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || "files",
+  );
+  const [panelEpoch, setPanelEpoch] = useState(0);
+  const [localStatus, setLocalStatus] = useState<DeskRunStatus | null>(null);
+  const [workspaces, setWorkspaces] = useState<DeskWorkspaceRef[]>([]);
+  const [requireApproval, setRequireApproval] = useState(false);
   const [copied, setCopied] = useState("");
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
   const tokenRef = useRef("");
@@ -399,7 +420,11 @@ export function App() {
         setMessages([]);
         lastEventIdRef.current = null;
       }
-      if (diffRes.ok) {
+      if (run.executionTarget?.loop === "desk") {
+        // The files live on this machine, so the control plane has nothing to diff.
+        const localFolder = (await deskBridge()?.getTarget().catch(() => undefined))?.folder || run.repoUrls[0] || "";
+        setDiff(localFolder ? ((await deskBridge()?.diffStat(localFolder).catch(() => null)) ?? null) : null);
+      } else if (diffRes.ok) {
         setDiff(diffStats(await diffRes.text()));
       } else {
         setDiff(null);
@@ -408,6 +433,11 @@ export function App() {
     },
     [listen],
   );
+
+  const openRunRef = useRef(openRun);
+  useEffect(() => {
+    openRunRef.current = openRun;
+  }, [openRun]);
 
   const finishLogin = useCallback(async () => {
     const me = await api(tokenRef.current, "/v1/me");
@@ -499,9 +529,38 @@ export function App() {
     }
   };
 
+  const pickLocalFolder = useCallback(async () => {
+    const bridge = deskBridge();
+    if (!bridge) return;
+    const picked = await bridge.pickFolder();
+    if (!picked) return;
+    setFolder(picked.folder);
+    setWorkspaces(await bridge.listWorkspaces().catch(() => []));
+    applyTargetRef.current({ kind: "desk", folder: picked.folder, workspaceId: picked.id });
+  }, []);
+
+  /** Bring a local run's worker back on this machine, in the same folder. */
+  const resumeLocalRun = useCallback(async (id: string) => {
+    const bridge = deskBridge();
+    if (!bridge) return;
+    const response = await api(tokenRef.current, `/v1/runs/${id}/desk-start`, { method: "POST" });
+    const body = await readJson<{ assignment?: DeskAssignment; error?: string }>(response);
+    if (!response.ok || !body.assignment) {
+      setAuthError(body.error || "本机启动失败");
+      return;
+    }
+    await bridge.startRun(body.assignment);
+  }, []);
+
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
     const text = (draft ?? prompt).trim();
     if (!text || sending) return;
+    const local = target.kind === "desk";
+    if (local && !folder) {
+      // Do not create a run that can never start. Ask for the folder first.
+      setAuthError("先选一个本机文件夹，Agent 才知道该改哪里。");
+      return;
+    }
     const askPrefix = mode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     const startNew = opts?.asNew || !runId;
     const boundTodo = opts && "todo" in opts ? opts.todo : pendingTodo;
@@ -509,7 +568,7 @@ export function App() {
     if (!draft) setPrompt("");
     try {
       if (startNew) {
-        const created = await readJson<Run & { error?: string }>(
+        const created = await readJson<Run & { assignment?: DeskAssignment; error?: string }>(
           await api(token, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
@@ -520,24 +579,30 @@ export function App() {
               todoId: boundTodo?.id,
               expertId: expertPick.expertId,
               expertTeamId: expertPick.expertTeamId,
+              // This window is the desk, so it starts the worker itself instead
+              // of waiting to be handed its own run back.
+              start: local ? "inline" : undefined,
+              deskWorkspaceId: local ? target.workspaceId : undefined,
               repoUrls:
-                target.kind === "desk" && folder
+                local && folder
                   ? [folder]
                   : composerRepo
                     ? [composerRepo]
                     : activeProject?.defaultRepoUrls?.length
                       ? activeProject.defaultRepoUrls
                       : [],
-              target:
-                target.kind === "desk"
-                  ? { loop: "desk", tools: "desk", deskId: target.deskId }
-                  : { loop: "cloud", tools: "cloud" },
+              target: local
+                ? { loop: "desk", tools: "desk", deskId: target.deskId, deskWorkspaceId: target.workspaceId }
+                : { loop: "cloud", tools: "cloud" },
             }),
           }),
         );
         if (created.error) throw new Error(created.error);
         setPendingTodo(null);
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+        if (created.assignment) {
+          await deskBridge()?.startRun(created.assignment);
+        }
         await openRun(created.id);
         return;
       }
@@ -546,6 +611,9 @@ export function App() {
         body: JSON.stringify({ text: `${askPrefix}${text}` }),
       });
       setQueueEpoch((cur) => cur + 1);
+      if (current?.executionTarget?.loop === "desk" && localStatus?.state !== "running") {
+        await resumeLocalRun(runId);
+      }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "发送失败");
     } finally {
@@ -553,10 +621,55 @@ export function App() {
     }
   };
 
-  const applyTarget = (next: DeskTarget) => {
+  const applyTarget = useCallback((next: DeskTarget) => {
     setTarget(next);
     void deskBridge()?.setTarget(next);
-  };
+  }, []);
+
+  const applyTargetRef = useRef(applyTarget);
+  useEffect(() => {
+    applyTargetRef.current = applyTarget;
+  }, [applyTarget]);
+
+  useEffect(() => {
+    localStorage.setItem("neo.desk.panel", panelOpen ? "1" : "0");
+    localStorage.setItem("neo.desk.panelTab", panelTab);
+  }, [panelOpen, panelTab]);
+
+  // Surface what the main process is doing with local runs, instead of leaving
+  // failures in a terminal the user never sees.
+  useEffect(() => {
+    const bridge = deskBridge();
+    if (!bridge?.onRunStatus) return;
+    const offStatus = bridge.onRunStatus((status) => {
+      setLocalStatus(status);
+      if (status.state === "failed" && status.detail) {
+        setAuthError(status.detail);
+      }
+      if (status.state === "running" || status.state === "stopped") {
+        setPanelEpoch((n) => n + 1);
+        void refreshRuns();
+      }
+    });
+    const offDispatch = bridge.onDispatched?.(({ runId: id }) => {
+      void refreshRuns();
+      void openRunRef.current(id);
+    });
+    return () => {
+      offStatus?.();
+      offDispatch?.();
+    };
+  }, [refreshRuns]);
+
+  useEffect(() => {
+    const bridge = deskBridge();
+    if (!bridge || !authed) return;
+    void bridge.listWorkspaces().then(setWorkspaces).catch(() => undefined);
+    void bridge
+      .getPrefs()
+      .then((value) => setRequireApproval(value.requireApproval === true))
+      .catch(() => undefined);
+  }, [authed, folder]);
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -958,6 +1071,15 @@ export function App() {
 
   const branch = current?.branchName || "";
 
+  // An open local run keeps its own folder; with no run open, follow the picker.
+  const localRunActive = current?.executionTarget?.loop === "desk";
+  const panelIsLocal = current ? localRunActive : target.kind === "desk";
+  const localFolder = panelIsLocal
+    ? (localRunActive && current?.repoUrls[0] && path0(current.repoUrls[0]).startsWith("/")
+        ? current.repoUrls[0]
+        : folder)
+    : "";
+
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -1200,6 +1322,15 @@ export function App() {
       </aside>
 
       <main className="stage">
+        <button
+          type="button"
+          className={`panel-toggle${panelOpen ? " on" : ""}`}
+          aria-label={panelOpen ? "收起右侧栏" : "打开右侧栏"}
+          title={panelOpen ? "收起右侧栏" : "Files / Terminal"}
+          onClick={() => setPanelOpen((cur) => !cur)}
+        >
+          <IconPanelRight size={15} />
+        </button>
         <div className="stage-col" key={nav}>
         {nav === "automations" ? (
           <AutomationsPage
@@ -1310,27 +1441,94 @@ export function App() {
                   ]}
                 />
               </label>
-              {target.kind === "desk" ? (
-                <button
-                  type="button"
-                  className="folder-btn"
-                  onClick={() => {
-                    void deskBridge()
-                      ?.pickFolder()
-                      .then((picked) => {
-                        if (!picked) return;
-                        setFolder(picked);
-                        applyTarget({ ...target, kind: "desk", folder: picked });
-                      });
-                  }}
-                >
-                  {folder || "Folder…"}
-                </button>
+              <button type="button" className="folder-btn" onClick={() => void pickLocalFolder()}>
+                {folder || "选择本机文件夹…"}
+              </button>
+              <p className="hint">
+                Agent 会直接改这个文件夹里的文件，包括还没提交的改动。写不出这个文件夹。
+              </p>
+              {workspaces.length > 0 ? (
+                <ul className="ws-list">
+                  {workspaces.map((item) => (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        className={`ws-pick${path0(folder) === path0(item.folder) ? " on" : ""}`}
+                        onClick={() => {
+                          setFolder(item.folder);
+                          applyTarget({ ...target, kind: "desk", folder: item.folder, workspaceId: item.id });
+                        }}
+                      >
+                        {item.name}
+                        {item.git ? "" : "（不是 git 仓库）"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => {
+                          void deskBridge()
+                            ?.unbindWorkspace(item.id)
+                            .then(() => deskBridge()?.listWorkspaces())
+                            .then((next) => setWorkspaces(next ?? []));
+                          if (path0(folder) === path0(item.folder)) {
+                            setFolder("");
+                            applyTarget({ ...target, folder: undefined, workspaceId: undefined });
+                          }
+                        }}
+                      >
+                        解绑
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               ) : null}
+              <label className="ws-toggle">
+                <input
+                  type="checkbox"
+                  checked={requireApproval}
+                  onChange={(event) => {
+                    const next = event.target.checked;
+                    setRequireApproval(next);
+                    void deskBridge()?.setPrefs({ requireApproval: next });
+                  }}
+                />
+                <span>远程派来的对话，每次都先问我</span>
+              </label>
+              <p className="hint">
+                绑定文件夹就等于允许远程在里面开对话。打开这个开关会改成每条都先弹确认。
+              </p>
             </div>
           </ModelSettingsPage>
         ) : (
-          <section className={`page chat-page${current?.projectId ? " project-chat" : current ? " personal-chat" : ""}`}>
+          <section
+            className={`page chat-page${current?.projectId ? " project-chat" : current ? " personal-chat" : ""}${
+              panelOpen ? " with-panel" : ""
+            }`}
+          >
+            <div className="chat-stage">
+            {localRunActive ? (
+              <div className="local-bar">
+                <IconComputer size={13} />
+                <span>This Computer · {folderName(localFolder)}</span>
+                {localStatus?.state === "starting" ? <em>正在启动…</em> : null}
+                {localStatus?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
+                {localStatus?.state === "failed" ? <em className="bad">{localStatus.detail || "启动失败"}</em> : null}
+                {localStatus?.state === "stopped" || !localStatus ? (
+                  <button type="button" className="ghost" onClick={() => current && void resumeLocalRun(current.id)}>
+                    在这台电脑上继续
+                  </button>
+                ) : null}
+                {localStatus?.state === "running" ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => current && void deskBridge()?.stopRun(current.id)}
+                  >
+                    停止本机 worker
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {current?.projectId ? (
               <ProjectChatPage
                 title={title}
@@ -1475,6 +1673,19 @@ export function App() {
               {authError ? <p className="error toast-inline">{authError}</p> : null}
               {copied ? <p className="copied">Copied</p> : null}
             </footer>
+            </div>
+            {panelOpen ? (
+              <SidePanel
+                tab={panelTab}
+                onTab={setPanelTab}
+                onClose={() => setPanelOpen(false)}
+                folder={localFolder}
+                token={token}
+                runId={runId}
+                local={panelIsLocal}
+                refreshKey={panelEpoch}
+              />
+            ) : null}
           </section>
         )}
         </div>

@@ -10,6 +10,7 @@ import type {
   DeskAssignment,
   DeskLeaseResponse,
   DiskCloneMethod,
+  RunStart,
   EgressPolicy,
   ExecutionTarget,
   FollowUp,
@@ -27,6 +28,7 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import {
   assertColocatedTarget,
+  deskRepoKey,
   evaluateEgress,
   isDeskTarget,
   MAX_SUBSCRIPTION_WAKES,
@@ -34,6 +36,7 @@ import {
   parseContextUsage,
   parseExecutionTarget,
   parseRunSource,
+  parseRunStart,
   parseSubscriptionEvents,
   redactText,
   SUBSCRIPTION_COALESCE_MS,
@@ -100,9 +103,12 @@ import { bindTodoRun } from "../projects/todos.js";
 import { listProjectAssetsUnchecked } from "../projects/assets.js";
 import { pushInbox } from "../projects/inbox.js";
 import {
+  dropDeskAssignment,
+  findDeskWorkspace,
   getDesk,
   isDeskOnline,
   offerDeskAssignment,
+  pushDeskInbox,
   touchDesk,
   waitDeskAssignment,
 } from "../desks/store.js";
@@ -286,13 +292,28 @@ function settleDetachedRun(run: Run, title: string): void {
 function detachOrQueue(run: Run, queuedTitle: string, idleTitle: string): void {
   const resumed = requeueActiveTurn(run);
   if (isDeskTarget(run.executionTarget)) {
-    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
+    const deskId = run.executionTarget.deskId ?? "";
+    offerDeskAssignment(deskId, run.id);
+    pushDeskInbox(deskId, { kind: "assignment", assignment: assignmentFor(run) });
   }
   if (hasPendingUserInbound(run.id)) {
     queueRun(run, resumed ? "中断的回合已自动排队，空出来会继续" : queuedTitle);
     return;
   }
   settleDetachedRun(run, idleTitle);
+}
+
+/**
+ * Tear down whatever is running this turn. Cloud handles are destroyed here;
+ * a desk worker lives on the user's computer, so we ask that desk to stop it.
+ */
+async function stopWorker(runId: string, handle: RuntimeHandle, reason?: string): Promise<void> {
+  if (handle.runtime === "desk") {
+    const deskId = runs.get(runId)?.executionTarget?.deskId ?? "";
+    pushDeskInbox(deskId, { kind: "cancel", runId, reason });
+    return;
+  }
+  await getRuntime().destroy(handle);
 }
 
 function bindWorkerExit(runId: string) {
@@ -372,11 +393,14 @@ export function expireStaleWorkers(at = Date.now()): string[] {
     if (!LIVE_STATUSES.has(run.status) || run.status === "NOT_YET_STARTED") {
       continue;
     }
-    if (handles.has(run.id)) {
+    const handle = handles.get(run.id);
+    if (handle && handle.runtime !== "desk") {
       // Process/container liveness is owned by the runtime. Heartbeats only
       // cover the post-restart gap when adopt() could not reattach.
       continue;
     }
+    // Desk workers run on someone else's computer, so there is no local process
+    // to watch. Their heartbeat is the only signal that they are still alive.
     const lastSeen = heartbeats.get(run.id) ?? Date.parse(run.updatedAt);
     if (Number.isFinite(lastSeen) && at - lastSeen < timeout) {
       continue;
@@ -517,7 +541,7 @@ export async function releaseIdleWorker(runId: string): Promise<boolean> {
     inbound.get(runId)?.push({ type: "shutdown", reason: "idle" });
     const handle = handles.get(runId);
     if (handle) {
-      await getRuntime().destroy(handle);
+      await stopWorker(runId, handle, "空闲释放");
     }
     handles.delete(runId);
     deleteWorkerLease(runId);
@@ -851,6 +875,64 @@ export function removeRunCollaborator(runId: string, userId: string, actor: { us
   return run;
 }
 
+/**
+ * Match a desk target the way Cursor's My Machines does: the desk must belong to
+ * the caller, and the bound workspace has to be the one the request asked for.
+ * A near miss fails loudly instead of running against the wrong checkout.
+ */
+function resolveDeskTarget(
+  target: ExecutionTarget,
+  options: { ownerUserId?: string; start: RunStart; repoUrls: string[] },
+): { deskWorkspaceId?: string } {
+  const desk = getDesk(target.deskId ?? "");
+  if (!desk) {
+    throw new Error("本机未登记");
+  }
+  if (options.ownerUserId && desk.userId !== options.ownerUserId) {
+    throw new Error("不是这台本机的主人");
+  }
+  const dispatch = options.start === "dispatch";
+  if (dispatch && desk.allowRemote === false) {
+    throw new Error("这台电脑关闭了远程派活");
+  }
+  if (dispatch && !isDeskOnline(desk)) {
+    throw new Error("这台电脑没打开 Desk");
+  }
+  const bound = desk.workspaces ?? [];
+  if (target.deskWorkspaceId) {
+    const picked = findDeskWorkspace(desk, { workspaceId: target.deskWorkspaceId });
+    if (!picked) {
+      throw new Error("这台电脑没有这个本机工作区");
+    }
+    const wanted = requestedRepoKey(options.repoUrls);
+    if (wanted && picked.repoKey !== wanted) {
+      throw new Error("这台电脑绑的是别的仓库");
+    }
+    return { deskWorkspaceId: picked.id };
+  }
+  if (!dispatch) {
+    // The desk itself is calling, so it already knows which folder it authorized.
+    return {};
+  }
+  if (bound.length === 0) {
+    throw new Error("这台电脑还没有绑定本机工作区");
+  }
+  const wanted = requestedRepoKey(options.repoUrls);
+  if (!wanted) {
+    throw new Error("远程派活需要指定这台电脑上的本机工作区");
+  }
+  const matched = findDeskWorkspace(desk, { repoKey: wanted });
+  if (!matched) {
+    throw new Error("这台电脑绑的是别的仓库");
+  }
+  return { deskWorkspaceId: matched.id };
+}
+
+function requestedRepoKey(repoUrls: string[]): string {
+  const remote = repoUrls.find((url) => looksRemoteRepo(url));
+  return remote ? deskRepoKey({ remoteUrl: remote }) : "";
+}
+
 export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string; email?: string }): Promise<Run> {
   const config = getConfig();
   assertCreateRunAllowed([...runs.values()], owner?.orgId ?? config.orgId);
@@ -877,17 +959,17 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   if (target) {
     assertColocatedTarget(target);
   }
+  const start = parseRunStart(input.start) ?? "dispatch";
   if (isDeskTarget(target)) {
-    const desk = getDesk(target.deskId ?? "");
-    if (!desk) {
-      throw new Error("本机未登记");
+    if (input.source === "automation") {
+      throw new Error("定时任务不能派到本机");
     }
-    if (owner?.userId && desk.userId !== owner.userId) {
-      throw new Error("不是这台本机的主人");
-    }
-    if (!isDeskOnline(desk)) {
-      throw new Error("本机未在线");
-    }
+    const requested = input.deskWorkspaceId?.trim() || target.deskWorkspaceId;
+    const resolved = resolveDeskTarget(
+      { ...target, deskWorkspaceId: requested },
+      { ownerUserId: owner?.userId, start, repoUrls },
+    );
+    target.deskWorkspaceId = resolved.deskWorkspaceId;
   }
   if (input.expertId && input.expertTeamId) {
     throw new Error("一次对话只能选专家或专家团");
@@ -951,8 +1033,13 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   writeExpertRole(run);
 
   if (isDeskTarget(run.executionTarget)) {
-    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
-    queueRun(run, "等待本机 Desk 认领");
+    if (start === "inline") {
+      // The caller is that desk: it spawns the worker from this response, so
+      // there is nothing to hand out and nothing to wait for.
+      queueRun(run, "正在这台电脑上启动 Agent");
+      return run;
+    }
+    dispatchToDesk(run, owner?.email);
     return run;
   }
 
@@ -1157,8 +1244,7 @@ export async function resumeRun(runId: string): Promise<Run> {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
   if (isDeskTarget(run.executionTarget)) {
-    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
-    queueRun(run, "等待本机 Desk 认领");
+    dispatchToDesk(run);
     return run;
   }
   if (loadWorkspaceMeta(runId)?.state === "evicted" && run.repoUrls.length > 0) {
@@ -1319,7 +1405,7 @@ export function listRuns(): Run[] {
   return [...runs.values()];
 }
 
-function assignmentFor(run: Run): DeskAssignment {
+function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
   const config = getConfig();
   const files = expertFilesForRun(run);
   return {
@@ -1331,10 +1417,51 @@ function assignmentFor(run: Run): DeskAssignment {
     controlPlaneUrl: config.controlPlaneUrl,
     llmGatewayUrl: config.workerLlmGatewayUrl,
     target: run.executionTarget ?? { loop: "desk", tools: "desk" },
+    workspaceId: run.executionTarget?.deskWorkspaceId ?? null,
+    requestedBy: requestedBy ?? null,
     expertId: run.expertId ?? null,
     expertTeamId: run.expertTeamId ?? null,
     ...assignmentExpertFields(files),
   };
+}
+
+/**
+ * Everything the calling desk needs to spawn its own worker. Used by the inline
+ * path, where the desk is the one that just created the run.
+ */
+export function deskAssignmentForRun(runId: string): DeskAssignment {
+  const run = requireRun(runId);
+  if (!isDeskTarget(run.executionTarget)) {
+    throw new Error("run is not a desk run");
+  }
+  return assignmentFor(run);
+}
+
+/** Notify the desk over its own outbound stream, and keep a lease offer as fallback. */
+function dispatchToDesk(run: Run, requestedBy?: string | null): void {
+  const deskId = run.executionTarget?.deskId ?? "";
+  offerDeskAssignment(deskId, run.id);
+  const delivered = pushDeskInbox(deskId, { kind: "assignment", assignment: assignmentFor(run, requestedBy) });
+  queueRun(run, delivered ? "已派给这台电脑，等待启动" : "等待这台电脑上线");
+}
+
+/** Desk could not take the run. Surface why instead of leaving it queued forever. */
+export function rejectDeskRun(deskId: string, runId: string, reason?: string): Run {
+  const run = requireRun(runId);
+  if (!isDeskTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
+    throw new Error("run is not assigned to this desk");
+  }
+  dropDeskAssignment(deskId, runId);
+  touchDesk(deskId);
+  clearActiveTurn(runId);
+  inbound.set(runId, []);
+  run.status = "ERROR";
+  run.errorMessage = reason?.trim() || "这台电脑没有接下这条对话";
+  run.workerHandle = null;
+  run.updatedAt = now();
+  publish(event(runId, "run.error", run.errorMessage));
+  flushRun(runId);
+  return run;
 }
 
 export async function leaseDesk(deskId: string, waitMs = 20_000): Promise<DeskLeaseResponse> {
@@ -1417,27 +1544,28 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
   const handle = handles.get(runId);
   if (handle) {
     inbound.get(runId)?.push({ type: "shutdown", reason: "idle" });
-    await getRuntime(handle.runtime === "desk" ? "desk" : undefined).destroy(handle);
+    await stopWorker(runId, handle, "对话已切换执行位置");
     handles.delete(runId);
     deleteWorkerLease(runId);
     heartbeats.delete(runId);
     run.workerHandle = null;
     run.vmSlotId = null;
   }
-  run.executionTarget = target;
-  run.updatedAt = now();
   if (isDeskTarget(target)) {
-    const desk = getDesk(target.deskId ?? "");
-    if (!desk) {
-      throw new Error("本机未登记");
-    }
-    if (!isDeskOnline(desk)) {
-      throw new Error("本机未在线");
-    }
-    offerDeskAssignment(target.deskId ?? "", run.id);
-    queueRun(run, "已交给本机，等待 Desk 认领");
+    // Same posture as Cursor: only pull back to a machine that already has this
+    // repo bound. No generic "clone it somewhere" fallback.
+    const resolved = resolveDeskTarget(
+      { ...target, deskWorkspaceId: input.deskWorkspaceId?.trim() || target.deskWorkspaceId },
+      { ownerUserId: run.userId, start: "dispatch", repoUrls: run.repoUrls },
+    );
+    target.deskWorkspaceId = resolved.deskWorkspaceId;
+    run.executionTarget = target;
+    run.updatedAt = now();
+    dispatchToDesk(run);
     return run;
   }
+  run.executionTarget = target;
+  run.updatedAt = now();
   if (!run.repoUrls.some(looksRemoteRepo)) {
     throw new Error("切到云端需要可 clone 的远端仓库。未提交的改动不会带过去。");
   }
@@ -1856,7 +1984,7 @@ export async function archiveRun(runId: string): Promise<Run> {
   reclaimAndPublish(runId);
   const handle = handles.get(runId);
   if (handle) {
-    await getRuntime().destroy(handle);
+    await stopWorker(runId, handle, "对话已归档");
     handles.delete(runId);
   }
   deleteWorkerLease(runId);

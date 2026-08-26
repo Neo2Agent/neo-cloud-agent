@@ -216,3 +216,21 @@ export function IconSync(props: IconProps) {
   );
 }
 
+export function IconClose(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </Svg>
+  );
+}
+
+/** Panel toggle, same idea as the Agents Window right-sidebar button. */
+export function IconPanelRight(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
+    </Svg>
+  );
+}
+

@@ -13,7 +13,8 @@ export function spawnDeskWorker(input: {
   controlPlaneUrl: string;
   llmGatewayUrl: string;
   workspaceDir: string;
-  sessionDir?: string;
+  /** Per-run state, kept outside the user's repo. */
+  stateDir: string;
   model: string;
   nodePath?: string;
 }): ChildProcess {
@@ -27,7 +28,11 @@ export function spawnDeskWorker(input: {
     CONTROL_PLANE_URL: input.controlPlaneUrl,
     LLM_GATEWAY_URL: input.llmGatewayUrl,
     WORKSPACE_DIR: input.workspaceDir,
-    SESSION_DIR: input.sessionDir ?? path.join(input.workspaceDir, "sessions"),
+    SESSION_DIR: path.join(input.stateDir, "sessions"),
+    NEO_RUN_BOOTSTRAP: path.join(input.stateDir, "run-bootstrap.json"),
+    // The workspace is one folder inside the user's real filesystem, so the
+    // worker has to refuse anything outside it.
+    NEO_SANDBOX_ROOT: input.workspaceDir,
     NEO_MODEL: input.model,
     WORKER_POLL_MS: process.env.WORKER_POLL_MS ?? "200",
     ELECTRON_RUN_AS_NODE: "1",

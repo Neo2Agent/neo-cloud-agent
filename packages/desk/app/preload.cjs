@@ -5,6 +5,12 @@ const apiBase = (process.env.NEO_CONTROL_PLANE_URL || process.env.CONTROL_PLANE_
   "",
 );
 
+function on(channel, cb) {
+  const listen = (_event, payload) => cb(payload);
+  ipcRenderer.on(channel, listen);
+  return () => ipcRenderer.removeListener(channel, listen);
+}
+
 contextBridge.exposeInMainWorld("neoDesk", {
   platform: process.platform,
   apiBase,
@@ -13,13 +19,25 @@ contextBridge.exposeInMainWorld("neoDesk", {
   setToken: (token) => ipcRenderer.invoke("desk:setToken", token),
   clearToken: () => ipcRenderer.invoke("desk:clearToken"),
   pickFolder: () => ipcRenderer.invoke("desk:pickFolder"),
+  listWorkspaces: () => ipcRenderer.invoke("desk:listWorkspaces"),
+  unbindWorkspace: (workspaceId) => ipcRenderer.invoke("desk:unbindWorkspace", workspaceId),
   getTarget: () => ipcRenderer.invoke("desk:getTarget"),
   setTarget: (target) => ipcRenderer.invoke("desk:setTarget", target),
+  getPrefs: () => ipcRenderer.invoke("desk:getPrefs"),
+  setPrefs: (next) => ipcRenderer.invoke("desk:setPrefs", next),
+  startRun: (assignment) => ipcRenderer.invoke("desk:startRun", assignment),
+  stopRun: (runId) => ipcRenderer.invoke("desk:stopRun", runId),
   notify: (title, body) => ipcRenderer.invoke("desk:notify", title, body),
   openPath: (filePath) => ipcRenderer.invoke("desk:openPath", filePath),
-  onDeepLink: (cb) => {
-    const listen = (_event, url) => cb(url);
-    ipcRenderer.on("desk:deep-link", listen);
-    return () => ipcRenderer.removeListener("desk:deep-link", listen);
-  },
+  listDir: (input) => ipcRenderer.invoke("desk:listDir", input),
+  diffStat: (folder) => ipcRenderer.invoke("desk:diffStat", folder),
+  termOpen: (folder) => ipcRenderer.invoke("desk:termOpen", folder),
+  termWrite: (id, data) => ipcRenderer.invoke("desk:termWrite", { id, data }),
+  termClose: (id) => ipcRenderer.invoke("desk:termClose", id),
+  onDeepLink: (cb) => on("desk:deep-link", cb),
+  onRunStatus: (cb) => on("desk:run-status", cb),
+  onDispatched: (cb) => on("desk:dispatched", cb),
+  onInboxState: (cb) => on("desk:inbox-state", cb),
+  onTermData: (cb) => on("desk:term-data", cb),
+  onTermExit: (cb) => on("desk:term-exit", cb),
 });
