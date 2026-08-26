@@ -2,6 +2,8 @@
   "name": "@neo-cloud-agent/desk",
   "version": "0.1.0",
   "private": true,
+  "description": "Neo Desk desktop client",
+  "author": "Neo",
   "type": "module",
   "main": "app/main.cjs",
   "scripts": {
