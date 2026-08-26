@@ -49,6 +49,8 @@ body,
 
 button,
 input,
+textarea,
+select,
 a {
   font: inherit;
   touch-action: manipulation;
@@ -604,6 +606,155 @@ th {
   display: none;
 }
 
+.expert-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.expert-nav {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.expert-nav button {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.expert-nav button.on {
+  border-color: var(--accent);
+  background: var(--run-bg);
+}
+
+.expert-nav .chip {
+  justify-self: start;
+}
+
+.admin-form {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-form textarea,
+.admin-form input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.admin-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.admin-form fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-form legend {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tool-picks,
+.audience,
+.user-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tool-picks label,
+.audience label,
+.user-picks label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.primary-btn,
+.ghost-btn {
+  border: 0;
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 0 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-btn {
+  background: var(--accent);
+  color: #fff;
+}
+
+.ghost-btn {
+  background: var(--bg-2);
+  color: var(--text);
+}
+
+.primary-btn:disabled,
+.ghost-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.audience,
+.user-picks {
+  margin: 0 0 12px;
+}
+
+.ok-banner {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.user-picks {
+  display: grid;
+  max-height: 240px;
+  overflow: auto;
+}
+
 @keyframes pulse {
   0% {
     background-position: 100% 0;
@@ -661,6 +812,10 @@ th {
     display: grid;
   }
 
+  .expert-layout {
+    grid-template-columns: 1fr;
+  }
+
   .table-only-wide {
     display: none;
   }
@@ -680,7 +835,7 @@ th {
     bottom: 0;
     z-index: 6;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
     min-height: calc(var(--dock-h) + var(--safe-bottom));
     padding: 6px max(8px, var(--safe-right)) max(6px, var(--safe-bottom)) max(8px, var(--safe-left));

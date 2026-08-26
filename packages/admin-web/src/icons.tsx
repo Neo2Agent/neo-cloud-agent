@@ -41,6 +41,16 @@ export function IconRuns(props: IconProps) {
   );
 }
 
+export function IconExperts(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="9" cy="8" r="2.8" />
+      <path d="M4.2 18.4c.6-2.8 2.4-4.4 4.8-4.4s4.2 1.6 4.8 4.4" />
+      <path d="M16 7.2v5.2M13.4 9.8H18.6" />
+    </Svg>
+  );
+}
+
 export function IconSystem(props: IconProps) {
   return (
     <Svg {...props}>
