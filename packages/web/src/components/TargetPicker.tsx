@@ -1,3 +1,4 @@
+import { Select } from "@neo-cloud-agent/ui";
 import type { DeskTarget } from "../desk";
 
 type Props = {
@@ -12,25 +13,22 @@ export function TargetPicker({ target, canRunLocal, folder, onTarget, onPickFold
   return (
     <label className="picker">
       <span className="picker-label">目标</span>
-      <select
+      <Select
         id="execution-target"
+        size="pill"
+        aria-label="目标"
         value={target.kind}
-        onChange={(event) => {
-          const kind = event.target.value as DeskTarget["kind"];
-          if (kind === "desk" && !canRunLocal) {
-            return;
-          }
+        onValueChange={(next) => {
+          const kind = next as DeskTarget["kind"];
+          if (kind === "desk" && !canRunLocal) return;
           onTarget({ ...target, kind });
         }}
-      >
-        <option value="cloud">云端</option>
-        <option value="desk" disabled={!canRunLocal}>
-          {canRunLocal ? "本机" : "本机（P2 需 Desk）"}
-        </option>
-        <option value="remote" disabled>
-          远程机（P3）
-        </option>
-      </select>
+        options={[
+          { value: "cloud", label: "云端" },
+          { value: "desk", label: canRunLocal ? "本机" : "本机（P2 需 Desk）", disabled: !canRunLocal },
+          { value: "remote", label: "远程机（P3）", disabled: true },
+        ]}
+      />
       {target.kind === "desk" ? (
         <button type="button" className="ghost picker-extra" onClick={onPickFolder}>
           {folder || "选择文件夹…"}

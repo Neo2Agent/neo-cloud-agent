@@ -1,4 +1,5 @@
 import { ADMIN_EXPERT_TOOL_CHOICES } from "@neo-cloud-agent/contracts/expert";
+import { Checkbox, RadioGroup, Switch } from "@neo-cloud-agent/ui";
 import { useEffect, useMemo, useState } from "react";
 import { api, readJson } from "../api";
 import type { AdminBundledExpert, AdminExpertsCatalog } from "../types";
@@ -188,14 +189,12 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
                   {selected.slug} · 默认名「{selected.baseline.name}」
                 </p>
               </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.enabled}
-                  onChange={(event) => patch({ enabled: event.target.checked })}
-                />
-                <span>{draft.enabled ? "启用" : "停用"}</span>
-              </label>
+              <Switch
+                className="toggle"
+                checked={draft.enabled}
+                onCheckedChange={(enabled) => patch({ enabled })}
+                label={draft.enabled ? "启用" : "停用"}
+              />
             </header>
             <form
               className="admin-form"
@@ -237,18 +236,16 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
                 <p className="muted">不勾选等于不限制。团长需要 neo_subagent。</p>
                 <div className="tool-picks">
                   {ADMIN_EXPERT_TOOL_CHOICES.map((tool) => (
-                    <label key={tool}>
-                      <input
-                        type="checkbox"
-                        checked={draft.tools.includes(tool)}
-                        onChange={(event) => {
-                          patch({
-                            tools: event.target.checked ? [...draft.tools, tool] : draft.tools.filter((item) => item !== tool),
-                          });
-                        }}
-                      />
-                      <span>{tool}</span>
-                    </label>
+                    <Checkbox
+                      key={tool}
+                      checked={draft.tools.includes(tool)}
+                      label={tool}
+                      onCheckedChange={(checked) => {
+                        patch({
+                          tools: checked ? [...draft.tools, tool] : draft.tools.filter((item) => item !== tool),
+                        });
+                      }}
+                    />
                   ))}
                 </div>
               </fieldset>
@@ -284,19 +281,15 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
               </div>
             </header>
             <div className="audience">
-              <label>
-                <input type="radio" name="audience" checked={audience === "all"} onChange={() => setAudience("all")} />
-                全部用户
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="audience"
-                  checked={audience === "allowlist"}
-                  onChange={() => setAudience("allowlist")}
-                />
-                指定用户
-              </label>
+              <RadioGroup
+                name="audience"
+                value={audience}
+                onValueChange={(value) => setAudience(value as "all" | "allowlist")}
+                options={[
+                  { value: "all", label: "全部用户" },
+                  { value: "allowlist", label: "指定用户" },
+                ]}
+              />
             </div>
             {audience === "allowlist" ? (
               <>
@@ -312,18 +305,13 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
                 <ul className="user-picks">
                   {visibleUsers.map((user) => (
                     <li key={user.id}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={userIds.includes(user.id)}
-                          onChange={(event) => {
-                            setUserIds((cur) =>
-                              event.target.checked ? [...cur, user.id] : cur.filter((id) => id !== user.id),
-                            );
-                          }}
-                        />
-                        <span>{user.email}</span>
-                      </label>
+                      <Checkbox
+                        checked={userIds.includes(user.id)}
+                        label={user.email}
+                        onCheckedChange={(checked) => {
+                          setUserIds((cur) => (checked ? [...cur, user.id] : cur.filter((id) => id !== user.id)));
+                        }}
+                      />
                     </li>
                   ))}
                 </ul>

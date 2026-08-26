@@ -1,5 +1,6 @@
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
+import { Select } from "@neo-cloud-agent/ui";
 import { useState } from "react";
 import { api, readJson } from "../api";
 import { IconPeople, IconSearch, IconSync } from "../icons";
@@ -98,14 +99,15 @@ export function ChatHeader({
                   <p className="hint">没有可邀请的项目成员。对方要先在项目里。</p>
                 ) : (
                   <>
-                    <select value={invitee} onChange={(event) => setInvitee(event.target.value)}>
-                      <option value="">选择项目成员</option>
-                      {others.map((item) => (
-                        <option key={item.userId} value={item.userId}>
-                          {item.email}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      value={invitee}
+                      onValueChange={setInvitee}
+                      placeholder="选择项目成员"
+                      options={[
+                        { value: "", label: "选择项目成员" },
+                        ...others.map((item) => ({ value: item.userId, label: item.email })),
+                      ]}
+                    />
                     <button type="button" className="ghost" disabled={!invitee || busy} onClick={() => void invite()}>
                       邀请
                     </button>

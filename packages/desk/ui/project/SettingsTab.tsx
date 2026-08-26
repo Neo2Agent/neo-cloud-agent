@@ -1,5 +1,6 @@
 import { expertPickerLabel, type Expert } from "@neo-cloud-agent/contracts/expert";
 import { canManageProject, type InvitePolicy, type Project } from "@neo-cloud-agent/contracts/project";
+import { Checkbox, Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
 import { roleLabel } from "./helpers";
@@ -161,10 +162,15 @@ export function SettingsTab({
         </label>
         <label>
           <span>邀请策略</span>
-          <select value={policy} disabled={!manage} onChange={(event) => setPolicy(event.target.value as InvitePolicy)}>
-            <option value="approve">需要审批</option>
-            <option value="open">链接即加入</option>
-          </select>
+          <Select
+            value={policy}
+            disabled={!manage}
+            onValueChange={(value) => setPolicy(value as InvitePolicy)}
+            options={[
+              { value: "approve", label: "需要审批" },
+              { value: "open", label: "链接即加入" },
+            ]}
+          />
         </label>
         {manage ? (
           <button type="submit" className="dash-create" disabled={busy}>
@@ -200,19 +206,14 @@ export function SettingsTab({
         <ul className="expert-pin-list">
           {catalog.map((item) => (
             <li key={item.id}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={pinnedIds.includes(item.id)}
-                  disabled={!manage}
-                  onChange={(event) => {
-                    setPinnedIds((prev) =>
-                      event.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id),
-                    );
-                  }}
-                />
-                <span>{expertPickerLabel(item)}</span>
-              </label>
+              <Checkbox
+                checked={pinnedIds.includes(item.id)}
+                disabled={!manage}
+                label={expertPickerLabel(item)}
+                onCheckedChange={(checked) => {
+                  setPinnedIds((prev) => (checked ? [...prev, item.id] : prev.filter((id) => id !== item.id)));
+                }}
+              />
             </li>
           ))}
         </ul>

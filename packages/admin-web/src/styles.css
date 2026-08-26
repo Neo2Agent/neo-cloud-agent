@@ -685,9 +685,8 @@ th {
   list-style: none;
 }
 
-.tool-picks label,
-.audience label,
-.user-picks label {
+.tool-picks .neo-check,
+.user-picks .neo-check {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -695,6 +694,12 @@ th {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg);
+}
+
+.tool-picks .neo-check:has(.neo-check-box[data-state="checked"]),
+.user-picks .neo-check:has(.neo-check-box[data-state="checked"]) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, #fff);
 }
 
 .toggle {
