@@ -62,9 +62,11 @@ export function ChatTranscript({
       ) : null}
       {visible.map((message, messageIndex) => {
         if (message.role === "user") {
+          const sender = message.actorEmail || user;
           return (
             <article key={message.id} className="msg-row user">
               <div className="chat-col">
+                {message.actorEmail ? <span className="chat-actor">{message.actorEmail}</span> : null}
                 <div className="chat-bubble user">{message.text || current.prompt}</div>
                 {message.images?.length ? (
                   <div className="thumbs">
@@ -74,7 +76,7 @@ export function ChatTranscript({
                   </div>
                 ) : null}
               </div>
-              <span className="avatar">{memberInitials(user)}</span>
+              <span className="avatar">{memberInitials(sender)}</span>
             </article>
           );
         }

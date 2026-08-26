@@ -1457,23 +1457,11 @@ export async function enqueueFollowUp(
     type: delivery,
     text: input.text,
     images: input.images,
+    followUpId: item.id,
   });
   publish(
     event(runId, "followup.queued", "Follow-up queued", {
       data: { followUpId: item.id, delivery, actorUserId: actor?.userId, actorEmail: actor?.email },
-    }),
-  );
-  publish(
-    event(runId, "user.message", "User message", {
-      category: "agent_run",
-      data: {
-        text: input.text,
-        followUpId: item.id,
-        delivery,
-        images: input.images,
-        actorUserId: actor?.userId,
-        actorEmail: actor?.email,
-      },
     }),
   );
   flushRun(runId);
@@ -1661,18 +1649,55 @@ function flushAllSubscriptions(): void {
   }
 }
 
+function publishFollowUpUserMessage(item: FollowUp): void {
+  publish(
+    event(item.runId, "user.message", "User message", {
+      category: "agent_run",
+      data: {
+        text: item.text,
+        followUpId: item.id,
+        delivery: item.delivery,
+        images: item.images,
+        actorUserId: item.actorUserId,
+        actorEmail: item.actorEmail,
+      },
+    }),
+  );
+}
+
+function deliverTakenFollowUps(runId: string, taken: WorkerInbound[]): void {
+  const deliveredAt = now();
+  const byId = new Map((followUps.get(runId) ?? []).map((item) => [item.id, item]));
+  for (const inboundItem of taken) {
+    if (inboundItem.type !== "prompt" && inboundItem.type !== "steer" && inboundItem.type !== "follow_up") {
+      continue;
+    }
+    const item = inboundItem.followUpId ? byId.get(inboundItem.followUpId) : undefined;
+    if (!item || item.status !== "queued") {
+      continue;
+    }
+    item.status = "delivered";
+    item.deliveredAt = deliveredAt;
+    publish(
+      event(runId, "followup.delivered", "Follow-up delivered", {
+        data: {
+          followUpId: item.id,
+          delivery: item.delivery,
+          actorUserId: item.actorUserId,
+          actorEmail: item.actorEmail,
+        },
+      }),
+    );
+    publishFollowUpUserMessage(item);
+  }
+}
+
 export function takeInbound(runId: string): WorkerInbound[] {
   noteWorkerHeartbeat(runId);
   const queued = inbound.get(runId) ?? [];
   inbound.set(runId, []);
   rememberActiveTurns(runId, queued);
-  const deliveredAt = now();
-  for (const item of followUps.get(runId) ?? []) {
-    if (item.status === "queued") {
-      item.status = "delivered";
-      item.deliveredAt = deliveredAt;
-    }
-  }
+  deliverTakenFollowUps(runId, queued);
   flushRun(runId);
   return queued;
 }

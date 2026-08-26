@@ -1,4 +1,4 @@
-import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
+import type { FollowUp, PublicLlmSettings } from "@neo-cloud-agent/contracts";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -176,6 +176,8 @@ export function App() {
   const [runId, setRunId] = useState<string | null>(null);
   const [current, setCurrent] = useState<Run | null>(null);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [queuedFollowUps, setQueuedFollowUps] = useState<FollowUp[]>([]);
+  const [queueEpoch, setQueueEpoch] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [query, setQuery] = useState("");
@@ -311,6 +313,9 @@ export function App() {
         if (batch.some((event) => event.kind === "run.idle" || event.kind === "run.error")) {
           void refreshRuns();
         }
+        if (batch.some((event) => event.kind === "followup.queued" || event.kind === "followup.delivered")) {
+          setQueueEpoch((cur) => cur + 1);
+        }
       };
       source.onmessage = (event) => {
         const parsed = parseSse(event.data);
@@ -355,6 +360,7 @@ export function App() {
       if (!runRes.ok) return;
       const run = await readJson<Run>(runRes);
       setCurrent(run);
+      setQueuedFollowUps([]);
       setChatToolsOpen(false);
       if (run.projectId) {
         const projectRes = await api(tokenRef.current, `/v1/projects/${run.projectId}`);
@@ -519,6 +525,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify({ text: `${askPrefix}${text}` }),
       });
+      setQueueEpoch((cur) => cur + 1);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "发送失败");
     } finally {
@@ -575,7 +582,35 @@ export function App() {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [messages, runId]);
 
-  const visible = displayTranscriptMessages(messages);
+  const queuedFollowUpIds = useMemo(
+    () => queuedFollowUps.filter((item) => item.status === "queued").map((item) => item.id),
+    [queuedFollowUps],
+  );
+  const onQueuedChange = useCallback((items: FollowUp[]) => {
+    setQueuedFollowUps((cur) => {
+      if (
+        cur.length === items.length &&
+        cur.every((item, index) => item.id === items[index]?.id && item.status === items[index]?.status && item.text === items[index]?.text)
+      ) {
+        return cur;
+      }
+      return items;
+    });
+  }, []);
+  useEffect(() => {
+    if (!authed || !current || current.projectId) return;
+    let cancelled = false;
+    void api(token, `/v1/runs/${current.id}/follow-ups`).then(async (response) => {
+      if (!response.ok || cancelled) return;
+      const body = await readJson<{ followUps?: FollowUp[] }>(response);
+      onQueuedChange((body.followUps ?? []).filter((item) => item.status === "queued"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authed, current, onQueuedChange, queueEpoch, token]);
+
+  const visible = displayTranscriptMessages(messages, { hideFollowUpIds: queuedFollowUpIds });
   const activity = liveActivityLabel(visible);
   const rail = useMemo(() => {
     const names = new Map(projects.map((item) => [item.id, item.name]));
@@ -1233,6 +1268,8 @@ export function App() {
                   }
                 }}
                 onCopy={(text) => void copyText(text)}
+                queueEpoch={queueEpoch}
+                onQueuedChange={onQueuedChange}
               />
             ) : current ? (
               <PersonalChatPage
@@ -1306,6 +1343,15 @@ export function App() {
                 onComposerKey={onComposerKey}
                 home={!current}
                 mentions={current ? mentions : []}
+                queued={queuedFollowUps}
+                waiting={Boolean(current && (queuedFollowUps.length > 0 || current.status === "RUNNING"))}
+                onStop={
+                  current
+                    ? () => {
+                        void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
+                      }
+                    : undefined
+                }
               />
               {current ? (
                 <p className="composer-note">

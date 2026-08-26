@@ -113,6 +113,21 @@ export function IconArrowUp(props: IconProps) {
   );
 }
 
+export function IconStop(props: IconProps) {
+  return (
+    <svg
+      className={props.className}
+      width={props.size ?? 14}
+      height={props.size ?? 14}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
 export function IconBack(props: IconProps) {
   return (
     <Svg {...props}>

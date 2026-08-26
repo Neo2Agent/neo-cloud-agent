@@ -102,6 +102,9 @@ export interface TranscriptMessage {
   href?: string;
   mediaType?: string;
   images?: Array<{ mediaType: string; data: string }>;
+  followUpId?: string;
+  actorUserId?: string;
+  actorEmail?: string;
 }
 
 export interface TranscriptSnapshot {

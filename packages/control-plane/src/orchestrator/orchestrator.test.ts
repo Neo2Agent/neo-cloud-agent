@@ -25,6 +25,7 @@ const {
   handoffRun,
   ingestEvents,
   leaseDesk,
+  listFollowUps,
   listRuns,
   listRunSubscriptions,
   mintRunGitToken,
@@ -497,6 +498,53 @@ test("desk target waits for a claim instead of spawning a server worker", async 
   });
   assert.equal(claimed.status, "RUNNING");
   assert.equal(getBootstrap(run.id).workspaceDir, "/tmp/neo-desk-ws");
+});
+
+test("queued follow-ups stay off the transcript until the worker takes them", async () => {
+  const run = await createRun({
+    prompt: "A starts the turn",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  const first = await enqueueFollowUp(
+    run.id,
+    { text: "A is still talking" },
+    { userId: "user-a", email: "admin" },
+  );
+  const second = await enqueueFollowUp(
+    run.id,
+    { text: "B is waiting in line" },
+    { userId: "user-b", email: "ping" },
+  );
+  assert.equal(first.status, "queued");
+  assert.equal(second.status, "queued");
+  assert.equal(
+    listEvents(run.id).some((item) => item.kind === "user.message" && item.data?.followUpId === first.id),
+    false,
+  );
+  assert.equal(
+    listEvents(run.id).some((item) => item.kind === "user.message" && item.data?.followUpId === second.id),
+    false,
+  );
+  assert.ok(listEvents(run.id).some((item) => item.kind === "followup.queued" && item.data?.followUpId === second.id));
+  assert.equal(listFollowUps(run.id).filter((item) => item.status === "queued").length, 2);
+
+  const taken = takeInbound(run.id);
+  assert.equal(taken.length, 2);
+  assert.equal(
+    taken.every((item) => "followUpId" in item && (item.followUpId === first.id || item.followUpId === second.id)),
+    true,
+  );
+  assert.equal(listFollowUps(run.id).every((item) => item.status === "delivered"), true);
+  const bubble = listEvents(run.id).find((item) => item.kind === "user.message" && item.data?.followUpId === second.id);
+  assert.ok(bubble);
+  assert.equal(bubble.data?.text, "B is waiting in line");
+  assert.equal(bubble.data?.actorEmail, "ping");
+  assert.ok(listEvents(run.id).some((item) => item.kind === "followup.delivered" && item.data?.followUpId === second.id));
+
+  const leftover = takeInbound(run.id);
+  assert.equal(leftover.length, 0);
+  assert.equal(listEvents(run.id).filter((item) => item.kind === "user.message" && item.data?.followUpId === second.id).length, 1);
 });
 
 test("handoff to cloud without a remote repo is rejected", async () => {

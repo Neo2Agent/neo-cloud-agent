@@ -1,3 +1,4 @@
+import type { FollowUp } from "@neo-cloud-agent/contracts";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
@@ -25,6 +26,8 @@ export function ProjectChatPage({
   onAbort,
   onTransferred,
   onCopy,
+  queueEpoch = 0,
+  onQueuedChange,
 }: {
   title: string;
   project: Project | null;
@@ -44,6 +47,8 @@ export function ProjectChatPage({
   onAbort: () => void;
   onTransferred: (run: Run) => void;
   onCopy: (text: string) => void;
+  queueEpoch?: number;
+  onQueuedChange?: (items: FollowUp[]) => void;
 }) {
   return (
     <div className="project-chat-shell">
@@ -66,6 +71,8 @@ export function ProjectChatPage({
         project={project}
         userId={userId}
         toolsOpen={toolsOpen}
+        refreshKey={queueEpoch}
+        onQueuedChange={onQueuedChange}
         onAbort={onAbort}
         onTransferred={onTransferred}
       />
