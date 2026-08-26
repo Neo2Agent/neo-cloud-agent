@@ -2,7 +2,7 @@
 
 对话页、CLI、Desk、Telegram / 微信公众号都已经是 `/v1` 的宿主。手机端是**下一个同级客户端**，不是新的 Agent 内核，也不是 Desk 的缩小版。
 
-本文是落地蓝图。合约仍在 [`packages/contracts`](../packages/contracts)。终端客户端见 [cli.md](./cli.md)。Desk 本机执行见 [desk.md](./desk.md)。总架构见 [architecture.md](./architecture.md)。
+本文是落地蓝图。合约仍在 [`packages/contracts`](../packages/contracts)。终端客户端见 [cli.md](./cli.md)。Desk 本机执行见 [desk.md](./desk.md)。总架构见 [architecture.md](./architecture.md)。现状地图见 [architecture-overview.md](./architecture-overview.md)。
 
 ---
 

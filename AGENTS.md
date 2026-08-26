@@ -1,6 +1,6 @@
 # neo-cloud-agent
 
-Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent). A pnpm/TypeScript monorepo. See `README.md` and `docs/architecture.md` for the full design and command reference.
+Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent). A pnpm/TypeScript monorepo. See `README.md`、`docs/architecture-overview.md`（现状总览）and `docs/architecture.md`（设计蓝图） for the full design and command reference.
 
 ## Cursor Cloud specific instructions
 
