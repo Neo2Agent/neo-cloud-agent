@@ -226,11 +226,10 @@ async function confirmFolder(folder: string): Promise<boolean> {
 async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
   const resolved = path.resolve(folder);
   const existing = findBound({ folder: resolved });
-  if (existing) {
-    return existing;
-  }
-  const identity = await readRepoIdentity(resolved);
-  let id = `dws_local_${Buffer.from(resolved).toString("hex").slice(0, 12)}`;
+  const identity = existing
+    ? { name: existing.name, repoKey: existing.repoKey, git: existing.git }
+    : await readRepoIdentity(resolved);
+  let id = existing?.id || `dws_local_${Buffer.from(resolved).toString("hex").slice(0, 12)}`;
   if (deskId && deskToken) {
     try {
       const client = createLeaseClient(controlPlaneUrl);
@@ -244,10 +243,18 @@ async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
       id = bound.id;
     } catch (error) {
       console.error("failed to register desk workspace", error);
+      if (existing) {
+        return existing;
+      }
     }
+  } else if (existing) {
+    return existing;
   }
   const record: BoundWorkspace = { id, folder: resolved, name: identity.name, repoKey: identity.repoKey, git: identity.git };
-  saveBoundWorkspaces([...boundWorkspaces().filter((item) => item.id !== id), record]);
+  saveBoundWorkspaces([
+    ...boundWorkspaces().filter((item) => path.resolve(item.folder) !== resolved && item.id !== id),
+    record,
+  ]);
   return record;
 }
 
@@ -392,7 +399,19 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
   await startAssignment(assignment, bound?.folder);
 }
 
+let connecting: Promise<void> | null = null;
+
 async function connectInbox(): Promise<void> {
+  if (connecting) {
+    return connecting;
+  }
+  connecting = connectInboxOnce().finally(() => {
+    connecting = null;
+  });
+  return connecting;
+}
+
+async function connectInboxOnce(): Promise<void> {
   const userToken = getToken();
   if (!userToken) {
     return;
@@ -410,12 +429,16 @@ async function connectInbox(): Promise<void> {
       deskToken = registered.token;
       writeJson(stateFile("desk.json"), { deskId, token: encodeSecret(deskToken) });
       const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
+      // Re-bind folders on this desk id. A local record is not enough: the
+      // in-memory control plane forgets workspaces every restart.
+      for (const item of boundWorkspaces()) {
+        const bound = await bindWorkspace(item.folder).catch(() => undefined);
+        if (bound && saved.folder && path.resolve(saved.folder) === path.resolve(bound.folder)) {
+          saved.workspaceId = bound.id;
+        }
+      }
       writeJson(stateFile("target.json"), { ...saved, deskId });
       toRenderer("desk:target", { ...saved, deskId });
-      // Re-register folders bound before this desk had an id.
-      for (const item of boundWorkspaces()) {
-        await bindWorkspace(item.folder).catch(() => undefined);
-      }
     } catch (error) {
       console.error("failed to register desk", error);
       return;
