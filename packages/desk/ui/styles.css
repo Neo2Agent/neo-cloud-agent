@@ -20,7 +20,7 @@
   --shadow-soft: 0 1px 2px rgba(17, 17, 16, 0.04), 0 8px 24px rgba(17, 17, 16, 0.05);
   --transcript-max: 860px;
   --transcript-gutter: 48px;
-  font-family: "Geist Sans", "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Geist Sans", "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
 }
@@ -2255,10 +2255,8 @@ button:disabled {
   color: var(--text);
 }
 
-.context-item em {
-  font-style: normal;
-  font-size: 9px;
-  opacity: 0.5;
+.context-item svg {
+  opacity: 0.55;
 }
 
 .context-menu {
@@ -2471,14 +2469,14 @@ button:disabled {
   height: 32px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--ink);
   color: #fff;
 }
 
 .send-btn:disabled {
-  background: #ecece8;
-  color: #b0b0aa;
+  background: #e4e4de;
+  color: #9a9a94;
   opacity: 1;
 }
 
@@ -2761,11 +2759,18 @@ button:disabled {
 
 /* Right sidebar: Files / Terminal, toggled from the top-right corner. */
 
-.panel-toggle {
+.panel-toggle-wrap {
   position: absolute;
   top: 10px;
   right: 12px;
   z-index: 6;
+}
+
+.panel-toggle {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: auto;
   display: grid;
   place-items: center;
   width: 26px;

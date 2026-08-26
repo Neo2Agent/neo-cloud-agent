@@ -1365,14 +1365,16 @@ export function App() {
 
       <main className="stage">
         <Tooltip content={panelOpen ? "收起右侧栏" : "Files / Terminal"} side="left">
-          <button
-            type="button"
-            className={`panel-toggle${panelOpen ? " on" : ""}`}
-            aria-label={panelOpen ? "收起右侧栏" : "打开右侧栏"}
-            onClick={() => setPanelOpen((cur) => !cur)}
-          >
-            <IconPanelRight size={15} />
-          </button>
+          <span className="panel-toggle-wrap">
+            <button
+              type="button"
+              className={`panel-toggle${panelOpen ? " on" : ""}`}
+              aria-label={panelOpen ? "收起右侧栏" : "打开右侧栏"}
+              onClick={() => setPanelOpen((cur) => !cur)}
+            >
+              <IconPanelRight size={15} />
+            </button>
+          </span>
         </Tooltip>
         <div className="stage-col" key={nav}>
         {nav === "automations" ? (

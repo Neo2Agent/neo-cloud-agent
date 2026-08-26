@@ -1,6 +1,7 @@
 import {
   ArrowUp,
   Bot,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CirclePlus,
@@ -117,6 +118,10 @@ export function IconChevron({ open, className, ...props }: IconProps & { open?: 
       aria-hidden="true"
     />
   );
+}
+
+export function IconChevronDown(props: IconProps) {
+  return icon(ChevronDown, props);
 }
 
 export function IconSync(props: IconProps) {

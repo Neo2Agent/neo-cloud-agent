@@ -10,7 +10,7 @@ import {
   composerMaxWidth,
   composerTextareaHeight,
 } from "../src/composer-size";
-import { IconAddRepo, IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop } from "./icons";
+import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop } from "./icons";
 
 export type ContextMenuId = "repo" | "target" | null;
 export type RepoChoice = { url: string; label: string };
@@ -559,7 +559,7 @@ export function ContextBar({
         >
           {local ? <IconComputer size={13} /> : null}
           <span>{workspaceLabel}</span>
-          <em>▾</em>
+          <IconChevronDown size={12} />
         </button>
         {open === "repo" && !locked ? (
           <div className="context-menu" role="menu">
@@ -625,7 +625,7 @@ export function ContextBar({
         >
           {local ? <IconComputer size={14} /> : <IconCloud size={14} />}
           <span>{local ? "This Computer" : "Cloud"}</span>
-          <em>▾</em>
+          <IconChevronDown size={12} />
         </button>
         {open === "target" && !locked ? (
           <div className="context-menu" role="menu">
@@ -870,7 +870,7 @@ export function ChatComposer({
           <div className="model-wrap">
             <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
               {label}
-              <span aria-hidden="true">▾</span>
+              <IconChevronDown size={12} />
             </button>
             {menuOpen ? (
               <div className="model-menu" role="menu">
