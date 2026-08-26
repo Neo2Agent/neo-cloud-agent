@@ -44,13 +44,15 @@ test("mysql store upserts run JSON, events, and users", async () => {
     calls.push({ text, values: values ?? [] });
     const key = text.includes("FROM runs WHERE")
       ? "run"
-      : text.includes("FROM events")
-        ? "events"
-        : text.includes("FROM users WHERE email")
-          ? "user"
-          : text.includes("FROM users ORDER BY")
-            ? "users"
-            : "other";
+      : text.includes("FROM runs")
+        ? "runs"
+        : text.includes("FROM events")
+          ? "events"
+          : text.includes("FROM users WHERE email")
+            ? "user"
+            : text.includes("FROM users ORDER BY")
+              ? "users"
+              : "other";
     return { rows: rowsByQuery[key] ?? [] };
   });
 
@@ -77,6 +79,15 @@ test("mysql store upserts run JSON, events, and users", async () => {
   rowsByQuery.run = [{ record }];
   const loaded = await store.loadRun("run-mysql-1");
   assert.equal(loaded?.run.prompt, "hello mysql");
+
+  const older = { version: 1 as const, run: sampleRun("run-old"), followUps: [], inbound: [] };
+  older.run.updatedAt = "2026-08-01T00:00:00.000Z";
+  rowsByQuery.runs = [{ record: older }, { record }];
+  const listedRuns = await store.loadRuns();
+  assert.equal(listedRuns[0]?.run.id, "run-mysql-1");
+  const loadRunsSql = calls.find((item) => item.text.includes("FROM runs") && !item.text.includes("WHERE"))?.text ?? "";
+  assert.match(loadRunsSql, /SELECT record FROM runs/);
+  assert.doesNotMatch(loadRunsSql, /ORDER BY/);
 
   await store.createUser({
     id: "user-1",

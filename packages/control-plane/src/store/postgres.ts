@@ -253,8 +253,11 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       return parseJson(result.rows[0]?.record, asRecord);
     },
     async loadRuns() {
-      const result = await query(`SELECT record FROM runs ORDER BY updated_at DESC`);
-      return result.rows.map((row) => parseJson(row.record, asRecord)).filter((item): item is PersistedRun => Boolean(item));
+      const result = await query(`SELECT record FROM runs`);
+      return result.rows
+        .map((row) => parseJson(row.record, asRecord))
+        .filter((item): item is PersistedRun => Boolean(item))
+        .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
     },
     async saveEvent(event) {
       await query(
