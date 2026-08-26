@@ -32,6 +32,7 @@ mac:
         - x64
         - arm64
 win:
+  signAndEditExecutable: false
   target:
     - target: zip
       arch:

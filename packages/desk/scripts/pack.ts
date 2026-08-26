@@ -98,13 +98,18 @@ async function main(): Promise<void> {
   await run("python3", [path.join(deskRoot, "scripts/make-icon.py"), icon], { cwd: deskRoot });
   copyFileSync(icon, path.join(deskRoot, "build/icon.png"));
 
-  await run("pnpm", ["exec", "electron-builder", "--config", "electron-builder.yml", "--mac", "--win", "--linux"], {
-    cwd: deskRoot,
-    env: {
-      ...process.env,
-      CSC_IDENTITY_AUTO_DISCOVERY: "false",
-    },
-  });
+  const env = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" };
+  // Build each OS on its own so a Windows wine miss does not drop the Mac zip.
+  for (const platform of ["--mac", "--linux", "--win"] as const) {
+    try {
+      await run("pnpm", ["exec", "electron-builder", "--config", "electron-builder.yml", platform], {
+        cwd: deskRoot,
+        env,
+      });
+    } catch (error) {
+      console.warn(`electron-builder ${platform} failed:`, error);
+    }
+  }
 }
 
 void main();
