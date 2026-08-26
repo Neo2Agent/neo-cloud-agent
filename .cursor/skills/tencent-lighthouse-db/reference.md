@@ -35,12 +35,14 @@ chown -R ubuntu:ubuntu /home/ubuntu/.ssh
 chmod 600 /home/ubuntu/.ssh/authorized_keys
 ```
 
-本机：
+本机（历史钥匙，新对话不必再配）：
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/neo_lighthouse_new -C neo-db-deploy -N ""
 # 把 ~/.ssh/neo_lighthouse_new.pub 填进上面的 TAT
 ```
+
+Cloud Agent 现网用应用机同一把 `neo-cloud-agent-deploy`（`NEO_LIGHTHOUSE_SSH_KEY_B64`）。库机账号云 API 是 `TENCENTCLOUD_LNS_SECRET_ID` / `TENCENTCLOUD_LNS_SECRET_KEY`。操作步骤见 [SKILL.md](SKILL.md)「Cloud Agent 怎么操作」。
 
 ## Docker
 

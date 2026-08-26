@@ -25,20 +25,47 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 控制台列表：[北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。  
 Chrome 里若还登着旧号，**看不到**这台机。
 
+## Cloud Agent 怎么操作（现网）
+
+新对话先跑应用机那份引导脚本。它读同一个 `NEO_LIGHTHOUSE_SSH_KEY_B64`，写成 `~/.ssh/neo_lighthouse`，并同时写 `Host lighthouse`（应用机）和 `Host lighthouse-db`（本机）。
+
+```bash
+bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh
+
+# 只报是否 set，不要 echo 值
+[ -n "${NEO_LIGHTHOUSE_SSH_KEY_B64:-}" ] && echo ssh_secret=set || echo ssh_secret=missing
+[ -n "${TENCENTCLOUD_LNS_SECRET_ID:-}" ] && echo lns_api=set || echo lns_api=missing
+
+ssh -o BatchMode=yes -o ConnectTimeout=10 lighthouse-db 'hostname; whoami'
+ssh lighthouse-db 'cd /home/ubuntu/db && docker compose ps'
+```
+
+| Secret | 用途 |
+| --- | --- |
+| `NEO_LIGHTHOUSE_SSH_KEY_B64` | SSH 私钥（和应用机同一把）。`ssh lighthouse-db` 用这个 |
+| `TENCENTCLOUD_LNS_SECRET_ID` / `TENCENTCLOUD_LNS_SECRET_KEY` | **库机账号**的云 API（Lighthouse / TAT）。不是 SSH |
+| 应用机那对 `TENCENTCLOUD_*`（名字里没有 `LNS`） | **应用机账号**的云 API。看不到 `neo-mysql-redis` |
+
+`TENCENTCLOUD_LNS_*` 是云 API，不能用来 `ssh`。SSH 仍然靠 `NEO_LIGHTHOUSE_SSH_KEY_B64`。公钥必须是这把私钥对应的 `neo-cloud-agent-deploy`（TAT 追加到 `ubuntu` 的 `authorized_keys`）。只往机上塞另一把公钥（例如 `neo-cloud-agent-ee36`）对不上当前 Secret，会 `Permission denied`。
+
+连不上时用库机账号 TAT 追加当前公钥，**不要**重启、**不要**控制台「绑定密钥」。TAT Agent 现网 Online。查实例 / 防火墙也走 `TENCENTCLOUD_LNS_*`，实例 `lhins-1whwkmau`，地域 `ap-beijing`。中途新加的 Secret 当前这轮读不到，要再开一轮。
+
 ## SSH
+
+引导脚本写的别名（Cloud Agent / 本机都可以）：
 
 ```
 Host lighthouse-db
   HostName 101.42.105.230
   User ubuntu
-  IdentityFile ~/.ssh/neo_lighthouse_new
+  IdentityFile ~/.ssh/neo_lighthouse
   IdentitiesOnly yes
 ```
 
 - 用户：`ubuntu`（也有 `lighthouse` / `root`，默认用 `ubuntu`）
-- 密钥注释：`neo-db-deploy`
-- 首次装公钥用控制台 **TAT**，不要「绑定密钥」（会重启）。步骤见 [reference.md](reference.md)。
-- 应用机 Cloud Agent Secret 是 `NEO_LIGHTHOUSE_SSH_KEY_B64`（`ssh lighthouse`）。**不要**拿那把钥匙连这台库机。
+- Cloud Agent 现网公钥注释：`neo-cloud-agent-deploy`（与 `NEO_LIGHTHOUSE_SSH_KEY_B64` 配对）
+- 机上还留着历史行：`neo-db-deploy`、`neo-cloud-agent-ee36`。本地旧钥匙 `~/.ssh/neo_lighthouse_new` 仍可用，新对话不必再配
+- 首次 / 补公钥用控制台或 API **TAT**，不要「绑定密钥」（会重启）。步骤见 [reference.md](reference.md)
 
 ## 硬约束
 
@@ -150,6 +177,7 @@ ORDER BY seq;
 | 现象 | 先查 |
 | --- | --- |
 | 应用机 `/health` 仍是 `fs` / `memory` | 应用机根目录 `.env` 是否有 `DATABASE_URL` / `REDIS_URL`；是否重启了 `neo-control-plane` |
+| `ssh lighthouse-db` Permission denied | 这轮有没有 `NEO_LIGHTHOUSE_SSH_KEY_B64`；`ubuntu` 的 `authorized_keys` 是否已有 `neo-cloud-agent-deploy`。对不上就用 `TENCENTCLOUD_LNS_*` 走 TAT 追加，不要绑密钥 |
 | 连不上 3306 / 6379 | 轻量防火墙是否放行；容器 `docker compose ps` 是否 `healthy`；密码是否和 `.env` 一致 |
 | `docker pull` 超时 | 确认 `registry-mirrors` 是 `https://mirror.ccs.tencentyun.com`，`systemctl restart docker` |
 | 表是空的 | 控制面还没写过；探测 run 只有 `run_live_probe` |
@@ -163,7 +191,8 @@ ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql red
 
 ## 给 Cloud Agent 的注意点
 
-- SSH 目标是 `lighthouse-db` / `101.42.105.230`，密钥 `~/.ssh/neo_lighthouse_new`。
-- 连不上先 TAT 追加当前公钥，不要重启、不要绑密钥。
+- 先跑 [../tencent-lighthouse-deploy/bootstrap-agent-access.sh](../tencent-lighthouse-deploy/bootstrap-agent-access.sh)。SSH 目标是 `lighthouse-db` / `101.42.105.230`，钥匙是 `~/.ssh/neo_lighthouse`（`NEO_LIGHTHOUSE_SSH_KEY_B64`）。
+- 库机云 API 用 `TENCENTCLOUD_LNS_SECRET_ID` / `TENCENTCLOUD_LNS_SECRET_KEY`。不要拿应用机那对 `TENCENTCLOUD_SECRET_*` 去查这台。
+- 连不上先用 LNS 密钥走 TAT 追加当前 `neo-cloud-agent-deploy` 公钥，不要重启、不要绑密钥。
 - 验收只报 `healthy` / 表行数 / `metadataStore` / `eventBus`，不报密钥。
 - 改 compose 先改仓库模板，再 scp 到 `/home/ubuntu/db` 后 `docker compose up -d`。卷名别删。

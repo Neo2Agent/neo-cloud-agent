@@ -54,15 +54,16 @@ Host lighthouse
 
 | Secret | 类型 | 是什么 |
 | --- | --- | --- |
-| `NEO_LIGHTHOUSE_SSH_KEY_B64` | Runtime Secret | 操作者自己电脑 `ssh-keygen` 出来的**私钥文件**做 `base64` 后的单行（`base64 -w0 ~/.ssh/neo_lighthouse`）。不是腾讯云控制台里的 ID，也不是 `.pub`，也不是带换行的 PEM 原文 |
+| `NEO_LIGHTHOUSE_SSH_KEY_B64` | Runtime Secret | 操作者自己电脑 `ssh-keygen` 出来的**私钥文件**做 `base64` 后的单行（`base64 -w0 ~/.ssh/neo_lighthouse`）。不是腾讯云控制台里的 ID，也不是 `.pub`，也不是带换行的 PEM 原文。现网同一把钥匙也登录库机（`ssh lighthouse-db`） |
 | `TENCENTCLOUD_SECRET_ID` | Runtime Secret | 周栋账号下**子用户**的云 API SecretId（不要用主号） |
 | `TENCENTCLOUD_SECRET_KEY` | Runtime Secret | 对应 SecretKey |
+| `TENCENTCLOUD_LNS_SECRET_ID` / `TENCENTCLOUD_LNS_SECRET_KEY` | Runtime Secret | **库机账号**的云 API。查 `neo-mysql-redis` / TAT 用这对，不要和应用机那对混 |
 | `TENCENTCLOUD_REGION` | Environment Variable | `ap-beijing`（可以给模型看） |
 
 公钥必须已经在轻量 `ubuntu` 的 `authorized_keys`。追加用 TAT 或已有 SSH，**不要**控制台「绑定密钥」。子用户 CAM 只开 `lighthouse` / `tat` / `dnspod`，不要给 `ResetInstance` / `RebootInstances` / 重装 / 销毁。
 
 ```bash
-# 1) 有 Secret 就写 ~/.ssh/neo_lighthouse 和 Host lighthouse；没有就跳过
+# 1) 有 Secret 就写 ~/.ssh/neo_lighthouse 和 Host lighthouse / lighthouse-db；没有就跳过
 bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh
 
 # 2) 只报是否 set，不要 echo 值
@@ -75,7 +76,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 lighthouse 'hostname; systemctl is-act
 tccli lighthouse DescribeInstances --region ap-beijing --InstanceIds '["lhins-b0l0d8b2"]'
 ```
 
-`ssh` 失败：公钥没在轻量上，或这轮没注入 `NEO_LIGHTHOUSE_SSH_KEY_B64`。不要重启实例。备案 / 微信扫码没有 API，仍要用户本人。库机 SSH 是另一把钥匙（`lighthouse-db`），不要拿这把去连 `101.42.105.230`。引导脚本仍兼容旧名 `NEO_LIGHTHOUSE_SSH_KEY`（PEM 原文），新对话只配 B64。
+`ssh` 失败：公钥没在轻量上，或这轮没注入 `NEO_LIGHTHOUSE_SSH_KEY_B64`。不要重启实例。备案 / 微信扫码没有 API，仍要用户本人。库机也用这把钥匙：`ssh lighthouse-db`（`101.42.105.230`）。库机云 API 用 `TENCENTCLOUD_LNS_SECRET_ID` / `TENCENTCLOUD_LNS_SECRET_KEY`，不要和应用机那对混。引导脚本仍兼容旧名 `NEO_LIGHTHOUSE_SSH_KEY`（PEM 原文），新对话只配 B64。
 
 ## 硬约束
 
@@ -182,7 +183,7 @@ ssh lighthouse 'journalctl -u neo-control-plane -u neo-llm-gateway -u neo-admin-
 
 ## 给 Cloud Agent 的注意点
 
-- 新对话先跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)。它读 `NEO_LIGHTHOUSE_SSH_KEY_B64`（私钥文件的单行 base64），写成 `~/.ssh/neo_lighthouse`。SSH 目标就是 `lighthouse`。
+- 新对话先跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)。它读 `NEO_LIGHTHOUSE_SSH_KEY_B64`（私钥文件的单行 base64），写成 `~/.ssh/neo_lighthouse`，并写 `Host lighthouse` 和 `Host lighthouse-db`。应用机 SSH 目标是 `lighthouse`；库机见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。
 - 连不上先看 Secret 是否注入；公钥不在就 TAT 追加，不要重启、不要绑密钥。
 - 同步代码用 [deploy.sh](deploy.sh)，不要假设轻量能拉 GitHub，也不要手搓全量 tar。
 - 验收只报 `ok` / `configured` / `workerRuntime` / 槽位数字，不报密钥。
