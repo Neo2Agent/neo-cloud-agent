@@ -265,7 +265,7 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 | `PROVISIONING` | Runtime 占槽 / 起进程 / 起容器 / 等 Desk claim |
 | `INSTALLING` | 冷启动跑 `install`；从 active Build 启动则跳过 |
 | `RUNNING` | pi 正在 turn |
-| `IDLE` | 本轮结束、会话还在，可跟进。`vm` 运行时超过 `WORKER_IDLE_RELEASE_MS`（默认 15 分钟）先把工作区写回再卸槽 |
+| `IDLE` | 本轮结束、会话还在，可跟进。`vm` 运行时超过 `WORKER_IDLE_RELEASE_MS`（默认 15 分钟）先把工作区写回再卸槽；写回失败则留下槽。工作区预算与回收见 [workspace-persistence.md](./workspace-persistence.md) |
 | `WAITING_FOR_BACKGROUND_WORK` | 子任务 / 后台工作未完 |
 | `ERROR` | 失败；跟进仍可从 session 备份恢复 |
 | `ARCHIVED` / `EXPIRED` | 释放计算；transcript 按保留策略另存 |
@@ -342,7 +342,7 @@ adopt(runId, lease) → handle | null   // 控制面重启后认领还在的进�
 | `desk` | 不在云端起进程；等 Desk `claim` | `target.loop === "desk"` |
 | `none` | 不拉起 worker | 测编排 |
 
-`vm` 槽满时新 Run 停在 `NOT_YET_STARTED`。空闲超时必须先 `persistWorkspaceTree` 再 `releaseVmSlot`（卸槽会擦盘）。`WORKER_MEMORY_MIB` 打进 V8 堆上限；control-plane unit 开了 cgroup `Delegate=` 时再套 RSS。
+`vm` 槽满时新 Run 停在 `NOT_YET_STARTED`。空闲超时必须先把工作区写回 `hostRunsDir/<runId>`（跳过 `node_modules` 等缓存）再 `releaseVmSlot`（卸槽会擦盘）。写回失败则留下槽。持久化工作区有全站预算和 TTL 回收，见 [workspace-persistence.md](./workspace-persistence.md)。`WORKER_MEMORY_MIB` 打进 V8 堆上限；control-plane unit 开了 cgroup `Delegate=` 时再套 RSS。
 
 块设备克隆顺序：`cp --reflink=always` → 工作区整树 `copy` / 生产 rootfs 只读 `shared` → warm slot `rename`。不是 live-fork。
 

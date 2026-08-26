@@ -33,10 +33,16 @@ test("GET /v1/vms lists the loop-mounted slot pool", async (t) => {
   assert.equal(denied.status, 401);
   const listed = await fetch(`${base}/v1/vms`, { headers: { authorization: "Bearer vm-api-token" } });
   assert.equal(listed.status, 200);
-  const body = (await listed.json()) as { total: number; backend: string; slots: unknown[] };
+  const body = (await listed.json()) as {
+    total: number;
+    backend: string;
+    slots: unknown[];
+    workspaceStore: { runCount: number };
+  };
   assert.equal(body.total, 2);
   assert.equal(body.backend, "loop");
   assert.equal(body.slots.length, 2);
+  assert.ok(body.workspaceStore);
   const health = (await (await fetch(`${base}/health`)).json()) as { vmSlots: { total: number; backend: string } };
   assert.equal(health.vmSlots.total, 2);
   assert.equal(health.vmSlots.backend, "loop");

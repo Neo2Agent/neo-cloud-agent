@@ -112,7 +112,7 @@ WORKER_DISK_GIB=4
 WORKER_IDLE_RELEASE_MS=900000   # 空闲 15 分钟卸槽；0 = 不自动释放
 ```
 
-卸槽前必须把 slot 工作区拷回 `RUNS_DIR`，否则下一轮 claim 会擦盘。两个槽都忙时 `POST /v1/runs` 返回 `NOT_YET_STARTED` 并发 `run.queued`。
+卸槽前必须把 slot 工作区拷回 `RUNS_DIR`（跳过 `node_modules` 等缓存），否则下一轮 claim 会擦盘。写回失败则留下槽。`WORKER_RUNTIME=vm` 时持久化工作区默认合计 12GiB，空闲 7 天 / 归档 3 天后可回收；见 `docs/workspace-persistence.md`。两个槽都忙时 `POST /v1/runs` 返回 `NOT_YET_STARTED` 并发 `run.queued`。
 
 接 GitHub 远程（只放控制面，不要进 worker）。也可以在对话页设置里贴 PAT，写到 `.neo/scm-push.env`：
 

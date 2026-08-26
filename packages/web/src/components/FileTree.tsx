@@ -8,6 +8,7 @@ export type FsListing = {
   entries?: FsEntry[];
   content?: string;
   truncated?: boolean;
+  workspace?: { state?: "present" | "evicted" | "missing"; evictedReason?: string };
 };
 
 type Props = {
@@ -68,6 +69,11 @@ export function FileTree({ token, runId, open }: Props) {
         ) : null}
       </div>
       {error ? <p className="setup err">{error}</p> : null}
+      {listing?.workspace?.state === "evicted" ? (
+        <p className="hint">
+          工作区已按磁盘回收清掉。对话还在；发跟进会按仓库重新检出（没有当时的未提交改动）。
+        </p>
+      ) : null}
       {listing?.type === "dir" ? (
         <ul>
           {(listing.entries ?? []).map((entry) => (

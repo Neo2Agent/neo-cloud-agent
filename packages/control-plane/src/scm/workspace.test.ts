@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { copyTreeAll, materializeRepos, persistWorkspaceTree, repoName, resolveRepoRef, skipCopy } from "./workspace.js";
+import {
+  copyTreeAll,
+  materializeRepos,
+  measureWorkspaceBytes,
+  persistDurableWorkspace,
+  persistWorkspaceTree,
+  repoName,
+  resolveRepoRef,
+  skipCopy,
+} from "./workspace.js";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
 
@@ -65,6 +74,26 @@ test("persistWorkspaceTree copies slot children and skips lost+found", async () 
   await persistWorkspaceTree(src, dest);
   assert.equal(readFileSync(path.join(dest, "AGENT.md"), "utf8"), "from slot\n");
   assert.equal(existsSync(path.join(dest, "lost+found")), false);
+});
+
+test("persistDurableWorkspace skips caches, copies user files, and prunes stale dest", async () => {
+  const src = mkdtempSync(path.join(tmpdir(), "neo-durable-src-"));
+  const dest = mkdtempSync(path.join(tmpdir(), "neo-durable-dest-"));
+  mkdirSync(path.join(src, "node_modules", "pkg"), { recursive: true });
+  mkdirSync(path.join(src, "src"), { recursive: true });
+  writeFileSync(path.join(src, "node_modules", "pkg", "index.js"), "cache\n");
+  writeFileSync(path.join(src, "NOTES.md"), "keep me\n");
+  writeFileSync(path.join(src, "src", "app.ts"), "export {}\n");
+  writeFileSync(path.join(dest, "stale.txt"), "gone\n");
+  mkdirSync(path.join(dest, "node_modules"), { recursive: true });
+  writeFileSync(path.join(dest, "node_modules", "old.js"), "old\n");
+  await persistDurableWorkspace(src, dest);
+  assert.equal(readFileSync(path.join(dest, "NOTES.md"), "utf8"), "keep me\n");
+  assert.equal(readFileSync(path.join(dest, "src", "app.ts"), "utf8"), "export {}\n");
+  assert.equal(existsSync(path.join(dest, "node_modules")), false);
+  assert.equal(existsSync(path.join(dest, "stale.txt")), false);
+  assert.equal(measureWorkspaceBytes(src) > 0, true);
+  assert.equal(measureWorkspaceBytes(dest), measureWorkspaceBytes(src));
 });
 
 test("copyTreeAll keeps install output that skipCopy would drop", async () => {
