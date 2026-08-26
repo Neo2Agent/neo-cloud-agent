@@ -72,10 +72,34 @@ export function resetPlatformForTests(): void {
   resetRateLimitStore();
 }
 
+async function attachRedisBus(redisUrl: string): Promise<void> {
+  redis = await connectRedis(redisUrl);
+  eventBusKind = "redis";
+  attachRateLimitRedis(redis);
+  attachHotBus({
+    publish(event) {
+      const payload = JSON.stringify(event);
+      void redis?.xAdd(runStreamKey(event.runId), payload).catch((error) => console.error("redis xadd failed", error));
+      void redis?.publish(runChannel(event.runId), payload).catch((error) => console.error("redis publish failed", error));
+    },
+  });
+  await redis.pSubscribe("neo:run:*", (message) => {
+    const event = parseHotEvent(message);
+    if (event) {
+      ingestRemoteEvent(event);
+    }
+  });
+  console.log("control-plane event bus: redis");
+}
+
 async function doStart(): Promise<void> {
   ensureGitHubWebhookSecret();
   const databaseUrl = (process.env.DATABASE_URL ?? "").trim();
   const redisUrl = (process.env.REDIS_URL ?? "").trim();
+  // Redis first: login /v1 rate limits must not wait on MySQL hydrate.
+  if (redisUrl) {
+    await attachRedisBus(redisUrl);
+  }
   if (databaseUrl) {
     const connected = await connectDatabase(databaseUrl);
     metadata = connected.store;
@@ -133,35 +157,20 @@ async function doStart(): Promise<void> {
         void metadata?.saveBuild(build).catch((error) => console.error("metadata saveBuild failed", error));
       },
     });
-    await hydrateFromStore(metadata);
-    await hydrateEnvFromStore(metadata);
-    await hydrateAutomationsFromStore(metadata);
-    await hydrateProjectsFromStore(metadata);
-    await hydrateExpertsFromStore(metadata);
-    await hydrateExpertPolicyFromStore(metadata);
-    await hydrateDesksFromStore(metadata);
-    await hydrateDevicesFromStore(metadata);
-    reloadPersistedState();
-    console.log(`control-plane metadata store: ${metadataKind}`);
-  }
-  if (redisUrl) {
-    redis = await connectRedis(redisUrl);
-    eventBusKind = "redis";
-    attachRateLimitRedis(redis);
-    attachHotBus({
-      publish(event) {
-        const payload = JSON.stringify(event);
-        void redis?.xAdd(runStreamKey(event.runId), payload).catch((error) => console.error("redis xadd failed", error));
-        void redis?.publish(runChannel(event.runId), payload).catch((error) => console.error("redis publish failed", error));
-      },
-    });
-    await redis.pSubscribe("neo:run:*", (message) => {
-      const event = parseHotEvent(message);
-      if (event) {
-        ingestRemoteEvent(event);
-      }
-    });
-    console.log("control-plane event bus: redis");
+    try {
+      await hydrateFromStore(metadata);
+      await hydrateEnvFromStore(metadata);
+      await hydrateAutomationsFromStore(metadata);
+      await hydrateProjectsFromStore(metadata);
+      await hydrateExpertsFromStore(metadata);
+      await hydrateExpertPolicyFromStore(metadata);
+      await hydrateDesksFromStore(metadata);
+      await hydrateDevicesFromStore(metadata);
+      reloadPersistedState();
+      console.log(`control-plane metadata store: ${metadataKind}`);
+    } catch (error) {
+      console.error("platform hydrate failed", error);
+    }
   }
   if (!process.env.NODE_TEST_CONTEXT) {
     await ensureDefaultAdmin().catch((error) => {
