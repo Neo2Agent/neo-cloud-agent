@@ -1,3 +1,4 @@
+import { Checkbox, Select } from "@neo-cloud-agent/ui";
 import { useEffect, useMemo, useState } from "react";
 import type { Expert } from "@neo-cloud-agent/contracts/expert";
 import { expertPickerLabel } from "@neo-cloud-agent/contracts/expert";
@@ -197,19 +198,14 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
           <ul className="expert-pin-list">
             {catalog.map((item) => (
               <li key={item.id}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={pinnedIds.includes(item.id)}
-                    disabled={!canManageProject(members.find((member) => member.userId === userId)?.role)}
-                    onChange={(event) => {
-                      setPinnedIds((prev) =>
-                        event.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id),
-                      );
-                    }}
-                  />
-                  <span>{expertPickerLabel(item)}</span>
-                </label>
+                <Checkbox
+                  checked={pinnedIds.includes(item.id)}
+                  disabled={!canManageProject(members.find((member) => member.userId === userId)?.role)}
+                  label={expertPickerLabel(item)}
+                  onCheckedChange={(checked) => {
+                    setPinnedIds((prev) => (checked ? [...prev, item.id] : prev.filter((id) => id !== item.id)));
+                  }}
+                />
               </li>
             ))}
           </ul>
@@ -355,25 +351,27 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
               >
                 <label>
                   <span>转交对话</span>
-                  <select value={transferRunId} onChange={(event) => setTransferRunId(event.target.value)}>
-                    <option value="">选择对话</option>
-                    {runs.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.prompt.slice(0, 32)}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={transferRunId}
+                    onValueChange={setTransferRunId}
+                    placeholder="选择对话"
+                    options={[
+                      { value: "", label: "选择对话" },
+                      ...runs.map((item) => ({ value: item.id, label: item.prompt.slice(0, 32) })),
+                    ]}
+                  />
                 </label>
                 <label>
                   <span>交给</span>
-                  <select value={transferUserId} onChange={(event) => setTransferUserId(event.target.value)}>
-                    <option value="">选择成员</option>
-                    {others.map((item) => (
-                      <option key={item.userId} value={item.userId}>
-                        {item.email}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={transferUserId}
+                    onValueChange={setTransferUserId}
+                    placeholder="选择成员"
+                    options={[
+                      { value: "", label: "选择成员" },
+                      ...others.map((item) => ({ value: item.userId, label: item.email })),
+                    ]}
+                  />
                 </label>
                 <button className="ghost" type="submit" disabled={busy || !transferRunId || !transferUserId}>
                   转交

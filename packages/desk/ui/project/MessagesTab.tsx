@@ -1,5 +1,6 @@
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectMessage } from "@neo-cloud-agent/contracts/project-message";
+import { Select } from "@neo-cloud-agent/ui";
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson } from "../api";
 import { displayName, formatRel, initials } from "./helpers";
@@ -111,16 +112,19 @@ export function MessagesTab({
         <p className="hint">{replyId ? "回复一条留言" : "发一条项目留言"}</p>
         <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={3} placeholder="写给项目成员…" />
         <div className="message-compose-tools">
-          <select value={mentionId} onChange={(event) => setMentionId(event.target.value)} aria-label="@ 成员">
-            <option value="">不点名</option>
-            {project.members
-              .filter((item) => item.userId !== userId)
-              .map((item) => (
-                <option key={item.userId} value={item.userId}>
-                  @{displayName(item.email)}
-                </option>
-              ))}
-          </select>
+          <Select
+            size="pill"
+            aria-label="@ 成员"
+            value={mentionId}
+            onValueChange={setMentionId}
+            placeholder="不点名"
+            options={[
+              { value: "", label: "不点名" },
+              ...project.members
+                .filter((item) => item.userId !== userId)
+                .map((item) => ({ value: item.userId, label: `@${displayName(item.email)}` })),
+            ]}
+          />
           <button type="submit" className="ghost" disabled={!body.trim()}>
             发送
           </button>

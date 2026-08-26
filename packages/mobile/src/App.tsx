@@ -13,6 +13,7 @@ import { detectMobileSource, parseRunIdFromHref } from "./api/source";
 import { preview, resolveChatModel, STATUS_LABELS, toolArgPreview, toolDisplayName } from "./format";
 import { applyLiveEvents } from "./stream";
 import { isComposerClosed, isTerminalTurnEvent, statusFromEventKind } from "./turn";
+import { Select } from "@neo-cloud-agent/ui";
 
 type Screen = "login" | "list" | "chat" | "settings";
 
@@ -379,18 +380,23 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
       >
         <textarea value={prompt} placeholder="新任务。先选环境，再发送。" onChange={(event) => setPrompt(event.target.value)} />
         <div className="composer-row">
-          <select value={envId} onChange={(event) => setEnvId(event.target.value)}>
-            <option value="">选择环境</option>
-            {envs.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <select value={model} onChange={(event) => setModel(event.target.value)}>
-            <option value="deepseek-v4-flash">Flash</option>
-            <option value="deepseek-v4-pro">Pro</option>
-          </select>
+          <Select
+            value={envId}
+            onValueChange={setEnvId}
+            placeholder="选择环境"
+            options={[
+              { value: "", label: "选择环境" },
+              ...envs.map((item) => ({ value: item.id, label: item.name })),
+            ]}
+          />
+          <Select
+            value={model}
+            onValueChange={setModel}
+            options={[
+              { value: "deepseek-v4-flash", label: "Flash" },
+              { value: "deepseek-v4-pro", label: "Pro" },
+            ]}
+          />
           <button className="primary" type="submit" disabled={sending || !prompt.trim() || !envId}>
             开始
           </button>

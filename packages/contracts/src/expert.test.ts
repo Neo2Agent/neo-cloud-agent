@@ -4,11 +4,14 @@ import {
   BUNDLED_EXPERTS,
   BUNDLED_EXPERT_TEAMS,
   appendExpertRole,
+  applyBundledExpertOverride,
   bundledExpertById,
   bundledTeamById,
+  canAccessBundledExpertPolicy,
   canEditExpert,
   canUseExpert,
   decodeExpertPick,
+  defaultBundledExpertPolicyEntry,
   encodeExpertPick,
   expertBodyLength,
   expertVisibilityLabel,
@@ -78,4 +81,25 @@ test("access and picker sort", () => {
   assert.deepEqual(decodeExpertPick("team:team_ship_change"), { expertTeamId: "team_ship_change" });
   assert.deepEqual(decodeExpertPick("neo"), {});
   assert.equal(expertVisibilityLabel("bundled"), "内置");
+});
+
+test("bundled expert policy override and access", () => {
+  const base = bundledExpertById("exp_reviewer")!;
+  const live = applyBundledExpertOverride(base, {
+    name: "审查加强",
+    title: null,
+    persona: "You review diffs only.",
+    tools: ["read", "grep"],
+  });
+  assert.equal(live.name, "审查加强");
+  assert.equal(live.title, undefined);
+  assert.equal(live.persona, "You review diffs only.");
+  assert.deepEqual(live.tools, ["read", "grep"]);
+  assert.equal(live.methodology, base.methodology);
+  const open = defaultBundledExpertPolicyEntry();
+  assert.equal(canAccessBundledExpertPolicy(open, "u1"), true);
+  assert.equal(canAccessBundledExpertPolicy({ ...open, enabled: false }, "u1"), false);
+  assert.equal(canAccessBundledExpertPolicy({ ...open, audience: "allowlist", userIds: ["u2"] }, "u1"), false);
+  assert.equal(canAccessBundledExpertPolicy({ ...open, audience: "allowlist", userIds: ["u2"] }, "u2"), true);
+  assert.equal(canAccessBundledExpertPolicy({ ...open, audience: "allowlist", userIds: ["u2"] }, undefined), true);
 });

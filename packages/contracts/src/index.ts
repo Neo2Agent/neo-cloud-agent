@@ -209,6 +209,11 @@ export type {
 } from "./project.js";
 export { appendProjectInstruction, canManageProject, formatProjectMemory } from "./project.js";
 export type {
+  BundledExpertAudience,
+  BundledExpertOverrideFields,
+  BundledExpertPolicyDocument,
+  BundledExpertPolicyEntry,
+  ConfigureBundledExpertRequest,
   CreateExpertRequest,
   Expert,
   ExpertPick,
@@ -216,10 +221,13 @@ export type {
   ExpertTeamWorkflow,
   ExpertVisibility,
   ExpertWorkspaceMeta,
+  PublishBundledExpertRequest,
   UpdateExpertRequest,
 } from "./expert.js";
 export {
+  ADMIN_EXPERT_TOOL_CHOICES,
   BUNDLED_EXPERTS,
+  BUNDLED_EXPERT_POLICY_ID,
   BUNDLED_EXPERT_TEAMS,
   EXPLORE_EXPERT_TOOLS,
   MAX_EXPERT_BODY,
@@ -228,11 +236,15 @@ export {
   READ_ONLY_EXPERT_TOOLS,
   TEAM_LEAD_TOOLS,
   appendExpertRole,
+  applyBundledExpertOverride,
   bundledExpertById,
   bundledTeamById,
+  canAccessBundledExpertPolicy,
   canEditExpert,
   canUseExpert,
   decodeExpertPick,
+  defaultBundledExpertPolicyEntry,
+  emptyBundledExpertPolicyDocument,
   encodeExpertPick,
   expertBodyLength,
   expertPickerLabel,

@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson, readToken, writeToken } from "./api";
-import { IconLogout, IconOverview, IconRefresh, IconRuns, IconSystem, IconUsers } from "./icons";
+import { IconExperts, IconLogout, IconOverview, IconRefresh, IconRuns, IconSystem, IconUsers } from "./icons";
 import { PAGE_META, pageHref, readPage } from "./nav";
+import { ExpertsScreen } from "./screens/ExpertsScreen";
 import { LoginScreen } from "./screens/LoginScreen";
 import { OverviewScreen } from "./screens/OverviewScreen";
 import { RunsScreen } from "./screens/RunsScreen";
 import { SystemScreen } from "./screens/SystemScreen";
 import { UsersScreen } from "./screens/UsersScreen";
-import type { AdminOverview, AdminPage, AdminRun, AdminUser, RateLimitSnapshot } from "./types";
+import type { AdminExpertsCatalog, AdminOverview, AdminPage, AdminRun, AdminUser, RateLimitSnapshot } from "./types";
 
 const NAV: Array<{ id: AdminPage; icon: typeof IconOverview }> = [
   { id: "overview", icon: IconOverview },
   { id: "users", icon: IconUsers },
   { id: "runs", icon: IconRuns },
+  { id: "experts", icon: IconExperts },
   { id: "system", icon: IconSystem },
 ];
 
@@ -29,6 +31,7 @@ export function App() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [runs, setRuns] = useState<AdminRun[]>([]);
   const [limits, setLimits] = useState<RateLimitSnapshot | null>(null);
+  const [experts, setExperts] = useState<AdminExpertsCatalog | null>(null);
   const [error, setError] = useState("");
 
   const persist = (next: string) => {
@@ -37,12 +40,13 @@ export function App() {
   };
 
   const refresh = useCallback(async (session: string) => {
-    const [overviewRes, usersRes, runsRes, limitsRes, meRes] = await Promise.all([
+    const [overviewRes, usersRes, runsRes, limitsRes, meRes, expertsRes] = await Promise.all([
       api(session, "/v1/admin/overview"),
       api(session, "/v1/admin/users"),
       api(session, "/v1/admin/runs?limit=50"),
       api(session, "/v1/rate-limits"),
       api(session, "/v1/me"),
+      api(session, "/v1/admin/experts"),
     ]);
     if (meRes.status === 401 || overviewRes.status === 401) {
       persist("");
@@ -59,6 +63,7 @@ export function App() {
     setUsers((await readJson<{ users?: AdminUser[] }>(usersRes)).users ?? []);
     setRuns((await readJson<{ runs?: AdminRun[] }>(runsRes)).runs ?? []);
     if (limitsRes.ok) setLimits(await readJson<RateLimitSnapshot>(limitsRes));
+    if (expertsRes.ok) setExperts(await readJson<AdminExpertsCatalog>(expertsRes));
     setError("");
   }, []);
 
@@ -123,6 +128,7 @@ export function App() {
     setUsers([]);
     setRuns([]);
     setLimits(null);
+    setExperts(null);
     setError("");
   };
 
@@ -200,6 +206,9 @@ export function App() {
           {overview && page === "overview" ? <OverviewScreen overview={overview} runs={runs} /> : null}
           {overview && page === "users" ? <UsersScreen users={users} /> : null}
           {overview && page === "runs" ? <RunsScreen runs={runs} /> : null}
+          {overview && page === "experts" ? (
+            <ExpertsScreen token={token} catalog={experts} onChanged={() => refresh(token)} />
+          ) : null}
           {overview && page === "system" ? <SystemScreen overview={overview} limits={limits} /> : null}
         </main>
       </div>

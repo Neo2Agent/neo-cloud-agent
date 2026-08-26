@@ -14,6 +14,13 @@ import {
   adminRunsPayload,
   adminUsersPayload,
 } from "../../control-plane/src/admin/overview.js";
+import type { ConfigureBundledExpertRequest } from "@neo-cloud-agent/contracts";
+import {
+  adminBundledExpertsPayload,
+  configureBundledExpert,
+  publishBundledExpert,
+  resetBundledExpert,
+} from "../../control-plane/src/experts/policy.js";
 import { actorIsPlatformAdmin, isAdminLogin } from "../../control-plane/src/security/actor.js";
 import { readApiCredential, readBearer, resolveActor } from "../../control-plane/src/security/auth.js";
 import { clientIp, rateLimitSnapshot } from "../../control-plane/src/security/rate-limit-http.js";
@@ -142,6 +149,51 @@ export function createAdminApiServer() {
       }
       if (method === "GET" && path === "/v1/rate-limits") {
         send(res, 200, await rateLimitSnapshot(actor, clientIp(req)));
+        return;
+      }
+      if (method === "GET" && path === "/v1/admin/experts") {
+        send(res, 200, await adminBundledExpertsPayload());
+        return;
+      }
+      const expertPublish = /^\/v1\/admin\/experts\/([^/]+)\/publish$/.exec(path);
+      if (expertPublish && method === "POST") {
+        try {
+          const body = (await readJson(req)) as { audience?: "all" | "allowlist"; userIds?: string[] };
+          send(res, 200, {
+            ok: true,
+            entry: publishBundledExpert(expertPublish[1] ?? "", {
+              audience: body.audience === "allowlist" ? "allowlist" : "all",
+              userIds: body.userIds,
+            }),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "invalid_publish";
+          send(res, message.includes("不存在") ? 404 : 400, { error: message });
+        }
+        return;
+      }
+      const expertReset = /^\/v1\/admin\/experts\/([^/]+)\/reset$/.exec(path);
+      if (expertReset && method === "POST") {
+        try {
+          const body = (await readJson(req)) as { grants?: boolean };
+          send(res, 200, { ok: true, entry: resetBundledExpert(expertReset[1] ?? "", { grants: Boolean(body.grants) }) });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "invalid_reset";
+          send(res, message.includes("不存在") ? 404 : 400, { error: message });
+        }
+        return;
+      }
+      const expertConfigure = /^\/v1\/admin\/experts\/([^/]+)$/.exec(path);
+      if (expertConfigure && method === "POST") {
+        try {
+          send(res, 200, {
+            ok: true,
+            entry: configureBundledExpert(expertConfigure[1] ?? "", (await readJson(req)) as ConfigureBundledExpertRequest),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "invalid_expert";
+          send(res, message.includes("不存在") ? 404 : 400, { error: message });
+        }
         return;
       }
       send(res, 404, { error: "not_found" });

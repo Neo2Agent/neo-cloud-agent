@@ -6,6 +6,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Select } from "@neo-cloud-agent/ui";
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import { deskBridge, withApiBase, type DeskTarget } from "./desk";
@@ -1295,18 +1296,19 @@ export function App() {
               <h2>This computer</h2>
               <label>
                 <span>Target</span>
-                <select
+                <Select
                   value={target.kind}
-                  onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}
-                >
-                  <option value="cloud">Cloud</option>
-                  <option value="desk" disabled={!canRunLocal}>
-                    {canRunLocal ? "This Computer" : "This Computer (needs Electron)"}
-                  </option>
-                  <option value="remote" disabled>
-                    Remote SSH
-                  </option>
-                </select>
+                  onValueChange={(value) => applyTarget({ ...target, kind: value as DeskTarget["kind"] })}
+                  options={[
+                    { value: "cloud", label: "Cloud" },
+                    {
+                      value: "desk",
+                      label: canRunLocal ? "This Computer" : "This Computer (needs Electron)",
+                      disabled: !canRunLocal,
+                    },
+                    { value: "remote", label: "Remote SSH", disabled: true },
+                  ]}
+                />
               </label>
               {target.kind === "desk" ? (
                 <button

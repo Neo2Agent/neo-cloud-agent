@@ -2,10 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
-  BUNDLED_EXPERTS,
   MAX_EXPERT_BODY,
   MAX_USER_EXPERTS,
-  bundledExpertById,
   canEditExpert,
   canManageProject,
   canUseExpert,
@@ -20,6 +18,7 @@ import {
 import { controlStateDir } from "../store/persist.js";
 import { getProject, memberRole } from "../projects/store.js";
 import { expertPersistHooks } from "./persist-hooks.js";
+import { canAccessBundledExpert, listMergedBundledExperts, mergeBundledExpert } from "./policy.js";
 
 export function expertsFile(): string {
   return path.join(controlStateDir(), "experts.json");
@@ -122,7 +121,7 @@ export function getStoredExpert(id: string): Expert | null {
 }
 
 export function resolveExpert(id: string): Expert | null {
-  return bundledExpertById(id) ?? getStoredExpert(id);
+  return mergeBundledExpert(id) ?? getStoredExpert(id);
 }
 
 export function listExpertsForActor(input: {
@@ -135,7 +134,8 @@ export function listExpertsForActor(input: {
   const stored = readAll().filter((item) =>
     canUseExpert(item, { userId: input.userId, projectId: project?.id ?? null, projectMember }),
   );
-  const merged = [...BUNDLED_EXPERTS, ...stored];
+  const bundled = listMergedBundledExperts().filter((item) => canAccessBundledExpert(item.id, input.userId));
+  const merged = [...bundled, ...stored];
   const q = (input.query ?? "").trim().toLowerCase();
   const filtered = q
     ? merged.filter((item) =>
@@ -252,6 +252,12 @@ export function requireUsableExpert(
   if (!expert) throw new Error("专家不存在");
   const project = actor.projectId ? getProject(actor.projectId) : expert.projectId ? getProject(expert.projectId) : null;
   const projectMember = Boolean(actor.userId && project && memberRole(project.id, actor.userId));
+  if (expert.visibility === "bundled") {
+    if (!canAccessBundledExpert(expert.id, actor.userId)) {
+      throw new Error("不能使用这个专家");
+    }
+    return expert;
+  }
   if (!canUseExpert(expert, { userId: actor.userId, projectId: project?.id ?? actor.projectId, projectMember })) {
     throw new Error("不能使用这个专家");
   }

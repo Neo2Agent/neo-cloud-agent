@@ -965,6 +965,13 @@ button:disabled {
   margin: 0 0 4px;
 }
 
+.run-chrome-actions label {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  flex: 1;
+}
+
 .run-chrome-actions select,
 .run-chrome-actions input {
   border: 1px solid var(--line);
@@ -988,7 +995,7 @@ button:disabled {
   font-size: 12px;
 }
 
-.handoff-artifacts label {
+.handoff-artifacts .neo-check {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1467,6 +1474,11 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.message-compose-tools .neo-select-trigger {
+  flex: 1;
+  min-width: 140px;
 }
 
 .text-btn {
@@ -2305,13 +2317,8 @@ button:disabled {
   font-size: 12px;
 }
 
-.expert-pick select {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: var(--card);
-  color: inherit;
-  max-width: 160px;
+.expert-pick .neo-select-trigger {
+  max-width: 200px;
 }
 
 .expert-section {
@@ -2335,7 +2342,7 @@ button:disabled {
   gap: 8px;
 }
 
-.expert-pin-list label {
+.expert-pin-list .neo-check {
   display: flex;
   align-items: center;
   gap: 8px;

@@ -1,6 +1,7 @@
 import type { FollowUp } from "@neo-cloud-agent/contracts";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import { Select } from "@neo-cloud-agent/ui";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
@@ -313,11 +314,15 @@ export function ModelSettingsPage({
             <>
               <label>
                 <span>型号</span>
-                <select value={selectedModel} onChange={(event) => setName(event.target.value)}>
-                  <option value="deepseek-v4-flash">Flash（便宜）</option>
-                  <option value="deepseek-v4-flash-vision-exp">Flash Vision（看图）</option>
-                  <option value="deepseek-v4-pro">Pro</option>
-                </select>
+                <Select
+                  value={selectedModel}
+                  onValueChange={setName}
+                  options={[
+                    { value: "deepseek-v4-flash", label: "Flash（便宜）" },
+                    { value: "deepseek-v4-flash-vision-exp", label: "Flash Vision（看图）" },
+                    { value: "deepseek-v4-pro", label: "Pro" },
+                  ]}
+                />
               </label>
               <p className="hint">对话走控制面 Gateway，再打 New API。不要在 Desk 里贴上游 Key。</p>
               <a className="link-btn" href={consoleUrl} target="_blank" rel="noreferrer">
@@ -351,9 +356,7 @@ export function ModelSettingsPage({
               </label>
               <label>
                 <span>协议</span>
-                <select value="openai" disabled>
-                  <option value="openai">OpenAI</option>
-                </select>
+                <Select value="openai" disabled onValueChange={() => undefined} options={[{ value: "openai", label: "OpenAI" }]} />
               </label>
             </>
           )}
@@ -768,19 +771,22 @@ export function ChatComposer({
         {onExpert ? (
           <label className="expert-pick">
             <span>专家</span>
-            <select value={expertValue ?? ""} disabled={expertLocked} onChange={(event) => onExpert(event.target.value)}>
-              <option value="">Neo</option>
-              {(experts ?? []).map((item) => (
-                <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
-                  {expertPickerLabel(item)}
-                </option>
-              ))}
-              {(teams ?? []).map((item) => (
-                <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
-                  团 · {item.name}
-                </option>
-              ))}
-            </select>
+            <Select
+              size="pill"
+              aria-label="专家"
+              value={expertValue ?? ""}
+              disabled={expertLocked}
+              onValueChange={onExpert}
+              groups={[
+                { label: "默认", options: [{ value: "", label: "Neo" }] },
+                ...((experts ?? []).length > 0
+                  ? [{ label: "专家", options: (experts ?? []).map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
+                  : []),
+                ...((teams ?? []).length > 0
+                  ? [{ label: "专家团", options: (teams ?? []).map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: `团 · ${item.name}` })) }]
+                  : []),
+              ]}
+            />
           </label>
         ) : null}
         <div className="model-wrap">
@@ -936,13 +942,11 @@ export function AutomationCreateForm({
       </label>
       <label>
         <span>频率</span>
-        <select value={preset} onChange={(event) => setPreset(event.target.value as ScheduleKind)}>
-          {SCHEDULE_PRESETS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={preset}
+          onValueChange={(value) => setPreset(value as ScheduleKind)}
+          options={SCHEDULE_PRESETS.map((item) => ({ value: item.id, label: item.label }))}
+        />
       </label>
       {error ? <p className="error">{error}</p> : null}
       <footer className="modal-actions">

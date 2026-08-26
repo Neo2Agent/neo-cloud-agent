@@ -442,7 +442,7 @@ CLOUD_SYSTEM_PROMPT
 
 导出导入第一期做成 `GET /v1/experts/:id` 的 JSON，和项目一样不搞独立文件格式市场。仓库专家用 markdown 提交即可。
 
-管理台第一期 **不要** 做专家运营页。bundled 专家跟代码走，走 PR，不走 `/admin`。
+管理台可以改内置专家的文案/工具，并下发给全部或指定用户。代码里的 `BUNDLED_EXPERTS` 仍是出厂默认，覆盖写在 `.control/bundled-expert-policy.json` 和 MySQL `expert_policies`。
 
 ### 6.5 内置专家（编码向，不是办公向）
 
@@ -561,7 +561,7 @@ IM（Telegram / 微信）第一期不解析 `@专家`，避免和群 @人冲突�
 - 中途热切换专家（换 Run）
 - 成员互调、新编排引擎、控制面代跑 subagent
 - 专家自动改自己的方法论
-- 管理台专家运营、按行业运营位
+- 按行业运营位、专家市场运营
 - 个人连接器票据进协作任务
 - 专家绑定任意 MCP 服务器（等项目级连接器先有）
 
@@ -579,7 +579,7 @@ IM（Telegram / 微信）第一期不解析 `@专家`，避免和群 @人冲突�
 | `packages/cli` | `--expert` / `--team` |
 | `packages/desk` | 复用 `/v1`；设置页钉住 |
 | `packages/mobile` | 选择 bundled |
-| `packages/admin-*` | 不做 |
+| `packages/admin-*` | 内置专家配置 + 下发（`/v1/admin/experts`） |
 | `docs/` | 本文；overview 挂链；协作调研改「后置 → 见本文」 |
 
 测试（跟仓库习惯）：

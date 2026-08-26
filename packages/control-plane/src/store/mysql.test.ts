@@ -137,6 +137,22 @@ test("mysql store upserts run JSON, events, and users", async () => {
   });
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO projects/);
 
+  await store.saveExpertPolicy({
+    version: 1,
+    updatedAt: record.run.createdAt,
+    experts: {
+      exp_reviewer: {
+        enabled: true,
+        audience: "all",
+        userIds: [],
+        override: { name: "审查加强" },
+        updatedAt: record.run.createdAt,
+        publishedAt: null,
+      },
+    },
+  });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO expert_policies/);
+
   await store.saveExpert({
     id: "exp_mine",
     slug: "release-check",
