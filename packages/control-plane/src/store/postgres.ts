@@ -7,6 +7,7 @@ import type {
   Environment,
   Expert,
   Project,
+  Run,
   RunEvent,
 } from "@neo-cloud-agent/contracts";
 import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
@@ -104,6 +105,7 @@ export interface PostgresMetadataStore extends AccountStore {
   saveRun(record: PersistedRun): Promise<void>;
   loadRun(runId: string): Promise<PersistedRun | null>;
   loadRuns(): Promise<PersistedRun[]>;
+  loadRunSummaries(): Promise<Run[]>;
   saveEvent(event: RunEvent): Promise<void>;
   loadEvents(runId: string): Promise<RunEvent[]>;
   saveLease(lease: WorkerLease): Promise<void>;
@@ -138,6 +140,14 @@ function asRecord(value: unknown): PersistedRun | null {
   }
   const record = value as PersistedRun;
   return record.run?.id ? record : null;
+}
+
+function asRun(value: unknown): Run | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const run = value as Run;
+  return run.id && run.prompt ? run : null;
 }
 
 function asEvent(value: unknown): RunEvent | null {
@@ -258,6 +268,13 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         .map((row) => parseJson(row.record, asRecord))
         .filter((item): item is PersistedRun => Boolean(item))
         .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
+    },
+    async loadRunSummaries() {
+      const result = await query(`SELECT record->'run' AS run FROM runs`);
+      return result.rows
+        .map((row) => parseJson(row.run, asRun))
+        .filter((item): item is Run => Boolean(item))
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
     },
     async saveEvent(event) {
       await query(

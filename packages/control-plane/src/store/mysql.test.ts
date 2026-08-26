@@ -85,9 +85,16 @@ test("mysql store upserts run JSON, events, and users", async () => {
   rowsByQuery.runs = [{ record: older }, { record }];
   const listedRuns = await store.loadRuns();
   assert.equal(listedRuns[0]?.run.id, "run-mysql-1");
-  const loadRunsSql = calls.find((item) => item.text.includes("FROM runs") && !item.text.includes("WHERE"))?.text ?? "";
+  const loadRunsSql = calls.find((item) => item.text.includes("FROM runs") && !item.text.includes("WHERE") && item.text.includes("SELECT record"))?.text ?? "";
   assert.match(loadRunsSql, /SELECT record FROM runs/);
   assert.doesNotMatch(loadRunsSql, /ORDER BY/);
+
+  rowsByQuery.runs = [{ run: record.run }];
+  const summaries = await store.loadRunSummaries();
+  assert.equal(summaries[0]?.id, "run-mysql-1");
+  const summarySql = calls.find((item) => item.text.includes("JSON_EXTRACT"))?.text ?? "";
+  assert.match(summarySql, /JSON_EXTRACT\(record, '\$\.run'\)/);
+  assert.doesNotMatch(summarySql, /SELECT record FROM runs/);
 
   await store.createUser({
     id: "user-1",

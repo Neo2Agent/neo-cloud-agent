@@ -66,8 +66,7 @@ async function doStart(): Promise<void> {
 
 export async function loadAdminRuns(): Promise<Run[]> {
   if (metadata) {
-    const records = await metadata.loadRuns();
-    return records.map((record) => record.run);
+    return metadata.loadRunSummaries();
   }
   return loadPersistedRuns().map((record) => record.run);
 }
