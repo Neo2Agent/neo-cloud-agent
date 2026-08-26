@@ -87,7 +87,7 @@ export function hasLocalTools(bridge = deskBridge()): boolean {
 
 /** Older preloads answered pickFolder with just the path, or `workspaceId` instead of `id`. */
 export function asWorkspaceRef(
-  picked: (DeskWorkspaceRef & { workspaceId?: string }) | string | null | undefined,
+  picked: (Partial<DeskWorkspaceRef> & { workspaceId?: string }) | string | null | undefined,
 ): DeskWorkspaceRef | null {
   if (!picked) {
     return null;

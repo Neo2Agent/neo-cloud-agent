@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { asWorkspaceRef } from "./desk.ts";
+import { asWorkspaceRef } from "./desk";
 
 test("asWorkspaceRef accepts a path string from an older preload", () => {
   const picked = asWorkspaceRef("/tmp/desk-local-verify");
