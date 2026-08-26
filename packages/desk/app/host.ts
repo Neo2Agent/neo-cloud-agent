@@ -13,7 +13,7 @@ import { controlPlaneOrigin, deskRendererUrl } from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import {
-  isGitRepo,
+  ignoreNeoDir,
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
   readRepoIdentity,
@@ -262,8 +262,6 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
   if (startedRuns.has(runId) || workers.has(runId)) {
     return;
   }
-  const bound = findBound({ workspaceId: assignment.workspaceId, folder: folderHint }) ?? findBound({ folder: currentTarget().folder });
-  const folder = bound?.folder ?? folderHint ?? currentTarget().folder ?? "";
   const client = createLeaseClient(controlPlaneUrl);
   const fail = async (detail: string) => {
     reportRunStatus({ runId, state: "failed", detail });
@@ -273,21 +271,34 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
       });
     }
   };
+  // A run that names a workspace must get that one. Falling back to whatever is
+  // selected right now would run against a folder nobody asked for.
+  let folder = "";
+  if (assignment.workspaceId) {
+    const bound = findBound({ workspaceId: assignment.workspaceId });
+    if (!bound) {
+      await fail("这台电脑上找不到这条对话要用的工作区，可能已经解绑了");
+      return;
+    }
+    folder = bound.folder;
+  } else {
+    folder = folderHint || currentTarget().folder || "";
+  }
   if (!folder) {
     await fail("这台电脑还没有绑定本机工作区");
     return;
   }
-  if (![...workers.keys()].every((id) => id === runId)) {
-    const busy = [...workers.keys()].find((id) => id !== runId);
-    if (busy) {
-      await fail("这台电脑已经有一条本机对话在跑，先停掉它再开新的");
-      return;
-    }
+  // One local worker at a time, so two agents never edit the same folder at once.
+  if ([...workers.keys()].some((id) => id !== runId)) {
+    await fail("这台电脑已经有一条本机对话在跑，先停掉它再开新的");
+    return;
   }
   startedRuns.add(runId);
   reportRunStatus({ runId, state: "starting", workspace: folder });
   try {
     const workspaceDir = await prepareDeskWorkspace({ repoDir: folder });
+    // The worker writes .neo/logs here too, so exclude it even with no expert.
+    ignoreNeoDir(workspaceDir);
     const stateDirForRun = runStateDir(stateDir(), runId);
     writeRunBootstrap(stateDirForRun, {
       runId,
@@ -584,5 +595,3 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
-
-export { isGitRepo };
