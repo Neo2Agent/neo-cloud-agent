@@ -142,6 +142,10 @@ test("cloud project runs invite collaborators without a second worker", async (t
   assert.equal(followUps.filter((item) => item.status === "queued").length >= 1, true);
   assert.equal(actors.has(mate.user.id), true);
   assert.equal(followUps.some((item) => item.actorUserId === admin.user.id || item.actorUserId === mate.user.id), true);
+  const transcript = await fetch(`${base}/v1/runs/${run.id}/transcript`, { headers: auth(mate.token) });
+  assert.equal(transcript.status, 200);
+  const snapshot = ((await transcript.json()) as { snapshot?: { messages?: Array<{ role: string; text: string }> } }).snapshot;
+  assert.equal(snapshot?.messages?.some((item) => item.role === "user" && item.text === "同事排队"), false);
 
   const own = await fetch(`${base}/v1/runs`, {
     method: "POST",

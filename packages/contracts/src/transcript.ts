@@ -308,9 +308,13 @@ export function transcriptHasUnsettledWork(messages: TranscriptMessage[]): boole
 
 export function displayTranscriptMessages(
   messages: TranscriptMessage[],
-  options?: { hideStaleRestart?: boolean },
+  options?: { hideStaleRestart?: boolean; hideFollowUpIds?: Iterable<string> },
 ): TranscriptMessage[] {
+  const hidden = options?.hideFollowUpIds ? new Set(options.hideFollowUpIds) : null;
   return messages.filter((message, index) => {
+    if (hidden && message.role === "user" && message.followUpId && hidden.has(message.followUpId)) {
+      return false;
+    }
     if (options?.hideStaleRestart && isTransientInfraNotice(message.text)) {
       return false;
     }
@@ -460,6 +464,9 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
             typeof (item as { data?: unknown }).data === "string",
         )
       : undefined;
+    const followUpId = typeof event.data?.followUpId === "string" ? event.data.followUpId : undefined;
+    const actorUserId = typeof event.data?.actorUserId === "string" ? event.data.actorUserId : undefined;
+    const actorEmail = typeof event.data?.actorEmail === "string" ? event.data.actorEmail : undefined;
     state.messages.push({
       id: event.id,
       role: "user",
@@ -467,6 +474,9 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
       createdAt: event.createdAt,
       updatedAt: event.createdAt,
       images: images?.length ? images : undefined,
+      followUpId,
+      actorUserId,
+      actorEmail,
     });
     return;
   }

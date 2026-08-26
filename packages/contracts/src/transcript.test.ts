@@ -393,3 +393,19 @@ test("transcriptGroups keeps bash tools that only live on message.tools", () => 
   assert.equal(groups[1]?.type, "tools");
   assert.equal(groups[1]?.type === "tools" ? groups[1].tools[0]?.name : "", "bash");
 });
+
+test("user bubbles keep follow-up actor metadata and stay hidden while queued", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({
+      id: "u1",
+      kind: "user.message",
+      data: { text: "B is waiting", followUpId: "fu-b", actorUserId: "user-b", actorEmail: "ping" },
+    }),
+  ]);
+  const user = snapshot.messages.find((item) => item.role === "user");
+  assert.equal(user?.followUpId, "fu-b");
+  assert.equal(user?.actorUserId, "user-b");
+  assert.equal(user?.actorEmail, "ping");
+  assert.equal(displayTranscriptMessages(snapshot.messages, { hideFollowUpIds: ["fu-b"] }).length, 0);
+  assert.equal(displayTranscriptMessages(snapshot.messages, { hideFollowUpIds: ["other"] }).length, 1);
+});

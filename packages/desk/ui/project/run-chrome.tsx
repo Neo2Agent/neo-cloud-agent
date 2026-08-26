@@ -13,6 +13,8 @@ export function RunChrome({
   onAbort,
   onTransferred,
   toolsOpen = false,
+  refreshKey = 0,
+  onQueuedChange,
 }: {
   token: string;
   run: Run;
@@ -21,6 +23,8 @@ export function RunChrome({
   onAbort: () => void;
   onTransferred: (run: Run) => void;
   toolsOpen?: boolean;
+  refreshKey?: number;
+  onQueuedChange?: (items: FollowUp[]) => void;
 }) {
   const cloud = run.executionTarget?.loop !== "desk";
   const members = project?.members ?? [];
@@ -44,7 +48,9 @@ export function RunChrome({
       if (cancelled) return;
       if (queueRes.ok) {
         const body = await readJson<{ followUps?: FollowUp[] }>(queueRes);
-        setFollowUps(body.followUps ?? []);
+        const next = body.followUps ?? [];
+        setFollowUps(next);
+        onQueuedChange?.(next.filter((item) => item.status === "queued"));
       }
       if (artifactRes.ok) {
         const body = await readJson<{ artifacts?: Array<{ name: string }> }>(artifactRes);
@@ -57,7 +63,7 @@ export function RunChrome({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [run.id, token]);
+  }, [onQueuedChange, refreshKey, run.id, token]);
 
   const queued = useMemo(() => followUps.filter((item) => item.status === "queued"), [followUps]);
   const running = run.status === "RUNNING";
@@ -91,12 +97,25 @@ export function RunChrome({
     <div className="run-chrome">
       {queued.length > 0 || running ? (
         <div className="queue-bar">
-          <span>{running ? "正在处理当前回合" : "空闲"}</span>
-          {queued[0] ? <span>下一条 {queued[0].actorEmail || "跟进"}</span> : null}
-          {running ? (
-            <button type="button" className="ghost" onClick={onAbort}>
-              停止当前回合
-            </button>
+          <div className="queue-bar-head">
+            <span>{running ? "正在处理当前回合" : "空闲"}</span>
+            {queued.length > 0 ? <span>排队 {queued.length} 条</span> : null}
+            {running ? (
+              <button type="button" className="ghost" onClick={onAbort}>
+                停止当前回合
+              </button>
+            ) : null}
+          </div>
+          {queued.length > 0 ? (
+            <ul className="queue-list">
+              {queued.map((item, index) => (
+                <li key={item.id}>
+                  <strong>{item.actorEmail || "跟进"}</strong>
+                  <span className="queue-text">{item.text}</span>
+                  <em>{index === 0 ? "下一条" : "排队中"}</em>
+                </li>
+              ))}
+            </ul>
           ) : null}
         </div>
       ) : (
