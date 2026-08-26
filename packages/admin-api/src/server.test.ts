@@ -140,4 +140,36 @@ test("admin-api is a separate app and only platform admins can use it", async (t
 
   const health = await fetch(`${base}/health`);
   assert.equal(((await health.json()) as { service?: string }).service, "admin-api");
+
+  const experts = await fetch(`${base}/v1/admin/experts`, { headers: auth(admin.body.token!) });
+  assert.equal(experts.status, 200);
+  const catalog = (await experts.json()) as {
+    experts: Array<{ id: string; live: { name: string }; enabled: boolean }>;
+    users: Array<{ id: string; email: string }>;
+  };
+  assert.ok(catalog.experts.some((item) => item.id === "exp_reviewer"));
+  assert.ok(catalog.users.some((item) => item.email === "admin"));
+
+  const configured = await fetch(`${base}/v1/admin/experts/exp_reviewer`, {
+    method: "POST",
+    headers: { ...auth(admin.body.token!), "content-type": "application/json" },
+    body: JSON.stringify({ name: "审查加强", enabled: true }),
+  });
+  assert.equal(configured.status, 200);
+
+  const published = await fetch(`${base}/v1/admin/experts/exp_reviewer/publish`, {
+    method: "POST",
+    headers: { ...auth(admin.body.token!), "content-type": "application/json" },
+    body: JSON.stringify({ audience: "allowlist", userIds: [admin.body.user?.id] }),
+  });
+  assert.equal(published.status, 200);
+
+  const { listExpertsForActor } = await import("../../control-plane/src/experts/store.js");
+  const { resetBundledExpertPolicyForTests } = await import("../../control-plane/src/experts/policy.js");
+  try {
+    assert.equal(listExpertsForActor({ userId: admin.body.user?.id }).some((item) => item.id === "exp_reviewer" && item.name === "审查加强"), true);
+    assert.equal(listExpertsForActor({ userId: mateUser.id }).some((item) => item.id === "exp_reviewer"), false);
+  } finally {
+    resetBundledExpertPolicyForTests();
+  }
 });

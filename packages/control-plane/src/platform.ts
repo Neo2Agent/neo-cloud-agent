@@ -9,6 +9,8 @@ import { listProjects, replaceProjects } from "./projects/store.js";
 import { setProjectPersistHooks } from "./projects/persist-hooks.js";
 import { listStoredExperts, replaceExperts } from "./experts/store.js";
 import { setExpertPersistHooks } from "./experts/persist-hooks.js";
+import { readBundledExpertPolicy, replaceBundledExpertPolicy } from "./experts/policy.js";
+import { setBundledExpertPolicyPersistHooks } from "./experts/policy-persist.js";
 import { listDesks, replaceDesks } from "./desks/store.js";
 import { setDeskPersistHooks } from "./desks/persist-hooks.js";
 import { listStoredDevices, replaceDevices } from "./devices/store.js";
@@ -108,6 +110,11 @@ async function doStart(): Promise<void> {
         void mirrorExperts(metadata, items).catch((error) => console.error("metadata saveExpert failed", error));
       },
     });
+    setBundledExpertPolicyPersistHooks({
+      onWrite: (doc) => {
+        void metadata?.saveExpertPolicy(doc).catch((error) => console.error("metadata saveExpertPolicy failed", error));
+      },
+    });
     setDeskPersistHooks({
       onWrite: (items) => {
         void mirrorDesks(metadata, items).catch((error) => console.error("metadata saveDesk failed", error));
@@ -131,6 +138,7 @@ async function doStart(): Promise<void> {
     await hydrateAutomationsFromStore(metadata);
     await hydrateProjectsFromStore(metadata);
     await hydrateExpertsFromStore(metadata);
+    await hydrateExpertPolicyFromStore(metadata);
     await hydrateDesksFromStore(metadata);
     await hydrateDevicesFromStore(metadata);
     reloadPersistedState();
@@ -271,6 +279,18 @@ async function mirrorDesks(store: MetadataStore | null, items: import("@neo-clou
     if (!keep.has(old.id)) {
       await store.deleteDesk(old.id);
     }
+  }
+}
+
+async function hydrateExpertPolicyFromStore(store: MetadataStore): Promise<void> {
+  const remote = await store.loadExpertPolicy();
+  if (remote) {
+    replaceBundledExpertPolicy(remote, { mirror: false });
+    return;
+  }
+  const local = readBundledExpertPolicy();
+  if (Object.keys(local.experts).length > 0) {
+    await store.saveExpertPolicy(local);
   }
 }
 

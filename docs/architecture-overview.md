@@ -151,7 +151,7 @@ neo-cloud-agent/
 
 P0 唯一值得拆进程的边界是**密钥隔离**：Provider Key 不能和编排、工作区、SCM 私钥住在同一个进程里。Gateway 按 token 扩缩、单独审计。env / scm / event 此时是函数调用，不是网络 hop。
 
-`admin-api` 是后来加上的第三个进程：只给平台管理员看总览 / 用户 / Run，读同一套账号库和持久化，**不改**控制面 `/v1` 登录语义。New API（开源模型网关）如果接入，只能当 Gateway 的上游，不能替换 `llm-gateway`，也不能接管 Agent 用户表。见 [admin-platform-research.md](./admin-platform-research.md)。
+`admin-api` 是后来加上的第三个进程：只给平台管理员看总览 / 用户 / Run / 内置专家配置与下发，读同一套账号库和持久化，**不改**控制面 `/v1` 登录语义。New API（开源模型网关）如果接入，只能当 Gateway 的上游，不能替换 `llm-gateway`，也不能接管 Agent 用户表。见 [admin-platform-research.md](./admin-platform-research.md)。
 
 ---
 
@@ -557,7 +557,7 @@ Desk UI 有独立的项目工作台（看板 / 资产 / 消息 / 设置）。Web
 | UI | `admin-web` `:5176` | 由 admin-api 托管 dist |
 | 登录 | 仍是 `admin` / `123456` 或 `ADMIN_EMAILS` | 只认平台管理员 / 服务令牌 |
 
-接口：`/v1/auth/login|logout`、`/v1/me`、`/v1/admin/overview`、`/v1/admin/users`、`/v1/admin/runs`、`/v1/rate-limits`。复用 control-plane 的账号与聚合函数，**不**另建用户表。
+接口：`/v1/auth/login|logout`、`/v1/me`、`/v1/admin/overview`、`/v1/admin/users`、`/v1/admin/runs`、`/v1/admin/experts`（配置 / 下发 / 恢复默认）、`/v1/rate-limits`。复用 control-plane 的账号与聚合函数，**不**另建用户表。内置专家覆盖写在 `expert_policies`。
 
 ---
 
