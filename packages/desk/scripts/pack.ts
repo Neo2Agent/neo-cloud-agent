@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,6 +110,11 @@ async function main(): Promise<void> {
       console.warn(`electron-builder ${platform} failed:`, error);
     }
   }
+  const zips = readdirSync(path.join(deskRoot, "release")).filter((name) => name.endsWith(".zip"));
+  if (zips.length === 0) {
+    throw new Error("electron-builder produced no zip");
+  }
+  console.log(`packed ${zips.join(", ")}`);
 }
 
 void main();
