@@ -10,6 +10,7 @@ import { gunzipSync } from "node:zlib";
 import {
   acceptsGzip,
   isHashedWebAsset,
+  resolveArchitectureFile,
   resolveWebFile,
   serveWebFile,
   WEB_ROOT,
@@ -190,6 +191,35 @@ test("control-plane gzips hashed JS when the browser asks", async () => {
     const html = await rawGet(`http://127.0.0.1:${port}/`, {});
     assert.equal(html.headers["cache-control"], "no-cache");
     assert.match(html.body.toString("utf8"), /正在进入/);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test("serves the architecture poster at /architecture without a web build", async () => {
+  const file = resolveArchitectureFile("/architecture");
+  assert.ok(file);
+  assert.equal(path.basename(file), "architecture-complete.html");
+  assert.equal(resolveArchitectureFile("/architecture.html"), file);
+  assert.equal(resolveArchitectureFile("/architecture-complete.html"), file);
+  assert.equal(resolveArchitectureFile("/"), null);
+  const html = readFileSync(file, "utf8");
+  assert.match(html, /Neo Cloud Agent 完整架构图/);
+  assert.match(html, /llm-gateway/);
+
+  const server = createServer((req, res) => {
+    if (!serveWebFile(req, res)) {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  try {
+    const page = await rawGet(`http://127.0.0.1:${port}/architecture`, {});
+    assert.equal(page.status, 200);
+    assert.match(String(page.headers["content-type"]), /text\/html/);
+    assert.match(page.body.toString("utf8"), /控制面/);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
