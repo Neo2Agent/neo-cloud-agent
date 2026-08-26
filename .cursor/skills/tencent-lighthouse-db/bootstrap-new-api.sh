@@ -70,9 +70,9 @@ if admin_path.exists():
     username = parsed.get("NEW_API_ROOT_USER", username)
     password = parsed.get("NEW_API_ROOT_PASSWORD", "")
 
-if not setup.get("status") or not setup.get("root_init"):
-    if not password:
-        password = secrets.token_urlsafe(18)
+initialized = bool(setup.get("status") or setup.get("root_init"))
+if not initialized and not password:
+    password = secrets.token_urlsafe(18)
     status, body = request(
         urllib.request.build_opener(),
         "POST",
@@ -85,16 +85,16 @@ if not setup.get("status") or not setup.get("root_init"):
             "DemoSiteEnabled": False,
         },
     )
-    if not body.get("success"):
+    if not body.get("success") and "已经初始化" not in str(body.get("message") or ""):
         raise SystemExit("bootstrap-new-api: setup failed: " + str(body.get("message") or status))
     admin_path.write_text(
         "NEW_API_ROOT_USER=" + username + "\nNEW_API_ROOT_PASSWORD=" + password + "\n"
     )
     os.chmod(admin_path, 0o600)
     print("bootstrap-new-api: root created")
+elif not password:
+    raise SystemExit("bootstrap-new-api: already initialized but admin file missing")
 else:
-    if not password:
-        raise SystemExit("bootstrap-new-api: already initialized but admin file missing")
     print("bootstrap-new-api: already initialized")
 
 jar = CookieJar()
@@ -102,9 +102,10 @@ opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 status, body = request(opener, "POST", "/api/user/login", {"username": username, "password": password})
 if not body.get("success"):
     raise SystemExit("bootstrap-new-api: login failed: " + str(body.get("message") or status))
-user = body.get("data") or {}
+payload = body.get("data") or {}
+user = payload.get("user") if isinstance(payload.get("user"), dict) else payload
 user_id = str(user.get("id") or "1")
-access = user.get("token") or ""
+access = payload.get("access_token") or payload.get("token") or user.get("token") or ""
 headers = {"New-Api-User": user_id}
 if access:
     headers["Authorization"] = "Bearer " + access
@@ -131,15 +132,18 @@ if not has_deepseek:
             "POST",
             "/api/channel/",
             {
-                "type": 43,
-                "name": "DeepSeek",
-                "key": key,
-                "base_url": "https://api.deepseek.com",
-                "models": "deepseek-v4-flash,deepseek-v4-pro,deepseek-v4-flash-vision-exp",
-                "groups": "default",
-                "group": "default",
-                "priority": 0,
-                "weight": 0,
+                "mode": "single",
+                "channel": {
+                    "type": 43,
+                    "name": "DeepSeek",
+                    "key": key,
+                    "base_url": "https://api.deepseek.com",
+                    "models": "deepseek-v4-flash,deepseek-v4-pro,deepseek-v4-flash-vision-exp",
+                    "groups": ["default"],
+                    "group": "default",
+                    "priority": 0,
+                    "weight": 0,
+                },
             },
             headers,
         )
@@ -153,15 +157,14 @@ status, body = request(opener, "GET", "/api/token/?p=0&size=20", headers=headers
 tokens = ((body.get("data") or {}).get("items") if isinstance(body.get("data"), dict) else body.get("data")) or []
 if not isinstance(tokens, list):
     tokens = []
-existing = next((item for item in tokens if isinstance(item, dict) and item.get("name") == "neo-gateway"), None)
-if existing and existing.get("key"):
-    key = existing["key"]
-    if not str(key).startswith("sk-"):
-        key = "sk-" + str(key)
-    token_path.write_text(key + "\n")
-    os.chmod(token_path, 0o600)
-    print("bootstrap-new-api: reused neo-gateway token")
-else:
+def token_items(payload):
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return data.get("items") or data.get("data") or []
+    return data if isinstance(data, list) else []
+
+existing = next((item for item in token_items({"data": tokens}) if isinstance(item, dict) and item.get("name") == "neo-gateway"), None)
+if existing is None:
     status, body = request(
         opener,
         "POST",
@@ -171,23 +174,32 @@ else:
             "expired_time": -1,
             "unlimited_quota": True,
             "remain_quota": 0,
+            "group": "default",
         },
         headers,
     )
     if not body.get("success"):
         raise SystemExit("bootstrap-new-api: create token failed: " + str(body.get("message") or status))
-    data = body.get("data") or {}
-    key = data.get("key") or data.get("token") or ""
-    if not key:
-        status, body = request(opener, "GET", "/api/token/?p=0&size=20", headers=headers)
-        tokens = ((body.get("data") or {}).get("items") if isinstance(body.get("data"), dict) else body.get("data")) or []
-        match = next((item for item in tokens if isinstance(item, dict) and item.get("name") == "neo-gateway"), None)
-        key = (match or {}).get("key") or ""
-    if not key:
-        raise SystemExit("bootstrap-new-api: token created but key missing")
-    if not str(key).startswith("sk-"):
-        key = "sk-" + str(key)
-    token_path.write_text(str(key) + "\n")
-    os.chmod(token_path, 0o600)
-    print("bootstrap-new-api: neo-gateway token written")
+    status, body = request(opener, "GET", "/api/token/?p=0&size=20", headers=headers)
+    tokens = token_items(body)
+    existing = next((item for item in tokens if isinstance(item, dict) and item.get("name") == "neo-gateway"), None)
+    print("bootstrap-new-api: neo-gateway token created")
+else:
+    print("bootstrap-new-api: neo-gateway token exists")
+if not existing or not existing.get("id"):
+    raise SystemExit("bootstrap-new-api: token id missing")
+status, body = request(opener, "POST", f"/api/token/{existing['id']}/key", headers=headers)
+key = ((body.get("data") or {}) if isinstance(body.get("data"), dict) else {}).get("key") or body.get("data") or ""
+if not key:
+    status, body = request(opener, "POST", "/api/token/batch/keys", {"ids": [existing["id"]]}, headers)
+    data = body.get("data") if isinstance(body.get("data"), dict) else {}
+    keys = data.get("keys") if isinstance(data.get("keys"), dict) else {}
+    key = keys.get(str(existing["id"])) or keys.get(existing["id"]) or ""
+if not key:
+    raise SystemExit("bootstrap-new-api: token key missing: " + str(body.get("message") or status))
+if not str(key).startswith("sk-"):
+    key = "sk-" + str(key)
+token_path.write_text(str(key) + "\n")
+os.chmod(token_path, 0o600)
+print("bootstrap-new-api: neo-gateway token written")
 PY
