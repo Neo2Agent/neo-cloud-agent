@@ -181,7 +181,7 @@ const CORS = {
 } as const;
 
 async function requireRun(runId: string) {
-  return getRun(runId) ?? (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
+  return (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
 }
 
 function denyUnless(run: { userId: string } | null | undefined, actor: Actor, res: ServerResponse): boolean {

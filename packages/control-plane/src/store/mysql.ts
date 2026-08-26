@@ -218,6 +218,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       for (const statement of [
         "CREATE INDEX events_run_seq ON events (run_id, seq)",
         "CREATE INDEX builds_fingerprint ON builds (fingerprint)",
+        "CREATE INDEX runs_updated_at ON runs (updated_at)",
       ]) {
         try {
           await query(statement);
@@ -246,8 +247,13 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       return parseJson(result.rows[0]?.record, asRecord);
     },
     async loadRuns() {
-      const result = await query(`SELECT record FROM runs ORDER BY updated_at DESC`);
-      return result.rows.map((row) => parseJson(row.record, asRecord)).filter((item): item is PersistedRun => Boolean(item));
+      // Do not ORDER BY in MySQL: filesort of JSON blobs hits ER_OUT_OF_SORTMEMORY
+      // with the default 256KiB sort_buffer_size.
+      const result = await query(`SELECT record FROM runs`);
+      return result.rows
+        .map((row) => parseJson(row.record, asRecord))
+        .filter((item): item is PersistedRun => Boolean(item))
+        .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
     },
     async saveEvent(event) {
       await query(

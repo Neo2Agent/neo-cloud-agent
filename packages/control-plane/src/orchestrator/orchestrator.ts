@@ -1144,14 +1144,32 @@ export function adoptRun(runId: string, userId: string, orgId?: string): Run | u
   return run;
 }
 
+async function ensureEventsLoaded(runId: string): Promise<void> {
+  if (eventsForRun(runId).length > 0) {
+    return;
+  }
+  try {
+    const { getPostgresStore } = await import("../platform.js");
+    const events = (await getPostgresStore()?.loadEvents(runId)) ?? [];
+    if (events.length > 0) {
+      replacePersistedEvents(runId, events);
+      seedEvents(runId, events);
+    }
+  } catch {
+    // mysql / postgres is optional
+  }
+}
+
 export async function loadRunIntoMemory(runId: string): Promise<Run | undefined> {
   const existing = runs.get(runId);
   if (existing) {
+    await ensureEventsLoaded(runId);
     return existing;
   }
   const local = loadPersistedRun(runId);
   if (local?.run?.id) {
     hydrateRecord(local);
+    await ensureEventsLoaded(runId);
     return local.run;
   }
   try {
@@ -1160,10 +1178,7 @@ export async function loadRunIntoMemory(runId: string): Promise<Run | undefined>
     const remote = await store?.loadRun(runId);
     if (remote?.run?.id) {
       persistRunRecord(remote, undefined, { mirror: false });
-      const events = (await store?.loadEvents(runId)) ?? [];
-      if (events.length > 0) {
-        replacePersistedEvents(runId, events);
-      }
+      await ensureEventsLoaded(runId);
       hydrateRecord(remote);
       return remote.run;
     }

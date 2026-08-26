@@ -76,10 +76,15 @@ export function createMemoryRedis(): RedisHotClient {
 
 export async function connectRedis(url: string): Promise<RedisHotClient> {
   const redis = await import("redis");
-  const client = redis.createClient({ url });
+  const shared = {
+    url,
+    socket: { connectTimeout: 2_000 },
+    commandOptions: { timeout: 2_000 },
+  };
+  const client = redis.createClient({ ...shared, commandsQueueMaxLength: 256 });
   const subscriber = client.duplicate();
-  await client.connect();
-  await subscriber.connect();
+  const limiter = redis.createClient({ ...shared, commandsQueueMaxLength: 64 });
+  await Promise.all([client.connect(), subscriber.connect(), limiter.connect()]);
   return {
     async publish(channel, message) {
       await client.publish(channel, message);
@@ -104,14 +109,14 @@ export async function connectRedis(url: string): Promise<RedisHotClient> {
         .filter((item): item is string => typeof item === "string");
     },
     async incrWithTtl(key, ttlMs) {
-      const count = await client.incr(key);
+      const count = await limiter.incr(key);
       if (count === 1) {
-        await client.pExpire(key, Math.max(1, ttlMs));
+        await limiter.pExpire(key, Math.max(1, ttlMs));
       }
       return count;
     },
     async get(key) {
-      return client.get(key);
+      return limiter.get(key);
     },
   };
 }
