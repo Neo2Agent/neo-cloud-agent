@@ -2,7 +2,7 @@
 
 对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离 VM 运行；**LLM 推理走云端网关**；**Agent 循环和工具执行在 VM 内**；Agent 内核使用 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
 
-本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（包、进程、现网、数据流）见 [architecture-overview.md](./architecture-overview.md)。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
+本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（包、进程、现网、数据流）见 [architecture-overview.md](./architecture-overview.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
 
 ---
 

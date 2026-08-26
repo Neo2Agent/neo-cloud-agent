@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Neo Cloud Agent 完整架构图</title>
+  <style>
+    :root {
+      --ink: #122033;
+      --muted: #5b6b7c;
+      --line: #c5d0dc;
+      --client: #dbeafe;
+      --client-bd: #3b6fb6;
+      --edge: #fef3c7;
+      --edge-bd: #c9a227;
+      --control: #dcfce7;
+      --control-bd: #2f7d4a;
+      --exec: #ede9fe;
+      --exec-bd: #6b3fa0;
+      --llm: #ffedd5;
+      --llm-bd: #c2410c;
+      --store: #f1f5f9;
+      --store-bd: #64748b;
+      --ext: #ffe4e6;
+      --ext-bd: #be123c;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      color: var(--ink);
+      background: #f8fafc;
+      padding: 28px 32px 36px;
+    }
+    header { margin-bottom: 18px; }
+    h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -0.02em; }
+    .sub { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; max-width: 1100px; }
+    .principle {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 6px 12px;
+      background: #eff6ff;
+      border-left: 4px solid #2563eb;
+      font-size: 13px;
+      color: #1e3a8a;
+    }
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 10px 16px;
+      margin: 16px 0 20px; font-size: 12px; color: var(--muted);
+    }
+    .swatch { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #0002; }
+    .board {
+      display: grid;
+      grid-template-columns: 200px 1fr 1fr 280px;
+      grid-template-rows: auto auto auto;
+      gap: 14px;
+    }
+    .col {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 12px;
+      min-width: 0;
+    }
+    .col h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: none;
+      color: var(--muted);
+    }
+    .box {
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin: 0 0 8px;
+      border: 1px solid;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .box:last-child { margin-bottom: 0; }
+    .box strong { display: block; font-size: 13.5px; }
+    .box small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+    .client { background: var(--client); border-color: var(--client-bd); }
+    .edge { background: var(--edge); border-color: var(--edge-bd); }
+    .control { background: var(--control); border-color: var(--control-bd); }
+    .exec { background: var(--exec); border-color: var(--exec-bd); }
+    .llm { background: var(--llm); border-color: var(--llm-bd); }
+    .store { background: var(--store); border-color: var(--store-bd); }
+    .ext { background: var(--ext); border-color: var(--ext-bd); }
+    .modules {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .flow {
+      margin: 8px 0 0;
+      padding: 8px 10px;
+      background: #f8fafc;
+      border-radius: 8px;
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .flow b { color: var(--ink); }
+    .span-bottom { grid-column: 1 / -1; }
+    .store-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .ext-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .hosts {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .host {
+      background: #fff;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 12.5px;
+    }
+    .host h3 { margin: 0 0 6px; font-size: 13px; }
+    .host p { margin: 0; color: var(--muted); line-height: 1.45; }
+    footer { margin-top: 16px; font-size: 12px; color: var(--muted); }
+    .arrow-note {
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+      margin: -4px 0 2px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Neo Cloud Agent 完整架构图</h1>
+    <p class="sub">一个 monorepo · 三个控制面进程 + 一张 worker 镜像 · 客户端只打 <code>/v1</code>。对标 Cursor Cloud Agent；Agent 内核是 pi-coding-agent，不自研 tool loop。</p>
+    <div class="principle">锁死原则：Agent loop 跑在执行面，不跑在控制面。Provider Key 只在 llm-gateway。Worker 只有短寿命 run JWT。</div>
+  </header>
+
+  <div class="legend">
+    <span class="swatch"><span class="dot" style="background:#dbeafe;border-color:#3b6fb6"></span>客户端</span>
+    <span class="swatch"><span class="dot" style="background:#fef3c7;border-color:#c9a227"></span>入口 / 边缘</span>
+    <span class="swatch"><span class="dot" style="background:#dcfce7;border-color:#2f7d4a"></span>控制面（高信任）</span>
+    <span class="swatch"><span class="dot" style="background:#ede9fe;border-color:#6b3fa0"></span>执行面（低信任）</span>
+    <span class="swatch"><span class="dot" style="background:#ffedd5;border-color:#c2410c"></span>推理（唯一持钥）</span>
+    <span class="swatch"><span class="dot" style="background:#f1f5f9;border-color:#64748b"></span>存储</span>
+    <span class="swatch"><span class="dot" style="background:#ffe4e6;border-color:#be123c"></span>外部系统</span>
+  </div>
+
+  <div class="board">
+    <section class="col">
+      <h2>① 客户端 · 不跑 loop</h2>
+      <div class="box client"><strong>Web 对话页</strong><small>packages/web · :5173 / 现网 :8080 托管</small></div>
+      <div class="box client"><strong>Desk</strong><small>Electron + 独立 UI :5174 · 可本机执行</small></div>
+      <div class="box client"><strong>CLI <code>neo</code></strong><small>packages/cli · headless /v1</small></div>
+      <div class="box client"><strong>Mobile</strong><small>:5175 · source = ios / android</small></div>
+      <div class="box client"><strong>IM 入口</strong><small>Telegram / 微信公众号 · 发一句开 Run</small></div>
+      <div class="box client"><strong>Admin Web</strong><small>:5176 · 现网 /admin/ · 仅平台管理员</small></div>
+      <div class="flow">Desk / CLI / Mobile 直打控制面。<br>浏览器走 Caddy。</div>
+    </section>
+
+    <section class="col">
+      <h2>②③ 入口 + 控制面 :8080</h2>
+      <div class="box edge"><strong>Caddy · neorun.cloud</strong><small>/ → control-plane :8080　　/admin/ → admin-api :8090</small></div>
+      <div class="box control"><strong>admin-api :8090</strong><small>总览 / 用户 / Run / 限流 · 读同一套账号库，不改 /v1 登录</small></div>
+      <div class="box control"><strong>control-plane · /v1 + /internal + SSE</strong><small>鉴权 · 配额 · 限流 · 托管对话页 dist/</small></div>
+      <div class="modules">
+        <div class="box control"><strong>orchestrator</strong><small>Run 状态机 · provision · 跟进队列 · 认领 worker</small></div>
+        <div class="box control"><strong>env / build / warm-pool</strong><small>environment.json · JIT 打盘 · 热槽 rename</small></div>
+        <div class="box control"><strong>scm</strong><small>GitHub App 短寿命 token · 受控 commit / PR</small></div>
+        <div class="box control"><strong>events</strong><small>Redis 热流 · transcript 快照 · 多端订阅</small></div>
+        <div class="box control"><strong>projects / desks</strong><small>协作 · lease/claim · 自动化 · 推送</small></div>
+        <div class="box control"><strong>security / quota</strong><small>session · run JWT · 打码 · 月 token</small></div>
+      </div>
+      <div class="flow"><b>对外</b> POST /v1/runs · SSE /events · transcript<br><b>对内</b> worker 带 run JWT 打 /internal/runs/:id/…</div>
+    </section>
+
+    <section class="col">
+      <h2>④ 执行面 · 每 Run 一份</h2>
+      <div class="box exec"><strong>Runtime factory</strong><small>local（开发）· vm（现网 loop 槽）· docker · firecracker · desk</small></div>
+      <div class="box exec"><strong>neo-worker</strong><small>packages/worker · 唯一和控制系统说话的进程</small></div>
+      <div class="box exec"><strong>pi-coding-agent</strong><small>createAgentSession · steer / followUp · JSONL</small></div>
+      <div class="box exec"><strong>文件系统工具</strong><small>read / write / edit / bash / grep / find / ls</small></div>
+      <div class="box exec"><strong>云工具 extensions</strong><small>neo_git_commit · neo_pr_open · neo_diag · neo_browse<br>neo_mcp_* · neo_artifact_upload · neo_subagent · neo_subscribe</small></div>
+      <div class="box exec"><strong>/workspace + tmux</strong><small>install / start / terminals · skills · AGENTS.md</small></div>
+      <div class="flow"><b>inbox</b> prompt / steer / follow_up / abort<br><b>上报</b> RunEvent + workerSeq 串行 POST</div>
+    </section>
+
+    <section class="col">
+      <h2>⑤⑦ 推理 + 外部</h2>
+      <div class="box llm"><strong>llm-gateway :8081</strong><small>唯一持有 Provider Key<br>验 run JWT · 模型别名 · 限流</small></div>
+      <div class="box llm"><strong>上游</strong><small>默认 deepseek-v4-flash · 可切 Pro<br>无 key 则 mock</small></div>
+      <div class="box ext"><strong>GitHub App</strong><small>clone / push / draft PR / webhook<br>长期凭证不过 VM</small></div>
+      <div class="box ext"><strong>推送</strong><small>Expo · 企业微信 · Telegram · SMTP</small></div>
+      <div class="box ext"><strong>HTTP MCP</strong><small>控制面 OAuth / Bearer 代理<br>密钥不进 worker</small></div>
+      <div class="flow"><b>pi → Gateway</b> OpenAI-compatible<br><code>Authorization: Bearer &lt;run JWT&gt;</code></div>
+    </section>
+
+    <section class="col span-bottom">
+      <h2>⑥ 存储 · 现网库机 101.42.105.230 · 没配则回退本机文件</h2>
+      <div class="store-row">
+        <div class="box store"><strong>MySQL 8.4</strong><small>用户 · Run · 事件索引 · Environment / Build · Project · Desk · Device · Automation<br>没配 → <code>.neo/runs/.control</code> JSON</small></div>
+        <div class="box store"><strong>Redis 7</strong><small>直播事件 Pub/Sub + Stream · 限流固定窗口 · lease<br>没配 → 进程内 EventEmitter</small></div>
+        <div class="box store"><strong>对象存储</strong><small>transcript 归档 · session JSONL 备份 · artifacts<br>现网默认 <code>RUNS_DIR/.objects</code>，不切 S3</small></div>
+        <div class="box store"><strong>块 / 槽</strong><small>2 × loop ext4 槽 · Build 快照 · warm pool<br><code>WORKER_RUNTIME=vm</code> · 卸槽前必须写回工作区</small></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="hosts">
+    <div class="host">
+      <h3>现网应用机 · 62.234.211.200 · 4C/4G</h3>
+      <p>Ubuntu 24.04 · systemd：<code>neo-control-plane</code> / <code>neo-llm-gateway</code> / Caddy。无 Docker、无 KVM。对话 <code>https://neorun.cloud/</code>，管理台 <code>/admin/</code>。</p>
+    </div>
+    <div class="host">
+      <h3>一次 Run 主路径</h3>
+      <p>Client → POST /v1/runs → orchestrator 占槽 → Runtime.provision → worker bootstrap（JWT）→ pi 打 Gateway → 工具改 /workspace → /internal/events → 多端 SSE。跟进对齐 prompt / steer / followUp。</p>
+    </div>
+  </div>
+
+  <footer>源文件 docs/diagrams/architecture-complete.html · mermaid 源 docs/diagrams/architecture-complete.mmd · 总览 docs/architecture-overview.md</footer>
+</body>
+</html>

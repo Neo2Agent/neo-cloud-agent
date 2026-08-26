@@ -16,6 +16,12 @@
 
 「推理在云端」靠 Gateway，不靠把 `read` / `edit` / `bash` 做成跨网络 RPC。把 loop 放控制面会丢掉 cwd、进程组、tmux 和 pi 本身。
 
+### 完整架构图
+
+一张图把客户端、入口、控制面、执行面、推理、存储和外部依赖摊开。源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）。
+
+![Neo Cloud Agent 完整架构图](./diagrams/architecture-complete.png)
+
 另外四条红线（和 [README](../README.md) 一致）：
 
 1. 不要 fork pi 加云功能——用 worker + `packages/extensions`。
