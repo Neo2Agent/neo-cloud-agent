@@ -45,6 +45,13 @@ test("detach aliases and equals flags", () => {
   assert.equal(parsed.flags.output, "json");
 });
 
+test("expert flags go onto the run command", () => {
+  const parsed = parseArgv(["run", "--expert", "reviewer", "--expert-team=ship-change", "review the diff"]);
+  assert.equal(parsed.command, "run");
+  assert.equal(parsed.flags.expertId, "reviewer");
+  assert.equal(parsed.flags.expertTeamId, "ship-change");
+});
+
 test("unknown flag is a usage error", () => {
   assert.throws(() => parseArgv(["run", "--yolo"]), /unknown flag/);
 });

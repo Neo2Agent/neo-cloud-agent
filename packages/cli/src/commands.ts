@@ -286,6 +286,8 @@ export async function runCommand(parsed: ParsedCli, io: CliIo): Promise<number> 
     envId: parsed.flags.envId,
     buildId: parsed.flags.buildId,
     model: parsed.flags.model,
+    expertId: parsed.flags.expertId,
+    expertTeamId: parsed.flags.expertTeamId,
     ref: parsed.flags.ref,
     reuseBuild: parsed.flags.reuseBuild,
   });
