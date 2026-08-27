@@ -1207,6 +1207,10 @@ export function App() {
     localStatus?.runId === current?.id &&
     (localStatus?.state === "stopped" || localStatus?.state === "failed");
   const turnLive = current?.status === "RUNNING" && !localWorkerDown;
+  const noLocalWorker = localRunActive && (!localStatus || localStatus.runId !== current?.id || localStatus.state === "stopped");
+  // Nothing running and nothing owed: the per-turn worker simply finished.
+  const localWorkerIdle = noLocalWorker && !isActiveRunStatus(current?.status);
+  const localNeedsRestart = noLocalWorker && isActiveRunStatus(current?.status);
   const panelIsLocal = current ? localRunActive : target.kind === "desk";
   const localFolder = panelIsLocal
     ? (localRunActive && current?.repoUrls[0] && path0(current.repoUrls[0]).startsWith("/")
@@ -1662,7 +1666,10 @@ export function App() {
                 {localStatus?.state === "starting" ? <em>正在启动…</em> : null}
                 {localStatus?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
                 {localStatus?.state === "failed" ? <em className="bad">{localStatus.detail || "启动失败"}</em> : null}
-                {localStatus?.state === "stopped" || !localStatus ? (
+                {/* A worker exits after its turn, so "no process" is the resting
+                    state, not something to recover from. */}
+                {localWorkerIdle ? <em>本机就绪 · 发送即在这里继续</em> : null}
+                {localNeedsRestart ? (
                   <button
                     type="button"
                     className="ghost"

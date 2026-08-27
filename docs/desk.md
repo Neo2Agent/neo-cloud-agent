@@ -106,6 +106,22 @@
 
 **为什么就地改：** 旁路 worktree 从 HEAD 长出来，Agent 读不到你正在改的未提交文件，它的改动也落在你不会打开的副本里。Cursor 的 This Computer 就是改你点开的那个 checkout。
 
+### worker 逐回合，不常驻
+
+本机 worker **一回合跑完就退**（`WORKER_EXIT_AFTER_TURN=1`）。`session.prompt` 是 await 的，所以 inbox 再拉一次为空就说明这轮结束、后面也没排队，此时上传 session 备份并退出。
+
+进程寿命比对话回合长会带来三种真故障，都不值得为了省一次冷启去承担：
+
+| 常驻的代价 | 结果 |
+| --- | --- |
+| run JWT 一小时过期 | worker 死在 `inbox 401`，而 assignment 又发缓存里同一个死 token，这条对话再也起不来 |
+| 「一台机器只跑一条」 | 已结束的 worker 占着名额，第二条本机对话被拒 |
+| 进程活着但 run 已 IDLE | 界面分不清，进度条一直挂着 |
+
+退出后 Desk 调 `POST /v1/desks/:id/release`，控制面丢掉 handle。下一条跟进走 `resumeRun` → `dispatchToDesk`，**同一台机器**收到新的 assignment，新进程 `downloadSession` 恢复上下文再跑。
+
+常驻的只有 **Desk 主进程的 inbox / lease 长连接**——remote control 必须靠它，否则控制面找不到这台笔记本。云端 run 不受影响：`WORKER_EXIT_AFTER_TURN` 只有 Desk 会设。
+
 ### B Remote control
 
 对标 Cursor 的 **My Machines**（[docs](https://cursor.com/docs/cloud-agent/my-machines)）。控制面打不进 NAT 后面的笔记本，所以派活走 Desk 自己开的连接。
@@ -116,7 +132,11 @@ Web / handoff  →   POST /v1/runs（缺省 dispatch）
 控制面             严格匹配 user + 机器在线且允许远程 + 仓库对得上
 控制面         →   inbox 推 assignment
 Desk 主进程        用已绑定的工作区 spawn，然后 claim
+Desk 主进程    →   POST /v1/desks/:id/release（worker 跑完退出）
+Web 再发一条   →   控制面重新派单，同一台机器起新进程
 ```
+
+Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，选的是**已绑定的工作区**，不是路径。浏览器里没有绑定就没有可选项。
 
 抄了：出向长连接、长驻、机器命名、**注册绑定到仓库**、严格匹配、失败不回落、绑定即预授权。
 
@@ -139,7 +159,8 @@ Desk 主进程        用已绑定的工作区 spawn，然后 claim
 - **绝对路径不上云。** 绑定只上报机器名 + repoKey + 短名；远程端看到 `机器名 · 仓库名`。也不把本机路径同步成别人的项目默认仓库。
 - **`online` = 正握着 inbox。** 只看时间戳会让一台注册完就退出的电脑看起来还在。
 - **控制面不杀笔记本进程。** `DeskRuntime.destroy` 是空的；停 worker 走 inbox 的 `cancel`，活着靠 worker 心跳。
-- 一期同一 Desk 只跑一条本机对话，避免两个 Agent 抢改同一份盘。
+- **同一时刻只有一个本机 worker 在改盘**，但已结束的那条会被自动退掉（先问控制面 run 状态），不会把这台机器卡死。
+- 界面上两个「停止」不是一回事：`停止当前回合` 只打断这一轮，`结束本机进程` 杀掉这条对话的本机 Agent 进程。
 - 一期不允许 Automation 派到本机。
 - 本机 Run **没有**「邀请加入这条对话」。一起干活要开 Cloud，或各开各的云端 Run。
 - 切到云端 handoff 需要可 clone 的远端，未提交改动不跟随；切回本机要求该仓库已有绑定。
