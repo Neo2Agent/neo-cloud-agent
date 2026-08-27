@@ -33,6 +33,7 @@ import {
   isDeskTarget,
   MAX_SUBSCRIPTION_WAKES,
   mintRunToken,
+  verifyRunToken,
   parseContextUsage,
   parseExecutionTarget,
   parseRunSource,
@@ -629,6 +630,29 @@ export function event(runId: string, kind: RunEvent["kind"], title: string, extr
   };
 }
 
+/** Re-mint before this much life is left, so a worker never boots on a dead token. */
+const JWT_RENEW_MARGIN_MS = 5 * 60 * 1000;
+
+/**
+ * A desk worker outlives one turn, so the cached token can already be expired
+ * by the time the run is handed back. Reuse it only while it still works.
+ */
+function usableRunJwt(run: Run): string {
+  const cached = runJwts.get(run.id);
+  if (!cached) {
+    return mintJwtForRun(run);
+  }
+  try {
+    const claims = verifyRunToken(getConfig().jwtSecret, cached);
+    if (claims.exp * 1000 - Date.now() > JWT_RENEW_MARGIN_MS) {
+      return cached;
+    }
+  } catch {
+    // expired or signed with an older secret
+  }
+  return mintJwtForRun(run);
+}
+
 export function mintJwtForRun(run: Run): string {
   const config = getConfig();
   const token = mintRunToken(config.jwtSecret, {
@@ -1211,7 +1235,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
 }
 
 async function attachWorker(run: Run, title: string): Promise<void> {
-  const handle = await getRuntime().provision(launchSpec(run, runJwts.get(run.id) ?? mintJwtForRun(run)), {
+  const handle = await getRuntime().provision(launchSpec(run, usableRunJwt(run)), {
     onExit: bindWorkerExit(run.id),
   });
   handles.set(run.id, handle);
@@ -1410,7 +1434,7 @@ function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
   const files = expertFilesForRun(run);
   return {
     runId: run.id,
-    jwt: runJwts.get(run.id) ?? mintJwtForRun(run),
+    jwt: usableRunJwt(run),
     model: run.model,
     prompt: run.prompt,
     repoUrls: run.repoUrls,
@@ -1590,7 +1614,7 @@ export function getBootstrap(runId: string) {
   const config = getConfig();
   return {
     run,
-    jwt: runJwts.get(runId) ?? mintJwtForRun(run),
+    jwt: usableRunJwt(run),
     llmGatewayUrl: config.workerLlmGatewayUrl,
     workspaceDir: isDeskTarget(run.executionTarget)
       ? (deskWorkspaces.get(runId) ?? "")

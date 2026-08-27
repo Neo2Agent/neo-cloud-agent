@@ -1201,6 +1201,12 @@ export function App() {
 
   // An open local run keeps its own folder; with no run open, follow the picker.
   const localRunActive = current?.executionTarget?.loop === "desk";
+  // A dead local worker means nothing is coming, whatever the run status says.
+  const localWorkerDown =
+    localRunActive &&
+    localStatus?.runId === current?.id &&
+    (localStatus?.state === "stopped" || localStatus?.state === "failed");
+  const turnLive = current?.status === "RUNNING" && !localWorkerDown;
   const panelIsLocal = current ? localRunActive : target.kind === "desk";
   const localFolder = panelIsLocal
     ? (localRunActive && current?.repoUrls[0] && path0(current.repoUrls[0]).startsWith("/")
@@ -1720,6 +1726,7 @@ export function App() {
               <PersonalChatPage
                 title={title}
                 current={current}
+                running={turnLive}
                 visible={visible}
                 activity={activity}
                 user={user}
@@ -1815,7 +1822,7 @@ export function App() {
                   if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
                 }}
                 queued={queuedFollowUps}
-                waiting={Boolean(current && (queuedFollowUps.length > 0 || current.status === "RUNNING"))}
+                waiting={Boolean(current && (queuedFollowUps.length > 0 || turnLive))}
                 onStop={
                   current
                     ? () => {
