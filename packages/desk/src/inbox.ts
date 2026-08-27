@@ -18,6 +18,8 @@ export function openDeskInboxStream(input: {
   onEvent: (event: DeskInboxEvent) => void;
   onStateChange?: (connected: boolean) => void;
   onUnauthorized?: () => void;
+  /** Inbox route is missing on the current production control plane. */
+  onUnavailable?: () => void;
   fetchImpl?: typeof fetch;
   retryMs?: number;
 }): DeskInboxHandle {
@@ -38,9 +40,14 @@ export function openDeskInboxStream(input: {
         headers: { authorization: `Bearer ${input.deskToken}`, accept: "text/event-stream" },
         signal: controller.signal,
       });
-      if (response.status === 401 || response.status === 403 || response.status === 404) {
+      if (response.status === 401 || response.status === 403) {
         closed = true;
         input.onUnauthorized?.();
+        return;
+      }
+      if (response.status === 404) {
+        closed = true;
+        input.onUnavailable?.();
         return;
       }
       if (!response.ok || !response.body) {

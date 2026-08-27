@@ -62,6 +62,29 @@ test("a malformed frame is dropped without killing the stream", async () => {
   assert.deepEqual(seen.map((item) => item.kind), ["ping"]);
 });
 
+test("a 404 means this control plane has no inbox, not a dead token", async () => {
+  let unauthorized = 0;
+  let unavailable = 0;
+  const handle = openDeskInboxStream({
+    baseUrl: "http://cp.test",
+    deskId: "desk_1",
+    deskToken: "desk_tok",
+    retryMs: 5,
+    onEvent: () => undefined,
+    onUnauthorized: () => {
+      unauthorized += 1;
+    },
+    onUnavailable: () => {
+      unavailable += 1;
+    },
+    fetchImpl: async () => new Response(JSON.stringify({ error: "not_found" }), { status: 404 }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  handle.close();
+  assert.equal(unauthorized, 0);
+  assert.equal(unavailable, 1);
+});
+
 test("a 401 asks the host to re-register instead of retrying the dead token", async () => {
   let calls = 0;
   let unauthorized = 0;

@@ -1,10 +1,12 @@
-import type { BindDeskWorkspaceRequest, DeskAssignment, DeskLeaseResponse, DeskWorkspace } from "@neo-cloud-agent/contracts";
+import type { BindDeskWorkspaceRequest, Desk, DeskAssignment, DeskLeaseResponse, DeskWorkspace } from "@neo-cloud-agent/contracts";
 
 export type LeaseClient = {
   register(input: { name?: string; hostname?: string; platform?: string; userToken: string }): Promise<{
     deskId: string;
     token: string;
   }>;
+  listDesks(userToken: string): Promise<Desk[]>;
+  deleteDesk(userToken: string, deskId: string): Promise<void>;
   waitAssignment(input: { deskId: string; deskToken: string; waitMs?: number }): Promise<DeskAssignment | null>;
   claim(input: {
     deskId: string;
@@ -50,6 +52,26 @@ export function createLeaseClient(baseUrl: string, fetchImpl: typeof fetch = fet
         throw new Error(body.error || "desk register failed");
       }
       return { deskId: body.desk.id, token: body.token };
+    },
+    async listDesks(userToken) {
+      const response = await fetchImpl(`${root}/v1/desks`, {
+        headers: { authorization: `Bearer ${userToken}` },
+      });
+      const body = (await response.json()) as { desks?: Desk[]; error?: string };
+      if (!response.ok) {
+        throw new Error(body.error || "list desks failed");
+      }
+      return body.desks ?? [];
+    },
+    async deleteDesk(userToken, deskId) {
+      const response = await fetchImpl(`${root}/v1/desks/${deskId}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${userToken}` },
+      });
+      if (!response.ok && response.status !== 404) {
+        const failed = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(failed.error || "delete desk failed");
+      }
     },
     async waitAssignment(input) {
       const response = await fetchImpl(`${root}/v1/desks/${input.deskId}/lease`, {

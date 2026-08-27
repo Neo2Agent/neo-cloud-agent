@@ -59,6 +59,7 @@ let sleepBlocker = 0;
 let deskId = "";
 let deskToken = "";
 let inbox: DeskInboxHandle | null = null;
+let leaseLoop = false;
 const workers = new Map<string, ChildProcess>();
 const shells = new Map<string, LocalShell>();
 /** Runs this process already started, so an inbox echo never double-spawns. */
@@ -479,6 +480,110 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
 
 let connecting: Promise<void> | null = null;
 
+function reportPresence(connected: boolean, error?: string): void {
+  toRenderer("desk:inbox-state", { connected, deskId, error } satisfies InboxState);
+}
+
+async function persistRegisteredDesk(registered: { deskId: string; token: string }): Promise<void> {
+  deskId = registered.deskId;
+  deskToken = registered.token;
+  writeJson(stateFile("desk.json"), { deskId, token: encodeSecret(deskToken) });
+  const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
+  for (const item of boundWorkspaces()) {
+    const bound = await bindWorkspace(item.folder).catch(() => undefined);
+    if (bound && saved.folder && path.resolve(saved.folder) === path.resolve(bound.folder)) {
+      saved.workspaceId = bound.id;
+    }
+  }
+  writeJson(stateFile("target.json"), { ...saved, deskId });
+  toRenderer("desk:target", { ...saved, deskId });
+}
+
+async function pruneOfflineDesks(userToken: string): Promise<void> {
+  const desks = await leaseClient().listDesks(userToken);
+  const stale = desks.filter((item) => item.online !== true && item.id !== deskId).slice(0, 8);
+  for (const item of stale) {
+    await leaseClient().deleteDesk(userToken, item.id).catch((error) => {
+      console.warn("failed to prune stale desk", item.id, error);
+    });
+  }
+}
+
+async function registerThisDesk(userToken: string): Promise<void> {
+  const client = leaseClient();
+  const request = {
+    name: os.hostname(),
+    hostname: os.hostname(),
+    platform: process.platform,
+    userToken,
+  };
+  try {
+    await persistRegisteredDesk(await client.register(request));
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/at most/i.test(message)) {
+      throw error;
+    }
+    await pruneOfflineDesks(userToken);
+    await persistRegisteredDesk(await client.register(request));
+  }
+}
+
+/** Production marks a desk online from lastSeen, which lease refreshes. Inbox is newer. */
+async function heartbeatLease(waitMs: number): Promise<"ok" | "auth" | "down"> {
+  if (!deskId || !deskToken) {
+    return "auth";
+  }
+  try {
+    const assignment = await leaseClient().waitAssignment({ deskId, deskToken, waitMs });
+    lastRegisterError = "";
+    reportPresence(true);
+    if (assignment) {
+      void handleInboxEvent({ kind: "assignment", assignment });
+    }
+    return "ok";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "desk lease failed";
+    console.error("desk lease loop", error);
+    if (/unauthorized|login_required|desk not found/i.test(message)) {
+      return "auth";
+    }
+    reportPresence(false, `本机保活失败：${message}`);
+    return "down";
+  }
+}
+
+function startLeaseLoop(): void {
+  if (leaseLoop || !deskId || !deskToken) {
+    return;
+  }
+  leaseLoop = true;
+  const tick = async () => {
+    if (!leaseLoop) {
+      return;
+    }
+    const result = await heartbeatLease(20_000);
+    if (result === "auth") {
+      leaseLoop = false;
+      deskId = "";
+      deskToken = "";
+      inbox?.close();
+      inbox = null;
+      void connectInbox();
+      return;
+    }
+    if (leaseLoop) {
+      setTimeout(() => void tick(), result === "ok" ? 250 : 2000);
+    }
+  };
+  void tick();
+}
+
+function stopLeaseLoop(): void {
+  leaseLoop = false;
+}
+
 async function connectInbox(): Promise<void> {
   if (connecting) {
     return connecting;
@@ -494,42 +599,31 @@ async function connectInboxOnce(): Promise<void> {
   if (!userToken) {
     return;
   }
-  const client = leaseClient();
-  if (!deskId || !deskToken) {
-    try {
-      const registered = await client.register({
-        name: os.hostname(),
-        hostname: os.hostname(),
-        platform: process.platform,
-        userToken,
-      });
-      deskId = registered.deskId;
-      deskToken = registered.token;
-      writeJson(stateFile("desk.json"), { deskId, token: encodeSecret(deskToken) });
-      const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
-      // Re-bind folders on this desk id. A local record is not enough: the
-      // in-memory control plane forgets workspaces every restart.
-      for (const item of boundWorkspaces()) {
-        const bound = await bindWorkspace(item.folder).catch(() => undefined);
-        if (bound && saved.folder && path.resolve(saved.folder) === path.resolve(bound.folder)) {
-          saved.workspaceId = bound.id;
-        }
+  try {
+    if (deskId && deskToken) {
+      const stillValid = await heartbeatLease(400);
+      if (stillValid === "auth") {
+        deskId = "";
+        deskToken = "";
       }
-      writeJson(stateFile("target.json"), { ...saved, deskId });
-      lastRegisterError = "";
-      toRenderer("desk:target", { ...saved, deskId });
-    } catch (error) {
-      lastRegisterError = error instanceof Error ? error.message : "desk register failed";
-      console.error("failed to register desk", error);
-      toRenderer("desk:inbox-state", {
-        connected: false,
-        error: `本机登记失败：${lastRegisterError}`,
-      } satisfies InboxState);
-      return;
     }
+    if (!deskId || !deskToken) {
+      await registerThisDesk(userToken);
+      const online = await heartbeatLease(400);
+      if (online !== "ok") {
+        throw new Error("本机已登记，但现网还没把它标成在线");
+      }
+    }
+    lastRegisterError = "";
+    toRenderer("desk:target", currentTarget());
+    reportPresence(true);
+    startLeaseLoop();
+  } catch (error) {
+    lastRegisterError = error instanceof Error ? error.message : "desk register failed";
+    console.error("failed to register desk", error);
+    reportPresence(false, `本机登记失败：${lastRegisterError}`);
+    return;
   }
-  toRenderer("desk:target", currentTarget());
-  toRenderer("desk:inbox-state", { connected: Boolean(inbox), deskId } satisfies InboxState);
   if (inbox) {
     return;
   }
@@ -539,15 +633,30 @@ async function connectInboxOnce(): Promise<void> {
     deskToken,
     fetchImpl: net.fetch as typeof fetch,
     onEvent: (event) => void handleInboxEvent(event),
-    onStateChange: (connected) => toRenderer("desk:inbox-state", { connected, deskId } satisfies InboxState),
-    onUnauthorized: () => {
-      // Local control plane is in-memory: a restart invalidates the saved
-      // desk token. Drop it and register again instead of retrying 401s.
-      deskId = "";
-      deskToken = "";
+    onStateChange: (connected) => {
+      if (connected) {
+        reportPresence(true);
+      }
+    },
+    onUnavailable: () => {
       inbox?.close();
       inbox = null;
-      void connectInbox();
+    },
+    onUnauthorized: () => {
+      void (async () => {
+        // Production has no inbox route, so a desk token gets 401 there even
+        // while lease still proves this machine is registered.
+        const leaseOk = await heartbeatLease(400);
+        inbox?.close();
+        inbox = null;
+        if (leaseOk === "ok") {
+          return;
+        }
+        deskId = "";
+        deskToken = "";
+        stopLeaseLoop();
+        void connectInbox();
+      })();
     },
   });
 }
@@ -563,6 +672,7 @@ function wireIpc(): void {
   });
   ipcMain.handle("desk:clearToken", () => {
     setToken("");
+    stopLeaseLoop();
     inbox?.close();
     inbox = null;
   });
