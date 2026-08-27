@@ -9,6 +9,29 @@ export type DeskTarget = {
   workspaceId?: string;
 };
 
+/** Keep the live desk id when the UI only changes folder / kind. */
+export function mergeDeskTarget(target: DeskTarget, deskId?: string): DeskTarget {
+  const id = (deskId || target.deskId || "").trim();
+  return id ? { ...target, deskId: id } : { ...target, deskId: undefined };
+}
+
+export function localRunTarget(target: DeskTarget, deskId?: string): {
+  loop: "desk";
+  tools: "desk";
+  deskId?: string;
+  deskWorkspaceId?: string;
+} {
+  const merged = mergeDeskTarget(target, deskId);
+  return {
+    loop: "desk",
+    tools: "desk",
+    deskId: merged.deskId,
+    deskWorkspaceId: merged.workspaceId,
+  };
+}
+
+export const MISSING_DESK_ID_HINT = "本机还没登记到控制面。等连上后再发，或退出重新登录。";
+
 export type DeskWorkspaceRef = {
   id: string;
   folder: string;
@@ -49,7 +72,7 @@ export type NeoDeskBridge = {
   /** Packaged Desk talks to production through the main process, not from the renderer. */
   proxyApi?: boolean;
   getToken(): Promise<string>;
-  setToken(token: string): Promise<void>;
+  setToken(token: string): Promise<{ deskId?: string; error?: string } | void>;
   clearToken(): Promise<void>;
   pickFolder(): Promise<DeskWorkspaceRef | string | null>;
   getTarget(): Promise<DeskTarget>;
@@ -71,7 +94,7 @@ export type NeoDeskBridge = {
   onRunStatus?(cb: (status: DeskRunStatus) => void): () => void;
   onDispatched?(cb: (payload: { runId: string; workspace: string }) => void): () => void;
   onTarget?(cb: (target: DeskTarget) => void): () => void;
-  onInboxState?(cb: (payload: { connected: boolean }) => void): () => void;
+  onInboxState?(cb: (payload: { connected: boolean; deskId?: string; error?: string }) => void): () => void;
   onTermData?(cb: (payload: { id: string; chunk: string }) => void): () => void;
   onTermExit?(cb: (payload: { id: string; code: number | null }) => void): () => void;
 };

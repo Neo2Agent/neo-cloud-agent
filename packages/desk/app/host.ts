@@ -41,6 +41,14 @@ type BoundWorkspace = { id: string; folder: string; name: string; repoKey: strin
 
 type DeskPrefs = { requireApproval?: boolean };
 
+type InboxState = { connected: boolean; deskId?: string; error?: string };
+
+let lastRegisterError = "";
+
+function leaseClient() {
+  return createLeaseClient(controlPlaneUrl, net.fetch as typeof fetch);
+}
+
 let controlPlaneUrl = controlPlaneOrigin();
 const stateDir = () => path.join(app.getPath("userData"), "neo-desk");
 const stateFile = (name: string) => path.join(stateDir(), name);
@@ -302,7 +310,7 @@ async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
   let id = existing?.id || `dws_local_${Buffer.from(resolved).toString("hex").slice(0, 12)}`;
   if (deskId && deskToken) {
     try {
-      const client = createLeaseClient(controlPlaneUrl);
+      const client = leaseClient();
       const bound = await client.bindWorkspace({
         deskId,
         deskToken,
@@ -339,7 +347,7 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
   if (startedRuns.has(runId) || workers.has(runId)) {
     return;
   }
-  const client = createLeaseClient(controlPlaneUrl);
+  const client = leaseClient();
   const fail = async (detail: string) => {
     reportRunStatus({ runId, state: "failed", detail });
     if (deskId && deskToken) {
@@ -457,7 +465,7 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
       detail: assignment.prompt.slice(0, 400),
     });
     if (choice.response !== 0) {
-      await createLeaseClient(controlPlaneUrl)
+      await leaseClient()
         .reject({ deskId, deskToken, runId: assignment.runId, reason: "这台电脑拒绝了这条派活" })
         .catch((error) => console.error("failed to reject desk run", error));
       return;
@@ -486,7 +494,7 @@ async function connectInboxOnce(): Promise<void> {
   if (!userToken) {
     return;
   }
-  const client = createLeaseClient(controlPlaneUrl);
+  const client = leaseClient();
   if (!deskId || !deskToken) {
     try {
       const registered = await client.register({
@@ -508,12 +516,20 @@ async function connectInboxOnce(): Promise<void> {
         }
       }
       writeJson(stateFile("target.json"), { ...saved, deskId });
+      lastRegisterError = "";
       toRenderer("desk:target", { ...saved, deskId });
     } catch (error) {
+      lastRegisterError = error instanceof Error ? error.message : "desk register failed";
       console.error("failed to register desk", error);
+      toRenderer("desk:inbox-state", {
+        connected: false,
+        error: `本机登记失败：${lastRegisterError}`,
+      } satisfies InboxState);
       return;
     }
   }
+  toRenderer("desk:target", currentTarget());
+  toRenderer("desk:inbox-state", { connected: Boolean(inbox), deskId } satisfies InboxState);
   if (inbox) {
     return;
   }
@@ -521,8 +537,9 @@ async function connectInboxOnce(): Promise<void> {
     baseUrl: controlPlaneUrl,
     deskId,
     deskToken,
+    fetchImpl: net.fetch as typeof fetch,
     onEvent: (event) => void handleInboxEvent(event),
-    onStateChange: (connected) => toRenderer("desk:inbox-state", { connected }),
+    onStateChange: (connected) => toRenderer("desk:inbox-state", { connected, deskId } satisfies InboxState),
     onUnauthorized: () => {
       // Local control plane is in-memory: a restart invalidates the saved
       // desk token. Drop it and register again instead of retrying 401s.
@@ -538,9 +555,11 @@ async function connectInboxOnce(): Promise<void> {
 function wireIpc(): void {
   const { ipcMain } = require("electron") as typeof import("electron");
   ipcMain.handle("desk:getToken", () => getToken());
-  ipcMain.handle("desk:setToken", (_event, token: string) => {
+  ipcMain.handle("desk:setToken", async (_event, token: string) => {
     setToken(token);
-    void connectInbox();
+    lastRegisterError = "";
+    await connectInbox();
+    return { deskId: deskId || undefined, error: lastRegisterError || undefined };
   });
   ipcMain.handle("desk:clearToken", () => {
     setToken("");
@@ -573,7 +592,7 @@ function wireIpc(): void {
   ipcMain.handle("desk:unbindWorkspace", async (_event, workspaceId: string) => {
     saveBoundWorkspaces(boundWorkspaces().filter((item) => item.id !== workspaceId));
     if (deskId && deskToken) {
-      await createLeaseClient(controlPlaneUrl)
+      await leaseClient()
         .unbindWorkspace({ deskId, deskToken, workspaceId })
         .catch((error) => console.error("failed to unbind desk workspace", error));
     }
@@ -584,7 +603,7 @@ function wireIpc(): void {
     const bound = findBound({ folder: target.folder });
     writeJson(stateFile("target.json"), {
       ...target,
-      deskId: target.deskId || deskId || undefined,
+      deskId: deskId || target.deskId || undefined,
       workspaceId: bound?.id ?? target.workspaceId,
     });
   });

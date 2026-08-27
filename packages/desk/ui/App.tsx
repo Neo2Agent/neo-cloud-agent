@@ -12,6 +12,9 @@ import { api, persistSessionToken, readJson } from "./api";
 import {
   asWorkspaceRef,
   deskBridge,
+  localRunTarget,
+  mergeDeskTarget,
+  MISSING_DESK_ID_HINT,
   STALE_DESK_HINT,
   withApiBase,
   type DeskRunStatus,
@@ -244,6 +247,7 @@ export function App() {
   const [requireApproval, setRequireApproval] = useState(false);
   const [copied, setCopied] = useState("");
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
+  const deskIdRef = useRef("");
   const tokenRef = useRef("");
   const sourceRef = useRef<EventSource | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
@@ -460,11 +464,15 @@ export function App() {
     setAuthed(true);
     const desk = deskBridge();
     if (desk) {
-      await desk.setToken(tokenRef.current).catch(() => undefined);
+      const registered = await desk.setToken(tokenRef.current).catch(() => undefined);
+      if (registered?.deskId) deskIdRef.current = registered.deskId;
+      if (registered?.error) setAuthError(registered.error);
       const saved = await desk.getTarget().catch(() => undefined);
       if (saved) {
-        setTarget(saved);
-        if (saved.folder) setFolder(saved.folder);
+        const next = mergeDeskTarget(saved, deskIdRef.current || registered?.deskId);
+        if (next.deskId) deskIdRef.current = next.deskId;
+        setTarget(next);
+        if (next.folder) setFolder(next.folder);
       }
     }
     await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshExperts(), refreshLlm(), refreshInbox()]);
@@ -549,7 +557,12 @@ export function App() {
     if (!picked) return;
     setFolder(picked.folder);
     setWorkspaces((await bridge.listWorkspaces?.().catch(() => [])) ?? []);
-    applyTargetRef.current({ kind: "desk", folder: picked.folder, workspaceId: picked.id || undefined });
+    applyTargetRef.current({
+      kind: "desk",
+      folder: picked.folder,
+      workspaceId: picked.id || undefined,
+      deskId: deskIdRef.current,
+    });
   }, []);
 
   /** Bring a local run's worker back on this machine, in the same folder. */
@@ -575,6 +588,23 @@ export function App() {
     if (local && !folder) {
       // Do not create a run that can never start. Ask for the folder first.
       setAuthError("先选一个本机文件夹，Agent 才知道该改哪里。");
+      return;
+    }
+    let localDeskId = target.deskId || deskIdRef.current;
+    if (local && !localDeskId) {
+      const bridge = deskBridge();
+      const [prefs, saved] = await Promise.all([
+        bridge?.getPrefs?.().catch(() => undefined),
+        bridge?.getTarget().catch(() => undefined),
+      ]);
+      localDeskId = prefs?.deskId || saved?.deskId || "";
+      if (localDeskId) {
+        deskIdRef.current = localDeskId;
+        setTarget((prev) => mergeDeskTarget(prev, localDeskId));
+      }
+    }
+    if (local && !localDeskId) {
+      setAuthError(MISSING_DESK_ID_HINT);
       return;
     }
     const askPrefix = mode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
@@ -607,9 +637,7 @@ export function App() {
                     : activeProject?.defaultRepoUrls?.length
                       ? activeProject.defaultRepoUrls
                       : [],
-              target: local
-                ? { loop: "desk", tools: "desk", deskId: target.deskId, deskWorkspaceId: target.workspaceId }
-                : { loop: "cloud", tools: "cloud" },
+              target: local ? localRunTarget(target, localDeskId) : { loop: "cloud", tools: "cloud" },
             }),
           }),
         );
@@ -643,8 +671,10 @@ export function App() {
   };
 
   const applyTarget = useCallback((next: DeskTarget) => {
-    setTarget(next);
-    void deskBridge()?.setTarget(next);
+    const merged = mergeDeskTarget(next, deskIdRef.current);
+    if (merged.deskId) deskIdRef.current = merged.deskId;
+    setTarget(merged);
+    void deskBridge()?.setTarget(merged);
   }, []);
 
   const applyTargetRef = useRef(applyTarget);
@@ -661,8 +691,8 @@ export function App() {
   // failures in a terminal the user never sees.
   useEffect(() => {
     const bridge = deskBridge();
-    if (!bridge?.onRunStatus) return;
-    const offStatus = bridge.onRunStatus((status) => {
+    if (!bridge) return;
+    const offStatus = bridge.onRunStatus?.((status) => {
       setLocalStatus(status);
       if (status.state === "failed" && status.detail) {
         setAuthError(status.detail);
@@ -677,14 +707,24 @@ export function App() {
       void openRunRef.current(id);
     });
     const offTarget = bridge.onTarget?.((saved) => {
-      setTarget(saved);
-      if (saved.folder) setFolder(saved.folder);
+      const next = mergeDeskTarget(saved, deskIdRef.current);
+      if (next.deskId) deskIdRef.current = next.deskId;
+      setTarget(next);
+      if (next.folder) setFolder(next.folder);
       void bridge.listWorkspaces?.().then(setWorkspaces).catch(() => undefined);
+    });
+    const offInbox = bridge.onInboxState?.((state) => {
+      if (state.deskId) {
+        deskIdRef.current = state.deskId;
+        setTarget((prev) => mergeDeskTarget(prev, state.deskId));
+      }
+      if (state.error) setAuthError(state.error);
     });
     return () => {
       offStatus?.();
       offDispatch?.();
       offTarget?.();
+      offInbox?.();
     };
   }, [refreshRuns]);
 
@@ -694,7 +734,13 @@ export function App() {
     void bridge.listWorkspaces?.().then(setWorkspaces).catch(() => undefined);
     void bridge
       .getPrefs?.()
-      .then((value) => setRequireApproval(value.requireApproval === true))
+      .then((value) => {
+        setRequireApproval(value.requireApproval === true);
+        if (value.deskId) {
+          deskIdRef.current = value.deskId;
+          setTarget((prev) => mergeDeskTarget(prev, value.deskId));
+        }
+      })
       .catch(() => undefined);
   }, [authed, folder]);
 
