@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type {
   CreateCommitRequest,
@@ -2104,10 +2104,27 @@ export function mintRunGitToken(runId: string, input: CreateGitTokenRequest) {
   };
 }
 
+/**
+ * Git runs where the files are. A desk run's files are on someone's laptop, so
+ * `workspaceFor` points at a directory this host does not have — which used to
+ * surface as a baffling `spawn git ENOENT`.
+ */
+function gitCwdFor(runId: string): string {
+  const run = runs.get(runId);
+  if (!isDeskTarget(run?.executionTarget)) {
+    return workspaceFor(runId);
+  }
+  const folder = deskWorkspaces.get(runId) ?? "";
+  if (!folder || !existsSync(folder)) {
+    throw new Error("这条对话的文件在那台电脑上，控制面看不到；请在本机用 git 提交");
+  }
+  return folder;
+}
+
 export async function commitRun(runId: string, input: CreateCommitRequest) {
   const run = requireRun(runId);
   try {
-    const result = await commitRunWorkspace(workspaceFor(runId), input);
+    const result = await commitRunWorkspace(gitCwdFor(runId), input);
     run.updatedAt = now();
     publish(
       event(runId, "scm.commit_succeeded", result.empty ? "Nothing to commit" : "Committed workspace", {
@@ -2128,7 +2145,7 @@ export async function openRunDraftPr(runId: string, input: CreatePullRequestRequ
   const run = requireRun(runId);
   try {
     const extra = formatPrArtifactMarkdown(runId, await listRunArtifacts(runId));
-    const result = await openRunPullRequest(workspaceFor(runId), run, {
+    const result = await openRunPullRequest(gitCwdFor(runId), run, {
       ...input,
       body: [input.body, extra].filter((part) => part && part.trim()).join("\n\n"),
     });
@@ -2223,7 +2240,9 @@ export function getRunSession(runId: string, options?: { includeContent?: boolea
 
 export async function getRunDiff(runId: string) {
   const run = requireRun(runId);
-  const diff = await diffRunWorkspace(workspaceFor(runId), run);
+  // A desk run is diffed by the desk itself; this host has no such folder.
+  const cwd = isDeskTarget(run.executionTarget) ? (deskWorkspaces.get(runId) ?? "") : workspaceFor(runId);
+  const diff = cwd && existsSync(cwd) ? await diffRunWorkspace(cwd, run) : { stat: "", patch: "" };
   return {
     branch: run.branchName,
     baseBranch: run.baseBranch,
