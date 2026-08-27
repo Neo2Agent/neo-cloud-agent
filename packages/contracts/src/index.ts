@@ -106,6 +106,7 @@ export {
   clampTranscriptPage,
   cloneTranscriptMessage,
   displayTranscriptMessages,
+  isDeskHandshakeNotice,
   isSetupKind,
   isStaleRestartNotice,
   pageTranscriptMessages,

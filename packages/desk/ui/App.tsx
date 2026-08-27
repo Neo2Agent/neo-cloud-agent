@@ -3,7 +3,7 @@ import { decodeExpertPick, encodeExpertPick, type Expert, type ExpertPick, type 
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import type { ExecutionTarget, Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Select, Tooltip } from "@neo-cloud-agent/ui";
@@ -566,27 +566,57 @@ export function App() {
   }, []);
 
   /** Bring a local run's worker back on this machine, in the same folder. */
-  const resumeLocalRun = useCallback(async (id: string) => {
-    const start = deskBridge()?.startRun;
+  const resumeLocalRun = useCallback(async (id: string, deskTarget?: ExecutionTarget | null) => {
+    const bridge = deskBridge();
+    const start = bridge?.startRun;
     if (!start) {
       setAuthError(STALE_DESK_HINT);
       return;
     }
+    setAuthError("");
     const response = await api(tokenRef.current, `/v1/runs/${id}/desk-start`, { method: "POST" });
     const body = await readJson<{ assignment?: DeskAssignment; error?: string }>(response);
     if (response.ok && body.assignment) {
       await start(body.assignment);
       return;
     }
-    const taken = await deskBridge()?.takeAssignment?.(id);
-    if (!taken?.started) {
-      setAuthError(body.error || "本机启动失败");
+    if (await bridge?.takeAssignment?.(id).then((taken) => taken?.started)) {
+      return;
     }
-  }, []);
+    // Older control planes have no desk-start. Handing the run back to this
+    // same machine re-queues an assignment we can then claim.
+    const deskId = deskTarget?.deskId || deskIdRef.current;
+    if (!deskId) {
+      setAuthError(MISSING_DESK_ID_HINT);
+      return;
+    }
+    const handoff = await api(tokenRef.current, `/v1/runs/${id}/handoff`, {
+      method: "POST",
+      body: JSON.stringify({
+        target: {
+          loop: "desk",
+          tools: "desk",
+          deskId,
+          deskWorkspaceId: deskTarget?.deskWorkspaceId ?? target.workspaceId,
+        },
+      }),
+    });
+    if (!handoff.ok) {
+      const failed = await readJson<{ error?: string }>(handoff);
+      setAuthError(failed.error || "本机启动失败");
+      return;
+    }
+    const retaken = await bridge?.takeAssignment?.(id);
+    if (!retaken?.started) {
+      setAuthError("现网还没把这条对话交回这台电脑，稍等再试。");
+    }
+  }, [target.workspaceId]);
 
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
     const text = (draft ?? prompt).trim();
     if (!text || sending) return;
+    // A failure from an earlier turn must not sit under the composer forever.
+    setAuthError("");
     const local = target.kind === "desk";
     if (local && !folder) {
       // Do not create a run that can never start. Ask for the folder first.
@@ -668,7 +698,7 @@ export function App() {
       });
       setQueueEpoch((cur) => cur + 1);
       if (current?.executionTarget?.loop === "desk" && localStatus?.state !== "running") {
-        await resumeLocalRun(runId);
+        await resumeLocalRun(runId, current?.executionTarget);
       }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "发送失败");
@@ -823,7 +853,12 @@ export function App() {
     };
   }, [authed, current, onQueuedChange, queueEpoch, token]);
 
-  const visible = displayTranscriptMessages(messages, { hideFollowUpIds: queuedFollowUpIds });
+  // This window is the machine, so the local bar already says what the claim
+  // handshake would: 正在启动 / 已在这台电脑上运行.
+  const visible = displayTranscriptMessages(messages, {
+    hideFollowUpIds: queuedFollowUpIds,
+    hideDeskHandshake: true,
+  });
   const activity = liveActivityLabel(visible);
   const rail = useMemo(() => {
     const names = new Map(projects.map((item) => [item.id, item.name]));
@@ -1613,7 +1648,12 @@ export function App() {
                 {localStatus?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
                 {localStatus?.state === "failed" ? <em className="bad">{localStatus.detail || "启动失败"}</em> : null}
                 {localStatus?.state === "stopped" || !localStatus ? (
-                  <button type="button" className="ghost" onClick={() => current && void resumeLocalRun(current.id)}>
+                  <button
+                    type="button"
+                    className="ghost"
+                    title="重新在这台电脑上拉起这条对话的 Agent 进程"
+                    onClick={() => current && void resumeLocalRun(current.id, current.executionTarget)}
+                  >
                     在这台电脑上继续
                   </button>
                 ) : null}
@@ -1621,9 +1661,10 @@ export function App() {
                   <button
                     type="button"
                     className="ghost"
+                    title="结束这条对话在本机的 Agent 进程。只想打断这一轮回答，用「停止当前回合」。"
                     onClick={() => current && void deskBridge()?.stopRun?.(current.id)}
                   >
-                    停止本机 worker
+                    结束本机进程
                   </button>
                 ) : null}
               </div>
