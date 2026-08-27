@@ -1551,6 +1551,41 @@ export async function claimDeskRun(
   return run;
 }
 
+/**
+ * A desk worker exits after its turn, so the desk says so instead of leaving a
+ * handle behind. Without this the next follow-up thinks a worker is still there
+ * and never gets dispatched back to the machine.
+ */
+export function releaseDeskRun(deskId: string, runId: string, input: { code?: number | null } = {}): Run {
+  const run = requireRun(runId);
+  if (!isDeskTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
+    throw new Error("run is not assigned to this desk");
+  }
+  touchDesk(deskId);
+  handles.delete(runId);
+  deleteWorkerLease(runId);
+  heartbeats.delete(runId);
+  run.workerHandle = null;
+  run.vmSlotId = null;
+  const failed = input.code != null && input.code !== 0;
+  if (failed && run.status === "RUNNING") {
+    failRun(run, `本机 worker 退出（${input.code}）`);
+    return run;
+  }
+  if (run.status === "RUNNING" && !hasPendingUserInbound(runId)) {
+    clearActiveTurn(runId);
+    run.status = "IDLE";
+    run.idleAt = now();
+  }
+  run.updatedAt = now();
+  flushRun(runId);
+  if (hasPendingUserInbound(runId)) {
+    // Work arrived while the process was on its way out; hand it back.
+    dispatchToDesk(run);
+  }
+  return run;
+}
+
 function looksRemoteRepo(url: string): boolean {
   return /^(https?:\/\/|git@|github\.com\/)/i.test(url);
 }

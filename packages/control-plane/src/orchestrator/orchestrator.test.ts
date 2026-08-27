@@ -38,6 +38,7 @@ const {
   takeInbound,
   deskAssignmentForRun,
   rejectDeskRun,
+  releaseDeskRun,
 } = await import("./orchestrator.js");
 const { bindDeskWorkspace, createDesk, openDeskInbox, takeDeskAssignment, updateDesk } = await import(
   "../desks/store.js"
@@ -655,6 +656,63 @@ test("a rejected dispatch reports why instead of waiting forever", async () => {
   assert.equal(rejected.errorMessage, "工作区已经不在了");
   assert.equal(takeDeskAssignment(registered.desk.id), null);
   detach();
+});
+
+test("a per-turn desk worker releases the run, and the next follow-up is dispatched again", async () => {
+  const registered = newDesk("per-turn-box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  const pushed: Array<{ kind: string }> = [];
+  const detach = openDeskInbox(registered.desk.id, (event) => pushed.push(event));
+  const run = await createRun({
+    prompt: "one turn only",
+    repoUrls: [],
+    source: "desk",
+    start: "inline",
+    deskWorkspaceId: bound.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/neo-per-turn", pid: 4242 });
+  takeInbound(run.id);
+  ingestEvents(run.id, [
+    {
+      id: "end-1",
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "agent.end",
+      title: "turn done",
+    },
+  ]);
+  assert.equal(getRun(run.id)?.status, "IDLE");
+
+  // The worker exits on purpose after the turn, so no handle should linger.
+  const released = releaseDeskRun(registered.desk.id, run.id, { code: 0 });
+  assert.equal(released.status, "IDLE");
+  assert.equal(released.workerHandle, null);
+
+  pushed.length = 0;
+  await enqueueFollowUp(run.id, { text: "second turn" }, { userId: registered.desk.userId, email: "admin" });
+  assert.equal(pushed.some((item) => item.kind === "assignment"), true);
+  assert.equal(takeDeskAssignment(registered.desk.id), run.id);
+  detach();
+});
+
+test("a desk worker that crashes surfaces the exit code instead of going idle", async () => {
+  const registered = newDesk("crash-box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  const run = await createRun({
+    prompt: "will crash",
+    repoUrls: [],
+    source: "desk",
+    start: "inline",
+    deskWorkspaceId: bound.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/neo-crash", pid: 4243 });
+  const released = releaseDeskRun(registered.desk.id, run.id, { code: 2 });
+  assert.equal(released.status, "ERROR");
+  assert.match(released.errorMessage ?? "", /worker 退出/);
 });
 
 test("a desk worker that stops answering is detached, not left running forever", async () => {

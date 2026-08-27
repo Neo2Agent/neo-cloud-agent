@@ -42,5 +42,11 @@ export function getWorkerConfig() {
     egress: file.egress,
     /** Set only for desk runs: the folder the agent must stay inside. */
     sandboxRoot: sandboxRoot ? path.resolve(sandboxRoot) : "",
+    /**
+     * Desk runs live on someone's laptop, so the worker exits once the turn is
+     * done instead of idling with a token that will expire under it. The next
+     * turn gets a fresh process and restores the session backup.
+     */
+    exitAfterTurn: process.env.WORKER_EXIT_AFTER_TURN === "1",
   };
 }

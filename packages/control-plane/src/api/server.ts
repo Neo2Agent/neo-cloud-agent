@@ -50,6 +50,7 @@ import {
   createRun,
   deskAssignmentForRun,
   rejectDeskRun,
+  releaseDeskRun,
   enqueueFollowUp,
   inviteRunCollaborator,
   canInviteRunCollaborator,
@@ -563,7 +564,7 @@ export function createApiServer() {
           openDeskInboxStream(req, res, deskId);
           return;
         }
-        const deskAction = /^\/v1\/desks\/([^/]+)\/(lease|claim|reject|workspaces)$/.exec(path);
+        const deskAction = /^\/v1\/desks\/([^/]+)\/(lease|claim|reject|release|workspaces)$/.exec(path);
         if (deskAction && method === "POST") {
           const deskId = deskAction[1] ?? "";
           const action = deskAction[2];
@@ -594,6 +595,15 @@ export function createApiServer() {
                 return;
               }
               send(res, 200, rejectDeskRun(deskId, body.runId, body.reason));
+              return;
+            }
+            if (action === "release") {
+              const body = (await readJson(req)) as { runId?: string; code?: number | null };
+              if (!body.runId) {
+                send(res, 400, { error: "runId is required" });
+                return;
+              }
+              send(res, 200, releaseDeskRun(deskId, body.runId, { code: body.code ?? null }));
               return;
             }
             if (action === "workspaces") {

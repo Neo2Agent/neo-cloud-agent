@@ -16,6 +16,8 @@ export type LeaseClient = {
     pid?: number;
   }): Promise<void>;
   reject(input: { deskId: string; deskToken: string; runId: string; reason?: string }): Promise<void>;
+  /** Tell the control plane this machine's worker for a run has exited. */
+  release(input: { deskId: string; deskToken: string; runId: string; code?: number | null }): Promise<void>;
   bindWorkspace(input: { deskId: string; deskToken: string } & BindDeskWorkspaceRequest): Promise<DeskWorkspace>;
   unbindWorkspace(input: { deskId: string; deskToken: string; workspaceId: string }): Promise<void>;
 };
@@ -101,6 +103,15 @@ export function createLeaseClient(baseUrl: string, fetchImpl: typeof fetch = fet
         "reject",
         { runId: input.runId, reason: input.reason },
         "desk reject failed",
+      );
+    },
+    async release(input) {
+      await deskPost(
+        input.deskId,
+        input.deskToken,
+        "release",
+        { runId: input.runId, code: input.code ?? null },
+        "desk release failed",
       );
     },
     async bindWorkspace(input) {

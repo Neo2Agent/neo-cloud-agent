@@ -457,6 +457,11 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
       workers.delete(runId);
       startedRuns.delete(runId);
       reportRunStatus({ runId, state: "stopped", detail: code === 0 ? undefined : `worker 退出（${code}）` });
+      if (deskId && deskToken) {
+        // Older control planes have no release route; the next send falls back
+        // to handoff there, so a failure here is not worth surfacing.
+        void client.release({ deskId, deskToken, runId, code }).catch(() => undefined);
+      }
       if (workers.size === 0 && sleepBlocker && powerSaveBlocker.isStarted(sleepBlocker)) {
         powerSaveBlocker.stop(sleepBlocker);
         sleepBlocker = 0;

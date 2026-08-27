@@ -183,6 +183,7 @@ async function main(): Promise<void> {
 
   let consecutiveFailures = 0;
   const maxFailures = Number(process.env.WORKER_INBOX_MAX_FAILURES ?? 75);
+  let servedTurn = false;
 
   try {
     while (running) {
@@ -201,11 +202,21 @@ async function main(): Promise<void> {
       }
       for (const message of messages) {
         console.log(`[worker ${config.runId}] ${describeDispatch(message)}`);
+        if (message.type === "prompt" || message.type === "steer" || message.type === "follow_up") {
+          servedTurn = true;
+        }
         const next = await dispatchInbound(session, message);
         if (next === "stop") {
           running = false;
           break;
         }
+      }
+      // `session.prompt` is awaited, so an empty inbox here means the turn is
+      // finished and nothing else was queued behind it.
+      if (running && config.exitAfterTurn && servedTurn && messages.length === 0 && !session.isStreaming) {
+        console.log(`[worker ${config.runId}] turn finished, exiting`);
+        running = false;
+        break;
       }
       if (running) {
         await sleep(config.pollMs);

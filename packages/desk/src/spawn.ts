@@ -48,6 +48,8 @@ export function spawnDeskWorker(input: {
   stateDir: string;
   model: string;
   nodePath?: string;
+  /** Desk default: exit when the turn is done instead of idling on the laptop. */
+  exitAfterTurn?: boolean;
 }): ChildProcess {
   const launch = deskWorkerLaunch({ execPath: input.nodePath ?? process.execPath });
   const env: NodeJS.ProcessEnv = {
@@ -64,6 +66,7 @@ export function spawnDeskWorker(input: {
     NEO_SANDBOX_ROOT: input.workspaceDir,
     NEO_MODEL: input.model,
     WORKER_POLL_MS: process.env.WORKER_POLL_MS ?? "200",
+    WORKER_EXIT_AFTER_TURN: input.exitAfterTurn === false ? "0" : "1",
     ELECTRON_RUN_AS_NODE: "1",
   };
   for (const key of SECRET_ENV_KEYS) {
