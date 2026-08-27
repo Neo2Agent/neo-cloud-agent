@@ -29,7 +29,14 @@ export function getWorkerConfig() {
   const workspaceDir = process.env.WORKSPACE_DIR ?? "/workspace";
   const file = readBootstrapFile(workspaceDir);
   const sandboxRoot = process.env.NEO_SANDBOX_ROOT?.trim();
+  const scratchDir = process.env.NEO_RUN_SCRATCH_DIR?.trim();
   return {
+    /**
+     * Per-run scratch inside the workspace, set only when several runs can share
+     * one folder. Empty means the folder belongs to this run alone and the plain
+     * `<workspace>/.neo` layout is correct, which is how every cloud run works.
+     */
+    scratchDir: scratchDir ? path.resolve(scratchDir) : "",
     runId: process.env.RUN_ID || file.runId || "",
     controlPlaneUrl: (process.env.CONTROL_PLANE_URL || file.controlPlaneUrl || "http://127.0.0.1:8080").replace(/\/$/, ""),
     llmGatewayUrl: (process.env.LLM_GATEWAY_URL || file.llmGatewayUrl || "http://127.0.0.1:8081").replace(/\/$/, ""),

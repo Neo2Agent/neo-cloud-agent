@@ -46,6 +46,8 @@ export function spawnDeskWorker(input: {
   workspaceDir: string;
   /** Per-run state, kept outside the user's repo. */
   stateDir: string;
+  /** Per-run scratch inside the workspace, so folder-mates never collide. */
+  scratchDir: string;
   model: string;
   nodePath?: string;
   /** Desk default: exit when the turn is done instead of idling on the laptop. */
@@ -61,6 +63,7 @@ export function spawnDeskWorker(input: {
     WORKSPACE_DIR: input.workspaceDir,
     SESSION_DIR: path.join(input.stateDir, "sessions"),
     NEO_RUN_BOOTSTRAP: path.join(input.stateDir, "run-bootstrap.json"),
+    NEO_RUN_SCRATCH_DIR: input.scratchDir,
     // The workspace is one folder inside the user's real filesystem, so the
     // worker has to refuse anything outside it.
     NEO_SANDBOX_ROOT: input.workspaceDir,

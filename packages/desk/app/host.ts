@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import type { DeskAssignment, DeskInboxEvent } from "@neo-cloud-agent/contracts";
+import { admitLocalRun, normalizeMaxLocalRuns, type ActiveLocalRun } from "../src/admission.js";
 import { createLeaseClient } from "../src/lease.js";
 import { openDeskInboxStream, type DeskInboxHandle } from "../src/inbox.js";
 import { listLocalPath } from "../src/local-fs.js";
@@ -24,6 +25,7 @@ import {
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
   readRepoIdentity,
+  runScratchDir,
   runStateDir,
   writeRunBootstrap,
   writeRunExpertFiles,
@@ -45,7 +47,7 @@ type BoundWorkspace = { id: string; folder: string; name: string; repoKey: strin
  * control. Off (default) this machine stays private: folders are never
  * published, so no other client can even see it, let alone dispatch to it.
  */
-type DeskPrefs = { requireApproval?: boolean; remoteControl?: boolean };
+type DeskPrefs = { requireApproval?: boolean; remoteControl?: boolean; maxLocalRuns?: number };
 
 type InboxState = { connected: boolean; deskId?: string; error?: string };
 
@@ -66,10 +68,27 @@ let deskId = "";
 let deskToken = "";
 let inbox: DeskInboxHandle | null = null;
 let leaseLoop = false;
-const workers = new Map<string, ChildProcess>();
 const shells = new Map<string, LocalShell>();
-/** Runs this process already started, so an inbox echo never double-spawns. */
-const startedRuns = new Set<string>();
+/**
+ * Local runs this process owns, keyed by runId.
+ *
+ * The entry is created before the spawn so a run still preparing its workspace
+ * already counts against the limit, and it carries the folder so admission can
+ * tell same-folder work apart from unrelated folders.
+ */
+const localRuns = new Map<string, { folder: string; child?: ChildProcess }>();
+
+function hasLocalRun(runId: string): boolean {
+  return localRuns.has(runId);
+}
+
+function activeLocalRuns(): ActiveLocalRun[] {
+  return [...localRuns.entries()].map(([runId, entry]) => ({ runId, folder: entry.folder }));
+}
+
+function maxLocalRuns(): number {
+  return normalizeMaxLocalRuns(prefs().maxLocalRuns);
+}
 
 function readJson<T>(file: string, fallback: T): T {
   try {
@@ -287,6 +306,8 @@ function reportRunStatus(payload: {
   state: "starting" | "running" | "failed" | "stopped";
   detail?: string;
   workspace?: string;
+  /** Something worth saying without failing the run, like a shared folder. */
+  notice?: string;
 }): void {
   toRenderer("desk:run-status", payload);
 }
@@ -353,40 +374,51 @@ async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
 
 const ACTIVE_RUN_STATUS = new Set(["PROVISIONING", "INSTALLING", "RUNNING", "WAITING_FOR_BACKGROUND_WORK"]);
 
-/** A desk worker outlives its turn, so ask the control plane before calling it busy. */
-async function runIsActive(runId: string): Promise<boolean> {
+/**
+ * True only when the control plane says this run stopped working.
+ *
+ * Anything we cannot read is reported as unfinished. Killing a worker because a
+ * status call timed out would throw away live work, and the reaper this feeds is
+ * only cleanup: admission counts local processes and never waits on the network.
+ */
+async function runHasFinished(runId: string): Promise<boolean> {
   const token = getToken();
   if (!token) {
-    return true;
+    return false;
   }
   try {
     const response = await net.fetch(`${controlPlaneUrl}/v1/runs/${runId}`, {
       headers: { authorization: `Bearer ${token}` },
     });
+    if (response.status === 404) {
+      return true;
+    }
     if (!response.ok) {
       return false;
     }
     const run = (await response.json()) as { status?: string };
-    return ACTIVE_RUN_STATUS.has(run.status ?? "");
+    return !ACTIVE_RUN_STATUS.has(run.status ?? "");
   } catch {
-    return true;
+    return false;
   }
 }
 
-/** Returns true when another local run is genuinely still working. */
-async function retireFinishedWorkers(keepRunId: string): Promise<boolean> {
-  let busy = false;
-  for (const otherId of [...workers.keys()]) {
-    if (otherId === keepRunId) {
+/**
+ * Stop workers whose run already ended on the control plane.
+ *
+ * A desk worker exits after its own turn, so a process still here means it hung
+ * or the run was archived elsewhere. Best effort on purpose: nothing about
+ * starting a new conversation waits for this.
+ */
+async function reapFinishedWorkers(keepRunId: string): Promise<void> {
+  for (const runId of [...localRuns.keys()]) {
+    if (runId === keepRunId || !localRuns.get(runId)?.child) {
       continue;
     }
-    if (await runIsActive(otherId)) {
-      busy = true;
-      continue;
+    if (await runHasFinished(runId)) {
+      stopRun(runId, "这条本机对话已经结束，本机进程已退出");
     }
-    stopRun(otherId, "上一条本机对话已结束，worker 已退出");
   }
-  return busy;
 }
 
 /**
@@ -397,7 +429,7 @@ async function retireFinishedWorkers(keepRunId: string): Promise<boolean> {
  */
 async function startAssignment(assignment: DeskAssignment, folderHint?: string): Promise<void> {
   const runId = assignment.runId;
-  if (startedRuns.has(runId) || workers.has(runId)) {
+  if (hasLocalRun(runId)) {
     return;
   }
   const client = leaseClient();
@@ -420,26 +452,34 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
     }
     folder = bound.folder;
   } else {
+    // The caller passes its own folder so two inline runs cannot both resolve to
+    // whatever the picker happens to show. The saved target is only a backstop.
     folder = folderHint || currentTarget().folder || "";
   }
   if (!folder) {
     await fail("这台电脑还没有绑定本机工作区");
     return;
   }
-  // One local worker at a time, so two agents never edit the same folder at once.
-  // A worker whose run already finished is only idling, so retire it instead of
-  // wedging this desk after the first local conversation.
-  if (await retireFinishedWorkers(runId)) {
-    await fail("这台电脑已经有一条本机对话在跑，先停掉它再开新的");
+  // Retiring hung workers first can free a slot, but it never gates the start:
+  // a control plane we cannot reach must not stop work on the user's own disk.
+  await reapFinishedWorkers(runId);
+  const decision = admitLocalRun({ runId, folder, active: activeLocalRuns(), limit: maxLocalRuns() });
+  if (!decision.ok) {
+    await fail(decision.reason);
     return;
   }
-  startedRuns.add(runId);
-  reportRunStatus({ runId, state: "starting", workspace: folder });
+  // Reserve the slot before any await so a second assignment arriving mid-spawn
+  // counts this run instead of racing past the limit.
+  localRuns.set(runId, { folder });
+  reportRunStatus({ runId, state: "starting", workspace: folder, notice: decision.warning });
+  let child: ChildProcess | undefined;
   try {
     const workspaceDir = await prepareDeskWorkspace({ repoDir: folder });
-    // The worker writes .neo/logs here too, so exclude it even with no expert.
+    // The worker writes logs and pasted images here too, so exclude the
+    // directory even when this run has no expert files.
     ignoreNeoDir(workspaceDir);
     const stateDirForRun = runStateDir(stateDir(), runId);
+    const scratchDirForRun = runScratchDir(workspaceDir, runId);
     const workerUrls = publicizeWorkerUrls(assignment, controlPlaneUrl);
     writeRunBootstrap(stateDirForRun, {
       runId,
@@ -448,54 +488,88 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
       jwt: assignment.jwt,
       model: assignment.model,
     });
-    writeRunExpertFiles(workspaceDir, assignment);
+    writeRunExpertFiles(workspaceDir, scratchDirForRun, assignment);
     if (!sleepBlocker) {
       sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
     }
-    const child = spawnDeskWorker({
+    child = spawnDeskWorker({
       runId,
       jwt: assignment.jwt,
       controlPlaneUrl: workerUrls.controlPlaneUrl,
       llmGatewayUrl: workerUrls.llmGatewayUrl,
       workspaceDir,
       stateDir: stateDirForRun,
+      scratchDir: scratchDirForRun,
       model: assignment.model,
     });
-    workers.set(runId, child);
-    await client.claim({ deskId, deskToken, runId, workspaceDir, pid: child.pid ?? undefined });
-    reportRunStatus({ runId, state: "running", workspace: workspaceDir });
+    localRuns.set(runId, { folder: workspaceDir, child });
+    console.log(`[desk-worker ${runId}] spawned pid=${child.pid ?? "?"} folder=${workspaceDir}`);
     child.stdout?.on("data", (chunk) => process.stdout.write(`[desk-worker ${runId}] ${chunk}`));
     child.stderr?.on("data", (chunk) => process.stderr.write(`[desk-worker ${runId}] ${chunk}`));
     child.on("exit", (code) => {
-      workers.delete(runId);
-      startedRuns.delete(runId);
+      localRuns.delete(runId);
+      console.log(`[desk-worker ${runId}] exit code=${code} folder=${workspaceDir}`);
       reportRunStatus({ runId, state: "stopped", detail: code === 0 ? undefined : `worker 退出（${code}）` });
-      if (deskId && deskToken) {
-        // Older control planes have no release route; the next send falls back
-        // to handoff there, so a failure here is not worth surfacing.
-        void client.release({ deskId, deskToken, runId, code }).catch(() => undefined);
-      }
-      if (workers.size === 0 && sleepBlocker && powerSaveBlocker.isStarted(sleepBlocker)) {
+      void releaseRun(runId, code);
+      if (localRuns.size === 0 && sleepBlocker && powerSaveBlocker.isStarted(sleepBlocker)) {
         powerSaveBlocker.stop(sleepBlocker);
         sleepBlocker = 0;
       }
     });
+    // Claim last. A worker the control plane never learned about would keep
+    // editing the folder while the run looks unstarted, so a failure here has
+    // to take the process down with it.
+    await client.claim({ deskId, deskToken, runId, workspaceDir, pid: child.pid ?? undefined });
+    console.log(`[desk-worker ${runId}] claimed folder=${workspaceDir}`);
+    reportRunStatus({ runId, state: "running", workspace: workspaceDir });
   } catch (error) {
-    startedRuns.delete(runId);
-    workers.delete(runId);
+    if (child && !child.killed) {
+      child.kill("SIGTERM");
+    }
+    localRuns.delete(runId);
     await fail(error instanceof Error ? error.message : "本机启动失败");
   }
 }
 
+/**
+ * Tell the control plane the worker is gone.
+ *
+ * Losing this leaves the run holding a worker handle that no longer exists, and
+ * follow-ups then stop being dispatched, so retry before giving up and say so in
+ * the UI when it still fails.
+ */
+async function releaseRun(runId: string, code: number | null): Promise<void> {
+  if (!deskId || !deskToken) {
+    return;
+  }
+  const client = leaseClient();
+  let lastError: unknown;
+  for (const waitMs of [0, 500, 2_000]) {
+    if (waitMs) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+    try {
+      await client.release({ deskId, deskToken, runId, code });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  console.error(`failed to release desk run ${runId}`, lastError);
+  reportRunStatus({
+    runId,
+    state: "stopped",
+    detail: "本机进程已退出，但没能告诉现网。下一条消息可能需要点「在这台电脑上继续」。",
+  });
+}
+
 function stopRun(runId: string, reason?: string): void {
-  const child = workers.get(runId);
+  const child = localRuns.get(runId)?.child;
+  localRuns.delete(runId);
   if (!child) {
-    startedRuns.delete(runId);
     return;
   }
   child.kill("SIGTERM");
-  workers.delete(runId);
-  startedRuns.delete(runId);
   reportRunStatus({ runId, state: "stopped", detail: reason });
 }
 
@@ -508,7 +582,7 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
     return;
   }
   const assignment = event.assignment;
-  if (startedRuns.has(assignment.runId) || workers.has(assignment.runId)) {
+  if (hasLocalRun(assignment.runId)) {
     return;
   }
   const bound = findBound({ workspaceId: assignment.workspaceId });
@@ -814,25 +888,25 @@ function wireIpc(): void {
     }
     return prefs();
   });
-  ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment) => {
-    await startAssignment(assignment);
+  ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment, folder?: string) => {
+    await startAssignment(assignment, folder);
     return true;
   });
-  ipcMain.handle("desk:takeAssignment", async (_event, runId?: string) => {
-    if (runId && (startedRuns.has(runId) || workers.has(runId))) {
+  ipcMain.handle("desk:takeAssignment", async (_event, runId?: string, folder?: string) => {
+    if (runId && hasLocalRun(runId)) {
       return { started: true, runId };
     }
     if (!deskId || !deskToken) {
       return { started: false };
     }
     const assignment = await leaseClient().waitAssignment({ deskId, deskToken, waitMs: 8_000 });
-    if (runId && (startedRuns.has(runId) || workers.has(runId))) {
+    if (runId && hasLocalRun(runId)) {
       return { started: true, runId };
     }
     if (!assignment || (runId && assignment.runId !== runId)) {
       return { started: false, runId: assignment?.runId };
     }
-    await startAssignment(assignment);
+    await startAssignment(assignment, folder);
     return { started: true, runId: assignment.runId };
   });
   ipcMain.handle("desk:stopRun", (_event, runId: string) => {
@@ -935,11 +1009,36 @@ app.on("open-url", (_event, url) => {
   mainWindow.webContents.send("desk:deep-link", url);
 });
 
-app.on("before-quit", () => {
+let shuttingDown = false;
+
+/**
+ * Quitting must take the workers with it.
+ *
+ * They edit the user's own folder, so a leftover process would keep writing to a
+ * repo nobody is watching. The workers back up their session on SIGTERM, so the
+ * short wait here is about letting that finish and telling the control plane the
+ * handle is gone.
+ */
+app.on("before-quit", (event) => {
   inbox?.close();
   for (const shellSession of shells.values()) {
     shellSession.kill();
   }
+  if (shuttingDown || localRuns.size === 0) {
+    return;
+  }
+  shuttingDown = true;
+  event.preventDefault();
+  const running = [...localRuns.entries()];
+  localRuns.clear();
+  for (const [runId, entry] of running) {
+    console.log(`[desk-worker ${runId}] stopping for app quit`);
+    entry.child?.kill("SIGTERM");
+  }
+  const releases = running.map(([runId]) => releaseRun(runId, null));
+  const settled = Promise.allSettled(releases);
+  const deadline = new Promise((resolve) => setTimeout(resolve, 3_000));
+  void Promise.race([settled, deadline]).then(() => app.quit());
 });
 
 app.on("window-all-closed", () => {

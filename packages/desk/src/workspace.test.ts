@@ -10,6 +10,7 @@ import {
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
   readRepoIdentity,
+  runScratchDir,
   runStateDir,
   writeRunBootstrap,
   writeRunExpertFiles,
@@ -56,21 +57,36 @@ test("run state stays out of the repo", () => {
   assert.equal(existsSync(path.join(repo, "sessions")), false);
 });
 
-test("expert files land in the workspace and .neo is excluded from git", async () => {
+test("expert files land in the run's own scratch and .neo is excluded from git", async () => {
   const dir = initRepo();
   const workspace = await prepareDeskWorkspace({ repoDir: dir });
-  writeRunExpertFiles(workspace, {
+  const scratch = runScratchDir(workspace, "run-a");
+  writeRunExpertFiles(workspace, scratch, {
     expertMarkdown: "Role Override: reviewer\n",
     expertMeta: JSON.stringify({ id: "exp_reviewer", slug: "reviewer", name: "审查", kind: "expert" }),
     expertAgents: [{ slug: "planner", markdown: "---\nname: planner\n---\nplan\n" }],
   });
-  assert.match(readFileSync(path.join(workspace, ".neo", "EXPERT.md"), "utf8"), /Role Override/);
-  assert.match(readFileSync(path.join(workspace, ".neo", "expert.json"), "utf8"), /exp_reviewer/);
-  assert.match(readFileSync(path.join(workspace, ".neo", "agents", "planner.md"), "utf8"), /planner/);
+  assert.match(readFileSync(path.join(scratch, "EXPERT.md"), "utf8"), /Role Override/);
+  assert.match(readFileSync(path.join(scratch, "expert.json"), "utf8"), /exp_reviewer/);
+  assert.match(readFileSync(path.join(scratch, "agents", "planner.md"), "utf8"), /planner/);
+  // The shared folder must stay clean, or the next run would read this persona.
+  assert.equal(existsSync(path.join(workspace, ".neo", "EXPERT.md")), false);
   assert.match(readFileSync(path.join(dir, ".git", "info", "exclude"), "utf8"), /^\.neo\/$/m);
   ignoreNeoDir(workspace);
   const exclude = readFileSync(path.join(dir, ".git", "info", "exclude"), "utf8");
   assert.equal(exclude.match(/^\.neo\/$/gm)?.length, 1);
+});
+
+test("two runs sharing one folder keep separate experts", async () => {
+  const dir = initRepo();
+  const workspace = await prepareDeskWorkspace({ repoDir: dir });
+  const first = runScratchDir(workspace, "run-a");
+  const second = runScratchDir(workspace, "run-b");
+  assert.notEqual(first, second);
+  writeRunExpertFiles(workspace, first, { expertMarkdown: "Role Override: reviewer\n" });
+  writeRunExpertFiles(workspace, second, { expertMarkdown: "Role Override: planner\n" });
+  assert.match(readFileSync(path.join(first, "EXPERT.md"), "utf8"), /reviewer/);
+  assert.match(readFileSync(path.join(second, "EXPERT.md"), "utf8"), /planner/);
 });
 
 test("diff stat counts uncommitted edits in the user's own folder", async () => {

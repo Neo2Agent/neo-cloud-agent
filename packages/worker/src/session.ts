@@ -80,7 +80,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
 
   const config = getWorkerConfig();
   const allowSubagent = input.allowSubagent !== false;
-  const expert = readExpertWorkspace(input.cwd);
+  const expert = readExpertWorkspace(input.cwd, config.scratchDir);
   const toolNames = intersectSessionTools(
     input.tools ?? sessionToolNames({ includeSubagent: allowSubagent }),
     expert.tools,
@@ -177,7 +177,8 @@ export async function dispatchInbound(session: AgentSession, message: WorkerInbo
   }
 
   const method = deliveryForPi(message.type);
-  const { text, images } = inboundPrompt(getWorkerConfig().workspaceDir, message);
+  const config = getWorkerConfig();
+  const { text, images } = inboundPrompt(config.workspaceDir, message, config.scratchDir);
   const vision = images.length ? images : undefined;
   if (session.isStreaming) {
     if (method === "steer") {

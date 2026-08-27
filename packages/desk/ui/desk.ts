@@ -44,6 +44,8 @@ export type DeskRunStatus = {
   state: "starting" | "running" | "failed" | "stopped";
   detail?: string;
   workspace?: string;
+  /** Worth telling the user without failing the run, like a shared folder. */
+  notice?: string;
 };
 
 export type LocalFsEntry = { name: string; path: string; type: "file" | "dir"; size?: number };
@@ -81,13 +83,20 @@ export type NeoDeskBridge = {
   openPath(filePath: string): Promise<void>;
   listWorkspaces?(): Promise<DeskWorkspaceRef[]>;
   unbindWorkspace?(workspaceId: string): Promise<boolean>;
-  getPrefs?(): Promise<{ requireApproval?: boolean; remoteControl?: boolean; deskId?: string }>;
+  getPrefs?(): Promise<{
+    requireApproval?: boolean;
+    remoteControl?: boolean;
+    maxLocalRuns?: number;
+    deskId?: string;
+  }>;
   setPrefs?(next: {
     requireApproval?: boolean;
     remoteControl?: boolean;
-  }): Promise<{ requireApproval?: boolean; remoteControl?: boolean }>;
-  startRun?(assignment: DeskAssignment): Promise<boolean>;
-  takeAssignment?(runId?: string): Promise<{ started?: boolean; runId?: string }>;
+    maxLocalRuns?: number;
+  }): Promise<{ requireApproval?: boolean; remoteControl?: boolean; maxLocalRuns?: number }>;
+  /** `folder` pins this run to a folder so parallel runs cannot follow the picker. */
+  startRun?(assignment: DeskAssignment, folder?: string): Promise<boolean>;
+  takeAssignment?(runId?: string, folder?: string): Promise<{ started?: boolean; runId?: string }>;
   stopRun?(runId: string): Promise<boolean>;
   listDir?(input: { folder: string; path?: string; content?: boolean }): Promise<LocalFsListing>;
   diffStat?(folder: string): Promise<{ added: number; removed: number } | null>;

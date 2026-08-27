@@ -39,18 +39,32 @@ export function writeRunBootstrap(stateDir: string, bootstrap: Record<string, un
 }
 
 /**
+ * Per-run scratch inside the workspace.
+ *
+ * Two local conversations are allowed to share a folder, so anything written for
+ * one run has to be addressed by run id. `.neo/runs/` is already excluded from
+ * commits and skipped by workspace copies.
+ */
+export function runScratchDir(workspaceDir: string, runId: string): string {
+  const dest = path.join(path.resolve(workspaceDir), ".neo", "runs", runId);
+  mkdirSync(dest, { recursive: true });
+  return dest;
+}
+
+/**
  * Expert files have to sit in the workspace because the worker's loader reads
- * them from `<cwd>/.neo`. Keep that directory ignored so it never lands in a
- * commit on the user's own branch.
+ * them from disk. They go under the run's own scratch so a second conversation
+ * in the same folder cannot swap this run's persona out from under it.
  */
 export function writeRunExpertFiles(
   workspaceDir: string,
+  scratchDir: string,
   assignment: Pick<DeskAssignment, "expertMarkdown" | "expertTeamMarkdown" | "expertMeta" | "expertAgents">,
 ): void {
   if (!assignment.expertMeta && !assignment.expertMarkdown && !assignment.expertTeamMarkdown && !assignment.expertAgents?.length) {
     return;
   }
-  const dest = path.join(workspaceDir, ".neo");
+  const dest = scratchDir;
   mkdirSync(dest, { recursive: true });
   if (assignment.expertMeta) {
     writeFileSync(path.join(dest, "expert.json"), assignment.expertMeta.endsWith("\n") ? assignment.expertMeta : `${assignment.expertMeta}\n`);
