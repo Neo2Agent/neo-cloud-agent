@@ -2,6 +2,7 @@ import { useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } fro
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
+import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { DeskTarget } from "../desk";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
 import { Select } from "@neo-cloud-agent/ui";
@@ -23,6 +24,7 @@ type Props = {
   target: DeskTarget;
   canRunLocal?: boolean;
   folder?: string;
+  desks?: Desk[];
   mode: AgentMode;
   model: string;
   models?: Array<{ id: string; label: string }>;
@@ -55,6 +57,7 @@ export function Composer({
   target,
   canRunLocal = false,
   folder,
+  desks,
   mode,
   model,
   models = [
@@ -147,6 +150,7 @@ export function Composer({
           target={target}
           canRunLocal={canRunLocal}
           folder={folder}
+          desks={desks}
           onTarget={onTarget}
           onPickFolder={onPickFolder}
         />

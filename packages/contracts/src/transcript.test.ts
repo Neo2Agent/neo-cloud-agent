@@ -160,6 +160,26 @@ test("stale control-plane restart notices hide after the conversation continues"
   assert.equal(busy.length, 0);
 });
 
+test("the desk claim handshake never shows on the machine, and disappears elsewhere once it starts", () => {
+  const claim: TranscriptMessage = {
+    id: "q1",
+    role: "setup",
+    text: "等待本机 Desk 认领",
+    createdAt: "2026-08-27T00:00:00.000Z",
+    kind: "run.queued",
+  };
+  // On the desk itself the local bar covers this, so it is always hidden.
+  assert.equal(displayTranscriptMessages([claim], { hideDeskHandshake: true }).length, 0);
+  // On the web it is real information while the machine has not picked it up.
+  assert.equal(displayTranscriptMessages([claim]).length, 1);
+  // Once the run actually started it is stale everywhere.
+  const started = displayTranscriptMessages([
+    claim,
+    { id: "a1", role: "assistant", text: "local-ok", createdAt: "2026-08-27T00:00:05.000Z" },
+  ]);
+  assert.deepEqual(started.map((item) => item.role), ["assistant"]);
+});
+
 test("transcriptHasUnsettledWork sees running tools on either tools or blocks", () => {
   assert.equal(
     transcriptHasUnsettledWork([

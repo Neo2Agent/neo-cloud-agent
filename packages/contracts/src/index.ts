@@ -21,6 +21,7 @@ export type {
   TransferRunMode,
   TransferRunRequest,
   RunSource,
+  RunStart,
   RunStatus,
   SetupStatus,
 } from "./run.js";
@@ -31,17 +32,24 @@ export {
   isDeskTarget,
   parseExecutionTarget,
   parseRunSource,
+  parseRunStart,
 } from "./run.js";
 export type { CreateDeviceRequest, Device, DevicePlatform } from "./device.js";
 export { parseDevicePlatform } from "./device.js";
 export type {
+  BindDeskWorkspaceRequest,
   CreateDeskRequest,
   Desk,
   DeskAssignment,
   DeskClaimRequest,
+  DeskInboxEvent,
   DeskLeaseResponse,
+  DeskRejectRequest,
+  DeskWorkspace,
   HandoffRequest,
+  UpdateDeskRequest,
 } from "./desk.js";
+export { deskRepoKey, deskWorkspaceShortName } from "./desk-workspace.js";
 
 export type {
   Build,
@@ -98,6 +106,7 @@ export {
   clampTranscriptPage,
   cloneTranscriptMessage,
   displayTranscriptMessages,
+  isDeskHandshakeNotice,
   isSetupKind,
   isStaleRestartNotice,
   pageTranscriptMessages,

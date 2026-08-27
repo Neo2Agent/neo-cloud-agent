@@ -17,6 +17,7 @@
     "./project-asset": "./src/project-asset.ts",
     "./project-message": "./src/project-message.ts",
     "./desk": "./src/desk.ts",
+    "./desk-workspace": "./src/desk-workspace.ts",
     "./device": "./src/device.ts",
     "./environment": "./src/environment.ts"
   },

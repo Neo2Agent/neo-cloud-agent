@@ -4,6 +4,8 @@ export type DeskTarget = {
   kind: DeskTargetKind;
   folder?: string;
   deskId?: string;
+  /** Which bound folder on that machine should run this. */
+  workspaceId?: string;
 };
 
 export type NeoDeskBridge = {

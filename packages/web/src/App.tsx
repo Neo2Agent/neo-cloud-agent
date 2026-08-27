@@ -8,6 +8,7 @@ import {
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
+import type { Desk, DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
 import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
@@ -199,6 +200,7 @@ export function App() {
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [deskFolder, setDeskFolder] = useState("");
+  const [desks, setDesks] = useState<Desk[]>([]);
   const [pinnedIds, setPinnedIds] = useState<string[]>(() => (typeof window === "undefined" ? [] : readPinnedRuns()));
   const [diagLogs, setDiagLogs] = useState<Array<{ name: string; content?: string }>>([]);
   const [diagError, setDiagError] = useState("");
@@ -419,6 +421,19 @@ export function App() {
       // keep last occupancy
     }
   }, [applyVms]);
+
+  /** Machines the user registered from Desk, so a run can be sent to one. */
+  const refreshDesks = useCallback(async () => {
+    if (!tokenRef.current) return;
+    try {
+      const response = await api(tokenRef.current, "/v1/desks");
+      if (response.ok) {
+        setDesks((await readJson<{ desks?: Desk[] }>(response)).desks ?? []);
+      }
+    } catch {
+      // keep the last list
+    }
+  }, []);
 
   const refreshExperts = useCallback(async (projectId?: string | null) => {
     if (!tokenRef.current) return;
@@ -677,7 +692,15 @@ export function App() {
         if (target.folder) setDeskFolder(target.folder);
       }
     }
-    const refreshShell = [refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms(), refreshExperts()] as const;
+    const refreshShell = [
+      refreshRuns(),
+      refreshEnvironments(),
+      refreshLlm(),
+      refreshScm(),
+      refreshVms(),
+      refreshExperts(),
+      refreshDesks(),
+    ] as const;
     if (hashAutomations()) {
       setMainTab("automations");
       await Promise.all(refreshShell);
@@ -706,9 +729,10 @@ export function App() {
       refreshLlm(),
       refreshScm(),
       refreshVms(),
+      refreshDesks(),
     ]);
     if (!match && !hashRunId() && !hashProjects() && !hashExperts()) resetComposer();
-  }, [openRun, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
+  }, [openRun, refreshDesks, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
     async (nextToken: string, user?: { id?: string; email?: string } | null) => {
@@ -795,9 +819,15 @@ export function App() {
               expertId: expertPick.expertId,
               expertTeamId: expertPick.expertTeamId,
               mode: agentMode,
+              deskWorkspaceId: deskTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
               target:
                 deskTarget.kind === "desk"
-                  ? { loop: "desk", tools: "desk", deskId: deskTarget.deskId }
+                  ? {
+                      loop: "desk",
+                      tools: "desk",
+                      deskId: deskTarget.deskId,
+                      deskWorkspaceId: deskTarget.workspaceId,
+                    }
                   : { loop: "cloud", tools: "cloud" },
               ...buildPayload,
             }),
@@ -922,12 +952,17 @@ export function App() {
       try {
         const target =
           kind === "desk"
-            ? { loop: "desk" as const, tools: "desk" as const, deskId: deskTarget.deskId }
+            ? {
+                loop: "desk" as const,
+                tools: "desk" as const,
+                deskId: deskTarget.deskId,
+                deskWorkspaceId: deskTarget.workspaceId,
+              }
             : { loop: "cloud" as const, tools: "cloud" as const };
         const body = await readJson<Run & { error?: string }>(
           await api(tokenRef.current, `/v1/runs/${runId}/handoff`, {
             method: "POST",
-            body: JSON.stringify({ target }),
+            body: JSON.stringify({ target, deskWorkspaceId: deskTarget.workspaceId }),
           }),
         );
         if (body.error) throw new Error(body.error);
@@ -1172,6 +1207,23 @@ export function App() {
       : Math.max(0, (vms.total || vms.slots.length) - vms.busy) > 0
         ? `${Math.max(0, (vms.total || vms.slots.length) - vms.busy)}/${vms.total || vms.slots.length} 个 VM 空闲，发送后占用其中一个（${vms.backend === "loop" ? "loop 挂载" : vms.backend}）。`
         : `${vms.total || vms.slots.length} 个 VM 都在忙。新对话会排队，有空闲槽再自动开始。`;
+
+  const localTargetHint = deskBridge()?.canRunLocal
+    ? deskFolder
+      ? `本机 · ${deskFolder}`
+      : "本机执行需要先选一个文件夹。"
+    : (() => {
+        const picked = desks
+          .flatMap((desk) => (desk.workspaces ?? []).map((ws: DeskWorkspace) => ({ desk, ws })))
+          .find((item) => item.ws.id === deskTarget.workspaceId);
+        if (picked) {
+          return `会在 ${picked.desk.name} 的 ${picked.ws.name} 里跑。`;
+        }
+        const available = desks.some((desk) => desk.online && desk.allowRemote !== false && (desk.workspaces?.length ?? 0) > 0);
+        return available
+          ? "选一台已打开 Desk 的电脑。"
+          : "没有可用的电脑。先打开 Desk 并在设置里绑定一个文件夹。";
+      })();
 
   const loadOlder = () => {
     if (!runId || remaining <= 0 || loadingOlder || loadingTranscript) return;
@@ -1780,13 +1832,7 @@ export function App() {
             <Composer
               prompt={prompt}
               images={images}
-              vmHint={
-                deskTarget.kind === "desk"
-                  ? deskFolder
-                    ? `本机 · ${deskFolder}`
-                    : "本机执行需要先选一个 git 文件夹。"
-                  : vmHint
-              }
+              vmHint={deskTarget.kind === "desk" ? localTargetHint : vmHint}
               busy={busy}
               stopping={stopping}
               archived={archived}
@@ -1796,6 +1842,7 @@ export function App() {
               target={deskTarget}
               canRunLocal={Boolean(deskBridge()?.canRunLocal)}
               folder={deskFolder}
+              desks={desks}
               mode={agentMode}
               model={selectedModel}
               experts={experts}

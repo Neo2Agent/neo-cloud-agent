@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { DefaultResourceLoader, type ResourceLoader, type SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createWorkspaceHookExtension, isInsideWorkspace } from "./hooks.js";
+import { createWorkspaceSandboxExtension } from "./sandbox.js";
 
 export const WORKSPACE_SKILL_DIRS = [
   ".pi/skills",
@@ -35,8 +36,14 @@ export async function createWorkspaceLoader(input: {
   agentDir: string;
   systemPrompt: string;
   settingsManager: SettingsManager;
+  /** Desk runs only. A cloud VM is already an isolated box. */
+  sandboxRoot?: string;
 }): Promise<ResourceLoader> {
   const cwd = path.resolve(input.cwd);
+  const extensionFactories = [createWorkspaceHookExtension(cwd)];
+  if (input.sandboxRoot) {
+    extensionFactories.push(createWorkspaceSandboxExtension(input.sandboxRoot));
+  }
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir: path.resolve(input.agentDir),
@@ -48,7 +55,7 @@ export async function createWorkspaceLoader(input: {
     noContextFiles: false,
     additionalSkillPaths: existingWorkspaceSkillPaths(cwd),
     systemPrompt: input.systemPrompt,
-    extensionFactories: [createWorkspaceHookExtension(cwd)],
+    extensionFactories,
     agentsFilesOverride: (current) => ({
       agentsFiles: projectContextFilesOnly(cwd, current.agentsFiles),
     }),

@@ -274,14 +274,20 @@ export function settleTranscriptMessages(messages: TranscriptMessage[]): Transcr
 
 const RESTART_HEARTBEAT = /heartbeat lost after control plane restart/i;
 const SLOT_BUSY_NOTICE = /all VM slots are busy/i;
+/** Control plane waiting for a desk to pick the run up. Never user-facing on the desk itself. */
+const DESK_CLAIM_NOTICE = /(等待本机 Desk 认领|等待 Desk 认领|已派给这台电脑，等待启动)/;
 
 function isTransientInfraNotice(text: string | undefined): boolean {
   const value = text ?? "";
   return RESTART_HEARTBEAT.test(value) || SLOT_BUSY_NOTICE.test(value);
 }
 
+export function isDeskHandshakeNotice(text: string | undefined): boolean {
+  return DESK_CLAIM_NOTICE.test(text ?? "");
+}
+
 export function isStaleRestartNotice(message: TranscriptMessage, later: TranscriptMessage[]): boolean {
-  if (!isTransientInfraNotice(message.text)) {
+  if (!isTransientInfraNotice(message.text) && !isDeskHandshakeNotice(message.text)) {
     return false;
   }
   return later.some(
@@ -308,7 +314,12 @@ export function transcriptHasUnsettledWork(messages: TranscriptMessage[]): boole
 
 export function displayTranscriptMessages(
   messages: TranscriptMessage[],
-  options?: { hideStaleRestart?: boolean; hideFollowUpIds?: Iterable<string> },
+  options?: {
+    hideStaleRestart?: boolean;
+    /** This window is the machine, so its own claim handshake is noise. */
+    hideDeskHandshake?: boolean;
+    hideFollowUpIds?: Iterable<string>;
+  },
 ): TranscriptMessage[] {
   const hidden = options?.hideFollowUpIds ? new Set(options.hideFollowUpIds) : null;
   return messages.filter((message, index) => {
@@ -316,6 +327,9 @@ export function displayTranscriptMessages(
       return false;
     }
     if (options?.hideStaleRestart && isTransientInfraNotice(message.text)) {
+      return false;
+    }
+    if (options?.hideDeskHandshake && isDeskHandshakeNotice(message.text)) {
       return false;
     }
     return !isStaleRestartNotice(message, messages.slice(index + 1));

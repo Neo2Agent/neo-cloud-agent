@@ -143,7 +143,7 @@ iOS / Android / PWA
 - 在 App 里贴 `DEEPSEEK_API_KEY`
 - 把 Telegram 用户直接映射成 App 账号（ingress 仍然是公开 webhook）
 - 为了手机把 Agent loop 搬到控制面
-- 复制 Desk 的 lease / claim / worktree
+- 复制 Desk 的登记 / claim / 本机工作区
 
 ---
 

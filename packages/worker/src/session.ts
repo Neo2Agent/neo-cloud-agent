@@ -107,10 +107,14 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     cwd: input.cwd,
     agentDir,
     systemPrompt: appendProjectInstruction(
-      appendExpertRole(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, expert.role),
+      appendExpertRole(
+        appendWorkspaceBoundary(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, config.sandboxRoot),
+        expert.role,
+      ),
       readProjectInstruction(input.cwd),
     ),
     settingsManager,
+    sandboxRoot: config.sandboxRoot,
   });
   const loaded = summarizeWorkspaceResources(resourceLoader);
   if (loaded.skills.length > 0 || loaded.agentsFiles.length > 0) {
@@ -132,6 +136,21 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     settingsManager,
   });
   return session;
+}
+
+/** Desk runs live in the user's own folder, so say so before the agent guesses. */
+function appendWorkspaceBoundary(prompt: string, sandboxRoot: string): string {
+  if (!sandboxRoot) {
+    return prompt;
+  }
+  return [
+    prompt,
+    "",
+    "## 本机工作区",
+    "",
+    `你在用户自己的电脑上，工作区是 \`${sandboxRoot}\`。这里面的文件就是用户正在编辑的文件，包括还没提交的改动。`,
+    "只读写这个文件夹里的内容。不要碰家目录、系统目录，或工作区之外的路径。",
+  ].join("\n");
 }
 
 function readProjectInstruction(cwd: string): string {

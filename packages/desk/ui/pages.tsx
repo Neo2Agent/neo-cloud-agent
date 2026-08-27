@@ -10,7 +10,7 @@ import {
   composerMaxWidth,
   composerTextareaHeight,
 } from "../src/composer-size";
-import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop } from "./icons";
+import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop } from "./icons";
 
 export type ContextMenuId = "repo" | "target" | null;
 export type RepoChoice = { url: string; label: string };
@@ -505,11 +505,22 @@ export function ProjectsPage({
   );
 }
 
+/**
+ * Workspace / branch / where-it-runs, under the composer.
+ *
+ * The workspace pill is also where you authorize a local folder, the way
+ * Cursor puts Open Folder inside the repo pill. Picking a folder is what makes
+ * This Computer available at all, so the two controls belong next to each other.
+ */
 export function ContextBar({
   repoLabel,
   repos,
   repoUrl,
   onRepo,
+  workspaces,
+  folder,
+  onWorkspace,
+  onPickFolder,
   branch,
   targetKind,
   canRunLocal,
@@ -522,6 +533,10 @@ export function ContextBar({
   repos: RepoChoice[];
   repoUrl: string;
   onRepo: (url: string) => void;
+  workspaces: Array<{ id: string; folder: string; name: string; git: boolean }>;
+  folder: string;
+  onWorkspace: (workspace: { id: string; folder: string }) => void;
+  onPickFolder: () => void;
   branch: string;
   targetKind: "cloud" | "desk" | "remote";
   canRunLocal: boolean;
@@ -530,7 +545,9 @@ export function ContextBar({
   setOpen: (id: ContextMenuId) => void;
   locked?: boolean;
 }) {
-  const targetLabel = targetKind === "desk" ? "This Computer" : "Cloud";
+  const local = targetKind === "desk";
+  const activeFolder = workspaces.find((item) => trimTrailingSlash(item.folder) === trimTrailingSlash(folder));
+  const workspaceLabel = local ? activeFolder?.name || (folder ? lastSegment(folder) : "选择文件夹") : repoLabel;
   return (
     <div className="context-bar">
       <div className="context-item-wrap">
@@ -540,31 +557,65 @@ export function ContextBar({
           disabled={locked}
           onClick={() => setOpen(open === "repo" ? null : "repo")}
         >
-          <span>{repoLabel}</span>
-          <em>▾</em>
+          {local ? <IconComputer size={13} /> : null}
+          <span>{workspaceLabel}</span>
+          <IconChevronDown size={12} />
         </button>
         {open === "repo" && !locked ? (
           <div className="context-menu" role="menu">
+            {canRunLocal ? (
+              <>
+                <p className="context-menu-label">这台电脑</p>
+                {workspaces.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={item === activeFolder && local ? "on" : ""}
+                    onClick={() => {
+                      onWorkspace(item);
+                      setOpen(null);
+                    }}
+                  >
+                    <IconComputer size={13} />
+                    {item.name}
+                    {item.git ? "" : "（不是 git 仓库）"}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onPickFolder();
+                    setOpen(null);
+                  }}
+                >
+                  <IconAddRepo size={13} />
+                  打开文件夹…
+                </button>
+                <p className="context-menu-label">云端仓库</p>
+              </>
+            ) : null}
             {repos.map((item) => (
               <button
                 key={item.url || "inbox"}
                 type="button"
-                className={item.url === repoUrl ? "on" : ""}
+                className={!local && item.url === repoUrl ? "on" : ""}
                 onClick={() => {
                   onRepo(item.url);
                   setOpen(null);
                 }}
               >
-                {item.label}
+                {item.url ? <IconCloud size={13} /> : null}
+                {item.url ? item.label : "不关联仓库"}
               </button>
             ))}
           </div>
         ) : null}
       </div>
-      <button type="button" className="context-item" disabled>
-        <span>{branch}</span>
-        <em>▾</em>
-      </button>
+      {local ? null : (
+        <button type="button" className="context-item" disabled>
+          <span>{branch}</span>
+        </button>
+      )}
       <div className="context-item-wrap">
         <button
           type="button"
@@ -572,9 +623,9 @@ export function ContextBar({
           disabled={locked}
           onClick={() => setOpen(open === "target" ? null : "target")}
         >
-          {targetKind === "desk" ? <IconComputer size={14} /> : <IconCloud size={14} />}
-          <span>{targetLabel}</span>
-          <em>▾</em>
+          {local ? <IconComputer size={14} /> : <IconCloud size={14} />}
+          <span>{local ? "This Computer" : "Cloud"}</span>
+          <IconChevronDown size={12} />
         </button>
         {open === "target" && !locked ? (
           <div className="context-menu" role="menu">
@@ -591,22 +642,46 @@ export function ContextBar({
             </button>
             <button
               type="button"
-              className={targetKind === "desk" ? "on" : ""}
+              className={local ? "on" : ""}
               disabled={!canRunLocal}
               onClick={() => {
                 if (!canRunLocal) return;
-                onTarget("desk");
+                // No folder yet means there is nothing to run against, so ask
+                // for one instead of switching to a target that cannot start.
+                if (workspaces.length === 0 && !folder) {
+                  onPickFolder();
+                } else {
+                  onTarget("desk");
+                }
                 setOpen(null);
               }}
             >
               <IconComputer size={14} />
-              {canRunLocal ? "This Computer" : "This Computer（需要 Desk）"}
+              {canRunLocal
+                ? workspaces.length === 0 && !folder
+                  ? "This Computer（先打开一个文件夹）"
+                  : "This Computer"
+                : "This Computer（需要 Desk）"}
             </button>
+            <button type="button" disabled>
+              Remote SSH（未做）
+            </button>
+            <p className="context-menu-note">
+              别人从 Web 或手机派活到这台电脑，是设置里的「允许远程派活」，不在这里切。
+            </p>
           </div>
         ) : null}
       </div>
     </div>
   );
+}
+
+function trimTrailingSlash(value: string): string {
+  return (value || "").replace(/[\\/]+$/, "");
+}
+
+function lastSegment(value: string): string {
+  return trimTrailingSlash(value).split(/[\\/]/).pop() || value;
 }
 
 export type ComposerMention = {
@@ -789,36 +864,40 @@ export function ChatComposer({
             />
           </label>
         ) : null}
-        <div className="model-wrap">
-          <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
-            {label}
-            <span aria-hidden="true">▾</span>
-          </button>
-          {menuOpen ? (
-            <div className="model-menu" role="menu">
-              <p className="palette-label">Your models</p>
-              {models.length === 0 ? <p className="pane-note">还没有配置模型</p> : null}
-              {models.map((name) => (
-                <button key={name} type="button" className={name === selected ? "on" : ""} onClick={() => onSelectModel(name)}>
-                  <span>{name}</span>
-                  {name === selected ? <span className="check">✓</span> : null}
+        {/* Model and send belong together on the right; spreading them apart
+            left a wide gap where the eye expects one control group. */}
+        <div className="composer-send-group">
+          <div className="model-wrap">
+            <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
+              {label}
+              <IconChevronDown size={12} />
+            </button>
+            {menuOpen ? (
+              <div className="model-menu" role="menu">
+                <p className="palette-label">Your models</p>
+                {models.length === 0 ? <p className="pane-note">还没有配置模型</p> : null}
+                {models.map((name) => (
+                  <button key={name} type="button" className={name === selected ? "on" : ""} onClick={() => onSelectModel(name)}>
+                    <span>{name}</span>
+                    {name === selected ? <span className="check">✓</span> : null}
+                  </button>
+                ))}
+                <button type="button" className="add-model" onClick={onAddModel}>
+                  Add Models
                 </button>
-              ))}
-              <button type="button" className="add-model" onClick={onAddModel}>
-                Add Models
-              </button>
-            </div>
-          ) : null}
+              </div>
+            ) : null}
+          </div>
+          {onStop && waitingNow && !prompt.trim() ? (
+            <button type="button" className="send-btn stop" aria-label="停止" onClick={onStop}>
+              <IconStop size={14} />
+            </button>
+          ) : (
+            <button type="button" className="send-btn" aria-label="Send" disabled={sending || !prompt.trim()} onClick={onSubmit}>
+              <IconArrowUp size={16} />
+            </button>
+          )}
         </div>
-        {onStop && waitingNow && !prompt.trim() ? (
-          <button type="button" className="send-btn stop" aria-label="停止" onClick={onStop}>
-            <IconStop size={14} />
-          </button>
-        ) : (
-          <button type="button" className="send-btn" aria-label="Send" disabled={sending || !prompt.trim()} onClick={onSubmit}>
-            <IconArrowUp size={16} />
-          </button>
-        )}
       </div>
     </>
   );
