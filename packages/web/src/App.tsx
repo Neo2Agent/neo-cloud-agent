@@ -427,9 +427,28 @@ export function App() {
     if (!tokenRef.current) return;
     try {
       const response = await api(tokenRef.current, "/v1/desks");
-      if (response.ok) {
-        setDesks((await readJson<{ desks?: Desk[] }>(response)).desks ?? []);
-      }
+      if (!response.ok) return;
+      const list = (await readJson<{ desks?: Desk[] }>(response)).desks ?? [];
+      setDesks(list);
+      // A machine re-registers with a new id, so a target saved in this browser
+      // can point at one that no longer exists. Sending to it fails with
+      // 本机未登记, which reads like a bug rather than a stale pick.
+      setDeskTarget((prev) => {
+        if (prev.kind !== "desk" || !prev.deskId || deskBridge()?.canRunLocal) {
+          return prev;
+        }
+        const stillThere = list.some(
+          (desk) =>
+            desk.id === prev.deskId &&
+            (!prev.workspaceId || (desk.workspaces ?? []).some((ws) => ws.id === prev.workspaceId)),
+        );
+        if (stillThere) {
+          return prev;
+        }
+        const next = { ...prev, deskId: undefined, workspaceId: undefined };
+        writeLastTarget(next);
+        return next;
+      });
     } catch {
       // keep the last list
     }
@@ -782,6 +801,14 @@ export function App() {
         messages,
       })
     ) {
+      return;
+    }
+    // A browser cannot pick a folder, so 本机 needs a machine chosen first.
+    if (!runId && deskTarget.kind === "desk" && !deskBridge()?.canRunLocal && !deskTarget.deskId) {
+      setMessages((prev) => [
+        ...prev,
+        localErrorMessage(runId, "先选一台电脑。要出现在这里，那台电脑得打开 Desk 并在设置里开启 Remote control。"),
+      ]);
       return;
     }
     const attached = images;
