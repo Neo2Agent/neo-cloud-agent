@@ -20,6 +20,7 @@ const {
   enqueueFollowUp,
   getBootstrap,
   getRun,
+  getRunDiff,
   getRunDiagnostics,
   getRunSession,
   handoffRun,
@@ -696,6 +697,28 @@ test("a per-turn desk worker releases the run, and the next follow-up is dispatc
   assert.equal(pushed.some((item) => item.kind === "assignment"), true);
   assert.equal(takeDeskAssignment(registered.desk.id), run.id);
   detach();
+});
+
+test("git on a desk run says the files are elsewhere instead of spawn git ENOENT", async () => {
+  const registered = newDesk("git-box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  const run = await createRun({
+    prompt: "commit my work",
+    repoUrls: [],
+    source: "desk",
+    start: "inline",
+    deskWorkspaceId: bound.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  // The laptop's folder does not exist on the control-plane host.
+  await claimDeskRun(registered.desk.id, {
+    runId: run.id,
+    workspaceDir: "/tmp/neo-desk-folder-that-is-on-someone-else-laptop",
+    pid: 4244,
+  });
+  await assert.rejects(() => commitRun(run.id, { message: "wip" }), /控制面看不到/);
+  const diff = await getRunDiff(run.id);
+  assert.equal(diff.stat, "");
 });
 
 test("a desk worker that crashes surfaces the exit code instead of going idle", async () => {
