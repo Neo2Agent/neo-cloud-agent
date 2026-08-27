@@ -155,6 +155,8 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 
 **没抄** 它的云端 loop + 本机工具 RPC：[`assertColocatedTarget`](../packages/contracts/src/run.ts) 明确 P0–P2 只允许 `loop === tools`，[architecture.md §2](./architecture.md) 也写了不要把每个 `read` / `edit` / `bash` 做成跨网 RPC。B 只做派单，loop 仍在本机。流式和跟进不受影响：worker 本来就是出向推事件、主动拉 inbox。
 
+二期若要拆开这两轴，先读 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)：那里核过 Cursor 的实际形态、pi 自带的远程工具接缝，以及沙箱必须先从 worker 搬到 Desk 侧这件事。
+
 匹配失败一律**明确报错**，不回落云端、不留一条永远排队的 Run：
 
 | 情况 | 文案 |
