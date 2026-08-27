@@ -4,7 +4,7 @@ const packaged = process.env.NEO_DESK_PACKAGED === "1";
 const apiBase = (
   process.env.NEO_CONTROL_PLANE_URL ||
   process.env.CONTROL_PLANE_URL ||
-  (packaged ? "https://neorun.cloud" : "http://127.0.0.1:8080")
+  (packaged ? "http://62.234.211.200" : "http://127.0.0.1:8080")
 ).replace(/\/$/, "");
 
 function on(channel, cb) {

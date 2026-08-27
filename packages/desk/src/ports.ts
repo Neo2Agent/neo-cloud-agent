@@ -1,7 +1,7 @@
 export const DEFAULT_WEB_UI_PORT = 5173;
 export const DEFAULT_DESK_UI_PORT = 5174;
-export const DEFAULT_PRODUCTION_CONTROL_PLANE = "https://neorun.cloud";
-export const PRODUCTION_CONTROL_PLANE_FALLBACKS = ["http://neorun.cloud", "http://62.234.211.200"] as const;
+export const DEFAULT_PRODUCTION_CONTROL_PLANE = "http://62.234.211.200";
+export const PRODUCTION_CONTROL_PLANE_FALLBACKS = [] as const;
 
 export function isDeskPackaged(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NEO_DESK_PACKAGED === "1";

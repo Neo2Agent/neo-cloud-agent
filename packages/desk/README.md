@@ -12,7 +12,7 @@ pnpm dev:desk:prod  # 同一套 Desk UI，API 打线上控制面，不启本地 
 
 `dev:desk` 打开的是原生窗口，不是浏览器页。没有 `:8082` 预览。登录账号和 Web 相同，必须手输。
 
-本地 `pnpm dev` / `pnpm dev:desk` 只连本机控制面（内存事件总线 + 本地 Run）。要和线上 MySQL / Redis / VM 槽是同一条总线，用 `pnpm dev:desk:prod`（默认 `https://neorun.cloud`，443 不通时回落 `http://62.234.211.200`）。Web 看现网直接打开该地址，不必再起一份本地 Web。
+本地 `pnpm dev` / `pnpm dev:desk` 只连本机控制面（内存事件总线 + 本地 Run）。要和线上 MySQL / Redis / VM 槽是同一条总线，用 `pnpm dev:desk:prod`（默认 `http://62.234.211.200`）。域名 HTTP 会 308 到 HTTPS，而现网 443 会重置，安装包不要走 `neorun.cloud`。
 
 安装包：
 

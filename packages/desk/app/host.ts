@@ -145,8 +145,11 @@ async function healthOk(origin: string): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
-    const response = await net.fetch(`${origin.replace(/\/$/, "")}/health`, { signal: controller.signal });
-    return response.ok;
+    const response = await net.fetch(`${origin.replace(/\/$/, "")}/health`, {
+      signal: controller.signal,
+      redirect: "manual",
+    });
+    return response.status === 200;
   } catch {
     return false;
   } finally {
@@ -154,7 +157,7 @@ async function healthOk(origin: string): Promise<boolean> {
   }
 }
 
-/** Packaged builds prefer HTTPS, then fall back to the IP if 443 is blocked. */
+/** Packaged builds talk to the production IP. Hostname HTTP 308s onto broken TLS. */
 async function resolvePackedControlPlane(): Promise<void> {
   if (!isDeskPackaged()) {
     return;
@@ -200,6 +203,7 @@ async function proxyControlPlane(request: Request, url: URL): Promise<Response> 
     const init: RequestInit & { duplex?: "half" } = {
       method: request.method,
       headers,
+      redirect: "manual",
     };
     if (request.method !== "GET" && request.method !== "HEAD" && request.body) {
       init.body = request.body;

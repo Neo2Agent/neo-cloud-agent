@@ -4,7 +4,6 @@ import {
   DEFAULT_DESK_UI_PORT,
   DEFAULT_PRODUCTION_CONTROL_PLANE,
   DEFAULT_WEB_UI_PORT,
-  PRODUCTION_CONTROL_PLANE_FALLBACKS,
   controlPlaneOrigin,
   deskClientOrigin,
   deskRendererUrl,
@@ -27,7 +26,7 @@ test("web and desk UIs use different ports from the control plane", () => {
 test("production Desk launch ignores a local CONTROL_PLANE_URL from .env", () => {
   assert.equal(isLoopbackOrigin("http://127.0.0.1:8080"), true);
   assert.equal(isLoopbackOrigin("http://62.234.211.200"), false);
-  assert.equal(DEFAULT_PRODUCTION_CONTROL_PLANE, "https://neorun.cloud");
+  assert.equal(DEFAULT_PRODUCTION_CONTROL_PLANE, "http://62.234.211.200");
   assert.equal(
     deskClientOrigin({ CONTROL_PLANE_URL: "http://127.0.0.1:8080" }, { production: true }),
     DEFAULT_PRODUCTION_CONTROL_PLANE,
@@ -41,7 +40,7 @@ test("production Desk launch ignores a local CONTROL_PLANE_URL from .env", () =>
     DEFAULT_PRODUCTION_CONTROL_PLANE,
   );
   assert.equal(controlPlaneOrigin({ NEO_DESK_PACKAGED: "1", CONTROL_PLANE_URL: "http://127.0.0.1:8080" }), DEFAULT_PRODUCTION_CONTROL_PLANE);
-  assert.ok(productionControlPlaneCandidates().includes(PRODUCTION_CONTROL_PLANE_FALLBACKS[1]));
+  assert.deepEqual(productionControlPlaneCandidates(), [DEFAULT_PRODUCTION_CONTROL_PLANE]);
   assert.equal(isDeskApiProxyPath("/v1/auth/login"), true);
   assert.equal(isDeskApiProxyPath("/health"), true);
   assert.equal(isDeskApiProxyPath("/index.html"), false);
