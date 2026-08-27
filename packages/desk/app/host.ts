@@ -338,6 +338,44 @@ async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
   return record;
 }
 
+const ACTIVE_RUN_STATUS = new Set(["PROVISIONING", "INSTALLING", "RUNNING", "WAITING_FOR_BACKGROUND_WORK"]);
+
+/** A desk worker outlives its turn, so ask the control plane before calling it busy. */
+async function runIsActive(runId: string): Promise<boolean> {
+  const token = getToken();
+  if (!token) {
+    return true;
+  }
+  try {
+    const response = await net.fetch(`${controlPlaneUrl}/v1/runs/${runId}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      return false;
+    }
+    const run = (await response.json()) as { status?: string };
+    return ACTIVE_RUN_STATUS.has(run.status ?? "");
+  } catch {
+    return true;
+  }
+}
+
+/** Returns true when another local run is genuinely still working. */
+async function retireFinishedWorkers(keepRunId: string): Promise<boolean> {
+  let busy = false;
+  for (const otherId of [...workers.keys()]) {
+    if (otherId === keepRunId) {
+      continue;
+    }
+    if (await runIsActive(otherId)) {
+      busy = true;
+      continue;
+    }
+    stopRun(otherId, "上一条本机对话已结束，worker 已退出");
+  }
+  return busy;
+}
+
 /**
  * Start the worker for one run on this machine.
  *
@@ -376,7 +414,9 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
     return;
   }
   // One local worker at a time, so two agents never edit the same folder at once.
-  if ([...workers.keys()].some((id) => id !== runId)) {
+  // A worker whose run already finished is only idling, so retire it instead of
+  // wedging this desk after the first local conversation.
+  if (await retireFinishedWorkers(runId)) {
     await fail("这台电脑已经有一条本机对话在跑，先停掉它再开新的");
     return;
   }
