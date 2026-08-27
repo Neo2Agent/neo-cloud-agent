@@ -40,7 +40,12 @@ type DeskTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?:
 
 type BoundWorkspace = { id: string; folder: string; name: string; repoKey: string; git: boolean };
 
-type DeskPrefs = { requireApproval?: boolean };
+/**
+ * `remoteControl` is the whole difference between This Computer and Remote
+ * control. Off (default) this machine stays private: folders are never
+ * published, so no other client can even see it, let alone dispatch to it.
+ */
+type DeskPrefs = { requireApproval?: boolean; remoteControl?: boolean };
 
 type InboxState = { connected: boolean; deskId?: string; error?: string };
 
@@ -302,7 +307,15 @@ async function confirmFolder(folder: string): Promise<boolean> {
   return result.response === 0;
 }
 
-/** Bind a folder locally and register its repo identity so remote dispatch can match it. */
+function remoteControlOn(): boolean {
+  return prefs().remoteControl === true;
+}
+
+/**
+ * Bind a folder for local runs. The repo identity only goes to the control
+ * plane when the user turned remote control on; This Computer alone never
+ * tells anyone which folders exist here.
+ */
 async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
   const resolved = path.resolve(folder);
   const existing = findBound({ folder: resolved });
@@ -310,7 +323,7 @@ async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
     ? { name: existing.name, repoKey: existing.repoKey, git: existing.git }
     : await readRepoIdentity(resolved);
   let id = existing?.id || `dws_local_${Buffer.from(resolved).toString("hex").slice(0, 12)}`;
-  if (deskId && deskToken) {
+  if (deskId && deskToken && remoteControlOn()) {
     try {
       const client = leaseClient();
       const bound = await client.bindWorkspace({
@@ -500,6 +513,14 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
   }
   const bound = findBound({ workspaceId: assignment.workspaceId });
   const label = bound?.name ?? "本机工作区";
+  const dispatched = Boolean(assignment.requestedBy) || Boolean(assignment.workspaceId);
+  if (dispatched && !remoteControlOn()) {
+    // Someone else asked, but this machine is in This Computer mode.
+    await leaseClient()
+      .reject({ deskId, deskToken, runId: assignment.runId, reason: "这台电脑没有开启远程派活" })
+      .catch((error) => console.error("failed to reject desk run", error));
+    return;
+  }
   if (prefs().requireApproval) {
     // The binding is the standing permission; this switch is for people who
     // still want to see every remote task before it touches their disk.
@@ -536,7 +557,7 @@ async function persistRegisteredDesk(registered: { deskId: string; token: string
   deskToken = registered.token;
   writeJson(stateFile("desk.json"), { deskId, token: encodeSecret(deskToken) });
   const saved = readJson<DeskTarget>(stateFile("target.json"), { kind: "cloud" });
-  for (const item of boundWorkspaces()) {
+  for (const item of remoteControlOn() ? boundWorkspaces() : []) {
     const bound = await bindWorkspace(item.folder).catch(() => undefined);
     if (bound && saved.folder && path.resolve(saved.folder) === path.resolve(bound.folder)) {
       saved.workspaceId = bound.id;
@@ -566,7 +587,6 @@ async function registerThisDesk(userToken: string): Promise<void> {
   };
   try {
     await persistRegisteredDesk(await client.register(request));
-    return;
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (!/at most/i.test(message)) {
@@ -574,6 +594,27 @@ async function registerThisDesk(userToken: string): Promise<void> {
     }
     await pruneOfflineDesks(userToken);
     await persistRegisteredDesk(await client.register(request));
+  }
+  await publishRemoteControl(userToken);
+}
+
+/**
+ * A desk registers so it can run its own work; that is not consent to be
+ * dispatched to. Only remote control mode makes it visible to other clients.
+ */
+async function publishRemoteControl(userToken = getToken()): Promise<void> {
+  if (!deskId || !userToken) {
+    return;
+  }
+  const on = remoteControlOn();
+  await leaseClient()
+    .setAllowRemote(userToken, deskId, on)
+    .catch((error) => console.warn("failed to set remote control", error));
+  if (!on) {
+    return;
+  }
+  for (const item of boundWorkspaces()) {
+    await bindWorkspace(item.folder).catch((error) => console.warn("failed to publish workspace", error));
   }
 }
 
@@ -765,8 +806,12 @@ function wireIpc(): void {
     });
   });
   ipcMain.handle("desk:getPrefs", () => ({ ...prefs(), deskId }));
-  ipcMain.handle("desk:setPrefs", (_event, next: DeskPrefs) => {
+  ipcMain.handle("desk:setPrefs", async (_event, next: DeskPrefs) => {
+    const before = remoteControlOn();
     setPrefs(next);
+    if (remoteControlOn() !== before) {
+      await publishRemoteControl();
+    }
     return prefs();
   });
   ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment) => {

@@ -161,6 +161,32 @@ test("stale control-plane restart notices hide after the conversation continues"
   assert.equal(busy.length, 0);
 });
 
+test("one user turn is one reply bubble even when text and tools alternate", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "只回复 order2" } }),
+    ev({ id: "s1", kind: "agent.start" }),
+    ev({ id: "t1", kind: "tool.start", data: { toolCallId: "ls", toolName: "ls" } }),
+    ev({ id: "t2", kind: "tool.end", data: { toolCallId: "ls", toolName: "ls", output: "README.md" } }),
+    ev({ id: "m1", kind: "message.delta", data: { delta: "先看看目录。" } }),
+    ev({ id: "m2", kind: "message.end" }),
+    ev({ id: "t3", kind: "tool.start", data: { toolCallId: "read", toolName: "read" } }),
+    ev({ id: "t4", kind: "tool.end", data: { toolCallId: "read", toolName: "read", output: "target" } }),
+    ev({ id: "m3", kind: "message.delta", data: { delta: "order2" } }),
+    ev({ id: "m4", kind: "message.end" }),
+    ev({ id: "z1", kind: "agent.end" }),
+  ]);
+  assert.deepEqual(snapshot.messages.map((item) => item.role), ["user", "assistant"]);
+  const reply = snapshot.messages[1];
+  assert.equal(reply?.text, "先看看目录。order2");
+  // Tools stay in place between the two pieces of text.
+  assert.deepEqual(
+    transcriptGroups(reply as TranscriptMessage).map((group) =>
+      group.type === "tools" ? group.tools.map((tool) => tool.name).join("+") : group.text,
+    ),
+    ["ls", "先看看目录。", "read", "order2"],
+  );
+});
+
 test("a second worker process does not sort its turn in front of the first", () => {
   const at = (seconds: number) => `2026-08-27T10:0${seconds}:00.000Z`;
   const ev = (id: string, kind: string, seq: number, epoch: string, seconds: number, extra?: Record<string, unknown>) => ({

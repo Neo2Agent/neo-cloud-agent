@@ -81,8 +81,11 @@ export type NeoDeskBridge = {
   openPath(filePath: string): Promise<void>;
   listWorkspaces?(): Promise<DeskWorkspaceRef[]>;
   unbindWorkspace?(workspaceId: string): Promise<boolean>;
-  getPrefs?(): Promise<{ requireApproval?: boolean; deskId?: string }>;
-  setPrefs?(next: { requireApproval?: boolean }): Promise<{ requireApproval?: boolean }>;
+  getPrefs?(): Promise<{ requireApproval?: boolean; remoteControl?: boolean; deskId?: string }>;
+  setPrefs?(next: {
+    requireApproval?: boolean;
+    remoteControl?: boolean;
+  }): Promise<{ requireApproval?: boolean; remoteControl?: boolean }>;
   startRun?(assignment: DeskAssignment): Promise<boolean>;
   takeAssignment?(runId?: string): Promise<{ started?: boolean; runId?: string }>;
   stopRun?(runId: string): Promise<boolean>;

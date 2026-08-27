@@ -804,7 +804,7 @@ test("queued follow-ups stay off the transcript until the worker takes them", as
   assert.equal(listEvents(run.id).filter((item) => item.kind === "user.message" && item.data?.followUpId === second.id).length, 1);
 });
 
-test("handoff to cloud without a remote repo is rejected", async () => {
+test("a This Computer conversation cannot be moved to the cloud", async () => {
   const registered = newDesk("box-2");
   const run = await createRun({
     prompt: "stay local",
@@ -813,9 +813,10 @@ test("handoff to cloud without a remote repo is rejected", async () => {
     start: "inline",
     target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
   });
+  // The work is in the user's own folder, usually uncommitted.
   await assert.rejects(
     () => handoffRun(run.id, { target: { loop: "cloud", tools: "cloud" } }),
-    /远端仓库/,
+    /不能切到云端/,
   );
 });
 

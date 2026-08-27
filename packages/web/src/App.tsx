@@ -941,24 +941,21 @@ export function App() {
     [runId],
   );
 
+  /** Cloud → This Computer only. A local conversation stays local; see handoffRun. */
   const handoffCurrent = useCallback(
-    async (kind: "cloud" | "desk") => {
+    async (_kind: "desk") => {
       if (!runId) return;
-      const warning = "未提交的改动不会带过去，先 commit 或 stash。确定？";
-      if (!window.confirm(kind === "cloud" ? `切到云端。${warning}` : `切到本机。${warning}`)) {
+      if (!window.confirm("切到本机。未提交的改动不会带过去，先 commit 或 stash。确定？")) {
         return;
       }
       setHandoffError("");
       try {
-        const target =
-          kind === "desk"
-            ? {
-                loop: "desk" as const,
-                tools: "desk" as const,
-                deskId: deskTarget.deskId,
-                deskWorkspaceId: deskTarget.workspaceId,
-              }
-            : { loop: "cloud" as const, tools: "cloud" as const };
+        const target = {
+          loop: "desk" as const,
+          tools: "desk" as const,
+          deskId: deskTarget.deskId,
+          deskWorkspaceId: deskTarget.workspaceId,
+        };
         const body = await readJson<Run & { error?: string }>(
           await api(tokenRef.current, `/v1/runs/${runId}/handoff`, {
             method: "POST",
@@ -1501,16 +1498,6 @@ export function App() {
                   </button>
                 ))}
               </nav>
-              {runId && currentRun?.executionTarget?.loop === "desk" ? (
-                <button
-                  className="ghost"
-                  type="button"
-                  title="未提交的改动不会带过去，先 commit 或 stash"
-                  onClick={() => void handoffCurrent("cloud")}
-                >
-                  切到云端
-                </button>
-              ) : null}
               {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
                 <button
                   className="ghost"

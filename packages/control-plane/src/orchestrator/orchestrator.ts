@@ -1600,6 +1600,12 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
+  // A This Computer conversation stays on that computer. Its work sits in the
+  // user's own folder, usually uncommitted, so "move it to the cloud" would
+  // quietly leave the actual changes behind.
+  if (isDeskTarget(run.executionTarget) && !isDeskTarget(target)) {
+    throw new Error("本机对话不能切到云端。要在云端跑就开一条新的云端对话。");
+  }
   const handle = handles.get(runId);
   if (handle) {
     inbound.get(runId)?.push({ type: "shutdown", reason: "idle" });

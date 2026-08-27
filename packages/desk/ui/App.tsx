@@ -246,6 +246,7 @@ export function App() {
   const [localStatus, setLocalStatus] = useState<DeskRunStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<DeskWorkspaceRef[]>([]);
   const [requireApproval, setRequireApproval] = useState(false);
+  const [remoteControl, setRemoteControl] = useState(false);
   const [copied, setCopied] = useState("");
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
   const deskIdRef = useRef("");
@@ -782,6 +783,7 @@ export function App() {
       .getPrefs?.()
       .then((value) => {
         setRequireApproval(value.requireApproval === true);
+        setRemoteControl(value.remoteControl === true);
         if (value.deskId) {
           deskIdRef.current = value.deskId;
           setTarget((prev) => mergeDeskTarget(prev, value.deskId));
@@ -1638,18 +1640,39 @@ export function App() {
               <label className="ws-toggle">
                 <input
                   type="checkbox"
-                  checked={requireApproval}
+                  checked={remoteControl}
                   onChange={(event) => {
                     const next = event.target.checked;
-                    setRequireApproval(next);
-                    void deskBridge()?.setPrefs?.({ requireApproval: next });
+                    setRemoteControl(next);
+                    void deskBridge()
+                      ?.setPrefs?.({ remoteControl: next })
+                      .then(() => deskBridge()?.listWorkspaces?.())
+                      .then((items) => setWorkspaces(items ?? []));
                   }}
                 />
-                <span>远程派来的对话，每次都先问我</span>
+                <span>Remote control：允许从网页把任务派到这台电脑</span>
               </label>
               <p className="hint">
-                绑定文件夹就等于允许远程在里面开对话。打开这个开关会改成每条都先弹确认。
+                关着的时候这台电脑只为你自己工作，网页上看不到它，也看不到你绑了哪些文件夹。打开后才会把
+                <strong>机器名和仓库名</strong>（不含绝对路径）报给控制面，网页的「目标 → 本机」里才会出现这台电脑。
               </p>
+              {remoteControl ? (
+                <>
+                  <label className="ws-toggle">
+                    <input
+                      type="checkbox"
+                      checked={requireApproval}
+                      onChange={(event) => {
+                        const next = event.target.checked;
+                        setRequireApproval(next);
+                        void deskBridge()?.setPrefs?.({ requireApproval: next });
+                      }}
+                    />
+                    <span>远程派来的对话，每次都先问我</span>
+                  </label>
+                  <p className="hint">绑定文件夹就等于允许远程在里面开对话。打开这个开关会改成每条都先弹确认。</p>
+                </>
+              ) : null}
             </div>
           </ModelSettingsPage>
         ) : (

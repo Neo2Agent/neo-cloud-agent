@@ -509,19 +509,15 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     finishAssistant(state);
     return;
   }
+  // One user turn is one reply bubble. The model may alternate text and tools
+  // several times inside it; those become blocks, not separate bubbles.
   if (event.kind === "message.start") {
-    if (state.open && hasAssistantContent(state.open)) {
-      finishAssistant(state);
-    }
     const assistant = ensureAssistant(state, event);
     assistant.streaming = true;
     touch(assistant, event.createdAt);
     return;
   }
   if (event.kind === "message.delta") {
-    if (state.open?.tools?.length && !state.open.streaming) {
-      finishAssistant(state);
-    }
     const assistant = ensureAssistant(state, event);
     appendText(assistant, String(event.data?.delta ?? ""));
     touch(assistant, event.createdAt);
@@ -531,10 +527,6 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     if (state.open) {
       state.open.streaming = false;
       touch(state.open, event.createdAt);
-      const busy = state.open.tools?.some((tool) => tool.status === "running");
-      if (state.open.text.trim() && !busy) {
-        finishAssistant(state);
-      }
     }
     return;
   }
@@ -559,9 +551,6 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
       upsertTool(existing, event);
       touch(existing, event.createdAt);
       return;
-    }
-    if (state.open?.text.trim() && state.open.streaming === false) {
-      finishAssistant(state);
     }
     const assistant = ensureAssistant(state, event);
     upsertTool(assistant, event);

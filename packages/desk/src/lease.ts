@@ -7,6 +7,8 @@ export type LeaseClient = {
   }>;
   listDesks(userToken: string): Promise<Desk[]>;
   deleteDesk(userToken: string, deskId: string): Promise<void>;
+  /** Publish or hide this machine for remote dispatch. Needs the user token. */
+  setAllowRemote(userToken: string, deskId: string, allowRemote: boolean): Promise<void>;
   waitAssignment(input: { deskId: string; deskToken: string; waitMs?: number }): Promise<DeskAssignment | null>;
   claim(input: {
     deskId: string;
@@ -64,6 +66,17 @@ export function createLeaseClient(baseUrl: string, fetchImpl: typeof fetch = fet
         throw new Error(body.error || "list desks failed");
       }
       return body.desks ?? [];
+    },
+    async setAllowRemote(userToken, deskId, allowRemote) {
+      const response = await fetchImpl(`${root}/v1/desks/${deskId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({ allowRemote }),
+      });
+      if (!response.ok) {
+        const failed = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(failed.error || "update desk failed");
+      }
     },
     async deleteDesk(userToken, deskId) {
       const response = await fetchImpl(`${root}/v1/desks/${deskId}`, {
