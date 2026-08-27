@@ -7,6 +7,7 @@ import {
   displayTranscriptMessages,
   pageTranscriptMessages,
   pageTranscriptSnapshot,
+  sortRunEvents,
   transcriptHasUnsettledWork,
   transcriptGroups,
 } from "./transcript.js";
@@ -158,6 +159,28 @@ test("stale control-plane restart notices hide after the conversation continues"
     { hideStaleRestart: true },
   );
   assert.equal(busy.length, 0);
+});
+
+test("a second worker process does not sort its turn in front of the first", () => {
+  const at = (seconds: number) => `2026-08-27T10:0${seconds}:00.000Z`;
+  const ev = (id: string, kind: string, seq: number, epoch: string, seconds: number, extra?: Record<string, unknown>) => ({
+    id,
+    runId: "run-1",
+    createdAt: at(seconds),
+    category: "agent_run" as const,
+    level: "info" as const,
+    kind: kind as RunEvent["kind"],
+    title: kind,
+    data: { workerSeq: seq, workerEpoch: epoch, ...extra },
+  });
+  // Turn one ran in process A; turn two in process B, whose seq restarts at 1.
+  const sorted = sortRunEvents([
+    ev("b1", "user.message", 1, "B", 5, { text: "second" }),
+    ev("a1", "user.message", 1, "A", 1, { text: "first" }),
+    ev("a2", "message.delta", 2, "A", 2, { delta: "one" }),
+    ev("b2", "message.delta", 2, "B", 6, { delta: "two" }),
+  ]);
+  assert.deepEqual(sorted.map((item) => item.id), ["a1", "a2", "b1", "b2"]);
 });
 
 test("the desk claim handshake never shows on the machine, and disappears elsewhere once it starts", () => {

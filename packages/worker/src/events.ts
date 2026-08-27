@@ -92,10 +92,17 @@ export function contextUsageEvent(runId: string, snapshot: ContextUsageSnapshot)
   return makeEvent(runId, "context.usage", "Context usage", contextUsageToData(snapshot));
 }
 
+/**
+ * One desk run is served by a fresh process per turn, so a sequence number only
+ * means something next to this epoch. Without it the second turn's events would
+ * sort in front of the first turn's.
+ */
+const WORKER_EPOCH = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 export function stampWorkerSeq(events: RunEvent[], next: { value: number }): RunEvent[] {
   return events.map((event) => ({
     ...event,
-    data: { ...event.data, workerSeq: ++next.value },
+    data: { ...event.data, workerSeq: ++next.value, workerEpoch: WORKER_EPOCH },
   }));
 }
 

@@ -46,6 +46,16 @@ function workerSeq(event: RunEvent): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/**
+ * Which worker process emitted this. A desk run is served by one process per
+ * turn, and each starts its sequence at 1, so a sequence only orders events
+ * from the same process.
+ */
+function workerEpoch(event: RunEvent): string {
+  const value = event.data?.workerEpoch;
+  return typeof value === "string" ? value : "";
+}
+
 /** Restore emission order when HTTP ingest races or clocks stay close. */
 export function sortRunEvents(events: RunEvent[]): RunEvent[] {
   return events
@@ -53,7 +63,8 @@ export function sortRunEvents(events: RunEvent[]): RunEvent[] {
     .sort((left, right) => {
       const leftSeq = workerSeq(left.event);
       const rightSeq = workerSeq(right.event);
-      if (leftSeq != null && rightSeq != null && leftSeq !== rightSeq) {
+      const sameProcess = workerEpoch(left.event) === workerEpoch(right.event);
+      if (sameProcess && leftSeq != null && rightSeq != null && leftSeq !== rightSeq) {
         return leftSeq - rightSeq;
       }
       const leftAt = Date.parse(left.event.createdAt) || 0;
