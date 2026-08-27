@@ -80,3 +80,27 @@ test("readExpertWorkspace loads Role Override and tool allowlist", () => {
   assert.match(expert.role, /Role Override/);
   assert.deepEqual(expert.tools, ["read", "grep"]);
 });
+
+test("a run's own scratch wins over the folder it shares", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-expert-scratch-"));
+  mkdirSync(path.join(cwd, ".neo"), { recursive: true });
+  writeFileSync(path.join(cwd, ".neo", "EXPERT.md"), "Role Override: the other run's expert.\n");
+  const scratch = path.join(cwd, ".neo", "runs", "run-a");
+  mkdirSync(scratch, { recursive: true });
+  writeFileSync(
+    path.join(scratch, "expert.json"),
+    `${JSON.stringify({ id: "exp_planner", slug: "planner", name: "计划", kind: "expert", tools: ["read"] })}\n`,
+  );
+  writeFileSync(path.join(scratch, "EXPERT.md"), "Role Override: my own expert.\n");
+  const expert = readExpertWorkspace(cwd, scratch);
+  assert.match(expert.role, /my own expert/);
+  assert.deepEqual(expert.tools, ["read"]);
+});
+
+test("a run with no scratch files still reads the workspace expert", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-expert-fallback-"));
+  mkdirSync(path.join(cwd, ".neo"), { recursive: true });
+  writeFileSync(path.join(cwd, ".neo", "EXPERT.md"), "Role Override: cloud expert.\n");
+  const expert = readExpertWorkspace(cwd, path.join(cwd, ".neo", "runs", "missing"));
+  assert.match(expert.role, /cloud expert/);
+});

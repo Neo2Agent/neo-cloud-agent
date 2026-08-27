@@ -128,7 +128,7 @@
 | 常驻的代价 | 结果 |
 | --- | --- |
 | run JWT 一小时过期 | worker 死在 `inbox 401`，而 assignment 又发缓存里同一个死 token，这条对话再也起不来 |
-| 「一台机器只跑一条」 | 已结束的 worker 占着名额，第二条本机对话被拒 |
+| 占着并发名额 | 已结束的 worker 仍算在上限里，新的本机对话被白白挡掉 |
 | 进程活着但 run 已 IDLE | 界面分不清，进度条一直挂着 |
 
 退出后 Desk 调 `POST /v1/desks/:id/release`，控制面丢掉 handle。下一条跟进走 `resumeRun` → `dispatchToDesk`，**同一台机器**收到新的 assignment，新进程 `downloadSession` 恢复上下文再跑。
@@ -168,11 +168,14 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 
 - **工作区 = 授权目录本身。** 有 `.git` 才有 commit / PR；没有 git 的文件夹仍可读写、开终端。
 - **沙箱：** pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝；`bash` 的重定向和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂。只对本机 Run 生效（`NEO_SANDBOX_ROOT`）；云端 VM 本身就是隔离盒子。
-- **Run 私货不进仓库：** session / bootstrap / jwt 在 `userData/neo-desk/runs/<runId>/`。专家文件仍写 `<workspace>/.neo`，但会加进 `.git/info/exclude`。
+- **Run 私货不进仓库：** session / bootstrap / jwt 在 `userData/neo-desk/runs/<runId>/`。要被 Agent 读到的（专家文件、贴图）写 `<workspace>/.neo/runs/<runId>/`，整个 `.neo/` 都在 `.git/info/exclude` 里。
 - **绝对路径不上云。** 绑定只上报机器名 + repoKey + 短名；远程端看到 `机器名 · 仓库名`。也不把本机路径同步成别人的项目默认仓库。
 - **`online` = 正握着 inbox。** 只看时间戳会让一台注册完就退出的电脑看起来还在。
 - **控制面不杀笔记本进程。** `DeskRuntime.destroy` 是空的；停 worker 走 inbox 的 `cancel`，活着靠 worker 心跳。
-- **同一时刻只有一个本机 worker 在改盘**，但已结束的那条会被自动退掉（先问控制面 run 状态），不会把这台机器卡死。
+- **退出 Desk 会带走 worker。** 它们在改用户自己的文件夹，留一个孤儿进程等于让没人看着的仓库继续被改。`claim` 失败同样会把刚起的进程收掉。
+- **本机对话可以并行，边界是资源不是文件夹。** 不同文件夹互不相干；同一个文件夹也允许开第二条（Cursor 也不拦，它的 subagents 文档直说共享 checkout 会互相覆盖），只是会提示未提交改动可能打架。唯一的硬限制是「同时最多几条」，默认 4，设置里可调，理由是每条都是一个独立 Node 进程。
+- **准入只看本机事实。** 活没活由主进程自己的子进程表决定；控制面只用来回收「run 已结束但进程还在」的 worker，问不到就不动它。现网抖一下不该让你在自己的盘上干不了活。
+- **per-run 私货按 runId 寻址。** 专家文件、贴图、boot 日志都在 `<workspace>/.neo/runs/<runId>/`；共用一个文件夹时才不会串。云端 run 一个工作区只有一条，仍用 `<workspace>/.neo`。
 - 界面上两个「停止」不是一回事：`停止当前回合` 只打断这一轮，`结束本机进程` 杀掉这条对话的本机 Agent 进程。
 - 一期不允许 Automation 派到本机。
 - 本机 Run **没有**「邀请加入这条对话」。一起干活要开 Cloud，或各开各的云端 Run。

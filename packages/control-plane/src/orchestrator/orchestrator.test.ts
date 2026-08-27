@@ -699,6 +699,54 @@ test("a per-turn desk worker releases the run, and the next follow-up is dispatc
   detach();
 });
 
+test("one desk runs two workspaces at once, each claiming and releasing on its own", async () => {
+  const registered = newDesk("parallel-box");
+  const web = bindDeskWorkspace(registered.desk.id, { name: "web", repoKey: "local:web", git: true });
+  const api = bindDeskWorkspace(registered.desk.id, { name: "api", repoKey: "local:api", git: true });
+  const first = await createRun({
+    prompt: "work on web",
+    repoUrls: [],
+    source: "desk",
+    start: "inline",
+    deskWorkspaceId: web.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  const second = await createRun({
+    prompt: "work on api",
+    repoUrls: [],
+    source: "desk",
+    start: "inline",
+    deskWorkspaceId: api.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  await claimDeskRun(registered.desk.id, { runId: first.id, workspaceDir: "/tmp/neo-web", pid: 5151 });
+  await claimDeskRun(registered.desk.id, { runId: second.id, workspaceDir: "/tmp/neo-api", pid: 5252 });
+  assert.equal(getRun(first.id)?.status, "RUNNING");
+  assert.equal(getRun(second.id)?.status, "RUNNING");
+  // Each run keeps its own folder; one desk holding two is not a conflict.
+  assert.equal(getBootstrap(first.id).workspaceDir, "/tmp/neo-web");
+  assert.equal(getBootstrap(second.id).workspaceDir, "/tmp/neo-api");
+
+  // Finishing one must leave the other alone.
+  takeInbound(first.id);
+  ingestEvents(first.id, [
+    {
+      id: "end-web",
+      runId: first.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "agent.end",
+      title: "web done",
+    },
+  ]);
+  const releasedFirst = releaseDeskRun(registered.desk.id, first.id, { code: 0 });
+  assert.equal(releasedFirst.status, "IDLE");
+  assert.equal(releasedFirst.workerHandle, null);
+  assert.equal(getRun(second.id)?.status, "RUNNING");
+  assert.notEqual(getRun(second.id)?.workerHandle, null);
+});
+
 test("git on a desk run says the files are elsewhere instead of spawn git ENOENT", async () => {
   const registered = newDesk("git-box");
   const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
