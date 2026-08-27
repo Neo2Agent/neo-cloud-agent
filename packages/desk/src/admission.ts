@@ -1,5 +1,3 @@
-import path from "node:path";
-
 /** Default number of local conversations allowed to work at the same time. */
 export const DEFAULT_MAX_LOCAL_RUNS = 4;
 const MAX_LOCAL_RUNS_CEILING = 16;
@@ -19,11 +17,17 @@ export function normalizeMaxLocalRuns(value: unknown): number {
   return Math.min(n, MAX_LOCAL_RUNS_CEILING);
 }
 
+/**
+ * Compare two folders the caller already resolved to absolute paths.
+ *
+ * This module is imported by the renderer for the settings control, so it cannot
+ * reach for `node:path`. Resolving is the Node caller's job.
+ */
 function sameFolder(left: string, right: string): boolean {
   if (!left || !right) {
     return false;
   }
-  return path.resolve(left) === path.resolve(right);
+  return left.replace(/[\\/]+$/, "") === right.replace(/[\\/]+$/, "");
 }
 
 /**

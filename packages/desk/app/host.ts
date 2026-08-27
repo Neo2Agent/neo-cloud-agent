@@ -83,7 +83,11 @@ function hasLocalRun(runId: string): boolean {
 }
 
 function activeLocalRuns(): ActiveLocalRun[] {
-  return [...localRuns.entries()].map(([runId, entry]) => ({ runId, folder: entry.folder }));
+  // admitLocalRun compares folders as plain strings, so resolve them here.
+  return [...localRuns.entries()].map(([runId, entry]) => ({
+    runId,
+    folder: entry.folder ? path.resolve(entry.folder) : "",
+  }));
 }
 
 function maxLocalRuns(): number {
@@ -463,7 +467,12 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
   // Retiring hung workers first can free a slot, but it never gates the start:
   // a control plane we cannot reach must not stop work on the user's own disk.
   await reapFinishedWorkers(runId);
-  const decision = admitLocalRun({ runId, folder, active: activeLocalRuns(), limit: maxLocalRuns() });
+  const decision = admitLocalRun({
+    runId,
+    folder: path.resolve(folder),
+    active: activeLocalRuns(),
+    limit: maxLocalRuns(),
+  });
   if (!decision.ok) {
     await fail(decision.reason);
     return;

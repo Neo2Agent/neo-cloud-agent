@@ -12,6 +12,7 @@ import { api, persistSessionToken, readJson } from "./api";
 import {
   asWorkspaceRef,
   deskBridge,
+  localRunFolder,
   localRunTarget,
   mergeDeskTarget,
   MISSING_DESK_ID_HINT,
@@ -22,6 +23,7 @@ import {
   type DeskWorkspaceRef,
 } from "./desk";
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
+import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
 import { isLoopbackOrigin } from "../src/ports";
 import { groupRailSessions } from "../src/rail";
 import {
@@ -243,10 +245,15 @@ export function App() {
     () => (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || "files",
   );
   const [panelEpoch, setPanelEpoch] = useState(0);
-  const [localStatus, setLocalStatus] = useState<DeskRunStatus | null>(null);
+  // Keyed by runId: several local conversations can hold a worker at once, and a
+  // single slot would show whichever one reported last.
+  const [localStatuses, setLocalStatuses] = useState<Record<string, DeskRunStatus>>({});
   const [workspaces, setWorkspaces] = useState<DeskWorkspaceRef[]>([]);
   const [requireApproval, setRequireApproval] = useState(false);
   const [remoteControl, setRemoteControl] = useState(false);
+  const [maxLocalRuns, setMaxLocalRuns] = useState(DEFAULT_MAX_LOCAL_RUNS);
+  /** Said once when a new run joins a folder someone else is already editing. */
+  const [localNotice, setLocalNotice] = useState("");
   const [copied, setCopied] = useState("");
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
   const deskIdRef = useRef("");
@@ -576,7 +583,7 @@ export function App() {
   }, []);
 
   /** Bring a local run's worker back on this machine, in the same folder. */
-  const resumeLocalRun = useCallback(async (id: string, deskTarget?: ExecutionTarget | null) => {
+  const resumeLocalRun = useCallback(async (id: string, deskTarget?: ExecutionTarget | null, runFolder?: string) => {
     const bridge = deskBridge();
     const start = bridge?.startRun;
     if (!start) {
@@ -587,10 +594,10 @@ export function App() {
     const response = await api(tokenRef.current, `/v1/runs/${id}/desk-start`, { method: "POST" });
     const body = await readJson<{ assignment?: DeskAssignment; error?: string }>(response);
     if (response.ok && body.assignment) {
-      await start(body.assignment);
+      await start(body.assignment, runFolder);
       return;
     }
-    if (await bridge?.takeAssignment?.(id).then((taken) => taken?.started)) {
+    if (await bridge?.takeAssignment?.(id, runFolder).then((taken) => taken?.started)) {
       return;
     }
     // Older control planes have no desk-start. Handing the run back to this
@@ -616,7 +623,7 @@ export function App() {
       setAuthError(failed.error || "本机启动失败");
       return;
     }
-    const retaken = await bridge?.takeAssignment?.(id);
+    const retaken = await bridge?.takeAssignment?.(id, runFolder);
     if (!retaken?.started) {
       setAuthError("现网还没把这条对话交回这台电脑，稍等再试。");
     }
@@ -690,14 +697,14 @@ export function App() {
         if (created.assignment) {
           const start = deskBridge()?.startRun;
           if (start) {
-            await start(created.assignment);
+            await start(created.assignment, local ? folder : undefined);
           } else {
             setAuthError(STALE_DESK_HINT);
           }
         } else if (local) {
           // Production still queues desk runs for claim and does not return
           // an inline assignment. Pull it off the lease instead of waiting.
-          await deskBridge()?.takeAssignment?.(created.id);
+          await deskBridge()?.takeAssignment?.(created.id, folder);
         }
         await openRun(created.id);
         return;
@@ -707,8 +714,8 @@ export function App() {
         body: JSON.stringify({ text: `${askPrefix}${text}` }),
       });
       setQueueEpoch((cur) => cur + 1);
-      if (current?.executionTarget?.loop === "desk" && localStatus?.state !== "running") {
-        await resumeLocalRun(runId, current?.executionTarget);
+      if (current?.executionTarget?.loop === "desk" && localStatuses[runId]?.state !== "running") {
+        await resumeLocalRun(runId, current?.executionTarget, localRunFolder(current));
       }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "发送失败");
@@ -740,9 +747,12 @@ export function App() {
     const bridge = deskBridge();
     if (!bridge) return;
     const offStatus = bridge.onRunStatus?.((status) => {
-      setLocalStatus(status);
+      setLocalStatuses((prev) => ({ ...prev, [status.runId]: status }));
       if (status.state === "failed" && status.detail) {
         setAuthError(status.detail);
+      }
+      if (status.notice) {
+        setLocalNotice(status.notice);
       }
       if (status.state === "running" || status.state === "stopped") {
         setPanelEpoch((n) => n + 1);
@@ -784,6 +794,7 @@ export function App() {
       .then((value) => {
         setRequireApproval(value.requireApproval === true);
         setRemoteControl(value.remoteControl === true);
+        setMaxLocalRuns(normalizeMaxLocalRuns(value.maxLocalRuns));
         if (value.deskId) {
           deskIdRef.current = value.deskId;
           setTarget((prev) => mergeDeskTarget(prev, value.deskId));
@@ -1203,22 +1214,30 @@ export function App() {
 
   // An open local run keeps its own folder; with no run open, follow the picker.
   const localRunActive = current?.executionTarget?.loop === "desk";
+  const localStatus = current ? localStatuses[current.id] : undefined;
   // A dead local worker means nothing is coming, whatever the run status says.
   const localWorkerDown =
-    localRunActive &&
-    localStatus?.runId === current?.id &&
-    (localStatus?.state === "stopped" || localStatus?.state === "failed");
+    localRunActive && (localStatus?.state === "stopped" || localStatus?.state === "failed");
   const turnLive = current?.status === "RUNNING" && !localWorkerDown;
-  const noLocalWorker = localRunActive && (!localStatus || localStatus.runId !== current?.id || localStatus.state === "stopped");
+  const noLocalWorker = localRunActive && (!localStatus || localStatus.state === "stopped");
   // Nothing running and nothing owed: the per-turn worker simply finished.
   const localWorkerIdle = noLocalWorker && !isActiveRunStatus(current?.status);
   const localNeedsRestart = noLocalWorker && isActiveRunStatus(current?.status);
   const panelIsLocal = current ? localRunActive : target.kind === "desk";
-  const localFolder = panelIsLocal
-    ? (localRunActive && current?.repoUrls[0] && path0(current.repoUrls[0]).startsWith("/")
-        ? current.repoUrls[0]
-        : folder)
-    : "";
+  // A run's own folder wins. Following the picker would point the file tree at
+  // whatever is selected now, which is the wrong repo with two runs open.
+  const localFolder = panelIsLocal ? localRunFolder(current) || folder : "";
+  /** Local runs holding a worker right now, so the rail can mark them. */
+  const runningLocalRunIds = useMemo(
+    () =>
+      new Set(
+        Object.values(localStatuses)
+          .filter((status) => status.state === "starting" || status.state === "running")
+          .map((status) => status.runId),
+      ),
+    [localStatuses],
+  );
+  const otherLocalRunCount = [...runningLocalRunIds].filter((id) => id !== current?.id).length;
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1415,6 +1434,7 @@ export function App() {
             spacesOpen={railSpacesOpen}
             inboxExpanded={railInboxExpanded}
             folderOpen={repoOpen}
+            runningLocalRunIds={runningLocalRunIds}
             formatRel={formatRel}
             onToggleInbox={() => setRailInboxOpen((cur) => !cur)}
             onToggleSpaces={() => setRailSpacesOpen((cur) => !cur)}
@@ -1637,6 +1657,21 @@ export function App() {
                   ))}
                 </ul>
               ) : null}
+              <label>
+                <span>同时最多几条本机对话</span>
+                <Select
+                  value={String(maxLocalRuns)}
+                  onValueChange={(value) => {
+                    const next = normalizeMaxLocalRuns(Number(value));
+                    setMaxLocalRuns(next);
+                    void deskBridge()?.setPrefs?.({ maxLocalRuns: next });
+                  }}
+                  options={[1, 2, 3, 4, 6, 8].map((n) => ({ value: String(n), label: `${n} 条` }))}
+                />
+              </label>
+              <p className="hint">
+                不同文件夹可以同时跑。每条都是一个独立进程，开太多会吃满内存和 CPU。
+              </p>
               <label className="ws-toggle">
                 <input
                   type="checkbox"
@@ -1697,7 +1732,9 @@ export function App() {
                     type="button"
                     className="ghost"
                     title="重新在这台电脑上拉起这条对话的 Agent 进程"
-                    onClick={() => current && void resumeLocalRun(current.id, current.executionTarget)}
+                    onClick={() =>
+                      current && void resumeLocalRun(current.id, current.executionTarget, localRunFolder(current))
+                    }
                   >
                     在这台电脑上继续
                   </button>
@@ -1711,6 +1748,9 @@ export function App() {
                   >
                     结束本机进程
                   </button>
+                ) : null}
+                {otherLocalRunCount > 0 ? (
+                  <em title="另外这些对话也在这台电脑上改文件">另有 {otherLocalRunCount} 条在本机跑</em>
                 ) : null}
               </div>
             ) : null}
@@ -1867,6 +1907,14 @@ export function App() {
                 </p>
               ) : null}
               {authError ? <p className="error toast-inline">{authError}</p> : null}
+              {localNotice ? (
+                <p className="toast-inline local-notice">
+                  {localNotice}
+                  <button type="button" className="ghost" onClick={() => setLocalNotice("")}>
+                    知道了
+                  </button>
+                </p>
+              ) : null}
               {copied ? <p className="copied">Copied</p> : null}
             </footer>
             </div>

@@ -32,6 +32,20 @@ export function localRunTarget(target: DeskTarget, deskId?: string): {
 
 export const MISSING_DESK_ID_HINT = "本机还没登记到控制面。等连上后再发，或退出重新登录。";
 
+/**
+ * The folder a local run works in.
+ *
+ * Runs are created with their folder as the only repo url, so the run itself is
+ * the answer. Reading the picker instead would follow whatever is selected now,
+ * which is the wrong folder as soon as two local runs are open.
+ */
+export function localRunFolder(run?: { executionTarget?: { loop?: string } | null; repoUrls?: string[] } | null): string {
+  if (run?.executionTarget?.loop !== "desk") {
+    return "";
+  }
+  return run.repoUrls?.[0] ?? "";
+}
+
 export type DeskWorkspaceRef = {
   id: string;
   folder: string;

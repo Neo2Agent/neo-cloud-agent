@@ -2747,6 +2747,33 @@ button:disabled {
   font-size: 12px;
 }
 
+.local-notice {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: var(--warn, #b26a00);
+}
+
+/** A local run editing files while you read some other conversation. */
+.chat-local-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok, #2f9e44);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .copied {
   color: var(--muted);
 }
