@@ -18,6 +18,30 @@ export function isTerminalTurnEvent(kind: string): boolean {
   return TERMINAL_EVENT_KINDS.has(kind);
 }
 
+/**
+ * Status the open run should show for one event. Without this the run bar and
+ * the composer stop button keep claiming a turn is live long after it ended.
+ */
+export function statusFromEventKind(kind: string, current?: string | null): string | null {
+  switch (kind) {
+    case "run.idle":
+    case "agent.end":
+      return "IDLE";
+    case "run.error":
+      return "ERROR";
+    case "run.archived":
+      return "ARCHIVED";
+    case "agent.start":
+    case "user.message":
+    case "followup.delivered":
+      return "RUNNING";
+    case "followup.queued":
+      return isActiveRunStatus(current) ? current ?? "RUNNING" : "RUNNING";
+    default:
+      return null;
+  }
+}
+
 export function parseSse(raw: string): RunEvent | null {
   try {
     const event = JSON.parse(raw) as RunEvent;

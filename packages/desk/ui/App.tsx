@@ -46,6 +46,7 @@ import {
   liveActivityLabel,
   parseSse,
   runEventsQuery,
+  statusFromEventKind,
 } from "../src/stream";
 import {
   AutomationCreateForm,
@@ -364,6 +365,14 @@ export function App() {
         setMessages((prev) => {
           const next = applyRunEventsToMessages(prev, batch);
           return batch.some((event) => isTerminalTurnEvent(event.kind)) ? settleTranscriptMessages(next) : next;
+        });
+        setCurrent((prev) => {
+          if (!prev || prev.id !== id) return prev;
+          let status = prev.status;
+          for (const event of batch) {
+            status = (statusFromEventKind(event.kind, status) as Run["status"]) ?? status;
+          }
+          return status === prev.status ? prev : { ...prev, status };
         });
         if (batch.some((event) => event.kind === "run.idle" || event.kind === "run.error")) {
           void refreshRuns();
