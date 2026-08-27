@@ -18,6 +18,7 @@ import {
 } from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
+import { publicizeWorkerUrls } from "../src/worker-urls.js";
 import {
   ignoreNeoDir,
   localWorkspaceDiffStat,
@@ -386,10 +387,11 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
     // The worker writes .neo/logs here too, so exclude it even with no expert.
     ignoreNeoDir(workspaceDir);
     const stateDirForRun = runStateDir(stateDir(), runId);
+    const workerUrls = publicizeWorkerUrls(assignment, controlPlaneUrl);
     writeRunBootstrap(stateDirForRun, {
       runId,
-      controlPlaneUrl: assignment.controlPlaneUrl,
-      llmGatewayUrl: assignment.llmGatewayUrl,
+      controlPlaneUrl: workerUrls.controlPlaneUrl,
+      llmGatewayUrl: workerUrls.llmGatewayUrl,
       jwt: assignment.jwt,
       model: assignment.model,
     });
@@ -400,8 +402,8 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
     const child = spawnDeskWorker({
       runId,
       jwt: assignment.jwt,
-      controlPlaneUrl: assignment.controlPlaneUrl,
-      llmGatewayUrl: assignment.llmGatewayUrl,
+      controlPlaneUrl: workerUrls.controlPlaneUrl,
+      llmGatewayUrl: workerUrls.llmGatewayUrl,
       workspaceDir,
       stateDir: stateDirForRun,
       model: assignment.model,
@@ -725,6 +727,23 @@ function wireIpc(): void {
   ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment) => {
     await startAssignment(assignment);
     return true;
+  });
+  ipcMain.handle("desk:takeAssignment", async (_event, runId?: string) => {
+    if (runId && (startedRuns.has(runId) || workers.has(runId))) {
+      return { started: true, runId };
+    }
+    if (!deskId || !deskToken) {
+      return { started: false };
+    }
+    const assignment = await leaseClient().waitAssignment({ deskId, deskToken, waitMs: 8_000 });
+    if (runId && (startedRuns.has(runId) || workers.has(runId))) {
+      return { started: true, runId };
+    }
+    if (!assignment || (runId && assignment.runId !== runId)) {
+      return { started: false, runId: assignment?.runId };
+    }
+    await startAssignment(assignment);
+    return { started: true, runId: assignment.runId };
   });
   ipcMain.handle("desk:stopRun", (_event, runId: string) => {
     stopRun(runId, "已在这台电脑上停止");

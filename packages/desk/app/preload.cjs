@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("neoDesk", {
   getPrefs: () => ipcRenderer.invoke("desk:getPrefs"),
   setPrefs: (next) => ipcRenderer.invoke("desk:setPrefs", next),
   startRun: (assignment) => ipcRenderer.invoke("desk:startRun", assignment),
+  takeAssignment: (runId) => ipcRenderer.invoke("desk:takeAssignment", runId),
   stopRun: (runId) => ipcRenderer.invoke("desk:stopRun", runId),
   notify: (title, body) => ipcRenderer.invoke("desk:notify", title, body),
   openPath: (filePath) => ipcRenderer.invoke("desk:openPath", filePath),

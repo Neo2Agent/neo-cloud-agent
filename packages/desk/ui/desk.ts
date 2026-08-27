@@ -84,6 +84,7 @@ export type NeoDeskBridge = {
   getPrefs?(): Promise<{ requireApproval?: boolean; deskId?: string }>;
   setPrefs?(next: { requireApproval?: boolean }): Promise<{ requireApproval?: boolean }>;
   startRun?(assignment: DeskAssignment): Promise<boolean>;
+  takeAssignment?(runId?: string): Promise<{ started?: boolean; runId?: string }>;
   stopRun?(runId: string): Promise<boolean>;
   listDir?(input: { folder: string; path?: string; content?: boolean }): Promise<LocalFsListing>;
   diffStat?(folder: string): Promise<{ added: number; removed: number } | null>;

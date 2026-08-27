@@ -574,11 +574,14 @@ export function App() {
     }
     const response = await api(tokenRef.current, `/v1/runs/${id}/desk-start`, { method: "POST" });
     const body = await readJson<{ assignment?: DeskAssignment; error?: string }>(response);
-    if (!response.ok || !body.assignment) {
-      setAuthError(body.error || "本机启动失败");
+    if (response.ok && body.assignment) {
+      await start(body.assignment);
       return;
     }
-    await start(body.assignment);
+    const taken = await deskBridge()?.takeAssignment?.(id);
+    if (!taken?.started) {
+      setAuthError(body.error || "本机启动失败");
+    }
   }, []);
 
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
@@ -651,6 +654,10 @@ export function App() {
           } else {
             setAuthError(STALE_DESK_HINT);
           }
+        } else if (local) {
+          // Production still queues desk runs for claim and does not return
+          // an inline assignment. Pull it off the lease instead of waiting.
+          await deskBridge()?.takeAssignment?.(created.id);
         }
         await openRun(created.id);
         return;
