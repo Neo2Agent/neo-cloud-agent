@@ -46,6 +46,8 @@ export type NeoDeskBridge = {
   platform: string;
   apiBase: string;
   canRunLocal: boolean;
+  /** Packaged Desk talks to production through the main process, not from the renderer. */
+  proxyApi?: boolean;
   getToken(): Promise<string>;
   setToken(token: string): Promise<void>;
   clearToken(): Promise<void>;
@@ -122,7 +124,11 @@ export function withApiBase(path: string): string {
   if (/^https?:\/\//i.test(path)) {
     return path;
   }
-  const origin = (deskBridge()?.apiBase || "").replace(/\/$/, "");
+  const desk = deskBridge();
+  if (desk?.proxyApi) {
+    return path.startsWith("/") ? path : `/${path}`;
+  }
+  const origin = (desk?.apiBase || "").replace(/\/$/, "");
   if (!origin) {
     return path;
   }

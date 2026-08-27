@@ -34,6 +34,11 @@ export function productionControlPlaneCandidates(env: NodeJS.ProcessEnv = proces
   return [...new Set([preferred, DEFAULT_PRODUCTION_CONTROL_PLANE, ...PRODUCTION_CONTROL_PLANE_FALLBACKS])];
 }
 
+/** Paths the packaged renderer must send through the main-process proxy. */
+export function isDeskApiProxyPath(pathname: string): boolean {
+  return pathname === "/health" || pathname.startsWith("/v1/");
+}
+
 /** Vite URL from `pnpm dev:desk`. Empty means Electron should load `ui/dist` via `neo-desk://`. */
 export function deskRendererUrl(env: NodeJS.ProcessEnv = process.env): string {
   return (env.NEO_DESK_URL || "").replace(/\/$/, "");

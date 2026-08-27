@@ -8,6 +8,7 @@ import {
   controlPlaneOrigin,
   deskClientOrigin,
   deskRendererUrl,
+  isDeskApiProxyPath,
   isLoopbackOrigin,
   productionControlPlaneCandidates,
 } from "./ports.js";
@@ -41,4 +42,7 @@ test("production Desk launch ignores a local CONTROL_PLANE_URL from .env", () =>
   );
   assert.equal(controlPlaneOrigin({ NEO_DESK_PACKAGED: "1", CONTROL_PLANE_URL: "http://127.0.0.1:8080" }), DEFAULT_PRODUCTION_CONTROL_PLANE);
   assert.ok(productionControlPlaneCandidates().includes(PRODUCTION_CONTROL_PLANE_FALLBACKS[1]));
+  assert.equal(isDeskApiProxyPath("/v1/auth/login"), true);
+  assert.equal(isDeskApiProxyPath("/health"), true);
+  assert.equal(isDeskApiProxyPath("/index.html"), false);
 });

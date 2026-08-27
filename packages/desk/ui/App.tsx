@@ -535,7 +535,8 @@ export function App() {
       await finishLogin();
     } catch (error) {
       persist("");
-      setAuthError(error instanceof Error ? error.message : "登录失败");
+      const message = error instanceof Error ? error.message : "登录失败";
+      setAuthError(message === "Failed to fetch" ? "连不上现网控制面。检查网络后重试，或换一份新的安装包。" : message);
     } finally {
       setAuthBusy(false);
     }

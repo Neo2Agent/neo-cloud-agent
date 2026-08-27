@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("neoDesk", {
   platform: process.platform,
   apiBase,
   canRunLocal: true,
+  proxyApi: packaged,
   getToken: () => ipcRenderer.invoke("desk:getToken"),
   setToken: (token) => ipcRenderer.invoke("desk:setToken", token),
   clearToken: () => ipcRenderer.invoke("desk:clearToken"),

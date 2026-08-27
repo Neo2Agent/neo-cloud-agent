@@ -9,7 +9,13 @@ import { createLeaseClient } from "../src/lease.js";
 import { openDeskInboxStream, type DeskInboxHandle } from "../src/inbox.js";
 import { listLocalPath } from "../src/local-fs.js";
 import { createLocalShell, type LocalShell } from "../src/local-shell.js";
-import { controlPlaneOrigin, deskRendererUrl, isDeskPackaged, productionControlPlaneCandidates } from "../src/ports.js";
+import {
+  controlPlaneOrigin,
+  deskRendererUrl,
+  isDeskApiProxyPath,
+  isDeskPackaged,
+  productionControlPlaneCandidates,
+} from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import {
@@ -168,20 +174,45 @@ async function resolvePackedControlPlane(): Promise<void> {
 }
 
 function registerRendererProtocol(): void {
-  protocol.handle("neo-desk", (request) => {
-    const dist = uiDist();
+  protocol.handle("neo-desk", async (request) => {
     const url = new URL(request.url);
-    let relative = decodeURIComponent(url.pathname || "/");
-    if (relative === "/" || relative === "") {
-      relative = "/index.html";
+    const relative = decodeURIComponent(url.pathname || "/");
+    if (isDeskApiProxyPath(relative)) {
+      return proxyControlPlane(request, url);
     }
-    const file = path.normalize(path.join(dist, relative));
+    const dist = uiDist();
+    const filePath = relative === "/" || relative === "" ? "/index.html" : relative;
+    const file = path.normalize(path.join(dist, filePath));
     if (!file.startsWith(dist)) {
       return new Response("forbidden", { status: 403 });
     }
     const target = existsSync(file) ? file : path.join(dist, "index.html");
     return net.fetch(pathToFileURL(target).href);
   });
+}
+
+async function proxyControlPlane(request: Request, url: URL): Promise<Response> {
+  const target = `${controlPlaneUrl}${url.pathname}${url.search}`;
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  headers.delete("origin");
+  try {
+    const init: RequestInit & { duplex?: "half" } = {
+      method: request.method,
+      headers,
+    };
+    if (request.method !== "GET" && request.method !== "HEAD" && request.body) {
+      init.body = request.body;
+      init.duplex = "half";
+    }
+    return await net.fetch(target, init);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "unreachable";
+    return new Response(JSON.stringify({ error: `连不上现网控制面（${controlPlaneUrl}）：${detail}` }), {
+      status: 502,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
 }
 
 function rendererEntry(): string {
