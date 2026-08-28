@@ -151,7 +151,7 @@ function appendWorkspaceBoundary(prompt: string, sandboxRoot: string): string {
     `你在用户自己的电脑上，工作区是 \`${sandboxRoot}\`。这里面的文件就是用户正在编辑的文件，包括还没提交的改动。`,
     "只读写这个文件夹里的内容。不要碰家目录、系统目录，或工作区之外的路径。",
     "",
-    `工作区里也有几处只读：\`.git/hooks\`、\`.git/config\`、\`.git/info/attributes\`、\`.neo/\`。前三个写进去会在这一轮结束后继续生效，最后一个是 Desk 给这条对话用的暂存目录。要改 git 配置就用 git 命令，并先说明你打算做什么。`,
+    `工作区里也有几处只读：\`.git/hooks\`、\`.git/config\`、\`.git/info/attributes\`、\`.cursor/hooks.json\`、\`.cursor/hooks/\`、\`.neo/\`。写进 hook 或 \`.cursor/hooks.json\` 会在下一回合继续生效；\`.neo/\` 是 Desk 给这条对话用的暂存目录。要改 git 配置就用 git 命令，并先说明你打算做什么。不要在工作区里链到家目录或 \`/tmp\`。`,
   ].join("\n");
 }
 

@@ -171,8 +171,8 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 ## 客户端约束（已经写进代码）
 
 - **工作区 = 授权目录本身。** 有 `.git` 才有 commit / PR；没有 git 的文件夹仍可读写、开终端。
-- **沙箱：** pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝；`bash` 的重定向和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂。只对本机 Run 生效（`NEO_SANDBOX_ROOT`）；云端 VM 本身就是隔离盒子。
-- **工作区里还有几处只读：** `.git/hooks`、`.git/config`、`.git/info/attributes`、`.neo/`。前三个的写入会**活过这一轮**——hook 在用户下次提交时执行，`config` 能改 `origin` 和 `core.hooksPath`，等于事后绕过沙箱边界；`.neo/` 是 Desk 和 worker 维护的 per-run 暂存，Agent 改它就能顶掉并行 run 的专家人设。读不拦，git 自己的写也不拦（走 git 进程，不经过工具调用），所以正常 commit / 切分支不受影响。Cursor 出于同样理由把这批路径设成"无论怎么配都不可写"（[sandbox reference](https://cursor.com/docs/reference/sandbox)）。系统提示里也会明说，免得 Agent 撞上才知道。
+- **沙箱：** pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝（会展开 `~` / `$HOME`，并顺着符号链接看到真实落点）；`bash` 的重定向（含 `1>` / `2>` / `&>` / `>|`）和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂，但 `ln` 不准把工作区名字链到 `/tmp` 或家目录。只对本机 Run 生效（`NEO_SANDBOX_ROOT`）；云端 VM 本身就是隔离盒子。出界是直接拒绝，不再问人。
+- **工作区里还有几处只读：** `.git/hooks`、`.git/config`、`.git/info/attributes`、`.cursor/hooks.json`、`.cursor/hooks/`、`.neo/`。这些写入会**活过这一轮**——git hook 在用户下次提交时执行；`.cursor/hooks.json` 在下一回合被新 worker 用 `/bin/sh` 跑，不再走沙箱扫描；`.neo/` 是 Desk 和 worker 维护的 per-run 暂存，Agent 改它就能顶掉并行 run 的专家人设。读不拦，git 自己的写也不拦（走 git 进程，不经过工具调用），所以正常 commit / 切分支不受影响。Cursor 出于同样理由把这批路径设成"无论怎么配都不可写"（[sandbox reference](https://cursor.com/docs/reference/sandbox)）。系统提示里也会明说，免得 Agent 撞上才知道。
 - **Run 私货不进仓库：** session / bootstrap / jwt 在 `userData/neo-desk/runs/<runId>/`。要被 Agent 读到的（专家文件、贴图）写 `<workspace>/.neo/runs/<runId>/`，整个 `.neo/` 都在 `.git/info/exclude` 里。
 - **绝对路径不上云。** 绑定只上报机器名 + repoKey + 短名；远程端看到 `机器名 · 仓库名`。也不把本机路径同步成别人的项目默认仓库。
 - **`online` = 正握着 inbox。** 只看时间戳会让一台注册完就退出的电脑看起来还在。

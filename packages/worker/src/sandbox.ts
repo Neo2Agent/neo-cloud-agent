@@ -1,4 +1,5 @@
-import { tmpdir } from "node:os";
+import { lstatSync, realpathSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { isInsideWorkspace } from "./hooks.js";
@@ -12,31 +13,29 @@ const WRITE_TOOLS = new Set(["write", "edit"]);
 /**
  * Paths that stay write-protected even though they are inside the workspace.
  *
- * A This Computer run edits the user's real checkout in place, so a write here
- * outlives the turn and escapes the boundary after the fact: a git hook runs on
- * the user's next commit, and `.git/config` can repoint `origin` or
- * `core.hooksPath`. Reads stay allowed, and git's own writes go through the git
- * process rather than a tool call, so normal commits and branches are
- * unaffected. `.neo` is this run's private scratch, written by Desk and by the
- * worker: an agent editing it could swap a parallel run's expert persona out
- * from under it.
+ * A This Computer run edits the user's real folder in place, so a write here
+ * outlives the turn and escapes the boundary after the fact:
+ *
+ * - git hooks run on the user's next commit; `.git/config` can repoint `origin`
+ *   or `core.hooksPath`
+ * - `.cursor/hooks.json` (and `.cursor/hooks/`) is loaded by the next worker
+ *   process and executed with `/bin/sh`, bypassing this guard
+ * - `.neo` is this run's private scratch: an agent editing it could swap a
+ *   parallel run's expert persona out from under it
+ *
+ * Reads stay allowed. git's own writes go through the git process rather than a
+ * tool call, so normal commits and branches are unaffected.
  */
-const PROTECTED_RELATIVE_PATHS = [".git/config", ".git/hooks", ".git/info/attributes", ".neo"];
+const PROTECTED_RELATIVE_PATHS = [
+  ".git/config",
+  ".git/hooks",
+  ".git/info/attributes",
+  ".cursor/hooks.json",
+  ".cursor/hooks",
+  ".neo",
+];
 
-/** The protected prefix a write lands in, or null when it is somewhere else. */
-export function protectedWorkspacePath(workspaceDir: string, target: string): string | null {
-  const root = path.resolve(workspaceDir);
-  if (!isInsideWorkspace(root, target)) {
-    return null;
-  }
-  const relative = path.relative(root, target).split(path.sep).join("/");
-  for (const guarded of PROTECTED_RELATIVE_PATHS) {
-    if (relative === guarded || relative.startsWith(`${guarded}/`)) {
-      return guarded;
-    }
-  }
-  return null;
-}
+const HOOK_GUARD_PREFIXES = [".cursor/hooks.json", ".cursor/hooks"] as const;
 
 /** Shell builtins that change the filesystem, so their path arguments are writes. */
 const MUTATING_COMMANDS = new Set([
@@ -57,28 +56,117 @@ const MUTATING_COMMANDS = new Set([
   "shred",
 ]);
 
+const DEV_NULL_TARGETS = new Set(["/dev/null", "/dev/stdout", "/dev/stderr"]);
+
+/**
+ * `>`, `>>`, `>|`, `1>`, `2>`, `&>`, `>&` followed by a target.
+ *
+ * The previous pattern skipped a digit or `&` before `>`, so `1>/etc/hosts`
+ * and `&>/etc/hosts` walked through. This still is not a shell parser.
+ */
+const REDIRECT_TARGET =
+  /(?:&>{1,2}|>&|(?:\d*)>{1,2}\|?)\s*([^\s;|&()]+)/g;
+
+/** The protected prefix a write lands in, or null when it is somewhere else. */
+export function protectedWorkspacePath(workspaceDir: string, target: string): string | null {
+  const root = path.resolve(workspaceDir);
+  if (!isInsideWorkspace(root, target)) {
+    return null;
+  }
+  const relative = path.relative(root, target).split(path.sep).join("/");
+  for (const guarded of PROTECTED_RELATIVE_PATHS) {
+    if (relative === guarded || relative.startsWith(`${guarded}/`)) {
+      return guarded;
+    }
+  }
+  return null;
+}
+
+function stripQuotes(raw: string): string {
+  return raw.trim().replace(/^["']|["']$/g, "");
+}
+
+/**
+ * Turn `~` / `$HOME` / `${HOME}` into an absolute path the way bash would
+ * before it opens the file. Anything else is returned as-is (quotes stripped).
+ */
+export function expandLeadingHome(raw: string, home = homedir()): string {
+  const value = stripQuotes(raw);
+  if (!value) {
+    return "";
+  }
+  if (value === "~" || value.startsWith("~/") || value.startsWith("~\\")) {
+    return `${home}${value.slice(1)}`;
+  }
+  if (value === "$HOME" || value.startsWith("$HOME/") || value.startsWith("$HOME\\")) {
+    return `${home}${value.slice("$HOME".length)}`;
+  }
+  if (value === "${HOME}" || value.startsWith("${HOME}/") || value.startsWith("${HOME}\\")) {
+    return `${home}${value.slice("${HOME}".length)}`;
+  }
+  return value;
+}
+
+function resolvedRoot(dir: string): string {
+  const resolved = path.resolve(dir);
+  try {
+    return realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+/**
+ * Walk each component and follow symlinks, so `home-link/.ssh/id_rsa` is
+ * judged at the real destination, not at the lexical path inside the workspace.
+ *
+ * Missing tail components stay attached to the last existing real directory.
+ */
+export function followPathThroughSymlinks(target: string): string {
+  const absolute = path.resolve(target);
+  const root = path.parse(absolute).root;
+  const rest = absolute.slice(root.length).split(path.sep).filter(Boolean);
+  let current = root;
+  for (let index = 0; index < rest.length; index += 1) {
+    const next = path.join(current, rest[index] ?? "");
+    try {
+      const stat = lstatSync(next);
+      current = stat.isSymbolicLink() ? realpathSync(next) : next;
+    } catch {
+      return path.join(next, ...rest.slice(index + 1));
+    }
+  }
+  return current;
+}
+
 /**
  * Writes outside the workspace are blocked, but build tooling legitimately uses
  * the system temp dir, so it stays allowed.
  */
 function writableRoots(workspaceDir: string): string[] {
-  return [path.resolve(workspaceDir), path.resolve(tmpdir())];
+  return [resolvedRoot(workspaceDir), resolvedRoot(tmpdir())];
 }
 
-function allowedTarget(workspaceDir: string, target: string): boolean {
-  return writableRoots(workspaceDir).some((root) => isInsideWorkspace(root, target));
+function allowedTarget(workspaceDir: string, lexical: string, followed: string): boolean {
+  const workspace = resolvedRoot(workspaceDir);
+  // A workspace path that walks out through a symlink is not a /tmp cache write.
+  if (lexical && isInsideWorkspace(workspace, lexical) && followed && !isInsideWorkspace(workspace, followed)) {
+    return false;
+  }
+  return writableRoots(workspaceDir).some((root) => isInsideWorkspace(root, followed));
+}
+
+function resolveWrite(workspaceDir: string, raw: string): { lexical: string; followed: string } {
+  const value = expandLeadingHome(raw);
+  if (!value) {
+    return { lexical: "", followed: "" };
+  }
+  const lexical = path.resolve(workspaceDir, value);
+  return { lexical, followed: followPathThroughSymlinks(lexical) };
 }
 
 function resolveAgainstWorkspace(workspaceDir: string, raw: string): string {
-  const value = raw.trim().replace(/^["']|["']$/g, "");
-  if (!value) {
-    return "";
-  }
-  if (value.startsWith("~")) {
-    // `~` is the user's home, which is never the workspace.
-    return path.join("/__home__", value.slice(1));
-  }
-  return path.resolve(workspaceDir, value);
+  return resolveWrite(workspaceDir, raw).followed;
 }
 
 /** The `path` a file tool was pointed at, resolved, or empty when it has none. */
@@ -101,7 +189,7 @@ export function fileToolEscapes(workspaceDir: string, toolName: string, input: u
     return false;
   }
   const resolved = fileToolTarget(workspaceDir, toolName, input);
-  return !resolved || !isInsideWorkspace(workspaceDir, resolved);
+  return !resolved || !isInsideWorkspace(resolvedRoot(workspaceDir), resolved);
 }
 
 /** The protected prefix a file tool would write into, or null. */
@@ -118,8 +206,13 @@ export function fileToolWritesProtectedPath(
 }
 
 function looksLikePath(token: string): boolean {
-  const value = token.replace(/^["']|["']$/g, "");
-  return value.startsWith("/") || value.startsWith("~") || value.includes("../");
+  const expanded = expandLeadingHome(token);
+  return path.isAbsolute(expanded) || expanded.startsWith("~") || token.includes("../") || expanded.includes("..");
+}
+
+function isFdOrDevice(token: string): boolean {
+  const value = stripQuotes(token);
+  return DEV_NULL_TARGETS.has(value) || /^&?\d+$/.test(value);
 }
 
 /**
@@ -135,17 +228,17 @@ function shellWriteTargets(command: string): Array<{ token: string; fromRedirect
   if (!command.trim()) {
     return targets;
   }
-  const redirect = /(?:^|[^0-9<>&])>{1,2}\s*([^\s;|&()]+)/g;
+  const redirect = new RegExp(REDIRECT_TARGET.source, "g");
   for (let match = redirect.exec(command); match; match = redirect.exec(command)) {
     const token = match[1] ?? "";
-    if (token === "/dev/null" || token === "/dev/stdout" || token === "/dev/stderr") {
+    if (!token || isFdOrDevice(token)) {
       continue;
     }
     targets.push({ token, fromRedirect: true });
   }
   for (const segment of command.split(/&&|\|\||;|\||\n/)) {
     const tokens = segment.trim().split(/\s+/).filter(Boolean);
-    const head = tokens[0] ? path.basename(tokens[0].replace(/^["']|["']$/g, "")) : "";
+    const head = tokens[0] ? path.basename(stripQuotes(tokens[0])) : "";
     if (!MUTATING_COMMANDS.has(head)) {
       continue;
     }
@@ -167,9 +260,37 @@ export function shellWriteEscapes(workspaceDir: string, command: string): string
     if (!fromRedirect && !looksLikePath(token)) {
       continue;
     }
-    const resolved = resolveAgainstWorkspace(workspaceDir, token);
-    if (resolved && !allowedTarget(workspaceDir, resolved)) {
+    const { lexical, followed } = resolveWrite(workspaceDir, token);
+    if (followed && !allowedTarget(workspaceDir, lexical, followed)) {
       return token;
+    }
+  }
+  return null;
+}
+
+/**
+ * A symlink is a door, not a cache file. `/tmp` may be written, but it must
+ * not become a workspace path the next turn walks through.
+ *
+ * `ln -s /tmp .cursor` plus a write of `/tmp/hooks.json` is how a hook file
+ * would otherwise land outside this guard and still be loaded next turn.
+ */
+export function shellLinkEscapes(workspaceDir: string, command: string): string | null {
+  const root = resolvedRoot(workspaceDir);
+  for (const segment of command.split(/&&|\|\||;|\||\n/)) {
+    const tokens = segment.trim().split(/\s+/).filter(Boolean);
+    const head = tokens[0] ? path.basename(stripQuotes(tokens[0])) : "";
+    if (head !== "ln") {
+      continue;
+    }
+    for (const token of tokens.slice(1)) {
+      if (token.startsWith("-")) {
+        continue;
+      }
+      const resolved = resolveAgainstWorkspace(workspaceDir, token);
+      if (resolved && !isInsideWorkspace(root, resolved)) {
+        return token;
+      }
     }
   }
   return null;
@@ -197,10 +318,17 @@ export function shellWriteHitsProtectedPath(
   return null;
 }
 
+function isHookGuard(guarded: string): boolean {
+  return HOOK_GUARD_PREFIXES.some((prefix) => guarded === prefix);
+}
+
 function protectedPathReason(guarded: string, target: string): string {
   const named = target && target !== guarded ? `${target}（属于 \`${guarded}\`）` : `\`${guarded}\``;
   if (guarded === ".neo") {
     return `${named} 是本机对话自己的暂存目录，由 Desk 和 worker 维护，Agent 不要改。`;
+  }
+  if (isHookGuard(guarded)) {
+    return `${named} 是下一回合 worker 会执行的钩子，写进去等于事后绕过工作区边界。`;
   }
   return `${named} 不允许改：写进去的东西会在这一轮结束后继续生效（git hook 会在用户下次提交时执行，config 能改 origin 和 hooksPath）。要动 git 配置请用 git 命令，并先告诉用户你打算做什么。`;
 }
@@ -234,7 +362,7 @@ export function createWorkspaceSandboxExtension(workspaceDir: string): InlineExt
         if (event.toolName === "bash") {
           const input = event.input as Record<string, unknown>;
           const command = typeof input.command === "string" ? input.command : "";
-          const escaped = shellWriteEscapes(root, command);
+          const escaped = shellWriteEscapes(root, command) ?? shellLinkEscapes(root, command);
           if (escaped) {
             return {
               block: true,
