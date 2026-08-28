@@ -171,19 +171,23 @@ export function Composer({
           }
         }}
       />
-      {mentionHits.length > 0 ? (
+      {trigger ? (
         <ul className="mention-menu" role="listbox">
-          {mentionHits.map((item) => (
-            <li key={`${item.kind}-${item.id}`}>
-              <button type="button" onClick={() => pickMention(item)}>
-                <small>{mentionKindLabel(item.kind)}</small>
-                <span>{item.label}</span>
-              </button>
-            </li>
-          ))}
+          {mentionHits.length === 0 ? (
+            <li className="hint">没有可引用的专家、技能或资产</li>
+          ) : (
+            mentionHits.map((item) => (
+              <li key={`${item.kind}-${item.id}`}>
+                <button type="button" onClick={() => pickMention(item)}>
+                  <small>{mentionKindLabel(item.kind)}</small>
+                  <span>{item.label}</span>
+                </button>
+              </li>
+            ))
+          )}
         </ul>
       ) : null}
-      {capsules.length > 0 && mentionHits.length === 0 ? (
+      {capsules.length > 0 && !trigger ? (
         <div className="intent-capsules">
           {capsules.map((item) => (
             <button key={item.id} type="button" className="intent-capsule" onClick={() => onCapsule?.(item)}>

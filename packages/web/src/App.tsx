@@ -268,9 +268,11 @@ export function App() {
   const sendingRef = useRef(false);
   const pendingRef = useRef<PendingUser | null>(null);
   const keepPendingRef = useRef(false);
+  const projectNamesRef = useRef(projectNames);
   tokenRef.current = token;
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
+  projectNamesRef.current = projectNames;
 
   const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
   const contextUsage = useMemo(() => {
@@ -663,7 +665,11 @@ export function App() {
       writeLastRunId(id);
       const projectId = run.projectId ?? "";
       if (projectId) {
-        setActiveProject((prev) => (prev?.id === projectId ? prev : { id: projectId, name: prev?.name ?? "项目对话" }));
+        const known = projectNamesRef.current[projectId];
+        setActiveProject((prev) => ({
+          id: projectId,
+          name: known || (prev?.id === projectId ? prev.name : "项目对话"),
+        }));
       } else {
         setActiveProject(null);
       }
