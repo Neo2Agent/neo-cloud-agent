@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type {
   CreateCommitRequest,
@@ -1009,6 +1009,14 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   if (target) {
     assertColocatedTarget(target);
   }
+  if (!isDeskTarget(target)) {
+    repoUrls = repoUrls.filter((url) => {
+      if (looksRemoteRepo(url) || !looksLocalFilesystem(url)) {
+        return true;
+      }
+      return existsSync(url) && statSync(url).isDirectory();
+    });
+  }
   const start = parseRunStart(input.start) ?? "dispatch";
   if (isDeskTarget(target)) {
     if (input.source === "automation") {
@@ -1623,6 +1631,11 @@ export function releaseDeskRun(deskId: string, runId: string, input: { code?: nu
 
 function looksRemoteRepo(url: string): boolean {
   return /^(https?:\/\/|git@|github\.com\/)/i.test(url);
+}
+
+function looksLocalFilesystem(url: string): boolean {
+  const text = url.trim();
+  return text.startsWith("/") || text.startsWith("file:") || /^[A-Za-z]:[\\/]/.test(text);
 }
 
 export async function handoffRun(runId: string, input: HandoffRequest): Promise<Run> {

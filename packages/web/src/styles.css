@@ -415,6 +415,7 @@ button[type="submit"]:disabled {
   gap: 10px;
   min-width: 0;
   flex: 1 1 160px;
+  overflow: hidden;
 }
 
 .topbar-lead,
@@ -426,6 +427,14 @@ button[type="submit"]:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.topbar-heading .eyebrow,
+.topbar-heading h1 {
+  max-width: 100%;
 }
 
 .app-tabs {
@@ -480,6 +489,10 @@ h1 {
   align-items: center;
   flex: 0 1 auto;
   min-width: 0;
+  max-width: min(100%, 62%);
+  position: relative;
+  z-index: 1;
+  background: var(--bg);
 }
 
 .status {
@@ -2423,9 +2436,14 @@ textarea {
   background: #eff6ff;
 }
 
+.context-usage-backdrop {
+  display: none;
+}
+
 .context-usage-pop {
   position: absolute;
-  left: 0;
+  right: 0;
+  left: auto;
   bottom: calc(100% + 10px);
   width: min(360px, calc(100vw - 48px));
   padding: 12px 14px;
@@ -2433,7 +2451,7 @@ textarea {
   border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  z-index: 8;
+  z-index: 12;
 }
 
 .context-usage-head {
@@ -2663,6 +2681,16 @@ textarea {
 
 .sidebar-closed .sidebar {
   display: none;
+}
+
+@media (max-width: 1200px) {
+  .topbar-heading {
+    display: none;
+  }
+
+  .top-actions {
+    max-width: none;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -3697,5 +3725,32 @@ textarea {
 
   .composer .neo-select-pill {
     min-height: 36px;
+  }
+
+  .context-usage-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    border: 0;
+    padding: 0;
+    background: rgba(17, 24, 39, 0.2);
+  }
+
+  .context-usage-pop {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: max(96px, calc(env(safe-area-inset-bottom) + 88px));
+    width: auto;
+    max-width: none;
+    max-height: min(48vh, 360px);
+    overflow: auto;
+    z-index: 30;
+  }
+
+  .context-usage-status {
+    flex-wrap: wrap;
   }
 }

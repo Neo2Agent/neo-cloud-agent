@@ -242,6 +242,11 @@ export async function materializeRepos(
     if (ref.kind === "remote") {
       await gitClone(ref.source, dest);
     } else {
+      if (!existsSync(ref.source) || !statSync(ref.source).isDirectory()) {
+        throw new Error(
+          `local repo not found: ${ref.source}。这是本机文件夹，云端 VM 上没有这份目录。请清空仓库或改成 Git 地址；要改本机文件请用 Desk。`,
+        );
+      }
       await copyWorkspaceTree(ref.source, dest);
     }
     placed.push({ dest, ref });
