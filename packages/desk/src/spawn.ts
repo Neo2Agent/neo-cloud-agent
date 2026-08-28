@@ -4,13 +4,15 @@ import { fileURLToPath } from "node:url";
 import { SECRET_ENV_KEYS } from "@neo-cloud-agent/contracts";
 import { isDeskPackaged } from "./ports.js";
 
-export { isDeskPackaged };
+/** How often the worker polls its inbox for the next turn. */
+const DEFAULT_WORKER_POLL_MS = "200";
 
 export function deskRepoRoot(): string {
   return fileURLToPath(new URL("../../..", import.meta.url));
 }
 
-export function deskResourcesRoot(env: NodeJS.ProcessEnv = process.env): string {
+/** Where the packaged app keeps `worker.cjs`, or the repo when running from source. */
+function deskResourcesRoot(env: NodeJS.ProcessEnv = process.env): string {
   if (isDeskPackaged(env) && env.NEO_DESK_RESOURCES) {
     return env.NEO_DESK_RESOURCES;
   }
@@ -46,10 +48,10 @@ export function spawnDeskWorker(input: {
   workspaceDir: string;
   /** Per-run state, kept outside the user's repo. */
   stateDir: string;
+  /** Per-run scratch inside the workspace, so folder-mates never collide. */
+  scratchDir: string;
   model: string;
   nodePath?: string;
-  /** Desk default: exit when the turn is done instead of idling on the laptop. */
-  exitAfterTurn?: boolean;
 }): ChildProcess {
   const launch = deskWorkerLaunch({ execPath: input.nodePath ?? process.execPath });
   const env: NodeJS.ProcessEnv = {
@@ -61,12 +63,15 @@ export function spawnDeskWorker(input: {
     WORKSPACE_DIR: input.workspaceDir,
     SESSION_DIR: path.join(input.stateDir, "sessions"),
     NEO_RUN_BOOTSTRAP: path.join(input.stateDir, "run-bootstrap.json"),
+    NEO_RUN_SCRATCH_DIR: input.scratchDir,
     // The workspace is one folder inside the user's real filesystem, so the
     // worker has to refuse anything outside it.
     NEO_SANDBOX_ROOT: input.workspaceDir,
     NEO_MODEL: input.model,
-    WORKER_POLL_MS: process.env.WORKER_POLL_MS ?? "200",
-    WORKER_EXIT_AFTER_TURN: input.exitAfterTurn === false ? "0" : "1",
+    WORKER_POLL_MS: process.env.WORKER_POLL_MS ?? DEFAULT_WORKER_POLL_MS,
+    // Not configurable: a resident worker on a laptop dies on an expired run
+    // JWT and holds a concurrency slot it is no longer using. See docs/desk.md.
+    WORKER_EXIT_AFTER_TURN: "1",
     ELECTRON_RUN_AS_NODE: "1",
   };
   for (const key of SECRET_ENV_KEYS) {

@@ -1,8 +1,18 @@
 import type { DeskInboxEvent } from "@neo-cloud-agent/contracts";
+import { deskLogger } from "./log.js";
 
 export type DeskInboxHandle = {
   close(): void;
 };
+
+/** How long before a dropped stream is dialled again. */
+const DEFAULT_RETRY_MS = 3_000;
+
+/** SSE frames are separated by a blank line, and payload lines start with `data:`. */
+const FRAME_SEPARATOR = "\n\n";
+const DATA_PREFIX = "data:";
+
+const log = deskLogger("inbox");
 
 /**
  * Hold one outbound stream to the control plane.
@@ -25,7 +35,7 @@ export function openDeskInboxStream(input: {
 }): DeskInboxHandle {
   const root = input.baseUrl.replace(/\/$/, "");
   const fetchImpl = input.fetchImpl ?? fetch;
-  const retryMs = input.retryMs ?? 3000;
+  const retryMs = input.retryMs ?? DEFAULT_RETRY_MS;
   let closed = false;
   let controller: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -63,26 +73,28 @@ export function openDeskInboxStream(input: {
           break;
         }
         buffer += decoder.decode(value, { stream: true });
-        let split = buffer.indexOf("\n\n");
+        let split = buffer.indexOf(FRAME_SEPARATOR);
         while (split >= 0) {
           const frame = buffer.slice(0, split);
-          buffer = buffer.slice(split + 2);
+          buffer = buffer.slice(split + FRAME_SEPARATOR.length);
           for (const line of frame.split("\n")) {
-            if (!line.startsWith("data:")) {
+            if (!line.startsWith(DATA_PREFIX)) {
               continue;
             }
             try {
-              input.onEvent(JSON.parse(line.slice(5).trim()) as DeskInboxEvent);
-            } catch {
-              // ignore a malformed frame rather than dropping the stream
+              input.onEvent(JSON.parse(line.slice(DATA_PREFIX.length).trim()) as DeskInboxEvent);
+            } catch (error) {
+              // One bad frame is not worth dropping the stream the whole machine
+              // depends on, but it should not vanish either.
+              log.warn("skipped a malformed frame", { deskId: input.deskId, detail: String(error) });
             }
           }
-          split = buffer.indexOf("\n\n");
+          split = buffer.indexOf(FRAME_SEPARATOR);
         }
       }
     } catch (error) {
       if (!closed) {
-        console.error("desk inbox stream", error);
+        log.error("stream dropped, reconnecting", error, { deskId: input.deskId, retryMs });
       }
     } finally {
       input.onStateChange?.(false);

@@ -2,6 +2,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
+import type { DeskTargetKind } from "../desk";
 import { IconArrowUp, IconCloud, IconComputer } from "../icons";
 import { ActivityTab } from "./ActivityTab";
 import { AssetsTab } from "./AssetsTab";
@@ -31,7 +32,7 @@ export function ProjectWorkbench({
   userId: string;
   initialTab?: WorkbenchTab;
   composing?: boolean;
-  targetKind?: "cloud" | "desk" | "remote";
+  targetKind?: DeskTargetKind;
   onBack: () => void;
   onStartChat: (todo?: { id: string; title: string }) => void;
   onCompose: (text: string) => void;

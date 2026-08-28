@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileToolEscapes, shellWriteEscapes } from "./sandbox.js";
+import {
+  fileToolEscapes,
+  fileToolWritesProtectedPath,
+  protectedWorkspacePath,
+  shellLinkEscapes,
+  shellWriteEscapes,
+  shellWriteHitsProtectedPath,
+} from "./sandbox.js";
 
 const root = "/home/me/code/app";
 
@@ -28,7 +36,14 @@ test("shell writes outside the workspace are refused", () => {
   assert.equal(shellWriteEscapes(root, "cat src/foo.ts"), null);
   assert.equal(shellWriteEscapes(root, "rm -rf build"), null);
   assert.equal(shellWriteEscapes(root, "echo pwned > /etc/hosts"), "/etc/hosts");
+  assert.equal(shellWriteEscapes(root, "echo pwned 1>/etc/hosts"), "/etc/hosts");
+  assert.equal(shellWriteEscapes(root, "echo pwned 2>/etc/hosts"), "/etc/hosts");
+  assert.equal(shellWriteEscapes(root, "echo pwned &>/etc/hosts"), "/etc/hosts");
+  assert.equal(shellWriteEscapes(root, "echo pwned >| /etc/hosts"), "/etc/hosts");
+  assert.equal(shellWriteEscapes(root, "echo pwned > $HOME/.ssh/authorized_keys"), "$HOME/.ssh/authorized_keys");
+  assert.equal(shellWriteEscapes(root, "echo pwned > ${HOME}/.ssh/authorized_keys"), "${HOME}/.ssh/authorized_keys");
   assert.equal(shellWriteEscapes(root, "rm -rf ~/Documents"), "~/Documents");
+  assert.equal(shellWriteEscapes(root, "ln -s $HOME home-link"), "$HOME");
   assert.equal(shellWriteEscapes(root, "npm test && mv src/foo.ts /tmp/../etc/foo"), "/tmp/../etc/foo");
 });
 
@@ -43,4 +58,86 @@ test("reads through the shell are not blocked, only writes", () => {
   // breaking every `cat /usr/share/...` over.
   assert.equal(shellWriteEscapes(root, "cat /etc/hostname"), null);
   assert.equal(shellWriteEscapes(root, "/usr/bin/env node -v"), null);
+});
+
+test("git hooks and config stay read-only even inside the workspace", () => {
+  // These outlive the turn: a hook runs on the user's next commit, and config
+  // can repoint origin or core.hooksPath.
+  assert.equal(protectedWorkspacePath(root, `${root}/.git/hooks/pre-commit`), ".git/hooks");
+  assert.equal(protectedWorkspacePath(root, `${root}/.git/config`), ".git/config");
+  assert.equal(protectedWorkspacePath(root, `${root}/.git/info/attributes`), ".git/info/attributes");
+  assert.equal(protectedWorkspacePath(root, `${root}/.neo/runs/run-a/EXPERT.md`), ".neo");
+  // The next worker process executes these, so a write here outlives the turn.
+  assert.equal(protectedWorkspacePath(root, `${root}/.cursor/hooks.json`), ".cursor/hooks.json");
+  assert.equal(protectedWorkspacePath(root, `${root}/.cursor/hooks/pre.sh`), ".cursor/hooks");
+  assert.equal(protectedWorkspacePath(root, `${root}/.cursor/rules.md`), null);
+  // The rest of .git, and the repo itself, are not protected by this rule.
+  assert.equal(protectedWorkspacePath(root, `${root}/.git/info/exclude`), null);
+  assert.equal(protectedWorkspacePath(root, `${root}/src/foo.ts`), null);
+  assert.equal(protectedWorkspacePath(root, "/etc/passwd"), null);
+});
+
+test("writing a protected path through a file tool is refused, reading it is not", () => {
+  assert.equal(fileToolWritesProtectedPath(root, "write", { path: ".git/hooks/pre-push" }), ".git/hooks");
+  assert.equal(fileToolWritesProtectedPath(root, "edit", { path: `${root}/.git/config` }), ".git/config");
+  assert.equal(fileToolWritesProtectedPath(root, "write", { path: ".neo/runs/run-b/EXPERT.md" }), ".neo");
+  assert.equal(fileToolWritesProtectedPath(root, "write", { path: ".cursor/hooks.json" }), ".cursor/hooks.json");
+  assert.equal(fileToolWritesProtectedPath(root, "edit", { path: ".cursor/hooks/pre.sh" }), ".cursor/hooks");
+  assert.equal(fileToolWritesProtectedPath(root, "read", { path: ".cursor/hooks.json" }), null);
+  assert.equal(fileToolWritesProtectedPath(root, "read", { path: ".git/config" }), null);
+  assert.equal(fileToolWritesProtectedPath(root, "grep", { path: ".git/hooks" }), null);
+  assert.equal(fileToolWritesProtectedPath(root, "write", { path: "src/foo.ts" }), null);
+});
+
+test("a shell write into a protected path is refused, however it is spelled", () => {
+  // Both halves come back: what the agent typed, and which rule it hit.
+  assert.deepEqual(shellWriteHitsProtectedPath(root, "echo x > .git/hooks/pre-commit"), {
+    token: ".git/hooks/pre-commit",
+    guarded: ".git/hooks",
+  });
+  assert.deepEqual(shellWriteHitsProtectedPath(root, "rm -rf .git/hooks"), {
+    token: ".git/hooks",
+    guarded: ".git/hooks",
+  });
+  assert.deepEqual(shellWriteHitsProtectedPath(root, `cp evil ${root}/.git/config`), {
+    token: `${root}/.git/config`,
+    guarded: ".git/config",
+  });
+  assert.equal(shellWriteHitsProtectedPath(root, "chmod +x .git/hooks/pre-commit")?.guarded, ".git/hooks");
+  assert.equal(shellWriteHitsProtectedPath(root, "rm -rf .neo/runs")?.guarded, ".neo");
+  assert.equal(shellWriteHitsProtectedPath(root, "echo x > .cursor/hooks.json")?.guarded, ".cursor/hooks.json");
+  assert.equal(shellWriteHitsProtectedPath(root, "rm -rf .cursor/hooks")?.guarded, ".cursor/hooks");
+  // Ordinary work in the repo, and git's own writes, are untouched.
+  assert.equal(shellWriteHitsProtectedPath(root, "rm -rf build"), null);
+  assert.equal(shellWriteHitsProtectedPath(root, "git commit -am wip"), null);
+  assert.equal(shellWriteHitsProtectedPath(root, "git config user.name me"), null);
+  assert.equal(shellWriteHitsProtectedPath(root, "cat .git/config"), null);
+});
+
+test("file tools expand $HOME the way bash would, then refuse it", () => {
+  assert.equal(fileToolEscapes(root, "write", { path: "$HOME/.ssh/authorized_keys" }), true);
+  assert.equal(fileToolEscapes(root, "write", { path: "${HOME}/.ssh/authorized_keys" }), true);
+  assert.equal(fileToolEscapes(root, "read", { path: path.join(homedir(), ".ssh/id_rsa") }), true);
+});
+
+test("a symlink planted in the workspace does not smuggle a write out", () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "neo-sandbox-ws-"));
+  const outside = mkdtempSync(path.join(tmpdir(), "neo-sandbox-out-"));
+  writeFileSync(path.join(outside, "secret.txt"), "secret\n");
+  mkdirSync(path.join(outside, ".ssh"));
+  symlinkSync(outside, path.join(workspace, "home-link"));
+  assert.equal(fileToolEscapes(workspace, "write", { path: "home-link/.ssh/authorized_keys" }), true);
+  assert.equal(fileToolEscapes(workspace, "read", { path: "home-link/secret.txt" }), true);
+  assert.equal(fileToolEscapes(workspace, "write", { path: "notes.md" }), false);
+  // /tmp itself is writable, but not through a door planted in the workspace.
+  assert.equal(shellWriteEscapes(workspace, "echo x > home-link/pwned"), "home-link/pwned");
+  assert.equal(shellWriteEscapes(workspace, `echo x > ${path.join(tmpdir(), "build-cache")}`), null);
+});
+
+test("ln may not point a workspace name at /tmp or $HOME", () => {
+  assert.equal(shellLinkEscapes(root, "ln -s /tmp tmp-link"), "/tmp");
+  assert.equal(shellLinkEscapes(root, "ln -s $HOME home-link"), "$HOME");
+  assert.equal(shellLinkEscapes(root, "ln -s /tmp .cursor"), "/tmp");
+  assert.equal(shellLinkEscapes(root, "ln -s notes.txt notes.alias"), null);
+  assert.equal(shellWriteEscapes(root, "ln -s /tmp tmp-link"), null);
 });

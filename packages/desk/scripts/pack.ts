@@ -99,15 +99,20 @@ async function main(): Promise<void> {
   copyFileSync(icon, path.join(deskRoot, "build/icon.png"));
 
   const env = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" };
-  // Build each OS on its own so a Windows wine miss does not drop the Mac zip.
-  for (const platform of ["--mac", "--linux", "--win"] as const) {
+  const requested = (process.env.DESK_PACK_PLATFORMS || "").trim();
+  // Default: each OS on its own so a Windows wine miss does not drop the Mac zip.
+  // Override example: DESK_PACK_PLATFORMS="--mac --arm64"
+  const platformRuns = requested
+    ? [requested.split(/\s+/)]
+    : (["--mac", "--linux", "--win"] as const).map((platform) => [platform]);
+  for (const args of platformRuns) {
     try {
-      await run("pnpm", ["exec", "electron-builder", "--config", "electron-builder.yml", platform], {
+      await run("pnpm", ["exec", "electron-builder", "--config", "electron-builder.yml", ...args], {
         cwd: deskRoot,
         env,
       });
     } catch (error) {
-      console.warn(`electron-builder ${platform} failed:`, error);
+      console.warn(`electron-builder ${args.join(" ")} failed:`, error);
     }
   }
   const zips = readdirSync(path.join(deskRoot, "release")).filter((name) => name.endsWith(".zip"));

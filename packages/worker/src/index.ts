@@ -62,7 +62,11 @@ async function main(): Promise<void> {
     `worker ${config.runId} version=${config.workerVersion} model=${bootstrap.model} gateway=${bootstrap.llmGatewayUrl}`,
   );
 
-  const boot = await runWorkspaceBoot({ runId: config.runId, workspaceDir });
+  const boot = await runWorkspaceBoot({
+    runId: config.runId,
+    workspaceDir,
+    scratchDir: config.scratchDir,
+  });
   if (boot.events.length > 0) {
     await pushEvents(config.runId, stampWorkerSeq(boot.events, workerSeq));
   }

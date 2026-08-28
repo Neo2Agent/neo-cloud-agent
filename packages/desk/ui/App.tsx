@@ -12,6 +12,7 @@ import { api, persistSessionToken, readJson } from "./api";
 import {
   asWorkspaceRef,
   deskBridge,
+  localRunFolder,
   localRunTarget,
   mergeDeskTarget,
   MISSING_DESK_ID_HINT,
@@ -22,8 +23,10 @@ import {
   type DeskWorkspaceRef,
 } from "./desk";
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
+import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
+import { WORKSPACE_SCOPE_HINT } from "../src/folder-auth";
 import { isLoopbackOrigin } from "../src/ports";
-import { groupRailSessions } from "../src/rail";
+import { groupRailSessions, isLocalPath } from "../src/rail";
 import {
   hashForProject,
   inviteTokenFromDeepLink,
@@ -35,7 +38,9 @@ import {
 import { ExpertsPage } from "./ExpertsPage";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
+import { localRunView, otherRunningLocalRuns, runningLocalRunIds } from "./chat/local-run-view";
 import { RailSessions } from "./chat/RailSessions";
+import { initials, repoShort } from "./project/helpers";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
@@ -111,12 +116,13 @@ function path0(value: string): string {
   return (value || "").replace(/[\\/]+$/, "");
 }
 
-function isLocalPathLike(value: string): boolean {
-  return value.startsWith("/") || value.startsWith("~") || /^[A-Za-z]:[\\/]/.test(value);
-}
-
 function folderName(value: string): string {
   return path0(value).split(/[\\/]/).pop() || value;
+}
+
+/** `repoShort`, plus the reading a run with no repo at all should get. */
+function repoPath(url?: string): string {
+  return url ? repoShort(url) : "Inbox";
 }
 
 function repoLabel(url?: string): string {
@@ -131,25 +137,12 @@ function repoLabel(url?: string): string {
   }
 }
 
-function repoPath(url?: string): string {
-  if (!url) return "Inbox";
-  try {
-    const parts = new URL(url).pathname.replace(/\.git$/, "").split("/").filter(Boolean);
-    return parts.slice(-2).join("/") || repoLabel(url);
-  } catch {
-    const parts = url.replace(/\/$/, "").replace(/\.git$/, "").split("/").filter(Boolean);
-    return parts.slice(-2).join("/") || repoLabel(url);
-  }
-}
-
-function initials(value: string): string {
-  const parts = value.trim().split(/[@\s./_-]+/).filter(Boolean);
-  if (parts.length === 0) return "N";
-  if (parts.length === 1) return parts[0]!.slice(0, 1).toUpperCase();
-  return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
-}
-
-function formatRel(iso?: string | null): string {
+/**
+ * The rail and the search list need a timestamp that fits next to a title, so
+ * this is the compact form. The project pages use `formatRel` from
+ * `project/helpers`, which spells the same interval out in full.
+ */
+function formatRelShort(iso?: string | null): string {
   if (!iso) return "";
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return "";
@@ -243,10 +236,15 @@ export function App() {
     () => (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || "files",
   );
   const [panelEpoch, setPanelEpoch] = useState(0);
-  const [localStatus, setLocalStatus] = useState<DeskRunStatus | null>(null);
+  // Keyed by runId: several local conversations can hold a worker at once, and a
+  // single slot would show whichever one reported last.
+  const [localStatuses, setLocalStatuses] = useState<Record<string, DeskRunStatus>>({});
   const [workspaces, setWorkspaces] = useState<DeskWorkspaceRef[]>([]);
   const [requireApproval, setRequireApproval] = useState(false);
   const [remoteControl, setRemoteControl] = useState(false);
+  const [maxLocalRuns, setMaxLocalRuns] = useState(DEFAULT_MAX_LOCAL_RUNS);
+  /** Said once when a new run joins a folder someone else is already editing. */
+  const [localNotice, setLocalNotice] = useState("");
   const [copied, setCopied] = useState("");
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
   const deskIdRef = useRef("");
@@ -447,9 +445,12 @@ export function App() {
         lastEventIdRef.current = null;
       }
       if (run.executionTarget?.loop === "desk") {
-        // The files live on this machine, so the control plane has nothing to diff.
-        const localFolder = (await deskBridge()?.getTarget().catch(() => undefined))?.folder || run.repoUrls[0] || "";
-        setDiff(localFolder ? ((await deskBridge()?.diffStat?.(localFolder).catch(() => null)) ?? null) : null);
+        // The files live on this machine, so the control plane has nothing to
+        // diff. It has to be this run's own folder: reading the picker would
+        // count changes in whatever folder is selected right now, which is the
+        // wrong one as soon as a second local conversation is open.
+        const runFolder = localRunFolder(run);
+        setDiff(runFolder ? ((await deskBridge()?.diffStat?.(runFolder).catch(() => null)) ?? null) : null);
       } else if (diffRes.ok) {
         setDiff(diffStats(await diffRes.text()));
       } else {
@@ -576,7 +577,7 @@ export function App() {
   }, []);
 
   /** Bring a local run's worker back on this machine, in the same folder. */
-  const resumeLocalRun = useCallback(async (id: string, deskTarget?: ExecutionTarget | null) => {
+  const resumeLocalRun = useCallback(async (id: string, deskTarget?: ExecutionTarget | null, runFolder?: string) => {
     const bridge = deskBridge();
     const start = bridge?.startRun;
     if (!start) {
@@ -587,10 +588,10 @@ export function App() {
     const response = await api(tokenRef.current, `/v1/runs/${id}/desk-start`, { method: "POST" });
     const body = await readJson<{ assignment?: DeskAssignment; error?: string }>(response);
     if (response.ok && body.assignment) {
-      await start(body.assignment);
+      await start(body.assignment, runFolder);
       return;
     }
-    if (await bridge?.takeAssignment?.(id).then((taken) => taken?.started)) {
+    if (await bridge?.takeAssignment?.(id, runFolder).then((taken) => taken?.started)) {
       return;
     }
     // Older control planes have no desk-start. Handing the run back to this
@@ -603,24 +604,22 @@ export function App() {
     const handoff = await api(tokenRef.current, `/v1/runs/${id}/handoff`, {
       method: "POST",
       body: JSON.stringify({
-        target: {
-          loop: "desk",
-          tools: "desk",
-          deskId,
-          deskWorkspaceId: deskTarget?.deskWorkspaceId ?? target.workspaceId,
-        },
+        // Only this run's own workspace. Filling the gap with whatever the
+        // picker holds would hand the run a folder it never worked in; with no
+        // workspace id the main process uses `runFolder`, which is this run's.
+        target: { loop: "desk", tools: "desk", deskId, deskWorkspaceId: deskTarget?.deskWorkspaceId },
       }),
     });
     if (!handoff.ok) {
       const failed = await readJson<{ error?: string }>(handoff);
-      setAuthError(failed.error || "本机启动失败");
+      setAuthError(failed.error || body.error || "本机启动失败");
       return;
     }
-    const retaken = await bridge?.takeAssignment?.(id);
+    const retaken = await bridge?.takeAssignment?.(id, runFolder);
     if (!retaken?.started) {
       setAuthError("现网还没把这条对话交回这台电脑，稍等再试。");
     }
-  }, [target.workspaceId]);
+  }, []);
 
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
     const text = (draft ?? prompt).trim();
@@ -690,14 +689,14 @@ export function App() {
         if (created.assignment) {
           const start = deskBridge()?.startRun;
           if (start) {
-            await start(created.assignment);
+            await start(created.assignment, local ? folder : undefined);
           } else {
             setAuthError(STALE_DESK_HINT);
           }
         } else if (local) {
           // Production still queues desk runs for claim and does not return
           // an inline assignment. Pull it off the lease instead of waiting.
-          await deskBridge()?.takeAssignment?.(created.id);
+          await deskBridge()?.takeAssignment?.(created.id, folder);
         }
         await openRun(created.id);
         return;
@@ -707,8 +706,8 @@ export function App() {
         body: JSON.stringify({ text: `${askPrefix}${text}` }),
       });
       setQueueEpoch((cur) => cur + 1);
-      if (current?.executionTarget?.loop === "desk" && localStatus?.state !== "running") {
-        await resumeLocalRun(runId, current?.executionTarget);
+      if (current?.executionTarget?.loop === "desk" && localStatuses[runId]?.state !== "running") {
+        await resumeLocalRun(runId, current?.executionTarget, localRunFolder(current));
       }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "发送失败");
@@ -740,9 +739,12 @@ export function App() {
     const bridge = deskBridge();
     if (!bridge) return;
     const offStatus = bridge.onRunStatus?.((status) => {
-      setLocalStatus(status);
+      setLocalStatuses((prev) => ({ ...prev, [status.runId]: status }));
       if (status.state === "failed" && status.detail) {
         setAuthError(status.detail);
+      }
+      if (status.notice) {
+        setLocalNotice(status.notice);
       }
       if (status.state === "running" || status.state === "stopped") {
         setPanelEpoch((n) => n + 1);
@@ -784,6 +786,7 @@ export function App() {
       .then((value) => {
         setRequireApproval(value.requireApproval === true);
         setRemoteControl(value.remoteControl === true);
+        setMaxLocalRuns(normalizeMaxLocalRuns(value.maxLocalRuns));
         if (value.deskId) {
           deskIdRef.current = value.deskId;
           setTarget((prev) => mergeDeskTarget(prev, value.deskId));
@@ -896,7 +899,7 @@ export function App() {
       .map((run) => ({
         id: run.id,
         title: preview(run.prompt, 72),
-        meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRel(run.updatedAt)),
+        meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRelShort(run.updatedAt)),
       }));
   }, [projects, query, runs]);
 
@@ -1184,10 +1187,10 @@ export function App() {
     for (const run of runs) {
       const url = run.repoUrls[0] || "";
       // Local runs carry a path; those show up under 这台电脑 instead.
-      if (url && !isLocalPathLike(url)) map.set(url, repoPath(url));
+      if (url && !isLocalPath(url)) map.set(url, repoShort(url));
     }
     for (const url of activeProject?.defaultRepoUrls ?? []) {
-      if (url) map.set(url, repoPath(url));
+      if (url) map.set(url, repoShort(url));
     }
     return [...map.entries()].map(([url, label]) => ({ url, label }));
   }, [activeProject, runs]);
@@ -1201,24 +1204,15 @@ export function App() {
 
   const branch = current?.branchName || "";
 
-  // An open local run keeps its own folder; with no run open, follow the picker.
-  const localRunActive = current?.executionTarget?.loop === "desk";
-  // A dead local worker means nothing is coming, whatever the run status says.
-  const localWorkerDown =
-    localRunActive &&
-    localStatus?.runId === current?.id &&
-    (localStatus?.state === "stopped" || localStatus?.state === "failed");
-  const turnLive = current?.status === "RUNNING" && !localWorkerDown;
-  const noLocalWorker = localRunActive && (!localStatus || localStatus.runId !== current?.id || localStatus.state === "stopped");
-  // Nothing running and nothing owed: the per-turn worker simply finished.
-  const localWorkerIdle = noLocalWorker && !isActiveRunStatus(current?.status);
-  const localNeedsRestart = noLocalWorker && isActiveRunStatus(current?.status);
-  const panelIsLocal = current ? localRunActive : target.kind === "desk";
-  const localFolder = panelIsLocal
-    ? (localRunActive && current?.repoUrls[0] && path0(current.repoUrls[0]).startsWith("/")
-        ? current.repoUrls[0]
-        : folder)
-    : "";
+  const localRun = useMemo(() => localRunView(current, localStatuses), [current, localStatuses]);
+  const turnLive = current?.status === "RUNNING" && !localRun.workerDown;
+  const panelIsLocal = current ? localRun.isLocal : target.kind === "desk";
+  // An open run answers with its own folder; only the empty composer follows the
+  // picker. Letting an open run fall back to the picker would point the file
+  // tree and the diff at the wrong repo as soon as two local runs exist.
+  const localFolder = current ? localRun.folder : panelIsLocal ? folder : "";
+  const runningRunIds = useMemo(() => runningLocalRunIds(localStatuses), [localStatuses]);
+  const otherLocalRunCount = otherRunningLocalRuns(localStatuses, current?.id);
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1415,7 +1409,8 @@ export function App() {
             spacesOpen={railSpacesOpen}
             inboxExpanded={railInboxExpanded}
             folderOpen={repoOpen}
-            formatRel={formatRel}
+            runningLocalRunIds={runningRunIds}
+            formatRel={formatRelShort}
             onToggleInbox={() => setRailInboxOpen((cur) => !cur)}
             onToggleSpaces={() => setRailSpacesOpen((cur) => !cur)}
             onToggleInboxExpanded={() => setRailInboxExpanded((cur) => !cur)}
@@ -1592,16 +1587,13 @@ export function App() {
                       label: canRunLocal ? "This Computer" : "This Computer (needs Electron)",
                       disabled: !canRunLocal,
                     },
-                    { value: "remote", label: "Remote SSH", disabled: true },
                   ]}
                 />
               </label>
               <button type="button" className="folder-btn" onClick={() => void pickLocalFolder()}>
                 {folder || "选择本机文件夹…"}
               </button>
-              <p className="hint">
-                Agent 会直接改这个文件夹里的文件，包括还没提交的改动。写不出这个文件夹。
-              </p>
+              <p className="hint">{WORKSPACE_SCOPE_HINT} 写不出这个文件夹。</p>
               {workspaces.length > 0 ? (
                 <ul className="ws-list">
                   {workspaces.map((item) => (
@@ -1637,6 +1629,21 @@ export function App() {
                   ))}
                 </ul>
               ) : null}
+              <label>
+                <span>同时最多几条本机对话</span>
+                <Select
+                  value={String(maxLocalRuns)}
+                  onValueChange={(value) => {
+                    const next = normalizeMaxLocalRuns(Number(value));
+                    setMaxLocalRuns(next);
+                    void deskBridge()?.setPrefs?.({ maxLocalRuns: next });
+                  }}
+                  options={[1, 2, 3, 4, 6, 8].map((n) => ({ value: String(n), label: `${n} 条` }))}
+                />
+              </label>
+              <p className="hint">
+                不同文件夹可以同时跑。每条都是一个独立进程，开太多会吃满内存和 CPU。
+              </p>
               <label className="ws-toggle">
                 <input
                   type="checkbox"
@@ -1682,27 +1689,31 @@ export function App() {
             }`}
           >
             <div className="chat-stage">
-            {localRunActive ? (
+            {localRun.isLocal ? (
               <div className="local-bar">
                 <IconComputer size={13} />
                 <span>This Computer · {folderName(localFolder)}</span>
-                {localStatus?.state === "starting" ? <em>正在启动…</em> : null}
-                {localStatus?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
-                {localStatus?.state === "failed" ? <em className="bad">{localStatus.detail || "启动失败"}</em> : null}
+                {localRun.status?.state === "starting" ? <em>正在启动…</em> : null}
+                {localRun.status?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
+                {localRun.status?.state === "failed" ? (
+                  <em className="bad">{localRun.status.detail || "启动失败"}</em>
+                ) : null}
                 {/* A worker exits after its turn, so "no process" is the resting
                     state, not something to recover from. */}
-                {localWorkerIdle ? <em>本机就绪 · 发送即在这里继续</em> : null}
-                {localNeedsRestart ? (
+                {localRun.idle ? <em>本机就绪 · 发送即在这里继续</em> : null}
+                {localRun.needsRestart ? (
                   <button
                     type="button"
                     className="ghost"
                     title="重新在这台电脑上拉起这条对话的 Agent 进程"
-                    onClick={() => current && void resumeLocalRun(current.id, current.executionTarget)}
+                    onClick={() =>
+                      current && void resumeLocalRun(current.id, current.executionTarget, localRun.folder)
+                    }
                   >
                     在这台电脑上继续
                   </button>
                 ) : null}
-                {localStatus?.state === "running" ? (
+                {localRun.status?.state === "running" ? (
                   <button
                     type="button"
                     className="ghost"
@@ -1711,6 +1722,9 @@ export function App() {
                   >
                     结束本机进程
                   </button>
+                ) : null}
+                {otherLocalRunCount > 0 ? (
+                  <em title="另外这些对话也在这台电脑上改文件">另有 {otherLocalRunCount} 条在本机跑</em>
                 ) : null}
               </div>
             ) : null}
@@ -1867,6 +1881,14 @@ export function App() {
                 </p>
               ) : null}
               {authError ? <p className="error toast-inline">{authError}</p> : null}
+              {localNotice ? (
+                <p className="toast-inline local-notice">
+                  {localNotice}
+                  <button type="button" className="ghost" onClick={() => setLocalNotice("")}>
+                    知道了
+                  </button>
+                </p>
+              ) : null}
               {copied ? <p className="copied">Copied</p> : null}
             </footer>
             </div>

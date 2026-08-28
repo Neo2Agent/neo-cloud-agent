@@ -10,6 +10,7 @@ import {
   composerMaxWidth,
   composerTextareaHeight,
 } from "../src/composer-size";
+import type { DeskTargetKind } from "./desk";
 import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop } from "./icons";
 
 export type ContextMenuId = "repo" | "target" | null;
@@ -54,7 +55,7 @@ export function rememberSavedModel(model: SavedModel): SavedModel[] {
   return next;
 }
 
-export function formatAddedAt(iso: string): string {
+function formatAddedAt(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return "刚刚";
   const min = Math.round(ms / 60_000);
@@ -538,7 +539,7 @@ export function ContextBar({
   onWorkspace: (workspace: { id: string; folder: string }) => void;
   onPickFolder: () => void;
   branch: string;
-  targetKind: "cloud" | "desk" | "remote";
+  targetKind: DeskTargetKind;
   canRunLocal: boolean;
   onTarget: (kind: "cloud" | "desk") => void;
   open: ContextMenuId;
@@ -663,9 +664,6 @@ export function ContextBar({
                   : "This Computer"
                 : "This Computer（需要 Desk）"}
             </button>
-            <button type="button" disabled>
-              Remote SSH（未做）
-            </button>
             <p className="context-menu-note">
               别人从 Web 或手机派活到这台电脑，是设置里的「允许远程派活」，不在这里切。
             </p>
@@ -691,7 +689,7 @@ export type ComposerMention = {
   insert: string;
 };
 
-export function mentionTrigger(text: string): { trigger: "@" | "/"; query: string } | null {
+function mentionTrigger(text: string): { trigger: "@" | "/"; query: string } | null {
   const at = text.lastIndexOf("@");
   const slash = text.lastIndexOf("/");
   const idx = Math.max(at, slash);

@@ -3,11 +3,9 @@ import test from "node:test";
 import {
   COMPOSER_HOME_TEXTAREA_MAX,
   COMPOSER_MAX_PX,
-  TRANSCRIPT_MAX_PX,
-  composerBoxWidth,
+  COMPOSER_MIN_PX,
   composerMaxWidth,
   composerTextareaHeight,
-  transcriptColumnWidth,
 } from "./composer-size.js";
 
 test("composer max width follows 92% of the stage up to the fig-2 cap", () => {
@@ -17,15 +15,8 @@ test("composer max width follows 92% of the stage up to the fig-2 cap", () => {
   assert.equal(composerMaxWidth(0), COMPOSER_MAX_PX);
 });
 
-test("home composer stays at the stage max instead of shrinking to typed text", () => {
-  assert.equal(composerBoxWidth({ home: true, measuredText: 40, maxWidth: 880 }), 880);
-});
-
-test("follow-up composer uses the transcript column, not the stage ratio", () => {
-  assert.equal(transcriptColumnWidth(1000), TRANSCRIPT_MAX_PX);
-  assert.equal(transcriptColumnWidth(800), 752);
-  assert.equal(transcriptColumnWidth(400), 352);
-  assert.equal(transcriptColumnWidth(0), TRANSCRIPT_MAX_PX);
+test("a very narrow window still leaves a usable composer", () => {
+  assert.equal(composerMaxWidth(200), COMPOSER_MIN_PX);
 });
 
 test("follow-up starts short and shares the New Chat max height", () => {

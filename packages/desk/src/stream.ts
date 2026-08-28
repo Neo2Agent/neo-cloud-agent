@@ -100,7 +100,7 @@ function turnMessages(messages: TranscriptMessage[], messageIndex: number): Tran
   return messages.slice(start, end);
 }
 
-export function turnIsLive(messages: TranscriptMessage[]): boolean {
+function turnIsLive(messages: TranscriptMessage[]): boolean {
   return messages.some(messageIsLive) || Boolean(liveActivityLabel(messages));
 }
 

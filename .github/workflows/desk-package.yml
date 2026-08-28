@@ -3,7 +3,7 @@ name: Desk package
 on:
   workflow_dispatch:
   push:
-    branches: [cursor/desk-local-remote-643d]
+    branches: [cursor/desk-downloads-643d, cursor/desk-local-remote-643d]
     paths:
       - "packages/desk/**"
       - ".github/workflows/desk-package.yml"
@@ -27,6 +27,7 @@ jobs:
       - run: pnpm pack:desk
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          DESK_PACK_PLATFORMS: "--mac --arm64"
       - run: ls -lah packages/desk/release
       - uses: actions/upload-artifact@v4
         with:

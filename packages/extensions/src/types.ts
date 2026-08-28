@@ -14,6 +14,12 @@ export interface CloudToolContext {
   controlPlaneUrl: string;
   jwt: string;
   workspaceDir: string;
+  /**
+   * Per-run scratch inside the workspace. Set only when several local runs can
+   * share one folder; empty on every cloud run. Expert team agents are read
+   * from here first, then `<workspaceDir>/.neo`.
+   */
+  scratchDir?: string;
   fetch?: CloudToolFetch;
   /** Worker-injected nested session runner. Missing in unit tests that only check schemas. */
   runSubagent?: (params: Record<string, unknown>) => Promise<CloudToolResult>;

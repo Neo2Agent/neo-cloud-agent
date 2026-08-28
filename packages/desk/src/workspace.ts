@@ -1,11 +1,48 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
 import path from "node:path";
 import type { DeskAssignment } from "@neo-cloud-agent/contracts";
 import { deskRepoKey, deskWorkspaceShortName } from "@neo-cloud-agent/contracts/desk-workspace";
+import {
+  FOLDER_UNREADABLE_MESSAGE,
+  HOME_OR_ROOT_REJECT_MESSAGE,
+  isHomeOrFilesystemRoot,
+  isOverlyBroadFolder,
+} from "./folder-auth.js";
+
+/** Same filenames as a cloud run. Local addressing adds `runs/<id>` under this. */
+const NEO_DIR = ".neo";
+const AGENTS_DIR = "agents";
+const SKILLS_DIR = "skills";
+const RUNS_DIR = "runs";
 
 export function isGitRepo(folder: string): boolean {
   return existsSync(path.join(folder, ".git"));
+}
+
+export type AuthorizedFolder =
+  | { ok: true; path: string; overlyBroad: boolean }
+  | { ok: false; reason: "unreadable" | "home-or-root"; message: string };
+
+/**
+ * Resolve the folder the user picked before it becomes a workspace.
+ *
+ * `realpath` follows symlinks so a link to home or `/` cannot sneak through.
+ * Home and the filesystem root are refused; overly-broad parents need a second
+ * confirm in the host, which only shows the dialog.
+ */
+export function resolveAuthorizedFolder(folder: string, homeDir = homedir()): AuthorizedFolder {
+  let resolved: string;
+  try {
+    resolved = realpathSync(folder);
+  } catch {
+    return { ok: false, reason: "unreadable", message: `${FOLDER_UNREADABLE_MESSAGE} ${folder}` };
+  }
+  if (isHomeOrFilesystemRoot(resolved, homeDir)) {
+    return { ok: false, reason: "home-or-root", message: HOME_OR_ROOT_REJECT_MESSAGE };
+  }
+  return { ok: true, path: resolved, overlyBroad: isOverlyBroadFolder(resolved) };
 }
 
 /**
@@ -23,7 +60,7 @@ export async function prepareDeskWorkspace(input: { repoDir: string }): Promise<
   if (!existsSync(folder) || !statSync(folder).isDirectory()) {
     throw new Error(`本机工作区不存在：${folder}`);
   }
-  return path.resolve(folder);
+  return realpathSync(folder);
 }
 
 /** Where per-run state lives, kept out of the user's repo. */
@@ -39,12 +76,26 @@ export function writeRunBootstrap(stateDir: string, bootstrap: Record<string, un
 }
 
 /**
+ * Per-run scratch inside the workspace.
+ *
+ * Two local conversations are allowed to share a folder, so anything written for
+ * one run has to be addressed by run id. `.neo/runs/` is already excluded from
+ * commits and skipped by workspace copies.
+ */
+export function runScratchDir(workspaceDir: string, runId: string): string {
+  const dest = path.join(path.resolve(workspaceDir), NEO_DIR, RUNS_DIR, runId);
+  mkdirSync(dest, { recursive: true });
+  return dest;
+}
+
+/**
  * Expert files have to sit in the workspace because the worker's loader reads
- * them from `<cwd>/.neo`. Keep that directory ignored so it never lands in a
- * commit on the user's own branch.
+ * them from disk. They go under the run's own scratch so a second conversation
+ * in the same folder cannot swap this run's persona out from under it.
  */
 export function writeRunExpertFiles(
   workspaceDir: string,
+  scratchDir: string,
   assignment: Pick<DeskAssignment, "expertMarkdown" | "expertTeamMarkdown" | "expertMeta" | "expertAgents" | "pluginSkills" | "pluginSnapshot">,
 ): void {
   if (
@@ -57,7 +108,7 @@ export function writeRunExpertFiles(
   ) {
     return;
   }
-  const dest = path.join(workspaceDir, ".neo");
+  const dest = scratchDir;
   mkdirSync(dest, { recursive: true });
   if (assignment.expertMeta) {
     writeFileSync(path.join(dest, "expert.json"), assignment.expertMeta.endsWith("\n") ? assignment.expertMeta : `${assignment.expertMeta}\n`);
@@ -69,7 +120,7 @@ export function writeRunExpertFiles(
     writeFileSync(path.join(dest, "EXPERT_TEAM.md"), assignment.expertTeamMarkdown);
   }
   if (assignment.expertAgents?.length) {
-    const agentsDir = path.join(dest, "agents");
+    const agentsDir = path.join(dest, AGENTS_DIR);
     mkdirSync(agentsDir, { recursive: true });
     for (const agent of assignment.expertAgents) {
       writeFileSync(path.join(agentsDir, `${agent.slug}.md`), agent.markdown);
@@ -83,7 +134,7 @@ export function writeRunExpertFiles(
   }
   if (assignment.pluginSkills?.length) {
     for (const skill of assignment.pluginSkills) {
-      const skillDir = path.join(dest, "skills", skill.slug);
+      const skillDir = path.join(dest, SKILLS_DIR, skill.slug);
       mkdirSync(skillDir, { recursive: true });
       for (const file of skill.files) {
         writeFileSync(path.join(skillDir, file.relativePath), file.content);
@@ -108,7 +159,7 @@ export function ignoreNeoDir(workspaceDir: string): void {
       return;
     }
     const prefix = current && !current.endsWith("\n") ? "\n" : "";
-    writeFileSync(file, `${current}${prefix}.neo/\n`);
+    writeFileSync(file, `${current}${prefix}${NEO_DIR}/\n`);
   } catch {
     // an exclude file we cannot write is not worth failing the run over
   }
