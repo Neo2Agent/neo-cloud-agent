@@ -31,13 +31,10 @@ function machineOptions(desks: Desk[]): MachineOption[] {
 export function TargetPicker({ target, canRunLocal, folder, desks = [], onTarget, onPickFolder }: Props) {
   const machines = machineOptions(desks);
   const local = target.kind === "desk";
-  // Running inside Desk means this window is the machine, so it picks a folder.
-  // A browser has to pick one of the machines that registered instead.
   const insideDesk = canRunLocal;
   const canGoLocal = insideDesk || machines.length > 0;
   return (
-    <label className="picker">
-      <span className="picker-label">目标</span>
+    <div className="picker">
       <Select
         id="execution-target"
         size="pill"
@@ -78,6 +75,6 @@ export function TargetPicker({ target, canRunLocal, folder, desks = [], onTarget
           options={machines.map((item) => ({ value: item.workspaceId, label: item.label }))}
         />
       ) : null}
-    </label>
+    </div>
   );
 }
