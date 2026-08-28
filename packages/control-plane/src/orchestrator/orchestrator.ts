@@ -104,6 +104,7 @@ import { requireUsableExpert } from "../experts/store.js";
 import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
 import { bindTodoRun } from "../projects/todos.js";
 import { listProjectAssetsUnchecked } from "../projects/assets.js";
+import { attachHandoffPack, buildHandoffMarkdown } from "../projects/handoff.js";
 import { pushInbox } from "../projects/inbox.js";
 import {
   dropDeskAssignment,
@@ -1421,17 +1422,21 @@ export async function transferRun(
   }
   const resolved: TransferRunMode = mode ?? (run.executionTarget?.loop === "desk" ? "fork" : "reassign");
   if (resolved === "fork") {
-    const summary = [`交接自 ${run.id}`, note.trim(), `原任务：${run.prompt.slice(0, 800)}`].filter(Boolean).join("\n");
+    const pack = buildHandoffMarkdown(run, note, actor.email);
+    const summary = (pack || [`交接自 ${run.id}`, note.trim(), `原任务：${run.prompt.slice(0, 800)}`].filter(Boolean).join("\n")).slice(0, 2400);
     const forked = await createRun(
       {
         prompt: summary,
         repoUrls: run.repoUrls,
         projectId: run.projectId,
-        source: "desk",
+        source: run.source === "desk" ? "desk" : "web",
         todoId: run.todoId ?? undefined,
+        expertId: run.expertId ?? undefined,
+        expertTeamId: run.expertTeamId ?? undefined,
       },
       { userId: toUserId, orgId: run.orgId },
     );
+    await attachHandoffPack({ source: run, target: forked, actor, note }).catch(() => undefined);
     recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `分出了新对话：${note.trim()}` : "分出了一条新对话");
     pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 给你开了一条新对话`, projectId: run.projectId, runId: forked.id });
     return forked;
@@ -1448,6 +1453,7 @@ export async function transferRun(
   run.assigneeUserId = toUserId;
   run.updatedAt = now();
   flushRun(run.id);
+  await attachHandoffPack({ source: run, target: run, actor, note }).catch(() => undefined);
   recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `转交了对话：${note.trim()}` : "转交了一条对话");
   pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 把一条对话转交给你`, projectId: run.projectId, runId: run.id });
   return run;

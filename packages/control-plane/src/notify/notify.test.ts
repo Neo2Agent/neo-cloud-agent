@@ -47,6 +47,16 @@ test("Telegram parser ignores slash commands and keeps chat id", () => {
   const work = parseTelegramUpdate({ message: { chat: { id: 42 }, text: "帮我看一下" } });
   assert.equal(work.ignored, undefined);
   assert.equal(work.text, "帮我看一下");
+  const photo = parseTelegramUpdate({
+    message: { chat: { id: 42 }, photo: [{ file_id: "small" }, { file_id: "big" }] },
+  });
+  assert.equal(photo.ignored, undefined);
+  assert.equal(photo.photoFileId, "big");
+  const captioned = parseTelegramUpdate({
+    message: { chat: { id: 42 }, caption: "看这张图", photo: [{ file_id: "pic" }] },
+  });
+  assert.equal(captioned.text, "看这张图");
+  assert.equal(captioned.photoFileId, "pic");
   assert.equal(verifyTelegramSecret("abc", "abc"), true);
   assert.equal(verifyTelegramSecret("nope", "abc"), false);
 });
@@ -61,5 +71,11 @@ test("WeChat signature and XML reply use the official token check", () => {
     "<xml><ToUserName><![CDATA[gh]]></ToUserName><FromUserName><![CDATA[user]]></FromUserName><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[帮我看一下]]></Content></xml>",
   );
   assert.equal(parsed.content, "帮我看一下");
+  const image = parseWeChatXml(
+    "<xml><ToUserName><![CDATA[gh]]></ToUserName><FromUserName><![CDATA[user]]></FromUserName><MsgType><![CDATA[image]]></MsgType><PicUrl><![CDATA[https://example/a.jpg]]></PicUrl><MediaId><![CDATA[mid]]></MediaId></xml>",
+  );
+  assert.equal(image.msgType, "image");
+  assert.equal(image.picUrl, "https://example/a.jpg");
+  assert.equal(image.mediaId, "mid");
   assert.match(weChatTextReply("user", "gh", "已收到"), /已收到/);
 });

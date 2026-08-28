@@ -3,6 +3,7 @@ import { isExpoPushToken, listStoredDevices } from "../devices/store.js";
 import { formatExpoPushMessage, sendExpoPush } from "./expo.js";
 import { publicAppUrl, readNotifySecrets } from "./settings.js";
 import { sendSmtpMail } from "./smtp.js";
+import { sendTelegramMessage } from "./telegram.js";
 
 const lastSent = new Map<string, number>();
 const COALESCE_MS = 15_000;
@@ -116,14 +117,7 @@ export async function sendNotifyText(
 }
 
 async function postTelegram(token: string, chatId: string, text: string): Promise<void> {
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
-  });
-  if (!response.ok) {
-    throw new Error(`telegram ${response.status}`);
-  }
+  await sendTelegramMessage(token, chatId, text);
 }
 
 async function postExpoDevices(userId: string, text: string, runId: string, kind: NotifyKind): Promise<void> {

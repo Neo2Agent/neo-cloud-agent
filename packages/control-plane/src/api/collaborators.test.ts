@@ -166,6 +166,12 @@ test("cloud project runs invite collaborators without a second worker", async (t
   assert.equal(nextHost.userId, mate.user.id);
   assert.equal(nextHost.collaborators?.some((item) => item.userId === admin.user.id), true);
   assert.equal((await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(admin.token) })).status, 200);
+  const handoff = await fetch(`${base}/v1/runs/${run.id}/artifacts`, { headers: auth(mate.token) });
+  assert.equal(handoff.status, 200);
+  assert.equal(
+    ((await handoff.json()) as { artifacts: Array<{ name: string }> }).artifacts.some((item) => item.name === "HANDOFF.md"),
+    true,
+  );
 
   const forked = await fetch(`${base}/v1/runs/${ownRun.id}/transfer`, {
     method: "POST",

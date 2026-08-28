@@ -5,6 +5,8 @@ export type WeChatMessage = {
   fromUser: string;
   msgType: string;
   content: string;
+  picUrl?: string;
+  mediaId?: string;
 };
 
 export function verifyWeChatSignature(input: {
@@ -26,6 +28,8 @@ export function parseWeChatXml(xml: string): WeChatMessage {
     fromUser: xmlTag(xml, "FromUserName"),
     msgType: xmlTag(xml, "MsgType") || "text",
     content: xmlTag(xml, "Content"),
+    picUrl: xmlTag(xml, "PicUrl") || undefined,
+    mediaId: xmlTag(xml, "MediaId") || undefined,
   };
 }
 

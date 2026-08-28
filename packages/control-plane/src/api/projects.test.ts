@@ -68,6 +68,20 @@ test("projects share runs, inject instruction, and keep registration closed", as
   assert.equal(created.status, 201);
   const project = (await created.json()) as Project;
   assert.equal(project.name, "官网改版");
+  const templated = await fetch(`${base}/v1/projects`, {
+    method: "POST",
+    headers: auth(admin.token),
+    body: JSON.stringify({
+      name: "代码审查",
+      instruction: "这个项目里的对话默认做代码审查。",
+      expertIds: ["exp_reviewer"],
+      pluginIds: ["plug_pr_review"],
+    }),
+  });
+  assert.equal(templated.status, 201);
+  const templateProject = (await templated.json()) as Project;
+  assert.deepEqual(templateProject.expertIds, ["exp_reviewer"]);
+  assert.deepEqual(templateProject.pluginIds, ["plug_pr_review"]);
   assert.equal(project.invitePolicy, "approve");
   assert.equal(project.members[0]?.role, "owner");
 
