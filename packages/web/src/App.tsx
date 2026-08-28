@@ -1425,7 +1425,7 @@ export function App() {
           health={healthText}
           pinnedIds={pinnedIds}
           onPin={(id) => setPinnedIds(togglePinnedRun(id))}
-          onClose={toggleSidebar}
+          onClose={narrow ? toggleSidebar : undefined}
           onNewChat={() => {
             setActiveProject(null);
             setMainTab("chat");
@@ -1469,16 +1469,18 @@ export function App() {
         <main className="main">
           <header className="topbar">
             <div className="topbar-lead">
-              <button
-                className="icon-btn sidebar-toggle"
-                id="sidebar-toggle"
-                type="button"
-                aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
-                onClick={toggleSidebar}
-              >
-                {sidebarOpen ? <IconSidebarClose /> : <IconMenu />}
-                <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
-              </button>
+              <Tooltip content={sidebarOpen ? "收起侧栏" : "打开对话列表"} side="bottom">
+                <button
+                  className="icon-btn sidebar-toggle"
+                  id="sidebar-toggle"
+                  type="button"
+                  aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
+                  onClick={toggleSidebar}
+                >
+                  {sidebarOpen ? <IconSidebarClose /> : <IconMenu />}
+                  <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
+                </button>
+              </Tooltip>
               <nav className="app-tabs" id="app-tabs" aria-label="主导航">
                 {(
                   [
