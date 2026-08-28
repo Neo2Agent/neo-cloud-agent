@@ -399,9 +399,10 @@ button[type="submit"]:disabled {
 .topbar {
   grid-area: topbar;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
   padding: 10px 24px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
@@ -489,10 +490,42 @@ h1 {
   align-items: center;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: min(100%, 62%);
   position: relative;
   z-index: 1;
-  background: var(--bg);
+}
+
+@media (min-width: 861px) {
+  /* Run id / prompt used to share the first row with app + session tabs
+     and paint under them. Sidebar already names the conversation. */
+  .topbar-heading {
+    display: none;
+  }
+
+  /* Let inbox/status sit on row 1; session tools take a full-width row 2. */
+  .top-actions {
+    display: contents;
+  }
+
+  .inbox-bell,
+  .desk-badge,
+  .top-actions > .status {
+    flex: 0 0 auto;
+  }
+
+  .top-more {
+    flex: 1 0 100%;
+    justify-content: flex-start;
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+    min-width: 0;
+  }
+
+  .top-more-menu {
+    flex: 1 1 auto;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
 }
 
 .status {
@@ -2923,6 +2956,7 @@ textarea {
   }
 
   .top-actions {
+    display: flex;
     flex: 0 0 auto;
     flex-wrap: nowrap;
     gap: 2px;
@@ -3643,6 +3677,7 @@ textarea {
   }
 
   .top-actions {
+    display: flex;
     grid-area: actions;
   }
 
