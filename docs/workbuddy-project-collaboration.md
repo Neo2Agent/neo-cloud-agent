@@ -4,6 +4,8 @@
 对象：腾讯云 WorkBuddy（CodeBuddy 文档站里的「从入门到精通 / 项目」这一支，不是 IDE 里的 Plan Mode）。  
 目的：弄清它的「项目协作」到底卖什么，再对照 Neo Cloud Agent 现在能做什么，给出一份能跟着做、又不照抄办公套件的落地顺序。专家 / 专家团单独见 [workbuddy-experts.md](./workbuddy-experts.md)。技能 / 插件市场见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。
 
+2026-08-28 按当时已落地的项目 / 专家 / 技能骨架重新对标，见 [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md)。本文 §13 的「Neo 现在没有项目」已经过时。
+
 本文依据官方文档、更新日志和公开实战文整理。没有登录 WorkBuddy 客户端点过每一个按钮；文中把「官方写死的行为」和「第三方解读 / 建议模型」分开写。
 
 主要来源：

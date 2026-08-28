@@ -4,6 +4,8 @@
 对象：OpenAI Codex 的 **Plugin / Marketplace**，以及腾讯云 WorkBuddy / CodeBuddy 的 **技能市场 + 插件市场**。  
 目的：弄清两边「市场」到底卖什么、包怎么装、运行时怎么吃，再对照 Neo Cloud Agent 现在的工作区 Skill / 专家 `skillNames` / `environment.json` MCP，给出一份能跟着做、又不照抄官方商店审核门户和办公 Skill 的落地顺序。
 
+同日按产品面重新对标 WorkBuddy（记忆、灵感、验收面、转交交接包），见 [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md)。本文继续只覆盖 Skill / Plugin 目录。
+
 本文依据官方文档整理。没有登录 ChatGPT Plugins Directory 或 WorkBuddy 客户端点过每一个按钮；文中把「官方写死的行为」和「第三方解读」分开写。
 
 专家 / 专家团已经单独写过，见 [workbuddy-experts.md](./workbuddy-experts.md)。项目协作见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。那两份把**市场**后置。本文把市场作为发现、安装、启用、分发层单独摊开。

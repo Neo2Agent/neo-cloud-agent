@@ -4,6 +4,8 @@
 对象：腾讯云 WorkBuddy 的 **专家 / 专家团**（专家中心、我的专家、项目专家、`@` 召唤），不是 Skill 市场，也不是 IDE Plan Mode。  
 目的：弄清它到底卖什么、底层怎么装，再对照 Neo Cloud Agent 现在的 `neo_subagent` / 项目指令 / 工作区 Skill，给出一份能跟着做、又不照抄办公套件和市场积分的落地顺序。
 
+2026-08-28 再对标见 [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md)。本文 §4.4 缺口表写于 Expert 实体落地前，已经过时；专家还缺的是 `@` 和置顶排序，不是从零做实体。
+
 本文依据官方文档、更新日志和公开拆解文整理。没有登录 WorkBuddy 客户端点过每一个按钮；文中把「官方写死的行为」和「第三方解读」分开写。
 
 项目协作那一层（项目 / 任务 / 看板 / 资产）已经写过，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。那份文档把专家**市场**后置。本文把专家作为角色包和召唤面单独摊开。
