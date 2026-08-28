@@ -65,7 +65,7 @@ export function CatalogPager(props: {
   const pageSize = props.pageSize ?? CATALOG_PAGE_SIZE;
   const pages = pageCount(props.total, pageSize);
   const page = clampPage(props.page, props.total, pageSize);
-  if (props.total === 0) return null;
+  if (props.total === 0 || pages <= 1) return null;
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(props.total, page * pageSize);
   return (
