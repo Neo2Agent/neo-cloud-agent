@@ -55,7 +55,7 @@ export function rememberSavedModel(model: SavedModel): SavedModel[] {
   return next;
 }
 
-export function formatAddedAt(iso: string): string {
+function formatAddedAt(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return "刚刚";
   const min = Math.round(ms / 60_000);
@@ -689,7 +689,7 @@ export type ComposerMention = {
   insert: string;
 };
 
-export function mentionTrigger(text: string): { trigger: "@" | "/"; query: string } | null {
+function mentionTrigger(text: string): { trigger: "@" | "/"; query: string } | null {
   const at = text.lastIndexOf("@");
   const slash = text.lastIndexOf("/");
   const idx = Math.max(at, slash);

@@ -137,11 +137,6 @@ export type NeoDeskBridge = {
  */
 export const STALE_DESK_HINT = "Desk 主进程还是旧版本，退出 Desk 再重新打开。";
 
-/** True when the running preload knows about local files and terminals. */
-export function hasLocalTools(bridge = deskBridge()): boolean {
-  return Boolean(bridge?.listDir && bridge.termOpen && bridge.startRun);
-}
-
 /** Older preloads answered pickFolder with just the path, or `workspaceId` instead of `id`. */
 export function asWorkspaceRef(
   picked: (Partial<DeskWorkspaceRef> & { workspaceId?: string }) | string | null | undefined,

@@ -11,7 +11,8 @@ export function deskRepoRoot(): string {
   return fileURLToPath(new URL("../../..", import.meta.url));
 }
 
-export function deskResourcesRoot(env: NodeJS.ProcessEnv = process.env): string {
+/** Where the packaged app keeps `worker.cjs`, or the repo when running from source. */
+function deskResourcesRoot(env: NodeJS.ProcessEnv = process.env): string {
   if (isDeskPackaged(env) && env.NEO_DESK_RESOURCES) {
     return env.NEO_DESK_RESOURCES;
   }
