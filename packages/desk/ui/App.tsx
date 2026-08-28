@@ -454,9 +454,12 @@ export function App() {
         lastEventIdRef.current = null;
       }
       if (run.executionTarget?.loop === "desk") {
-        // The files live on this machine, so the control plane has nothing to diff.
-        const localFolder = (await deskBridge()?.getTarget().catch(() => undefined))?.folder || run.repoUrls[0] || "";
-        setDiff(localFolder ? ((await deskBridge()?.diffStat?.(localFolder).catch(() => null)) ?? null) : null);
+        // The files live on this machine, so the control plane has nothing to
+        // diff. It has to be this run's own folder: reading the picker would
+        // count changes in whatever folder is selected right now, which is the
+        // wrong one as soon as a second local conversation is open.
+        const runFolder = localRunFolder(run);
+        setDiff(runFolder ? ((await deskBridge()?.diffStat?.(runFolder).catch(() => null)) ?? null) : null);
       } else if (diffRes.ok) {
         setDiff(diffStats(await diffRes.text()));
       } else {
@@ -1224,9 +1227,10 @@ export function App() {
   const localWorkerIdle = noLocalWorker && !isActiveRunStatus(current?.status);
   const localNeedsRestart = noLocalWorker && isActiveRunStatus(current?.status);
   const panelIsLocal = current ? localRunActive : target.kind === "desk";
-  // A run's own folder wins. Following the picker would point the file tree at
-  // whatever is selected now, which is the wrong repo with two runs open.
-  const localFolder = panelIsLocal ? localRunFolder(current) || folder : "";
+  // An open run answers with its own folder; only the empty composer follows the
+  // picker. Letting an open run fall back to the picker would point the file
+  // tree and the diff at the wrong repo as soon as two local runs exist.
+  const localFolder = current ? (localRunActive ? localRunFolder(current) : "") : panelIsLocal ? folder : "";
   /** Local runs holding a worker right now, so the rail can mark them. */
   const runningLocalRunIds = useMemo(
     () =>
@@ -1612,7 +1616,6 @@ export function App() {
                       label: canRunLocal ? "This Computer" : "This Computer (needs Electron)",
                       disabled: !canRunLocal,
                     },
-                    { value: "remote", label: "Remote SSH", disabled: true },
                   ]}
                 />
               </label>

@@ -10,6 +10,7 @@ import {
   composerMaxWidth,
   composerTextareaHeight,
 } from "../src/composer-size";
+import type { DeskTargetKind } from "./desk";
 import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop } from "./icons";
 
 export type ContextMenuId = "repo" | "target" | null;
@@ -538,7 +539,7 @@ export function ContextBar({
   onWorkspace: (workspace: { id: string; folder: string }) => void;
   onPickFolder: () => void;
   branch: string;
-  targetKind: "cloud" | "desk" | "remote";
+  targetKind: DeskTargetKind;
   canRunLocal: boolean;
   onTarget: (kind: "cloud" | "desk") => void;
   open: ContextMenuId;
@@ -662,9 +663,6 @@ export function ContextBar({
                   ? "This Computer（先打开一个文件夹）"
                   : "This Computer"
                 : "This Computer（需要 Desk）"}
-            </button>
-            <button type="button" disabled>
-              Remote SSH（未做）
             </button>
             <p className="context-menu-note">
               别人从 Web 或手机派活到这台电脑，是设置里的「允许远程派活」，不在这里切。

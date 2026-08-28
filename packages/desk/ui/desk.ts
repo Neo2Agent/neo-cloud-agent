@@ -1,6 +1,11 @@
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 
-export type DeskTargetKind = "cloud" | "desk" | "remote";
+/**
+ * Where a new conversation runs. There is no third option: Remote SSH was a
+ * placeholder that never shipped, and remote dispatch is a Desk setting rather
+ * than a target the composer picks.
+ */
+export type DeskTargetKind = "cloud" | "desk";
 
 export type DeskTarget = {
   kind: DeskTargetKind;
