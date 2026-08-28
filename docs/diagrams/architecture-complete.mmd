@@ -47,6 +47,7 @@ flowchart TB
     SCM["scm<br/>短寿命 token / PR"]
     Events["events<br/>总线 / transcript"]
     Collab["projects · desks<br/>automations · notify"]
+    Catalog["experts · plugins<br/>物化进工作区"]
   end
 
   %% ── 执行面 ──
@@ -62,14 +63,15 @@ flowchart TB
   %% ── 推理 ──
   subgraph llm["⑤ 推理 · 唯一持钥"]
     direction LR
-    GW["llm-gateway :8081<br/>验 run JWT · 别名 · 限流"]
+    GW["llm-gateway :8081<br/>验 run JWT · 别名 · 限流 · max_tokens≤16k"]
+    NewAPI["New API :3000<br/>库机上游 · 不是 Neo 进程"]
     Provider["DeepSeek / OpenAI / mock"]
   end
 
   %% ── 存储 ──
   subgraph store["⑥ 存储 · 没配则回退本机文件"]
     direction LR
-    MySQL[("库机 MySQL 8.4<br/>101.42.105.230<br/>Run / 用户 / 项目")]
+    MySQL[("库机 MySQL 8.4<br/>101.42.105.230<br/>Run / 用户 / 项目 / 专家 / 插件")]
     Redis[("Redis 7<br/>直播事件 · 限流")]
     Objects["对象存储<br/>transcript · session · artifacts"]
     Slots["loop 槽 / Build 快照<br/>RUNS_DIR · .builds"]
@@ -101,6 +103,7 @@ flowchart TB
   Orch --> SCM
   Orch --> Events
   Orch --> Collab
+  Orch --> Catalog
 
   %% 编排 → 执行
   Orch -->|"provision / inbox / events"| Runtime
@@ -112,7 +115,8 @@ flowchart TB
 
   %% 推理：loop 在 VM，Key 在 Gateway
   Pi -->|"chat/completions<br/>run JWT"| GW
-  GW --> Provider
+  GW --> NewAPI
+  NewAPI --> Provider
 
   %% 存储
   CP --> MySQL

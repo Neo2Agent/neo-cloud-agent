@@ -2,6 +2,8 @@
 
 本文是**现在仓库里实际长什么样**的完整地图：包怎么拆、进程怎么跑、一次 Run 怎么走、现网怎么叠。设计原则、分阶段蓝图、以及「为什么这样拆」仍以 [architecture.md](./architecture.md) 为准。本文不重复那份蓝图的每一条落地笔记，只把**核心架构**和**当前实现边界**摊开。
 
+对照 `origin/main` `c2fda3c`（2026-08-28）。锁死的分层没变；相对 2026-08-26 那版总览，main 上多了共享 UI 包、控制面 `experts/` / `plugins/`、库机 New API 上游、Desk inline/dispatch、空闲槽工作区写回，以及 Web 上的专家 / 技能 / 配方面。[workbuddy-experts.md](./workbuddy-experts.md) §4.4 缺口表写于 Expert 实体落地前，已经过时。
+
 对标对象：[Cursor Cloud Agent](https://cursor.com/docs/cloud-agent)。Agent 内核是 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent`），不自研 tool loop。
 
 ---
@@ -42,8 +44,8 @@
 
 | 层 | 信任级 | 现在落在哪 | 干什么 |
 | --- | --- | --- | --- |
-| 控制面 | 高（账号体系） | `packages/control-plane` 一个进程 `:8080` | 鉴权、Run 状态机、环境 / Build、SCM、事件扇出、项目协作、配额、限流 |
-| LLM Gateway | 高（唯一持钥） | `packages/llm-gateway` 一个进程 `:8081` | 验 run JWT、模型别名、限流、打上游（DeepSeek / OpenAI / mock） |
+| 控制面 | 高（账号体系） | `packages/control-plane` 一个进程 `:8080` | 鉴权、Run 状态机、环境 / Build、SCM、事件扇出、项目协作、专家 / 插件物化、配额、限流 |
+| LLM Gateway | 高（唯一持钥） | `packages/llm-gateway` 一个进程 `:8081` | 验 run JWT、模型别名、`max_tokens` 封顶 16384、限流、打上游（New API / DeepSeek / OpenAI / mock） |
 | 执行面 | 低（按 Run 隔离） | `packages/worker` + `packages/extensions`，**镜像不是长驻服务** | 嵌入 pi、操作磁盘和进程、遵守 egress、只拿短寿命 JWT |
 
 客户端（Web / Desk / CLI / Mobile / IM）**都不是第四个控制面**。它们只打 `/v1`，不跑 loop，不持有 Provider Key。
@@ -70,10 +72,12 @@ flowchart TB
     Projects["projects / todos"]
     DeskReg["desks / devices"]
     Auto["automations"]
+    Experts["experts / plugins"]
   end
 
   AdminAPI["admin-api :8090\n读同一套账号和 Run"]
   GW["llm-gateway :8081"]
+  NewAPI["New API :3000\n库机上游，不是 Neo 进程"]
 
   subgraph exec [Execution — 每 Run 一份]
     Runtime["Runtime: local / vm / docker / firecracker / desk"]
@@ -95,12 +99,14 @@ flowchart TB
   Orch --> Env
   Orch --> SCM
   Orch --> Events
+  Orch --> Experts
   Orch --> Runtime
   Runtime --> Worker
   Worker --> Pi
   Pi --> WS
   Pi -->|"run JWT"| GW
-  GW --> Provider["DeepSeek / OpenAI / mock"]
+  GW --> NewAPI
+  NewAPI --> Provider["DeepSeek / OpenAI / mock"]
 ```
 
 ---
@@ -113,7 +119,8 @@ flowchart TB
 | --- | --- | --- |
 | Git 仓库 | 1（`neo-cloud-agent`） | 代码怎么管 |
 | 可部署进程 | 3 + worker 镜像 | `control-plane`、`llm-gateway`、`admin-api`；worker 随 Run 生灭 |
-| 逻辑 package | 11 | 代码怎么分层 |
+| 可选上游 | 0 或 1 | 库机 Docker `calciumion/new-api` `:3000`。**不是** Neo 进程，只当 Gateway 上游 |
+| 逻辑 package | 12 | 代码怎么分层（含共享 UI 包） |
 | 客户端 | 5 | Web / Desk / CLI / Mobile / Admin Web——都不是 Deployment |
 
 ### 3.1 Package 地图
@@ -126,6 +133,7 @@ neo-cloud-agent/
     llm-gateway      进程 2：唯一持有模型密钥
     worker           打进 VM / 任务容器 / Desk 本机 fork，不是集群 Deployment
     extensions       云工具，打进同一张 worker 镜像
+    ui               共享 Radix 控件（库，不是服务）。web / desk / admin-web / mobile 引用
     web              对话页 React，由 control-plane 托管 dist/
     admin-api        管理台后端，独立进程 :8090
     admin-web        管理台前端，独立 Vite :5176；现网挂 /admin/
@@ -144,6 +152,7 @@ neo-cloud-agent/
 | `llm-gateway` | OpenAI-compatible 代理 | `:8081` |
 | `worker` | 嵌入 pi 的执行进程 | 每 Run 一份 |
 | `extensions` | `neo_*` 云工具 | 打进 worker |
+| `ui` | 共享 Radix 控件 | 无进程；只被四个前端 import |
 | `web` | 对话页 | 开发 `:5173`；生产由 `:8080` 托管 |
 | `admin-api` + `admin-web` | 平台管理台 | `:8090` + `:5176`；现网 `/admin/` |
 | `desk` | 桌面壳 + 本机执行目标 | UI `:5174` + Electron（无 `:8082` 浏览器预览） |
@@ -183,10 +192,12 @@ flowchart LR
   subgraph db [库机 101.42.105.230]
     MySQL["Docker MySQL 8.4"]
     Redis["Docker Redis 7"]
+    NewAPI["Docker New API :3000\n可选，不是 Neo 进程"]
   end
 
   CP -->|"DATABASE_URL"| MySQL
   CP -->|"REDIS_URL"| Redis
+  GW -->|"LLM_UPSTREAM_BASE_URL"| NewAPI
 ```
 
 | 项 | 值 |
@@ -309,8 +320,10 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 | `artifacts/` | Run 产物 + 签名下载 URL |
 | `security/` | session、API token、run JWT、限流、打码 |
 | `accounts/` | 账号与默认 admin |
-| `projects/` | 项目、成员、邀请、看板 todo、资产、消息、inbox |
-| `desks/` | Desk 登记、lease、claim、handoff |
+| `experts/` | 专家 / 专家团目录、bundled 覆盖、创建 Run 时写 `.neo/EXPERT.md` |
+| `plugins/` | 插件安装记录、创建 Run 时物化 `.neo/skills/<slug>/SKILL.md` |
+| `projects/` | 项目、成员、邀请、看板 todo、资产、消息、inbox、HANDOFF.md |
+| `desks/` | Desk 登记、lease、claim、inbox SSE、工作区绑定（name + repoKey） |
 | `devices/` | 手机推送 token |
 | `automations/` | 定时任务（`source: automation`） |
 | `subscriptions/` | GitHub webhook、CI autofix |
@@ -435,8 +448,9 @@ pi-ai streamSimple
 | Run-scoped JWT | `runId` / `orgId` / `model` / 过期；VM 重启轮换 |
 | 模型目录 | 对外 `neo/deepseek`、`ds` 等；对内默认 `deepseek-v4-flash`；设置里可切 Pro；退役的 `deepseek-chat` / `deepseek-reasoner` 改写成 flash |
 | 用量 | input / output 按 Run 聚合；对话页另有 context window 填充 |
-| 上游 | `.env` / `.neo/llm-upstream.env`；没 key 则 `upstream=mock` |
-| 不做 | 不执行工具、不看见磁盘、不持有 SCM 私钥 |
+| 上游 | `.env` / `.neo/llm-upstream.env`；现网 `LLM_UPSTREAM_BASE_URL` 指向库机 New API；没 key 且没上游则 `upstream=mock` |
+| 输出封顶 | `MAX_REQUEST_OUTPUT_TOKENS = 16384`（`packages/contracts/src/models.ts`）；`capUpstreamMaxTokens()` 在打上游前截断，避免 New API 钱包预扣爆掉 |
+| 不做 | 不执行工具、不看见磁盘、不持有 SCM 私钥。New API **不是**第四个 Neo 进程 |
 
 对话页 `POST /v1/settings/llm` 在未接 New API 时写 key 到本机文件；**响应永不回传明文**。现网 Gateway 上游是库机 New API `http://101.42.105.230:3000/v1`，对话页 / Desk 只选型号，渠道和 Provider Key 在 New API 控制台。New API 只能接在 Gateway **后面**，worker 不拿 `sk-`。
 
@@ -515,9 +529,9 @@ GitHub PR 评论和 Actions 经 `POST /webhooks/github`（HMAC）进跟进队列
 
 | 宿主 | Package | 执行面 | 现状 |
 | --- | --- | --- | --- |
-| 对话页 | `packages/web` | 云端 | 完整：登录、流式、Markdown、Diff、文件树、粘贴图片、产物、项目、自动化、Flash/Pro |
-| 管理台 | `admin-web` + `admin-api` | 无 | 总览 / 用户 / Run / 限流；仅平台管理员 |
-| Desk | `packages/desk` | 云或本机 | Electron + 独立 UI；本机目标走 lease/claim + fork worker |
+| 对话页 | `packages/web` | 云端 | 登录、流式、Markdown、Diff、文件树、粘贴图片、产物预览、项目、专家 / 技能目录、自动化、Flash/Pro |
+| 管理台 | `admin-web` + `admin-api` | 无 | 总览 / 用户 / Run / 内置专家配置与下发 / 限流；仅平台管理员 |
+| Desk | `packages/desk` | 云或本机 | Electron + 独立 UI；This Computer（默认）vs Remote control；inline 直接带 assignment，dispatch 走 inbox SSE |
 | CLI | `packages/cli` | 云端 | `pnpm neo`：创建、SSE、跟进、归档、diff、PR；headless |
 | Mobile | `packages/mobile` | 云端 | P0：登录、列表、开 Run、SSE、跟进；`source` 为 ios/android；推送 `/v1/devices` |
 | Telegram / 微信 | `ingress/` | 云端 | 发一句开新对话；做完 / 开 PR 可推回来 |
@@ -537,15 +551,17 @@ Desk 本机路径（已落地）。`start` 分开「谁起这个 worker」：
 2. 控制面严格匹配 user + 机器在线且允许远程 + 仓库对得上，然后往 inbox 推 assignment；对不上就明确报错，不回落云端。
 3. Desk 用已绑定的工作区 spawn，再 `claim`。
 
-两条路径之后完全一样。共同约束：`online` 就是「正握着 inbox」；控制面**不**杀笔记本 pid（取消走 inbox，活着靠 worker 心跳）；本机 Run 的文件工具和 bash 写操作锁在工作区根内；掉线走 `detachOrQueue`，不标 ERROR；handoff 到云要可 clone 的远端，切回本机要求该仓库已有绑定，未提交改动都不跟随。
+两条路径之后完全一样。共同约束：`online` 就是「正握着 inbox」；控制面**不**杀笔记本 pid（取消走 inbox，活着靠 worker 心跳）；本机 Run 的文件工具和 bash 写操作锁在工作区根内；掉线走 `detachOrQueue`，不标 ERROR；handoff 到云要可 clone 的远端，切回本机要求该仓库已有绑定，未提交改动都不跟随。Desk 本机 worker 默认 `WORKER_EXIT_AFTER_TURN=1`（一轮退出，跟进再起进程）。每轮划痕在 `<workspace>/.neo/runs/<runId>/`。打包产物是 `pnpm pack:desk` → `packages/desk/release/*.zip`，没有 `/v1/downloads`。跨址「云 loop + 本机工具」见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)，**还没做**。
 
 设计细节：[cli.md](./cli.md)、[desk.md](./desk.md)、[mobile.md](./mobile.md)。
 
 ---
 
-## 14. 协作面：Project / Todo / Automation
+## 14. 协作面与产品层
 
-对话是一次 Run。项目是共享上下文 + 看板 + 成员。分层对齐 WorkBuddy 调研里「项目包上下文、任务包一次 Run」，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。专家 / 专家团（角色包绑到 Run，团走现有 `neo_subagent`）见 [workbuddy-experts.md](./workbuddy-experts.md)。Skill / Plugin 目录（安装后物化进 `.neo/skills`）见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。骨架落地之后还值得跟的功能见 [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md)。
+对话是一次 Run。项目是共享上下文 + 看板 + 成员。专家切父 Run 人格；插件把 Skill 物化进工作区；配方只是客户端预填。分层对齐 WorkBuddy 调研，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)、[workbuddy-experts.md](./workbuddy-experts.md)、[skill-plugin-marketplace.md](./skill-plugin-marketplace.md)、[workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md)。
+
+### 14.1 项目协作
 
 | 实体 | 作用 |
 | --- | --- |
@@ -553,11 +569,54 @@ Desk 本机路径（已落地）。`start` 分开「谁起这个 worker」：
 | `ProjectTodo` | 看板上的任务；可绑一条 Run |
 | `ProjectAsset` | 用户手动上云；工作区不会自动进来 |
 | `ProjectMessage` | 项目内消息 |
-| Inbox | 邀请、转交、评论等通知 |
+| Inbox | `GET /v1/inbox`、`POST /v1/inbox/:id/read`：邀请、转交、评论 |
 | `Automation` | 每天 / 每小时按调度 `POST /v1/runs`，`source: automation` |
 | Collaborator / Transfer | 单条 Run 可邀请 editor，或 reassign / fork 给别人 |
+| Handoff pack | `projects/handoff.ts` 写 `HANDOFF.md` |
 
-Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Terminal 右侧栏，项目工作台默认停在任务（任务 / 对话 / 资产 / 动态 / 设置）。Web 对话页也有 Projects / Automations 页。
+Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Terminal 右侧栏，项目工作台默认停在任务（任务 / 对话 / 资产 / 动态 / 设置）。Web 另有 `#/projects`、`#/experts`、`#/skills`。
+
+### 14.2 专家 / 专家团（控制面对象）
+
+合约在 `packages/contracts/src/expert.ts`。内置 5 个编码向专家（侦察 / 规划 / 审查 / 实现 / 安全）和 2 个专家团（交付改动 chain、调查收口 parallel）。
+
+| 层 | 行为 |
+| --- | --- |
+| 持久化 | `.control/experts.json` + `bundled-expert-policy.json`；有 `DATABASE_URL` 则 `experts` / `expert_policies` |
+| 创建 Run | `expertId` xor `expertTeamId`；控制面写 `.neo/expert.json`、`EXPERT.md` / `EXPERT_TEAM.md` |
+| worker | `packages/worker/src/expert-workspace.ts` 读角色覆盖，工具白名单与专家 `tools` 求交 |
+| 专家团 | 团长 = 带编排手册的父会话；团员物化成 `.neo/agents/*.md` 后走现有 `neo_subagent` |
+| API | `GET\|POST /v1/experts`、`GET\|PATCH\|DELETE /v1/experts/:id`、`GET /v1/expert-teams` |
+| 后管 | `GET/POST /v1/admin/experts` 配置 / 下发 / 恢复默认 |
+
+专家跟 Run 绑定，不中途换人格；要换就新开 Run。没有专家市场、没有积分倍率。
+
+### 14.3 插件 / 技能（控制面目录 + 工作区物化）
+
+合约在 `packages/contracts/src/plugin.ts`。内置 4 个 skill 包：`pr-review`、`release-notes`、`repo-scout`、`incident-brief`。
+
+| 层 | 行为 |
+| --- | --- |
+| 持久化 | `.control/plugin-installs.json`；有库则 `plugin_installs` |
+| 物化 | 创建 Run 时写 `.neo/skills/<slug>/SKILL.md` + `.neo/plugins.json`（`plugins/materialize.ts`） |
+| worker | 继续只扫工作区 skill 目录，不另造运行时 |
+| API | `GET /v1/plugins`、`GET /v1/plugins/:id`、`POST\|DELETE …/install`、`POST …/enable` |
+
+**还没有：** git marketplace、zip 上传、插件带 MCP/hooks、`GET /v1/search`、`GET /v1/recipes`。
+
+### 14.4 配方 / 模板 / 意图胶囊（仅客户端）
+
+`packages/contracts/src/recipe.ts` 有类型和内置目录。Web 空状态配方、项目模板、Composer 关键词胶囊只是预填 `POST /v1/runs` / `POST /v1/projects` 的 `prompt` / `expertId` / `expertTeamId`。**没有** HTTP 路由。
+
+### 14.5 Web 已落地的 WorkBuddy 面
+
+| 面 | 实际落点 |
+| --- | --- |
+| Inbox | `GET /v1/inbox` + 已读 |
+| `@` 提及 | Composer 客户端拼专家 / 团 / 插件 / 资产，不是服务端解析 |
+| 搜索 | 已加载 transcript / 目录上的 `?q=`，**没有** `GET /v1/search` |
+| 产物 | 预览 + `POST /v1/runs/:id/artifacts/:name/save-to-project` |
+| 目录页 | `#/experts`、`#/skills`、`#/projects` |
 
 ---
 
@@ -581,13 +640,13 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 
 | 存储 | 内容 | 没配时 |
 | --- | --- | --- |
-| MySQL 或 Postgres（`DATABASE_URL` scheme 决定） | 用户、Run、事件、Environment、Build、Project、Desk、Device、Automation | `.neo/runs/.control` JSON |
+| MySQL 或 Postgres（`DATABASE_URL` scheme 决定） | 用户、Run、事件、Environment、Build、Project、Desk、Device、Automation、`experts`、`expert_policies`、`plugin_installs` | `.neo/runs/.control` JSON |
 | Redis | 直播事件 Pub/Sub + Stream、限流固定窗口、lease | 进程内 EventEmitter + token bucket |
 | 对象存储（默认 fs） | transcript 归档、artifacts、session JSONL 备份 | `RUNS_DIR/.objects` |
 | 块存储 | Build 快照、warm slot、loop 盘 | `RUNS_DIR/.builds` |
 | 密钥文件 | LLM / SCM / notify（gitignore） | `.env`、`.neo/*.env` |
 
-`platform.ts` 在启动时：有 `DATABASE_URL` 就 `connectDatabase` 并挂 persist hook；有 `REDIS_URL` 就接热总线和限流。刷新页面或重启控制面：先从 persist 把 Run 拉回内存，再 `recoverLiveWorkers`——认领得到的 handle 以进程/容器退出为准，认领不到就等心跳，超时才标 ERROR。
+`platform.ts` 在启动时：**先接 Redis，再 hydrate MySQL**，避免登录 / 限流卡在库同步上。有 `DATABASE_URL` 就 `connectDatabase` 并挂 persist hook（含 experts / plugins / expert_policies）；有 `REDIS_URL` 就接热总线和限流。刷新页面或重启控制面：先从 persist 把 Run 拉回内存，再 `recoverLiveWorkers`——认领得到的 handle 以进程/容器退出为准，认领不到就等心跳，超时才标 ERROR。
 
 ---
 
@@ -629,6 +688,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 
 ```
 GET    /health
+GET    /architecture  /architecture.html  /architecture-complete.html
 POST   /webhooks/github
 POST   /webhooks/telegram
 GET|POST /webhooks/wechat
@@ -640,6 +700,7 @@ GET    /v1/runs/:id/artifacts/:name?token=   签名下载
 
 ```
 POST   /v1/auth/login|logout|bootstrap
+POST   /v1/auth/register                 固定 403「不支持注册」
 GET    /v1/me
 GET    /v1/vms
 GET    /v1/rate-limits
@@ -662,6 +723,7 @@ GET    /v1/runs/:id/fs
 GET    /v1/runs/:id/diff
 GET    /v1/runs/:id/diagnostics
 GET|POST /v1/runs/:id/artifacts
+POST   /v1/runs/:id/artifacts/:name/save-to-project
 POST   /v1/runs/:id/commit
 POST   /v1/runs/:id/pull-request
 GET|POST /v1/runs/:id/subscriptions
@@ -670,16 +732,27 @@ GET|POST /v1/runs/:id/collaborators
 POST   /v1/runs/:id/transfer
 ```
 
-### 环境、Desk、设备、项目、自动化
+### 专家、插件、环境、Desk、设备、项目、自动化
 
 ```
+GET|POST /v1/experts     GET|PATCH|DELETE /v1/experts/:id
+GET    /v1/expert-teams
+GET    /v1/plugins       GET /v1/plugins/:id
+POST|DELETE /v1/plugins/:id/install
+POST   /v1/plugins/:id/enable
 CRUD   /v1/environments  /v1/builds  /v1/builds/:id/logs
-CRUD   /v1/desks         POST /v1/desks/:id/lease|claim
+CRUD   /v1/desks
+GET    /v1/desks/:id/inbox               Desk token SSE
+POST   /v1/desks/:id/lease|claim|reject|release|workspaces
+DELETE /v1/desks/:id/workspaces/:wsId
 CRUD   /v1/devices
 CRUD   /v1/projects      成员 / 邀请 / todos / assets / messages
 GET    /v1/inbox
+POST   /v1/inbox/:id/read
 CRUD   /v1/automations
 ```
+
+没有 `GET /v1/search`，也没有 `GET /v1/recipes`。
 
 ### Worker 内部（run JWT）
 
@@ -710,13 +783,20 @@ User 1──* Project 1──* Member / Invite / Event
                     └── Todo / Asset / Message
                     └── Run (projectId)
 
+User 1──* Expert (visibility=user|project)     bundled 另存
+User 1──* PluginInstall → Plugin (bundled 目录)
+Run ── expertId xor expertTeamId
+Run ── plugins[]  { slug, version, digest }
+
 Environment 1──* EnvironmentVersion 1──* Build
                                       └── snapshotPath, fingerprint, draft?
 
-Desk 1──* Assignment / Lease
+Desk 1──* Assignment / Lease / WorkspaceBinding
 Device   （Expo push token）
 Automation  （调度 → 创建 Run）
 ```
+
+`CreateRunRequest` 接受 `expertId` 或 `expertTeamId`（互斥），以及启用中的插件快照。`Recipe` / `ProjectTemplate` / `IntentCapsule` 只在合约和客户端，不进这张表。
 
 `Build.status`: `IN_PROGRESS | SUCCEEDED | FAILED | CANCELLED | SKIPPED`  
 `Run.setupStatus`: `INSTALL_*` / `START_*` / `null`
@@ -745,18 +825,20 @@ pnpm typecheck && pnpm test
 
 ## 21. 现在有、明确没有
 
-**已经落地、文档必须对得上的：** P0 主路径（创建 Run → worker + pi → Gateway → SSE → IDLE → 跟进）；账号；MySQL / Redis 回退；Environment Builds / warm pool；`vm` loop 槽；受控 git / PR；云工具；多端 SSE；Desk 本机目标；项目协作骨架；自动化；IM 入口；管理台；CLI；Mobile P0；限流与配额打点。
+**已经落地、文档必须对得上的：** P0 主路径（创建 Run → worker + pi → Gateway → SSE → IDLE → 跟进）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游。
 
 **还没有、不要假装有的：**
 
 - 把 Agent loop 放控制面，或 CLI / 手机在本机跑 pi
-- 云 loop + 本机工具 RPC（`loop !== tools`）
+- 云 loop + 本机工具 RPC（`loop !== tools`），见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
+- 插件 git marketplace、zip 上传、插件自带 MCP / hooks
+- `GET /v1/search`、`GET /v1/recipes`（配方只在客户端）
 - Firecracker live-fork、headed browser / computer-use（分期见 [browser-computer-use.md](./browser-computer-use.md)）
 - Egress 从应用层升到 iptables / 出站代理
 - 跨 Run 的用户 / 项目语义记忆（选型见 [agent-memory-research.md](./agent-memory-research.md)）
-- 完整多租户账务（只有配额打点）
+- 完整多租户账务（只有配额打点）；专家团积分倍率
 - Slack 宿主
-- 开放注册、第二套用户表
+- 开放注册、第二套用户表；New API 不是 Neo 进程，也不接管用户表
 
 ---
 
@@ -768,6 +850,8 @@ pnpm typecheck && pnpm test
 | 本文 | 现状总览：包、进程、现网、数据流 |
 | [cli.md](./cli.md) | `neo` 命令面；明确不做本机 Agent |
 | [desk.md](./desk.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为与项目工作台 |
+| [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) | 云 loop + 本机工具，尚未做 |
+| [workspace-persistence.md](./workspace-persistence.md) | 空闲槽写回、预算、TTL |
 | [mobile.md](./mobile.md) | 手机端蓝图与 P0 |
 | [admin-platform-research.md](./admin-platform-research.md) | 后管 vs New API 怎么拆 |
 | [nginx-research.md](./nginx-research.md) | 现网入口是 Caddy；不要再引入 Nginx |

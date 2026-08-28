@@ -141,7 +141,7 @@
 <body>
   <header>
     <h1>Neo Cloud Agent 完整架构图</h1>
-    <p class="sub">一个 monorepo · 三个控制面进程 + 一张 worker 镜像 · 客户端只打 <code>/v1</code>。对标 Cursor Cloud Agent；Agent 内核是 pi-coding-agent，不自研 tool loop。</p>
+    <p class="sub">一个 monorepo · 12 个 package · 三个控制面进程 + 一张 worker 镜像 · 客户端只打 <code>/v1</code>。对标 Cursor Cloud Agent；Agent 内核是 pi-coding-agent，不自研 tool loop。对照 main <code>c2fda3c</code> · 2026-08-28。</p>
     <div class="principle">锁死原则：Agent loop 跑在执行面，不跑在控制面。Provider Key 只在 llm-gateway。Worker 只有短寿命 run JWT。</div>
   </header>
 
@@ -158,26 +158,27 @@
   <div class="board">
     <section class="col">
       <h2>① 客户端 · 不跑 loop</h2>
-      <div class="box client"><strong>Web 对话页</strong><small>packages/web · :5173 / 现网 :8080 托管</small></div>
-      <div class="box client"><strong>Desk</strong><small>Electron + 独立 UI :5174 · 可本机执行</small></div>
+      <div class="box client"><strong>Web 对话页</strong><small>packages/web · :5173 / 现网 :8080 托管<br>#/experts · #/skills · #/projects</small></div>
+      <div class="box client"><strong>Desk</strong><small>Electron + 独立 UI :5174 · This Computer / Remote<br>inline assignment · dispatch inbox</small></div>
       <div class="box client"><strong>CLI <code>neo</code></strong><small>packages/cli · headless /v1</small></div>
       <div class="box client"><strong>Mobile</strong><small>:5175 · source = ios / android</small></div>
       <div class="box client"><strong>IM 入口</strong><small>Telegram / 微信公众号 · 发一句开 Run</small></div>
       <div class="box client"><strong>Admin Web</strong><small>:5176 · 现网 /admin/ · 仅平台管理员</small></div>
-      <div class="flow">Desk / CLI / Mobile 直打控制面。<br>浏览器走 Caddy。</div>
+      <div class="flow">四个前端共用 <code>packages/ui</code>（库，不是进程）。<br>Desk / CLI / Mobile 直打控制面。浏览器走 Caddy。</div>
     </section>
 
     <section class="col">
       <h2>②③ 入口 + 控制面 :8080</h2>
       <div class="box edge"><strong>Caddy · neorun.cloud</strong><small>/ → control-plane :8080　　/admin/ → admin-api :8090</small></div>
-      <div class="box control"><strong>admin-api :8090</strong><small>总览 / 用户 / Run / 限流 · 读同一套账号库，不改 /v1 登录</small></div>
+      <div class="box control"><strong>admin-api :8090</strong><small>总览 / 用户 / Run / 内置专家下发 / 限流 · 读同一套账号库，不改 /v1 登录</small></div>
       <div class="box control"><strong>control-plane · /v1 + /internal + SSE</strong><small>鉴权 · 配额 · 限流 · 托管对话页 dist/</small></div>
       <div class="modules">
         <div class="box control"><strong>orchestrator</strong><small>Run 状态机 · provision · 跟进队列 · 认领 worker</small></div>
         <div class="box control"><strong>env / build / warm-pool</strong><small>environment.json · JIT 打盘 · 热槽 rename</small></div>
         <div class="box control"><strong>scm</strong><small>GitHub App 短寿命 token · 受控 commit / PR</small></div>
         <div class="box control"><strong>events</strong><small>Redis 热流 · transcript 快照 · 多端订阅</small></div>
-        <div class="box control"><strong>projects / desks</strong><small>协作 · lease/claim · 自动化 · 推送</small></div>
+        <div class="box control"><strong>projects / desks</strong><small>协作 · lease/claim · inbox SSE · 自动化 · 推送</small></div>
+        <div class="box control"><strong>experts / plugins</strong><small>角色包绑 Run · 物化 .neo/skills · 配方只在客户端</small></div>
         <div class="box control"><strong>security / quota</strong><small>session · run JWT · 打码 · 月 token</small></div>
       </div>
       <div class="flow"><b>对外</b> POST /v1/runs · SSE /events · transcript<br><b>对内</b> worker 带 run JWT 打 /internal/runs/:id/…</div>
@@ -197,7 +198,8 @@
     <section class="col">
       <h2>⑤⑦ 推理 + 外部</h2>
       <div class="box llm"><strong>llm-gateway :8081</strong><small>唯一持有 Provider Key<br>验 run JWT · 模型别名 · 限流</small></div>
-      <div class="box llm"><strong>上游</strong><small>默认 deepseek-v4-flash · 可切 Pro<br>无 key 则 mock</small></div>
+      <div class="box llm"><strong>上游</strong><small>默认 deepseek-v4-flash · 可切 Pro<br>max_tokens 封顶 16384 · 无 key 则 mock</small></div>
+      <div class="box ext"><strong>New API :3000</strong><small>库机 Docker · Gateway 上游，不是 Neo 进程<br>渠道和 Provider Key 在 New API 控制台</small></div>
       <div class="box ext"><strong>GitHub App</strong><small>clone / push / draft PR / webhook<br>长期凭证不过 VM</small></div>
       <div class="box ext"><strong>推送</strong><small>Expo · 企业微信 · Telegram · SMTP</small></div>
       <div class="box ext"><strong>HTTP MCP</strong><small>控制面 OAuth / Bearer 代理<br>密钥不进 worker</small></div>
@@ -207,7 +209,7 @@
     <section class="col span-bottom">
       <h2>⑥ 存储 · 现网库机 101.42.105.230 · 没配则回退本机文件</h2>
       <div class="store-row">
-        <div class="box store"><strong>MySQL 8.4</strong><small>用户 · Run · 事件索引 · Environment / Build · Project · Desk · Device · Automation<br>没配 → <code>.neo/runs/.control</code> JSON</small></div>
+        <div class="box store"><strong>MySQL 8.4</strong><small>用户 · Run · 事件索引 · Environment / Build · Project · Desk · Device · Automation · experts · expert_policies · plugin_installs<br>没配 → <code>.neo/runs/.control</code> JSON</small></div>
         <div class="box store"><strong>Redis 7</strong><small>直播事件 Pub/Sub + Stream · 限流固定窗口 · lease<br>没配 → 进程内 EventEmitter</small></div>
         <div class="box store"><strong>对象存储</strong><small>transcript 归档 · session JSONL 备份 · artifacts<br>现网默认 <code>RUNS_DIR/.objects</code>，不切 S3</small></div>
         <div class="box store"><strong>块 / 槽</strong><small>2 × loop ext4 槽 · Build 快照 · warm pool<br><code>WORKER_RUNTIME=vm</code> · 卸槽前必须写回工作区</small></div>
@@ -218,7 +220,7 @@
   <div class="hosts">
     <div class="host">
       <h3>现网应用机 · 62.234.211.200 · 4C/4G</h3>
-      <p>Ubuntu 24.04 · systemd：<code>neo-control-plane</code> / <code>neo-llm-gateway</code> / Caddy。无 Docker、无 KVM。对话 <code>https://neorun.cloud/</code>，管理台 <code>/admin/</code>。</p>
+      <p>Ubuntu 24.04 · systemd：<code>neo-control-plane</code> / <code>neo-llm-gateway</code> / Caddy。无 Docker、无 KVM。对话 <code>https://neorun.cloud/</code>，管理台 <code>/admin/</code>，架构海报 <code>/architecture</code>。</p>
     </div>
     <div class="host">
       <h3>一次 Run 主路径</h3>
