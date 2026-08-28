@@ -515,7 +515,7 @@ IM（Telegram / 微信）第一期不解析 `@专家`，避免和群 @人冲突�
 
 ## 7. 分期
 
-原则：**先让用户能点一个角色开对话，再让用户能存自己的角色，最后才把团做成卡片。** 市场永远后置。
+原则：**先让用户能点一个角色开对话，再让用户能存自己的角色，最后才把团做成卡片。** 专家商店永远后置。Skill / Plugin 目录见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。
 
 ### 第 0 期：锁语义和合约
 
@@ -609,11 +609,13 @@ IM（Telegram / 微信）第一期不解析 `@专家`，避免和群 @人冲突�
 
 ## 10. 和旧调研的关系
 
-[workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) 第 10 节写过：项目协作第一期只用项目指令 + 项目 skills + 现有 subagent，不必做专家市场。那个判断 **仍然成立**——市场不做。
+[workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) 第 10 节写过：项目协作第一期只用项目指令 + 项目 skills + 现有 subagent，不必做专家市场。那个判断 **仍然成立**——专家上传站不做。
 
 现在要补的是：**专家作为召唤面和角色包**，不是市场。项目协作继续包上下文；专家包的是身份。两者叠在同一次 Run 上，不互相替代。
 
-Desk 方案 [desk-project-design.md](./desk-project-design.md) 把专家中心列在「不抄办公套件」里。本文落地后，Desk 只跟 **选择器 + 项目钉住**，仍然不做市场、双写、公开会话。
+Skill / Plugin 目录（Codex marketplace、WorkBuddy 技能市场）见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。那是能力包的发现和安装，不是专家商店。
+
+Desk 方案 [desk-project-design.md](./desk-project-design.md) 把专家中心列在「不抄办公套件」里。本文落地后，Desk 只跟 **选择器 + 项目钉住**，仍然不做专家商店、双写、公开会话。
 
 ---
 
@@ -631,6 +633,7 @@ Desk 方案 [desk-project-design.md](./desk-project-design.md) 把专家中心�
 | 五大概念 | https://www.woshipm.com/ai/6448550.html |
 | 三层模型 / 「训练」 | https://jishuzhan.net/article/2063614638046130177 |
 | 自定义专家字段 | https://www.171host.com/790079.html |
+| Neo 技能 / 插件市场调研 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) |
 | Neo 项目协作调研 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) |
 | Neo 现状总览 | [architecture-overview.md](./architecture-overview.md) |
 | Neo 原则 | [architecture.md](./architecture.md) |

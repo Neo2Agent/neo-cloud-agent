@@ -540,7 +540,7 @@ Desk 本机路径（已落地）。`start` 分开「谁起这个 worker」：
 
 ## 14. 协作面：Project / Todo / Automation
 
-对话是一次 Run。项目是共享上下文 + 看板 + 成员。分层对齐 WorkBuddy 调研里「项目包上下文、任务包一次 Run」，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。专家 / 专家团（角色包绑到 Run，团走现有 `neo_subagent`）见 [workbuddy-experts.md](./workbuddy-experts.md)。
+对话是一次 Run。项目是共享上下文 + 看板 + 成员。分层对齐 WorkBuddy 调研里「项目包上下文、任务包一次 Run」，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。专家 / 专家团（角色包绑到 Run，团走现有 `neo_subagent`）见 [workbuddy-experts.md](./workbuddy-experts.md)。Skill / Plugin 目录（安装后物化进 `.neo/skills`）见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。
 
 | 实体 | 作用 |
 | --- | --- |
@@ -766,6 +766,7 @@ pnpm typecheck && pnpm test
 | [admin-platform-research.md](./admin-platform-research.md) | 后管 vs New API 怎么拆 |
 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) | 项目协作对标 |
 | [workbuddy-experts.md](./workbuddy-experts.md) | WorkBuddy 专家 / 专家团调研与落地顺序 |
+| [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) | Codex / WorkBuddy 技能与插件市场调研与复刻顺序 |
 | [production-domain.md](./production-domain.md) | `neorun.cloud` / HTTPS / Caddy |
 | [README.md](../README.md) | 命令、环境变量、不要做的五件事 |
 | `packages/contracts` | 类型的权威来源 |
