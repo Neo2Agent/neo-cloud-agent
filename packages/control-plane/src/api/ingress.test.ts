@@ -68,3 +68,60 @@ test("Telegram and WeChat webhooks create runs without login", async (t) => {
   assert.match(xml, /已收到/);
   assert.equal(listRuns().some((run) => run.source === "wechat" && run.prompt === "从微信过来"), true);
 });
+
+test("Telegram photo and WeChat image wait for the next text", async (t) => {
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const before = listRuns().length;
+
+  const photo = await fetch(`${base}/webhooks/telegram`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-telegram-bot-api-secret-token": "tg-secret",
+    },
+    body: JSON.stringify({ message: { chat: { id: 77 }, photo: [{ file_id: "pic-77" }] } }),
+  });
+  assert.equal(photo.status, 200);
+  assert.deepEqual(await photo.json(), { ok: true, pending: true });
+  assert.equal(listRuns().length, before);
+
+  const follow = await fetch(`${base}/webhooks/telegram`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-telegram-bot-api-secret-token": "tg-secret",
+    },
+    body: JSON.stringify({ message: { chat: { id: 77 }, text: "把 logo 换成这个" } }),
+  });
+  assert.equal(follow.status, 202);
+  assert.equal(
+    listRuns().some((run) => run.source === "telegram" && run.prompt.includes("把 logo 换成这个") && run.prompt.includes("图片")),
+    true,
+  );
+
+  const timestamp = "1710000001";
+  const nonce = "n2";
+  const signature = createHash("sha1").update(["hook-token", timestamp, nonce].sort().join("")).digest("hex");
+  const image = await fetch(`${base}/webhooks/wechat?signature=${signature}&timestamp=${timestamp}&nonce=${nonce}`, {
+    method: "POST",
+    headers: { "content-type": "application/xml" },
+    body: "<xml><ToUserName><![CDATA[gh]]></ToUserName><FromUserName><![CDATA[pic-user]]></FromUserName><MsgType><![CDATA[image]]></MsgType></xml>",
+  });
+  assert.equal(image.status, 200);
+  assert.match(await image.text(), /再发一句说明/);
+  const wechatFollow = await fetch(`${base}/webhooks/wechat?signature=${signature}&timestamp=${timestamp}&nonce=${nonce}`, {
+    method: "POST",
+    headers: { "content-type": "application/xml" },
+    body: "<xml><ToUserName><![CDATA[gh]]></ToUserName><FromUserName><![CDATA[pic-user]]></FromUserName><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[海报用这张]]></Content></xml>",
+  });
+  assert.equal(wechatFollow.status, 200);
+  assert.equal(
+    listRuns().some((run) => run.source === "wechat" && run.prompt.includes("海报用这张") && run.prompt.includes("图片")),
+    true,
+  );
+});

@@ -1,10 +1,13 @@
-import { useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useMemo, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
+import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { DeskTarget } from "../desk";
 import { IconArrowUp, IconStop } from "../icons";
+import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
 import { Select } from "@neo-cloud-agent/ui";
 import { ContextUsageControl } from "./ContextUsage";
@@ -33,6 +36,10 @@ type Props = {
   teams?: ExpertTeam[];
   expertValue?: string;
   expertLocked?: boolean;
+  mentions?: ComposerMention[];
+  showCapsules?: boolean;
+  onMention?: (mention: ComposerMention) => void;
+  onCapsule?: (capsule: IntentCapsule) => void;
   onTarget: (target: DeskTarget) => void;
   onPickFolder?: () => void;
   onMode: (mode: AgentMode) => void;
@@ -69,6 +76,10 @@ export function Composer({
   teams = [],
   expertValue = "",
   expertLocked = false,
+  mentions = [],
+  showCapsules = false,
+  onMention,
+  onCapsule,
   onTarget,
   onPickFolder,
   onMode,
@@ -81,7 +92,17 @@ export function Composer({
   onStop,
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
+  const trigger = mentionTrigger(prompt);
+  const mentionHits = useMemo(
+    () => (trigger ? filterMentions(mentions, trigger.query) : []),
+    [mentions, trigger?.query],
+  );
+  const capsules = showCapsules ? matchIntentCapsules(prompt) : [];
   const empty = !prompt.trim() && images.length === 0;
+  const pickMention = (item: ComposerMention) => {
+    onPrompt(applyMention(prompt, item));
+    onMention?.(item);
+  };
   const hint = archived ? "对话已归档，无法继续发送。" : busy ? (activity ?? "正在进行…") : vmHint;
   const placeholder = archived
     ? "对话已归档。"
@@ -89,7 +110,7 @@ export function Composer({
       ? "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
       : isNarrowViewport()
         ? "描述任务，点发送。可粘贴图片。"
-        : "描述任务。Enter 发送，Shift+Enter 换行。可直接粘贴图片。";
+        : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
   return (
     <form
       className={busy ? "composer is-busy" : archived ? "composer is-locked" : "composer"}
@@ -133,6 +154,11 @@ export function Composer({
           });
         }}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+          if (mentionHits[0] && event.key === "Enter" && !event.shiftKey && trigger) {
+            event.preventDefault();
+            pickMention(mentionHits[0]);
+            return;
+          }
           if (shouldQueueOnCtrlEnter(event)) {
             event.preventDefault();
             if (!archived && onQueue) onQueue();
@@ -146,6 +172,31 @@ export function Composer({
           }
         }}
       />
+      {trigger ? (
+        <ul className="mention-menu" role="listbox">
+          {mentionHits.length === 0 ? (
+            <li className="hint">没有可引用的专家、技能或资产</li>
+          ) : (
+            mentionHits.map((item) => (
+              <li key={`${item.kind}-${item.id}`}>
+                <button type="button" onClick={() => pickMention(item)}>
+                  <small>{mentionKindLabel(item.kind)}</small>
+                  <span>{item.label}</span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      ) : null}
+      {capsules.length > 0 && !trigger ? (
+        <div className="intent-capsules">
+          {capsules.map((item) => (
+            <button key={item.id} type="button" className="intent-capsule" onClick={() => onCapsule?.(item)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="composer-bar">
         <div className="composer-pickers">
           <TargetPicker

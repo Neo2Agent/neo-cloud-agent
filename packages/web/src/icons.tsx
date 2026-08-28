@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  Bell,
   BookOpen,
   Bot,
   Check,
@@ -158,6 +159,10 @@ export function IconComputer(props: IconProps) {
 
 export function IconSearch(props: IconProps) {
   return icon(Search, props);
+}
+
+export function IconInbox(props: IconProps) {
+  return icon(Bell, props);
 }
 
 export function IconPr(props: IconProps) {

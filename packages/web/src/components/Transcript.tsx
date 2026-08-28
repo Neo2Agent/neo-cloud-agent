@@ -1,18 +1,13 @@
-import { Fragment, useLayoutEffect, useRef } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { fileToolDiff, formatMessageTime, formatWhen, toolArgPreview } from "../format";
+import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
+import { BUNDLED_RECIPES } from "@neo-cloud-agent/contracts/recipe";
+import { fileToolDiff, formatDuration, formatMessageTime, formatWhen, toolArgPreview } from "../format";
 import { IconCheck, IconError, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "../markdown";
 import { shouldShowThinking } from "../turn";
-
-const STARTER_PROMPTS = [
-  { title: "看仓库", prompt: "看看仓库结构，总结怎么跑起来。" },
-  { title: "加 README", prompt: "加个 README.md 并跑测试。" },
-  { title: "修类型", prompt: "找出类型错误并修掉。" },
-  { title: "开草稿 PR", prompt: "把这次改动整理成草稿 PR。" },
-];
 
 type Props = {
   messages: TranscriptMessage[];
@@ -22,8 +17,10 @@ type Props = {
   loadingOlder?: boolean;
   busy?: boolean;
   activity?: string;
+  highlightId?: string | null;
   onLoadOlder: () => void;
-  onPickPrompt?: (prompt: string) => void;
+  onOpenDiagnostics?: () => void;
+  onPickRecipe?: (recipe: Recipe) => void;
 };
 
 function ToolStatus({ tool }: { tool: TranscriptTool }) {
@@ -130,9 +127,14 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
 }
 
 function MessageTime({ message, className = "" }: { message: TranscriptMessage; className?: string }) {
+  const duration =
+    message.role === "assistant" && !message.streaming
+      ? formatDuration(message.createdAt, message.updatedAt)
+      : "";
   return (
     <time className={`bubble-time ${className}`.trim()} dateTime={message.updatedAt || message.createdAt}>
       {formatMessageTime(message.createdAt, message.updatedAt, Boolean(message.streaming))}
+      {duration ? ` · ${duration}` : ""}
     </time>
   );
 }
@@ -162,8 +164,10 @@ export function Transcript({
   loadingOlder = false,
   busy = false,
   activity,
+  highlightId,
   onLoadOlder,
-  onPickPrompt,
+  onOpenDiagnostics,
+  onPickRecipe,
 }: Props) {
   const scroller = useRef<HTMLElement>(null);
   const stick = useRef(true);
@@ -182,6 +186,11 @@ export function Transcript({
       node.scrollTop = node.scrollHeight;
     }
   }, [messages, remaining, busy, activity, loading]);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    document.getElementById(`msg-${highlightId}`)?.scrollIntoView({ block: "center" });
+  }, [highlightId]);
 
   const loadOlder = () => {
     if (remaining <= 0 || loadingOlder || restore.current) return;
@@ -222,16 +231,18 @@ export function Transcript({
         {empty ? (
           <div className="empty">
             <h2>有什么可以帮你的？</h2>
-            <p>发送后会占用一台云端电脑。仓库和 API Key 在「设置」里。</p>
-            {onPickPrompt ? (
-              <div className="empty-grid">
-                {STARTER_PROMPTS.map((item) => (
-                  <button key={item.title} type="button" className="empty-card" onClick={() => onPickPrompt(item.prompt)}>
-                    <strong>{item.title}</strong>
-                    <span>{item.prompt}</span>
-                  </button>
+            <p>发送后会占用一台云端电脑。也可以先点一张做法再改。仓库和 API Key 在「设置」里。</p>
+            {onPickRecipe ? (
+              <ul className="recipe-grid">
+                {BUNDLED_RECIPES.map((item) => (
+                  <li key={item.id}>
+                    <button type="button" className="recipe-card" onClick={() => onPickRecipe(item)}>
+                      <strong>{item.title}</strong>
+                      <span>{item.description}</span>
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : null}
           </div>
         ) : (
@@ -240,9 +251,20 @@ export function Transcript({
               return <ArtifactCard key={message.id} message={message} />;
             }
             if (message.role === "setup") {
+              const failed = message.level === "error" || String(message.kind).endsWith("_failed") || message.kind === "run.error";
               return (
-                <p key={message.id} className={message.level === "error" || String(message.kind).endsWith("_failed") ? "setup err" : "setup"}>
+                <p
+                  key={message.id}
+                  id={`msg-${message.id}`}
+                  className={failed ? "setup err" : "setup"}
+                  data-highlight={highlightId === message.id ? "true" : undefined}
+                >
                   <span>{message.text}</span>
+                  {failed && onOpenDiagnostics ? (
+                    <button type="button" className="ghost diag-link" onClick={onOpenDiagnostics}>
+                      查看诊断
+                    </button>
+                  ) : null}
                   <time className="bubble-time setup-time" dateTime={message.createdAt}>
                     {formatWhen(message.createdAt)}
                   </time>
@@ -251,7 +273,12 @@ export function Transcript({
             }
             if (message.role === "user") {
               return (
-                <article key={message.id} className="bubble user">
+                <article
+                  key={message.id}
+                  id={`msg-${message.id}`}
+                  className="bubble user"
+                  data-highlight={highlightId === message.id ? "true" : undefined}
+                >
                   {message.text ? <div className="body">{message.text}</div> : null}
                   {message.images?.length ? (
                     <div className="image-row">
@@ -291,7 +318,12 @@ export function Transcript({
                   }
                   const lastText = !groups.slice(index + 1).some((item) => item.type === "text");
                   return (
-                    <article key={`${message.id}-text-${index}`} className="bubble assistant">
+                    <article
+                      key={`${message.id}-text-${index}`}
+                      id={last ? `msg-${message.id}` : undefined}
+                      className="bubble assistant"
+                      data-highlight={highlightId === message.id ? "true" : undefined}
+                    >
                       <MarkdownBody
                         text={group.text}
                         className="body"

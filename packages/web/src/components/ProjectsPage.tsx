@@ -4,6 +4,7 @@ import type { Expert } from "@neo-cloud-agent/contracts/expert";
 import { expertPickerLabel } from "@neo-cloud-agent/contracts/expert";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { canManageProject, type Project, type ProjectInvite, type ProjectMember } from "@neo-cloud-agent/contracts/project";
+import { PROJECT_TEMPLATES, projectTemplateById } from "@neo-cloud-agent/contracts/recipe";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
 import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
@@ -31,6 +32,8 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
   const [createName, setCreateName] = useState("");
   const [createInstruction, setCreateInstruction] = useState("");
   const [instruction, setInstruction] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [transferNote, setTransferNote] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [memberPassword, setMemberPassword] = useState("");
@@ -146,15 +149,22 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
     if (busy || !createName.trim()) return;
     setBusy(true);
     setError("");
+    const template = projectTemplateById(templateId);
     void api(token, "/v1/projects", {
       method: "POST",
-      body: JSON.stringify({ name: createName.trim(), instruction: createInstruction }),
+      body: JSON.stringify({
+        name: createName.trim(),
+        instruction: createInstruction.trim() || template?.instruction || "",
+        expertIds: template?.expertIds,
+        pluginIds: template?.pluginIds,
+      }),
     })
       .then(async (res) => {
         const body = await readJson<Project & { error?: string }>(res);
         if (!res.ok) throw new Error(body.error || "创建失败");
         setCreateName("");
         setCreateInstruction("");
+        setTemplateId("");
         setCreateOpen(false);
         await refresh();
         onOpenProject(body.id);
@@ -285,7 +295,7 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
                   setBusy(true);
                   void api(token, `/v1/runs/${transferRunId}/transfer`, {
                     method: "POST",
-                    body: JSON.stringify({ toUserId: transferUserId }),
+                    body: JSON.stringify({ toUserId: transferUserId, note: transferNote.trim() || undefined }),
                   })
                     .then(async (res) => {
                       if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "转交失败");
@@ -319,6 +329,11 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
                     ]}
                   />
                 </label>
+                <label>
+                  <span>交接说明</span>
+                  <input value={transferNote} onChange={(event) => setTransferNote(event.target.value)} placeholder="可选，会写进 HANDOFF.md" />
+                </label>
+                <p className="hint">对话记录会交给对方。不会拷 .env、密钥或 SCM 凭证。</p>
                 <button className="ghost" type="submit" disabled={busy || !transferRunId || !transferUserId}>
                   转交
                 </button>
@@ -568,6 +583,7 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
         onAction={() => {
           setCreateName("");
           setCreateInstruction("");
+          setTemplateId("");
           setCreateOpen(true);
         }}
       />
@@ -623,6 +639,23 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
             createProject();
           }}
         >
+          <label>
+            <span>模板</span>
+            <Select
+              value={templateId}
+              onValueChange={(value) => {
+                setTemplateId(value);
+                const template = projectTemplateById(value);
+                if (template && !createInstruction.trim()) setCreateInstruction(template.instruction);
+                if (template && !createName.trim()) setCreateName(template.name);
+              }}
+              placeholder="空白项目"
+              options={[
+                { value: "", label: "空白项目" },
+                ...PROJECT_TEMPLATES.map((item) => ({ value: item.id, label: item.name })),
+              ]}
+            />
+          </label>
           <label>
             <span>名称</span>
             <input

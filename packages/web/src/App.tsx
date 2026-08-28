@@ -29,7 +29,10 @@ import { SkillsPage } from "./components/SkillsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import type { Project } from "@neo-cloud-agent/contracts/project";
+import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
+import type { IntentCapsule, Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import { InboxBell } from "./components/InboxBell";
 import { Tooltip } from "@neo-cloud-agent/ui";
 import {
   IconArtifacts,
@@ -49,7 +52,9 @@ import {
 } from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
+import { TranscriptSearch } from "./components/TranscriptSearch";
 import { VmSlots } from "./components/VmSlots";
+import type { ComposerMention } from "./mention";
 import {
   baselineContextUsage,
   overlayContextUsage,
@@ -213,8 +218,6 @@ export function App() {
   const [authToken, setAuthToken] = useState("");
   const [prompt, setPrompt] = useState("");
   const [images, setImages] = useState<ImageRef[]>([]);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [diffOpen, setDiffOpen] = useState(false);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState("");
   const [diffStat, setDiffStat] = useState("");
@@ -243,6 +246,10 @@ export function App() {
   const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts" | "skills">(initialMainTab);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(hashSkillId);
   const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
+  const [projectNames, setProjectNames] = useState<Record<string, string>>({});
+  const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [selectedExpertId, setSelectedExpertId] = useState<string | null>(hashExpertId);
   const [experts, setExperts] = useState<Expert[]>([]);
   const [teams, setTeams] = useState<ExpertTeam[]>([]);
@@ -277,9 +284,11 @@ export function App() {
   const sendingRef = useRef(false);
   const pendingRef = useRef<PendingUser | null>(null);
   const keepPendingRef = useRef(false);
+  const projectNamesRef = useRef(projectNames);
   tokenRef.current = token;
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
+  projectNamesRef.current = projectNames;
 
   const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
   const contextUsage = useMemo(() => {
@@ -489,15 +498,24 @@ export function App() {
     if (!tokenRef.current) return;
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     try {
-      const [expertRes, teamRes] = await Promise.all([
+      const [expertRes, teamRes, pluginRes, projectRes] = await Promise.all([
         api(tokenRef.current, `/v1/experts${query}`),
         api(tokenRef.current, "/v1/expert-teams"),
+        api(tokenRef.current, `/v1/plugins${query}`),
+        api(tokenRef.current, "/v1/projects"),
       ]);
       if (expertRes.ok) {
         setExperts((await readJson<{ experts?: Expert[] }>(expertRes)).experts ?? []);
       }
       if (teamRes.ok) {
         setTeams((await readJson<{ teams?: ExpertTeam[] }>(teamRes)).teams ?? []);
+      }
+      if (pluginRes.ok) {
+        setPluginCatalog((await readJson<{ plugins?: PluginCatalogItem[] }>(pluginRes)).plugins ?? []);
+      }
+      if (projectRes.ok) {
+        const projects = (await readJson<{ projects?: Project[] }>(projectRes)).projects ?? [];
+        setProjectNames(Object.fromEntries(projects.map((item) => [item.id, item.name])));
       }
     } catch {
       // optional catalog
@@ -602,8 +620,6 @@ export function App() {
     appliedEventIdsRef.current = new Set();
     setPrompt("");
     setImages([]);
-    setFilesOpen(false);
-    setDiffOpen(false);
     setSessionTab("chat");
     setDiffStat("");
     setDiffPatch("");
@@ -613,6 +629,7 @@ export function App() {
     setPendingTurn(null);
     setEnvId("");
     setBuildId("");
+    setHighlightId(null);
     history.replaceState(null, "", "/");
   }, [closeStream]);
 
@@ -630,6 +647,7 @@ export function App() {
       if (!keepPendingRef.current) setPendingTurn(null);
       setMainTab("chat");
       setSessionTab("chat");
+      setHighlightId(null);
       history.replaceState(null, "", `/#/runs/${id}`);
       const [runRes, transcriptRes] = await Promise.all([
         api(tokenRef.current, `/v1/runs/${id}`),
@@ -646,7 +664,11 @@ export function App() {
       writeLastRunId(id);
       const projectId = run.projectId ?? "";
       if (projectId) {
-        setActiveProject((prev) => (prev?.id === projectId ? prev : { id: projectId, name: prev?.name ?? "项目对话" }));
+        const known = projectNamesRef.current[projectId];
+        setActiveProject((prev) => ({
+          id: projectId,
+          name: known || (prev?.id === projectId ? prev.name : "项目对话"),
+        }));
       } else {
         setActiveProject(null);
       }
@@ -685,16 +707,12 @@ export function App() {
 
   const openAutomations = useCallback(() => {
     setMainTab("automations");
-    setFilesOpen(false);
-    setDiffOpen(false);
     setSettingsOpen(false);
     history.replaceState(null, "", "/#/automations");
   }, []);
 
   const openExperts = useCallback((id?: string | null) => {
     setMainTab("experts");
-    setFilesOpen(false);
-    setDiffOpen(false);
     setSettingsOpen(false);
     setSelectedExpertId(id ?? null);
     history.replaceState(null, "", id ? `/#/experts/${id}` : "/#/experts");
@@ -702,8 +720,6 @@ export function App() {
 
   const openSkills = useCallback((id?: string | null) => {
     setMainTab("skills");
-    setFilesOpen(false);
-    setDiffOpen(false);
     setSettingsOpen(false);
     setSelectedSkillId(id ?? null);
     history.replaceState(null, "", id ? `/#/skills/${id}` : "/#/skills");
@@ -740,8 +756,6 @@ export function App() {
 
   const openProjects = useCallback((id?: string | null, invite?: string | null) => {
     setMainTab("projects");
-    setFilesOpen(false);
-    setDiffOpen(false);
     setSettingsOpen(false);
     setSelectedProjectId(id ?? null);
     setInviteToken(invite ?? null);
@@ -758,9 +772,8 @@ export function App() {
       setActiveProject({ id: project.id, name: project.name });
       if (project.defaultRepoUrls[0]) setRepo(project.defaultRepoUrls[0]);
       setMainTab("chat");
-      void refreshExperts(project.id);
     },
-    [refreshExperts, resetComposer],
+    [resetComposer],
   );
 
   const openChat = useCallback(() => {
@@ -1159,8 +1172,6 @@ export function App() {
       if (hashAutomations()) {
         setMainTab("automations");
         setInviteToken(null);
-        setFilesOpen(false);
-        setDiffOpen(false);
         setSettingsOpen(false);
         return;
       }
@@ -1168,8 +1179,6 @@ export function App() {
         setMainTab("experts");
         setSelectedExpertId(hashExpertId());
         setInviteToken(null);
-        setFilesOpen(false);
-        setDiffOpen(false);
         setSettingsOpen(false);
         return;
       }
@@ -1177,8 +1186,6 @@ export function App() {
         setMainTab("skills");
         setSelectedSkillId(hashSkillId());
         setInviteToken(null);
-        setFilesOpen(false);
-        setDiffOpen(false);
         setSettingsOpen(false);
         return;
       }
@@ -1186,8 +1193,6 @@ export function App() {
         setMainTab("projects");
         setInviteToken(invite);
         setSelectedProjectId(projectId);
-        setFilesOpen(false);
-        setDiffOpen(false);
         setSettingsOpen(false);
         return;
       }
@@ -1276,6 +1281,31 @@ export function App() {
   }, [pendingTurn, messages]);
 
   useEffect(() => {
+    void refreshExperts(activeProject?.id);
+  }, [activeProject?.id, refreshExperts]);
+
+  useEffect(() => {
+    if (!token || !activeProject) {
+      setProjectAssets([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await api(token, `/v1/projects/${encodeURIComponent(activeProject.id)}/assets`);
+        if (!response.ok || cancelled) return;
+        const body = await readJson<{ assets?: ProjectAsset[] }>(response);
+        if (!cancelled) setProjectAssets(body.assets ?? []);
+      } catch {
+        if (!cancelled) setProjectAssets([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, activeProject]);
+
+  useEffect(() => {
     if (!currentRun || isActiveRunStatus(currentRun.status)) {
       return;
     }
@@ -1321,8 +1351,6 @@ export function App() {
 
   const openInspector = (id: "files" | "diff" | "terminal" | "artifacts" | "chat") => {
     setSessionTab(id);
-    setFilesOpen(id === "files");
-    setDiffOpen(id === "diff");
     setSettingsOpen(false);
     if (id === "chat" || !runId) return;
     if (id === "diff") {
@@ -1381,6 +1409,88 @@ export function App() {
           : "没有可用的电脑。先打开 Desk 并在设置里绑定一个文件夹。";
       })();
 
+  const composerMentions = useMemo<ComposerMention[]>(() => {
+    const expertItems: ComposerMention[] = experts.map((expert) => ({
+      kind: "expert",
+      id: expert.id,
+      label: expert.name,
+      insert: `@专家 ${expert.name}`,
+    }));
+    const teamItems: ComposerMention[] = teams.map((team) => ({
+      kind: "team",
+      id: team.id,
+      label: team.name,
+      insert: `@专家团 ${team.name}`,
+    }));
+    const skillItems: ComposerMention[] = [...pluginCatalog]
+      .sort((left, right) => Number(right.enabled) - Number(left.enabled) || Number(right.pinned) - Number(left.pinned))
+      .map((plugin) => ({
+        kind: "plugin",
+        id: plugin.id,
+        label: pluginPickerLabel(plugin),
+        insert: `@技能 ${pluginPickerLabel(plugin)}`,
+      }));
+    const assetItems: ComposerMention[] = projectAssets.map((asset) => ({
+      kind: "asset",
+      id: asset.path,
+      label: asset.path.split("/").pop() ?? asset.path,
+      insert: `@资产 ${asset.path}`,
+    }));
+    return [...expertItems, ...teamItems, ...skillItems, ...assetItems];
+  }, [experts, teams, pluginCatalog, projectAssets]);
+
+  const applyMention = (item: ComposerMention) => {
+    if (item.kind === "expert") {
+      setExpertPick({ expertId: item.id });
+      return;
+    }
+    if (item.kind === "team") {
+      setExpertPick({ expertTeamId: item.id });
+      return;
+    }
+    if (item.kind === "plugin") {
+      const plugin = pluginCatalog.find((entry) => entry.id === item.id);
+      if (plugin) setPluginPick(plugin);
+    }
+  };
+
+  const applyRole = (item: { expertId?: string; expertTeamId?: string; pluginIds?: string[] }) => {
+    if (item.expertTeamId) {
+      setExpertPick({ expertTeamId: item.expertTeamId });
+    } else if (item.expertId) {
+      setExpertPick({ expertId: item.expertId });
+    }
+    const pluginId = item.pluginIds?.[0];
+    if (!pluginId) return;
+    const plugin = pluginCatalog.find((entry) => entry.id === pluginId || entry.slug === pluginId);
+    if (plugin) setPluginPick(plugin);
+  };
+
+  const applyCapsule = (capsule: IntentCapsule) => {
+    applyRole(capsule);
+  };
+
+  const applyRecipe = (recipe: Recipe) => {
+    setPrompt(recipe.prompt);
+    applyRole(recipe);
+  };
+
+  const archiveMany = async (ids: string[]) => {
+    if (!token || ids.length === 0) return;
+    await Promise.allSettled(
+      ids.map((id) => api(token, `/v1/runs/${encodeURIComponent(id)}/archive`, { method: "POST" })),
+    );
+    await refreshRuns();
+    if (runId && ids.includes(runId)) {
+      setCurrentRun((run) => (run ? { ...run, status: "ARCHIVED" } : run));
+    }
+  };
+
+  const openDiagnostics = () => {
+    if (!runId) return;
+    openInspector("terminal");
+  };
+
   const loadOlder = () => {
     if (!runId || remaining <= 0 || loadingOlder || loadingTranscript) return;
     const before = nextBefore ?? messages[0]?.id;
@@ -1424,7 +1534,9 @@ export function App() {
           authBusy={authBusy}
           health={healthText}
           pinnedIds={pinnedIds}
+          projectNames={projectNames}
           onPin={(id) => setPinnedIds(togglePinnedRun(id))}
+          onArchiveMany={(ids) => void archiveMany(ids)}
           onClose={narrow ? toggleSidebar : undefined}
           onNewChat={() => {
             setActiveProject(null);
@@ -1553,6 +1665,15 @@ export function App() {
               </div>
             </div>
             <div className="top-actions">
+              <InboxBell
+                token={token}
+                authed={Boolean(userEmail)}
+                onOpenRun={(id) => {
+                  setMainTab("chat");
+                  void openRun(id);
+                }}
+                onOpenProject={(id) => openProjects(id)}
+              />
               {isDeskApp() ? (
                 <span className="desk-badge" title="Desk 预览，本机执行可用">
                   Desk
@@ -1647,8 +1768,6 @@ export function App() {
                   const next = !settingsOpen;
                   setSettingsOpen(next);
                   if (next) {
-                    setFilesOpen(false);
-                    setDiffOpen(false);
                   }
                 }}
               >
@@ -1700,8 +1819,6 @@ export function App() {
                   className="ghost"
                   id="close-drawer"
                   onClick={() => {
-                    setFilesOpen(false);
-                    setDiffOpen(false);
                     setSettingsOpen(false);
                   }}
                 >
@@ -1874,6 +1991,7 @@ export function App() {
               />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
+                <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />
                 <Transcript
                   messages={displayMessages}
                   remaining={remaining}
@@ -1882,8 +2000,10 @@ export function App() {
                   loadingOlder={loadingOlder}
                   busy={busy}
                   activity={activity}
+                  highlightId={highlightId}
                   onLoadOlder={loadOlder}
-                  onPickPrompt={setPrompt}
+                  onOpenDiagnostics={openDiagnostics}
+                  onPickRecipe={applyRecipe}
                 />
               </ChatErrorBoundary>
             )}
@@ -1924,6 +2044,18 @@ export function App() {
                   loading={artifactsLoading}
                   error={artifactsError}
                   artifacts={artifacts}
+                  projectId={currentRun?.projectId ?? activeProject?.id}
+                  token={token}
+                  runId={runId}
+                  onSaved={() => {
+                    const projectId = currentRun?.projectId ?? activeProject?.id;
+                    if (!projectId || !token) return;
+                    void api(token, `/v1/projects/${encodeURIComponent(projectId)}/assets`).then(async (response) => {
+                      if (!response.ok) return;
+                      const body = await readJson<{ assets?: ProjectAsset[] }>(response);
+                      setProjectAssets(body.assets ?? []);
+                    });
+                  }}
                   onOpen={
                     deskBridge()?.openPath
                       ? (item) => {
@@ -2002,6 +2134,10 @@ export function App() {
                   : encodeExpertPick(expertPick)
               }
               expertLocked={Boolean(runId)}
+              mentions={composerMentions}
+              showCapsules={!runId}
+              onMention={applyMention}
+              onCapsule={applyCapsule}
               onTarget={applyTarget}
               onPickFolder={() => {
                 void deskBridge()?.pickFolder().then((folder) => {

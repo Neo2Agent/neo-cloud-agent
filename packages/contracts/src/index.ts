@@ -345,6 +345,17 @@ export {
   subscriptionTargetsFrom,
 } from "./subscription.js";
 
+export type { IntentCapsule, ProjectTemplate, Recipe } from "./recipe.js";
+export {
+  BUNDLED_RECIPES,
+  INTENT_CAPSULES,
+  PROJECT_TEMPLATES,
+  formatHandoffMarkdown,
+  matchIntentCapsules,
+  projectTemplateById,
+  recipeById,
+} from "./recipe.js";
+
 export type {
   RunDiagnostics,
   RunDiagnosticsBuild,

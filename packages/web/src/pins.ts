@@ -20,6 +20,8 @@ export function togglePinnedRun(id: string, storage: Pick<Storage, "getItem" | "
   return next;
 }
 
+const ACTIVE = ["NOT_YET_STARTED", "PROVISIONING", "INSTALLING", "RUNNING", "WAITING_FOR_BACKGROUND_WORK"];
+
 export function groupRuns<T extends { id: string; status: string; createdAt: string }>(
   runs: T[],
   pinned: string[],
@@ -29,9 +31,42 @@ export function groupRuns<T extends { id: string; status: string; createdAt: str
   const rest = runs
     .filter((run) => !pinSet.has(run.id))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  const active = rest.filter((run) =>
-    ["NOT_YET_STARTED", "PROVISIONING", "INSTALLING", "RUNNING", "WAITING_FOR_BACKGROUND_WORK"].includes(run.status),
-  );
+  const active = rest.filter((run) => ACTIVE.includes(run.status));
   const recent = rest.filter((run) => !active.includes(run));
   return { pinned: pinnedRuns, active, recent };
+}
+
+export function filterRuns<T extends { prompt?: string; id: string }>(runs: T[], query: string): T[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return runs;
+  return runs.filter((run) => (run.prompt ?? "").toLowerCase().includes(needle) || run.id.toLowerCase().includes(needle));
+}
+
+export function groupRunsByProject<T extends { id: string; status: string; createdAt: string; projectId?: string | null }>(
+  runs: T[],
+  pinned: string[],
+  projectNames: Record<string, string>,
+): { pinned: T[]; sections: Array<{ key: string; label: string; active: T[]; recent: T[] }> } {
+  const { pinned: pinnedRuns, active, recent } = groupRuns(runs, pinned);
+  const rest = [...active, ...recent];
+  const keys: string[] = [];
+  const buckets = new Map<string, T[]>();
+  for (const run of rest) {
+    const key = run.projectId || "";
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+      keys.push(key);
+    }
+    buckets.get(key)!.push(run);
+  }
+  const sections = keys.map((key) => {
+    const items = buckets.get(key) ?? [];
+    return {
+      key: key || "none",
+      label: key ? projectNames[key] || "项目对话" : "未归项目",
+      active: items.filter((run) => ACTIVE.includes(run.status)),
+      recent: items.filter((run) => !ACTIVE.includes(run.status)),
+    };
+  });
+  return { pinned: pinnedRuns, sections };
 }

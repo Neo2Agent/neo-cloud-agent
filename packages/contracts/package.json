@@ -14,6 +14,7 @@
     "./project": "./src/project.ts",
     "./expert": "./src/expert.ts",
     "./plugin": "./src/plugin.ts",
+    "./recipe": "./src/recipe.ts",
     "./project-todo": "./src/project-todo.ts",
     "./project-asset": "./src/project-asset.ts",
     "./project-message": "./src/project-message.ts",

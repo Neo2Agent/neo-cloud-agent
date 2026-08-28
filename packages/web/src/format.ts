@@ -88,6 +88,17 @@ export function formatRunTime(createdAt: string, updatedAt?: string | null, now 
   return `创建 ${created} · 更新 ${formatWhen(updatedAt, now)}`;
 }
 
+export function formatDuration(start: string, end?: string | null, now = new Date()): string {
+  const from = Date.parse(start);
+  const to = end ? Date.parse(end) : now.getTime();
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return "";
+  const sec = Math.max(1, Math.round((to - from) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return rem ? `${min}m${rem}s` : `${min}m`;
+}
+
 export function formatMessageTime(
   createdAt: string,
   updatedAt?: string | null,
