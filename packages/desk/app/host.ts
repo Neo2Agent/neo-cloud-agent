@@ -27,6 +27,7 @@ import {
 } from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
+import { deskAssignmentAlert } from "../src/notify-assignment.js";
 import { isActiveRunStatus } from "../src/stream.js";
 import { publicizeWorkerUrls } from "../src/worker-urls.js";
 import {
@@ -37,6 +38,7 @@ import {
   runScratchDir,
   runStateDir,
   resolveAuthorizedFolder,
+  unboundThisComputerFolder,
   writeRunBootstrap,
   writeRunExpertFiles,
 } from "../src/workspace.js";
@@ -48,18 +50,12 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-type DeskTarget = { kind: "cloud" | "desk"; folder?: string; deskId?: string; workspaceId?: string };
+type DeskTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?: string; workspaceId?: string };
 
 type BoundWorkspace = { id: string; folder: string; name: string; repoKey: string; git: boolean };
 
-/**
- * `remoteControl` is the whole difference between This Computer and Remote
- * control. Off (default) this machine stays private: folders are never
- * published, so no other client can even see it, let alone dispatch to it.
- */
 type DeskPrefs = {
   requireApproval?: boolean;
-  remoteControl?: boolean;
   maxLocalRuns?: number;
   /** Desk-only. Cloud never reads this. Today only `deny` is honored. */
   outOfWorkspacePolicy?: OutOfWorkspacePolicy;
@@ -266,7 +262,8 @@ function findBound(selector: { workspaceId?: string | null; folder?: string }): 
  */
 function currentTarget(): DeskTarget {
   const saved = readJson<DeskTarget>(stateFile(TARGET_STATE_FILE), { kind: "cloud" });
-  const kind: DeskTarget["kind"] = saved.kind === "desk" ? "desk" : "cloud";
+  const kind: DeskTarget["kind"] =
+    saved.kind === "desk" || saved.kind === "remote" ? saved.kind : "cloud";
   return { ...saved, kind, deskId: saved.deskId || deskId || undefined };
 }
 
@@ -462,42 +459,18 @@ async function confirmFolder(folder: string): Promise<string | null> {
   return result.response === 0 ? authorized.path : null;
 }
 
-function remoteControlOn(): boolean {
-  return prefs().remoteControl === true;
-}
-
 /**
- * Bind a folder for local runs. The repo identity only goes to the control
- * plane when the user turned remote control on; This Computer alone never
- * tells anyone which folders exist here.
+ * Bind a folder for local runs. Folder identity stays on this machine; the
+ * control-plane workspace catalog is phase 2 (web starting a new chat here).
  */
 async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
   const resolved = path.resolve(folder);
   const existing = findBound({ folder: resolved });
-  const identity = existing
-    ? { name: existing.name, repoKey: existing.repoKey, git: existing.git }
-    : await readRepoIdentity(resolved);
-  let id = existing?.id || `dws_local_${Buffer.from(resolved).toString("hex").slice(0, LOCAL_WORKSPACE_ID_HEX_LEN)}`;
-  if (deskId && deskToken && remoteControlOn()) {
-    try {
-      const client = leaseClient();
-      const bound = await client.bindWorkspace({
-        deskId,
-        deskToken,
-        name: identity.name,
-        repoKey: identity.repoKey,
-        git: identity.git,
-      });
-      id = bound.id;
-    } catch (error) {
-      deskLog.error("could not register the workspace with the control plane", error, { folder: resolved });
-      if (existing) {
-        return existing;
-      }
-    }
-  } else if (existing) {
+  if (existing) {
     return existing;
   }
+  const identity = await readRepoIdentity(resolved);
+  const id = `dws_local_${Buffer.from(resolved).toString("hex").slice(0, LOCAL_WORKSPACE_ID_HEX_LEN)}`;
   const record: BoundWorkspace = { id, folder: resolved, name: identity.name, repoKey: identity.repoKey, git: identity.git };
   saveBoundWorkspaces([
     ...boundWorkspaces().filter((item) => path.resolve(item.folder) !== resolved && item.id !== id),
@@ -524,7 +497,7 @@ async function runHasFinished(runId: string): Promise<boolean> {
   }
   try {
     const response = await net.fetch(`${controlPlaneUrl}/v1/runs/${runId}`, {
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: `Bearer ${token}`, "x-neo-client": "desk" },
     });
     if (response.status === 404) {
       return true;
@@ -581,10 +554,11 @@ function resolveRunFolder(
     }
     return { folder: bound.folder };
   }
-  // The caller passes its own folder so two inline runs cannot both resolve to
-  // whatever the picker happens to show. The saved target is only a backstop.
-  const folder = folderHint || currentTarget().folder || "";
-  return folder ? { folder } : { reason: "这台电脑还没有绑定本机工作区" };
+  // The caller passes this run's folder. Do not fall back to the picker: a
+  // This Computer chat with no directory must stay in the default scratch, not
+  // whatever folder is selected now.
+  const folder = (folderHint || "").trim();
+  return { folder: folder || unboundThisComputerFolder(stateDir()) };
 }
 
 /**
@@ -787,6 +761,25 @@ function stopRun(runId: string, reason?: string): void {
   reportRunStatus({ runId, state: "stopped", detail: reason });
 }
 
+const startingHere = new Set<string>();
+
+function deskWindowFocused(): boolean {
+  return BrowserWindow.getAllWindows().some((window) => window.isFocused());
+}
+
+async function withStartingHere<T>(runId: string | undefined, work: () => Promise<T>): Promise<T> {
+  if (runId) {
+    startingHere.add(runId);
+  }
+  try {
+    return await work();
+  } finally {
+    if (runId) {
+      startingHere.delete(runId);
+    }
+  }
+}
+
 async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
   if (event.kind === "ping") {
     return;
@@ -796,18 +789,23 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
     return;
   }
   const assignment = event.assignment;
-  if (hasLocalRun(assignment.runId)) {
+  if (hasLocalRun(assignment.runId) || startingHere.has(assignment.runId)) {
     return;
   }
   const bound = findBound({ workspaceId: assignment.workspaceId });
   const label = bound?.name ?? "本机工作区";
   const dispatched = Boolean(assignment.requestedBy) || Boolean(assignment.workspaceId);
-  if (dispatched && !remoteControlOn()) {
-    // Someone else asked, but this machine is in This Computer mode.
+  if (dispatched) {
     await rejectRun(assignment.runId, "这台电脑没有开启远程派活");
     return;
   }
-  if (prefs().requireApproval) {
+  const alert = deskAssignmentAlert({
+    alreadyLocal: false,
+    startingHere: false,
+    windowFocused: deskWindowFocused(),
+    requireApproval: Boolean(prefs().requireApproval),
+  });
+  if (alert === "approve") {
     // The binding is the standing permission; this switch is for people who
     // still want to see every remote task before it touches their disk.
     const choice = await dialog.showMessageBox({
@@ -823,7 +821,7 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
       await rejectRun(assignment.runId, "这台电脑拒绝了这条派活");
       return;
     }
-  } else {
+  } else if (alert === "notify") {
     new Notification({
       title: "本机开始一条对话",
       body: `${label} · ${assignment.prompt.slice(0, NOTIFICATION_PROMPT_PREVIEW_LEN)}`,
@@ -844,18 +842,6 @@ async function persistRegisteredDesk(registered: { deskId: string; token: string
   deskToken = registered.token;
   writeJson(stateFile(DESK_STATE_FILE), { deskId, token: encodeSecret(deskToken) });
   const saved = readJson<DeskTarget>(stateFile(TARGET_STATE_FILE), { kind: "cloud" });
-  for (const item of remoteControlOn() ? boundWorkspaces() : []) {
-    const bound = await bindWorkspace(item.folder).catch((error) => {
-      deskLog.warn("could not re-bind a workspace after registering", {
-        folder: item.folder,
-        detail: errorText(error),
-      });
-      return undefined;
-    });
-    if (bound && saved.folder && path.resolve(saved.folder) === path.resolve(bound.folder)) {
-      saved.workspaceId = bound.id;
-    }
-  }
   writeJson(stateFile(TARGET_STATE_FILE), { ...saved, deskId });
   toRenderer("desk:target", { ...saved, deskId });
 }
@@ -889,29 +875,6 @@ async function registerThisDesk(userToken: string): Promise<void> {
     }
     await pruneOfflineDesks(userToken);
     await persistRegisteredDesk(await client.register(request));
-  }
-  await publishRemoteControl(userToken);
-}
-
-/**
- * A desk registers so it can run its own work; that is not consent to be
- * dispatched to. Only remote control mode makes it visible to other clients.
- */
-async function publishRemoteControl(userToken = getToken()): Promise<void> {
-  if (!deskId || !userToken) {
-    return;
-  }
-  const on = remoteControlOn();
-  await leaseClient()
-    .setAllowRemote(userToken, deskId, on)
-    .catch((error) => deskLog.warn("could not change remote control", { on, detail: errorText(error) }));
-  if (!on) {
-    return;
-  }
-  for (const item of boundWorkspaces()) {
-    await bindWorkspace(item.folder).catch((error) =>
-      deskLog.warn("could not publish a workspace", { folder: item.folder, detail: errorText(error) }),
-    );
   }
 }
 
@@ -1105,37 +1068,35 @@ function wireIpc(): void {
   });
   ipcMain.handle("desk:getPrefs", () => ({ ...prefs(), deskId }));
   ipcMain.handle("desk:setPrefs", async (_event, next: DeskPrefs) => {
-    const before = remoteControlOn();
     setPrefs(next);
-    if (remoteControlOn() !== before) {
-      await publishRemoteControl();
-    }
     return prefs();
   });
   ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment, folder?: string) => {
-    await startAssignment(assignment, folder);
+    await withStartingHere(assignment.runId, () => startAssignment(assignment, folder));
     return true;
   });
   ipcMain.handle("desk:takeAssignment", async (_event, runId?: string, folder?: string) => {
-    if (runId && hasLocalRun(runId)) {
-      return { started: true, runId };
-    }
-    if (!deskId || !deskToken) {
-      return { started: false };
-    }
-    const assignment = await leaseClient().waitAssignment({
-      deskId,
-      deskToken,
-      waitMs: TAKE_ASSIGNMENT_WAIT_MS,
+    return withStartingHere(runId, async () => {
+      if (runId && hasLocalRun(runId)) {
+        return { started: true, runId };
+      }
+      if (!deskId || !deskToken) {
+        return { started: false };
+      }
+      const assignment = await leaseClient().waitAssignment({
+        deskId,
+        deskToken,
+        waitMs: TAKE_ASSIGNMENT_WAIT_MS,
+      });
+      if (runId && hasLocalRun(runId)) {
+        return { started: true, runId };
+      }
+      if (!assignment || (runId && assignment.runId !== runId)) {
+        return { started: false, runId: assignment?.runId };
+      }
+      await startAssignment(assignment, folder);
+      return { started: true, runId: assignment.runId };
     });
-    if (runId && hasLocalRun(runId)) {
-      return { started: true, runId };
-    }
-    if (!assignment || (runId && assignment.runId !== runId)) {
-      return { started: false, runId: assignment?.runId };
-    }
-    await startAssignment(assignment, folder);
-    return { started: true, runId: assignment.runId };
   });
   ipcMain.handle("desk:stopRun", (_event, runId: string) => {
     stopRun(runId, "已在这台电脑上停止");

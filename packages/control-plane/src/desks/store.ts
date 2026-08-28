@@ -56,7 +56,7 @@ function publicDesk(item: StoredDesk, _at = Date.now()): Desk {
     lastSeenAt: item.lastSeenAt,
     online: hasInbox(item.id),
     workspaces: item.workspaces ?? [],
-    allowRemote: item.allowRemote !== false,
+    allowRemote: item.allowRemote === true,
   };
 }
 
@@ -98,7 +98,7 @@ function normalize(value: unknown): StoredDesk | null {
     lastSeenAt: typeof record.lastSeenAt === "string" ? record.lastSeenAt : createdAt,
     online: false,
     workspaces: normalizeWorkspaces(record.workspaces),
-    allowRemote: record.allowRemote !== false,
+    allowRemote: record.allowRemote === true,
     tokenHash: typeof record.tokenHash === "string" ? record.tokenHash : "",
   };
 }
@@ -179,7 +179,7 @@ export function createDesk(
     lastSeenAt: createdAt,
     online: true,
     workspaces: [],
-    allowRemote: true,
+    allowRemote: false,
     tokenHash: hashToken(token),
   };
   items.push(stored);

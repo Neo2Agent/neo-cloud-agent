@@ -1,8 +1,9 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_DESK_UI_PORT, deskClientOrigin, isLoopbackOrigin } from "../src/ports.ts";
 import { ensureBackend, waitForHttp } from "../../../scripts/ensure-backend.ts";
+import { spawnPnpm, killSpawned } from "../../../scripts/spawn-pnpm.ts";
 
 const deskRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -14,7 +15,7 @@ function launchDesk(opts: {
   apiBase: string;
   uiUrl: string;
 }): ChildProcess {
-  return spawn("pnpm", ["exec", "electron", `--user-data-dir=${opts.userData}`, "app/main.cjs"], {
+  return spawnPnpm(["exec", "electron", `--user-data-dir=${opts.userData}`, "app/main.cjs"], {
     cwd: deskRoot,
     stdio: "inherit",
     env: {
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
   if (isLoopbackOrigin(apiBase)) {
     await ensureBackend();
   }
-  const vite = spawn("pnpm", ["exec", "vite", "--config", "ui/vite.config.ts"], {
+  const vite = spawnPnpm(["exec", "vite", "--config", "ui/vite.config.ts"], {
     cwd: deskRoot,
     stdio: "inherit",
     env: { ...process.env, NEO_DESK_UI_PORT: String(uiPort), NEO_CONTROL_PLANE_URL: apiBase },
@@ -62,9 +63,9 @@ async function main(): Promise<void> {
     uiUrl,
   });
   const stop = () => {
-    left.kill("SIGTERM");
-    right.kill("SIGTERM");
-    vite.kill("SIGTERM");
+    killSpawned(left);
+    killSpawned(right);
+    killSpawned(vite);
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);

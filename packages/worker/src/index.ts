@@ -4,7 +4,7 @@ import { runWorkspaceBoot, stopTerminals } from "./boot.js";
 import { downloadSession, enqueueEvents, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
 import { installEgressGuard, policyFromEnv } from "./egress.js";
 import { inspectSessionContext } from "./context-usage.js";
-import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
+import { contextUsageEvent, stampWorkerSeq, toRunEvents, turnFinishedEvent } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { readSessionBackupPolicy, shouldBackupSession } from "./session-backup-schedule.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
@@ -210,6 +210,13 @@ async function main(): Promise<void> {
           servedTurn = true;
         }
         const next = await dispatchInbound(session, message);
+        if (message.type === "prompt" || message.type === "steer" || message.type === "follow_up") {
+          try {
+            await enqueueEvents(config.runId, stampWorkerSeq([turnFinishedEvent(config.runId)], workerSeq));
+          } catch (error: unknown) {
+            console.error("failed to push turn end", error);
+          }
+        }
         if (next === "stop") {
           running = false;
           break;

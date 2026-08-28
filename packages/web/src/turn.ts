@@ -11,7 +11,7 @@ export const ACTIVE_RUN_STATUSES = [
 ] as const;
 
 const SETUP_STATUSES = new Set(["NOT_YET_STARTED", "PROVISIONING", "INSTALLING"]);
-const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived", "agent.end"]);
+const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived"]);
 
 export type PendingUser = {
   id: string;
@@ -75,9 +75,10 @@ export function isTurnBusy(input: {
 }
 
 export function shouldShowThinking(busy: boolean, messages: TranscriptMessage[]): boolean {
-  if (!busy || hasLiveAssistantWork(messages)) return false;
-  const last = [...messages].reverse().find((message) => message.role === "user" || message.role === "assistant");
-  return !last || last.role === "user";
+  if (!busy) return false;
+  const turn = currentTurnMessages(messages);
+  if (hasLiveAssistantWork(turn)) return false;
+  return !turn.some((message) => message.role === "assistant" && Boolean(message.text.trim() || message.tools?.length));
 }
 
 export function activityLabel(input: {

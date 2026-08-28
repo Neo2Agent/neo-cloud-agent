@@ -481,15 +481,19 @@ test("subscriptions persist across control-plane reload", async () => {
   assert.equal(restored[0]?.prNumber, 4);
 });
 
-function newDesk(hostname: string) {
-  return createDesk({ name: hostname, hostname, platform: "linux" }, {
+function newDesk(hostname: string, allowRemote = false) {
+  const created = createDesk({ name: hostname, hostname, platform: "linux" }, {
     userId: process.env.DEFAULT_USER_ID ?? "user_local",
     orgId: process.env.DEFAULT_ORG_ID ?? "org_local",
   });
+  if (allowRemote) {
+    updateDesk(created.desk.id, { allowRemote: true });
+  }
+  return created;
 }
 
 test("desk target waits for a claim instead of spawning a server worker", async () => {
-  const registered = newDesk("box");
+  const registered = newDesk("box", true);
   const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
   // The desk is connected; lease is the catch-up path for anything already queued.
   const detach = openDeskInbox(registered.desk.id, () => undefined);
@@ -539,18 +543,21 @@ test("an inline desk run is handed its assignment instead of queueing for a clai
 
 test("inline works without a bound workspace because the desk knows its own folder", async () => {
   const registered = newDesk("unbound-box");
+  const folder = "C:\\Users\\me\\测试";
   const run = await createRun({
     prompt: "just this folder",
-    repoUrls: ["/home/me/scratch"],
+    repoUrls: [folder],
     source: "desk",
     start: "inline",
     target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
   });
+  assert.equal(run.executionTarget?.deskId, registered.desk.id);
   assert.equal(run.executionTarget?.deskWorkspaceId, undefined);
+  assert.deepEqual(run.repoUrls, [folder]);
 });
 
 test("remote dispatch needs a bound workspace and rides the desk inbox", async () => {
-  const registered = newDesk("remote-box");
+  const registered = newDesk("remote-box", true);
   const pushed: Array<{ kind: string }> = [];
   const detach = openDeskInbox(registered.desk.id, (event) => pushed.push(event));
   await assert.rejects(
@@ -577,7 +584,7 @@ test("remote dispatch needs a bound workspace and rides the desk inbox", async (
 });
 
 test("a dispatch for another repo is refused instead of running in the wrong folder", async () => {
-  const registered = newDesk("wrong-repo-box");
+  const registered = newDesk("wrong-repo-box", true);
   const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "github.com/acme/app", git: true });
   const detach = openDeskInbox(registered.desk.id, () => undefined);
   await assert.rejects(
@@ -595,7 +602,7 @@ test("a dispatch for another repo is refused instead of running in the wrong fol
 });
 
 test("an offline desk or a closed remote switch fails fast, with no queued run", async () => {
-  const registered = newDesk("offline-box");
+  const registered = newDesk("offline-box", true);
   bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "github.com/acme/app", git: true });
   const before = listRuns().length;
   await assert.rejects(
@@ -625,7 +632,7 @@ test("an offline desk or a closed remote switch fails fast, with no queued run",
 });
 
 test("automations never land on a personal machine", async () => {
-  const registered = newDesk("automation-box");
+  const registered = newDesk("automation-box", true);
   bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "github.com/acme/app", git: true });
   const detach = openDeskInbox(registered.desk.id, () => undefined);
   await assert.rejects(
@@ -642,7 +649,7 @@ test("automations never land on a personal machine", async () => {
 });
 
 test("a rejected dispatch reports why instead of waiting forever", async () => {
-  const registered = newDesk("reject-box");
+  const registered = newDesk("reject-box", true);
   const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
   const detach = openDeskInbox(registered.desk.id, () => undefined);
   const run = await createRun({
@@ -869,7 +876,7 @@ test("a This Computer conversation cannot be moved to the cloud", async () => {
 });
 
 test("handoff back to a machine needs that repo already bound there", async () => {
-  const registered = newDesk("handoff-box");
+  const registered = newDesk("handoff-box", true);
   const detach = openDeskInbox(registered.desk.id, () => undefined);
   const run = await createRun({
     prompt: "cloud first",

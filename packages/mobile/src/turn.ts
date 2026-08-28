@@ -6,7 +6,7 @@ export const ACTIVE_RUN_STATUSES = [
   "WAITING_FOR_BACKGROUND_WORK",
 ] as const;
 
-const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived", "agent.end"]);
+const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived"]);
 
 export function isActiveRunStatus(status?: string | null): boolean {
   return Boolean(status && (ACTIVE_RUN_STATUSES as readonly string[]).includes(status));

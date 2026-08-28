@@ -92,6 +92,11 @@ export function contextUsageEvent(runId: string, snapshot: ContextUsageSnapshot)
   return makeEvent(runId, "context.usage", "Context usage", contextUsageToData(snapshot));
 }
 
+/** True end of one user turn, after session.prompt / followUp / steer returns. */
+export function turnFinishedEvent(runId: string): RunEvent {
+  return makeEvent(runId, "agent.end", "Agent turn finished");
+}
+
 /**
  * One desk run is served by a fresh process per turn, so a sequence number only
  * means something next to this epoch. Without it the second turn's events would
@@ -136,15 +141,10 @@ export function toRunEvents(runId: string, event: LooseAgentEvent, options?: Run
       }
       return [makeEvent(runId, "agent.start", "Agent turn started")];
     case "agent_end": {
+      // pi fires this after every LLM round (between tools). The worker emits
+      // a single agent.end after session.prompt returns — that is the turn.
       const usage = collectUsage(event);
-      if (nest) {
-        return usage ? [makeEvent(runId, "llm.usage", "Token usage", withNest(usage, nest))] : [];
-      }
-      const events = [makeEvent(runId, "agent.end", "Agent turn finished")];
-      if (usage) {
-        events.push(makeEvent(runId, "llm.usage", "Token usage", usage));
-      }
-      return events;
+      return usage ? [makeEvent(runId, "llm.usage", "Token usage", withNest(usage, nest))] : [];
     }
     case "message_start":
       if (nest) {

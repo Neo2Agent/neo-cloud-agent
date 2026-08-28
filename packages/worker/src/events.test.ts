@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assembleContextUsage } from "@neo-cloud-agent/contracts";
-import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
+import { contextUsageEvent, stampWorkerSeq, toRunEvents, turnFinishedEvent } from "./events.js";
 
 test("maps pi session events to RunEvents", () => {
   const start = toRunEvents("run1", { type: "agent_start" });
@@ -75,14 +75,18 @@ test("nested subagent events skip parent lifecycle kinds", () => {
   );
 });
 
+test("turnFinishedEvent is the only agent.end for a user turn", () => {
+  assert.equal(turnFinishedEvent("run1").kind, "agent.end");
+});
+
 test("maps token usage on agent_end", () => {
   const events = toRunEvents("run1", {
     type: "agent_end",
     usage: { input: 12, output: 4 },
   });
-  assert.equal(events[0]?.kind, "agent.end");
-  assert.equal(events[1]?.kind, "llm.usage");
-  assert.deepEqual(events[1]?.data, { promptTokens: 12, completionTokens: 4, totalTokens: 16 });
+  assert.equal(events[0]?.kind, "llm.usage");
+  assert.equal(events.some((item) => item.kind === "agent.end"), false);
+  assert.deepEqual(events[0]?.data, { promptTokens: 12, completionTokens: 4, totalTokens: 16 });
 });
 
 test("stamps a monotonic workerSeq onto each event", () => {

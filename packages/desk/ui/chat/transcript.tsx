@@ -2,7 +2,7 @@ import type { Run } from "@neo-cloud-agent/contracts/run";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { Ref } from "react";
-import { messageIsLive, shouldShowAssistantActions } from "../../src/stream";
+import { messageIsLive, shouldShowAssistantActions, shouldShowThinking } from "../../src/stream";
 import { initials as memberInitials } from "../project/helpers";
 import { IconCopy, IconThumbsDown, IconThumbsUp } from "../icons";
 import { ToolCard } from "../ToolCard";
@@ -39,6 +39,7 @@ export function ChatTranscript({
   current,
   visible,
   activity,
+  busy,
   user,
   feedRef,
   onCopy,
@@ -46,10 +47,15 @@ export function ChatTranscript({
   current: Run;
   visible: TranscriptMessage[];
   activity: string | null;
+  busy?: boolean;
   user: string;
   feedRef: Ref<HTMLDivElement>;
   onCopy: (text: string) => void;
 }) {
+  let currentTurnStart = 0;
+  for (let index = 0; index < visible.length; index += 1) {
+    if (visible[index]?.role === "user") currentTurnStart = index;
+  }
   return (
     <div className="feed chat-feed" ref={feedRef}>
       {!visible.some((message) => message.role === "user") ? (
@@ -67,7 +73,10 @@ export function ChatTranscript({
             <article key={message.id} className="msg-row user">
               <div className="chat-col">
                 {message.actorEmail ? <span className="chat-actor">{message.actorEmail}</span> : null}
-                <div className="chat-bubble user">{message.text || current.prompt}</div>
+                <div className="chat-bubble user">
+                  {message.text || current.prompt}
+                  {message.createdAt ? <span className="chat-time">{formatAgo(message.createdAt)}</span> : null}
+                </div>
                 {message.images?.length ? (
                   <div className="thumbs">
                     {message.images.map((image, index) => (
@@ -97,8 +106,8 @@ export function ChatTranscript({
           );
         }
         const groups = transcriptGroups(message);
-        const showActions = shouldShowAssistantActions(visible, messageIndex);
-        const live = messageIsLive(message) || Boolean(activity && messageIndex === visible.length - 1);
+        const showActions = shouldShowAssistantActions(visible, messageIndex, !busy);
+        const live = Boolean(busy) && messageIndex >= currentTurnStart;
         const actions = showActions ? (
           <div className="assistant-actions">
             <button type="button" className="icon-btn" aria-label="复制" onClick={() => void onCopy(message.text)}>
@@ -158,14 +167,14 @@ export function ChatTranscript({
           </div>
         );
       })}
-      {activity && !visible.some((item) => messageIsLive(item)) ? (
+      {shouldShowThinking(Boolean(busy), visible) ? (
         <div className="turn-progress">
           <span className="think-dots" aria-hidden="true">
             <i />
             <i />
             <i />
           </span>
-          <span>{activity}</span>
+          <span>{activity || "正在思考…"}</span>
         </div>
       ) : null}
     </div>

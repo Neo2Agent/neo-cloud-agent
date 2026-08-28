@@ -64,6 +64,11 @@ export interface ExecutionTarget {
   deskId?: string;
   /** Which bound workspace on that desk runs this. Absolute path stays local. */
   deskWorkspaceId?: string;
+  /**
+   * This Computer omits this. Remote Control sets it so web/phone can list the
+   * same local run. Older desk runs without the field stay private.
+   */
+  remoteControl?: boolean;
 }
 
 export type AgentMode = "agent" | "ask";
@@ -92,7 +97,8 @@ export function parseExecutionTarget(value: unknown): ExecutionTarget | undefine
   const deskId = typeof record.deskId === "string" && record.deskId.trim() ? record.deskId.trim() : undefined;
   const deskWorkspaceId =
     typeof record.deskWorkspaceId === "string" && record.deskWorkspaceId.trim() ? record.deskWorkspaceId.trim() : undefined;
-  return { loop, tools, deskId, deskWorkspaceId };
+  const remoteControl = loop === "desk" && record.remoteControl === true;
+  return { loop, tools, deskId, deskWorkspaceId, ...(remoteControl ? { remoteControl: true } : {}) };
 }
 
 export function colocatedTarget(place: ExecutionPlace, deskId?: string): ExecutionTarget {
@@ -112,6 +118,10 @@ export function isDeskTarget(
   target?: ExecutionTarget | null,
 ): target is ExecutionTarget & { loop: "desk"; tools: "desk" } {
   return target?.loop === "desk" && target.tools === "desk";
+}
+
+export function isRemoteControlTarget(target?: ExecutionTarget | null): boolean {
+  return isDeskTarget(target) && target.remoteControl === true;
 }
 
 export interface Run {

@@ -761,7 +761,7 @@ pnpm typecheck && pnpm test
 | [architecture.md](./architecture.md) | 设计蓝图、原则、分阶段、与 Cursor 对照 |
 | 本文 | 现状总览：包、进程、现网、数据流 |
 | [cli.md](./cli.md) | `neo` 命令面；明确不做本机 Agent |
-| [desk.md](./desk.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为与项目工作台 |
+| [desk.md](./desk.md) / [desk-this-computer.md](./desk-this-computer.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为、This Computer 工作区一期、项目工作台 |
 | [mobile.md](./mobile.md) | 手机端蓝图与 P0 |
 | [admin-platform-research.md](./admin-platform-research.md) | 后管 vs New API 怎么拆 |
 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) | 项目协作对标 |

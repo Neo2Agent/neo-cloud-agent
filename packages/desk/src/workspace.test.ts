@@ -13,6 +13,7 @@ import {
   resolveAuthorizedFolder,
   runScratchDir,
   runStateDir,
+  unboundThisComputerFolder,
   writeRunBootstrap,
   writeRunExpertFiles,
 } from "./workspace.js";
@@ -46,6 +47,15 @@ test("a plain folder works too, it just has no git tools", async () => {
 
 test("a missing folder fails before anything spawns", async () => {
   await assert.rejects(prepareDeskWorkspace({ repoDir: path.join(tmpdir(), "neo-desk-missing-xyz") }), /不存在/);
+});
+
+test("This Computer without a folder uses a scratch dir under userData", () => {
+  const userData = mkdtempSync(path.join(tmpdir(), "neo-desk-unbound-"));
+  const first = unboundThisComputerFolder(userData);
+  const again = unboundThisComputerFolder(userData);
+  assert.equal(first, again);
+  assert.equal(path.basename(first), "scratch");
+  assert.equal(existsSync(first), true);
 });
 
 test("run state stays out of the repo", () => {

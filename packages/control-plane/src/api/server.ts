@@ -107,7 +107,8 @@ import {
   resolveApiToken,
   verifyWorkerJwt,
 } from "../security/auth.js";
-import { actorCanAccessRun, type Actor } from "../security/actor.js";
+import { type Actor } from "../security/actor.js";
+import { requestIsDeskClient, runVisibleToActor } from "../desks/visibility.js";
 import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBuildLogs } from "../env/builds.js";
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
@@ -193,7 +194,7 @@ import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slo
 
 const CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization",
+  "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization, X-Neo-Client",
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
   "access-control-expose-headers":
     "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Policy",
@@ -203,8 +204,13 @@ async function requireRun(runId: string) {
   return (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
 }
 
-function denyUnless(run: { userId: string } | null | undefined, actor: Actor, res: ServerResponse): boolean {
-  if (!run || !actorCanAccessRun(actor, run)) {
+function denyUnless(
+  run: { userId: string; executionTarget?: { loop?: string; deskId?: string | null } | null } | null | undefined,
+  actor: Actor,
+  res: ServerResponse,
+  req: IncomingMessage,
+): boolean {
+  if (!run || !runVisibleToActor(run, actor, requestIsDeskClient(req))) {
     notFound(res);
     return false;
   }
@@ -1317,7 +1323,7 @@ export function createApiServer() {
             return;
           }
           const userId = actor.kind === "user" ? actor.userId : "";
-          send(res, 200, { runs: listProjectRunCards(project.id, userId) });
+          send(res, 200, { runs: listProjectRunCards(project.id, userId, { deskClient: requestIsDeskClient(req) }) });
           return;
         }
         const projectMemberMatch = /^\/v1\/projects\/([^/]+)\/members$/.exec(path);
@@ -1455,7 +1461,7 @@ export function createApiServer() {
           return;
         }
         if (method === "GET" && path === "/v1/runs") {
-          send(res, 200, { runs: listRuns().filter((run) => actorCanAccessRun(actor, run)) });
+          send(res, 200, { runs: listRuns().filter((run) => runVisibleToActor(run, actor, requestIsDeskClient(req))) });
           return;
         }
         Object.assign(req, { neoActor: actor });
@@ -1466,7 +1472,7 @@ export function createApiServer() {
       const runMatch = /^\/v1\/runs\/([^/]+)$/.exec(path);
       if (runMatch && method === "GET") {
         const run = await requireRun(runMatch[1] ?? "");
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         send(res, 200, run);
@@ -1477,7 +1483,7 @@ export function createApiServer() {
       if (followMatch && method === "POST") {
         const runId = followMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         const body = (await readJson(req)) as CreateFollowUpRequest;
@@ -1498,7 +1504,7 @@ export function createApiServer() {
       }
       if (followMatch && method === "GET") {
         const run = await requireRun(followMatch[1] ?? "");
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         send(res, 200, { followUps: listFollowUps(followMatch[1] ?? "") });
@@ -1509,7 +1515,7 @@ export function createApiServer() {
       if (subscriptionMatch && (method === "GET" || method === "POST")) {
         const runId = subscriptionMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1533,7 +1539,7 @@ export function createApiServer() {
       const handoffMatch = /^\/v1\/runs\/([^/]+)\/handoff$/.exec(path);
       if (handoffMatch && method === "POST") {
         const run = await requireRun(handoffMatch[1] ?? "");
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         try {
@@ -1550,7 +1556,7 @@ export function createApiServer() {
       if (deskStartMatch && method === "POST") {
         const runId = deskStartMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         try {
@@ -1564,7 +1570,7 @@ export function createApiServer() {
       const abortMatch = /^\/v1\/runs\/([^/]+)\/abort$/.exec(path);
       if (abortMatch && method === "POST") {
         const run = await requireRun(abortMatch[1] ?? "");
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         send(res, 200, abortRun(abortMatch[1] ?? ""));
@@ -1582,7 +1588,10 @@ export function createApiServer() {
           notFound(res);
           return;
         }
-        if (!actorCanAccessRun(actor, run) && !canInviteRunCollaborator(run, actor)) {
+        if (
+          !runVisibleToActor(run, actor, requestIsDeskClient(req)) &&
+          !canInviteRunCollaborator(run, actor)
+        ) {
           notFound(res);
           return;
         }
@@ -1609,7 +1618,7 @@ export function createApiServer() {
       const collaboratorDelete = /^\/v1\/runs\/([^/]+)\/collaborators\/([^/]+)$/.exec(path);
       if (collaboratorDelete && method === "DELETE") {
         const run = await requireRun(collaboratorDelete[1] ?? "");
-        if (!run || !actor || actor.kind !== "user" || !actorCanAccessRun(actor, run)) {
+        if (!run || !actor || actor.kind !== "user" || !runVisibleToActor(run, actor, requestIsDeskClient(req))) {
           if (actor && actor.kind !== "user") {
             send(res, 401, { error: "login_required" });
             return;
@@ -1632,7 +1641,7 @@ export function createApiServer() {
       const transferMatch = /^\/v1\/runs\/([^/]+)\/transfer$/.exec(path);
       if (transferMatch && method === "POST") {
         const run = await requireRun(transferMatch[1] ?? "");
-        if (!run || !actor || !denyUnless(run, actor, res)) {
+        if (!run || !actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         if (actor.kind !== "user") {
@@ -1659,7 +1668,7 @@ export function createApiServer() {
       const archiveMatch = /^\/v1\/runs\/([^/]+)\/archive$/.exec(path);
       if (archiveMatch && method === "POST") {
         const run = await requireRun(archiveMatch[1] ?? "");
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         send(res, 200, await archiveRun(archiveMatch[1] ?? ""));
@@ -1670,7 +1679,7 @@ export function createApiServer() {
       if (eventsMatch && method === "GET") {
         const runId = eventsMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         if (shouldLimitSse(method, path)) {
@@ -1760,7 +1769,7 @@ export function createApiServer() {
       if (diagnosticsMatch && method === "GET") {
         const runId = diagnosticsMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1775,7 +1784,7 @@ export function createApiServer() {
       if (sessionMatch && method === "GET") {
         const runId = sessionMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1788,7 +1797,7 @@ export function createApiServer() {
       if (sessionMatch && method === "POST") {
         const runId = sessionMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1813,7 +1822,7 @@ export function createApiServer() {
       if (transcriptMatch && method === "GET") {
         const runId = transcriptMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         const includeEvents = url.searchParams.get("includeEvents") === "1";
@@ -1832,7 +1841,7 @@ export function createApiServer() {
       if (commitMatch && method === "POST") {
         const runId = commitMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1848,7 +1857,7 @@ export function createApiServer() {
       if (prMatch && method === "POST") {
         const runId = prMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1864,7 +1873,7 @@ export function createApiServer() {
       if (artifactsMatch && method === "GET") {
         const runId = artifactsMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1877,7 +1886,7 @@ export function createApiServer() {
       if (artifactsMatch && method === "POST") {
         const runId = artifactsMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1910,7 +1919,7 @@ export function createApiServer() {
       const saveArtifactMatch = /^\/v1\/runs\/([^/]+)\/artifacts\/([^/]+)\/save-to-project$/.exec(path);
       if (saveArtifactMatch && method === "POST") {
         const run = await requireRun(saveArtifactMatch[1] ?? "");
-        if (!run || !actor || !denyUnless(run, actor, res)) {
+        if (!run || !actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         if (!run.projectId) {
@@ -1954,7 +1963,7 @@ export function createApiServer() {
       if (artifactFileMatch && method === "GET") {
         const runId = artifactFileMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res))) {
+        if (path.startsWith("/v1/") && (!actor || !denyUnless(run, actor, res, req))) {
           return;
         }
         if (!run) {
@@ -1991,7 +2000,7 @@ export function createApiServer() {
       if (fsMatch && method === "GET") {
         const runId = fsMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         try {
@@ -2017,7 +2026,7 @@ export function createApiServer() {
       if (diffMatch && method === "GET") {
         const runId = diffMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (!actor || !denyUnless(run, actor, res)) {
+        if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
         send(res, 200, await getRunDiff(runId));

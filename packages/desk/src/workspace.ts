@@ -15,6 +15,8 @@ import {
 const NEO_DIR = ".neo";
 const AGENTS_DIR = "agents";
 const RUNS_DIR = "runs";
+/** This Computer with no picked folder works here, like Cloud with no repo. */
+const UNBOUND_SCRATCH_DIR = "scratch";
 
 export function isGitRepo(folder: string): boolean {
   return existsSync(path.join(folder, ".git"));
@@ -60,6 +62,13 @@ export async function prepareDeskWorkspace(input: { repoDir: string }): Promise<
     throw new Error(`本机工作区不存在：${folder}`);
   }
   return realpathSync(folder);
+}
+
+/** Default cwd when This Computer starts without a user-picked folder. */
+export function unboundThisComputerFolder(userDataDir: string): string {
+  const dest = path.join(userDataDir, UNBOUND_SCRATCH_DIR);
+  mkdirSync(dest, { recursive: true });
+  return dest;
 }
 
 /** Where per-run state lives, kept out of the user's repo. */

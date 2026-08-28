@@ -1,4 +1,4 @@
-import { deskBridge, withApiBase } from "./desk";
+import { deskBridge, withApiBase, withDeskClient } from "./desk";
 
 export function apiHeaders(token: string, json = false): HeadersInit {
   const headers: Record<string, string> = {};
@@ -8,7 +8,7 @@ export function apiHeaders(token: string, json = false): HeadersInit {
 }
 
 export async function api(token: string, url: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(withApiBase(url), {
+  return fetch(withApiBase(withDeskClient(url)), {
     ...options,
     credentials: "same-origin",
     headers: { ...apiHeaders(token, Boolean(options.body)), ...options.headers },

@@ -125,7 +125,38 @@ test("agent.end settles running tools left on earlier assistants", () => {
   ];
   const next = applyRunEventsToMessages(seed, [ev({ id: "z1", kind: "agent.end" })]);
   assert.equal(next[0]?.tools?.[0]?.status, "done");
-  assert.equal(next[1]?.streaming, false);
+  // The current turn stays open; run.idle is what marks the bubble complete.
+  assert.equal(next[1]?.streaming, true);
+});
+
+test("write then read then text stay one Neo bubble when pi ends each LLM round", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "测试.txt,写一个hello world!" } }),
+    ev({ id: "s1", kind: "agent.start" }),
+    ev({ id: "t1", kind: "tool.start", data: { toolCallId: "w1", toolName: "write" } }),
+    ev({ id: "t2", kind: "tool.end", data: { toolCallId: "w1", toolName: "write", output: "ok" } }),
+    ev({ id: "z1", kind: "agent.end" }),
+    ev({ id: "idle1", kind: "run.idle" }),
+    ev({ id: "s2", kind: "agent.start" }),
+    ev({ id: "t3", kind: "tool.start", data: { toolCallId: "r1", toolName: "read" } }),
+    ev({ id: "t4", kind: "tool.end", data: { toolCallId: "r1", toolName: "read", output: "hello world!" } }),
+    ev({ id: "z2", kind: "agent.end" }),
+    ev({ id: "idle2", kind: "run.idle" }),
+    ev({ id: "s3", kind: "agent.start" }),
+    ev({ id: "m1", kind: "message.delta", data: { delta: "完成 ✅" } }),
+    ev({ id: "m2", kind: "message.end" }),
+    ev({ id: "z3", kind: "agent.end" }),
+    ev({ id: "idle3", kind: "run.idle" }),
+  ]);
+  assert.deepEqual(snapshot.messages.map((item) => item.role), ["user", "assistant"]);
+  const reply = snapshot.messages[1];
+  assert.equal(reply?.streaming, false);
+  assert.deepEqual(
+    transcriptGroups(reply as TranscriptMessage).map((group) =>
+      group.type === "tools" ? group.tools.map((tool) => tool.name).join("+") : group.text,
+    ),
+    ["write+read", "完成 ✅"],
+  );
 });
 
 test("stale control-plane restart notices hide after the conversation continues", () => {
@@ -219,6 +250,14 @@ test("the desk claim handshake never shows on the machine, and disappears elsewh
   };
   // On the desk itself the local bar covers this, so it is always hidden.
   assert.equal(displayTranscriptMessages([claim], { hideDeskHandshake: true }).length, 0);
+  const interrupted: TranscriptMessage = {
+    id: "q1",
+    role: "setup",
+    text: "中断的回合已自动排队，空出来会继续",
+    createdAt: "2026-08-27T00:00:00.000Z",
+    kind: "followup.queued",
+  };
+  assert.equal(displayTranscriptMessages([interrupted], { hideDeskHandshake: true }).length, 0);
   // On the web it is real information while the machine has not picked it up.
   assert.equal(displayTranscriptMessages([claim]).length, 1);
   // Once the run actually started it is stale everywhere.

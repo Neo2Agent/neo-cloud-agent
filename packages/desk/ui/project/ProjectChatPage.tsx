@@ -17,6 +17,7 @@ export function ProjectChatPage({
   toolsOpen,
   visible,
   activity,
+  busy,
   feedRef,
   onOpenProject,
   onSearch,
@@ -38,6 +39,7 @@ export function ProjectChatPage({
   toolsOpen: boolean;
   visible: TranscriptMessage[];
   activity: string | null;
+  busy?: boolean;
   feedRef: Ref<HTMLDivElement>;
   onOpenProject: () => void;
   onSearch: () => void;
@@ -76,7 +78,7 @@ export function ProjectChatPage({
         onAbort={onAbort}
         onTransferred={onTransferred}
       />
-      <ChatTranscript current={current} visible={visible} activity={activity} user={user} feedRef={feedRef} onCopy={onCopy} />
+      <ChatTranscript current={current} visible={visible} activity={activity} busy={busy} user={user} feedRef={feedRef} onCopy={onCopy} />
     </div>
   );
 }
