@@ -130,6 +130,7 @@ export interface Run {
   todoId?: string | null;
   expertId?: string | null;
   expertTeamId?: string | null;
+  plugins?: Array<{ slug: string; version: string; digest: string }>;
   executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
@@ -243,6 +244,7 @@ export interface CreateRunRequest {
   todoId?: string;
   expertId?: string;
   expertTeamId?: string;
+  pluginIds?: string[];
   images?: ImageRef[];
   notifyChatId?: string;
   target?: ExecutionTarget;

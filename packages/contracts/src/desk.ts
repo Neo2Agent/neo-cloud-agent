@@ -67,6 +67,8 @@ export interface DeskAssignment {
   expertTeamMarkdown?: string;
   expertMeta?: string;
   expertAgents?: Array<{ slug: string; markdown: string }>;
+  pluginSkills?: Array<{ slug: string; files: Array<{ relativePath: string; content: string }> }>;
+  pluginSnapshot?: string;
 }
 
 export interface DeskLeaseResponse {

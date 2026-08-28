@@ -35,6 +35,7 @@ export type Project = {
   instruction: string;
   defaultRepoUrls: string[];
   expertIds: string[];
+  pluginIds: string[];
   invitePolicy: InvitePolicy;
   createdBy: string;
   createdAt: string;
@@ -49,6 +50,7 @@ export type CreateProjectRequest = {
   instruction?: string;
   defaultRepoUrls?: string[];
   expertIds?: string[];
+  pluginIds?: string[];
   invitePolicy?: InvitePolicy;
 };
 
@@ -57,6 +59,7 @@ export type UpdateProjectRequest = {
   instruction?: string;
   defaultRepoUrls?: string[];
   expertIds?: string[];
+  pluginIds?: string[];
   invitePolicy?: InvitePolicy;
 };
 
