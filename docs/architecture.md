@@ -752,7 +752,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 - Warm pool（已落地：成功 Build 的工作区副本，reflink 优先；还不是 live-fork 一台正在跑的 VM）
 - Firecracker guest init / rootfs overlay（已落地配方；生产盘仍要内核 + 烤进 worker 的 ext4）
 - Egress 三模式（已落地应用层）
-- MCP / browse / artifacts（已落地 HTTP MCP 控制面代理 + OAuth/Bearer、`neo_browse`、签名 artifact 链到 PR；headed 桌面未做）
+- MCP / browse / artifacts（已落地 HTTP MCP 控制面代理 + OAuth/Bearer、`neo_browse`、签名 artifact 链到 PR；headed 桌面未做。怎么补 browser-use / computer-use 见 [browser-computer-use.md](./browser-computer-use.md)）
 
 ### P3 — 生产隔离与规模
 
@@ -776,7 +776,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Cloud MCP | `neo-diag` extension | 动态工具，不必改 pi |
 | MCP / Hooks | 工作区 skills / `AGENTS.md` + `.cursor/hooks.json` command hooks | 不加载宿主机 `~/.pi` extensions |
 | GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 开 PR 自动订阅；CI 失败 autofix 到绿 |
-| Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置 |
+| Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置；分期见 [browser-computer-use.md](./browser-computer-use.md) |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
 | 手机查看 / 跟进 | `packages/mobile`（方案） | 与 CLI 同级的 `/v1` 宿主；见 [mobile.md](./mobile.md)。未实现 |
@@ -804,7 +804,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 2. 块设备 CoW 已落地接口：Build / 预热 / Firecracker rootfs 先 `cp --reflink=always`；文件系统不支持时工作区整树复制，生产 rootfs 只读共享原盘（不整份拷 1.5GiB）。不是 live-fork。
 3. 配额：同时跑的对话 / 本月 token 已落地（`GET /v1/quota`）；完整账务仍后置。请求限流已落地：控制面按 IP / 登录 / 用户写操作 / SSE 并发，Gateway 按 run JWT 与 org；`GET /v1/rate-limits` 看当前桶。设了 `REDIS_URL` 后计数走 Redis 固定窗口，否则进程内 token bucket。`RATE_LIMIT=0` 关闭。后管与模型网关怎么拆（New API 管渠道、Neo 管 Agent 用户）见 [admin-platform-research.md](./admin-platform-research.md)。
 4. Egress 从应用层升级到 VM 出站代理 / iptables
-5. headed browser / computer-use sidecar（`neo_browse` 只抓静态页）
+5. headed browser / computer-use sidecar（`neo_browse` 只抓静态页）。**先做 Playwright a11y browser-use，桌面和远程接管后置**，见 [browser-computer-use.md](./browser-computer-use.md)
 6. CLI 交互 TUI、浏览器登录、本机 pi 模式——都单开，不要和 `neo run` 混语义。P0 headless 客户端见 [cli.md](./cli.md)
 7. iOS / Android：与 CLI 同级的 `/v1` 宿主，不在手机上跑 loop。先 HTTPS 域名和设备推送，再开 `packages/mobile`。方案见 [mobile.md](./mobile.md)
 
