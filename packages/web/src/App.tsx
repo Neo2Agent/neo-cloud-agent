@@ -1516,6 +1516,7 @@ export function App() {
   };
 
   const toggleSidebar = () => {
+    if (narrow) topMoreRef.current?.removeAttribute("open");
     setSidebarOpen((value) => {
       const next = !value;
       window.localStorage.setItem("neo.sidebar", next ? "1" : "0");

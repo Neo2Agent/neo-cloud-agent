@@ -2701,7 +2701,7 @@ textarea {
     position: fixed;
     inset: 0;
     background: rgba(17, 24, 39, 0.28);
-    z-index: 8;
+    z-index: 40;
   }
 
   .app:not(.sidebar-closed) .sidebar {
@@ -2710,7 +2710,7 @@ textarea {
     bottom: 0;
     left: 0;
     width: min(360px, 92vw);
-    z-index: 9;
+    z-index: 41;
     border-right: 1px solid var(--line);
     box-shadow: var(--shadow);
     background: var(--rail);
@@ -2897,17 +2897,6 @@ textarea {
     display: none;
   }
 
-  .inbox-pop {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    top: calc(var(--app-offset-top, 0px) + 56px);
-    width: auto;
-    max-width: none;
-    max-height: min(70vh, 420px);
-    z-index: 30;
-  }
-
   .top-more {
     position: static;
     display: block;
@@ -2992,29 +2981,6 @@ textarea {
     overflow-x: hidden;
     overflow-y: auto;
     border-radius: 20px;
-  }
-
-  .intent-capsules {
-    position: static;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    margin: 4px 0 8px;
-  }
-
-  .intent-capsule {
-    min-height: 36px;
-    padding: 8px 12px;
-    font-size: 13px;
-  }
-
-  .mention-menu {
-    position: static;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    max-height: min(200px, 32vh);
-    margin: 4px 0 8px;
   }
 
   .composer textarea,
@@ -3570,5 +3536,143 @@ textarea {
 
   .catalog-pager {
     flex-wrap: wrap;
+  }
+
+  .proj-page-head h2,
+  .auto-page-head h2 {
+    white-space: normal;
+  }
+
+  /* These rules must stay after the unscoped inbox / capsule / picker
+     blocks so they actually win on narrow viewports. */
+  .topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "menu title actions"
+      "tabs tabs tabs";
+    row-gap: 2px;
+    column-gap: 6px;
+    align-items: center;
+  }
+
+  .topbar-lead {
+    display: contents;
+    overflow: visible;
+  }
+
+  .sidebar-toggle {
+    grid-area: menu;
+  }
+
+  .topbar-heading {
+    display: flex;
+    grid-area: title;
+    min-width: 0;
+  }
+
+  .topbar-heading h1 {
+    display: none;
+  }
+
+  .topbar-heading .eyebrow {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-tabs {
+    grid-area: tabs;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    gap: 2px;
+    padding-top: 4px;
+    border-top: 1px solid var(--line);
+  }
+
+  .app-tabs .tab-label {
+    display: inline;
+  }
+
+  .app-tabs button {
+    min-width: auto;
+    padding: 8px 10px;
+  }
+
+  .top-actions {
+    grid-area: actions;
+  }
+
+  .inbox-pop {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: auto;
+    max-width: none;
+    max-height: min(60vh, 420px);
+    z-index: 30;
+  }
+
+  .top-more-menu {
+    top: calc(var(--app-offset-top, 0px) + 52px);
+  }
+
+  .intent-capsules {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin: 4px 0 8px;
+  }
+
+  .intent-capsule {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .mention-menu {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    max-height: min(200px, 32vh);
+    margin: 4px 0 8px;
+  }
+
+  .composer {
+    width: auto;
+    max-width: none;
+    max-height: min(46vh, 320px);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .composer-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .composer-pickers {
+    width: 100%;
+    flex: none;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .composer-send-group {
+    width: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .composer .neo-select-pill {
+    min-height: 36px;
   }
 }
