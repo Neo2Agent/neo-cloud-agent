@@ -753,6 +753,7 @@ pnpm typecheck && pnpm test
 - 云 loop + 本机工具 RPC（`loop !== tools`）
 - Firecracker live-fork、headed browser / computer-use
 - Egress 从应用层升到 iptables / 出站代理
+- 跨 Run 的用户 / 项目语义记忆（选型见 [agent-memory-research.md](./agent-memory-research.md)）
 - 完整多租户账务（只有配额打点）
 - Slack 宿主
 - 开放注册、第二套用户表
