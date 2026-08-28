@@ -1,4 +1,4 @@
-import type { ContextUsageSnapshot, RunEvent, RunEventKind } from "@neo-cloud-agent/contracts";
+import type { ContextUsageSnapshot, RunEvent, RunEventKind, RunEventLevel } from "@neo-cloud-agent/contracts";
 import { contextUsageToData } from "@neo-cloud-agent/contracts";
 
 export interface LooseAgentEvent {
@@ -15,6 +15,8 @@ export interface LooseAgentEvent {
     type?: string;
     delta?: string;
   };
+  error?: unknown;
+  message?: string;
 }
 
 const TOOL_OUTPUT_LIMIT = 8000;
@@ -75,17 +77,37 @@ function toolPayload(event: LooseAgentEvent, output?: string): Record<string, un
   return payload;
 }
 
-function makeEvent(runId: string, kind: RunEventKind, title: string, data?: Record<string, unknown>): RunEvent {
+function makeEvent(
+  runId: string,
+  kind: RunEventKind,
+  title: string,
+  data?: Record<string, unknown>,
+  extra?: { level?: RunEventLevel; detail?: string },
+): RunEvent {
   return {
     id: crypto.randomUUID(),
     runId,
     createdAt: new Date().toISOString(),
     category: "agent_run",
-    level: kind === "tool.end" && data?.isError ? "error" : "info",
+    level: extra?.level ?? (kind === "llm.error" || (kind === "tool.end" && data?.isError) ? "error" : "info"),
     kind,
     title,
+    detail: extra?.detail,
     data,
   };
+}
+
+export function emptyAgentTurnEvent(runId: string): RunEvent {
+  return makeEvent(
+    runId,
+    "llm.error",
+    "模型没有返回内容",
+    { reason: "empty_turn" },
+    {
+      level: "error",
+      detail: "上游拒绝了这次请求，或额度预扣失败。再发一条即可重试。",
+    },
+  );
 }
 
 export function contextUsageEvent(runId: string, snapshot: ContextUsageSnapshot): RunEvent {
@@ -206,10 +228,29 @@ export function toRunEvents(runId: string, event: LooseAgentEvent, options?: Run
         ),
       ];
     default: {
+      if (event.type === "error" || event.type === "agent_error") {
+        const text = collectErrorText(event);
+        return [
+          makeEvent(runId, "llm.error", "模型调用失败", { error: text }, { level: "error", detail: text }),
+        ];
+      }
       const usage = collectUsage(event);
       return usage ? [makeEvent(runId, "llm.usage", "Token usage", usage)] : [];
     }
   }
+}
+
+function collectErrorText(event: LooseAgentEvent): string {
+  if (typeof event.error === "string" && event.error.trim()) {
+    return event.error.trim();
+  }
+  if (event.error instanceof Error && event.error.message.trim()) {
+    return event.error.message.trim();
+  }
+  if (typeof event.message === "string" && event.message.trim()) {
+    return event.message.trim();
+  }
+  return collectText(event.result) || event.type;
 }
 
 function collectUsage(event: LooseAgentEvent): Record<string, number> | undefined {

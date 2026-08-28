@@ -1,3 +1,4 @@
+import { MAX_REQUEST_OUTPUT_TOKENS } from "@neo-cloud-agent/contracts";
 import { getConfig } from "./config.js";
 import { messagesHaveImages, resolveUpstreamModel, visionModelFor } from "./routes.js";
 
@@ -8,13 +9,55 @@ export interface ChatCompletionBody {
   [key: string]: unknown;
 }
 
+function asPositiveInt(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.floor(value);
+}
+
+/** New API pre-deducts wallet against max_tokens. Never forward 384k. */
+export function capUpstreamMaxTokens(body: ChatCompletionBody): ChatCompletionBody {
+  const requested = asPositiveInt(body.max_tokens) ?? asPositiveInt(body.max_completion_tokens);
+  const maxTokens = Math.min(requested ?? MAX_REQUEST_OUTPUT_TOKENS, MAX_REQUEST_OUTPUT_TOKENS);
+  const next: ChatCompletionBody = { ...body, max_tokens: maxTokens };
+  if (body.max_completion_tokens !== undefined) {
+    next.max_completion_tokens = maxTokens;
+  }
+  return next;
+}
+
 export function rewriteBody(body: ChatCompletionBody, fallbackModel: string): ChatCompletionBody {
   const requested = typeof body.model === "string" ? body.model : fallbackModel;
   let model = resolveUpstreamModel(requested, fallbackModel);
   if (messagesHaveImages(body.messages)) {
     model = visionModelFor(model);
   }
-  return { ...body, model };
+  return capUpstreamMaxTokens({ ...body, model });
+}
+
+export function explainUpstreamChatError(status: number, body: string): string {
+  let raw = body.replace(/\s+/g, " ").trim().slice(0, 240);
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: unknown } | string; message?: unknown };
+    const nested = parsed.error;
+    const message =
+      (typeof nested === "object" && nested && typeof nested.message === "string" && nested.message) ||
+      (typeof nested === "string" && nested) ||
+      (typeof parsed.message === "string" && parsed.message);
+    if (message) {
+      raw = message.replace(/\s+/g, " ").trim().slice(0, 240);
+    }
+  } catch {
+    // keep the clipped body
+  }
+  if (status === 403 && /预扣费|额度不足|insufficient.?quota/i.test(raw)) {
+    return "模型额度预扣失败。单次输出长度已限制，请再试一次；若仍失败，给 New API 钱包充值。";
+  }
+  if (status === 429) {
+    return "模型请求过于频繁，请稍后再试。";
+  }
+  return raw || `上游返回 ${status}`;
 }
 
 export function buildMockSse(model: string, text: string): string {
@@ -146,6 +189,18 @@ export async function proxyChatCompletions(body: ChatCompletionBody): Promise<{
     },
     body: JSON.stringify(rewritten),
   });
+
+  if (!response.ok) {
+    const raw = await response.text();
+    const message = explainUpstreamChatError(response.status, raw);
+    console.error(`upstream chat status=${response.status} ${message}`);
+    return {
+      status: response.status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+      stream: false,
+      payload: JSON.stringify({ error: { message, type: "upstream_error", status: response.status } }),
+    };
+  }
 
   if (stream) {
     if (!response.body) {

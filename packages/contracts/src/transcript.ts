@@ -30,6 +30,9 @@ const SETUP_PREFIXES = [
 ];
 
 export function isSetupKind(kind: string): boolean {
+  if (kind === "llm.usage") {
+    return false;
+  }
   return SETUP_PREFIXES.some((prefix) => kind.startsWith(prefix));
 }
 

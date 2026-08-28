@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assembleContextUsage } from "@neo-cloud-agent/contracts";
-import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
+import { contextUsageEvent, emptyAgentTurnEvent, stampWorkerSeq, toRunEvents } from "./events.js";
 
 test("maps pi session events to RunEvents", () => {
   const start = toRunEvents("run1", { type: "agent_start" });
@@ -111,4 +111,14 @@ test("ignores unknown or empty deltas", () => {
     toRunEvents("run1", { type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "..." } }),
     [],
   );
+});
+
+test("maps pi error events and empty turns to llm.error", () => {
+  const failed = toRunEvents("run1", { type: "error", error: "预扣费额度失败" });
+  assert.equal(failed[0]?.kind, "llm.error");
+  assert.equal(failed[0]?.level, "error");
+  assert.match(failed[0]?.detail ?? "", /预扣费/);
+  const empty = emptyAgentTurnEvent("run1");
+  assert.equal(empty.kind, "llm.error");
+  assert.match(empty.title, /没有返回内容/);
 });

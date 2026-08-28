@@ -155,7 +155,7 @@ export {
   writeLlmSettings,
 } from "./llm-settings.js";
 export type { ModelLimits } from "./models.js";
-export { resolveModelLimits } from "./models.js";
+export { MAX_REQUEST_OUTPUT_TOKENS, resolveModelLimits, resolveRequestMaxTokens } from "./models.js";
 export { BASELINE_TOOL_TEXT, CLOUD_SYSTEM_PROMPT } from "./system-prompt.js";
 export {
   BUNDLED_SUBAGENTS,
