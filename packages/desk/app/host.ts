@@ -588,20 +588,37 @@ function prepareRunLaunch(
   return { stateDir: stateDirForRun, scratchDir: scratchDirForRun, ...workerUrls };
 }
 
-/** Pipe the worker's output through with its run id, and clean up when it exits. */
+/** Pipe the worker's output through with its run id, and clean up when it goes. */
 function watchLocalWorker(runId: string, child: ChildProcess, workspaceDir: string): void {
   child.stdout?.on("data", (chunk) => process.stdout.write(`[desk:worker ${runId}] ${chunk}`));
   child.stderr?.on("data", (chunk) => process.stderr.write(`[desk:worker ${runId}] ${chunk}`));
+  // A process that never came up emits `error` and no `exit`, so without this
+  // its slot would stay taken for the rest of the session and the run would sit
+  // there looking like it is still starting.
+  child.on("error", (error) => {
+    if (!localRuns.delete(runId)) {
+      return;
+    }
+    releaseSleepBlockerIfIdle();
+    runLog.error("worker could not start", error, { runId, folder: workspaceDir });
+    void failRun(runId, errorText(error, "本机 worker 起不来"));
+  });
   child.on("exit", (code) => {
     localRuns.delete(runId);
+    releaseSleepBlockerIfIdle();
     runLog.info("worker exited", { runId, code, folder: workspaceDir });
     reportRunStatus({ runId, state: "stopped", detail: code === 0 ? undefined : `worker 退出（${code}）` });
     void releaseRun(runId, code);
-    if (localRuns.size === 0 && sleepBlocker && powerSaveBlocker.isStarted(sleepBlocker)) {
-      powerSaveBlocker.stop(sleepBlocker);
-      sleepBlocker = 0;
-    }
   });
+}
+
+/** Let the machine sleep again once the last local worker is gone. */
+function releaseSleepBlockerIfIdle(): void {
+  if (localRuns.size > 0 || !sleepBlocker || !powerSaveBlocker.isStarted(sleepBlocker)) {
+    return;
+  }
+  powerSaveBlocker.stop(sleepBlocker);
+  sleepBlocker = 0;
 }
 
 /**

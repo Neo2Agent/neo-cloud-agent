@@ -37,6 +37,7 @@ import {
 import { ExpertsPage } from "./ExpertsPage";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
+import { localRunView, otherRunningLocalRuns, runningLocalRunIds } from "./chat/local-run-view";
 import { RailSessions } from "./chat/RailSessions";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
@@ -613,24 +614,22 @@ export function App() {
     const handoff = await api(tokenRef.current, `/v1/runs/${id}/handoff`, {
       method: "POST",
       body: JSON.stringify({
-        target: {
-          loop: "desk",
-          tools: "desk",
-          deskId,
-          deskWorkspaceId: deskTarget?.deskWorkspaceId ?? target.workspaceId,
-        },
+        // Only this run's own workspace. Filling the gap with whatever the
+        // picker holds would hand the run a folder it never worked in; with no
+        // workspace id the main process uses `runFolder`, which is this run's.
+        target: { loop: "desk", tools: "desk", deskId, deskWorkspaceId: deskTarget?.deskWorkspaceId },
       }),
     });
     if (!handoff.ok) {
       const failed = await readJson<{ error?: string }>(handoff);
-      setAuthError(failed.error || "本机启动失败");
+      setAuthError(failed.error || body.error || "本机启动失败");
       return;
     }
     const retaken = await bridge?.takeAssignment?.(id, runFolder);
     if (!retaken?.started) {
       setAuthError("现网还没把这条对话交回这台电脑，稍等再试。");
     }
-  }, [target.workspaceId]);
+  }, []);
 
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
     const text = (draft ?? prompt).trim();
@@ -1215,33 +1214,15 @@ export function App() {
 
   const branch = current?.branchName || "";
 
-  // An open local run keeps its own folder; with no run open, follow the picker.
-  const localRunActive = current?.executionTarget?.loop === "desk";
-  const localStatus = current ? localStatuses[current.id] : undefined;
-  // A dead local worker means nothing is coming, whatever the run status says.
-  const localWorkerDown =
-    localRunActive && (localStatus?.state === "stopped" || localStatus?.state === "failed");
-  const turnLive = current?.status === "RUNNING" && !localWorkerDown;
-  const noLocalWorker = localRunActive && (!localStatus || localStatus.state === "stopped");
-  // Nothing running and nothing owed: the per-turn worker simply finished.
-  const localWorkerIdle = noLocalWorker && !isActiveRunStatus(current?.status);
-  const localNeedsRestart = noLocalWorker && isActiveRunStatus(current?.status);
-  const panelIsLocal = current ? localRunActive : target.kind === "desk";
+  const localRun = useMemo(() => localRunView(current, localStatuses), [current, localStatuses]);
+  const turnLive = current?.status === "RUNNING" && !localRun.workerDown;
+  const panelIsLocal = current ? localRun.isLocal : target.kind === "desk";
   // An open run answers with its own folder; only the empty composer follows the
   // picker. Letting an open run fall back to the picker would point the file
   // tree and the diff at the wrong repo as soon as two local runs exist.
-  const localFolder = current ? (localRunActive ? localRunFolder(current) : "") : panelIsLocal ? folder : "";
-  /** Local runs holding a worker right now, so the rail can mark them. */
-  const runningLocalRunIds = useMemo(
-    () =>
-      new Set(
-        Object.values(localStatuses)
-          .filter((status) => status.state === "starting" || status.state === "running")
-          .map((status) => status.runId),
-      ),
-    [localStatuses],
-  );
-  const otherLocalRunCount = [...runningLocalRunIds].filter((id) => id !== current?.id).length;
+  const localFolder = current ? localRun.folder : panelIsLocal ? folder : "";
+  const runningRunIds = useMemo(() => runningLocalRunIds(localStatuses), [localStatuses]);
+  const otherLocalRunCount = otherRunningLocalRuns(localStatuses, current?.id);
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1438,7 +1419,7 @@ export function App() {
             spacesOpen={railSpacesOpen}
             inboxExpanded={railInboxExpanded}
             folderOpen={repoOpen}
-            runningLocalRunIds={runningLocalRunIds}
+            runningLocalRunIds={runningRunIds}
             formatRel={formatRel}
             onToggleInbox={() => setRailInboxOpen((cur) => !cur)}
             onToggleSpaces={() => setRailSpacesOpen((cur) => !cur)}
@@ -1720,29 +1701,31 @@ export function App() {
             }`}
           >
             <div className="chat-stage">
-            {localRunActive ? (
+            {localRun.isLocal ? (
               <div className="local-bar">
                 <IconComputer size={13} />
                 <span>This Computer · {folderName(localFolder)}</span>
-                {localStatus?.state === "starting" ? <em>正在启动…</em> : null}
-                {localStatus?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
-                {localStatus?.state === "failed" ? <em className="bad">{localStatus.detail || "启动失败"}</em> : null}
+                {localRun.status?.state === "starting" ? <em>正在启动…</em> : null}
+                {localRun.status?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
+                {localRun.status?.state === "failed" ? (
+                  <em className="bad">{localRun.status.detail || "启动失败"}</em>
+                ) : null}
                 {/* A worker exits after its turn, so "no process" is the resting
                     state, not something to recover from. */}
-                {localWorkerIdle ? <em>本机就绪 · 发送即在这里继续</em> : null}
-                {localNeedsRestart ? (
+                {localRun.idle ? <em>本机就绪 · 发送即在这里继续</em> : null}
+                {localRun.needsRestart ? (
                   <button
                     type="button"
                     className="ghost"
                     title="重新在这台电脑上拉起这条对话的 Agent 进程"
                     onClick={() =>
-                      current && void resumeLocalRun(current.id, current.executionTarget, localRunFolder(current))
+                      current && void resumeLocalRun(current.id, current.executionTarget, localRun.folder)
                     }
                   >
                     在这台电脑上继续
                   </button>
                 ) : null}
-                {localStatus?.state === "running" ? (
+                {localRun.status?.state === "running" ? (
                   <button
                     type="button"
                     className="ghost"
