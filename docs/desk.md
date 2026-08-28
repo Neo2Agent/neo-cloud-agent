@@ -117,7 +117,11 @@
   POST /v1/desks/:id/claim { workspaceDir, pid }
 ```
 
-**为什么就地改：** 旁路 worktree 从 HEAD 长出来，Agent 读不到你正在改的未提交文件，它的改动也落在你不会打开的副本里。Cursor 的 This Computer 就是改你点开的那个 checkout。
+**为什么就地改：** 旁路 worktree 从 HEAD 长出来，Agent 读不到你正在改的未提交文件，它的改动也落在你不会打开的副本里。Cursor 也是这样：worktree 是**显式 opt-in**（Agents Window 里选、IDE 里 `/worktree`、CLI 里 `-w`），默认所有会话共享同一个 checkout——"every agent and chat session you open on the same folder shares one Git checkout"，见 [worktrees](https://cursor.com/docs/configuration/worktrees)。它也没有回避共享的代价，subagents 文档原话是 "Subagents share the parent agent's checkout by default. When several subagents edit files at once, they can overwrite each other's changes."（[subagents](https://cursor.com/docs/subagents)）。所以我们同文件夹开第二条给提示而不拦，和它一致。
+
+**并发上限只是我们自己的资源约束。** Cursor 没有公布任何本地并发上限，口径是"想跑多少跑多少"（[cloud agents](https://cursor.com/docs/cloud-agent)）；它唯一的机器级数字是 worktree 保留上限 `cursor.worktreeMaxCount` 默认 25，那是磁盘清理阈值，不是会话上限。我们默认 4 的理由只有一个：每条本机对话是一个独立 Node 进程。
+
+**和 Cursor 的一处结构性差异：** 它的纯 This Computer 会话"lives entirely inside your desktop app, with no cloud-side representation"，而我们的本机 run 始终在控制面有一条记录（不变量 3：会话权威在控制面）。好处是 worker 逐回合退出后还能恢复、跟进能重新派回同一台机器；代价是本机执行会依赖控制面，所以准入必须显式跟控制面解耦——见下面的客户端约束。
 
 ### worker 逐回合，不常驻
 
@@ -168,12 +172,14 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 
 - **工作区 = 授权目录本身。** 有 `.git` 才有 commit / PR；没有 git 的文件夹仍可读写、开终端。
 - **沙箱：** pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝；`bash` 的重定向和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂。只对本机 Run 生效（`NEO_SANDBOX_ROOT`）；云端 VM 本身就是隔离盒子。
+- **工作区里还有几处只读：** `.git/hooks`、`.git/config`、`.git/info/attributes`、`.neo/`。前三个的写入会**活过这一轮**——hook 在用户下次提交时执行，`config` 能改 `origin` 和 `core.hooksPath`，等于事后绕过沙箱边界；`.neo/` 是 Desk 和 worker 维护的 per-run 暂存，Agent 改它就能顶掉并行 run 的专家人设。读不拦，git 自己的写也不拦（走 git 进程，不经过工具调用），所以正常 commit / 切分支不受影响。Cursor 出于同样理由把这批路径设成"无论怎么配都不可写"（[sandbox reference](https://cursor.com/docs/reference/sandbox)）。系统提示里也会明说，免得 Agent 撞上才知道。
 - **Run 私货不进仓库：** session / bootstrap / jwt 在 `userData/neo-desk/runs/<runId>/`。要被 Agent 读到的（专家文件、贴图）写 `<workspace>/.neo/runs/<runId>/`，整个 `.neo/` 都在 `.git/info/exclude` 里。
 - **绝对路径不上云。** 绑定只上报机器名 + repoKey + 短名；远程端看到 `机器名 · 仓库名`。也不把本机路径同步成别人的项目默认仓库。
 - **`online` = 正握着 inbox。** 只看时间戳会让一台注册完就退出的电脑看起来还在。
 - **控制面不杀笔记本进程。** `DeskRuntime.destroy` 是空的；停 worker 走 inbox 的 `cancel`，活着靠 worker 心跳。
 - **退出 Desk 会带走 worker。** 它们在改用户自己的文件夹，留一个孤儿进程等于让没人看着的仓库继续被改。`claim` 失败同样会把刚起的进程收掉。
-- **本机对话可以并行，边界是资源不是文件夹。** 不同文件夹互不相干；同一个文件夹也允许开第二条（Cursor 也不拦，它的 subagents 文档直说共享 checkout 会互相覆盖），只是会提示未提交改动可能打架。唯一的硬限制是「同时最多几条」，默认 4，设置里可调，理由是每条都是一个独立 Node 进程。macOS 和 Windows 上路径大小写不敏感，`/Users/me/Web` 和 `/Users/me/web` 是同一个 checkout，同文件夹判断要按平台归一化，否则那条提示会静默失效。
+- **本机对话可以并行，边界是资源不是文件夹。** 不同文件夹互不相干；同一个文件夹也允许开第二条，只是会提示未提交改动可能打架（理由见上面和 Cursor 的对比）。唯一的硬限制是「同时最多几条」，默认 4，设置里可调，理由是每条都是一个独立 Node 进程。macOS 和 Windows 上路径大小写不敏感，`/Users/me/Web` 和 `/Users/me/web` 是同一个 checkout，同文件夹判断要按平台归一化，否则那条提示会静默失效。
+- **仓库对不上就明确报错，不降级。** 抄 Cursor 的保守默认：一条 run 指名了工作区，就必须拿到那一个，找不到就失败，绝不回落到「当前选中的文件夹」。它的 My Machines 也是这样——"a request for repo A should never run on a machine checkout for repo B"（[my machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines)）。
 - **准入只看本机事实，一次网络请求都不发。** 有几条在跑由主进程自己的 `localRuns` 表决定，占位在任何 `await` 之前就写进去。控制面只用来回收「run 已结束但进程还在」的 worker，而且**只有被上限拦住时**才去问（一次并发问完），问不到就不动它。现网抖一下不该让你在自己的盘上干不了活，也不该让开新对话多等几个 RTT。
 - **判断 run 是否已结束要带上 `NOT_YET_STARTED`。** 每条 desk run 在这台机器 `claim` 落地之前都是这个状态（`createRun` 的 inline 分支和 `dispatchToDesk` 都走 `queueRun`）。漏掉它，spawn 到 claim 之间的 worker 在下一条对话看来就是「已经结束」，会被回收——开第二条对话把第一条杀掉。主进程复用 `src/stream.ts` 的 `isActiveRunStatus`，不留第二份会漂移的定义。
 - **每条对话的文件夹由 run 自己说。** `localRunFolder(run)` 读 run 的 `repoUrls[0]`；文件树、diff、`resumeLocalRun` 都用它。回落到「当前选中的文件夹」在并行下必然指错——picker 是给空 composer 用的。同理 handoff 不给 `deskWorkspaceId` 也不能用 picker 的补，宁可不给（主进程会用调用方传的 folder）。
