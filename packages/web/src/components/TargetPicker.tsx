@@ -8,6 +8,9 @@ type Props = {
   folder?: string;
   /** Machines that registered themselves and still hold a connection. */
   desks?: Desk[];
+  /** An open Remote Control run cannot change where it executes. */
+  locked?: boolean;
+  lockLabel?: string;
   onTarget: (target: DeskTarget) => void;
   onPickFolder?: () => void;
 };
@@ -28,11 +31,35 @@ function machineOptions(desks: Desk[]): MachineOption[] {
   return out;
 }
 
-export function TargetPicker({ target, canRunLocal, folder, desks = [], onTarget, onPickFolder }: Props) {
+export function TargetPicker({
+  target,
+  canRunLocal,
+  folder,
+  desks = [],
+  locked = false,
+  lockLabel = "Remote Control",
+  onTarget,
+  onPickFolder,
+}: Props) {
   const machines = machineOptions(desks);
   const local = target.kind === "desk";
   const insideDesk = canRunLocal;
   const canGoLocal = insideDesk || machines.length > 0;
+  if (locked) {
+    return (
+      <div className="picker">
+        <Select
+          id="execution-target"
+          size="pill"
+          aria-label="目标"
+          disabled
+          value="locked"
+          onValueChange={() => undefined}
+          options={[{ value: "locked", label: lockLabel }]}
+        />
+      </div>
+    );
+  }
   return (
     <div className="picker">
       <Select

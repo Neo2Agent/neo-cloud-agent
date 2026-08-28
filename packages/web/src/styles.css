@@ -1005,6 +1005,10 @@ h1 {
   box-shadow: 0 0 0 3px rgba(77, 107, 254, 0.08), var(--shadow);
 }
 
+.composer.is-locked {
+  opacity: 0.86;
+}
+
 .turn-progress {
   align-self: flex-start;
   max-width: 100%;

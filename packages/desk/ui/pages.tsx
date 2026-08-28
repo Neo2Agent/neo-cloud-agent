@@ -746,6 +746,7 @@ export function ChatComposer({
   setPrompt,
   placeholder,
   sending,
+  locked,
   models,
   selected,
   menuOpen,
@@ -770,6 +771,7 @@ export function ChatComposer({
   setPrompt: (value: string) => void;
   placeholder: string;
   sending: boolean;
+  locked?: boolean;
   models: string[];
   selected: string;
   menuOpen: boolean;
@@ -843,6 +845,7 @@ export function ChatComposer({
         ref={taRef}
         value={prompt}
         placeholder={placeholder}
+        disabled={locked}
         onChange={(event) => setPrompt(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape" && mentionHits.length > 0) {
@@ -920,7 +923,7 @@ export function ChatComposer({
               <IconStop size={14} />
             </button>
           ) : (
-            <button type="button" className="send-btn" aria-label="Send" disabled={sending || !prompt.trim()} onClick={onSubmit}>
+            <button type="button" className="send-btn" aria-label="Send" disabled={locked || sending || !prompt.trim()} onClick={onSubmit}>
               <IconArrowUp size={16} />
             </button>
           )}

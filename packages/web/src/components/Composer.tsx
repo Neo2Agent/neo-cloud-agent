@@ -29,6 +29,11 @@ type Props = {
   canRunLocal?: boolean;
   folder?: string;
   desks?: Desk[];
+  targetLocked?: boolean;
+  targetLockLabel?: string;
+  /** Remote Control host is offline; send is blocked until that Desk's inbox is live. */
+  blocked?: boolean;
+  blockedHint?: string;
   mode: AgentMode;
   model: string;
   models?: Array<{ id: string; label: string }>;
@@ -66,6 +71,10 @@ export function Composer({
   canRunLocal = false,
   folder,
   desks,
+  targetLocked = false,
+  targetLockLabel,
+  blocked = false,
+  blockedHint,
   mode,
   model,
   models = [
@@ -99,26 +108,35 @@ export function Composer({
   );
   const capsules = showCapsules ? matchIntentCapsules(prompt) : [];
   const empty = !prompt.trim() && images.length === 0;
+  const sendLocked = archived || blocked;
   const pickMention = (item: ComposerMention) => {
     onPrompt(applyMention(prompt, item));
     onMention?.(item);
   };
-  const hint = archived ? "对话已归档，无法继续发送。" : busy ? (activity ?? "正在进行…") : vmHint;
+  const hint = archived
+    ? "对话已归档，无法继续发送。"
+    : blocked
+      ? (blockedHint || "发起这条对话的 Desk 离线。打开 Desk 后才能继续。")
+      : busy
+        ? (activity ?? "正在进行…")
+        : vmHint;
   const placeholder = archived
     ? "对话已归档。"
-    : busy
-      ? "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
-      : isNarrowViewport()
-        ? "描述任务，点发送。可粘贴图片。"
-        : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
+    : blocked
+      ? (blockedHint || "发起这条对话的 Desk 离线。打开 Desk 后才能继续。")
+      : busy
+        ? "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
+        : isNarrowViewport()
+          ? "描述任务，点发送。可粘贴图片。"
+          : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
   return (
     <form
-      className={busy ? "composer is-busy" : archived ? "composer is-locked" : "composer"}
+      className={busy ? "composer is-busy" : sendLocked ? "composer is-locked" : "composer"}
       id="composer"
       aria-busy={busy}
       onSubmit={(event: FormEvent) => {
         event.preventDefault();
-        if (!busy && !archived) onSend();
+        if (!busy && !sendLocked) onSend();
       }}
     >
       {images.length > 0 ? (
@@ -141,7 +159,7 @@ export function Composer({
         name="prompt"
         rows={isNarrowViewport() ? 2 : 3}
         placeholder={placeholder}
-        required={!busy && !archived && images.length === 0}
+        required={!busy && !sendLocked && images.length === 0}
         disabled={archived}
         value={prompt}
         onChange={(event) => onPrompt(event.target.value)}
@@ -161,12 +179,12 @@ export function Composer({
           }
           if (shouldQueueOnCtrlEnter(event)) {
             event.preventDefault();
-            if (!archived && onQueue) onQueue();
+            if (!sendLocked && onQueue) onQueue();
             return;
           }
           if (shouldSendOnEnter(event, { narrow: isNarrowViewport() })) {
             event.preventDefault();
-            if (!busy && !archived) {
+            if (!busy && !sendLocked) {
               (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
             }
           }
@@ -204,6 +222,8 @@ export function Composer({
             canRunLocal={canRunLocal}
             folder={folder}
             desks={desks}
+            locked={targetLocked}
+            lockLabel={targetLockLabel}
             onTarget={onTarget}
             onPickFolder={onPickFolder}
           />
@@ -259,7 +279,7 @@ export function Composer({
               </span>
             </button>
           ) : (
-            <button type="submit" id="send" className="send" disabled={archived || empty || busy} aria-label={busy ? "发送中" : "发送"}>
+            <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label={busy ? "发送中" : "发送"}>
               <IconArrowUp size={16} />
             </button>
           )}

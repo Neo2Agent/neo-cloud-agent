@@ -110,4 +110,22 @@ test("This Computer stays off web; Remote Control is listed", async (t) => {
   assert.equal(deskList.runs.some((item) => item.id === local.id), true);
   assert.equal(deskList.runs.some((item) => item.id === remote.id), true);
   assert.equal((await fetch(`${base}/v1/runs/${local.id}?client=desk`, { headers: auth(token) })).status, 200);
+
+  const offlineFollow = await fetch(`${base}/v1/runs/${remote.id}/follow-ups`, {
+    method: "POST",
+    headers: auth(token),
+    body: JSON.stringify({ text: "from the web while desk is down" }),
+  });
+  assert.equal(offlineFollow.status, 409);
+  assert.match(((await offlineFollow.json()) as { error?: string }).error ?? "", /离线/);
+
+  const { openDeskInbox } = await import("../desks/store.js");
+  const detach = openDeskInbox(registered.desk.id, () => undefined);
+  t.after(detach);
+  const liveFollow = await fetch(`${base}/v1/runs/${remote.id}/follow-ups`, {
+    method: "POST",
+    headers: auth(token),
+    body: JSON.stringify({ text: "desk is back" }),
+  });
+  assert.equal(liveFollow.status, 201);
 });

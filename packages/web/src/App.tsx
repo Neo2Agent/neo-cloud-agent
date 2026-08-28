@@ -12,6 +12,7 @@ import type { Desk, DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
 import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
+import { remoteControlSendLock } from "./desk-live";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
 import { cloudSafeRepoUrls, isLocalFolderRef } from "./repo";
@@ -703,9 +704,12 @@ export function App() {
       setLoadingTranscript(false);
       listen(run.id, lastEventIdRef.current);
       void refreshVms();
+      if (run.executionTarget?.loop === "desk") {
+        void refreshDesks();
+      }
       return true;
     },
-    [listen, refreshVms],
+    [listen, refreshDesks, refreshVms],
   );
 
   const openAutomations = useCallback(() => {
@@ -883,6 +887,12 @@ export function App() {
     const text = prompt.trim();
     if (!text && images.length === 0) return;
     if (isComposerClosed(currentRun?.status)) return;
+    const hostLock = remoteControlSendLock(
+      currentRun,
+      desks,
+      deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
+    );
+    if (hostLock.locked) return;
     if (
       isTurnBusy({
         sending: sendingRef.current,
@@ -984,12 +994,21 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, agentMode, buildId, currentRun?.status, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, agentMode, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
 
   const queueMessage = useCallback(async () => {
     const text = prompt.trim();
     if (!text && images.length === 0) return;
     if (isComposerClosed(currentRun?.status) || !runId) return;
+    if (
+      remoteControlSendLock(
+        currentRun,
+        desks,
+        deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
+      ).locked
+    ) {
+      return;
+    }
     const attached = images;
     const askPrefix = agentMode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     setPrompt("");
@@ -1010,7 +1029,7 @@ export function App() {
       setImages(attached);
       setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "排队失败")]);
     }
-  }, [agentMode, currentRun?.status, images, prompt, runId]);
+  }, [agentMode, currentRun, desks, deskTarget.deskId, images, prompt, runId]);
 
   const stopTurn = useCallback(() => {
     if (!runId) return;
@@ -1161,10 +1180,11 @@ export function App() {
         }
         if (runId) await refreshRuns();
         await refreshVms();
+        await refreshDesks();
       })();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [applyVms, refreshRuns, refreshVms, runId]);
+  }, [applyVms, refreshDesks, refreshRuns, refreshVms, runId]);
 
   useEffect(() => () => closeStream(), [closeStream]);
 
@@ -1332,6 +1352,11 @@ export function App() {
     messages: viewMessages,
   });
   const archived = isComposerClosed(currentRun?.status);
+  const hostLock = remoteControlSendLock(
+    currentRun,
+    desks,
+    deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
+  );
   const activity = activityLabel({
     sending,
     stopping,
@@ -2127,6 +2152,12 @@ export function App() {
               canRunLocal={Boolean(deskBridge()?.canRunLocal)}
               folder={deskFolder}
               desks={desks}
+              targetLocked={currentRun?.executionTarget?.loop === "desk"}
+              targetLockLabel={
+                currentRun?.executionTarget?.remoteControl === true ? "Remote Control" : "This Computer"
+              }
+              blocked={hostLock.locked}
+              blockedHint={hostLock.hint}
               mode={agentMode}
               model={selectedModel}
               experts={experts}

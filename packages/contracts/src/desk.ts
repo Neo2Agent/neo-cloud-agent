@@ -97,3 +97,34 @@ export interface HandoffRequest {
   /** Desk targets only. Which bound workspace should pick this up. */
   deskWorkspaceId?: string;
 }
+
+export const DESK_HOST_OFFLINE_MESSAGE = "发起这条对话的 Desk 离线。打开 Desk 后才能继续。";
+export const DESK_HOST_UNBOUND_MESSAGE = "这条本机对话还没有绑定电脑，打开 Desk 后才能继续。";
+
+export type RemoteControlSendLockOptions = {
+  /** The Desk window that started this run may send even if the list is stale. */
+  thisDeskId?: string | null;
+};
+
+/** Other clients may send only while the desk that started this run still holds its inbox. */
+export function remoteControlSendLock(
+  run: { executionTarget?: { loop?: string; deskId?: string | null } | null } | null | undefined,
+  desks: Array<Pick<Desk, "id" | "online">>,
+  options?: RemoteControlSendLockOptions,
+): { locked: boolean; hint: string } {
+  if (run?.executionTarget?.loop !== "desk") {
+    return { locked: false, hint: "" };
+  }
+  const deskId = run.executionTarget.deskId?.trim();
+  if (!deskId) {
+    return { locked: true, hint: DESK_HOST_UNBOUND_MESSAGE };
+  }
+  if (options?.thisDeskId?.trim() === deskId) {
+    return { locked: false, hint: "" };
+  }
+  const host = desks.find((item) => item.id === deskId);
+  if (host?.online === true) {
+    return { locked: false, hint: "" };
+  }
+  return { locked: true, hint: DESK_HOST_OFFLINE_MESSAGE };
+}

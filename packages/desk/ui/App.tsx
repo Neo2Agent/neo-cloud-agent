@@ -28,7 +28,7 @@ import {
   type DeskTarget,
   type DeskWorkspaceRef,
 } from "./desk";
-import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
+import { remoteControlSendLock, type DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
 import { isLoopbackOrigin } from "../src/ports";
 import { groupRailSessions } from "../src/rail";
@@ -676,6 +676,12 @@ export function App() {
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
     const text = (draft ?? prompt).trim();
     if (!text || sending) return;
+    if (
+      current &&
+      remoteControlSendLock(current, [], { thisDeskId: target.deskId || deskIdRef.current }).locked
+    ) {
+      return;
+    }
     // A failure from an earlier turn must not sit under the composer forever.
     setAuthError("");
     const local = isLocalDeskKind(target.kind);
@@ -1238,6 +1244,7 @@ export function App() {
   // An open run answers with its own folder; only the empty composer follows the
   // picker. Letting an open run fall back to the picker would point the file
   // tree and the diff at the wrong repo as soon as two local runs exist.
+  const hostLock = remoteControlSendLock(current, [], { thisDeskId: target.deskId || deskIdRef.current });
   const localFolder = current ? localRun.folder : panelIsLocal ? folder : "";
   const runningRunIds = useMemo(() => runningLocalRunIds(localStatuses), [localStatuses]);
   const otherLocalRunCount = otherRunningLocalRuns(localStatuses, current?.id);
@@ -1741,13 +1748,16 @@ export function App() {
                 prompt={prompt}
                 setPrompt={setPrompt}
                 placeholder={
-                  current?.projectId
-                    ? "今天帮你做些什么？@ 引用资产文件或项目待办"
-                    : current
-                      ? "今天帮你做些什么？@ 引用对话文件，/ 调用已有自动化"
-                      : "今天帮你做些什么？"
+                  hostLock.locked
+                    ? hostLock.hint
+                    : current?.projectId
+                      ? "今天帮你做些什么？@ 引用资产文件或项目待办"
+                      : current
+                        ? "今天帮你做些什么？@ 引用对话文件，/ 调用已有自动化"
+                        : "今天帮你做些什么？"
                 }
                 sending={sending}
+                locked={hostLock.locked}
                 models={modelNames}
                 selected={selectedModel}
                 menuOpen={modelMenu}
@@ -1786,7 +1796,11 @@ export function App() {
               />
               {current ? (
                 <p className="composer-note">
-                  {current.projectId ? "内容由模型生成，请核实重要信息" : "内容由 AI 生成，请核实重要信息"}
+                  {hostLock.locked
+                    ? hostLock.hint
+                    : current.projectId
+                      ? "内容由模型生成，请核实重要信息"
+                      : "内容由 AI 生成，请核实重要信息"}
                 </p>
               ) : null}
               {authError ? <p className="error toast-inline">{authError}</p> : null}

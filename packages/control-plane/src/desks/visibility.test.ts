@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import type { IncomingMessage } from "node:http";
 import test from "node:test";
 
-const { deskRunVisibleRemotely, requestIsDeskClient, runVisibleToActor } = await import("./visibility.js");
+const { deskFollowUpBlockReason, deskRunVisibleRemotely, requestIsDeskClient, runVisibleToActor } = await import(
+  "./visibility.js"
+);
 
 function req(input: { header?: string; url?: string } = {}): IncomingMessage {
   return {
@@ -35,6 +37,17 @@ test("cloud runs are visible without a desk client", () => {
   const run = { userId: "user_ada", executionTarget: { loop: "cloud" as const } };
   assert.equal(deskRunVisibleRemotely(run), true);
   assert.equal(runVisibleToActor(run, user, false), true);
+});
+
+test("a desk follow-up waits for the host inbox, like Cursor My Machines", () => {
+  const deskRun = { userId: "user_ada", executionTarget: { loop: "desk" as const, deskId: "desk_1" } };
+  assert.equal(deskFollowUpBlockReason({ userId: "user_ada", executionTarget: { loop: "cloud" } }, () => false), null);
+  assert.equal(deskFollowUpBlockReason(deskRun, () => true), null);
+  assert.match(deskFollowUpBlockReason(deskRun, () => false) ?? "", /离线/);
+  assert.match(
+    deskFollowUpBlockReason({ userId: "user_ada", executionTarget: { loop: "desk" } }, () => true) ?? "",
+    /绑定电脑/,
+  );
 });
 
 test("Desk identifies itself with a header or a query", () => {

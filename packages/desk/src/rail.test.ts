@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { groupRailSessions, isLocalPath, lastPathSegment, railPlacement } from "./rail.js";
+import { groupRailSessions, isLocalPath, lastPathSegment, localFolderFromRepoUrls, railPlacement } from "./rail.js";
 
 test("empty repo and no project stay in 对话", () => {
   assert.deepEqual(railPlacement({ id: "1", repoUrls: [] }), { section: "inbox" });
@@ -47,4 +47,11 @@ test("groupRailSessions splits inbox from nested spaces", () => {
   assert.deepEqual(grouped.spaces.map((item) => item.key), ["folder:/home/me/app", "project:p1"]);
   assert.deepEqual(grouped.spaces[1]?.runs.map((item) => item.id), ["b", "c"]);
   assert.equal(grouped.spaces[1]?.label, "工作台");
+});
+
+test("a desk run keeps the local folder named on create", () => {
+  assert.equal(localFolderFromRepoUrls(["C:\\Users\\me\\Desktop\\test remote"]), "C:\\Users\\me\\Desktop\\test remote");
+  assert.equal(localFolderFromRepoUrls(["https://github.com/acme/app.git", "/home/me/app"]), "/home/me/app");
+  assert.equal(localFolderFromRepoUrls(["https://github.com/acme/app.git"]), "");
+  assert.equal(localFolderFromRepoUrls([]), "");
 });

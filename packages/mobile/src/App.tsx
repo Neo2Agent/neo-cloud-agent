@@ -6,6 +6,7 @@ import {
 } from "@neo-cloud-agent/contracts/transcript";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
+import { remoteControlSendLock, type Desk } from "@neo-cloud-agent/contracts/desk";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { MobileApiError, MobileClient } from "./api/client";
 import { webCredentials, type CredentialStore } from "./api/credentials";
@@ -38,6 +39,7 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   const [envId, setEnvId] = useState("");
   const [model, setModel] = useState("deepseek-v4-flash");
   const [current, setCurrent] = useState<Run | null>(null);
+  const [desks, setDesks] = useState<Desk[]>([]);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
@@ -76,13 +78,15 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
 
   const refreshList = useCallback(async () => {
     if (!token) return;
-    const [listed, environments, settings] = await Promise.all([
+    const [listed, environments, settings, deskList] = await Promise.all([
       client.listRuns(),
       client.listEnvironments().catch(() => ({ environments: [] })),
       client.llmSettings().catch(() => null),
+      client.listDesks().catch(() => ({ desks: [] })),
     ]);
     setRuns(listed.runs);
     setEnvs(environments.environments);
+    setDesks(deskList.desks);
     if (settings?.model) setModel(resolveChatModel(settings.model));
     if (!envId && environments.environments[0]) setEnvId(environments.environments[0].id);
   }, [client, envId, token]);
@@ -93,6 +97,14 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
       if (error instanceof MobileApiError && error.status === 401) void persistToken("");
     });
   }, [ready, token, refreshList, persistToken]);
+
+  useEffect(() => {
+    if (!token || route.screen !== "chat") return;
+    const timer = window.setInterval(() => {
+      void client.listDesks().then((next) => setDesks(next.desks)).catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [client, route.screen, token]);
 
   const closeStream = useCallback(() => {
     abortRef.current?.abort();
@@ -191,6 +203,7 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   const send = async () => {
     const text = prompt.trim();
     if (!text || sending) return;
+    if (current && remoteControlSendLock(current, desks).locked) return;
     setSending(true);
     setPrompt("");
     try {
@@ -303,7 +316,9 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   }
 
   if (route.screen === "chat") {
-    const locked = isComposerClosed(current?.status);
+    const archived = isComposerClosed(current?.status);
+    const hostLock = remoteControlSendLock(current, desks);
+    const locked = archived || hostLock.locked;
     return (
       <div className="app">
         <header className="topbar">
@@ -345,7 +360,7 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
           <textarea
             value={prompt}
             disabled={locked}
-            placeholder={locked ? "对话已归档。" : "描述任务，点发送。"}
+            placeholder={archived ? "对话已归档。" : hostLock.locked ? hostLock.hint : "描述任务，点发送。"}
             onChange={(event) => setPrompt(event.target.value)}
           />
           <div className="composer-row">

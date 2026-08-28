@@ -40,6 +40,16 @@ export function isLocalPath(value: string): boolean {
   return text.startsWith("/") || text.startsWith("file:") || /^[A-Za-z]:[\\/]/.test(text);
 }
 
+/** The folder a desk run named on create, used when a later claim has no picker hint. */
+export function localFolderFromRepoUrls(repoUrls?: string[] | null): string {
+  for (const url of repoUrls ?? []) {
+    if (isLocalPath(url)) {
+      return url.trim();
+    }
+  }
+  return "";
+}
+
 export function railPlacement(run: RailRun, projectName?: string | null): RailPlacement {
   if (run.projectId) {
     return {

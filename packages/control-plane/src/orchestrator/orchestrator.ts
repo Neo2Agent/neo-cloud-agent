@@ -110,13 +110,14 @@ import {
   dropDeskAssignment,
   findDeskWorkspace,
   getDesk,
+  hasInbox,
   isDeskOnline,
   offerDeskAssignment,
   pushDeskInbox,
   touchDesk,
   waitDeskAssignment,
 } from "../desks/store.js";
-import { deskRunVisibleRemotely } from "../desks/visibility.js";
+import { deskFollowUpBlockReason, deskRunVisibleRemotely } from "../desks/visibility.js";
 
 const runs = new Map<string, Run>();
 const followUps = new Map<string, FollowUp[]>();
@@ -274,7 +275,7 @@ function requeueActiveTurn(run: Run): boolean {
   inbound.get(run.id)?.push({ type: active.type, text: active.text, images: active.images });
   publish(
     event(run.id, "followup.queued", "中断的回合已自动排队继续", {
-      data: { resume: true, delivery: active.type },
+      data: { resume: true, delivery: active.type, text: active.text },
     }),
   );
   return true;
@@ -1818,6 +1819,10 @@ export async function enqueueFollowUp(
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
+  const deskBlock = deskFollowUpBlockReason(run, hasInbox);
+  if (deskBlock) {
+    throw new Error(deskBlock);
+  }
   const delivery: FollowUpDelivery =
     input.delivery ?? (run.status === "RUNNING" ? "follow_up" : "prompt");
   const item: FollowUp = {
@@ -1842,7 +1847,13 @@ export async function enqueueFollowUp(
   });
   publish(
     event(runId, "followup.queued", "Follow-up queued", {
-      data: { followUpId: item.id, delivery, actorUserId: actor?.userId, actorEmail: actor?.email },
+      data: {
+        followUpId: item.id,
+        delivery,
+        text: input.text,
+        actorUserId: actor?.userId,
+        actorEmail: actor?.email,
+      },
     }),
   );
   flushRun(runId);

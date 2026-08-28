@@ -501,32 +501,67 @@ function assistantForTool(state: BuildState, event: RunEvent): TranscriptMessage
   return state.open;
 }
 
+function eventImages(event: RunEvent): TranscriptMessage["images"] {
+  const images = Array.isArray(event.data?.images)
+    ? event.data.images.filter(
+        (item): item is { mediaType: string; data: string } =>
+          Boolean(item) &&
+          typeof item === "object" &&
+          typeof (item as { mediaType?: unknown }).mediaType === "string" &&
+          typeof (item as { data?: unknown }).data === "string",
+      )
+    : undefined;
+  return images?.length ? images : undefined;
+}
+
+function applyUserTurn(state: BuildState, event: RunEvent): void {
+  const text = String(event.data?.text ?? "");
+  const followUpId = typeof event.data?.followUpId === "string" ? event.data.followUpId : undefined;
+  const actorUserId = typeof event.data?.actorUserId === "string" ? event.data.actorUserId : undefined;
+  const actorEmail = typeof event.data?.actorEmail === "string" ? event.data.actorEmail : undefined;
+  const images = eventImages(event);
+  const existing = followUpId
+    ? state.messages.find((item) => item.role === "user" && item.followUpId === followUpId)
+    : undefined;
+  if (existing) {
+    existing.id = event.id;
+    existing.text = text || existing.text;
+    existing.updatedAt = event.createdAt;
+    existing.actorUserId = actorUserId ?? existing.actorUserId;
+    existing.actorEmail = actorEmail ?? existing.actorEmail;
+    if (images) {
+      existing.images = images;
+    }
+    return;
+  }
+  if (!text && event.kind === "followup.queued") {
+    return;
+  }
+  finishAssistant(state);
+  state.messages.push({
+    id: event.id,
+    role: "user",
+    text,
+    createdAt: event.createdAt,
+    updatedAt: event.createdAt,
+    images,
+    followUpId,
+    actorUserId,
+    actorEmail,
+  });
+}
+
 function applyEventToState(state: BuildState, event: RunEvent): void {
   if (event.kind === "user.message") {
-    finishAssistant(state);
-    const images = Array.isArray(event.data?.images)
-      ? event.data.images.filter(
-          (item): item is { mediaType: string; data: string } =>
-            Boolean(item) &&
-            typeof item === "object" &&
-            typeof (item as { mediaType?: unknown }).mediaType === "string" &&
-            typeof (item as { data?: unknown }).data === "string",
-        )
-      : undefined;
-    const followUpId = typeof event.data?.followUpId === "string" ? event.data.followUpId : undefined;
-    const actorUserId = typeof event.data?.actorUserId === "string" ? event.data.actorUserId : undefined;
-    const actorEmail = typeof event.data?.actorEmail === "string" ? event.data.actorEmail : undefined;
-    state.messages.push({
-      id: event.id,
-      role: "user",
-      text: String(event.data?.text ?? ""),
-      createdAt: event.createdAt,
-      updatedAt: event.createdAt,
-      images: images?.length ? images : undefined,
-      followUpId,
-      actorUserId,
-      actorEmail,
-    });
+    applyUserTurn(state, event);
+    return;
+  }
+  if (
+    event.kind === "followup.queued" &&
+    typeof event.data?.followUpId === "string" &&
+    String(event.data?.text ?? "").trim()
+  ) {
+    applyUserTurn(state, event);
     return;
   }
   if (event.kind === "agent.start") {

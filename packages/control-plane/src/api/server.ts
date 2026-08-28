@@ -108,7 +108,12 @@ import {
   verifyWorkerJwt,
 } from "../security/auth.js";
 import { type Actor } from "../security/actor.js";
-import { requestIsDeskClient, runVisibleToActor } from "../desks/visibility.js";
+import {
+  DESK_HOST_OFFLINE_MESSAGE,
+  DESK_HOST_UNBOUND_MESSAGE,
+  requestIsDeskClient,
+  runVisibleToActor,
+} from "../desks/visibility.js";
 import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBuildLogs } from "../env/builds.js";
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
@@ -1574,15 +1579,24 @@ export function createApiServer() {
           send(res, 400, { error: "text is required" });
           return;
         }
-        send(
-          res,
-          201,
-          await enqueueFollowUp(
-            runId,
-            body,
-            actor.kind === "user" ? { userId: actor.userId, email: actor.email } : undefined,
-          ),
-        );
+        try {
+          send(
+            res,
+            201,
+            await enqueueFollowUp(
+              runId,
+              body,
+              actor.kind === "user" ? { userId: actor.userId, email: actor.email } : undefined,
+            ),
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "follow_up_failed";
+          send(
+            res,
+            message === DESK_HOST_OFFLINE_MESSAGE || message === DESK_HOST_UNBOUND_MESSAGE ? 409 : 400,
+            { error: message },
+          );
+        }
         return;
       }
       if (followMatch && method === "GET") {

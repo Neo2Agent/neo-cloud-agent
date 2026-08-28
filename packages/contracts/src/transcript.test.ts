@@ -298,6 +298,28 @@ test("the desk claim handshake never shows on the machine, and disappears elsewh
   assert.deepEqual(started.map((item) => item.role), ["assistant"]);
 });
 
+test("a queued follow-up is a user bubble before the worker delivers it", () => {
+  const queued = ev({
+    id: "q1",
+    kind: "followup.queued",
+    data: { followUpId: "fu_1", text: "帮我生成一个helloworld.HTML" },
+  });
+  const first = applyRunEventsToMessages([], [queued]);
+  assert.equal(first.length, 1);
+  assert.equal(first[0]?.role, "user");
+  assert.equal(first[0]?.text, "帮我生成一个helloworld.HTML");
+  assert.equal(first[0]?.followUpId, "fu_1");
+  const delivered = applyRunEventsToMessages(first, [
+    ev({
+      id: "u2",
+      kind: "user.message",
+      data: { followUpId: "fu_1", text: "帮我生成一个helloworld.HTML" },
+    }),
+  ]);
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0]?.id, "u2");
+});
+
 test("transcriptHasUnsettledWork sees running tools on either tools or blocks", () => {
   assert.equal(
     transcriptHasUnsettledWork([

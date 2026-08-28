@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import type { DeskAssignment, DeskInboxEvent } from "@neo-cloud-agent/contracts";
 import { admitLocalRun, normalizeMaxLocalRuns, type ActiveLocalRun } from "../src/admission.js";
+import { localFolderFromRepoUrls } from "../src/rail.js";
 import {
   FOLDER_CONFIRM_MESSAGE,
   HOME_OR_ROOT_REJECT_MESSAGE,
@@ -554,10 +555,9 @@ function resolveRunFolder(
     }
     return { folder: bound.folder };
   }
-  // The caller passes this run's folder. Do not fall back to the picker: a
-  // This Computer chat with no directory must stay in the default scratch, not
-  // whatever folder is selected now.
-  const folder = (folderHint || "").trim();
+  // Prefer the folder this run was created with. A web follow-up has no picker
+  // hint; falling back to scratch would write beside the first Desk turn.
+  const folder = (folderHint || "").trim() || localFolderFromRepoUrls(assignment.repoUrls);
   return { folder: folder || unboundThisComputerFolder(stateDir()) };
 }
 
@@ -828,7 +828,7 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
     }).show();
   }
   toRenderer("desk:dispatched", { runId: assignment.runId, workspace: label });
-  await startAssignment(assignment, bound?.folder);
+  await startAssignment(assignment, bound?.folder || localFolderFromRepoUrls(assignment.repoUrls));
 }
 
 let connecting: Promise<void> | null = null;

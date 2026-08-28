@@ -1,5 +1,8 @@
 import type { IncomingMessage } from "node:http";
+import { DESK_HOST_OFFLINE_MESSAGE, DESK_HOST_UNBOUND_MESSAGE } from "@neo-cloud-agent/contracts/desk";
 import { actorCanAccessRun, type Actor, type RunAccessShape } from "../security/actor.js";
+
+export { DESK_HOST_OFFLINE_MESSAGE, DESK_HOST_UNBOUND_MESSAGE };
 
 export const DESK_CLIENT_HEADER = "x-neo-client";
 export const DESK_CLIENT_QUERY = "client";
@@ -25,6 +28,21 @@ export function requestIsDeskClient(req: IncomingMessage): boolean {
   } catch {
     return false;
   }
+}
+
+/** Like Cursor My Machines: no live worker means the request fails, not a cloud fallback. */
+export function deskFollowUpBlockReason(
+  run: DeskVisibilityRun,
+  online: (deskId: string) => boolean,
+): string | null {
+  if (run.executionTarget?.loop !== "desk") {
+    return null;
+  }
+  const deskId = run.executionTarget.deskId?.trim();
+  if (!deskId) {
+    return DESK_HOST_UNBOUND_MESSAGE;
+  }
+  return online(deskId) ? null : DESK_HOST_OFFLINE_MESSAGE;
 }
 
 /** Web / phone see a desk run only when that conversation opted into Remote Control. */
