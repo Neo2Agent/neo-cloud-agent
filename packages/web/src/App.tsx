@@ -44,6 +44,7 @@ import {
   IconFiles,
   IconGear,
   IconMenu,
+  IconMore,
   IconPr,
   IconProjects,
   IconSidebarClose,
@@ -1684,7 +1685,9 @@ export function App() {
                 {statusView.label}
               </span>
               <details className="top-more" ref={topMoreRef}>
-                <summary className="ghost top-more-sum">更多</summary>
+                <summary className="icon-btn top-more-sum" aria-label="更多">
+                  <IconMore />
+                </summary>
                 <div
                   className="top-more-menu"
                   onClick={(event) => {
