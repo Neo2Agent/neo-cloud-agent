@@ -7,10 +7,18 @@ import {
   SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import { appendProjectInstruction, deliveryForPi, type WorkerInbound } from "@neo-cloud-agent/contracts";
+import {
+  appendExpertRole,
+  appendProjectInstruction,
+  deliveryForPi,
+  intersectSessionTools,
+  type WorkerInbound,
+} from "@neo-cloud-agent/contracts";
+import { expertDocRoots } from "@neo-cloud-agent/extensions";
 import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
+import { readExpertWorkspace } from "./expert-workspace.js";
 import { getWorkerConfig } from "./config.js";
-import { materializeInboundImages } from "./images.js";
+import { inboundPrompt } from "./images.js";
 import { gatewayModelSpec } from "./model-spec.js";
 import { abortNestedSubagents, executeNestedSubagent, type SubagentEventHandler } from "./subagent.js";
 import { createWorkspaceLoader, summarizeWorkspaceResources } from "./workspace-loader.js";
@@ -73,12 +81,18 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
 
   const config = getWorkerConfig();
   const allowSubagent = input.allowSubagent !== false;
-  const toolNames = input.tools ?? sessionToolNames({ includeSubagent: allowSubagent });
+  const scratchDir = config.scratchDir || undefined;
+  const expert = readExpertWorkspace(input.cwd, scratchDir);
+  const toolNames = intersectSessionTools(
+    input.tools ?? sessionToolNames({ includeSubagent: allowSubagent }),
+    expert.tools,
+  );
   const customTools = createPiCloudTools({
     runId: input.runId,
     jwt: input.jwt,
     controlPlaneUrl: input.controlPlaneUrl ?? config.controlPlaneUrl,
     workspaceDir: input.cwd,
+    scratchDir,
     runSubagent: allowSubagent
       ? (params) =>
           executeNestedSubagent({
@@ -95,13 +109,22 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
   const resourceLoader = await createWorkspaceLoader({
     cwd: input.cwd,
     agentDir,
-    systemPrompt: appendProjectInstruction(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, readProjectInstruction(input.cwd)),
+    systemPrompt: appendProjectInstruction(
+      appendExpertRole(
+        appendWorkspaceBoundary(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, config.sandboxRoot),
+        expert.role,
+      ),
+      readProjectInstruction(input.cwd),
+    ),
     settingsManager,
+    sandboxRoot: config.sandboxRoot,
+    scratchDir,
   });
   const loaded = summarizeWorkspaceResources(resourceLoader);
-  if (loaded.skills.length > 0 || loaded.agentsFiles.length > 0) {
+  const pluginNames = readPluginSnapshot(input.cwd, scratchDir);
+  if (loaded.skills.length > 0 || loaded.agentsFiles.length > 0 || pluginNames.length > 0) {
     console.log(
-      `workspace resources skills=${loaded.skills.join(",") || "-"} agents=${loaded.agentsFiles.length}`,
+      `workspace resources skills=${loaded.skills.join(",") || "-"} agents=${loaded.agentsFiles.length} plugins=${pluginNames.join(",") || "-"}`,
     );
   }
 
@@ -118,6 +141,22 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     settingsManager,
   });
   return session;
+}
+
+/** Desk runs live in the user's own folder, so say so before the agent guesses. */
+function appendWorkspaceBoundary(prompt: string, sandboxRoot: string): string {
+  if (!sandboxRoot) {
+    return prompt;
+  }
+  return [
+    prompt,
+    "",
+    "## 本机工作区",
+    "",
+    `你在用户自己的电脑上，工作区是用户选的文件夹 \`${sandboxRoot}\`。这里面的文件就是用户正在编辑的文件，包括还没提交的改动。`,
+    "`.neo` 和云端同一套：environment、hooks、skills、agents、专家文件都用这份布局。不要改 `.neo`——同一文件夹里可能还有另一条对话，改了会串。",
+    "只读写这个文件夹里的内容。不要碰家目录、系统目录，或工作区之外的路径。不要在工作区里链到家目录或 `/tmp`。要改 git 配置就用 git 命令，并先说明你打算做什么。",
+  ].join("\n");
 }
 
 function readProjectInstruction(cwd: string): string {
@@ -144,22 +183,36 @@ export async function dispatchInbound(session: AgentSession, message: WorkerInbo
   }
 
   const method = deliveryForPi(message.type);
-  const text = promptText(message);
+  const config = getWorkerConfig();
+  const { text, images } = inboundPrompt(config.workspaceDir, message, config.scratchDir);
+  const vision = images.length ? images : undefined;
   if (session.isStreaming) {
     if (method === "steer") {
-      await session.steer(text);
+      await session.steer(text, vision);
     } else {
-      await session.followUp(text);
+      await session.followUp(text, vision);
     }
     return "continue";
   }
-  await session.prompt(text);
+  await session.prompt(text, vision ? { images: vision } : undefined);
   return "continue";
 }
 
-function promptText(message: Extract<WorkerInbound, { text: string }>): string {
-  const attached = materializeInboundImages(getWorkerConfig().workspaceDir, message.images);
-  return attached.note ? `${message.text}\n\n${attached.note}` : message.text;
+function readPluginSnapshot(cwd: string, scratchDir?: string): string[] {
+  for (const root of expertDocRoots(cwd, scratchDir)) {
+    try {
+      const parsed = JSON.parse(readFileSync(path.join(root, "plugins.json"), "utf8")) as { plugins?: Array<{ slug?: string }> };
+      const names = Array.isArray(parsed.plugins)
+        ? parsed.plugins.map((item) => item.slug).filter((item): item is string => Boolean(item))
+        : [];
+      if (names.length > 0) {
+        return names;
+      }
+    } catch {
+      // Missing or invalid plugins.json — try the next root.
+    }
+  }
+  return [];
 }
 
 export function describeDispatch(message: WorkerInbound): string {

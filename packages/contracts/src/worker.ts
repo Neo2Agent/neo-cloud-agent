@@ -3,9 +3,9 @@ import type { RunEvent } from "./events.js";
 
 /** Control plane → VM */
 export type WorkerInbound =
-  | { type: "prompt"; text: string; images?: ImageRef[] }
-  | { type: "steer"; text: string; images?: ImageRef[] }
-  | { type: "follow_up"; text: string; images?: ImageRef[] }
+  | { type: "prompt"; text: string; images?: ImageRef[]; followUpId?: string }
+  | { type: "steer"; text: string; images?: ImageRef[]; followUpId?: string }
+  | { type: "follow_up"; text: string; images?: ImageRef[]; followUpId?: string }
   | { type: "abort" }
   | { type: "set_model"; model: string }
   | { type: "shutdown"; reason: "idle" | "archived" | "expired" | "error" };
@@ -20,7 +20,7 @@ export type WorkerOutbound =
   | { type: "open_pull_request"; repoUrl: string; branch: string; title: string; body: string }
   | { type: "upload_artifact"; name: string; contentType: string; sizeBytes: number };
 
-export type RuntimeKind = "local" | "docker" | "none" | "firecracker" | "vm" | "cloud-hypervisor";
+export type RuntimeKind = "local" | "docker" | "none" | "firecracker" | "vm" | "cloud-hypervisor" | "desk";
 
 export interface RuntimeSpec {
   runId: string;

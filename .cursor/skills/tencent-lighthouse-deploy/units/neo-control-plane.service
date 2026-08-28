@@ -9,10 +9,13 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/neo-cloud-agent
 EnvironmentFile=/home/ubuntu/neo-cloud-agent/.env
 Environment=PATH=/usr/bin:/usr/local/bin
-ExecStart=/usr/bin/pnpm --filter @neo-cloud-agent/control-plane start
+# node --import tsx is MainPID. KillMode=process then stops the API without
+# killing VM workers (pnpm/tsx grandchildren used to keep listening on :8080).
+ExecStart=/usr/local/bin/node --import tsx packages/control-plane/src/index.ts
 Restart=on-failure
 RestartSec=3
-KillMode=control-group
+TimeoutStopSec=15
+KillMode=process
 Delegate=yes
 DelegateSubgroup=main
 

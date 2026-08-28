@@ -36,10 +36,12 @@ export function compactHotEvents(events: RunEvent[]): RunEvent[] {
   return out;
 }
 
-/** Fold consecutive deltas that are no longer live (they sit immediately before a non-delta). */
+const FOLD_AFTER = new Set(["message.end", "agent.end", "run.idle", "run.error"]);
+
+/** Fold consecutive deltas only after the turn yields, not on context.usage mid-stream. */
 export function compactClosedDeltaRuns(list: RunEvent[]): void {
   const last = list.at(-1);
-  if (!last || last.kind === "message.delta") {
+  if (!last || !FOLD_AFTER.has(last.kind)) {
     return;
   }
   let end = list.length - 2;

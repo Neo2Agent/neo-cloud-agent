@@ -18,13 +18,21 @@ export function MarkdownBody({ text, className, streaming }: Props) {
       setShown(text);
       return;
     }
-    const timer = window.setTimeout(() => setShown(text), 80);
-    return () => window.clearTimeout(timer);
+    // Coalesce to the next frame. A trailing debounce (old 80ms timer) never
+    // fired while tokens arrived continuously, so the web transcript looked stuck.
+    const frame = window.requestAnimationFrame(() => setShown(text));
+    return () => window.cancelAnimationFrame(frame);
   }, [text, streaming]);
   return (
     <div className={className ? `md ${className}` : "md"}>
-      {renderBlocks(prepareMarkdown(shown, streaming))}
-      {streaming ? <span className="md-caret" aria-hidden="true" /> : null}
+      {streaming ? (
+        <>
+          <div className="md-stream">{shown}</div>
+          <span className="md-caret" aria-hidden="true" />
+        </>
+      ) : (
+        renderBlocks(shown)
+      )}
     </div>
   );
 }

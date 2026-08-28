@@ -616,8 +616,15 @@ export function firecrackerAvailable(bin = resolveFirecrackerBin()): boolean {
   return existsSync("/dev/kvm") && resolved;
 }
 
+let readyMemo: boolean | undefined;
+
 /** True only when this host can actually boot a guest (KVM + kernel + rootfs). */
 export function firecrackerReady(): boolean {
+  readyMemo ??= computeFirecrackerReady();
+  return readyMemo;
+}
+
+function computeFirecrackerReady(): boolean {
   if (!existsSync("/dev/kvm") || !firecrackerHostSupported().ok) {
     return false;
   }

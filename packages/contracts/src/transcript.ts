@@ -30,6 +30,9 @@ const SETUP_PREFIXES = [
 ];
 
 export function isSetupKind(kind: string): boolean {
+  if (kind === "llm.usage") {
+    return false;
+  }
   return SETUP_PREFIXES.some((prefix) => kind.startsWith(prefix));
 }
 
@@ -46,6 +49,16 @@ function workerSeq(event: RunEvent): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/**
+ * Which worker process emitted this. A desk run is served by one process per
+ * turn, and each starts its sequence at 1, so a sequence only orders events
+ * from the same process.
+ */
+function workerEpoch(event: RunEvent): string {
+  const value = event.data?.workerEpoch;
+  return typeof value === "string" ? value : "";
+}
+
 /** Restore emission order when HTTP ingest races or clocks stay close. */
 export function sortRunEvents(events: RunEvent[]): RunEvent[] {
   return events
@@ -53,7 +66,8 @@ export function sortRunEvents(events: RunEvent[]): RunEvent[] {
     .sort((left, right) => {
       const leftSeq = workerSeq(left.event);
       const rightSeq = workerSeq(right.event);
-      if (leftSeq != null && rightSeq != null && leftSeq !== rightSeq) {
+      const sameProcess = workerEpoch(left.event) === workerEpoch(right.event);
+      if (sameProcess && leftSeq != null && rightSeq != null && leftSeq !== rightSeq) {
         return leftSeq - rightSeq;
       }
       const leftAt = Date.parse(left.event.createdAt) || 0;
@@ -108,6 +122,10 @@ function upsertTool(assistant: TranscriptMessage, event: RunEvent): TranscriptTo
   return tool;
 }
 
+function touch(message: TranscriptMessage, at: string): void {
+  message.updatedAt = at;
+}
+
 function appendText(assistant: TranscriptMessage, delta: string): void {
   if (!delta) {
     return;
@@ -127,17 +145,25 @@ function hasAssistantContent(assistant: TranscriptMessage): boolean {
 }
 
 export function transcriptBlocks(message: TranscriptMessage): TranscriptBlock[] {
-  if (message.blocks && message.blocks.length > 0) {
-    return message.blocks.filter((block) => block.type !== "text" || block.text.trim().length > 0);
+  const fromBlocks = (message.blocks ?? []).filter((block) => block.type !== "text" || block.text.trim().length > 0);
+  if (fromBlocks.length === 0) {
+    const blocks: TranscriptBlock[] = [];
+    if (message.text.trim()) {
+      blocks.push({ type: "text", text: message.text });
+    }
+    for (const tool of message.tools ?? []) {
+      blocks.push({ type: "tool", tool });
+    }
+    return blocks;
   }
-  const blocks: TranscriptBlock[] = [];
-  if (message.text.trim()) {
-    blocks.push({ type: "text", text: message.text });
+  const seen = new Set(
+    fromBlocks.filter((block) => block.type === "tool").map((block) => (block.type === "tool" ? block.tool.id || block.tool.name : "")),
+  );
+  const extra = (message.tools ?? []).filter((tool) => !seen.has(tool.id || tool.name));
+  if (extra.length === 0) {
+    return fromBlocks;
   }
-  for (const tool of message.tools ?? []) {
-    blocks.push({ type: "tool", tool });
-  }
-  return blocks;
+  return [...fromBlocks, ...extra.map((tool) => ({ type: "tool" as const, tool }))];
 }
 
 export function transcriptGroups(message: TranscriptMessage): TranscriptGroup[] {
@@ -262,14 +288,20 @@ export function settleTranscriptMessages(messages: TranscriptMessage[]): Transcr
 
 const RESTART_HEARTBEAT = /heartbeat lost after control plane restart/i;
 const SLOT_BUSY_NOTICE = /all VM slots are busy/i;
+/** Control plane waiting for a desk to pick the run up. Never user-facing on the desk itself. */
+const DESK_CLAIM_NOTICE = /(等待本机 Desk 认领|等待 Desk 认领|已派给这台电脑，等待启动)/;
 
 function isTransientInfraNotice(text: string | undefined): boolean {
   const value = text ?? "";
   return RESTART_HEARTBEAT.test(value) || SLOT_BUSY_NOTICE.test(value);
 }
 
+export function isDeskHandshakeNotice(text: string | undefined): boolean {
+  return DESK_CLAIM_NOTICE.test(text ?? "");
+}
+
 export function isStaleRestartNotice(message: TranscriptMessage, later: TranscriptMessage[]): boolean {
-  if (!isTransientInfraNotice(message.text)) {
+  if (!isTransientInfraNotice(message.text) && !isDeskHandshakeNotice(message.text)) {
     return false;
   }
   return later.some(
@@ -296,10 +328,22 @@ export function transcriptHasUnsettledWork(messages: TranscriptMessage[]): boole
 
 export function displayTranscriptMessages(
   messages: TranscriptMessage[],
-  options?: { hideStaleRestart?: boolean },
+  options?: {
+    hideStaleRestart?: boolean;
+    /** This window is the machine, so its own claim handshake is noise. */
+    hideDeskHandshake?: boolean;
+    hideFollowUpIds?: Iterable<string>;
+  },
 ): TranscriptMessage[] {
+  const hidden = options?.hideFollowUpIds ? new Set(options.hideFollowUpIds) : null;
   return messages.filter((message, index) => {
+    if (hidden && message.role === "user" && message.followUpId && hidden.has(message.followUpId)) {
+      return false;
+    }
     if (options?.hideStaleRestart && isTransientInfraNotice(message.text)) {
+      return false;
+    }
+    if (options?.hideDeskHandshake && isDeskHandshakeNotice(message.text)) {
       return false;
     }
     return !isStaleRestartNotice(message, messages.slice(index + 1));
@@ -334,6 +378,7 @@ function ensureAssistant(state: BuildState, event: RunEvent): TranscriptMessage 
       role: "assistant",
       text: "",
       createdAt: event.createdAt,
+      updatedAt: event.createdAt,
       streaming: true,
       tools: [],
       blocks: [],
@@ -343,10 +388,14 @@ function ensureAssistant(state: BuildState, event: RunEvent): TranscriptMessage 
   return state.open;
 }
 
-function settleAll(state: BuildState): void {
+function settleAll(state: BuildState, at?: string): void {
   for (const message of state.messages) {
     if (message.role === "assistant") {
+      const open = message.streaming || Boolean(message.tools?.some((tool) => tool.status === "running"));
       message.streaming = false;
+      if (at && open) {
+        touch(message, at);
+      }
       markToolsDone(message);
     }
   }
@@ -443,12 +492,19 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
             typeof (item as { data?: unknown }).data === "string",
         )
       : undefined;
+    const followUpId = typeof event.data?.followUpId === "string" ? event.data.followUpId : undefined;
+    const actorUserId = typeof event.data?.actorUserId === "string" ? event.data.actorUserId : undefined;
+    const actorEmail = typeof event.data?.actorEmail === "string" ? event.data.actorEmail : undefined;
     state.messages.push({
       id: event.id,
       role: "user",
       text: String(event.data?.text ?? ""),
       createdAt: event.createdAt,
+      updatedAt: event.createdAt,
       images: images?.length ? images : undefined,
+      followUpId,
+      actorUserId,
+      actorEmail,
     });
     return;
   }
@@ -456,32 +512,29 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     finishAssistant(state);
     return;
   }
+  // One user turn is one reply bubble. The model may alternate text and tools
+  // several times inside it; those become blocks, not separate bubbles.
   if (event.kind === "message.start") {
-    if (state.open && hasAssistantContent(state.open)) {
-      finishAssistant(state);
-    }
-    ensureAssistant(state, event).streaming = true;
+    const assistant = ensureAssistant(state, event);
+    assistant.streaming = true;
+    touch(assistant, event.createdAt);
     return;
   }
   if (event.kind === "message.delta") {
-    if (state.open?.tools?.length && !state.open.streaming) {
-      finishAssistant(state);
-    }
-    appendText(ensureAssistant(state, event), String(event.data?.delta ?? ""));
+    const assistant = ensureAssistant(state, event);
+    appendText(assistant, String(event.data?.delta ?? ""));
+    touch(assistant, event.createdAt);
     return;
   }
   if (event.kind === "message.end") {
     if (state.open) {
       state.open.streaming = false;
-      const busy = state.open.tools?.some((tool) => tool.status === "running");
-      if (state.open.text.trim() && !busy) {
-        finishAssistant(state);
-      }
+      touch(state.open, event.createdAt);
     }
     return;
   }
   if (event.kind === "agent.end" || event.kind === "run.idle") {
-    settleAll(state);
+    settleAll(state, event.createdAt);
     return;
   }
   if (event.kind === "tool.start" || event.kind === "tool.update" || event.kind === "tool.end") {
@@ -492,22 +545,23 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
       }
       upsertNestedStep(parent.tool, event);
       state.open = parent.message;
+      touch(parent.message, event.createdAt);
       return;
     }
     const existing = assistantForTool(state, event);
     if (existing) {
       state.open = existing;
       upsertTool(existing, event);
+      touch(existing, event.createdAt);
       return;
     }
-    if (state.open?.text.trim() && state.open.streaming === false) {
-      finishAssistant(state);
-    }
-    upsertTool(ensureAssistant(state, event), event);
+    const assistant = ensureAssistant(state, event);
+    upsertTool(assistant, event);
+    touch(assistant, event.createdAt);
     return;
   }
   if (event.kind === "run.error") {
-    settleAll(state);
+    settleAll(state, event.createdAt);
     state.messages.push({
       id: event.id,
       role: "setup",

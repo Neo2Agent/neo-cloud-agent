@@ -12,6 +12,7 @@ import {
 } from "@neo-cloud-agent/contracts";
 import { controlStateDir } from "../store/persist.js";
 import { projectPersistHooks } from "./persist-hooks.js";
+import { pushInbox } from "./inbox.js";
 
 const MAX_PROJECTS = 40;
 const MAX_MEMBERS = 20;
@@ -22,18 +23,29 @@ export function projectsFile(): string {
   return path.join(controlStateDir(), "projects.json");
 }
 
+let projectMemo: { file: string; items: Project[] } | null = null;
+
 function readAll(): Project[] {
+  const file = projectsFile();
+  if (projectMemo?.file === file) {
+    return projectMemo.items;
+  }
   try {
-    const parsed = JSON.parse(readFileSync(projectsFile(), "utf8")) as { projects?: unknown };
-    return Array.isArray(parsed.projects) ? parsed.projects.map(normalize).filter(Boolean) as Project[] : [];
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { projects?: unknown };
+    const items = Array.isArray(parsed.projects) ? parsed.projects.map(normalize).filter(Boolean) as Project[] : [];
+    projectMemo = { file, items };
+    return items;
   } catch {
-    return [];
+    projectMemo = { file, items: [] };
+    return projectMemo.items;
   }
 }
 
 function writeAll(items: Project[], options?: { mirror?: boolean }): void {
-  mkdirSync(path.dirname(projectsFile()), { recursive: true });
-  writeFileSync(projectsFile(), `${JSON.stringify({ version: 1, projects: items }, null, 2)}\n`, { mode: 0o600 });
+  const file = projectsFile();
+  projectMemo = { file, items };
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify({ version: 1, projects: items }, null, 2)}\n`, { mode: 0o600 });
   if (options?.mirror !== false) {
     projectPersistHooks().onWrite?.(items);
   }
@@ -113,11 +125,19 @@ function normalize(value: unknown): Project | null {
   const repos = Array.isArray(record.defaultRepoUrls)
     ? record.defaultRepoUrls.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     : [];
+  const expertIds = Array.isArray(record.expertIds)
+    ? record.expertIds.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : [];
+  const pluginIds = Array.isArray(record.pluginIds)
+    ? record.pluginIds.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : [];
   return {
     id: record.id,
     name: record.name.trim() || "未命名项目",
     instruction: typeof record.instruction === "string" ? record.instruction : "",
     defaultRepoUrls: repos,
+    expertIds,
+    pluginIds,
     invitePolicy: asPolicy(record.invitePolicy),
     createdBy: typeof record.createdBy === "string" ? record.createdBy : members[0]?.userId ?? "",
     createdAt,
@@ -150,7 +170,7 @@ function save(project: Project): Project {
 }
 
 export function listProjects(): Project[] {
-  return readAll().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  return [...readAll()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function listProjectsForUser(userId: string): Project[] {
@@ -173,6 +193,8 @@ export function createProject(input: {
   name: string;
   instruction?: string;
   defaultRepoUrls?: string[];
+  expertIds?: string[];
+  pluginIds?: string[];
   invitePolicy?: InvitePolicy;
   actor: { userId: string; email: string };
 }): Project {
@@ -186,7 +208,9 @@ export function createProject(input: {
     name,
     instruction: (input.instruction ?? "").trim(),
     defaultRepoUrls: (input.defaultRepoUrls ?? []).map((item) => item.trim()).filter(Boolean),
-    invitePolicy: input.invitePolicy === "approve" ? "approve" : "open",
+    expertIds: (input.expertIds ?? []).map((item) => item.trim()).filter(Boolean),
+    pluginIds: (input.pluginIds ?? []).map((item) => item.trim()).filter(Boolean),
+    invitePolicy: input.invitePolicy === "open" ? "open" : "approve",
     createdBy: input.actor.userId,
     createdAt: now,
     updatedAt: now,
@@ -199,7 +223,7 @@ export function createProject(input: {
 
 export function updateProject(
   id: string,
-  patch: { name?: string; instruction?: string; defaultRepoUrls?: string[]; invitePolicy?: InvitePolicy },
+  patch: { name?: string; instruction?: string; defaultRepoUrls?: string[]; expertIds?: string[]; pluginIds?: string[]; invitePolicy?: InvitePolicy },
   actor: { userId: string; email: string },
 ): Project {
   const current = getProject(id);
@@ -210,6 +234,8 @@ export function updateProject(
     name: patch.name !== undefined ? patch.name.trim() || current.name : current.name,
     instruction: patch.instruction !== undefined ? patch.instruction : current.instruction,
     defaultRepoUrls: patch.defaultRepoUrls ?? current.defaultRepoUrls,
+    expertIds: patch.expertIds ?? current.expertIds,
+    pluginIds: patch.pluginIds ?? current.pluginIds,
     invitePolicy: patch.invitePolicy ?? current.invitePolicy,
   };
   return save(pushEvent(next, actor, "updated", "更新了项目设置"));
@@ -249,12 +275,23 @@ export function acceptInvite(token: string, actor: { userId: string; email: stri
   if (project.invitePolicy === "approve" && invite.status === "active") {
     const pending: ProjectInvite = { ...invite, status: "pending", requestedBy: actor.userId, requestedEmail: actor.email };
     const invites = project.invites.map((item) => (item.token === token ? pending : item));
-    return save(pushEvent({ ...project, invites }, actor, "join_requested", `${actor.email} 申请加入`));
+    const next = save(pushEvent({ ...project, invites }, actor, "join_requested", `${actor.email} 申请加入`));
+    for (const member of next.members.filter((item) => item.role === "owner" || item.role === "admin")) {
+      pushInbox({
+        userId: member.userId,
+        kind: "invite_pending",
+        title: `${actor.email} 申请加入「${project.name}」`,
+        projectId: project.id,
+      });
+    }
+    return next;
   }
   if (project.members.length >= MAX_MEMBERS) throw new Error(`一个项目最多 ${MAX_MEMBERS} 人`);
   const member: ProjectMember = { userId: actor.userId, email: actor.email, role: "member", joinedAt: new Date().toISOString() };
   const invites = project.invites.map((item) => (item.token === token ? { ...item, status: "accepted" as const } : item));
-  return save(pushEvent({ ...project, members: [...project.members, member], invites }, actor, "joined", `${actor.email} 加入了项目`));
+  const next = save(pushEvent({ ...project, members: [...project.members, member], invites }, actor, "joined", `${actor.email} 加入了项目`));
+  pushInbox({ userId: actor.userId, kind: "invited", title: `你加入了「${project.name}」`, projectId: project.id });
+  return next;
 }
 
 export function approveInvite(projectId: string, token: string, actor: { userId: string; email: string }): Project {
@@ -275,7 +312,9 @@ export function approveInvite(projectId: string, token: string, actor: { userId:
     joinedAt: new Date().toISOString(),
   };
   const invites = project.invites.map((item) => (item.token === token ? { ...item, status: "accepted" as const } : item));
-  return save(pushEvent({ ...project, members: [...project.members, member], invites }, actor, "approved", `通过了 ${invite.requestedEmail}`));
+  const next = save(pushEvent({ ...project, members: [...project.members, member], invites }, actor, "approved", `通过了 ${invite.requestedEmail}`));
+  pushInbox({ userId: invite.requestedBy, kind: "invited", title: `你已加入「${project.name}」`, projectId: project.id });
+  return next;
 }
 
 export function addProjectMember(
@@ -294,7 +333,9 @@ export function addProjectMember(
     role: member.role === "admin" ? "admin" : "member",
     joinedAt: new Date().toISOString(),
   };
-  return save(pushEvent({ ...project, members: [...project.members, next] }, actor, "member_added", `加入了 ${member.email}`));
+  const saved = save(pushEvent({ ...project, members: [...project.members, next] }, actor, "member_added", `加入了 ${member.email}`));
+  pushInbox({ userId: member.userId, kind: "invited", title: `你被加入了「${project.name}」`, projectId: project.id });
+  return saved;
 }
 
 export function recordProjectEvent(projectId: string, actor: { userId: string; email: string }, kind: string, detail: string): void {

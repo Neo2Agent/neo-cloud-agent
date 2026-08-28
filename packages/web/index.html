@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#f4f4f1" />
     <meta name="color-scheme" content="light" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -11,9 +11,20 @@
     <meta name="apple-mobile-web-app-title" content="Neo" />
     <title>Neo Cloud Agent</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      .boot-splash {
+        display: grid;
+        place-items: center;
+        height: 100dvh;
+        margin: 0;
+        color: #6f6f6a;
+        font: 14px/1.4 "Geist Sans", "PingFang SC", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+        background: #f4f4f1;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><p class="boot-splash">正在进入…</p></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -4,8 +4,9 @@ import { runWorkspaceBoot, stopTerminals } from "./boot.js";
 import { downloadSession, enqueueEvents, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
 import { installEgressGuard, policyFromEnv } from "./egress.js";
 import { inspectSessionContext } from "./context-usage.js";
-import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
+import { contextUsageEvent, emptyAgentTurnEvent, stampWorkerSeq, toRunEvents, type LooseAgentEvent } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
+import { readSessionBackupPolicy, shouldBackupSession } from "./session-backup-schedule.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
 import { abortNestedSubagents } from "./subagent.js";
 
@@ -39,7 +40,7 @@ async function main(): Promise<void> {
       }
     : await fetchBootstrap(config.runId);
 
-  const workspaceDir = bootstrap.workspaceDir || config.workspaceDir;
+  const workspaceDir = process.env.WORKSPACE_DIR || bootstrap.workspaceDir || config.workspaceDir;
   const egress: EgressPolicy = policyFromEnv(process.env, bootstrap.egress);
   installEgressGuard(egress, (decision) => {
     const event: RunEvent = {
@@ -61,7 +62,11 @@ async function main(): Promise<void> {
     `worker ${config.runId} version=${config.workerVersion} model=${bootstrap.model} gateway=${bootstrap.llmGatewayUrl}`,
   );
 
-  const boot = await runWorkspaceBoot({ runId: config.runId, workspaceDir });
+  const boot = await runWorkspaceBoot({
+    runId: config.runId,
+    workspaceDir,
+    scratchDir: config.scratchDir,
+  });
   if (boot.events.length > 0) {
     await pushEvents(config.runId, stampWorkerSeq(boot.events, workerSeq));
   }
@@ -109,20 +114,84 @@ async function main(): Promise<void> {
     }
   };
 
+  const backupPolicy = readSessionBackupPolicy();
+  let agentRunning = false;
+  let turnHadVisibleWork = false;
+  let toolsSinceBackup = 0;
+  let lastBackupAt = 0;
+  let backupInFlight = false;
+
+  const requestBackup = (force = false) => {
+    if (backupInFlight) {
+      return;
+    }
+    if (
+      !force &&
+      !shouldBackupSession({
+        now: Date.now(),
+        lastBackupAt,
+        toolsSinceBackup,
+        agentRunning,
+        policy: backupPolicy,
+      })
+    ) {
+      return;
+    }
+    backupInFlight = true;
+    toolsSinceBackup = 0;
+    lastBackupAt = Date.now();
+    void backupSession(config.runId, config.sessionDir).finally(() => {
+      backupInFlight = false;
+    });
+  };
+
   const unsubscribe = session.subscribe((event) => {
-    const mapped = stampWorkerSeq(toRunEvents(config.runId, event), workerSeq);
+    const loose = event as LooseAgentEvent;
+    if (loose.type === "agent_start") {
+      turnHadVisibleWork = false;
+    }
+    if (loose.type === "tool_execution_start") {
+      turnHadVisibleWork = true;
+    }
+    if (
+      loose.type === "message_update" &&
+      loose.assistantMessageEvent?.type === "text_delta" &&
+      loose.assistantMessageEvent.delta
+    ) {
+      turnHadVisibleWork = true;
+    }
+    const mapped = stampWorkerSeq(toRunEvents(config.runId, loose), workerSeq);
+    if (
+      event.type === "agent_end" &&
+      !turnHadVisibleWork &&
+      !mapped.some((item) => item.kind === "llm.error")
+    ) {
+      mapped.push(...stampWorkerSeq([emptyAgentTurnEvent(config.runId)], workerSeq));
+    }
     enqueueEvents(config.runId, mapped).catch((error: unknown) => {
       console.error("failed to push events", error);
     });
+    if (event.type === "agent_start") {
+      agentRunning = true;
+    }
+    if (mapped.some((item) => item.kind === "tool.end")) {
+      toolsSinceBackup += mapped.filter((item) => item.kind === "tool.end").length;
+      requestBackup();
+    }
     if (event.type === "agent_start" || event.type === "agent_end" || event.type === "compaction_end") {
       const usage = mapped.find((item) => item.kind === "llm.usage")?.data;
       const promptTokens = Number(usage?.promptTokens ?? 0);
       pushContext(promptTokens > 0 ? promptTokens : undefined);
     }
     if (mapped.some((item) => item.kind === "agent.end")) {
-      void backupSession(config.runId, config.sessionDir);
+      agentRunning = false;
+      requestBackup(true);
     }
   });
+  const incrementalBackup = setInterval(() => {
+    requestBackup();
+  }, Math.max(5_000, Math.min(backupPolicy.intervalMs, 30_000)));
+  incrementalBackup.unref();
   pushContext();
 
   let running = true;
@@ -140,6 +209,7 @@ async function main(): Promise<void> {
 
   let consecutiveFailures = 0;
   const maxFailures = Number(process.env.WORKER_INBOX_MAX_FAILURES ?? 75);
+  let servedTurn = false;
 
   try {
     while (running) {
@@ -158,17 +228,28 @@ async function main(): Promise<void> {
       }
       for (const message of messages) {
         console.log(`[worker ${config.runId}] ${describeDispatch(message)}`);
+        if (message.type === "prompt" || message.type === "steer" || message.type === "follow_up") {
+          servedTurn = true;
+        }
         const next = await dispatchInbound(session, message);
         if (next === "stop") {
           running = false;
           break;
         }
       }
+      // `session.prompt` is awaited, so an empty inbox here means the turn is
+      // finished and nothing else was queued behind it.
+      if (running && config.exitAfterTurn && servedTurn && messages.length === 0 && !session.isStreaming) {
+        console.log(`[worker ${config.runId}] turn finished, exiting`);
+        running = false;
+        break;
+      }
       if (running) {
         await sleep(config.pollMs);
       }
     }
   } finally {
+    clearInterval(incrementalBackup);
     unsubscribe();
     await backupSession(config.runId, config.sessionDir);
     stopTerminals(boot.terminals);

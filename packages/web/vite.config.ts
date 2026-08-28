@@ -8,8 +8,21 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/")) {
+            return "react";
+          }
+          return undefined;
+        },
+      },
+    },
   },
   server: {
+    host: "127.0.0.1",
+    port: 5173,
+    strictPort: true,
     proxy: {
       "/v1": "http://127.0.0.1:8080",
       "/health": "http://127.0.0.1:8080",

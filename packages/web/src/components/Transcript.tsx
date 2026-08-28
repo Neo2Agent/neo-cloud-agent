@@ -1,8 +1,11 @@
-import { Fragment, useLayoutEffect, useRef } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { fileToolDiff, toolArgPreview } from "../format";
+import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
+import { BUNDLED_RECIPES } from "@neo-cloud-agent/contracts/recipe";
+import { fileToolDiff, formatDuration, formatMessageTime, formatWhen, toolArgPreview } from "../format";
+import { IconCheck, IconError, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "../markdown";
 import { shouldShowThinking } from "../turn";
 
@@ -14,12 +17,16 @@ type Props = {
   loadingOlder?: boolean;
   busy?: boolean;
   activity?: string;
+  highlightId?: string | null;
   onLoadOlder: () => void;
+  onOpenDiagnostics?: () => void;
+  onPickRecipe?: (recipe: Recipe) => void;
 };
 
-function toolMark(tool: TranscriptTool): string {
-  if (tool.status === "running") return "…";
-  return tool.isError ? "✗" : "✓";
+function ToolStatus({ tool }: { tool: TranscriptTool }) {
+  if (tool.status === "running") return <IconSpinner size={14} />;
+  if (tool.isError) return <IconError size={14} />;
+  return <IconCheck size={14} />;
 }
 
 function toolDisplayName(tool: TranscriptTool): string {
@@ -66,8 +73,10 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
       open={running}
     >
       <summary>
-        <span>
-          {toolMark(tool)} {toolDisplayName(tool)}
+        <span className="tool-name">
+          <ToolStatus tool={tool} />
+          <IconTool name={tool.name} size={14} />
+          {toolDisplayName(tool)}
         </span>
         {preview ? <span className="cmd">{preview}</span> : null}
       </summary>
@@ -88,7 +97,8 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
               className={step.status === "running" ? "run" : step.isError ? "err" : undefined}
             >
               <span>
-                {step.status === "running" ? "…" : step.isError ? "✗" : "✓"} {step.agent} / {step.name}
+                {step.status === "running" ? <IconSpinner size={12} /> : step.isError ? <IconError size={12} /> : <IconCheck size={12} />}{" "}
+                {step.agent} / {step.name}
               </span>
               {toolArgPreview(step.args) ? <span className="cmd">{toolArgPreview(step.args)}</span> : null}
             </li>
@@ -113,6 +123,19 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
         <pre ref={preRef}>执行中…</pre>
       ) : null}
     </details>
+  );
+}
+
+function MessageTime({ message, className = "" }: { message: TranscriptMessage; className?: string }) {
+  const duration =
+    message.role === "assistant" && !message.streaming
+      ? formatDuration(message.createdAt, message.updatedAt)
+      : "";
+  return (
+    <time className={`bubble-time ${className}`.trim()} dateTime={message.updatedAt || message.createdAt}>
+      {formatMessageTime(message.createdAt, message.updatedAt, Boolean(message.streaming))}
+      {duration ? ` · ${duration}` : ""}
+    </time>
   );
 }
 
@@ -141,7 +164,10 @@ export function Transcript({
   loadingOlder = false,
   busy = false,
   activity,
+  highlightId,
   onLoadOlder,
+  onOpenDiagnostics,
+  onPickRecipe,
 }: Props) {
   const scroller = useRef<HTMLElement>(null);
   const stick = useRef(true);
@@ -160,6 +186,11 @@ export function Transcript({
       node.scrollTop = node.scrollHeight;
     }
   }, [messages, remaining, busy, activity, loading]);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    document.getElementById(`msg-${highlightId}`)?.scrollIntoView({ block: "center" });
+  }, [highlightId]);
 
   const loadOlder = () => {
     if (remaining <= 0 || loadingOlder || restore.current) return;
@@ -200,7 +231,19 @@ export function Transcript({
         {empty ? (
           <div className="empty">
             <h2>有什么可以帮你的？</h2>
-            <p>发送后会占用一台云端电脑。仓库和 API Key 在「设置」里。</p>
+            <p>发送后会占用一台云端电脑。也可以先点一张做法再改。仓库和 API Key 在「设置」里。</p>
+            {onPickRecipe ? (
+              <ul className="recipe-grid">
+                {BUNDLED_RECIPES.map((item) => (
+                  <li key={item.id}>
+                    <button type="button" className="recipe-card" onClick={() => onPickRecipe(item)}>
+                      <strong>{item.title}</strong>
+                      <span>{item.description}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ) : (
           messages.map((message) => {
@@ -208,15 +251,34 @@ export function Transcript({
               return <ArtifactCard key={message.id} message={message} />;
             }
             if (message.role === "setup") {
+              const failed = message.level === "error" || String(message.kind).endsWith("_failed") || message.kind === "run.error";
               return (
-                <p key={message.id} className={message.level === "error" || String(message.kind).endsWith("_failed") ? "setup err" : "setup"}>
-                  {message.text}
+                <p
+                  key={message.id}
+                  id={`msg-${message.id}`}
+                  className={failed ? "setup err" : "setup"}
+                  data-highlight={highlightId === message.id ? "true" : undefined}
+                >
+                  <span>{message.text}</span>
+                  {failed && onOpenDiagnostics ? (
+                    <button type="button" className="ghost diag-link" onClick={onOpenDiagnostics}>
+                      查看诊断
+                    </button>
+                  ) : null}
+                  <time className="bubble-time setup-time" dateTime={message.createdAt}>
+                    {formatWhen(message.createdAt)}
+                  </time>
                 </p>
               );
             }
             if (message.role === "user") {
               return (
-                <article key={message.id} className="bubble user">
+                <article
+                  key={message.id}
+                  id={`msg-${message.id}`}
+                  className="bubble user"
+                  data-highlight={highlightId === message.id ? "true" : undefined}
+                >
                   {message.text ? <div className="body">{message.text}</div> : null}
                   {message.images?.length ? (
                     <div className="image-row">
@@ -230,6 +292,7 @@ export function Transcript({
                       ))}
                     </div>
                   ) : null}
+                  <MessageTime message={message} />
                 </article>
               );
             }
@@ -240,23 +303,33 @@ export function Transcript({
             return (
               <Fragment key={message.id}>
                 {groups.map((group, index) => {
+                  const last = index === groups.length - 1;
                   if (group.type === "tools") {
                     return (
-                      <div key={`${message.id}-tools-${index}`} className="tool-stack">
-                        {group.tools.map((tool, toolIndex) => (
-                          <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
-                        ))}
-                      </div>
+                      <Fragment key={`${message.id}-tools-${index}`}>
+                        <div className="tool-stack">
+                          {group.tools.map((tool, toolIndex) => (
+                            <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
+                          ))}
+                        </div>
+                        {last ? <MessageTime message={message} className="assistant-time" /> : null}
+                      </Fragment>
                     );
                   }
                   const lastText = !groups.slice(index + 1).some((item) => item.type === "text");
                   return (
-                    <article key={`${message.id}-text-${index}`} className="bubble assistant">
+                    <article
+                      key={`${message.id}-text-${index}`}
+                      id={last ? `msg-${message.id}` : undefined}
+                      className="bubble assistant"
+                      data-highlight={highlightId === message.id ? "true" : undefined}
+                    >
                       <MarkdownBody
                         text={group.text}
                         className="body"
                         streaming={Boolean(message.streaming && lastText)}
                       />
+                      {last ? <MessageTime message={message} /> : null}
                     </article>
                   );
                 })}

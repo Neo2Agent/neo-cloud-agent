@@ -1,4 +1,17 @@
-import type { Automation, Build, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
+import type {
+  Automation,
+  Build,
+  BundledExpertPolicyDocument,
+  Desk,
+  Device,
+  Environment,
+  Expert,
+  PluginInstall,
+  Project,
+  Run,
+  RunEvent,
+} from "@neo-cloud-agent/contracts";
+import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
 import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
@@ -66,6 +79,31 @@ CREATE TABLE IF NOT EXISTS projects (
   body JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS desks (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS experts (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS expert_policies (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS plugin_installs (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -73,6 +111,7 @@ export interface PostgresMetadataStore extends AccountStore {
   saveRun(record: PersistedRun): Promise<void>;
   loadRun(runId: string): Promise<PersistedRun | null>;
   loadRuns(): Promise<PersistedRun[]>;
+  loadRunSummaries(): Promise<Run[]>;
   saveEvent(event: RunEvent): Promise<void>;
   loadEvents(runId: string): Promise<RunEvent[]>;
   saveLease(lease: WorkerLease): Promise<void>;
@@ -88,6 +127,20 @@ export interface PostgresMetadataStore extends AccountStore {
   saveProject(item: Project): Promise<void>;
   loadProjects(): Promise<Project[]>;
   deleteProject(id: string): Promise<void>;
+  saveExpert(item: Expert): Promise<void>;
+  loadExperts(): Promise<Expert[]>;
+  deleteExpert(id: string): Promise<void>;
+  saveExpertPolicy(item: BundledExpertPolicyDocument): Promise<void>;
+  loadExpertPolicy(): Promise<BundledExpertPolicyDocument | null>;
+  savePluginInstall(item: PluginInstall): Promise<void>;
+  loadPluginInstalls(): Promise<PluginInstall[]>;
+  deletePluginInstall(id: string): Promise<void>;
+  saveDesk(item: Desk): Promise<void>;
+  loadDesks(): Promise<Desk[]>;
+  deleteDesk(id: string): Promise<void>;
+  saveDevice(item: Device): Promise<void>;
+  loadDevices(): Promise<Device[]>;
+  deleteDevice(id: string): Promise<void>;
 }
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -96,6 +149,14 @@ function asRecord(value: unknown): PersistedRun | null {
   }
   const record = value as PersistedRun;
   return record.run?.id ? record : null;
+}
+
+function asRun(value: unknown): Run | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const run = value as Run;
+  return run.id && run.prompt ? run : null;
 }
 
 function asEvent(value: unknown): RunEvent | null {
@@ -138,12 +199,53 @@ function asAutomation(value: unknown): Automation | null {
   return item.id && item.prompt && item.schedule ? item : null;
 }
 
+function asDesk(value: unknown): Desk | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Desk;
+  return item.id && item.userId ? item : null;
+}
+
+function asDevice(value: unknown): Device | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Device;
+  return item.id && item.userId && (item.platform === "ios" || item.platform === "android") ? item : null;
+}
+
 function asProject(value: unknown): Project | null {
   if (!value || typeof value !== "object") {
     return null;
   }
   const item = value as Project;
-  return item.id && item.name ? item : null;
+  if (!item.id || !item.name) return null;
+  return { ...item, expertIds: item.expertIds ?? [], pluginIds: item.pluginIds ?? [] };
+}
+
+function asExpert(value: unknown): Expert | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Expert;
+  return item.id && item.name && item.persona ? item : null;
+}
+
+function asPluginInstall(value: unknown): PluginInstall | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as PluginInstall;
+  return item.id && item.pluginId ? item : null;
+}
+
+function asExpertPolicy(value: unknown): BundledExpertPolicyDocument | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as BundledExpertPolicyDocument;
+  return item.version === 1 && item.experts && typeof item.experts === "object" ? item : null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -179,8 +281,18 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       return parseJson(result.rows[0]?.record, asRecord);
     },
     async loadRuns() {
-      const result = await query(`SELECT record FROM runs ORDER BY updated_at DESC`);
-      return result.rows.map((row) => parseJson(row.record, asRecord)).filter((item): item is PersistedRun => Boolean(item));
+      const result = await query(`SELECT record FROM runs`);
+      return result.rows
+        .map((row) => parseJson(row.record, asRecord))
+        .filter((item): item is PersistedRun => Boolean(item))
+        .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
+    },
+    async loadRunSummaries() {
+      const result = await query(`SELECT record->'run' AS run FROM runs`);
+      return result.rows
+        .map((row) => parseJson(row.run, asRun))
+        .filter((item): item is Run => Boolean(item))
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
     },
     async saveEvent(event) {
       await query(
@@ -286,6 +398,78 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     async deleteProject(id) {
       await query(`DELETE FROM projects WHERE id = $1`, [id]);
     },
+    async saveExpert(item) {
+      await query(
+        `INSERT INTO experts (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.updatedAt],
+      );
+    },
+    async loadExperts() {
+      const result = await query(`SELECT body FROM experts ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asExpert)).filter((item): item is Expert => Boolean(item));
+    },
+    async deleteExpert(id) {
+      await query(`DELETE FROM experts WHERE id = $1`, [id]);
+    },
+    async saveExpertPolicy(item) {
+      await query(
+        `INSERT INTO expert_policies (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [BUNDLED_EXPERT_POLICY_ID, JSON.stringify(item), item.updatedAt],
+      );
+    },
+    async loadExpertPolicy() {
+      const result = await query(`SELECT body FROM expert_policies WHERE id = $1`, [BUNDLED_EXPERT_POLICY_ID]);
+      return parseJson(result.rows[0]?.body, asExpertPolicy);
+    },
+    async savePluginInstall(item) {
+      await query(
+        `INSERT INTO plugin_installs (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.updatedAt],
+      );
+    },
+    async loadPluginInstalls() {
+      const result = await query(`SELECT body FROM plugin_installs ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asPluginInstall)).filter((item): item is PluginInstall => Boolean(item));
+    },
+    async deletePluginInstall(id) {
+      await query(`DELETE FROM plugin_installs WHERE id = $1`, [id]);
+    },
+    async saveDesk(item) {
+      await query(
+        `INSERT INTO desks (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.lastSeenAt || item.createdAt],
+      );
+    },
+    async loadDesks() {
+      const result = await query(`SELECT body FROM desks ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asDesk)).filter((item): item is Desk => Boolean(item));
+    },
+    async deleteDesk(id) {
+      await query(`DELETE FROM desks WHERE id = $1`, [id]);
+    },
+    async saveDevice(item) {
+      await query(
+        `INSERT INTO devices (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.lastSeenAt || item.createdAt],
+      );
+    },
+    async loadDevices() {
+      const result = await query(`SELECT body FROM devices ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asDevice)).filter((item): item is Device => Boolean(item));
+    },
+    async deleteDevice(id) {
+      await query(`DELETE FROM devices WHERE id = $1`, [id]);
+    },
     async createUser(user) {
       try {
         await query(
@@ -315,6 +499,12 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         [id],
       );
       return mapUser(result.rows[0]);
+    },
+    async listUsers() {
+      const result = await query(
+        `SELECT id, email, password_hash, org_id, created_at FROM users ORDER BY created_at ASC`,
+      );
+      return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
     },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);

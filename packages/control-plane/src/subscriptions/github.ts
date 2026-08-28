@@ -1,6 +1,6 @@
 import type { RunSubscription } from "@neo-cloud-agent/contracts";
 
-export type GitHubIngressKind = "pr_activity" | "ci" | "ping" | "ignored";
+export type GitHubIngressKind = "pr_activity" | "ci" | "human_push" | "ping" | "ignored";
 
 export type GitHubIngress = {
   kind: GitHubIngressKind;
@@ -216,6 +216,24 @@ export function parseGitHubWebhook(eventName: string, payload: unknown, delivery
     };
   }
 
+  if (eventName === "push") {
+    const actor = loginOf(body.sender);
+    const ref = asString(body.ref);
+    const branch = ref.replace(/^refs\/heads\//, "");
+    if (!branch || ref.startsWith("refs/tags/") || body.deleted === true || isBotLogin(actor)) {
+      return ignored(repo, `push:${asString(body.after) || delivery}`);
+    }
+    return {
+      kind: "human_push",
+      deliveryKey: `push:${asString(body.after) || delivery}:${branch}`,
+      repo,
+      prNumbers: [],
+      branches: [branch],
+      actor,
+      text: `[GitHub] Human push on ${repo ?? "repo"} ${branch} by ${actor || "someone"}`,
+    };
+  }
+
   if (eventName === "status") {
     const state = asString(body.state);
     if (!state || state === "pending") {
@@ -260,6 +278,12 @@ export function subscriptionMatchesIngress(subscription: RunSubscription, ingres
   }
   if (!ingress.repo || subscription.repo !== ingress.repo) {
     return false;
+  }
+  if (ingress.kind === "human_push") {
+    if (subscription.branch && ingress.branches.length > 0) {
+      return ingress.branches.includes(subscription.branch);
+    }
+    return true;
   }
   if (subscription.kind === "github_pr" && ingress.kind !== "pr_activity") {
     return false;

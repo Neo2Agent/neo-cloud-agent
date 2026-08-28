@@ -286,6 +286,9 @@ export async function runCommand(parsed: ParsedCli, io: CliIo): Promise<number> 
     envId: parsed.flags.envId,
     buildId: parsed.flags.buildId,
     model: parsed.flags.model,
+    expertId: parsed.flags.expertId,
+    expertTeamId: parsed.flags.expertTeamId,
+    pluginIds: parsed.flags.plugins.length ? parsed.flags.plugins : undefined,
     ref: parsed.flags.ref,
     reuseBuild: parsed.flags.reuseBuild,
   });
@@ -429,4 +432,48 @@ export async function buildCommand(parsed: ParsedCli, io: CliIo): Promise<number
 export async function vmsCommand(parsed: ParsedCli, io: CliIo): Promise<number> {
   printJsonOrText(io, parsed.flags.output, await createClient(io, parsed.flags).vms());
   return EXIT_OK;
+}
+
+export async function pluginCommand(parsed: ParsedCli, io: CliIo): Promise<number> {
+  const client = createClient(io, parsed.flags);
+  const sub = parsed.args[0] ?? "ls";
+  const id = parsed.args[1]?.trim();
+  const projectId = parsed.flags.projectId;
+  const scope = projectId ? "project" : "user";
+  if (sub === "ls") {
+    const body = await client.listPlugins(projectId);
+    if (parsed.flags.output !== "text") {
+      printJsonOrText(io, parsed.flags.output, body);
+      return EXIT_OK;
+    }
+    if (body.plugins.length === 0) {
+      writeLine(io.out, "no plugins");
+      return EXIT_OK;
+    }
+    for (const item of body.plugins) {
+      const state = item.pinned ? "pinned" : item.enabled ? "enabled" : item.installed ? "disabled" : "catalog";
+      writeLine(io.out, `${item.slug}\t${state}\t${item.name}`);
+    }
+    return EXIT_OK;
+  }
+  if (!id) {
+    throw new CliError("plugin id is required", EXIT_USAGE);
+  }
+  if (sub === "install") {
+    printJsonOrText(io, parsed.flags.output, await client.installPlugin(id, { scope, projectId }));
+    return EXIT_OK;
+  }
+  if (sub === "enable") {
+    printJsonOrText(io, parsed.flags.output, await client.enablePlugin(id, { enabled: true, scope, projectId }));
+    return EXIT_OK;
+  }
+  if (sub === "disable") {
+    printJsonOrText(io, parsed.flags.output, await client.enablePlugin(id, { enabled: false, scope, projectId }));
+    return EXIT_OK;
+  }
+  if (sub === "uninstall") {
+    printJsonOrText(io, parsed.flags.output, await client.uninstallPlugin(id, { scope, projectId }));
+    return EXIT_OK;
+  }
+  throw new CliError(`unknown plugin command: ${sub}`, EXIT_USAGE);
 }

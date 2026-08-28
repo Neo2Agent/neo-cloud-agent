@@ -20,6 +20,7 @@ const {
   getBuild,
   listBuilds,
   readBuildLogs,
+  resetBuildsForTests,
   restoreBuildSnapshot,
 } = await import("./builds.js");
 const { readyWarmCount, resetWarmPoolForTests } = await import("./warm-pool.js");
@@ -34,9 +35,18 @@ test("environment fingerprint is stable across repo order", () => {
   assert.match(a, /^[0-9a-f]{64}$/);
 });
 
+test("listBuilds reuses the in-memory catalog after the first scan", () => {
+  resetBuildsForTests();
+  const first = listBuilds();
+  const second = listBuilds();
+  assert.deepEqual(first, second);
+  assert.equal(first.every((item) => Boolean(item.id)), true);
+});
+
 test("createEnvironmentBuild snapshots install output and seeds the warm pool", async () => {
   resetEnvironmentsForTests();
   resetWarmPoolForTests();
+  resetBuildsForTests();
   const build = await createEnvironmentBuild({
     name: "toy",
     repoUrls: ["fixtures/toy-repo"],
@@ -63,6 +73,7 @@ test("createEnvironmentBuild snapshots install output and seeds the warm pool", 
 test("draft builds never become the active boot image", async () => {
   resetEnvironmentsForTests();
   resetWarmPoolForTests();
+  resetBuildsForTests();
   const fixture = mkdtempSync(path.join(tmpdir(), "neo-draft-build-"));
   mkdirSync(path.join(fixture, ".neo"), { recursive: true });
   writeFileSync(path.join(fixture, ".neo/environment.json"), JSON.stringify({ install: "printf draft > .neo-installed" }));

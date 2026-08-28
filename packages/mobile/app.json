@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Neo",
+    "slug": "neo-cloud-agent",
+    "scheme": "neo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "agent.neo.mobile",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "package": "agent.neo.mobile",
+      "usesCleartextTraffic": true
+    },
+    "plugins": ["expo-secure-store", "expo-notifications"],
+    "extra": {
+      "apiUrl": ""
+    }
+  }
+}

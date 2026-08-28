@@ -2,7 +2,7 @@
 
 对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离 VM 运行；**LLM 推理走云端网关**；**Agent 循环和工具执行在 VM 内**；Agent 内核使用 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
 
-本文是实现蓝图，不是产品文案。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
+本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（包、进程、现网、数据流）见 [architecture-overview.md](./architecture-overview.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
 
 ---
 
@@ -23,7 +23,7 @@
 
 - 复刻 Cursor 的 IDE、Tab、本地 sandbox，或把 pi 再嵌进一份本机 TUI
 - 多租户计费的完整账务系统（先打点，后对账）
-- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）
+- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）——二期重新评估见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 让 VM 直连 Anthropic / OpenAI / 自建 GPU（密钥与配额会泄漏到不可信环境）
 - 让 CLI 在开发者机器上执行工具来「加速」——CLI 只打 `/v1`，见 [cli.md](./cli.md)
 
@@ -57,6 +57,7 @@ flowchart TB
   subgraph clients [Clients]
     Web
     CLI
+    Mobile[iOS / Android]
     Slack
     GitHub
     PublicAPI[Public API]
@@ -90,7 +91,7 @@ flowchart TB
 
 | 层 | 信任级 | 职责 |
 | --- | --- | --- |
-| 控制面 | 高（你的账号体系） | 鉴权、Run 状态机、环境/Build、密钥、模型路由、SCM、事件扇出 |
+| 控制面 | 高（你的账号体系） | 鉴权、限流、Run 状态机、环境/Build、密钥、模型路由、SCM、事件扇出 |
 | LLM Gateway | 高 | 唯一持有 Provider / GPU 凭证；计费、限流、审计、prompt cache |
 | 执行面 VM | 低（按 Run 隔离） | 跑 pi、操作磁盘和进程、遵守 egress；只拿短寿命 JWT |
 
@@ -135,11 +136,11 @@ sequenceDiagram
 
 | 职责 | 干什么 | P0 部署在 |
 | --- | --- | --- |
-| `api` | 对外 REST / SSE。创建 Run、跟进、取消、拉 transcript、artifacts | `control-plane` 模块 |
+| `api` | 对外 REST / SSE。创建 Run、跟进、取消、拉 transcript、artifacts。请求限流（IP / 登录 / 用户写操作 / SSE 并发） | `control-plane` 模块 |
 | `orchestrator` | Run 状态机；向 VM 调度器下发 provision / stop / snapshot | `control-plane` 模块 |
 | `env` | Environment 版本、`environment.json`、密钥绑定、egress 策略 | `control-plane` 模块 |
 | `build` | 后台 Build：clone + `install` + 打盘；维护 active / draft 快照 | `control-plane` 模块 |
-| `llm-gateway` | 模型代理，OpenAI-compatible + 原生 Anthropic 透传 | **独立进程** |
+| `llm-gateway` | 模型代理，OpenAI-compatible + 原生 Anthropic 透传。按 run JWT / org 做请求与并发限流 | **独立进程** |
 | `scm` | GitHub App / GitLab；短寿命 clone/push token；开 PR | `control-plane` 模块 |
 | `events` | 把 VM 上报的 AgentEvent 写成 RunEvent，SSE / WS 推给客户端 | `control-plane` 模块 |
 | `artifacts` | 签上传 URL；文件直传对象存储 | `control-plane` 模块 |
@@ -177,7 +178,7 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 
 | 存储 | 内容 |
 | --- | --- |
-| MySQL 或 Postgres | 用户、环境、Run 元数据、Build、PR 链接、事件索引。`DATABASE_URL` 以 `mysql://` / `mariadb://` 走 MySQL，`postgres://` 走 Postgres。现网 MySQL 在库机 `101.42.105.230`，操作见 [.cursor/skills/tencent-lighthouse-db/SKILL.md](../.cursor/skills/tencent-lighthouse-db/SKILL.md) |
+| MySQL 或 Postgres | 用户、环境、Run 元数据、Build、PR 链接、事件索引。`DATABASE_URL` 以 `mysql://` / `mariadb://` 走 MySQL，`postgres://` 走 Postgres。现网 MySQL 在库机 `101.42.105.230`，操作见 [.cursor/skills/tencent-lighthouse-db/SKILL.md](../.cursor/skills/tencent-lighthouse-db/SKILL.md)。应用机域名 `neorun.cloud` 见 [production-domain.md](./production-domain.md) |
 | Redis | 跟进队列、live event stream、lease / lock、warm pool 索引。现网 Redis 与 MySQL 同机 |
 | 对象存储 | transcript 归档、artifacts、（可选）session JSONL 备份 |
 | 密钥库 | SCM App 私钥、Provider Key、用户 secrets（KMS 加密） |
@@ -345,7 +346,7 @@ pi-ai                        ← 多 Provider 流式、用量、自定义 baseUr
 | --- | --- |
 | `neo-git` | `neo_git_commit` → `POST /internal/runs/:id/scm/commit`；签名和 push 走控制面，不把长期 token 给 bash |
 | `neo-pr` | `neo_pr_open` → `POST /internal/runs/:id/scm/pull-request` |
-| `neo-mcp` | `neo_mcp_list` / `neo_mcp_call`：读工作区 `.neo/environment.json` 的 `mcp`，打 HTTP 或拉起 stdio MCP。OAuth 交互登录未做 |
+| `neo-mcp` | `neo_mcp_list` / `neo_mcp_call`：读工作区 `.neo/environment.json` 的 `mcp`。HTTP 先走控制面 `/internal/runs/:id/mcp`（Bearer / OAuth 密钥不进 worker），失败再直连；stdio 仍在 worker |
 | `neo-browser` | `neo_browse`：抓公开 http(s) 页的 title + 可见文本。**不是** headed browser / computer-use |
 | `neo-artifact` | `neo_artifact_upload`：把工作区文件传到 `POST /internal/runs/:id/artifacts`，对话页用 `/v1/runs/:id/artifacts/:name` 下载或预览。录屏 / 远程桌面未做 |
 | `neo-diag` | `neo_diag` 读 `GET /internal/runs/:id/diagnostics` 和工作区 `.neo/logs` |
@@ -368,7 +369,7 @@ Gateway 是「推理在云端」的落点。VM 把它当成一个 OpenAI-compati
 pi-ai streamSimple
     → https://llm.<cluster>/v1/chat/completions
     → Authorization: Bearer <run JWT>
-    → Gateway: 验 JWT、配额、选路由、打点
+    → Gateway: 验 JWT、限流、配额、选路由、打点
     → Provider SDK / 内部 vLLM
 ```
 
@@ -525,7 +526,7 @@ User 1──* Run
 Run
   id, orgId, envId, envVersionId, buildId?
   status, setupStatus
-  source: web | cli | slack | github | api | automation
+  source: web | cli | slack | github | api | automation | telegram | wechat | desk | ios | android
   model, branchName, repoUrls[]
   workerHandle, llmJwtJti
   createdAt, idleAt, expiresAt
@@ -546,8 +547,13 @@ Run 1──* PullRequestRef
 POST   /v1/auth/login|logout
 GET    /v1/me
 GET    /v1/vms
+GET    /v1/rate-limits
 GET    /v1/settings/llm
 POST   /v1/settings/llm          页面存 Key；响应永不回传明文
+
+POST   /v1/devices               登记手机推送 token（Expo）
+GET    /v1/devices
+DELETE /v1/devices/:id
 
 POST   /v1/runs                  创建并开始（槽满则 queued）
 GET    /v1/runs
@@ -576,7 +582,7 @@ GET    /v1/builds/:id
 GET    /v1/builds/:id/logs
 ```
 
-第一个非 Web 宿主是 `packages/cli`（`pnpm neo`）。它只消费上面这组 `/v1` 和 SSE，`source` 填 `"cli"`。协议、退出码和明确不做的本机 Agent / worker 桥见 [cli.md](./cli.md)。
+第一个非 Web 宿主是 `packages/cli`（`pnpm neo`）。它只消费上面这组 `/v1` 和 SSE，`source` 填 `"cli"`。协议、退出码和明确不做的本机 Agent / worker 桥见 [cli.md](./cli.md)。iOS / Android 是下一个同级宿主：同样只打 `/v1`，不在手机上跑 loop；方案见 [mobile.md](./mobile.md)。
 
 内部通道是 **HTTP `/internal/runs/:id/...`**（worker 带 run JWT），不是单独的 gRPC 服务：
 
@@ -680,11 +686,12 @@ neo-cloud-agent/                  ← 唯一应用仓库
     worker/                       打进 VM / 任务容器镜像
     extensions/                   打进同一张 worker 镜像
     cli/                          终端客户端（不是第四个进程）
+    mobile/                       手机客户端，见 [mobile.md](./mobile.md)
   infra/                          compose、helm、镜像配方（先放这里）
   .neo/environment.json
 ```
 
-控制面仍是四个运行时 package：`contracts`、`control-plane`、`llm-gateway`、`worker`。`packages/cli` 是第五个 **客户端** package，不部署成进程。`orchestrator` / `scm` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
+控制面仍是四个运行时 package：`contracts`、`control-plane`、`llm-gateway`、`worker`。`packages/cli` 是第五个 **客户端** package，不部署成进程。iOS / Android 以后是第六个客户端 package，同样不是 Deployment。`orchestrator` / `scm` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
 
 ### 14.4 和「微服务清单」的对照
 
@@ -742,13 +749,13 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 - Warm pool（已落地：成功 Build 的工作区副本，reflink 优先；还不是 live-fork 一台正在跑的 VM）
 - Firecracker guest init / rootfs overlay（已落地配方；生产盘仍要内核 + 烤进 worker 的 ext4）
 - Egress 三模式（已落地应用层）
-- MCP / browse / artifacts（已落地 HTTP/stdio MCP、`neo_browse`、`/v1/runs/:id/artifacts`；headed 桌面未做。怎么补 browser-use / computer-use 见 [browser-computer-use.md](./browser-computer-use.md)）
+- MCP / browse / artifacts（已落地 HTTP MCP 控制面代理 + OAuth/Bearer、`neo_browse`、签名 artifact 链到 PR；headed 桌面未做。怎么补 browser-use / computer-use 见 [browser-computer-use.md](./browser-computer-use.md)）
 
 ### P3 — 生产隔离与规模
 
 - Firecracker / Cloud Hypervisor live-fork（正在跑的 VM 热分叉）
 - 失败 Build 不影响 fleets
-- 多仓、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），事件进现有跟进队列，单订阅最多唤醒 10 次。对话页可建每天 / 每小时任务（`source: automation`）。Telegram / 微信公众号发一句开新对话；做完可推企业微信机器人、Telegram 或 HTTP。
+- 多仓、Slack / Linear、OIDC。GitHub PR 评论 + Actions 订阅已落地：`neo_subscribe` + `POST /webhooks/github`（HMAC），开 PR 会自动订阅。CI 失败默认 autofix（最多 3 次）；人跟进或人 push 分支后停。对话页可建每天 / 每小时任务（`source: automation`）。Telegram / 微信公众号发一句开新对话；做完或 PR 开好了可推企业微信、Telegram、HTTP 或 SMTP。`QUOTA_MAX_*` / 设置页限制同时跑的对话和本月 token。
 - 子 Agent：已落地 `neo_subagent`。契约对齐 pi 官方 `subagent` 扩展（scout / planner / reviewer / worker，single / parallel / chain，`.pi/agents/*.md`）。实现走 worker 内二次 `createAgentSession`，不 spawn `pi` CLI，也不把 loop 打回控制面。子会话的 `agent.end` 不会把父 Run 标成 IDLE。子工具事件收进父卡片的 `details.steps`，不在 transcript 里铺成平级卡片。scout 用 `neo_browse` 做公开网页，不再带 bash。
 
 ---
@@ -765,10 +772,11 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Subagents / Task | `neo_subagent` | 对齐 pi 官方 subagent 契约；SDK 嵌套 session，不用 `pi --mode json` |
 | Cloud MCP | `neo-diag` extension | 动态工具，不必改 pi |
 | MCP / Hooks | 工作区 skills / `AGENTS.md` + `.cursor/hooks.json` command hooks | 不加载宿主机 `~/.pi` extensions |
-| GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 唤醒走跟进队列，不另开 loop |
-| Artifacts / 远程桌面 | artifact-service + 可选 sidecar | 桌面可后置；分期见 [browser-computer-use.md](./browser-computer-use.md) |
+| GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 开 PR 自动订阅；CI 失败 autofix 到绿 |
+| Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置；分期见 [browser-computer-use.md](./browser-computer-use.md) |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
+| 手机查看 / 跟进 | `packages/mobile`（方案） | 与 CLI 同级的 `/v1` 宿主；见 [mobile.md](./mobile.md)。未实现 |
 | Agent 内核（自研） | **pi-coding-agent** | 这是唯一故意不对齐的地方 |
 
 不对齐是优点：pi 已经有 SDK、RPC、session、extensions。你们的差异化在 **编排、环境和安全**，不在再写一遍 tool loop。
@@ -791,10 +799,11 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 
 1. Firecracker 生产 rootfs / tap 回连已经落地（`pnpm fc:assets` / `pnpm fc:rootfs` / `pnpm test:firecracker`）。嵌套 KVM + AMX 的宿主机 `KVM_CREATE_VCPU` 会故障，live turn 需在真机或非 AMX 宿主上跑。
 2. 块设备 CoW 已落地接口：Build / 预热 / Firecracker rootfs 先 `cp --reflink=always`；文件系统不支持时工作区整树复制，生产 rootfs 只读共享原盘（不整份拷 1.5GiB）。不是 live-fork。
-3. 配额、多租户计费、组织成员
+3. 配额：同时跑的对话 / 本月 token 已落地（`GET /v1/quota`）；完整账务仍后置。请求限流已落地：控制面按 IP / 登录 / 用户写操作 / SSE 并发，Gateway 按 run JWT 与 org；`GET /v1/rate-limits` 看当前桶。设了 `REDIS_URL` 后计数走 Redis 固定窗口，否则进程内 token bucket。`RATE_LIMIT=0` 关闭。后管与模型网关怎么拆（New API 管渠道、Neo 管 Agent 用户）见 [admin-platform-research.md](./admin-platform-research.md)。
 4. Egress 从应用层升级到 VM 出站代理 / iptables
 5. headed browser / computer-use sidecar（`neo_browse` 只抓静态页）。**先做 Playwright a11y browser-use，桌面和远程接管后置**，见 [browser-computer-use.md](./browser-computer-use.md)
 6. CLI 交互 TUI、浏览器登录、本机 pi 模式——都单开，不要和 `neo run` 混语义。P0 headless 客户端见 [cli.md](./cli.md)
+7. iOS / Android：与 CLI 同级的 `/v1` 宿主，不在手机上跑 loop。先 HTTPS 域名和设备推送，再开 `packages/mobile`。方案见 [mobile.md](./mobile.md)
 
 控制面重启后续上 RUNNING Worker、以及对外 API 令牌鉴权已经落地。
 
@@ -806,13 +815,15 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
 - 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。已经挂上的 handle 以进程/容器退出为准，不会因为一次长工具调用没心跳就被标 ERROR。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
 - 对外 `/v1` 用用户 session（`POST /v1/auth/login`）或 `CONTROL_PLANE_TOKEN`。不支持注册。默认必须登录（`ACCOUNTS_REQUIRED=0` 才允许匿名）。账号写死为 `admin` / `123456`，登录时查账号库（接了 MySQL 就查 `users` 表）。对话页不预填、不跳过，必须手输账号和密码。Worker 走 `/internal`，只带 run JWT。`/health`、静态页和公开 webhook 不需要令牌。
+- 平台管理台是独立应用，不嵌进对话页：`packages/admin-api`（默认 `:8090`）+ `packages/admin-web`（默认 `:5176`，`pnpm dev:admin`）。现网同一域名路径：`https://neorun.cloud/` 对话、`https://neorun.cloud/admin/` 管理台。只认 `admin` / `ADMIN_EMAILS` / 服务令牌。读同一套账号库和持久化 Run，不改控制面 `/v1` 登录。New API 只做控制台链接。
 - 设了 `DATABASE_URL` 后，Run / 事件 / 用户 / Environment / Build 写入 MySQL 或 Postgres（看 URL scheme）；没配则继续用 `.control` JSON。
-- 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。
+- 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。限流计数也复用这条 Redis（`INCR` 固定窗口）；没配则进程内 token bucket。
+- 对外 `/v1` 与 `/webhooks/*` 默认限流：IP、登录（含账号）、用户/组织读写、贵操作（Build / 设置 / commit / PR）、SSE 并发。`/health`、静态页、`/internal` 不限。Gateway `POST /v1/chat/completions` 按 run JWT 与 org 限 QPS 和在飞请求。超限返回 `429` + `Retry-After` / `X-RateLimit-*`。`GET /v1/rate-limits` 看当前桶。`RATE_LIMIT=0` 关闭。
 - `WORKER_RUNTIME=firecracker` 走 Firecracker HTTP API（kernel / rootfs / tap / vsock）。开发机没配内核时继续用 local / docker。没配 `FIRECRACKER_ROOTFS` 时：若 `infra/firecracker/.assets/rootfs.ext4` 是生产盘（`pnpm fc:rootfs`）就用它，否则用 overlay 打一张小 ext4（单测路径，需要 `mkfs.ext4`）。Guest 不能用 `127.0.0.1` 回连宿主机，provision 会把控制面 / Gateway URL 改成 tap 宿主机 IP。
 - Environment Builds：`POST /v1/environments`、`POST /v1/builds`。成功的非 draft Build 成为同一 fingerprint 的 active 快照；新 Run 先 claim warm slot（`rename`），否则 reflink / 拷贝 snapshot，不再跑 `install`。`BUILD_CAPTURE=0` 关闭 JIT 打盘；`WARM_POOL_SIZE` 默认 1。对话页可以选环境 / 快照，或点「预热」。
 - Egress：`environment.json` 的 `egress.mode` 会进 worker（`NEO_EGRESS_*`）。`allowlist_only` 拦 clone 和不在名单里的 `fetch`；Gateway / GitHub 仍放行。
 - Worker 把 `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` 注册成 pi `customTools`。Agent 用它们走控制面 commit / 开草稿 PR / 看 setup 与 egress / 抓网页 / 调 MCP / 上传产物；不要让 bash 拿长期 git token。`GET /v1/runs/:id/diagnostics` 给 UI，worker 走 `/internal`。
 - `packages/cli` 是 `/v1` 的 headless 宿主：创建 Run（`source: "cli"`）、订 SSE、跟进 / 归档 / diff / PR。不在终端里跑 pi，不持有 Provider Key。
 - DeepSeek：`deepseek-v4-flash` 是默认便宜模型；`deepseek-chat` / `deepseek-reasoner` 已退役，读写设置时改写成 flash。`deepseek-v4-pro` 显式保留。对话页可以切 Flash / Pro。
-- `WORKER_RUNTIME=vm`：无 KVM 时用 loop ext4 槽。空闲超时先 `persistWorkspaceTree` 再 `releaseVmSlot`（卸槽会擦盘）。两槽都忙则新对话 `run.queued`。loop/local worker 套 `WORKER_MEMORY_MIB` 堆上限；control-plane 有 cgroup `Delegate=` 时再套 RSS。归档 / 过期 run 不把事件树留在控制面内存里，补播从 persist 读并折叠 `message.delta`。
+- `WORKER_RUNTIME=vm`：无 KVM 时用 loop ext4 槽。空闲超时先把工作区写回 `hostRunsDir/<runId>` 再 `releaseVmSlot`（卸槽会擦盘）。写回失败则留下槽。工作区有全站预算和 TTL 回收，见 [workspace-persistence.md](./workspace-persistence.md)。两槽都忙则新对话 `run.queued`。loop/local worker 套 `WORKER_MEMORY_MIB` 堆上限；control-plane 有 cgroup `Delegate=` 时再套 RSS。归档 / 过期 run 不把事件树留在控制面内存里，补播从 persist 读并折叠 `message.delta`。
 - 对话页 React 包在 `packages/web`；control-plane 托管 `dist/`。工具卡和模型文字按时间拆行，见 §9.3。

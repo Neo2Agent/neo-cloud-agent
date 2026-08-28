@@ -9,30 +9,53 @@ import type {
   CreateRunRequest,
   CreateSubscriptionRequest,
   CreateAutomationRequest,
+  BindDeskWorkspaceRequest,
+  CreateDeskRequest,
+  CreateDeviceRequest,
+  DeskInboxEvent,
+  UpdateDeskRequest,
+  CreateExpertRequest,
   CreateProjectRequest,
+  CreateProjectMessageRequest,
+  CreateTodoRequest,
+  HandoffRequest,
+  TransitionTodoRequest,
+  UpdateTodoRequest,
   RunEvent,
+  UpdateExpertRequest,
   UpdateProjectRequest,
 } from "@neo-cloud-agent/contracts";
 import {
+  BUNDLED_EXPERT_TEAMS,
   canManageProject,
   evaluateEgress,
+  isDeskTarget,
   pageTranscriptSnapshot,
   parseAutomationSchedule,
   parseLlmSettingsRequest,
   publicLlmSettings,
   readLlmSettings,
+  readNewApiInfo,
   resolveModelLimits,
   writeLlmSettings,
 } from "@neo-cloud-agent/contracts";
 import { eventsForRun } from "../events/bus.js";
 import { snapshotForRun } from "../events/snapshot.js";
-import { attachEventStream } from "../events/stream.js";
+import { SSE_HEADERS, attachEventStream } from "../events/stream.js";
 import {
   abortRun,
   archiveRun,
+  claimDeskRun,
   commitRun,
   createRun,
+  deskAssignmentForRun,
+  rejectDeskRun,
+  releaseDeskRun,
   enqueueFollowUp,
+  inviteRunCollaborator,
+  canInviteRunCollaborator,
+  handoffRun,
+  leaseDesk,
   ingestGitHubWebhook,
   getBootstrap,
   getRun,
@@ -41,8 +64,10 @@ import {
   getRunSession,
   ingestEvents,
   listFollowUps,
+  listProjectRunCards,
   listRunSubscriptions,
   listRuns,
+  removeRunCollaborator,
   subscribeRun,
   transferRun,
   loadRunIntoMemory,
@@ -55,12 +80,14 @@ import {
   takeInbound,
 } from "../orchestrator/orchestrator.js";
 import { listWorkspacePath } from "../workspace-fs.js";
+import { loadWorkspaceMeta, summarizeWorkspaceStore } from "../runtime/workspace-store.js";
 import { workspaceFor } from "../worker-spawn.js";
 import {
   AccountError,
   bootstrapEmail,
   createTeammateAccount,
   findPublicUserByEmail,
+  findPublicUserById,
   loginAccount,
   logoutSession,
   sessionCookieHeader,
@@ -75,6 +102,7 @@ import {
   accountsRequired,
   cookieHeader,
   matchApiToken,
+  readBearer,
   resolveActor,
   resolveApiToken,
   verifyWorkerJwt,
@@ -84,6 +112,24 @@ import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBui
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
 import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
+import { verifyArtifactAccess } from "../artifacts/signed.js";
+import { beginMcpOAuth, finishMcpOAuth } from "../mcp/oauth.js";
+import { proxyMcpCall, proxyMcpList } from "../mcp/proxy.js";
+import { deleteMcpSecret, publicMcpServers, upsertMcpSecret } from "../mcp/secrets.js";
+import { publicAppUrl } from "../notify/settings.js";
+import { quotaSnapshot, QuotaError, writeQuotaLimits } from "../quota/quota.js";
+import {
+  acquireSseLease,
+  clientIp,
+  loginAccountKey,
+  rateLimitSnapshot,
+  rejectActorRateLimits,
+  rejectPublicRateLimits,
+  rejectRateLimits,
+  sendRateLimited,
+  shouldLimitSse,
+} from "../security/rate-limit-http.js";
+import { rateLimitEnabled, rateLimitStoreKind } from "../security/rate-limit.js";
 import { GITHUB_WEBHOOK_PATH, publicGitHubWebhookInfo } from "../subscriptions/secret.js";
 import { createAutomation, deleteAutomation, listAutomations, updateAutomation } from "../automations/store.js";
 import {
@@ -99,6 +145,47 @@ import {
   memberRole,
   updateProject,
 } from "../projects/store.js";
+import {
+  createExpert,
+  deleteExpert,
+  listExpertsForActor,
+  resolveExpert,
+  updateExpert,
+} from "../experts/store.js";
+import {
+  getPluginDetail,
+  installPlugin,
+  listPluginsForActor,
+  setPluginEnabled,
+  uninstallPlugin,
+} from "../plugins/store.js";
+import { renderExpertRole } from "@neo-cloud-agent/contracts";
+import {
+  addTodoComment,
+  attachTodoFiles,
+  createTodo,
+  getTodo,
+  listTodoComments,
+  listTodos,
+  transitionTodo,
+  updateTodo,
+} from "../projects/todos.js";
+import { deleteProjectAsset, listProjectAssets, putProjectAsset, readProjectAsset } from "../projects/assets.js";
+import { createProjectMessage, deleteProjectMessage, listProjectMessages, updateProjectMessage } from "../projects/messages.js";
+import { listInbox, markInboxRead, unreadInboxCount } from "../projects/inbox.js";
+import {
+  bindDeskWorkspace,
+  createDesk,
+  deleteDesk,
+  findDeskByToken,
+  listDesks,
+  openDeskInbox,
+  takeDeskAssignment,
+  touchDesk,
+  unbindDeskWorkspace,
+  updateDesk,
+} from "../desks/store.js";
+import { deleteDevice, listDevices, upsertDevice } from "../devices/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
   publicNotifySettings,
@@ -114,11 +201,13 @@ import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slo
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-expose-headers":
+    "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Policy",
 } as const;
 
 async function requireRun(runId: string) {
-  return getRun(runId) ?? (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
+  return (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
 }
 
 function denyUnless(run: { userId: string } | null | undefined, actor: Actor, res: ServerResponse): boolean {
@@ -178,6 +267,32 @@ function sendPlain(res: ServerResponse, status: number, body: string, contentTyp
   res.end(body);
 }
 
+async function sendArtifactBody(res: ServerResponse, runId: string, name: string): Promise<boolean> {
+  const file = await readRunArtifact(runId, name);
+  if (!file) {
+    return false;
+  }
+  res.writeHead(200, {
+    ...CORS,
+    "content-type": file.artifact.contentType,
+    "content-length": file.body.length,
+    "cache-control": "private, max-age=60",
+    "content-disposition": `inline; filename="${file.artifact.name}"`,
+  });
+  res.end(file.body);
+  return true;
+}
+
+function requestOrigin(req: IncomingMessage): string {
+  const configured = publicAppUrl();
+  if (configured) {
+    return configured;
+  }
+  const host = headerValue(req.headers.host);
+  const proto = headerValue(req.headers["x-forwarded-proto"]) || "http";
+  return host ? `${proto}://${host}` : getConfig().controlPlaneUrl;
+}
+
 function send(res: ServerResponse, status: number, body: unknown): void {
   const json = JSON.stringify(body);
   res.writeHead(status, {
@@ -190,6 +305,38 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 
 function notFound(res: ServerResponse): void {
   send(res, 404, { error: "not_found" });
+}
+
+/**
+ * The desk's own outbound stream. The control plane cannot dial into a laptop
+ * behind NAT, so remote dispatch rides down this connection. Holding it open is
+ * also what marks the desk online.
+ */
+function openDeskInboxStream(req: IncomingMessage, res: ServerResponse, deskId: string): void {
+  res.writeHead(200, SSE_HEADERS);
+  const write = (event: DeskInboxEvent) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+  const detach = openDeskInbox(deskId, write);
+  touchDesk(deskId);
+  // Anything offered while the desk was away is still waiting in the queue.
+  for (let pending = takeDeskAssignment(deskId); pending; pending = takeDeskAssignment(deskId)) {
+    try {
+      write({ kind: "assignment", assignment: deskAssignmentForRun(pending) });
+    } catch {
+      // run vanished or is no longer a desk run
+    }
+  }
+  write({ kind: "ping" });
+  const ping = setInterval(() => {
+    touchDesk(deskId);
+    write({ kind: "ping" });
+  }, 15_000);
+  ping.unref();
+  req.on("close", () => {
+    detach();
+    clearInterval(ping);
+  });
 }
 
 export function createApiServer() {
@@ -216,6 +363,10 @@ export function createApiServer() {
         return;
       }
 
+      if (await rejectPublicRateLimits(req, res, method, path)) {
+        return;
+      }
+
       if (method === "GET" && path === "/health") {
         const config = getConfig();
         const llm = publicLlmSettings(readLlmSettings());
@@ -227,9 +378,11 @@ export function createApiServer() {
           llmModel: llm.model,
           llmContextWindow: resolveModelLimits(llm.model)?.contextWindow ?? null,
           llmConfigured: llm.configured,
+          newApi: readNewApiInfo(),
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           vmSlots: summarizeVmSlots(config.workerRuntime),
+          workspaceStore: summarizeWorkspaceStore(),
           objectStore: getObjectStore().kind,
           scmPush: publicScmSettings(),
           workerMemoryMiB: defaultWorkerResources(config.workerRuntime).memoryMiB,
@@ -246,6 +399,7 @@ export function createApiServer() {
           notify: publicNotifySettings(),
           automations: listAutomations().length,
           projects: listProjects().length,
+          rateLimit: { enabled: rateLimitEnabled(), store: rateLimitStoreKind() },
         });
         return;
       }
@@ -301,6 +455,34 @@ export function createApiServer() {
         return;
       }
 
+      if (method === "GET" && path === "/oauth/callback/mcp") {
+        try {
+          const name = await finishMcpOAuth({
+            code: url.searchParams.get("code") ?? "",
+            state: url.searchParams.get("state") ?? "",
+            origin: requestOrigin(req),
+          });
+          sendPlain(res, 200, `<!doctype html><title>MCP</title><p>已连接 ${name}。可以关掉这个标签。</p>`, "text/html");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "oauth_failed";
+          sendPlain(res, 400, `<!doctype html><title>MCP</title><p>${message}</p>`, "text/html");
+        }
+        return;
+      }
+
+      const signedArtifact = /^\/v1\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
+      if (method === "GET" && signedArtifact) {
+        const runId = signedArtifact[1] ?? "";
+        const name = decodeURIComponent(signedArtifact[2] ?? "");
+        const token = url.searchParams.get("token") ?? "";
+        if (token && verifyArtifactAccess(token, runId, name)) {
+          if (!(await sendArtifactBody(res, runId, name))) {
+            notFound(res);
+          }
+          return;
+        }
+      }
+
       if (method === "POST" && path === "/v1/auth/register") {
         send(res, 403, { error: "不支持注册" });
         return;
@@ -308,6 +490,13 @@ export function createApiServer() {
 
       if (method === "POST" && path === "/v1/auth/login") {
         const body = (await readJson(req)) as { email?: string; password?: string };
+        if (
+          await rejectRateLimits(res, [
+            { policy: "login_account", key: loginAccountKey(body.email, clientIp(req)) },
+          ])
+        ) {
+          return;
+        }
         try {
           const created = await loginAccount(body);
           sendAuthSession(res, 200, created);
@@ -370,9 +559,103 @@ export function createApiServer() {
           return;
         }
       } else if (path.startsWith("/v1/")) {
+        const deskInbox = /^\/v1\/desks\/([^/]+)\/inbox$/.exec(path);
+        if (deskInbox && method === "GET") {
+          const deskId = deskInbox[1] ?? "";
+          const token = readBearer(req) || url.searchParams.get("token") || "";
+          const desk = token ? findDeskByToken(token) : undefined;
+          if (!desk || desk.id !== deskId) {
+            send(res, 401, { error: "unauthorized" });
+            return;
+          }
+          openDeskInboxStream(req, res, deskId);
+          return;
+        }
+        const deskAction = /^\/v1\/desks\/([^/]+)\/(lease|claim|reject|release|workspaces)$/.exec(path);
+        if (deskAction && method === "POST") {
+          const deskId = deskAction[1] ?? "";
+          const action = deskAction[2];
+          const token = readBearer(req);
+          const desk = token ? findDeskByToken(token) : undefined;
+          if (!desk || desk.id !== deskId) {
+            send(res, 401, { error: "unauthorized" });
+            return;
+          }
+          if (
+            await rejectRateLimits(res, [
+              { policy: "api", key: `desk:${deskId}` },
+              { policy: "write", key: `desk:${deskId}` },
+            ])
+          ) {
+            return;
+          }
+          try {
+            if (action === "lease") {
+              const body = (await readJson(req)) as { waitMs?: number };
+              send(res, 200, await leaseDesk(deskId, Number(body.waitMs ?? 20_000)));
+              return;
+            }
+            if (action === "reject") {
+              const body = (await readJson(req)) as { runId?: string; reason?: string };
+              if (!body.runId) {
+                send(res, 400, { error: "runId is required" });
+                return;
+              }
+              send(res, 200, rejectDeskRun(deskId, body.runId, body.reason));
+              return;
+            }
+            if (action === "release") {
+              const body = (await readJson(req)) as { runId?: string; code?: number | null };
+              if (!body.runId) {
+                send(res, 400, { error: "runId is required" });
+                return;
+              }
+              send(res, 200, releaseDeskRun(deskId, body.runId, { code: body.code ?? null }));
+              return;
+            }
+            if (action === "workspaces") {
+              const body = (await readJson(req)) as BindDeskWorkspaceRequest;
+              if (!body.name || !body.repoKey) {
+                send(res, 400, { error: "name and repoKey are required" });
+                return;
+              }
+              send(res, 201, bindDeskWorkspace(deskId, body));
+              return;
+            }
+            const body = (await readJson(req)) as { runId?: string; workspaceDir?: string; pid?: number };
+            if (!body.runId || !body.workspaceDir) {
+              send(res, 400, { error: "runId and workspaceDir are required" });
+              return;
+            }
+            send(res, 200, await claimDeskRun(deskId, { runId: body.runId, workspaceDir: body.workspaceDir, pid: body.pid }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "desk_action_failed" });
+          }
+          return;
+        }
+        const deskWorkspaceDelete = /^\/v1\/desks\/([^/]+)\/workspaces\/([^/]+)$/.exec(path);
+        if (deskWorkspaceDelete && method === "DELETE") {
+          const deskId = deskWorkspaceDelete[1] ?? "";
+          const token = readBearer(req);
+          const desk = token ? findDeskByToken(token) : undefined;
+          if (!desk || desk.id !== deskId) {
+            send(res, 401, { error: "unauthorized" });
+            return;
+          }
+          const ok = unbindDeskWorkspace(deskId, deskWorkspaceDelete[2] ?? "");
+          send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
+          return;
+        }
         const actor = await resolveActor(req, url);
         if (!actor) {
           send(res, 401, { error: "unauthorized" });
+          return;
+        }
+        if (await rejectActorRateLimits(req, res, actor, method, path)) {
+          return;
+        }
+        if (method === "GET" && path === "/v1/rate-limits") {
+          send(res, 200, await rateLimitSnapshot(actor, clientIp(req)));
           return;
         }
         if (method === "GET" && path === "/v1/me") {
@@ -380,7 +663,10 @@ export function createApiServer() {
           return;
         }
         if (method === "GET" && path === "/v1/vms") {
-          send(res, 200, summarizeVmSlots(getConfig().workerRuntime));
+          send(res, 200, {
+            ...summarizeVmSlots(getConfig().workerRuntime),
+            workspaceStore: summarizeWorkspaceStore(),
+          });
           return;
         }
         if (method === "GET" && path === "/v1/settings/llm") {
@@ -435,6 +721,12 @@ export function createApiServer() {
               httpUrl?: string;
               wechatToken?: string;
               defaultRepo?: string;
+              smtpHost?: string;
+              smtpPort?: string | number;
+              smtpUser?: string;
+              smtpPass?: string;
+              smtpFrom?: string;
+              emailTo?: string;
               clear?: boolean;
             };
             const saved = writeNotifySettings(body);
@@ -445,6 +737,91 @@ export function createApiServer() {
           } catch (error) {
             const message = error instanceof Error ? error.message : "invalid_notify_settings";
             send(res, 400, { error: message });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/quota") {
+          send(res, 200, quotaSnapshot(listRuns(), actor.orgId));
+          return;
+        }
+        if (method === "GET" && path === "/v1/settings/quota") {
+          send(res, 200, quotaSnapshot(listRuns(), actor.orgId));
+          return;
+        }
+        if (method === "POST" && path === "/v1/settings/quota") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { maxTokensMonth?: number; maxConcurrentRuns?: number };
+            writeQuotaLimits(body);
+            send(res, 200, quotaSnapshot(listRuns(), actor.orgId));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invalid_quota" });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/settings/mcp") {
+          send(res, 200, { servers: publicMcpServers() });
+          return;
+        }
+        if (method === "POST" && path === "/v1/settings/mcp") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as {
+              name?: string;
+              bearer?: string;
+              headers?: Record<string, string>;
+              oauth?: {
+                authorizeUrl?: string;
+                tokenUrl?: string;
+                clientId?: string;
+                clientSecret?: string;
+                scopes?: string;
+              };
+              clear?: boolean;
+            };
+            const name = (body.name ?? "").trim();
+            if (body.clear) {
+              send(res, 200, { servers: deleteMcpSecret(name) });
+              return;
+            }
+            if (!name) {
+              send(res, 400, { error: "MCP server name is required" });
+              return;
+            }
+            const headers = { ...(body.headers ?? {}) };
+            if (body.bearer?.trim()) {
+              headers.authorization = body.bearer.trim().startsWith("Bearer ")
+                ? body.bearer.trim()
+                : `Bearer ${body.bearer.trim()}`;
+            }
+            send(res, 200, {
+              servers: upsertMcpSecret(name, {
+                headers: Object.keys(headers).length > 0 ? headers : undefined,
+                oauth: body.oauth,
+              }),
+            });
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invalid_mcp_settings" });
+          }
+          return;
+        }
+        const mcpOAuthStart = /^\/v1\/oauth\/mcp\/([^/]+)\/start$/.exec(path);
+        if (mcpOAuthStart && method === "GET") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const started = beginMcpOAuth(decodeURIComponent(mcpOAuthStart[1] ?? ""), requestOrigin(req));
+            send(res, 200, started);
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "oauth_start_failed" });
           }
           return;
         }
@@ -512,6 +889,163 @@ export function createApiServer() {
             return;
           }
           send(res, 200, updated);
+          return;
+        }
+        if (method === "GET" && path === "/v1/experts") {
+          if (actor.kind !== "user") {
+            send(res, 200, { experts: listExpertsForActor({ query: url.searchParams.get("q") ?? undefined }) });
+            return;
+          }
+          send(
+            res,
+            200,
+            {
+              experts: listExpertsForActor({
+                userId: actor.userId,
+                projectId: url.searchParams.get("projectId"),
+                query: url.searchParams.get("q") ?? undefined,
+              }),
+            },
+          );
+          return;
+        }
+        if (method === "POST" && path === "/v1/experts") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 201, createExpert((await readJson(req)) as CreateExpertRequest, { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invalid_expert" });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/expert-teams") {
+          send(res, 200, { teams: BUNDLED_EXPERT_TEAMS });
+          return;
+        }
+        if (method === "GET" && path === "/v1/plugins") {
+          send(
+            res,
+            200,
+            {
+              plugins: listPluginsForActor({
+                userId: actor.kind === "user" ? actor.userId : undefined,
+                projectId: url.searchParams.get("projectId"),
+                query: url.searchParams.get("q") ?? undefined,
+              }),
+            },
+          );
+          return;
+        }
+        const pluginItem = /^\/v1\/plugins\/([^/]+)$/.exec(path);
+        if (pluginItem && method === "GET") {
+          const detail = getPluginDetail(pluginItem[1] ?? "", {
+            userId: actor.kind === "user" ? actor.userId : undefined,
+            projectId: url.searchParams.get("projectId"),
+          });
+          if (!detail) {
+            notFound(res);
+            return;
+          }
+          send(res, 200, detail);
+          return;
+        }
+        const pluginInstall = /^\/v1\/plugins\/([^/]+)\/install$/.exec(path);
+        if (pluginInstall && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { scope?: "user" | "project"; projectId?: string; enabled?: boolean };
+            send(res, 200, installPlugin(pluginInstall[1] ?? "", body, { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "install_failed" });
+          }
+          return;
+        }
+        if (pluginInstall && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req).catch(() => ({}))) as { scope?: "user" | "project"; projectId?: string };
+            uninstallPlugin(pluginInstall[1] ?? "", body, { userId: actor.userId, email: actor.email });
+            send(res, 200, { ok: true });
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "uninstall_failed" });
+          }
+          return;
+        }
+        const pluginEnable = /^\/v1\/plugins\/([^/]+)\/enable$/.exec(path);
+        if (pluginEnable && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { enabled?: boolean; scope?: "user" | "project"; projectId?: string };
+            send(
+              res,
+              200,
+              setPluginEnabled(pluginEnable[1] ?? "", { enabled: body.enabled !== false, scope: body.scope, projectId: body.projectId }, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "enable_failed" });
+          }
+          return;
+        }
+        const expertItem = /^\/v1\/experts\/([^/]+)$/.exec(path);
+        if (expertItem && method === "GET") {
+          const expert = resolveExpert(expertItem[1] ?? "");
+          if (!expert) {
+            notFound(res);
+            return;
+          }
+          if (actor.kind === "user") {
+            const visible = listExpertsForActor({ userId: actor.userId, projectId: expert.projectId }).some((item) => item.id === expert.id);
+            if (!visible) {
+              notFound(res);
+              return;
+            }
+          } else if (expert.visibility !== "bundled") {
+            notFound(res);
+            return;
+          }
+          send(res, 200, { ...expert, markdown: renderExpertRole(expert) });
+          return;
+        }
+        if (expertItem && (method === "PATCH" || method === "POST")) {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 200, updateExpert(expertItem[1] ?? "", (await readJson(req)) as UpdateExpertRequest, { userId: actor.userId }));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "update_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        if (expertItem && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            deleteExpert(expertItem[1] ?? "", { userId: actor.userId });
+            send(res, 200, { ok: true });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "delete_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
           return;
         }
         if (method === "GET" && path === "/v1/projects") {
@@ -628,6 +1162,247 @@ export function createApiServer() {
           }
           return;
         }
+        const todoCommentsMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)\/comments$/.exec(path);
+        if (todoCommentsMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todoCommentsMatch[1] ?? "";
+            const todoId = todoCommentsMatch[2] ?? "";
+            if (method === "GET") {
+              send(res, 200, { comments: listTodoComments(projectId, todoId, actor.userId) });
+              return;
+            }
+            const body = (await readJson(req)) as { body?: string };
+            send(res, 201, addTodoComment(projectId, todoId, body.body ?? "", { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_comment_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todoTransitionMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)\/transition$/.exec(path);
+        if (todoTransitionMatch && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as TransitionTodoRequest;
+            send(
+              res,
+              200,
+              transitionTodo(todoTransitionMatch[1] ?? "", todoTransitionMatch[2] ?? "", body.status, { userId: actor.userId, email: actor.email }, body.pauseReason),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_transition_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todoItemMatch = /^\/v1\/projects\/([^/]+)\/todos\/([^/]+)$/.exec(path);
+        if (todoItemMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todoItemMatch[1] ?? "";
+            const todoId = todoItemMatch[2] ?? "";
+            if (method === "GET") {
+              const todo = getTodo(projectId, todoId, actor.userId);
+              if (!todo) {
+                notFound(res);
+                return;
+              }
+              send(res, 200, todo);
+              return;
+            }
+            send(
+              res,
+              200,
+              updateTodo(projectId, todoId, (await readJson(req)) as UpdateTodoRequest, { userId: actor.userId, email: actor.email }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/inbox") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          send(res, 200, { items: listInbox(actor.userId), unread: unreadInboxCount(actor.userId) });
+          return;
+        }
+        const inboxRead = /^\/v1\/inbox\/([^/]+)\/read$/.exec(path);
+        if (inboxRead && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          markInboxRead(actor.userId, inboxRead[1]);
+          send(res, 200, { ok: true, unread: unreadInboxCount(actor.userId) });
+          return;
+        }
+        const messageItemMatch = /^\/v1\/projects\/([^/]+)\/messages\/([^/]+)$/.exec(path);
+        if (messageItemMatch && actor.kind === "user" && (method === "POST" || method === "DELETE")) {
+          try {
+            const projectId = messageItemMatch[1] ?? "";
+            const messageId = messageItemMatch[2] ?? "";
+            if (method === "DELETE") {
+              deleteProjectMessage(projectId, messageId, { userId: actor.userId });
+              send(res, 200, { ok: true });
+              return;
+            }
+            send(
+              res,
+              200,
+              updateProjectMessage(projectId, messageId, (await readJson(req)) as CreateProjectMessageRequest, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "message_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const messagesMatch = /^\/v1\/projects\/([^/]+)\/messages$/.exec(path);
+        if (messagesMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = messagesMatch[1] ?? "";
+            if (method === "GET") {
+              send(res, 200, { messages: listProjectMessages(projectId, actor.userId) });
+              return;
+            }
+            send(
+              res,
+              201,
+              createProjectMessage(projectId, (await readJson(req)) as CreateProjectMessageRequest, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "message_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const assetItemMatch = /^\/v1\/projects\/([^/]+)\/assets\/([^/]+)$/.exec(path);
+        if (assetItemMatch && actor.kind === "user" && (method === "GET" || method === "DELETE")) {
+          const projectId = assetItemMatch[1] ?? "";
+          const assetId = assetItemMatch[2] ?? "";
+          try {
+            if (method === "DELETE") {
+              deleteProjectAsset(projectId, assetId, { userId: actor.userId, email: actor.email });
+              send(res, 200, { ok: true });
+              return;
+            }
+            const found = await readProjectAsset(projectId, assetId, actor.userId);
+            if (!found) {
+              notFound(res);
+              return;
+            }
+            res.writeHead(200, {
+              ...CORS,
+              "content-type": found.asset.contentType,
+              "content-length": String(found.body.length),
+              "content-disposition": `attachment; filename="${found.asset.path.split("/").pop() ?? "file"}"`,
+            });
+            res.end(found.body);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "asset_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const assetsMatch = /^\/v1\/projects\/([^/]+)\/assets$/.exec(path);
+        if (assetsMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          const projectId = assetsMatch[1] ?? "";
+          try {
+            if (method === "GET") {
+              send(res, 200, { assets: listProjectAssets(projectId, actor.userId) });
+              return;
+            }
+            const body = (await readJson(req)) as {
+              path?: string;
+              content?: string;
+              contentType?: string;
+              encoding?: "utf8" | "base64";
+            };
+            if (!body.path || typeof body.content !== "string") {
+              send(res, 400, { error: "path and content are required" });
+              return;
+            }
+            const raw = body.encoding === "base64" ? Buffer.from(body.content, "base64") : Buffer.from(body.content, "utf8");
+            send(
+              res,
+              201,
+              await putProjectAsset(
+                projectId,
+                { path: body.path, body: raw, contentType: body.contentType, source: "upload" },
+                { userId: actor.userId, email: actor.email },
+              ),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "asset_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const todosMatch = /^\/v1\/projects\/([^/]+)\/todos$/.exec(path);
+        if (todosMatch && actor.kind === "user" && (method === "GET" || method === "POST")) {
+          try {
+            const projectId = todosMatch[1] ?? "";
+            if (method === "GET") {
+              send(res, 200, { todos: listTodos(projectId, actor.userId) });
+              return;
+            }
+            const body = (await readJson(req)) as CreateTodoRequest & { artifactNames?: string[] };
+            const todo = createTodo(projectId, body, { userId: actor.userId, email: actor.email });
+            const failedAttachments: string[] = [];
+            if (body.runId && body.artifactNames?.length) {
+              for (const name of body.artifactNames) {
+                try {
+                  const stored = await readRunArtifact(body.runId, name);
+                  if (!stored) {
+                    failedAttachments.push(name);
+                    continue;
+                  }
+                  const asset = await putProjectAsset(
+                    projectId,
+                    {
+                      path: stored.artifact.name,
+                      body: stored.body,
+                      contentType: stored.artifact.contentType,
+                      source: "run",
+                      runId: body.runId,
+                    },
+                    { userId: actor.userId, email: actor.email },
+                  );
+                  attachTodoFiles(todo.id, projectId, [{ kind: "asset", id: asset.id, name: asset.path }]);
+                } catch {
+                  failedAttachments.push(name);
+                }
+              }
+            }
+            send(res, 201, { ...getTodo(projectId, todo.id, actor.userId), failedAttachments });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "todo_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        const projectRunsMatch = /^\/v1\/projects\/([^/]+)\/runs$/.exec(path);
+        if (projectRunsMatch && method === "GET") {
+          const project = getProject(projectRunsMatch[1] ?? "");
+          if (!project || (actor.kind === "user" && !memberRole(project.id, actor.userId))) {
+            notFound(res);
+            return;
+          }
+          const userId = actor.kind === "user" ? actor.userId : "";
+          send(res, 200, { runs: listProjectRunCards(project.id, userId) });
+          return;
+        }
         const projectMemberMatch = /^\/v1\/projects\/([^/]+)\/members$/.exec(path);
         if (projectMemberMatch && method === "POST") {
           if (actor.kind !== "user") {
@@ -661,15 +1436,103 @@ export function createApiServer() {
           }
           return;
         }
-        if (method === "POST" && path === "/v1/runs") {
-          const body = (await readJson(req)) as CreateRunRequest;
-          if (!body.prompt || !Array.isArray(body.repoUrls)) {
-            send(res, 400, { error: "prompt and repoUrls are required" });
+        if (method === "GET" && path === "/v1/desks") {
+          send(res, 200, { desks: listDesks(actor.kind === "user" ? actor.userId : undefined) });
+          return;
+        }
+        if (method === "POST" && path === "/v1/desks") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
             return;
           }
           try {
-            send(res, 201, await createRun(body, { userId: actor.userId, orgId: actor.orgId }));
+            send(res, 201, createDesk((await readJson(req)) as CreateDeskRequest, { userId: actor.userId, orgId: actor.orgId }));
           } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "create_desk_failed" });
+          }
+          return;
+        }
+        const deskById = /^\/v1\/desks\/([^/]+)$/.exec(path);
+        if (deskById && method === "DELETE") {
+          if (actor.kind === "anonymous") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const ok = deleteDesk(deskById[1] ?? "", actor.kind === "user" ? actor.userId : undefined);
+          send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
+          return;
+        }
+        if (deskById && method === "PATCH") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const deskId = deskById[1] ?? "";
+          const owned = listDesks(actor.userId).some((item) => item.id === deskId);
+          if (!owned) {
+            send(res, 404, { error: "not_found" });
+            return;
+          }
+          const updated = updateDesk(deskId, (await readJson(req)) as UpdateDeskRequest);
+          send(res, updated ? 200 : 404, updated ?? { error: "not_found" });
+          return;
+        }
+        if (method === "GET" && path === "/v1/devices") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          send(res, 200, { devices: listDevices(actor.userId) });
+          return;
+        }
+        if (method === "POST" && path === "/v1/devices") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 201, upsertDevice((await readJson(req)) as CreateDeviceRequest, { userId: actor.userId, orgId: actor.orgId }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "create_device_failed" });
+          }
+          return;
+        }
+        const deviceDelete = /^\/v1\/devices\/([^/]+)$/.exec(path);
+        if (deviceDelete && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const ok = deleteDevice(deviceDelete[1] ?? "", actor.userId);
+          send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
+          return;
+        }
+        if (method === "POST" && path === "/v1/runs") {
+          const body = (await readJson(req)) as CreateRunRequest;
+          if (!body.prompt) {
+            send(res, 400, { error: "prompt is required" });
+            return;
+          }
+          if (!Array.isArray(body.repoUrls) && !body.envId) {
+            send(res, 400, { error: "prompt and repoUrls are required" });
+            return;
+          }
+          body.repoUrls = Array.isArray(body.repoUrls) ? body.repoUrls : [];
+          try {
+            const run = await createRun(body, {
+              userId: actor.kind === "user" ? actor.userId : undefined,
+              orgId: actor.orgId,
+              email: actor.kind === "user" ? actor.email : undefined,
+            });
+            // An inline desk run is started by the caller itself, so hand back
+            // everything it needs to spawn instead of making it poll for it.
+            const inline = body.start === "inline" && isDeskTarget(run.executionTarget);
+            send(res, 201, inline ? { ...run, assignment: deskAssignmentForRun(run.id) } : run);
+          } catch (error) {
+            if (error instanceof QuotaError) {
+              send(res, 429, { error: error.message });
+              return;
+            }
             send(res, 400, { error: error instanceof Error ? error.message : "create_run_failed" });
           }
           return;
@@ -705,7 +1568,15 @@ export function createApiServer() {
           send(res, 400, { error: "text is required" });
           return;
         }
-        send(res, 201, await enqueueFollowUp(runId, body));
+        send(
+          res,
+          201,
+          await enqueueFollowUp(
+            runId,
+            body,
+            actor.kind === "user" ? { userId: actor.userId, email: actor.email } : undefined,
+          ),
+        );
         return;
       }
       if (followMatch && method === "GET") {
@@ -742,6 +1613,37 @@ export function createApiServer() {
         return;
       }
 
+      const handoffMatch = /^\/v1\/runs\/([^/]+)\/handoff$/.exec(path);
+      if (handoffMatch && method === "POST") {
+        const run = await requireRun(handoffMatch[1] ?? "");
+        if (!actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        try {
+          send(res, 200, await handoffRun(handoffMatch[1] ?? "", (await readJson(req)) as HandoffRequest));
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "handoff_failed" });
+        }
+        return;
+      }
+
+      // Lets the desk pick a local run back up in place, e.g. after its worker
+      // exited, without waiting to be handed its own run back.
+      const deskStartMatch = /^\/v1\/runs\/([^/]+)\/desk-start$/.exec(path);
+      if (deskStartMatch && method === "POST") {
+        const runId = deskStartMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        try {
+          send(res, 200, { assignment: deskAssignmentForRun(runId) });
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "desk_start_failed" });
+        }
+        return;
+      }
+
       const abortMatch = /^\/v1\/runs\/([^/]+)\/abort$/.exec(path);
       if (abortMatch && method === "POST") {
         const run = await requireRun(abortMatch[1] ?? "");
@@ -749,6 +1651,64 @@ export function createApiServer() {
           return;
         }
         send(res, 200, abortRun(abortMatch[1] ?? ""));
+        return;
+      }
+
+      const collaboratorsMatch = /^\/v1\/runs\/([^/]+)\/collaborators$/.exec(path);
+      if (collaboratorsMatch && (method === "GET" || method === "POST")) {
+        const run = await requireRun(collaboratorsMatch[1] ?? "");
+        if (!run || !actor || actor.kind !== "user") {
+          if (actor && actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          notFound(res);
+          return;
+        }
+        if (!actorCanAccessRun(actor, run) && !canInviteRunCollaborator(run, actor)) {
+          notFound(res);
+          return;
+        }
+        if (method === "GET") {
+          send(res, 200, { collaborators: run.collaborators ?? [] });
+          return;
+        }
+        try {
+          const body = (await readJson(req)) as { userId?: string; email?: string };
+          let user = body.userId ? await findPublicUserById(body.userId) : null;
+          if (!user && body.email) {
+            user = await findPublicUserByEmail(body.email);
+          }
+          if (!user) {
+            send(res, 400, { error: "找不到这个账号" });
+            return;
+          }
+          send(res, 200, inviteRunCollaborator(run.id, { userId: user.id, email: user.email }, { userId: actor.userId, email: actor.email }));
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "invite_failed" });
+        }
+        return;
+      }
+      const collaboratorDelete = /^\/v1\/runs\/([^/]+)\/collaborators\/([^/]+)$/.exec(path);
+      if (collaboratorDelete && method === "DELETE") {
+        const run = await requireRun(collaboratorDelete[1] ?? "");
+        if (!run || !actor || actor.kind !== "user" || !actorCanAccessRun(actor, run)) {
+          if (actor && actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          notFound(res);
+          return;
+        }
+        try {
+          send(
+            res,
+            200,
+            removeRunCollaborator(run.id, collaboratorDelete[2] ?? "", { userId: actor.userId, email: actor.email }),
+          );
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "remove_failed" });
+        }
         return;
       }
 
@@ -763,12 +1723,16 @@ export function createApiServer() {
           return;
         }
         try {
-          const body = (await readJson(req)) as { toUserId?: string; note?: string };
+          const body = (await readJson(req)) as { toUserId?: string; note?: string; mode?: "reassign" | "fork" };
           if (!body.toUserId) {
             send(res, 400, { error: "toUserId is required" });
             return;
           }
-          send(res, 200, transferRun(run.id, body.toUserId, { userId: actor.userId, email: actor.email }, body.note));
+          send(
+            res,
+            200,
+            await transferRun(run.id, body.toUserId, { userId: actor.userId, email: actor.email }, body.note, body.mode),
+          );
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : "transfer_failed" });
         }
@@ -791,6 +1755,14 @@ export function createApiServer() {
         const run = await requireRun(runId);
         if (!actor || !denyUnless(run, actor, res)) {
           return;
+        }
+        if (shouldLimitSse(method, path)) {
+          const lease = await acquireSseLease(req, actor);
+          if (!lease.ok) {
+            sendRateLimited(res, lease);
+            return;
+          }
+          req.on("close", () => lease.release());
         }
         attachEventStream(req, res, runId, url);
         return;
@@ -827,6 +1799,43 @@ export function createApiServer() {
           return;
         }
         send(res, 200, evaluateEgress(bootstrap.egress, body.url));
+        return;
+      }
+
+      const mcpProxyMatch = /^\/internal\/runs\/([^/]+)\/mcp$/.exec(path);
+      if (mcpProxyMatch && method === "POST") {
+        const runId = mcpProxyMatch[1] ?? "";
+        try {
+          const bootstrap = getBootstrap(runId);
+          const body = (await readJson(req)) as {
+            action?: "list" | "call";
+            server?: string;
+            tool?: string;
+            arguments?: Record<string, unknown>;
+          };
+          if (body.action === "list") {
+            send(res, 200, await proxyMcpList(runId, workspaceFor(runId), bootstrap.egress));
+            return;
+          }
+          if (body.action === "call") {
+            if (!body.server || !body.tool) {
+              send(res, 400, { error: "server and tool are required" });
+              return;
+            }
+            send(res, 200, {
+              result: await proxyMcpCall(
+                runId,
+                { server: body.server, tool: body.tool, arguments: body.arguments },
+                workspaceFor(runId),
+                bootstrap.egress,
+              ),
+            });
+            return;
+          }
+          send(res, 400, { error: "action must be list or call" });
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "mcp_proxy_failed" });
+        }
         return;
       }
 
@@ -981,6 +1990,49 @@ export function createApiServer() {
         return;
       }
 
+      const saveArtifactMatch = /^\/v1\/runs\/([^/]+)\/artifacts\/([^/]+)\/save-to-project$/.exec(path);
+      if (saveArtifactMatch && method === "POST") {
+        const run = await requireRun(saveArtifactMatch[1] ?? "");
+        if (!run || !actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        if (!run.projectId) {
+          send(res, 400, { error: "只有项目对话才能保存到项目" });
+          return;
+        }
+        if (actor.kind !== "user") {
+          send(res, 401, { error: "login_required" });
+          return;
+        }
+        try {
+          const name = decodeURIComponent(saveArtifactMatch[2] ?? "");
+          const stored = await readRunArtifact(run.id, name);
+          if (!stored) {
+            notFound(res);
+            return;
+          }
+          const body = (await readJson(req).catch(() => ({}))) as { path?: string };
+          send(
+            res,
+            201,
+            await putProjectAsset(
+              run.projectId,
+              {
+                path: body.path?.trim() || stored.artifact.name,
+                body: stored.body,
+                contentType: stored.artifact.contentType,
+                source: "run",
+                runId: run.id,
+              },
+              { userId: actor.userId, email: actor.email },
+            ),
+          );
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "save_failed" });
+        }
+        return;
+      }
+
       const artifactFileMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
       if (artifactFileMatch && method === "GET") {
         const runId = artifactFileMatch[1] ?? "";
@@ -993,19 +2045,9 @@ export function createApiServer() {
           return;
         }
         try {
-          const file = await readRunArtifact(runId, decodeURIComponent(artifactFileMatch[2] ?? ""));
-          if (!file) {
+          if (!(await sendArtifactBody(res, runId, decodeURIComponent(artifactFileMatch[2] ?? "")))) {
             notFound(res);
-            return;
           }
-          res.writeHead(200, {
-            ...CORS,
-            "content-type": file.artifact.contentType,
-            "content-length": file.body.length,
-            "cache-control": "private, max-age=60",
-            "content-disposition": `inline; filename="${file.artifact.name}"`,
-          });
-          res.end(file.body);
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : "invalid artifact" });
         }
@@ -1036,13 +2078,17 @@ export function createApiServer() {
           return;
         }
         try {
-          send(
-            res,
-            200,
-            listWorkspacePath(workspaceFor(runId), url.searchParams.get("path") ?? "", {
+          send(res, 200, {
+            ...listWorkspacePath(workspaceFor(runId), url.searchParams.get("path") ?? "", {
               content: url.searchParams.get("content") === "1",
             }),
-          );
+            workspace: loadWorkspaceMeta(runId) ?? {
+              version: 1,
+              state: "missing",
+              bytes: 0,
+              persistedAt: null,
+            },
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : "fs failed";
           send(res, message.includes("not found") ? 404 : 400, { error: message });
@@ -1161,6 +2207,10 @@ export function createApiServer() {
 
       notFound(res);
     } catch (error) {
+      if (error instanceof QuotaError) {
+        send(res, 429, { error: error.message });
+        return;
+      }
       const message = error instanceof Error ? error.message : "internal_error";
       const status = message.includes("not found") ? 404 : 500;
       send(res, status, { error: message });

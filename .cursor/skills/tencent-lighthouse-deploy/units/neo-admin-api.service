@@ -1,0 +1,25 @@
+[Unit]
+Description=Neo Cloud Agent Admin API
+After=network.target neo-control-plane.service
+Wants=neo-control-plane.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/neo-cloud-agent
+EnvironmentFile=/home/ubuntu/neo-cloud-agent/.env
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=ADMIN_API_PORT=8090
+Environment=ADMIN_API_HOST=127.0.0.1
+# Same host as chat; do not reuse neo_session / Path=/.
+Environment=SESSION_COOKIE_NAME=neo_admin_session
+Environment=SESSION_COOKIE_PATH=/admin
+# node --import tsx is MainPID. Do not kill sibling control-plane workers.
+ExecStart=/usr/local/bin/node --import tsx packages/admin-api/src/index.ts
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

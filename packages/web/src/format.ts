@@ -13,9 +13,17 @@ export const STATUS_LABELS: Record<string, string> = {
   EXPIRED: "已过期",
 };
 
+export function resolveChatModel(upstream?: string | null, model?: string | null, hasImages = false): string {
+  if (upstream === "openai") return "gpt-4o-mini";
+  if (/pro/i.test(model ?? "") && !/vision/i.test(model ?? "")) return "deepseek-v4-pro";
+  if (hasImages || /vision/i.test(model ?? "")) return "deepseek-v4-flash-vision-exp";
+  return "deepseek-v4-flash";
+}
+
 export function modelLabel(upstream?: string | null, model?: string | null): string {
   if (upstream === "openai") return "OpenAI";
   if (upstream === "deepseek" || /deepseek/i.test(model ?? "")) {
+    if (/vision/i.test(model ?? "")) return "DeepSeek Flash Vision";
     return /pro/i.test(model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash";
   }
   return upstream || "LLM";
@@ -41,6 +49,67 @@ export function slotLabel(id?: string | null): string {
   const match = /^slot-(\d+)$/.exec(raw);
   if (match) return `VM ${Number(match[1]) + 1}`;
   return raw || "未分配";
+}
+
+const SHANGHAI = "Asia/Shanghai";
+
+export function sameClockMinute(left: string, right: string): boolean {
+  const start = Date.parse(left);
+  const end = Date.parse(right);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return left === right;
+  return Math.floor(start / 60_000) === Math.floor(end / 60_000);
+}
+
+function shanghaiYear(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: SHANGHAI, year: "numeric" }).format(date);
+}
+
+/** Asia/Shanghai wall clock, e.g. `8/24 17:30`. Drops the year when it matches `now`. */
+export function formatWhen(value: string, now = new Date()): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const sameYear = shanghaiYear(date) === shanghaiYear(now);
+  return date.toLocaleString("zh-CN", {
+    timeZone: SHANGHAI,
+    year: sameYear ? undefined : "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function formatRunTime(createdAt: string, updatedAt?: string | null, now = new Date()): string {
+  const created = formatWhen(createdAt, now);
+  if (!updatedAt || sameClockMinute(createdAt, updatedAt)) {
+    return created;
+  }
+  return `创建 ${created} · 更新 ${formatWhen(updatedAt, now)}`;
+}
+
+export function formatDuration(start: string, end?: string | null, now = new Date()): string {
+  const from = Date.parse(start);
+  const to = end ? Date.parse(end) : now.getTime();
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return "";
+  const sec = Math.max(1, Math.round((to - from) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return rem ? `${min}m${rem}s` : `${min}m`;
+}
+
+export function formatMessageTime(
+  createdAt: string,
+  updatedAt?: string | null,
+  streaming = false,
+  now = new Date(),
+): string {
+  const created = formatWhen(createdAt, now);
+  if (streaming || !updatedAt || sameClockMinute(createdAt, updatedAt)) {
+    return created;
+  }
+  return `${created} · 完成 ${formatWhen(updatedAt, now)}`;
 }
 
 export function toolArgPreview(args: unknown): string {

@@ -28,29 +28,23 @@ export function snapshotPathFor(buildId: string, runsDir = getConfig().runsDir):
   return path.join(runsDir, ".builds", buildId, "workspace");
 }
 
-function writeBuild(build: Build, runsDir?: string, options?: { mirror?: boolean }): void {
-  mkdirSync(path.dirname(buildFile(build.id, runsDir)), { recursive: true });
-  const tmp = `${buildFile(build.id, runsDir)}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(build, null, 2)}\n`);
-  renameSync(tmp, buildFile(build.id, runsDir));
-  if (options?.mirror !== false) {
-    envPersistHooks().onBuild?.(build);
+const buildsMemo = new Map<string, Build[]>();
+
+function rememberBuild(build: Build, runsDir?: string): void {
+  const key = buildsDir(runsDir);
+  const current = buildsMemo.get(key);
+  if (!current) {
+    return;
   }
-}
-
-export function importBuild(build: Build, runsDir?: string): void {
-  writeBuild(build, runsDir, { mirror: false });
-}
-
-export function getBuild(id: string, runsDir?: string): Build | undefined {
-  try {
-    return JSON.parse(readFileSync(buildFile(id, runsDir), "utf8")) as Build;
-  } catch {
-    return undefined;
+  const index = current.findIndex((item) => item.id === build.id);
+  if (index >= 0) {
+    current[index] = build;
+    return;
   }
+  current.push(build);
 }
 
-export function listBuilds(runsDir = getConfig().runsDir): Build[] {
+function readBuildsFromDisk(runsDir?: string): Build[] {
   try {
     return readdirSync(buildsDir(runsDir))
       .filter((name) => name.endsWith(".json") && !name.endsWith(".tmp"))
@@ -61,11 +55,56 @@ export function listBuilds(runsDir = getConfig().runsDir): Build[] {
           return null;
         }
       })
-      .filter((item): item is Build => Boolean(item?.id))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .filter((item): item is Build => Boolean(item?.id));
   } catch {
     return [];
   }
+}
+
+function loadBuilds(runsDir?: string): Build[] {
+  const key = buildsDir(runsDir);
+  const hit = buildsMemo.get(key);
+  if (hit) {
+    return hit;
+  }
+  const items = readBuildsFromDisk(runsDir);
+  buildsMemo.set(key, items);
+  return items;
+}
+
+export function resetBuildsForTests(): void {
+  buildsMemo.clear();
+}
+
+function writeBuild(build: Build, runsDir?: string, options?: { mirror?: boolean }): void {
+  mkdirSync(path.dirname(buildFile(build.id, runsDir)), { recursive: true });
+  const tmp = `${buildFile(build.id, runsDir)}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(build, null, 2)}\n`);
+  renameSync(tmp, buildFile(build.id, runsDir));
+  rememberBuild(build, runsDir);
+  if (options?.mirror !== false) {
+    envPersistHooks().onBuild?.(build);
+  }
+}
+
+export function importBuild(build: Build, runsDir?: string): void {
+  writeBuild(build, runsDir, { mirror: false });
+}
+
+export function getBuild(id: string, runsDir?: string): Build | undefined {
+  const cached = loadBuilds(runsDir).find((item) => item.id === id);
+  if (cached) {
+    return cached;
+  }
+  try {
+    return JSON.parse(readFileSync(buildFile(id, runsDir), "utf8")) as Build;
+  } catch {
+    return undefined;
+  }
+}
+
+export function listBuilds(runsDir = getConfig().runsDir): Build[] {
+  return [...loadBuilds(runsDir)].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export function listBuildsForEnv(envId: string, runsDir?: string): Build[] {

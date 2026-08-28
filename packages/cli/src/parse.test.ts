@@ -45,6 +45,23 @@ test("detach aliases and equals flags", () => {
   assert.equal(parsed.flags.output, "json");
 });
 
+test("expert flags go onto the run command", () => {
+  const parsed = parseArgv(["run", "--expert", "reviewer", "--expert-team=ship-change", "review the diff"]);
+  assert.equal(parsed.command, "run");
+  assert.equal(parsed.flags.expertId, "reviewer");
+  assert.equal(parsed.flags.expertTeamId, "ship-change");
+});
+
+test("plugin command and extra --plugin flags", () => {
+  const listed = parseArgv(["plugin", "ls", "--project=proj_1"]);
+  assert.equal(listed.command, "plugin");
+  assert.deepEqual(listed.args, ["ls"]);
+  assert.equal(listed.flags.projectId, "proj_1");
+  const run = parseArgv(["run", "--plugin", "pr-review", "--plugin=repo-scout", "--repo", "fixtures/toy-repo", "scout"]);
+  assert.equal(run.command, "run");
+  assert.deepEqual(run.flags.plugins, ["pr-review", "repo-scout"]);
+});
+
 test("unknown flag is a usage error", () => {
   assert.throws(() => parseArgv(["run", "--yolo"]), /unknown flag/);
 });

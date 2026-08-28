@@ -1,0 +1,127 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "ui-sans-serif, system-ui, sans-serif",
+    "fontSize": "14px",
+    "primaryColor": "#e8f1ff",
+    "primaryTextColor": "#122033",
+    "primaryBorderColor": "#3b6fb6",
+    "lineColor": "#5b6b7c",
+    "secondaryColor": "#e8f7ee",
+    "tertiaryColor": "#fff4d6"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "nodeSpacing": 18,
+    "rankSpacing": 36,
+    "padding": 12,
+    "htmlLabels": true
+  }
+}}%%
+flowchart TB
+  %% ── 客户端 ──
+  subgraph clients["① 客户端 · 只打 /v1 · 不跑 Agent loop · 不持有 Provider Key"]
+    direction LR
+    Web["Web 对话页<br/>packages/web · :5173 / :8080"]
+    Desk["Desk<br/>Electron · :5174"]
+    CLI["CLI neo<br/>packages/cli"]
+    Mobile["Mobile<br/>:5175 · ios/android"]
+    IM["IM 入口<br/>Telegram / 微信"]
+    AdminWeb["Admin Web<br/>:5176 · /admin/"]
+  end
+
+  %% ── 入口 ──
+  subgraph edge["② 现网入口 · neorun.cloud · 应用机 62.234.211.200"]
+    direction LR
+    Caddy["Caddy :443<br/>/ → :8080<br/>/admin/ → :8090"]
+    CP["control-plane :8080<br/>/v1 · /internal · SSE · webhooks"]
+    AdminAPI["admin-api :8090<br/>只给平台管理员"]
+  end
+
+  %% ── 控制面模块 ──
+  subgraph control["③ 控制面模块 · 同一个进程 · packages/control-plane"]
+    direction LR
+    API["api / 鉴权 / 限流"]
+    Orch["orchestrator<br/>Run 状态机"]
+    Env["env · build · warm-pool"]
+    SCM["scm<br/>短寿命 token / PR"]
+    Events["events<br/>总线 / transcript"]
+    Collab["projects · desks<br/>automations · notify"]
+  end
+
+  %% ── 执行面 ──
+  subgraph exec["④ 执行面 · 每 Run 一份 · 低信任 · loop 在这里"]
+    direction LR
+    Runtime["Runtime factory<br/>local / vm / docker<br/>firecracker / desk"]
+    Worker["neo-worker<br/>packages/worker"]
+    Pi["pi-coding-agent<br/>read / edit / bash"]
+    Ext["extensions<br/>neo_git / neo_pr / neo_mcp<br/>neo_subagent / neo_browse …"]
+    WS["/workspace + tmux<br/>skills · AGENTS.md"]
+  end
+
+  %% ── 推理 ──
+  subgraph llm["⑤ 推理 · 唯一持钥"]
+    direction LR
+    GW["llm-gateway :8081<br/>验 run JWT · 别名 · 限流"]
+    Provider["DeepSeek / OpenAI / mock"]
+  end
+
+  %% ── 存储 ──
+  subgraph store["⑥ 存储 · 没配则回退本机文件"]
+    direction LR
+    MySQL[("库机 MySQL 8.4<br/>101.42.105.230<br/>Run / 用户 / 项目")]
+    Redis[("Redis 7<br/>直播事件 · 限流")]
+    Objects["对象存储<br/>transcript · session · artifacts"]
+    Slots["loop 槽 / Build 快照<br/>RUNS_DIR · .builds"]
+  end
+
+  %% ── 外部 ──
+  subgraph ext["⑦ 外部系统"]
+    direction LR
+    GitHub["GitHub App<br/>clone / push / PR / webhook"]
+    Push["Expo · 企微<br/>Telegram · SMTP"]
+    MCP["HTTP MCP<br/>OAuth 代理"]
+  end
+
+  %% 客户端 → 入口
+  Web --> Caddy
+  AdminWeb --> Caddy
+  Desk --> CP
+  CLI --> CP
+  Mobile --> CP
+  IM --> CP
+  Caddy --> CP
+  Caddy --> AdminAPI
+  AdminAPI -.->|"读同一套账号和 Run"| CP
+
+  %% 控制面内部
+  CP --> API
+  API --> Orch
+  Orch --> Env
+  Orch --> SCM
+  Orch --> Events
+  Orch --> Collab
+
+  %% 编排 → 执行
+  Orch -->|"provision / inbox / events"| Runtime
+  Runtime --> Worker
+  Worker --> Pi
+  Pi --> Ext
+  Pi --> WS
+  Worker -->|"/internal · run JWT"| CP
+
+  %% 推理：loop 在 VM，Key 在 Gateway
+  Pi -->|"chat/completions<br/>run JWT"| GW
+  GW --> Provider
+
+  %% 存储
+  CP --> MySQL
+  CP --> Redis
+  CP --> Objects
+  Runtime --> Slots
+
+  %% 外部
+  SCM --> GitHub
+  Collab --> Push
+  Ext --> MCP
+  GitHub -->|"/webhooks/github"| CP

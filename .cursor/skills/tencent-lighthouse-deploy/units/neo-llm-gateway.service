@@ -11,6 +11,7 @@ Environment=PATH=/usr/bin:/usr/local/bin
 ExecStart=/usr/bin/pnpm --filter @neo-cloud-agent/llm-gateway start
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=15
 KillMode=control-group
 
 [Install]

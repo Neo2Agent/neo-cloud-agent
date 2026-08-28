@@ -5,7 +5,7 @@
 ## 控制台
 
 1. 打开 [Lighthouse 北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。
-2. 未登录会拦微信扫码；等用户扫完再继续，不要猜密码。
+2. 未登录会拦微信扫码；等用户扫完再继续，不要猜密码。扫码、DNSPod A 记录、绑 `neorun.cloud` 的完整步骤见 [../tencent-lighthouse-domain/SKILL.md](../tencent-lighthouse-domain/SKILL.md)。
 3. 确认实例 `Halo建站-AFjg`（`lhins-b0l0d8b2`）运行中，公网 `62.234.211.200`。
 4. **不要点重启、再次重装、绑定密钥。** 镜像已经是 Ubuntu 24.04 系统镜像。
 5. MySQL / Redis **不在这台机上**。库机是另一账号的 `neo-mysql-redis`（`101.42.105.230`），见 [../tencent-lighthouse-db/SKILL.md](../tencent-lighthouse-db/SKILL.md)。
@@ -34,12 +34,16 @@ chown -R ubuntu:ubuntu /home/ubuntu/.ssh
 chmod 600 /home/ubuntu/.ssh/authorized_keys
 ```
 
-本机：
+本机（操作者电脑，不是轻量）：
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/neo_lighthouse -C neo-cloud-agent-deploy -N ""
 # 把 ~/.ssh/neo_lighthouse.pub 填进上面的 TAT
+# 私钥文件做单行 base64，放进 Cursor 环境 Runtime Secret：NEO_LIGHTHOUSE_SSH_KEY_B64
+base64 -w0 ~/.ssh/neo_lighthouse; echo
 ```
+
+Cloud Agent 开机后跑 [bootstrap-agent-access.sh](bootstrap-agent-access.sh)，会把 `NEO_LIGHTHOUSE_SSH_KEY_B64` 解码写成 `~/.ssh/neo_lighthouse` 并补上 `Host lighthouse`。不要把私钥提交或打进聊天。云 API 另配子用户 SecretId / SecretKey（地域 `ap-beijing`）。
 
 ## 软件
 
@@ -97,18 +101,19 @@ API Key **不要**写进 `.env` 也可以：上线后在对话页保存，落到
 
 ## systemd
 
-模板：[units/neo-llm-gateway.service](units/neo-llm-gateway.service)、[units/neo-control-plane.service](units/neo-control-plane.service)。
+模板：[units/neo-llm-gateway.service](units/neo-llm-gateway.service)、[units/neo-control-plane.service](units/neo-control-plane.service)、[units/neo-admin-api.service](units/neo-admin-api.service)。
 
 ```bash
 sudo cp infra-or-skill-units/neo-llm-gateway.service /etc/systemd/system/
 sudo cp infra-or-skill-units/neo-control-plane.service /etc/systemd/system/
+sudo cp infra-or-skill-units/neo-admin-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now neo-llm-gateway neo-control-plane
+sudo systemctl enable --now neo-llm-gateway neo-control-plane neo-admin-api
 ```
 
-仓库里的副本也在本 skill 的 `units/`。`WorkingDirectory` 必须是仓库根，`EnvironmentFile` 指向根目录 `.env`。
+仓库里的副本也在本 skill 的 `units/`。`WorkingDirectory` 必须是仓库根，`EnvironmentFile` 指向根目录 `.env`。控制面 `ExecStart` 必须是 `node --import tsx packages/control-plane/src/index.ts`，不要用 `pnpm --filter … start`：否则 MainPID 是 pnpm，`KillMode=process` 停不掉真正听 `:8080` 的进程。
 
-控制面 `KillMode=control-group`：重启时要杀掉它拉起的本地 worker。若 unit 停不住，看 `journalctl`，不要重启整机。
+控制面 `KillMode=process`：只杀控制面主进程，不杀它 spawn 的 worker。重启后 `adopt()` 按 pid 认领。`systemctl stop` 会留下在跑的 worker，下次启动收回。若 unit 停不住，看 `journalctl`，不要重启整机。
 
 ## Caddy
 
@@ -120,7 +125,7 @@ sudo cp units/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-必须 `flush_interval -1`，否则对话 SSE 会缓冲。对外只开 80 即可，不要让用户去记 `:8080`。
+必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，对外用 `https://neorun.cloud/` 对话、`https://neorun.cloud/admin/` 管理台，不要让用户去记 `:8080` / `:8090`。8090 只听本机。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
 
 ## 系统镜像
 
@@ -129,7 +134,7 @@ sudo systemctl reload caddy
 - 登录用户 `ubuntu`；部署公钥注释 `neo-cloud-agent-deploy`
 - 不要再选应用模板重装
 - 装软件：Node 22、pnpm 10、`apt install caddy e2fsprogs`；不要装 Docker / 爱马仕
-- 覆盖源码后必须 `pnpm --filter @neo-cloud-agent/web build`，控制面只跑得起来 `packages/web/dist`
+- 日常发版用 [deploy.sh](deploy.sh)，不要手搓全量 tar。覆盖源码后对话页必须有 `packages/web/dist`，管理台必须有 `packages/admin-web/dist`
 
 ## 验收命令
 
@@ -140,4 +145,4 @@ curl -sS http://127.0.0.1:8080/v1/vms
 curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1/
 ```
 
-浏览器：http://62.234.211.200/ → 登录 → 保存 DeepSeek/OpenAI Key → 新开对话。旧 mock 气泡不会改写。
+浏览器：https://neorun.cloud/ 或 http://62.234.211.200/ → 登录 → 保存 DeepSeek/OpenAI Key → 新开对话。旧 mock 气泡不会改写。

@@ -12,6 +12,10 @@ process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-settings-runs-"));
 process.env.LLM_SETTINGS_DIR = mkdtempSync(path.join(tmpdir(), "neo-settings-llm-"));
 delete process.env.WORKER_WORKSPACE_MOUNT;
 process.env.ACCOUNTS_REQUIRED = "0";
+process.env.NEW_API_URL = "http://127.0.0.1:3000";
+process.env.NEW_API_CONSOLE_URL = "http://127.0.0.1:3000";
+delete process.env.QUOTA_MAX_TOKENS_MONTH;
+delete process.env.QUOTA_MAX_CONCURRENT_RUNS;
 delete process.env.DATABASE_URL;
 delete process.env.REDIS_URL;
 delete process.env.GITHUB_APP_ID;
@@ -40,8 +44,11 @@ test("llm settings API stores a key without ever returning it", async (t) => {
   const before = (await (await fetch(`${base}/v1/settings/llm`, { headers: AUTH })).json()) as {
     configured: boolean;
     upstream: string;
+    newApi?: { url: string | null; consoleUrl: string | null };
   };
   assert.equal(before.configured, false);
+  assert.equal(before.newApi?.url, "http://127.0.0.1:3000");
+  assert.equal(before.newApi?.consoleUrl, "http://127.0.0.1:3000");
 
   const missing = await fetch(`${base}/v1/settings/llm`, {
     method: "POST",
@@ -67,11 +74,13 @@ test("llm settings API stores a key without ever returning it", async (t) => {
     llmUpstream: string;
     llmModel?: string | null;
     llmContextWindow?: number | null;
+    newApi?: { url: string | null; consoleUrl: string | null };
   };
   assert.equal(health.llmConfigured, true);
   assert.equal(health.llmUpstream, "deepseek");
   assert.equal(health.llmModel, "deepseek-v4-flash");
   assert.equal(health.llmContextWindow, 1_000_000);
+  assert.equal(health.newApi?.consoleUrl, "http://127.0.0.1:3000");
   assert.doesNotMatch(JSON.stringify(health), /sk-never-echo/);
 
   const scmDenied = await fetch(`${base}/v1/settings/scm`);
@@ -113,4 +122,40 @@ test("llm settings API stores a key without ever returning it", async (t) => {
   assert.equal(kept.configured, true);
   assert.equal(kept.upstream, "openai");
   assert.doesNotMatch(JSON.stringify(kept), /sk-never-echo/);
+
+  const quotaSaved = await fetch(`${base}/v1/settings/quota`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ maxConcurrentRuns: 1, maxTokensMonth: 0 }),
+  });
+  assert.equal(quotaSaved.status, 200);
+  const quota = (await quotaSaved.json()) as { maxConcurrentRuns?: number };
+  assert.equal(quota.maxConcurrentRuns, 1);
+  const first = await fetch(`${base}/v1/runs`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ prompt: "one", repoUrls: ["fixtures/toy-repo"] }),
+  });
+  assert.equal(first.status, 201);
+  const second = await fetch(`${base}/v1/runs`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ prompt: "two", repoUrls: ["fixtures/toy-repo"] }),
+  });
+  assert.equal(second.status, 429);
+  await fetch(`${base}/v1/settings/quota`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ maxConcurrentRuns: 0, maxTokensMonth: 0 }),
+  });
+
+  const mcpSaved = await fetch(`${base}/v1/settings/mcp`, {
+    method: "POST",
+    headers: { ...AUTH, "content-type": "application/json" },
+    body: JSON.stringify({ name: "docs", bearer: "sk-mcp-never-echo" }),
+  });
+  assert.equal(mcpSaved.status, 200);
+  const mcp = (await mcpSaved.json()) as { servers?: Array<{ name: string; connected?: boolean }> };
+  assert.equal(mcp.servers?.some((item) => item.name === "docs" && item.connected), true);
+  assert.doesNotMatch(JSON.stringify(mcp), /sk-mcp-never-echo/);
 });

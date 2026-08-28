@@ -14,6 +14,7 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --innodb-buffer-pool-size=512M
+      - --sort-buffer-size=8M
       - --max-connections=100
     volumes:
       - mysql_data:/var/lib/mysql
@@ -55,6 +56,44 @@ services:
     networks:
       - dbnet
 
+  new-api:
+    image: calciumion/new-api:latest
+    container_name: new-api
+    restart: unless-stopped
+    command: --log-dir /app/logs
+    ports:
+      - "0.0.0.0:3000:3000"
+    volumes:
+      - new_api_data:/data
+      - new_api_logs:/app/logs
+    environment:
+      TZ: Asia/Shanghai
+      SQL_DSN: ${NEW_API_SQL_DSN}
+      REDIS_CONN_STRING: ${NEW_API_REDIS_CONN_STRING}
+      SESSION_SECRET: ${NEW_API_SESSION_SECRET}
+      CRYPTO_SECRET: ${NEW_API_CRYPTO_SECRET}
+      MEMORY_CACHE_ENABLED: "true"
+      BATCH_UPDATE_ENABLED: "true"
+      ERROR_LOG_ENABLED: "true"
+      GENERATE_DEFAULT_TOKEN: "true"
+      STREAMING_TIMEOUT: "300"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O - http://127.0.0.1:3000/api/status | grep -q '\"success\"' || exit 1",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+    networks:
+      - dbnet
+
 networks:
   dbnet:
     name: dbnet
@@ -62,3 +101,5 @@ networks:
 volumes:
   mysql_data:
   redis_data:
+  new_api_data:
+  new_api_logs:

@@ -248,6 +248,40 @@ test("neo_mcp_list and neo_mcp_call talk to an HTTP MCP server", async () => {
   assert.match(called.content, /found it/);
 });
 
+test("neo_mcp_call prefers the control-plane HTTP proxy", async () => {
+  const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-mcp-cp-"));
+  mkdirSync(path.join(workspaceDir, ".neo"), { recursive: true });
+  writeFileSync(
+    path.join(workspaceDir, ".neo/environment.json"),
+    JSON.stringify({
+      mcp: [{ name: "docs", transport: "http", url: "https://mcp.example/rpc" }],
+    }),
+  );
+  const fetchImpl: CloudToolFetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes("/internal/runs/run_1/mcp")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string };
+      if (body.action === "list") {
+        return new Response(
+          JSON.stringify({
+            servers: [{ name: "docs", transport: "http", tools: [{ name: "search", description: "via control plane" }] }],
+          }),
+        );
+      }
+      return new Response(JSON.stringify({ result: { content: [{ type: "text", text: "from control plane" }] } }));
+    }
+    return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+  };
+  const tools = createCloudTools(ctx(fetchImpl, workspaceDir));
+  const listed = await tools.find((item) => item.name === "neo_mcp_list")!.execute({});
+  assert.match(listed.content, /via control plane/);
+  const called = await tools.find((item) => item.name === "neo_mcp_call")!.execute({
+    server: "docs",
+    tool: "search",
+  });
+  assert.match(called.content, /from control plane/);
+});
+
 test("neo_subagent follows the pi single/parallel/chain contract", async () => {
   const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-subagent-"));
   mkdirSync(path.join(workspaceDir, ".pi", "agents"), { recursive: true });
@@ -280,6 +314,37 @@ Look for secrets.
     .execute({ agent: "scout", task: "find auth" });
   assert.equal(ran.isError, undefined);
   assert.match(ran.content, /ran scout/);
+});
+
+test("availableSubagents reads scratch agents after workspace ones so the run wins", () => {
+  const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-subagent-scratch-"));
+  const scratchDir = path.join(workspaceDir, ".neo", "runs", "run-a");
+  mkdirSync(path.join(workspaceDir, ".neo", "agents"), { recursive: true });
+  mkdirSync(path.join(scratchDir, "agents"), { recursive: true });
+  writeFileSync(
+    path.join(workspaceDir, ".neo/agents/planner.md"),
+    `---
+name: planner
+description: leftover workspace planner
+---
+
+Workspace leftover.
+`,
+  );
+  writeFileSync(
+    path.join(scratchDir, "agents/planner.md"),
+    `---
+name: planner
+description: this run's planner
+---
+
+Scratch team member.
+`,
+  );
+  const withoutScratch = availableSubagents(workspaceDir).find((item) => item.name === "planner");
+  assert.match(withoutScratch?.systemPrompt ?? "", /Workspace leftover/);
+  const withScratch = availableSubagents(workspaceDir, scratchDir).find((item) => item.name === "planner");
+  assert.match(withScratch?.systemPrompt ?? "", /Scratch team member/);
 });
 
 test("neo_subscribe posts events to the control plane", async () => {

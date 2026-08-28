@@ -27,7 +27,92 @@ export type RunSource =
   | "api"
   | "automation"
   | "telegram"
-  | "wechat";
+  | "wechat"
+  | "desk"
+  | "ios"
+  | "android";
+
+export const RUN_SOURCES: readonly RunSource[] = [
+  "web",
+  "cli",
+  "slack",
+  "github",
+  "api",
+  "automation",
+  "telegram",
+  "wechat",
+  "desk",
+  "ios",
+  "android",
+];
+
+export function parseRunSource(value: unknown): RunSource | undefined {
+  return typeof value === "string" && (RUN_SOURCES as readonly string[]).includes(value)
+    ? (value as RunSource)
+    : undefined;
+}
+
+export type ExecutionPlace = "cloud" | "desk";
+
+/**
+ * Two axes so a later "cloud loop + desk tools" combo does not rewrite the contract.
+ * P0–P2 only allow `loop === tools`.
+ */
+export interface ExecutionTarget {
+  loop: ExecutionPlace;
+  tools: ExecutionPlace;
+  deskId?: string;
+  /** Which bound workspace on that desk runs this. Absolute path stays local. */
+  deskWorkspaceId?: string;
+}
+
+export type AgentMode = "agent" | "ask";
+
+/**
+ * Who starts the worker for a desk target.
+ * `inline`: the caller is that desk, so it spawns right after the response.
+ * `dispatch`: someone else asked this desk to run it, so the desk is notified.
+ */
+export type RunStart = "inline" | "dispatch";
+
+export function parseRunStart(value: unknown): RunStart | undefined {
+  return value === "inline" || value === "dispatch" ? value : undefined;
+}
+
+export function parseExecutionTarget(value: unknown): ExecutionTarget | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const loop = record.loop === "desk" || record.loop === "cloud" ? record.loop : null;
+  const tools = record.tools === "desk" || record.tools === "cloud" ? record.tools : null;
+  if (!loop || !tools) {
+    return undefined;
+  }
+  const deskId = typeof record.deskId === "string" && record.deskId.trim() ? record.deskId.trim() : undefined;
+  const deskWorkspaceId =
+    typeof record.deskWorkspaceId === "string" && record.deskWorkspaceId.trim() ? record.deskWorkspaceId.trim() : undefined;
+  return { loop, tools, deskId, deskWorkspaceId };
+}
+
+export function colocatedTarget(place: ExecutionPlace, deskId?: string): ExecutionTarget {
+  return place === "desk" ? { loop: "desk", tools: "desk", deskId } : { loop: "cloud", tools: "cloud" };
+}
+
+export function assertColocatedTarget(target: ExecutionTarget): void {
+  if (target.loop !== target.tools) {
+    throw new Error("P0–P2 只允许 loop 与 tools 同址");
+  }
+  if (target.tools === "desk" && !target.deskId) {
+    throw new Error("本机执行需要 deskId");
+  }
+}
+
+export function isDeskTarget(
+  target?: ExecutionTarget | null,
+): target is ExecutionTarget & { loop: "desk"; tools: "desk" } {
+  return target?.loop === "desk" && target.tools === "desk";
+}
 
 export interface Run {
   id: string;
@@ -41,6 +126,12 @@ export interface Run {
   source: RunSource;
   projectId?: string | null;
   assigneeUserId?: string | null;
+  collaborators?: RunCollaborator[];
+  todoId?: string | null;
+  expertId?: string | null;
+  expertTeamId?: string | null;
+  plugins?: Array<{ slug: string; version: string; digest: string }>;
+  executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
   branchName: string | null;
@@ -60,6 +151,10 @@ export interface Run {
     completionTokens: number;
     totalTokens: number;
   } | null;
+  /** Telegram chat that started this run; completion notify prefers it. */
+  notifyChatId?: string | null;
+  /** Human push on the run branch disables further CI autofix. */
+  blockAutofix?: boolean;
   /** Latest model-context fill. Not cumulative billed tokens. */
   contextUsage?: {
     tokens: number;
@@ -84,6 +179,37 @@ export type FollowUpDelivery = "prompt" | "steer" | "follow_up";
 
 export type FollowUpStatus = "queued" | "delivered" | "cancelled";
 
+export type FollowUpSource = "user" | "subscription" | "autofix";
+
+export type RunCollaboratorRole = "host" | "editor";
+
+export type RunCollaborator = {
+  userId: string;
+  email: string;
+  role: RunCollaboratorRole;
+  joinedAt: string;
+};
+
+export type TransferRunMode = "reassign" | "fork";
+
+export type TransferRunRequest = {
+  toUserId: string;
+  note?: string;
+  mode?: TransferRunMode;
+};
+
+export type ProjectRunCard = {
+  id: string;
+  title: string;
+  status: RunStatus;
+  projectId: string;
+  hostUserId: string;
+  hostEmail: string;
+  loop: ExecutionPlace;
+  updatedAt: string;
+  role: RunCollaboratorRole | null;
+};
+
 export interface FollowUp {
   id: string;
   runId: string;
@@ -91,6 +217,9 @@ export interface FollowUp {
   images?: ImageRef[];
   delivery: FollowUpDelivery;
   status: FollowUpStatus;
+  source?: FollowUpSource;
+  actorUserId?: string;
+  actorEmail?: string;
   createdAt: string;
   deliveredAt: string | null;
 }
@@ -112,7 +241,18 @@ export interface CreateRunRequest {
   model?: string;
   source?: RunSource;
   projectId?: string;
+  todoId?: string;
+  expertId?: string;
+  expertTeamId?: string;
+  pluginIds?: string[];
   images?: ImageRef[];
+  notifyChatId?: string;
+  target?: ExecutionTarget;
+  /** Desk targets only. Default `dispatch`. */
+  start?: RunStart;
+  /** Desk targets only. Which bound workspace on that desk should run this. */
+  deskWorkspaceId?: string;
+  mode?: AgentMode;
 }
 
 export interface CreateFollowUpRequest {
@@ -120,6 +260,7 @@ export interface CreateFollowUpRequest {
   /** Omit to let the control plane pick prompt vs steer vs follow_up. */
   delivery?: FollowUpDelivery;
   images?: ImageRef[];
+  source?: FollowUpSource;
 }
 
 export interface CreateCommitRequest {

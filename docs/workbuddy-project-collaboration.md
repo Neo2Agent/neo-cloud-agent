@@ -2,7 +2,9 @@
 
 调研日期：2026-08-22。  
 对象：腾讯云 WorkBuddy（CodeBuddy 文档站里的「从入门到精通 / 项目」这一支，不是 IDE 里的 Plan Mode）。  
-目的：弄清它的「项目协作」到底卖什么，再对照 Neo Cloud Agent 现在能做什么，给出一份能跟着做、又不照抄办公套件的落地顺序。
+目的：弄清它的「项目协作」到底卖什么，再对照 Neo Cloud Agent 现在能做什么，给出一份能跟着做、又不照抄办公套件的落地顺序。专家 / 专家团单独见 [workbuddy-experts.md](./workbuddy-experts.md)。技能 / 插件市场见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。
+
+2026-08-28 按当时已落地的项目 / 专家 / 技能骨架重新对标，见 [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md)。本文 §13 的「Neo 现在没有项目」已经过时。
 
 本文依据官方文档、更新日志和公开实战文整理。没有登录 WorkBuddy 客户端点过每一个按钮；文中把「官方写死的行为」和「第三方解读 / 建议模型」分开写。
 
@@ -26,7 +28,7 @@ WorkBuddy 的项目协作不是「多开几个聊天窗口」，而是加了一�
 
 任务才是一次真正干活的会话：一个人提需求，Agent 在独立工作空间里跑，产物可以回写资产库，也可以连同对话摘要交给别人接着干。
 
-对 Neo 来说，值得跟的是这套 **「项目包上下文，任务包一次 Run」** 的分层，不是腾讯文档、积分、专家中心、锁屏远程电脑那些办公套件。
+对 Neo 来说，值得跟的是这套 **「项目包上下文，任务包一次 Run」** 的分层，不是腾讯文档、积分、锁屏远程电脑那些办公套件。专家中心市场仍然后置；**专家作为角色包和召唤面**见 [workbuddy-experts.md](./workbuddy-experts.md)。
 
 | 该跟 | 先别跟 |
 | --- | --- |
@@ -91,7 +93,7 @@ Neo Cloud Agent 是 **Cursor Cloud Agent 克隆**：控制面编排隔离 VM，p
 
 - 项目 ≈ 一组人共享的 `instructions` + 默认 `repoUrls` / Environment + 项目级 skills + 资产目录
 - 任务 ≈ 现在的 `Run`，多一个 `projectId`
-- 不要先做专家中心。项目指令 + 工作区 `AGENTS.md` / `.neo/skills` 已经能覆盖「团队行为规则」
+- 不要先做专家**市场**。项目指令 + 工作区 `AGENTS.md` / `.neo/skills` 覆盖「团队行为规则」。角色切换和专家团配方见 [workbuddy-experts.md](./workbuddy-experts.md)
 
 ---
 
@@ -353,7 +355,7 @@ Neo 现在的定时任务是整站一份列表，没有 `userId` / `projectId`�
 
 项目页允许挂「项目专家」，任务里还可以 `@` 自建专家和子助理（更新日志）。
 
-Neo 已有 `neo_subagent`（scout / planner / reviewer / worker，single / parallel / chain）。这已经覆盖专家团的「拆开并行再收回来」，不必再做专家市场。项目协作第一期只用 **项目指令 + 项目 skills + 现有 subagent**。
+项目协作第一期仍然只用 **项目指令 + 项目 skills + 现有 subagent**，不要把专家目录做成项目的前置依赖。专家作为一等召唤面（角色覆盖绑 Run、团走 `neo_subagent`、不做市场）的调研和分期见 [workbuddy-experts.md](./workbuddy-experts.md)。
 
 ---
 
@@ -424,7 +426,7 @@ Neo 现网不要把 Provider Key、`.env`、GitHub PAT 放进可转交的 transc
 | 项目动态 | 无 | 写 MySQL + 可选 notify |
 | 自动化 | 已有，MySQL 持久化，整站一份 | 加上 `userId` / 可选 `projectId` |
 | IM 入口 | Telegram / 微信公众号已能开 Run | 加上「开在某个项目里」 |
-| 专家团 | `neo_subagent` | 够用，不做市场 |
+| 专家团 | `neo_subagent` | 编排能力够用；召唤面和配方见 [workbuddy-experts.md](./workbuddy-experts.md)，不做市场 |
 | 连接器 | GitHub / 通知 webhook | 项目级绑定即可 |
 | 在线协同编辑 / 发布站 | 无 | 明确不做 |
 
@@ -476,7 +478,7 @@ Web 先做「项目」顶栏（和「对话 / 定时任务」并列或作为对�
 
 ### 刻意后置
 
-- 专家中心、技能市场
+- 专家**市场**（专家角色包见 [workbuddy-experts.md](./workbuddy-experts.md)）。技能 / 插件目录的跟法见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)，不要和专家上传站混成一页
 - 腾讯文档式人机双写、CSV/HTML 协同
 - 公开分享整段会话
 - 公共 OAuth 票据全员共用
@@ -617,3 +619,5 @@ Webhook（GitHub / Telegram / 微信）继续 **公开、不进 `/v1`**。若要
 | 多人并行原型实战 | https://cloud.tencent.com/developer/article/2688477 |
 | 企业微信接入 | https://www.workbuddy.cn/docs/workbuddy/Wecom-Guide |
 | Neo 架构（对照用） | [architecture.md](./architecture.md) |
+| 专家 / 专家团调研与方案 | [workbuddy-experts.md](./workbuddy-experts.md) |
+| 技能 / 插件市场调研与方案 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) |

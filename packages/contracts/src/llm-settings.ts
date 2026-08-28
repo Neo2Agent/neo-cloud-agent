@@ -7,24 +7,45 @@ import {
 } from "./llm-ids.js";
 
 export type { LlmUpstreamMode } from "./llm-ids.js";
-export { canonicalizeLlmModel, DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL, defaultLlmModel, isDeepseekProModel } from "./llm-ids.js";
+export {
+  canonicalizeLlmModel,
+  DEEPSEEK_FLASH_MODEL,
+  DEEPSEEK_PRO_MODEL,
+  DEEPSEEK_VISION_MODEL,
+  defaultLlmModel,
+  isDeepseekProModel,
+  isDeepseekVisionModel,
+  visionModelFor,
+} from "./llm-ids.js";
 
 export interface LlmSettings {
   upstream: LlmUpstreamMode;
   apiKey: string;
   model?: string;
+  baseUrl?: string;
 }
+
+export type NewApiPublicInfo = { url: string | null; consoleUrl: string | null };
 
 export interface PublicLlmSettings {
   configured: boolean;
   upstream: LlmUpstreamMode;
   model: string | null;
+  baseUrl: string | null;
+  newApi?: NewApiPublicInfo;
+}
+
+export function readNewApiInfo(env: NodeJS.ProcessEnv = process.env): NewApiPublicInfo {
+  const url = (env.NEW_API_URL ?? "").trim() || null;
+  const consoleUrl = (env.NEW_API_CONSOLE_URL ?? "").trim() || null;
+  return { url, consoleUrl };
 }
 
 export interface LlmSettingsRequest {
   upstream: LlmUpstreamMode;
   apiKey?: string;
   model?: string;
+  baseUrl?: string;
 }
 
 const FILE_NAME = path.join(".neo", "llm-upstream.env");
@@ -92,10 +113,15 @@ export function parseLlmSettingsRequest(body: unknown): LlmSettingsRequest {
     throw new Error("apiKey must be a single line");
   }
   const model = typeof raw.model === "string" ? raw.model.trim() : "";
+  const baseUrl = typeof raw.baseUrl === "string" ? raw.baseUrl.trim().replace(/\/$/, "") : "";
+  if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
+    throw new Error("baseUrl must be an http(s) URL");
+  }
   return {
     upstream,
     ...(apiKey ? { apiKey } : {}),
     ...(model ? { model } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
   };
 }
 
@@ -112,10 +138,11 @@ export function readLlmSettings(root?: string): LlmSettings | null {
     const model = parsed.LLM_UPSTREAM_MODEL
       ? canonicalizeLlmModel(upstream, parsed.LLM_UPSTREAM_MODEL)
       : undefined;
+    const baseUrl = (parsed.LLM_UPSTREAM_BASE_URL ?? "").trim().replace(/\/$/, "") || undefined;
     if (!apiKey && upstream === "mock" && !model) {
       return null;
     }
-    return { upstream, apiKey, model };
+    return { upstream, apiKey, model, baseUrl };
   } catch {
     return null;
   }
@@ -130,6 +157,7 @@ export function writeLlmSettings(settings: LlmSettingsRequest, root?: string): P
       settings.upstream,
       settings.model || existing?.model || defaultLlmModel(settings.upstream),
     ),
+    baseUrl: (settings.baseUrl || existing?.baseUrl || "").replace(/\/$/, "") || undefined,
   };
   if (merged.upstream !== "mock" && !merged.apiKey) {
     throw new Error("apiKey is required");
@@ -141,6 +169,7 @@ export function writeLlmSettings(settings: LlmSettingsRequest, root?: string): P
     "# Written by Neo Cloud Agent. Do not commit.",
     `LLM_UPSTREAM=${merged.upstream}`,
     `LLM_UPSTREAM_MODEL=${merged.model ?? defaultLlmModel(merged.upstream)}`,
+    merged.baseUrl ? `LLM_UPSTREAM_BASE_URL=${merged.baseUrl}` : "",
     merged.apiKey ? `${keyName}=${merged.apiKey}` : "",
   ]
     .filter(Boolean)
@@ -151,8 +180,9 @@ export function writeLlmSettings(settings: LlmSettingsRequest, root?: string): P
 }
 
 export function publicLlmSettings(settings: LlmSettings | null): PublicLlmSettings {
+  const newApi = readNewApiInfo();
   if (!settings) {
-    return { configured: false, upstream: "mock", model: null };
+    return { configured: false, upstream: "mock", model: null, baseUrl: null, newApi };
   }
   return {
     configured: Boolean(settings.apiKey) && settings.upstream !== "mock",
@@ -162,5 +192,7 @@ export function publicLlmSettings(settings: LlmSettings | null): PublicLlmSettin
       : settings.apiKey
         ? defaultLlmModel(settings.upstream)
         : null,
+    baseUrl: settings.baseUrl ?? null,
+    newApi,
   };
 }

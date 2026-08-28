@@ -6,27 +6,62 @@ import {
   settleTranscriptMessages,
 } from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
-import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
-import { api, readJson, readToken, writeToken } from "./api";
-import { parseSseData } from "./stream-apply";
+import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
+import type { Desk, DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
+import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
+import { hasSavedSession } from "./session";
+import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
+import { readPinnedRuns, togglePinnedRun } from "./pins";
+import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
+import { cycle, shortcutAction } from "./shortcuts";
+import { applyLiveEvents, parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
+import { ArtifactsPanel } from "./components/ArtifactsPanel";
 import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { AutomationsPage } from "./components/AutomationsPage";
+import { ExpertsPage } from "./components/ExpertsPage";
+import { SkillsPage } from "./components/SkillsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import type { Project } from "@neo-cloud-agent/contracts/project";
+import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
+import type { IntentCapsule, Recipe } from "@neo-cloud-agent/contracts/recipe";
+import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import { InboxBell } from "./components/InboxBell";
+import { Tooltip } from "@neo-cloud-agent/ui";
+import {
+  IconArtifacts,
+  IconAutomations,
+  IconChat,
+  IconClose,
+  IconDiff,
+  IconExperts,
+  IconFiles,
+  IconGear,
+  IconMenu,
+  IconPr,
+  IconProjects,
+  IconSidebarClose,
+  IconSkills,
+  IconTerminal,
+} from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
+import { TranscriptSearch } from "./components/TranscriptSearch";
+import { VmSlots } from "./components/VmSlots";
+import type { ComposerMention } from "./mention";
 import {
   baselineContextUsage,
   overlayContextUsage,
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatUsage, modelLabel, preview, shortId, slotLabel } from "./format";
+import { formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
 import {
   activityLabel,
   isActiveRunStatus,
@@ -79,6 +114,7 @@ type Health = {
   llmConfigured?: boolean;
   llmUpstream?: string;
   llmModel?: string | null;
+  newApi?: { url?: string | null; consoleUrl?: string | null };
   workerRuntime?: string;
   objectStore?: string;
   scmPush?: ScmSettings;
@@ -90,9 +126,11 @@ type PullRequest = { url?: string; draft?: boolean };
 
 function formatHealth(health: Health | null, vms: VmSummary): string {
   if (!health?.ok) return "控制面异常";
-  const provider = health.llmConfigured
-    ? modelLabel(health.llmUpstream, health.llmModel)
-    : "未配置 Key";
+  const provider = health.newApi?.consoleUrl || health.newApi?.url
+    ? `New API · ${modelLabel(health.llmUpstream, health.llmModel)}`
+    : health.llmConfigured
+      ? modelLabel(health.llmUpstream, health.llmModel)
+      : "未配置 Key";
   const total = vms.total || health.vmSlots?.total || 0;
   const busy = vms.busy ?? health.vmSlots?.busy ?? 0;
   const vm = total > 0 ? ` · VM ${busy}/${total}` : health.workerRuntime === "vm" ? " · VM" : "";
@@ -120,10 +158,40 @@ function hashProjects(): boolean {
   return location.hash === "#/projects" || Boolean(hashProjectId()) || Boolean(hashInviteToken());
 }
 
-function initialMainTab(): "chat" | "automations" | "projects" {
+function hashExpertId(): string | null {
+  return /^#\/experts\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
+}
+
+function hashExperts(): boolean {
+  return location.hash === "#/experts" || Boolean(hashExpertId());
+}
+
+function hashSkillId(): string | null {
+  return /^#\/skills\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
+}
+
+function hashSkills(): boolean {
+  return location.hash === "#/skills" || Boolean(hashSkillId());
+}
+
+function initialMainTab(): "chat" | "automations" | "projects" | "experts" | "skills" {
   if (hashAutomations()) return "automations";
   if (hashProjects()) return "projects";
+  if (hashExperts()) return "experts";
+  if (hashSkills()) return "skills";
   return "chat";
+}
+
+function runRoleLabel(run: Run | null, experts: Expert[], teams: ExpertTeam[]): string {
+  if (!run) return "";
+  if (run.expertTeamId) {
+    return teams.find((item) => item.id === run.expertTeamId || item.slug === run.expertTeamId)?.name ?? "专家团";
+  }
+  if (run.expertId) {
+    const expert = experts.find((item) => item.id === run.expertId || item.slug === run.expertId);
+    return expert ? expertPickerLabel(expert) : "专家";
+  }
+  return "";
 }
 
 export function App() {
@@ -141,7 +209,7 @@ export function App() {
   const [vms, setVms] = useState<VmSummary>({ total: 0, busy: 0, backend: "none", slots: [] });
   const [userEmail, setUserEmail] = useState("");
   const [userId, setUserId] = useState("");
-  const [authOpen, setAuthOpen] = useState(true);
+  const [authOpen, setAuthOpen] = useState(() => !hasSavedSession(readToken()));
   const [authMode, setAuthMode] = useState<"login" | "token">("login");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -150,8 +218,6 @@ export function App() {
   const [authToken, setAuthToken] = useState("");
   const [prompt, setPrompt] = useState("");
   const [images, setImages] = useState<ImageRef[]>([]);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [diffOpen, setDiffOpen] = useState(false);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState("");
   const [diffStat, setDiffStat] = useState("");
@@ -162,7 +228,32 @@ export function App() {
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects">(initialMainTab);
+  const [sessionTab, setSessionTab] = useState<"chat" | "files" | "diff" | "terminal" | "artifacts">("chat");
+  const [agentMode, setAgentMode] = useState<AgentMode>("agent");
+  const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
+  const [deskFolder, setDeskFolder] = useState("");
+  const [desks, setDesks] = useState<Desk[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() => (typeof window === "undefined" ? [] : readPinnedRuns()));
+  const [diagLogs, setDiagLogs] = useState<Array<{ name: string; content?: string }>>([]);
+  const [diagError, setDiagError] = useState("");
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [artifacts, setArtifacts] = useState<Array<{ name: string; url?: string; contentType?: string }>>([]);
+  const [artifactsError, setArtifactsError] = useState("");
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [commitError, setCommitError] = useState("");
+  const [handoffError, setHandoffError] = useState("");
+  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts" | "skills">(initialMainTab);
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(hashSkillId);
+  const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
+  const [projectNames, setProjectNames] = useState<Record<string, string>>({});
+  const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [selectedExpertId, setSelectedExpertId] = useState<string | null>(hashExpertId);
+  const [experts, setExperts] = useState<Expert[]>([]);
+  const [teams, setTeams] = useState<ExpertTeam[]>([]);
+  const [expertPick, setExpertPick] = useState<ExpertPick>({});
   const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
   const [inviteToken, setInviteToken] = useState<string | null>(hashInviteToken);
@@ -184,20 +275,22 @@ export function App() {
   const topMoreRef = useRef<HTMLDetailsElement>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const streamFrameRef = useRef(0);
+  const streamTimerRef = useRef(0);
   const lastEventIdRef = useRef<string | null>(null);
+  const appliedEventIdsRef = useRef<Set<string>>(new Set());
   const openGenRef = useRef(0);
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
   const tokenRef = useRef(token);
   const sendingRef = useRef(false);
   const pendingRef = useRef<PendingUser | null>(null);
   const keepPendingRef = useRef(false);
+  const projectNamesRef = useRef(projectNames);
   tokenRef.current = token;
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
+  projectNamesRef.current = projectNames;
 
-  const selectedModel =
-    currentRun?.model ||
-    (llm.upstream === "openai" ? "gpt-4o-mini" : /pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash");
+  const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
   const contextUsage = useMemo(() => {
     const reported = parseContextUsage(currentRun?.contextUsage ?? null);
     const base = reported ?? baselineContextUsage(selectedModel);
@@ -235,6 +328,10 @@ export function App() {
       cancelAnimationFrame(streamFrameRef.current);
       streamFrameRef.current = 0;
     }
+    if (streamTimerRef.current) {
+      window.clearTimeout(streamTimerRef.current);
+      streamTimerRef.current = 0;
+    }
     sourceRef.current?.close();
     sourceRef.current = null;
   }, []);
@@ -252,14 +349,18 @@ export function App() {
       if (cursor) params.set("after", cursor);
       if (tokenRef.current) params.set("access_token", tokenRef.current);
       const query = params.toString() ? `?${params}` : "";
-      const source = new EventSource(`/v1/runs/${id}/events${query}`);
+      const source = new EventSource(withApiBase(`/v1/runs/${id}/events${query}`));
       const pending: RunEvent[] = [];
       const flush = () => {
         streamFrameRef.current = 0;
+        if (streamTimerRef.current) {
+          window.clearTimeout(streamTimerRef.current);
+          streamTimerRef.current = 0;
+        }
         if (sourceRef.current !== source) {
           return;
         }
-        const batch = pending.splice(0);
+        const batch = applyLiveEvents([], pending.splice(0));
         if (batch.length === 0) {
           return;
         }
@@ -280,6 +381,12 @@ export function App() {
           if (isTerminalTurnEvent(event.kind)) {
             setStopping(false);
             setSending(false);
+            if (event.kind === "run.idle" || event.kind === "agent.end") {
+              void deskBridge()?.notify("对话已完成", preview(currentRun?.prompt ?? "Neo"));
+            }
+            if (event.kind === "run.error") {
+              void deskBridge()?.notify("对话出错", event.title || "Run error");
+            }
           }
           if (event.kind === "scm.pr_opened" && event.data?.url) {
             patchRun(id, (run) => ({
@@ -313,14 +420,20 @@ export function App() {
       };
       source.onmessage = (message) => {
         const event = parseSseData(message.data);
-        if (!event) {
+        if (!event || appliedEventIdsRef.current.has(event.id)) {
           return;
         }
+        appliedEventIdsRef.current.add(event.id);
         lastEventIdRef.current = event.id;
         pending.push(event);
-        if (!streamFrameRef.current) {
-          streamFrameRef.current = requestAnimationFrame(flush);
+        if (streamFrameRef.current || streamTimerRef.current) {
+          return;
         }
+        if (typeof document !== "undefined" && document.hidden) {
+          streamTimerRef.current = window.setTimeout(flush, 16);
+          return;
+        }
+        streamFrameRef.current = requestAnimationFrame(flush);
       };
       source.onerror = () => {
         setHealthText("事件流已断开，正在重试");
@@ -348,6 +461,66 @@ export function App() {
       // keep last occupancy
     }
   }, [applyVms]);
+
+  /** Machines the user registered from Desk, so a run can be sent to one. */
+  const refreshDesks = useCallback(async () => {
+    if (!tokenRef.current) return;
+    try {
+      const response = await api(tokenRef.current, "/v1/desks");
+      if (!response.ok) return;
+      const list = (await readJson<{ desks?: Desk[] }>(response)).desks ?? [];
+      setDesks(list);
+      // A machine re-registers with a new id, so a target saved in this browser
+      // can point at one that no longer exists. Sending to it fails with
+      // 本机未登记, which reads like a bug rather than a stale pick.
+      setDeskTarget((prev) => {
+        if (prev.kind !== "desk" || !prev.deskId || deskBridge()?.canRunLocal) {
+          return prev;
+        }
+        const stillThere = list.some(
+          (desk) =>
+            desk.id === prev.deskId &&
+            (!prev.workspaceId || (desk.workspaces ?? []).some((ws) => ws.id === prev.workspaceId)),
+        );
+        if (stillThere) {
+          return prev;
+        }
+        const next = { ...prev, deskId: undefined, workspaceId: undefined };
+        writeLastTarget(next);
+        return next;
+      });
+    } catch {
+      // keep the last list
+    }
+  }, []);
+
+  const refreshExperts = useCallback(async (projectId?: string | null) => {
+    if (!tokenRef.current) return;
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    try {
+      const [expertRes, teamRes, pluginRes, projectRes] = await Promise.all([
+        api(tokenRef.current, `/v1/experts${query}`),
+        api(tokenRef.current, "/v1/expert-teams"),
+        api(tokenRef.current, `/v1/plugins${query}`),
+        api(tokenRef.current, "/v1/projects"),
+      ]);
+      if (expertRes.ok) {
+        setExperts((await readJson<{ experts?: Expert[] }>(expertRes)).experts ?? []);
+      }
+      if (teamRes.ok) {
+        setTeams((await readJson<{ teams?: ExpertTeam[] }>(teamRes)).teams ?? []);
+      }
+      if (pluginRes.ok) {
+        setPluginCatalog((await readJson<{ plugins?: PluginCatalogItem[] }>(pluginRes)).plugins ?? []);
+      }
+      if (projectRes.ok) {
+        const projects = (await readJson<{ projects?: Project[] }>(projectRes)).projects ?? [];
+        setProjectNames(Object.fromEntries(projects.map((item) => [item.id, item.name])));
+      }
+    } catch {
+      // optional catalog
+    }
+  }, []);
 
   const refreshRuns = useCallback(async () => {
     const response = await api(tokenRef.current, "/v1/runs");
@@ -408,6 +581,7 @@ export function App() {
           configured: settings.configured,
           upstream: settings.upstream || "deepseek",
           model: settings.model,
+          newApi: settings.newApi,
         });
         setLlmKey("");
       }
@@ -443,10 +617,10 @@ export function App() {
     setLoadingTranscript(false);
     setLoadingOlder(false);
     lastEventIdRef.current = null;
+    appliedEventIdsRef.current = new Set();
     setPrompt("");
     setImages([]);
-    setFilesOpen(false);
-    setDiffOpen(false);
+    setSessionTab("chat");
     setDiffStat("");
     setDiffPatch("");
     setDiffError("");
@@ -455,6 +629,7 @@ export function App() {
     setPendingTurn(null);
     setEnvId("");
     setBuildId("");
+    setHighlightId(null);
     history.replaceState(null, "", "/");
   }, [closeStream]);
 
@@ -464,12 +639,15 @@ export function App() {
       setRunId(id);
       setLoadingTranscript(true);
       setMessages([]);
+      appliedEventIdsRef.current = new Set();
       setRemaining(0);
       setNextBefore(null);
       setStopping(false);
       setSending(false);
       if (!keepPendingRef.current) setPendingTurn(null);
       setMainTab("chat");
+      setSessionTab("chat");
+      setHighlightId(null);
       history.replaceState(null, "", `/#/runs/${id}`);
       const [runRes, transcriptRes] = await Promise.all([
         api(tokenRef.current, `/v1/runs/${id}`),
@@ -483,9 +661,14 @@ export function App() {
       const run = await readJson<Run>(runRes);
       if (openGenRef.current !== gen) return false;
       setCurrentRun(run);
+      writeLastRunId(id);
       const projectId = run.projectId ?? "";
       if (projectId) {
-        setActiveProject((prev) => (prev?.id === projectId ? prev : { id: projectId, name: prev?.name ?? "项目对话" }));
+        const known = projectNamesRef.current[projectId];
+        setActiveProject((prev) => ({
+          id: projectId,
+          name: known || (prev?.id === projectId ? prev.name : "项目对话"),
+        }));
       } else {
         setActiveProject(null);
       }
@@ -524,16 +707,55 @@ export function App() {
 
   const openAutomations = useCallback(() => {
     setMainTab("automations");
-    setFilesOpen(false);
-    setDiffOpen(false);
     setSettingsOpen(false);
     history.replaceState(null, "", "/#/automations");
   }, []);
 
+  const openExperts = useCallback((id?: string | null) => {
+    setMainTab("experts");
+    setSettingsOpen(false);
+    setSelectedExpertId(id ?? null);
+    history.replaceState(null, "", id ? `/#/experts/${id}` : "/#/experts");
+  }, []);
+
+  const openSkills = useCallback((id?: string | null) => {
+    setMainTab("skills");
+    setSettingsOpen(false);
+    setSelectedSkillId(id ?? null);
+    history.replaceState(null, "", id ? `/#/skills/${id}` : "/#/skills");
+  }, []);
+
+  const useSkill = useCallback(
+    async (plugin: PluginCatalogItem) => {
+      try {
+        if (!plugin.installed) {
+          const res = await api(tokenRef.current, `/v1/plugins/${plugin.id}/install`, {
+            method: "POST",
+            body: JSON.stringify({ scope: "user" }),
+          });
+          if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "安装失败");
+        } else if (!plugin.enabled) {
+          const res = await api(tokenRef.current, `/v1/plugins/${plugin.id}/enable`, {
+            method: "POST",
+            body: JSON.stringify({ enabled: true, scope: plugin.installScope ?? "user" }),
+          });
+          if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "启用失败");
+        }
+      } catch {
+        // 仍带上 pluginIds，这次对话会额外启用
+      }
+      resetComposer();
+      setPluginPick(plugin);
+      if (plugin.interface?.defaultPrompt?.[0]) {
+        setPrompt(plugin.interface.defaultPrompt[0]);
+      }
+      setMainTab("chat");
+    },
+    [resetComposer],
+  );
+
   const openProjects = useCallback((id?: string | null, invite?: string | null) => {
     setMainTab("projects");
-    setFilesOpen(false);
-    setDiffOpen(false);
     setSettingsOpen(false);
     setSelectedProjectId(id ?? null);
     setInviteToken(invite ?? null);
@@ -556,15 +778,44 @@ export function App() {
 
   const openChat = useCallback(() => {
     setMainTab("chat");
-    if (hashAutomations() || hashProjects()) {
+    if (hashAutomations() || hashProjects() || hashExperts() || hashSkills()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
   }, [runId]);
 
   const finishLogin = useCallback(async () => {
-    const refreshShell = [refreshRuns(), refreshEnvironments(), refreshLlm(), refreshScm(), refreshVms()] as const;
+    const desk = deskBridge();
+    if (desk) {
+      await desk.setToken(tokenRef.current).catch(() => undefined);
+      const target = await desk.getTarget().catch(() => undefined);
+      if (target) {
+        setDeskTarget(target);
+        if (target.folder) setDeskFolder(target.folder);
+      }
+    }
+    const refreshShell = [
+      refreshRuns(),
+      refreshEnvironments(),
+      refreshLlm(),
+      refreshScm(),
+      refreshVms(),
+      refreshExperts(),
+      refreshDesks(),
+    ] as const;
     if (hashAutomations()) {
       setMainTab("automations");
+      await Promise.all(refreshShell);
+      return;
+    }
+    if (hashExperts()) {
+      setMainTab("experts");
+      setSelectedExpertId(hashExpertId());
+      await Promise.all(refreshShell);
+      return;
+    }
+    if (hashSkills()) {
+      setMainTab("skills");
+      setSelectedSkillId(hashSkillId());
       await Promise.all(refreshShell);
       return;
     }
@@ -577,7 +828,7 @@ export function App() {
       await Promise.all(refreshShell);
       return;
     }
-    const match = hashRunId();
+    const match = hashRunId() || readLastRunId();
     await Promise.all([
       refreshRuns(),
       match ? openRun(match) : Promise.resolve(),
@@ -585,9 +836,10 @@ export function App() {
       refreshLlm(),
       refreshScm(),
       refreshVms(),
+      refreshDesks(),
     ]);
-    if (!match && !hashRunId() && !hashProjects()) resetComposer();
-  }, [openRun, refreshEnvironments, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
+    if (!match && !hashRunId() && !hashProjects() && !hashExperts() && !hashSkills()) resetComposer();
+  }, [openRun, refreshDesks, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
     async (nextToken: string, user?: { id?: string; email?: string } | null) => {
@@ -639,8 +891,17 @@ export function App() {
     ) {
       return;
     }
+    // A browser cannot pick a folder, so 本机 needs a machine chosen first.
+    if (!runId && deskTarget.kind === "desk" && !deskBridge()?.canRunLocal && !deskTarget.deskId) {
+      setMessages((prev) => [
+        ...prev,
+        localErrorMessage(runId, "先选一台电脑。要出现在这里，那台电脑得打开 Desk 并在设置里开启 Remote control。"),
+      ]);
+      return;
+    }
     const attached = images;
     const previousStatus = currentRun?.status;
+    const askPrefix = agentMode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     const pending: PendingUser = {
       id: `pending-${Date.now()}`,
       text: text || "（图片）",
@@ -655,8 +916,7 @@ export function App() {
       patchRun(runId, (run) => ({ ...run, status: "RUNNING" }));
     }
     const repoUrls = repo.trim() ? [repo.trim()] : [];
-    const model =
-      llm.upstream === "openai" ? "gpt-4o-mini" : /pro/i.test(llm.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash";
+    const model = resolveChatModel(llm.upstream, llm.model, attached.length > 0);
     const buildPayload = buildId === "cold" ? { reuseBuild: false } : buildId ? { buildId, reuseBuild: true } : { reuseBuild: true };
     try {
       if (!runId) {
@@ -664,13 +924,27 @@ export function App() {
           await api(tokenRef.current, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
-              prompt: text || "（图片）",
-              repoUrls,
-              source: "web",
+              prompt: `${askPrefix}${text || "（图片）"}`,
+              repoUrls: deskTarget.kind === "desk" ? (repoUrls.length ? repoUrls : deskFolder ? [deskFolder] : []) : repoUrls,
+              source: deskTarget.kind === "desk" ? "desk" : "web",
               envId: envId || undefined,
               model,
               images: attached.length ? attached : undefined,
               projectId: activeProject?.id,
+              expertId: expertPick.expertId,
+              expertTeamId: expertPick.expertTeamId,
+              pluginIds: pluginPick ? [pluginPick.id] : undefined,
+              mode: agentMode,
+              deskWorkspaceId: deskTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
+              target:
+                deskTarget.kind === "desk"
+                  ? {
+                      loop: "desk",
+                      tools: "desk",
+                      deskId: deskTarget.deskId,
+                      deskWorkspaceId: deskTarget.workspaceId,
+                    }
+                  : { loop: "cloud", tools: "cloud" },
               ...buildPayload,
             }),
           }),
@@ -689,7 +963,10 @@ export function App() {
       const follow = await readJson<{ error?: string }>(
         await api(tokenRef.current, `/v1/runs/${runId}/follow-ups`, {
           method: "POST",
-          body: JSON.stringify({ text: text || "（图片）", images: attached.length ? attached : undefined }),
+          body: JSON.stringify({
+            text: `${askPrefix}${text || "（图片）"}`,
+            images: attached.length ? attached : undefined,
+          }),
         }),
       );
       if (follow.error) throw new Error(follow.error);
@@ -704,7 +981,33 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, buildId, currentRun?.status, envId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, agentMode, buildId, currentRun?.status, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
+
+  const queueMessage = useCallback(async () => {
+    const text = prompt.trim();
+    if (!text && images.length === 0) return;
+    if (isComposerClosed(currentRun?.status) || !runId) return;
+    const attached = images;
+    const askPrefix = agentMode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
+    setPrompt("");
+    setImages([]);
+    try {
+      const follow = await readJson<{ error?: string }>(
+        await api(tokenRef.current, `/v1/runs/${runId}/follow-ups`, {
+          method: "POST",
+          body: JSON.stringify({
+            text: `${askPrefix}${text || "（图片）"}`,
+            images: attached.length ? attached : undefined,
+          }),
+        }),
+      );
+      if (follow.error) throw new Error(follow.error);
+    } catch (error) {
+      setPrompt(text);
+      setImages(attached);
+      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "排队失败")]);
+    }
+  }, [agentMode, currentRun?.status, images, prompt, runId]);
 
   const stopTurn = useCallback(() => {
     if (!runId) return;
@@ -725,35 +1028,114 @@ export function App() {
     })();
   }, [patchRun, runId]);
 
+  const commitWorkspace = useCallback(
+    async (message: string) => {
+      if (!runId) return;
+      setCommitting(true);
+      setCommitError("");
+      try {
+        const body = await readJson<{ error?: string }>(
+          await api(tokenRef.current, `/v1/runs/${runId}/commit`, {
+            method: "POST",
+            body: JSON.stringify({ message }),
+          }),
+        );
+        if (body.error) throw new Error(body.error);
+        setDiffLoading(true);
+        const response = await api(tokenRef.current, `/v1/runs/${runId}/diff`);
+        const diff = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
+        if (!response.ok) throw new Error(diff.error || "读取 diff 失败");
+        setDiffStat(diff.stat ?? "");
+        setDiffPatch(diff.patch ?? "");
+      } catch (error) {
+        setCommitError(error instanceof Error ? error.message : "提交失败");
+      } finally {
+        setCommitting(false);
+        setDiffLoading(false);
+      }
+    },
+    [runId],
+  );
+
+  /** Cloud → This Computer only. A local conversation stays local; see handoffRun. */
+  const handoffCurrent = useCallback(
+    async (_kind: "desk") => {
+      if (!runId) return;
+      if (!window.confirm("切到本机。未提交的改动不会带过去，先 commit 或 stash。确定？")) {
+        return;
+      }
+      setHandoffError("");
+      try {
+        const target = {
+          loop: "desk" as const,
+          tools: "desk" as const,
+          deskId: deskTarget.deskId,
+          deskWorkspaceId: deskTarget.workspaceId,
+        };
+        const body = await readJson<Run & { error?: string }>(
+          await api(tokenRef.current, `/v1/runs/${runId}/handoff`, {
+            method: "POST",
+            body: JSON.stringify({ target, deskWorkspaceId: deskTarget.workspaceId }),
+          }),
+        );
+        if (body.error) throw new Error(body.error);
+        setCurrentRun(body);
+        setRuns((prev) => prev.map((item) => (item.id === body.id ? { ...item, ...body } : item)));
+      } catch (error) {
+        setHandoffError(error instanceof Error ? error.message : "移交失败");
+      }
+    },
+    [deskTarget.deskId, runId],
+  );
+
+  const applyTarget = useCallback((next: DeskTarget) => {
+    setDeskTarget(next);
+    if (next.folder) setDeskFolder(next.folder);
+    writeLastTarget(next);
+    void deskBridge()?.setTarget(next);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+    const saved = tokenRef.current;
     void (async () => {
       try {
-        const payload = await readJson<Health>(await fetch("/health"));
+        const payload = await readJson<Health>(await fetch(withApiBase("/health")));
         if (cancelled) return;
         setHealth(payload);
         setAuthEmail("");
         setAuthPassword("");
         applyVms(payload.vmSlots);
         setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
-        const saved = tokenRef.current;
-        if (saved.startsWith("neo_sess_")) {
-          try {
-            await applySession(saved);
-            await finishLogin();
-            return;
-          } catch {
-            persistToken("");
-            setAuthError("请重新登录");
-            setAuthOpen(true);
-            return;
-          }
-        }
-        persistToken("");
-        setAuthOpen(true);
       } catch {
         if (!cancelled) setHealthText("控制面不可达");
       }
+    })();
+    void (async () => {
+      const remembered = (await deskBridge()?.getTarget().catch(() => undefined)) ?? readLastTarget();
+      if (cancelled) return;
+      if (remembered) {
+        setDeskTarget(remembered);
+        if (remembered.folder) setDeskFolder(remembered.folder);
+      }
+      const session = (await hydrateDeskToken()) || saved;
+      if (cancelled) return;
+      persistToken(session);
+      if (hasSavedSession(session)) {
+        try {
+          await applySession(session);
+          if (cancelled) return;
+          await finishLogin();
+        } catch {
+          if (cancelled) return;
+          persistToken("");
+          setAuthError("请重新登录");
+          setAuthOpen(true);
+        }
+        return;
+      }
+      persistToken("");
+      setAuthOpen(true);
     })();
     return () => {
       cancelled = true;
@@ -767,7 +1149,7 @@ export function App() {
       if (!tokenRef.current) return;
       void (async () => {
         try {
-          const payload = await readJson<Health>(await fetch("/health"));
+          const payload = await readJson<Health>(await fetch(withApiBase("/health")));
           setHealth(payload);
           applyVms(payload.vmSlots);
           setHealthText(formatHealth(payload, payload.vmSlots ?? { total: 0, busy: 0, backend: "none", slots: [] }));
@@ -790,8 +1172,20 @@ export function App() {
       if (hashAutomations()) {
         setMainTab("automations");
         setInviteToken(null);
-        setFilesOpen(false);
-        setDiffOpen(false);
+        setSettingsOpen(false);
+        return;
+      }
+      if (hashExperts()) {
+        setMainTab("experts");
+        setSelectedExpertId(hashExpertId());
+        setInviteToken(null);
+        setSettingsOpen(false);
+        return;
+      }
+      if (hashSkills()) {
+        setMainTab("skills");
+        setSelectedSkillId(hashSkillId());
+        setInviteToken(null);
         setSettingsOpen(false);
         return;
       }
@@ -799,8 +1193,6 @@ export function App() {
         setMainTab("projects");
         setInviteToken(invite);
         setSelectedProjectId(projectId);
-        setFilesOpen(false);
-        setDiffOpen(false);
         setSettingsOpen(false);
         return;
       }
@@ -810,6 +1202,61 @@ export function App() {
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
   }, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const el = event.target as HTMLElement | null;
+      const typing = Boolean(el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable));
+      const action = shortcutAction(event, deskBridge()?.platform === "darwin" ? "darwin" : "other");
+      if (!action) return;
+      if (typing && (action === "new-chat" || action === "prev-run" || action === "next-run" || action === "close")) {
+        return;
+      }
+      event.preventDefault();
+      if (action === "new-chat") {
+        setActiveProject(null);
+        setMainTab("chat");
+        resetComposer();
+        return;
+      }
+      if (action === "close") {
+        resetComposer();
+        return;
+      }
+      if (action === "queue") {
+        void queueMessage();
+        return;
+      }
+      if (action === "stop") {
+        stopTurn();
+        return;
+      }
+      if (action === "cycle-mode" || action === "mode-menu") {
+        setAgentMode((mode) => (mode === "agent" ? "ask" : "agent"));
+        return;
+      }
+      if (action === "cycle-model") {
+        setLlm((prev) => {
+          const next = cycle(["deepseek-v4-flash", "deepseek-v4-pro"], prev.model || "deepseek-v4-flash");
+          return { ...prev, model: next, upstream: "deepseek" };
+        });
+        return;
+      }
+      const ordered = [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      const index = ordered.findIndex((item) => item.id === runId);
+      if (action === "prev-run" && ordered[index + 1]) void openRun(ordered[index + 1]!.id);
+      if (action === "next-run" && ordered[index - 1]) void openRun(ordered[index - 1]!.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openRun, queueMessage, resetComposer, runId, runs, stopTurn]);
+
+  useEffect(() => {
+    return deskBridge()?.onDeepLink((url) => {
+      const match = /runs\/([^/?#]+)/.exec(url);
+      if (match?.[1]) void openRun(match[1]);
+    });
+  }, [openRun]);
 
   useEffect(() => {
     if (isNarrowViewport()) setSidebarOpen(false);
@@ -832,6 +1279,31 @@ export function App() {
       setPendingTurn(null);
     }
   }, [pendingTurn, messages]);
+
+  useEffect(() => {
+    void refreshExperts(activeProject?.id);
+  }, [activeProject?.id, refreshExperts]);
+
+  useEffect(() => {
+    if (!token || !activeProject) {
+      setProjectAssets([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await api(token, `/v1/projects/${encodeURIComponent(activeProject.id)}/assets`);
+        if (!response.ok || cancelled) return;
+        const body = await readJson<{ assets?: ProjectAsset[] }>(response);
+        if (!cancelled) setProjectAssets(body.assets ?? []);
+      } catch {
+        if (!cancelled) setProjectAssets([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, activeProject]);
 
   useEffect(() => {
     if (!currentRun || isActiveRunStatus(currentRun.status)) {
@@ -875,6 +1347,150 @@ export function App() {
         ? `${Math.max(0, (vms.total || vms.slots.length) - vms.busy)}/${vms.total || vms.slots.length} 个 VM 空闲，发送后占用其中一个（${vms.backend === "loop" ? "loop 挂载" : vms.backend}）。`
         : `${vms.total || vms.slots.length} 个 VM 都在忙。新对话会排队，有空闲槽再自动开始。`;
 
+  const inspectorOpen = mainTab === "chat" && sessionTab !== "chat";
+
+  const openInspector = (id: "files" | "diff" | "terminal" | "artifacts" | "chat") => {
+    setSessionTab(id);
+    setSettingsOpen(false);
+    if (id === "chat" || !runId) return;
+    if (id === "diff") {
+      setDiffLoading(true);
+      setDiffError("");
+      void (async () => {
+        const response = await api(token, `/v1/runs/${runId}/diff`);
+        const body = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
+        if (!response.ok) throw new Error(body.error || "读取 diff 失败");
+        setDiffStat(body.stat ?? "");
+        setDiffPatch(body.patch ?? "");
+      })()
+        .catch((error) => setDiffError(error instanceof Error ? error.message : "读取 diff 失败"))
+        .finally(() => setDiffLoading(false));
+    }
+    if (id === "terminal") {
+      setDiagLoading(true);
+      setDiagError("");
+      void (async () => {
+        const response = await api(token, `/v1/runs/${runId}/diagnostics`);
+        const body = await readJson<{ logs?: Array<{ name: string; content?: string }>; error?: string }>(response);
+        if (!response.ok) throw new Error(body.error || "读取日志失败");
+        setDiagLogs(body.logs ?? []);
+      })()
+        .catch((error) => setDiagError(error instanceof Error ? error.message : "读取日志失败"))
+        .finally(() => setDiagLoading(false));
+    }
+    if (id === "artifacts") {
+      setArtifactsLoading(true);
+      setArtifactsError("");
+      void (async () => {
+        const response = await api(token, `/v1/runs/${runId}/artifacts`);
+        const body = await readJson<{ artifacts?: Array<{ name: string; url?: string; contentType?: string }>; error?: string }>(response);
+        if (!response.ok) throw new Error(body.error || "读取产物失败");
+        setArtifacts(body.artifacts ?? []);
+      })()
+        .catch((error) => setArtifactsError(error instanceof Error ? error.message : "读取产物失败"))
+        .finally(() => setArtifactsLoading(false));
+    }
+  };
+
+  const localTargetHint = deskBridge()?.canRunLocal
+    ? deskFolder
+      ? `本机 · ${deskFolder}`
+      : "本机执行需要先选一个文件夹。"
+    : (() => {
+        const picked = desks
+          .flatMap((desk) => (desk.workspaces ?? []).map((ws: DeskWorkspace) => ({ desk, ws })))
+          .find((item) => item.ws.id === deskTarget.workspaceId);
+        if (picked) {
+          return `会在 ${picked.desk.name} 的 ${picked.ws.name} 里跑。`;
+        }
+        const available = desks.some((desk) => desk.online && desk.allowRemote !== false && (desk.workspaces?.length ?? 0) > 0);
+        return available
+          ? "选一台已打开 Desk 的电脑。"
+          : "没有可用的电脑。先打开 Desk 并在设置里绑定一个文件夹。";
+      })();
+
+  const composerMentions = useMemo<ComposerMention[]>(() => {
+    const expertItems: ComposerMention[] = experts.map((expert) => ({
+      kind: "expert",
+      id: expert.id,
+      label: expert.name,
+      insert: `@专家 ${expert.name}`,
+    }));
+    const teamItems: ComposerMention[] = teams.map((team) => ({
+      kind: "team",
+      id: team.id,
+      label: team.name,
+      insert: `@专家团 ${team.name}`,
+    }));
+    const skillItems: ComposerMention[] = [...pluginCatalog]
+      .sort((left, right) => Number(right.enabled) - Number(left.enabled) || Number(right.pinned) - Number(left.pinned))
+      .map((plugin) => ({
+        kind: "plugin",
+        id: plugin.id,
+        label: pluginPickerLabel(plugin),
+        insert: `@技能 ${pluginPickerLabel(plugin)}`,
+      }));
+    const assetItems: ComposerMention[] = projectAssets.map((asset) => ({
+      kind: "asset",
+      id: asset.path,
+      label: asset.path.split("/").pop() ?? asset.path,
+      insert: `@资产 ${asset.path}`,
+    }));
+    return [...expertItems, ...teamItems, ...skillItems, ...assetItems];
+  }, [experts, teams, pluginCatalog, projectAssets]);
+
+  const applyMention = (item: ComposerMention) => {
+    if (item.kind === "expert") {
+      setExpertPick({ expertId: item.id });
+      return;
+    }
+    if (item.kind === "team") {
+      setExpertPick({ expertTeamId: item.id });
+      return;
+    }
+    if (item.kind === "plugin") {
+      const plugin = pluginCatalog.find((entry) => entry.id === item.id);
+      if (plugin) setPluginPick(plugin);
+    }
+  };
+
+  const applyRole = (item: { expertId?: string; expertTeamId?: string; pluginIds?: string[] }) => {
+    if (item.expertTeamId) {
+      setExpertPick({ expertTeamId: item.expertTeamId });
+    } else if (item.expertId) {
+      setExpertPick({ expertId: item.expertId });
+    }
+    const pluginId = item.pluginIds?.[0];
+    if (!pluginId) return;
+    const plugin = pluginCatalog.find((entry) => entry.id === pluginId || entry.slug === pluginId);
+    if (plugin) setPluginPick(plugin);
+  };
+
+  const applyCapsule = (capsule: IntentCapsule) => {
+    applyRole(capsule);
+  };
+
+  const applyRecipe = (recipe: Recipe) => {
+    setPrompt(recipe.prompt);
+    applyRole(recipe);
+  };
+
+  const archiveMany = async (ids: string[]) => {
+    if (!token || ids.length === 0) return;
+    await Promise.allSettled(
+      ids.map((id) => api(token, `/v1/runs/${encodeURIComponent(id)}/archive`, { method: "POST" })),
+    );
+    await refreshRuns();
+    if (runId && ids.includes(runId)) {
+      setCurrentRun((run) => (run ? { ...run, status: "ARCHIVED" } : run));
+    }
+  };
+
+  const openDiagnostics = () => {
+    if (!runId) return;
+    openInspector("terminal");
+  };
+
   const loadOlder = () => {
     if (!runId || remaining <= 0 || loadingOlder || loadingTranscript) return;
     const before = nextBefore ?? messages[0]?.id;
@@ -913,13 +1529,15 @@ export function App() {
         <Sidebar
           runs={runs}
           currentRunId={runId}
-          slots={vms.slots}
-          backend={vms.backend}
           userEmail={userEmail}
           authed={Boolean(userEmail)}
           authBusy={authBusy}
           health={healthText}
-          onClose={toggleSidebar}
+          pinnedIds={pinnedIds}
+          projectNames={projectNames}
+          onPin={(id) => setPinnedIds(togglePinnedRun(id))}
+          onArchiveMany={(ids) => void archiveMany(ids)}
+          onClose={narrow ? toggleSidebar : undefined}
           onNewChat={() => {
             setActiveProject(null);
             setMainTab("chat");
@@ -963,70 +1581,104 @@ export function App() {
         <main className="main">
           <header className="topbar">
             <div className="topbar-lead">
-              <button
-                className="ghost sidebar-toggle"
-                id="sidebar-toggle"
-                type="button"
-                aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
-                onClick={toggleSidebar}
-              >
-                <span aria-hidden="true">{sidebarOpen ? "‹" : "☰"}</span>
-                <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
-              </button>
+              <Tooltip content={sidebarOpen ? "收起侧栏" : "打开对话列表"} side="bottom">
+                <button
+                  className="icon-btn sidebar-toggle"
+                  id="sidebar-toggle"
+                  type="button"
+                  aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
+                  onClick={toggleSidebar}
+                >
+                  {sidebarOpen ? <IconSidebarClose /> : <IconMenu />}
+                  <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
+                </button>
+              </Tooltip>
               <nav className="app-tabs" id="app-tabs" aria-label="主导航">
-                <button
-                  type="button"
-                  className={mainTab === "chat" ? "active" : ""}
-                  aria-current={mainTab === "chat" ? "page" : undefined}
-                  onClick={openChat}
-                >
-                  对话
-                </button>
-                <button
-                  type="button"
-                  className={mainTab === "projects" ? "active" : ""}
-                  aria-current={mainTab === "projects" ? "page" : undefined}
-                  onClick={() => openProjects()}
-                >
-                  项目
-                </button>
-                <button
-                  type="button"
-                  className={mainTab === "automations" ? "active" : ""}
-                  aria-current={mainTab === "automations" ? "page" : undefined}
-                  onClick={openAutomations}
-                >
-                  定时任务
-                </button>
+                {(
+                  [
+                    ["chat", "对话", IconChat, openChat],
+                    ["projects", "项目", IconProjects, () => openProjects()],
+                    ["experts", "专家", IconExperts, () => openExperts()],
+                    ["skills", "技能", IconSkills, () => openSkills()],
+                    ["automations", "定时任务", IconAutomations, openAutomations],
+                  ] as const
+                ).map(([id, label, Icon, onClick]) => (
+                  <Tooltip key={id} content={label} side="bottom">
+                    <button
+                      type="button"
+                      className={mainTab === id ? "active" : ""}
+                      aria-label={label}
+                      aria-current={mainTab === id ? "page" : undefined}
+                      onClick={onClick}
+                    >
+                      <Icon size={16} />
+                      <span className="tab-label">{label}</span>
+                    </button>
+                  </Tooltip>
+                ))}
               </nav>
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
                   {mainTab === "projects"
                     ? "项目"
-                    : mainTab === "automations"
+                    : mainTab === "experts"
+                      ? "专家"
+                      : mainTab === "skills"
+                      ? "技能"
+                      : mainTab === "automations"
                       ? "定时任务"
                       : currentRun
-                        ? currentRun.buildId
-                          ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
-                          : currentRun.branchName ?? shortId(currentRun.id)
-                        : activeProject
+                        ? [currentRun.branchName ?? shortId(currentRun.id), runRoleLabel(currentRun, experts, teams)]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : expertPick.expertTeamId || expertPick.expertId
+                          ? `专家 · ${
+                              teams.find((item) => item.id === expertPick.expertTeamId)?.name ||
+                              experts.find((item) => item.id === expertPick.expertId)?.name ||
+                              "已选"
+                            }`
+                          : activeProject
                           ? `项目 · ${activeProject.name}`
                           : "新对话"}
                 </p>
                 <h1 id="run-title">
                   {mainTab === "projects"
                     ? "人和 Agent 共用一份上下文"
-                    : mainTab === "automations"
+                    : mainTab === "experts"
+                      ? "换角色干活"
+                      : mainTab === "skills"
+                      ? "给 Agent 装工作手册"
+                      : mainTab === "automations"
                       ? "到点自动开对话"
                       : currentRun
                         ? preview(currentRun.prompt)
-                        : activeProject
+                        : expertPick.expertTeamId || expertPick.expertId
+                          ? `以「${
+                              teams.find((item) => item.id === expertPick.expertTeamId)?.name ||
+                              experts.find((item) => item.id === expertPick.expertId)?.name ||
+                              "专家"
+                            }」开对话`
+                          : activeProject
                           ? `在「${activeProject.name}」里开对话`
                           : "和云端 Agent 说话"}
                 </h1>
               </div>
             </div>
             <div className="top-actions">
+              <InboxBell
+                token={token}
+                authed={Boolean(userEmail)}
+                onOpenRun={(id) => {
+                  setMainTab("chat");
+                  void openRun(id);
+                }}
+                onOpenProject={(id) => openProjects(id)}
+              />
+              {isDeskApp() ? (
+                <span className="desk-badge" title="Desk 预览，本机执行可用">
+                  Desk
+                </span>
+              ) : null}
               <span className="status" id="status" data-state={statusView.state} data-busy={busy ? "true" : "false"}>
                 {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
                 {statusView.label}
@@ -1050,51 +1702,41 @@ export function App() {
                   {formatUsage(currentRun?.usage)}
                 </span>
               ) : null}
-              <button
-                className="ghost"
-                id="toggle-files"
-                type="button"
-                hidden={!runId}
-                aria-expanded={filesOpen}
-                onClick={() => {
-                  const next = !filesOpen;
-                  setFilesOpen(next);
-                  if (next) {
-                    setDiffOpen(false);
-                    setSettingsOpen(false);
-                  }
-                }}
-              >
-                {filesOpen ? "收起文件" : "文件树"}
-              </button>
-              <button
-                className="ghost"
-                id="toggle-diff"
-                type="button"
-                hidden={!runId}
-                aria-expanded={diffOpen}
-                onClick={() => {
-                  const next = !diffOpen;
-                  setDiffOpen(next);
-                  setFilesOpen(false);
-                  setSettingsOpen(false);
-                  if (next && runId) {
-                    setDiffLoading(true);
-                    setDiffError("");
-                    void (async () => {
-                      const response = await api(token, `/v1/runs/${runId}/diff`);
-                      const body = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
-                      if (!response.ok) throw new Error(body.error || "读取 diff 失败");
-                      setDiffStat(body.stat ?? "");
-                      setDiffPatch(body.patch ?? "");
-                    })()
-                      .catch((error) => setDiffError(error instanceof Error ? error.message : "读取 diff 失败"))
-                      .finally(() => setDiffLoading(false));
-                  }
-                }}
-              >
-                {diffOpen ? "收起 Diff" : "Diff"}
-              </button>
+              <nav className="session-tabs" hidden={!runId} aria-label="会话标签">
+                {(
+                  [
+                    ["chat", "对话", IconChat],
+                    ["files", "工作区", IconFiles],
+                    ["diff", "Diff", IconDiff],
+                    ["terminal", "终端", IconTerminal],
+                    ["artifacts", "产物", IconArtifacts],
+                  ] as const
+                ).map(([id, label, Icon]) => (
+                  <Tooltip key={id} content={label} side="bottom">
+                    <button
+                      type="button"
+                      className={sessionTab === id ? "active" : ""}
+                      aria-label={label}
+                      aria-current={sessionTab === id ? "page" : undefined}
+                      onClick={() => openInspector(id)}
+                    >
+                      <Icon size={14} />
+                      <span className="tab-label">{label}</span>
+                    </button>
+                  </Tooltip>
+                ))}
+              </nav>
+              {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
+                <button
+                  className="ghost"
+                  type="button"
+                  title="未提交的改动不会带过去，先 commit 或 stash"
+                  onClick={() => void handoffCurrent("desk")}
+                >
+                  切到本机
+                </button>
+              ) : null}
+              {handoffError ? <span className="setup err">{handoffError}</span> : null}
               <button
                 className="ghost"
                 id="archive-run"
@@ -1117,23 +1759,24 @@ export function App() {
                 归档
               </button>
               <button
-                className="ghost"
+                className="icon-btn"
                 id="toggle-settings"
                 type="button"
+                aria-label={settingsOpen ? "收起设置" : "设置"}
                 aria-expanded={settingsOpen}
                 onClick={() => {
                   const next = !settingsOpen;
                   setSettingsOpen(next);
                   if (next) {
-                    setFilesOpen(false);
-                    setDiffOpen(false);
                   }
                 }}
               >
-                {settingsOpen ? "收起设置" : "设置"}
+                <IconGear size={16} />
+                <span className="tab-label">{settingsOpen ? "收起设置" : "设置"}</span>
               </button>
               {pr?.url ? (
                 <a className="pr-link" id="pr-link" href={pr.url} target="_blank" rel="noreferrer">
+                  <IconPr size={14} />
                   {pr.draft === false ? "PR" : "草稿 PR"}
                 </a>
               ) : null}
@@ -1165,25 +1808,34 @@ export function App() {
               </details>
             </div>
           </header>
-          <div className="workspace-col">
-          {filesOpen || diffOpen || settingsOpen ? (
-            <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label={settingsOpen ? "设置" : filesOpen ? "文件树" : "Diff"}>
+          <div className={inspectorOpen ? "workspace-col has-inspector" : "workspace-col"}>
+          <div className="workspace-stage">
+          {settingsOpen ? (
+            <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label="设置">
               <div className="workspace-drawer-bar">
-                <strong>{settingsOpen ? "设置" : filesOpen ? "文件树" : "Diff"}</strong>
+                <strong>设置</strong>
                 <button
                   type="button"
                   className="ghost"
                   id="close-drawer"
                   onClick={() => {
-                    setFilesOpen(false);
-                    setDiffOpen(false);
                     setSettingsOpen(false);
                   }}
                 >
                   关闭
                 </button>
               </div>
-              {settingsOpen ? (
+              <VmSlots
+                slots={vms.slots}
+                backend={vms.backend}
+                currentRunId={runId}
+                runs={runs}
+                onOpenRun={(id) => {
+                  setSettingsOpen(false);
+                  setMainTab("chat");
+                  void openRun(id);
+                }}
+              />
                 <SettingsPanel
                   repo={repo}
                   envId={envId}
@@ -1201,22 +1853,17 @@ export function App() {
                     setLlm((prev) => ({
                       ...prev,
                       upstream: value,
-                      model: value === "openai" ? "gpt-4o-mini" : /pro/i.test(prev.model ?? "") ? "deepseek-v4-pro" : "deepseek-v4-flash",
+                      model: resolveChatModel(value, prev.model),
                     }))
                   }
                   onLlmModel={(value) => setLlm((prev) => ({ ...prev, model: value }))}
                   onLlmKey={setLlmKey}
                   onSaveLlm={() => {
               void (async () => {
-                if (!llmKey && !llm.configured) return;
+                if (!llmKey && !llm.configured && !(llm.newApi?.consoleUrl || llm.newApi?.url)) return;
                 const payload: Record<string, string> = {
                   upstream: llm.upstream || "deepseek",
-                  model:
-                    llm.upstream === "openai"
-                      ? "gpt-4o-mini"
-                      : /pro/i.test(llm.model ?? "")
-                        ? "deepseek-v4-pro"
-                        : "deepseek-v4-flash",
+                  model: resolveChatModel(llm.upstream, llm.model),
                 };
                 if (llmKey) payload.apiKey = llmKey;
                 const saved = await readJson<LlmSettings & { error?: string }>(
@@ -1224,7 +1871,12 @@ export function App() {
                 );
                 if (saved.error === "login_required") throw new Error("请先登录再保存 API Key");
                 if (saved.error) throw new Error(saved.error);
-                setLlm({ configured: saved.configured, upstream: saved.upstream, model: saved.model });
+                setLlm({
+                  configured: saved.configured,
+                  upstream: saved.upstream,
+                  model: saved.model,
+                  newApi: saved.newApi ?? llm.newApi,
+                });
                 setLlmKey("");
                 const nextHealth = await readJson<Health>(await fetch("/health"));
                 setHealth(nextHealth);
@@ -1272,6 +1924,7 @@ export function App() {
                 setHealthText(error instanceof Error ? error.message : "清除 GitHub 凭证失败");
               });
             }}
+                  token={token}
                   onWarm={() => {
                     void (async () => {
                       if (!repo.trim()) {
@@ -1292,9 +1945,6 @@ export function App() {
                     });
                   }}
                 />
-              ) : null}
-              <FileTree token={token} runId={runId} open={filesOpen} />
-              <DiffPanel open={diffOpen} loading={diffLoading} error={diffError} stat={diffStat} patch={diffPatch} />
             </aside>
           ) : null}
             {mainTab === "projects" ? (
@@ -1310,6 +1960,27 @@ export function App() {
                   void openRun(id);
                 }}
               />
+            ) : mainTab === "experts" ? (
+              <ExpertsPage
+                token={token}
+                userId={userId}
+                selectedId={selectedExpertId}
+                projectId={activeProject?.id}
+                onOpenExpert={(id) => openExperts(id)}
+                onSummon={(pick) => {
+                  resetComposer();
+                  setExpertPick({ expertId: pick.expertId, expertTeamId: pick.expertTeamId });
+                  setMainTab("chat");
+                }}
+              />
+            ) : mainTab === "skills" ? (
+              <SkillsPage
+                token={token}
+                selectedId={selectedSkillId}
+                projectId={activeProject?.id}
+                onOpenPlugin={(id) => openSkills(id)}
+                onUse={(plugin) => void useSkill(plugin)}
+              />
             ) : mainTab === "automations" ? (
               <AutomationsPage
                 token={token}
@@ -1320,6 +1991,7 @@ export function App() {
               />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
+                <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />
                 <Transcript
                   messages={displayMessages}
                   remaining={remaining}
@@ -1328,41 +2000,165 @@ export function App() {
                   loadingOlder={loadingOlder}
                   busy={busy}
                   activity={activity}
+                  highlightId={highlightId}
                   onLoadOlder={loadOlder}
+                  onOpenDiagnostics={openDiagnostics}
+                  onPickRecipe={applyRecipe}
                 />
               </ChatErrorBoundary>
             )}
           </div>
-          {mainTab === "chat" && activeProject ? (
+          {inspectorOpen ? (
+            <aside className="inspector" id="workspace-inspector" aria-label="工作区">
+              <div className="inspector-bar">
+                <strong>
+                  {sessionTab === "files"
+                    ? "工作区"
+                    : sessionTab === "diff"
+                      ? "Diff"
+                      : sessionTab === "terminal"
+                        ? "终端"
+                        : "产物"}
+                </strong>
+                <button type="button" className="icon-btn" aria-label="关闭检查器" onClick={() => openInspector("chat")}>
+                  <IconClose size={16} />
+                </button>
+              </div>
+              {sessionTab === "files" ? <FileTree token={token} runId={runId} open={Boolean(runId)} /> : null}
+              {sessionTab === "diff" ? (
+                <DiffPanel
+                  open
+                  loading={diffLoading}
+                  error={diffError}
+                  stat={diffStat}
+                  patch={diffPatch}
+                  committing={committing}
+                  commitError={commitError}
+                  onCommit={(message) => void commitWorkspace(message)}
+                />
+              ) : null}
+              {sessionTab === "terminal" ? <TerminalPanel open loading={diagLoading} error={diagError} logs={diagLogs} /> : null}
+              {sessionTab === "artifacts" ? (
+                <ArtifactsPanel
+                  open
+                  loading={artifactsLoading}
+                  error={artifactsError}
+                  artifacts={artifacts}
+                  projectId={currentRun?.projectId ?? activeProject?.id}
+                  token={token}
+                  runId={runId}
+                  onSaved={() => {
+                    const projectId = currentRun?.projectId ?? activeProject?.id;
+                    if (!projectId || !token) return;
+                    void api(token, `/v1/projects/${encodeURIComponent(projectId)}/assets`).then(async (response) => {
+                      if (!response.ok) return;
+                      const body = await readJson<{ assets?: ProjectAsset[] }>(response);
+                      setProjectAssets(body.assets ?? []);
+                    });
+                  }}
+                  onOpen={
+                    deskBridge()?.openPath
+                      ? (item) => {
+                          if (item.url) void deskBridge()?.openPath?.(item.url);
+                        }
+                      : undefined
+                  }
+                />
+              ) : null}
+            </aside>
+          ) : null}
+          </div>
+          {mainTab === "chat" && (activeProject || expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
             <div className="proj-chip-bar" id="project-chip">
-              <span className="proj-chip">
-                {runId ? `项目对话 · ${activeProject.name}` : `将在项目「${activeProject.name}」中开对话`}
-              </span>
-              {runId ? (
+              {activeProject ? (
+                <span className="proj-chip">
+                  {runId ? `项目对话 · ${activeProject.name}` : `将在项目「${activeProject.name}」中开对话`}
+                </span>
+              ) : null}
+              {expertPick.expertTeamId || expertPick.expertId ? (
+                <span className="proj-chip">
+                  {expertPick.expertTeamId
+                    ? `专家团 · ${teams.find((item) => item.id === expertPick.expertTeamId)?.name ?? "已选"}`
+                    : `专家 · ${experts.find((item) => item.id === expertPick.expertId)?.name ?? "已选"}`}
+                </span>
+              ) : null}
+              {pluginPick ? (
+                <span className="proj-chip">技能 · {pluginPickerLabel(pluginPick)}</span>
+              ) : null}
+              {runId && activeProject ? (
                 <button type="button" className="ghost" onClick={() => openProjects(activeProject.id)}>
                   打开项目
                 </button>
-              ) : (
+              ) : !runId && activeProject ? (
                 <button type="button" className="ghost" onClick={() => setActiveProject(null)}>
                   不用项目
                 </button>
-              )}
+              ) : null}
+              {!runId && (expertPick.expertId || expertPick.expertTeamId) ? (
+                <button type="button" className="ghost" onClick={() => setExpertPick({})}>
+                  不用专家
+                </button>
+              ) : null}
+              {!runId && pluginPick ? (
+                <button type="button" className="ghost" onClick={() => setPluginPick(null)}>
+                  不用技能
+                </button>
+              ) : null}
             </div>
           ) : null}
           {mainTab === "chat" ? (
             <Composer
               prompt={prompt}
               images={images}
-              vmHint={vmHint}
+              vmHint={deskTarget.kind === "desk" ? localTargetHint : vmHint}
               busy={busy}
               stopping={stopping}
               archived={archived}
               canStop={Boolean(runId)}
               activity={activity}
               contextUsage={contextUsage}
+              target={deskTarget}
+              canRunLocal={Boolean(deskBridge()?.canRunLocal)}
+              folder={deskFolder}
+              desks={desks}
+              mode={agentMode}
+              model={selectedModel}
+              experts={experts}
+              teams={teams}
+              expertValue={
+                runId
+                  ? encodeExpertPick({
+                      expertId: currentRun?.expertId ?? undefined,
+                      expertTeamId: currentRun?.expertTeamId ?? undefined,
+                    })
+                  : encodeExpertPick(expertPick)
+              }
+              expertLocked={Boolean(runId)}
+              mentions={composerMentions}
+              showCapsules={!runId}
+              onMention={applyMention}
+              onCapsule={applyCapsule}
+              onTarget={applyTarget}
+              onPickFolder={() => {
+                void deskBridge()?.pickFolder().then((folder) => {
+                  if (folder) {
+                    applyTarget({ ...deskTarget, kind: "desk", folder });
+                  }
+                });
+              }}
+              onMode={setAgentMode}
+              onExpert={(value) => setExpertPick(decodeExpertPick(value))}
+              onModel={(value) =>
+                setLlm((prev) => ({
+                  ...prev,
+                  model: value,
+                  upstream: /gpt/i.test(value) ? "openai" : "deepseek",
+                }))
+              }
               onPrompt={setPrompt}
               onImages={setImages}
               onSend={() => void sendMessage()}
+              onQueue={() => void queueMessage()}
               onStop={stopTurn}
             />
           ) : null}
@@ -1395,7 +2191,7 @@ export function App() {
           void (async () => {
             if (authMode === "token") {
               persistToken(authToken.trim());
-              const response = await fetch("/v1/auth", {
+              const response = await fetch(withApiBase("/v1/auth"), {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "content-type": "application/json" },
@@ -1410,7 +2206,7 @@ export function App() {
             } else {
               const email = authEmail.trim();
               const password = authPassword;
-              const response = await fetch("/v1/auth/login", {
+              const response = await fetch(withApiBase("/v1/auth/login"), {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "content-type": "application/json" },
@@ -1420,7 +2216,7 @@ export function App() {
               if (!response.ok) throw new Error(body.error || "unauthorized");
               await applySession(body.token ?? "", body.user);
             }
-            await finishLogin();
+            void finishLogin();
           })()
             .catch((error) => {
               persistToken("");

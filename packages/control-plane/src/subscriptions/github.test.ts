@@ -89,6 +89,28 @@ test("subscriptionMatchesIngress binds repo, PR, and branch", () => {
   assert.equal(subscriptionMatchesIngress(sub({ kind: "github_ci", repo: "other/app", prNumber: null }), ci), false);
 });
 
+test("parseGitHubWebhook records a human push and ignores bots", () => {
+  const human = parseGitHubWebhook("push", {
+    ref: "refs/heads/cursor/fix",
+    after: "abc123",
+    repository: { full_name: "acme/app" },
+    sender: { login: "alice" },
+  });
+  assert.equal(human.kind, "human_push");
+  assert.deepEqual(human.branches, ["cursor/fix"]);
+  assert.equal(
+    subscriptionMatchesIngress(sub({ kind: "github_ci", prNumber: null, branch: "cursor/fix" }), human),
+    true,
+  );
+  const bot = parseGitHubWebhook("push", {
+    ref: "refs/heads/cursor/fix",
+    after: "def456",
+    repository: { full_name: "acme/app" },
+    sender: { login: "github-actions[bot]" },
+  });
+  assert.equal(bot.kind, "ignored");
+});
+
 test("verifyGitHubSignature checks the hex HMAC", () => {
   const raw = Buffer.from('{"ok":true}');
   const digest = createHmac("sha256", "top-secret").update(raw).digest("hex");

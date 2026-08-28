@@ -1,6 +1,8 @@
+import { Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState } from "react";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { api, readJson } from "../api";
+import { formatWhen } from "../format";
 
 type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
 
@@ -106,13 +108,11 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
         <div className="auto-create-row">
           <label>
             <span>频率</span>
-            <select value={preset} onChange={(event) => setPreset(event.target.value as ScheduleKind)}>
-              {PRESETS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={preset}
+              onValueChange={(value) => setPreset(value as ScheduleKind)}
+              options={PRESETS.map((item) => ({ value: item.id, label: item.label }))}
+            />
           </label>
           <button className="auto-add" type="submit" disabled={busy || !prompt.trim()}>
             添加任务
@@ -283,15 +283,3 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
   );
 }
 
-function formatWhen(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}

@@ -34,6 +34,8 @@ export type Project = {
   name: string;
   instruction: string;
   defaultRepoUrls: string[];
+  expertIds: string[];
+  pluginIds: string[];
   invitePolicy: InvitePolicy;
   createdBy: string;
   createdAt: string;
@@ -47,6 +49,8 @@ export type CreateProjectRequest = {
   name: string;
   instruction?: string;
   defaultRepoUrls?: string[];
+  expertIds?: string[];
+  pluginIds?: string[];
   invitePolicy?: InvitePolicy;
 };
 
@@ -54,6 +58,8 @@ export type UpdateProjectRequest = {
   name?: string;
   instruction?: string;
   defaultRepoUrls?: string[];
+  expertIds?: string[];
+  pluginIds?: string[];
   invitePolicy?: InvitePolicy;
 };
 
@@ -61,9 +67,20 @@ export function canManageProject(role: ProjectRole | undefined | null): boolean 
   return role === "owner" || role === "admin";
 }
 
-export function formatProjectMemory(project: Pick<Project, "name" | "instruction">): string {
+export function formatProjectMemory(
+  project: Pick<Project, "name" | "instruction">,
+  assets?: Array<{ path: string; size: number; createdEmail?: string; createdBy?: string }>,
+): string {
   const instruction = project.instruction.trim();
-  return `# ${project.name.trim() || "项目"}\n\n${instruction || "（项目还没有写指令）"}\n`;
+  let text = `# ${project.name.trim() || "项目"}\n\n${instruction || "（项目还没有写指令）"}\n`;
+  if (assets && assets.length > 0) {
+    text += "\n## 项目资产\n\n对话里的文件不会自动出现在这里。\n\n";
+    for (const asset of assets) {
+      const who = asset.createdEmail || asset.createdBy || "";
+      text += `- ${asset.path} (${asset.size} bytes${who ? `, ${who}` : ""})\n`;
+    }
+  }
+  return text;
 }
 
 export function appendProjectInstruction(systemPrompt: string, instruction: string): string {

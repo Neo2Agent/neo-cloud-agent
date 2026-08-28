@@ -19,6 +19,7 @@ export type RunEventKind =
   | "run.error"
   | "run.archived"
   | "llm.usage"
+  | "llm.error"
   | "context.usage"
   | "agent.start"
   | "agent.end"
@@ -47,7 +48,10 @@ export type RunEventKind =
   | "mcp.auth_error"
   | "egress.denied"
   | "build.used"
-  | "artifact.uploaded";
+  | "artifact.uploaded"
+  | "workspace.persist_failed"
+  | "workspace.reclaimed"
+  | "workspace.restored";
 
 export interface RunEvent {
   id: string;
@@ -91,6 +95,8 @@ export interface TranscriptMessage {
   role: TranscriptRole;
   text: string;
   createdAt: string;
+  /** Last event time that changed this bubble (deltas, tools, message.end). */
+  updatedAt?: string;
   streaming?: boolean;
   kind?: string;
   level?: RunEventLevel;
@@ -100,6 +106,9 @@ export interface TranscriptMessage {
   href?: string;
   mediaType?: string;
   images?: Array<{ mediaType: string; data: string }>;
+  followUpId?: string;
+  actorUserId?: string;
+  actorEmail?: string;
 }
 
 export interface TranscriptSnapshot {

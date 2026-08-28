@@ -1,9 +1,40 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { parseEnvironmentJson, type McpServerSpec } from "@neo-cloud-agent/contracts";
-import { asString } from "./client.js";
+import { asString, callControlPlane } from "./client.js";
 import { callMcpHttpTool, listMcpHttpTools, runMcpStdio } from "./mcp-client.js";
 import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
+
+type RemoteMcpList = {
+  servers: Array<{
+    name: string;
+    transport: string;
+    tools: Array<{ name: string; description?: string }>;
+    error?: string;
+  }>;
+};
+
+async function listViaControlPlane(ctx: CloudToolContext): Promise<RemoteMcpList | null> {
+  try {
+    return await callControlPlane<RemoteMcpList>(ctx, `/internal/runs/${ctx.runId}/mcp`, {
+      method: "POST",
+      body: JSON.stringify({ action: "list" }),
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function callViaControlPlane(
+  ctx: CloudToolContext,
+  input: { server: string; tool: string; arguments: Record<string, unknown> },
+): Promise<unknown> {
+  const body = await callControlPlane<{ result?: unknown }>(ctx, `/internal/runs/${ctx.runId}/mcp`, {
+    method: "POST",
+    body: JSON.stringify({ action: "call", ...input }),
+  });
+  return body.result;
+}
 
 export const neoMcp = defineExtension({
   name: "neo-mcp",
@@ -81,17 +112,21 @@ export async function executeMcpList(
   if (servers.length === 0) {
     return { content: "No MCP servers in environment.json (mcp: []).", details: { servers: [] } };
   }
+  const remote = await listViaControlPlane(ctx);
   const lines = [`${servers.length} MCP server(s):`];
   for (const server of servers) {
     lines.push(`- ${server.name} (${server.transport}${server.url ? ` ${server.url}` : ""}${server.command ? ` ${server.command}` : ""})`);
     try {
+      const proxied = remote?.servers.find((item) => item.name === server.name);
       const tools =
         server.transport === "http"
-          ? await listMcpHttpTools(server, ctx.fetch ?? globalThis.fetch)
+          ? proxied && !proxied.error
+            ? proxied.tools
+            : await listMcpHttpTools(server, ctx.fetch ?? globalThis.fetch)
           : (((await runMcpStdio(server, [{ method: "tools/list", params: {} }]))[0] as { tools?: Array<{ name: string; description?: string }> })
               ?.tools ?? []);
       if (tools.length === 0) {
-        lines.push("  tools: (none)");
+        lines.push(proxied?.error ? `  error: ${proxied.error}` : "  tools: (none)");
       } else {
         for (const tool of tools) {
           lines.push(`  • ${tool.name}${tool.description ? ` — ${tool.description}` : ""}`);
@@ -122,10 +157,16 @@ export async function executeMcpCall(
       ? (params.arguments as Record<string, unknown>)
       : {};
   try {
-    const result =
-      spec.transport === "http"
-        ? await callMcpHttpTool(spec, tool, args, ctx.fetch ?? globalThis.fetch)
-        : (await runMcpStdio(spec, [{ method: "tools/call", params: { name: tool, arguments: args } }]))[0];
+    let result: unknown;
+    if (spec.transport === "http") {
+      try {
+        result = await callViaControlPlane(ctx, { server: serverName, tool, arguments: args });
+      } catch {
+        result = await callMcpHttpTool(spec, tool, args, ctx.fetch ?? globalThis.fetch);
+      }
+    } else {
+      result = (await runMcpStdio(spec, [{ method: "tools/call", params: { name: tool, arguments: args } }]))[0];
+    }
     return { content: formatMcpResult(result) || "(empty)", details: { server: serverName, tool } };
   } catch (error) {
     return {
@@ -155,7 +196,8 @@ export function createMcpCallTool(ctx: CloudToolContext): CloudToolDefinition {
   return {
     name: "neo_mcp_call",
     label: "Neo MCP Call",
-    description: "Call one tool on an MCP server defined in environment.json. Tokens come from env interpolation.",
+    description:
+      "Call one tool on an MCP server defined in environment.json. HTTP tokens stay on the control plane.",
     parameters: {
       type: "object",
       additionalProperties: false,

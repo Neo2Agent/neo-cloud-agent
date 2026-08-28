@@ -1,5 +1,18 @@
 import mysql from "mysql2/promise";
-import type { Automation, Build, Environment, Project, RunEvent } from "@neo-cloud-agent/contracts";
+import type {
+  Automation,
+  Build,
+  BundledExpertPolicyDocument,
+  Desk,
+  Device,
+  Environment,
+  Expert,
+  PluginInstall,
+  Project,
+  Run,
+  RunEvent,
+} from "@neo-cloud-agent/contracts";
+import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
 import type { SessionRecord, UserRecord } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
@@ -69,6 +82,31 @@ CREATE TABLE IF NOT EXISTS projects (
   body JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL
 );
+CREATE TABLE IF NOT EXISTS desks (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS devices (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS experts (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS expert_policies (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS plugin_installs (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
 `;
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -77,6 +115,14 @@ function asRecord(value: unknown): PersistedRun | null {
   }
   const record = value as PersistedRun;
   return record.run?.id ? record : null;
+}
+
+function asRun(value: unknown): Run | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const run = value as Run;
+  return run.id && run.prompt ? run : null;
 }
 
 function asEvent(value: unknown): RunEvent | null {
@@ -111,12 +157,53 @@ function asBuild(value: unknown): Build | null {
   return build.id && build.envId ? build : null;
 }
 
+function asDesk(value: unknown): Desk | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Desk;
+  return item.id && item.userId ? item : null;
+}
+
+function asDevice(value: unknown): Device | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Device;
+  return item.id && item.userId && (item.platform === "ios" || item.platform === "android") ? item : null;
+}
+
 function asProject(value: unknown): Project | null {
   if (!value || typeof value !== "object") {
     return null;
   }
   const item = value as Project;
-  return item.id && item.name ? item : null;
+  if (!item.id || !item.name) return null;
+  return { ...item, expertIds: item.expertIds ?? [], pluginIds: item.pluginIds ?? [] };
+}
+
+function asExpert(value: unknown): Expert | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Expert;
+  return item.id && item.name && item.persona ? item : null;
+}
+
+function asPluginInstall(value: unknown): PluginInstall | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as PluginInstall;
+  return item.id && item.pluginId ? item : null;
+}
+
+function asExpertPolicy(value: unknown): BundledExpertPolicyDocument | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as BundledExpertPolicyDocument;
+  return item.version === 1 && item.experts && typeof item.experts === "object" ? item : null;
 }
 
 function asAutomation(value: unknown): Automation | null {
@@ -155,6 +242,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       for (const statement of [
         "CREATE INDEX events_run_seq ON events (run_id, seq)",
         "CREATE INDEX builds_fingerprint ON builds (fingerprint)",
+        "CREATE INDEX runs_updated_at ON runs (updated_at)",
       ]) {
         try {
           await query(statement);
@@ -183,8 +271,22 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       return parseJson(result.rows[0]?.record, asRecord);
     },
     async loadRuns() {
-      const result = await query(`SELECT record FROM runs ORDER BY updated_at DESC`);
-      return result.rows.map((row) => parseJson(row.record, asRecord)).filter((item): item is PersistedRun => Boolean(item));
+      // Do not ORDER BY in MySQL: filesort of JSON blobs hits ER_OUT_OF_SORTMEMORY
+      // with the default 256KiB sort_buffer_size.
+      const result = await query(`SELECT record FROM runs`);
+      return result.rows
+        .map((row) => parseJson(row.record, asRecord))
+        .filter((item): item is PersistedRun => Boolean(item))
+        .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
+    },
+    async loadRunSummaries() {
+      // Pull only $.run. Persisted followUps can be megabytes and make the
+      // public path between the app host and MySQL take several seconds.
+      const result = await query(`SELECT JSON_EXTRACT(record, '$.run') AS run FROM runs`);
+      return result.rows
+        .map((row) => parseJson(row.run, asRun))
+        .filter((item): item is Run => Boolean(item))
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
     },
     async saveEvent(event) {
       await query(
@@ -288,6 +390,78 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     async deleteProject(id) {
       await query(`DELETE FROM projects WHERE id = ?`, [id]);
     },
+    async saveExpert(item) {
+      await query(
+        `INSERT INTO experts (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [item.id, JSON.stringify(item), mysqlDateTime(item.updatedAt)],
+      );
+    },
+    async loadExperts() {
+      const result = await query(`SELECT body FROM experts ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asExpert)).filter((item): item is Expert => Boolean(item));
+    },
+    async deleteExpert(id) {
+      await query(`DELETE FROM experts WHERE id = ?`, [id]);
+    },
+    async saveExpertPolicy(item) {
+      await query(
+        `INSERT INTO expert_policies (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [BUNDLED_EXPERT_POLICY_ID, JSON.stringify(item), mysqlDateTime(item.updatedAt)],
+      );
+    },
+    async loadExpertPolicy() {
+      const result = await query(`SELECT body FROM expert_policies WHERE id = ?`, [BUNDLED_EXPERT_POLICY_ID]);
+      return parseJson(result.rows[0]?.body, asExpertPolicy);
+    },
+    async savePluginInstall(item) {
+      await query(
+        `INSERT INTO plugin_installs (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [item.id, JSON.stringify(item), mysqlDateTime(item.updatedAt)],
+      );
+    },
+    async loadPluginInstalls() {
+      const result = await query(`SELECT body FROM plugin_installs ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asPluginInstall)).filter((item): item is PluginInstall => Boolean(item));
+    },
+    async deletePluginInstall(id) {
+      await query(`DELETE FROM plugin_installs WHERE id = ?`, [id]);
+    },
+    async saveDesk(item) {
+      await query(
+        `INSERT INTO desks (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [item.id, JSON.stringify(item), mysqlDateTime(item.lastSeenAt || item.createdAt)],
+      );
+    },
+    async loadDesks() {
+      const result = await query(`SELECT body FROM desks ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asDesk)).filter((item): item is Desk => Boolean(item));
+    },
+    async deleteDesk(id) {
+      await query(`DELETE FROM desks WHERE id = ?`, [id]);
+    },
+    async saveDevice(item) {
+      await query(
+        `INSERT INTO devices (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [item.id, JSON.stringify(item), mysqlDateTime(item.lastSeenAt || item.createdAt)],
+      );
+    },
+    async loadDevices() {
+      const result = await query(`SELECT body FROM devices ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asDevice)).filter((item): item is Device => Boolean(item));
+    },
+    async deleteDevice(id) {
+      await query(`DELETE FROM devices WHERE id = ?`, [id]);
+    },
     async createUser(user) {
       try {
         await query(
@@ -316,6 +490,12 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         [id],
       );
       return mapUser(result.rows[0]);
+    },
+    async listUsers() {
+      const result = await query(
+        `SELECT id, email, password_hash, org_id, created_at FROM users ORDER BY created_at ASC`,
+      );
+      return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
     },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = ? WHERE id = ?`, [passwordHash, userId]);

@@ -73,6 +73,7 @@ neo commit <runId> -m <message>
 neo env ls
 neo build ls
 neo vms
+neo plugin ls|install|enable|disable|uninstall [id] [--project]
 ```
 
 没有子命令时，剩余参数当作 `run` 的 prompt，和 Cursor 的 `agent "fix the tests"` 一样：
@@ -197,7 +198,7 @@ NDJSON，忽略不认识的 `type`：
 ## 7. 和现有面的关系
 
 ```
-neo / web / curl
+neo / web / mobile / curl
         │  /v1  + SSE
         ▼
  control-plane          llm-gateway
@@ -208,6 +209,7 @@ neo / web / curl
 ```
 
 - 对话页继续做选环境、存 Key、看 VM 槽。
+- iOS / Android 按同一套 `/v1` 做，不在手机上跑 pi。方案见 [mobile.md](./mobile.md)。
 - `scripts/e2e-http.ts` 可以逐步改成调 CLI；P0 不删它。
 - 槽位是硬资源。交互占着不 `archive` 会占 VM。`--detach` 给脚本；人工等待结束后提示 run 仍占槽，直到归档或过期。
 
