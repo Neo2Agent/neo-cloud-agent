@@ -55,7 +55,9 @@ export function buildPluginFiles(input: {
 }
 
 export function workspaceHasSkill(workspaceDir: string, name: string): boolean {
-  return WORKSPACE_SKILL_DIRS.some((dir) => existsSync(path.join(workspaceDir, dir, name, "SKILL.md")));
+  return WORKSPACE_SKILL_DIRS.filter((dir) => dir !== ".neo/skills").some((dir) =>
+    existsSync(path.join(workspaceDir, dir, name, "SKILL.md")),
+  );
 }
 
 export function writePluginFiles(workspaceDir: string, files: PluginFiles): void {

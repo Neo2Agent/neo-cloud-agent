@@ -88,7 +88,16 @@ test("plugins list bundled, install, materialize, disable, and pin on projects",
   const skillFile = path.join(runsDir, run.id, ".neo", "skills", "pr-review", "SKILL.md");
   assert.equal(existsSync(skillFile), true);
   assert.match(readFileSync(skillFile, "utf8"), /Blockers/);
-  assert.match(readFileSync(path.join(runsDir, run.id, ".neo", "plugins.json"), "utf8"), /pr-review/);
+  const snapshot = JSON.parse(readFileSync(path.join(runsDir, run.id, ".neo", "plugins.json"), "utf8")) as {
+    plugins: Array<{ slug: string }>;
+    warnings: string[];
+  };
+  assert.ok(snapshot.plugins.some((item) => item.slug === "pr-review"));
+  assert.equal(
+    snapshot.warnings.some((item) => item.includes("未覆盖")),
+    false,
+    snapshot.warnings.join("; "),
+  );
 
   await createTeammateAccount({ email: "mate", password: "654321", orgId: admin.user.id });
   const mate = await login(base, "mate", "654321");
