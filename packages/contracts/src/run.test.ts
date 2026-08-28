@@ -4,6 +4,7 @@ import {
   assertColocatedTarget,
   colocatedTarget,
   isDeskTarget,
+  isRemoteControlTarget,
   parseExecutionTarget,
   parseRunSource,
   parseRunStart,
@@ -28,6 +29,24 @@ test("parseExecutionTarget accepts the two-axis shape", () => {
   );
   assert.equal(parseExecutionTarget({ loop: "cloud" }), undefined);
   assert.equal(parseExecutionTarget(null), undefined);
+  assert.deepEqual(
+    parseExecutionTarget({ loop: "desk", tools: "desk", deskId: "desk_1", remoteControl: true }),
+    { loop: "desk", tools: "desk", deskId: "desk_1", deskWorkspaceId: undefined, remoteControl: true },
+  );
+  assert.equal(
+    parseExecutionTarget({ loop: "desk", tools: "desk", deskId: "desk_1", remoteControl: false })?.remoteControl,
+    undefined,
+  );
+  assert.equal(
+    parseExecutionTarget({ loop: "cloud", tools: "cloud", remoteControl: true })?.remoteControl,
+    undefined,
+  );
+});
+
+test("isRemoteControlTarget is only a desk run that opted in", () => {
+  assert.equal(isRemoteControlTarget({ loop: "desk", tools: "desk", deskId: "desk_1", remoteControl: true }), true);
+  assert.equal(isRemoteControlTarget({ loop: "desk", tools: "desk", deskId: "desk_1" }), false);
+  assert.equal(isRemoteControlTarget({ loop: "cloud", tools: "cloud" }), false);
 });
 
 test("parseRunStart only accepts the two start modes", () => {

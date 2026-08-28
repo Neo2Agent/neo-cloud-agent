@@ -30,6 +30,7 @@ export {
   assertColocatedTarget,
   colocatedTarget,
   isDeskTarget,
+  isRemoteControlTarget,
   parseExecutionTarget,
   parseRunSource,
   parseRunStart,

@@ -8,6 +8,7 @@ import {
   Cloud,
   Copy,
   FilePlus,
+  FolderMinus,
   LayoutGrid,
   ListFilter,
   Monitor,
@@ -95,6 +96,10 @@ export function IconSort(props: IconProps) {
 
 export function IconAddRepo(props: IconProps) {
   return icon(FilePlus, props);
+}
+
+export function IconUnbindFolder(props: IconProps) {
+  return icon(FolderMinus, props);
 }
 
 export function IconCopy(props: IconProps) {

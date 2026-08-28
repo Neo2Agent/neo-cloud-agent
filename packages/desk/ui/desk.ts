@@ -1,11 +1,11 @@
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 
-/**
- * Where a new conversation runs. There is no third option: Remote SSH was a
- * placeholder that never shipped, and remote dispatch is a Desk setting rather
- * than a target the composer picks.
- */
-export type DeskTargetKind = "cloud" | "desk";
+export const TARGET_CLOUD = "cloud" as const;
+export const TARGET_DESK = "desk" as const;
+export const TARGET_REMOTE = "remote" as const;
+export const DESK_CLIENT_QUERY = "desk";
+
+export type DeskTargetKind = typeof TARGET_CLOUD | typeof TARGET_DESK | typeof TARGET_REMOTE;
 
 export type DeskTarget = {
   kind: DeskTargetKind;
@@ -14,24 +14,44 @@ export type DeskTarget = {
   workspaceId?: string;
 };
 
+export function isLocalDeskKind(kind?: DeskTargetKind | null): boolean {
+  return kind === TARGET_DESK || kind === TARGET_REMOTE;
+}
+
+export function isRemoteControlRun(
+  run?: { executionTarget?: { loop?: string; remoteControl?: boolean } | null } | null,
+): boolean {
+  return run?.executionTarget?.loop === "desk" && run.executionTarget.remoteControl === true;
+}
+
+export function localRunLabel(
+  run?: { executionTarget?: { loop?: string; remoteControl?: boolean } | null } | null,
+): string {
+  return isRemoteControlRun(run) ? "Remote Control" : "This Computer";
+}
+
 /** Keep the live desk id when the UI only changes folder / kind. */
 export function mergeDeskTarget(target: DeskTarget, deskId?: string): DeskTarget {
   const id = (deskId || target.deskId || "").trim();
   return id ? { ...target, deskId: id } : { ...target, deskId: undefined };
 }
 
-export function localRunTarget(target: DeskTarget, deskId?: string): {
+/** Local ids stay on this machine. Remote Control only adds the visibility flag. */
+export function localRunTarget(
+  target: DeskTarget,
+  deskId?: string,
+): {
   loop: "desk";
   tools: "desk";
   deskId?: string;
-  deskWorkspaceId?: string;
+  remoteControl?: true;
 } {
   const merged = mergeDeskTarget(target, deskId);
   return {
     loop: "desk",
     tools: "desk",
     deskId: merged.deskId,
-    deskWorkspaceId: merged.workspaceId,
+    ...(merged.kind === TARGET_REMOTE ? { remoteControl: true as const } : {}),
   };
 }
 
@@ -102,15 +122,13 @@ export type NeoDeskBridge = {
   unbindWorkspace?(workspaceId: string): Promise<boolean>;
   getPrefs?(): Promise<{
     requireApproval?: boolean;
-    remoteControl?: boolean;
     maxLocalRuns?: number;
     deskId?: string;
   }>;
   setPrefs?(next: {
     requireApproval?: boolean;
-    remoteControl?: boolean;
     maxLocalRuns?: number;
-  }): Promise<{ requireApproval?: boolean; remoteControl?: boolean; maxLocalRuns?: number }>;
+  }): Promise<{ requireApproval?: boolean; maxLocalRuns?: number }>;
   /** `folder` pins this run to a folder so parallel runs cannot follow the picker. */
   startRun?(assignment: DeskAssignment, folder?: string): Promise<boolean>;
   takeAssignment?(runId?: string, folder?: string): Promise<{ started?: boolean; runId?: string }>;
@@ -180,4 +198,19 @@ export function withApiBase(path: string): string {
     return path;
   }
   return `${origin}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+/** Query flag the control plane already accepts. A custom header would CORS-fail on older production. */
+export function withDeskClient(path: string): string {
+  const hash = path.indexOf("#");
+  const beforeHash = hash < 0 ? path : path.slice(0, hash);
+  const suffix = hash < 0 ? "" : path.slice(hash);
+  const split = beforeHash.indexOf("?");
+  const base = split < 0 ? beforeHash : beforeHash.slice(0, split);
+  const params = new URLSearchParams(split < 0 ? "" : beforeHash.slice(split + 1));
+  if (params.get("client") !== DESK_CLIENT_QUERY) {
+    params.set("client", DESK_CLIENT_QUERY);
+  }
+  const query = params.toString();
+  return `${base}${query ? `?${query}` : ""}${suffix}`;
 }

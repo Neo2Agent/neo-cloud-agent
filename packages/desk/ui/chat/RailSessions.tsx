@@ -1,4 +1,5 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
+import { isRemoteControlRun } from "../desk";
 import type { RailSpaceGroup } from "../../src/rail";
 import { IconChevron, IconCloud, IconComputer, IconProjects } from "../icons";
 
@@ -142,11 +143,11 @@ function ChatRow({
       className={`chat-row${nested ? " nested" : ""}${active ? " active" : ""}`}
       onClick={() => onOpen(run.id)}
     >
-      <span className={`chat-dot${active ? " on" : ""}`} />
       <span className="chat-title">{preview(run.prompt, 40)}</span>
       <span className="chat-meta">
         {localRunning ? <i className="chat-local-dot" title="正在这台电脑上改文件" /> : null}
         {cloud ? <IconCloud size={12} /> : <IconComputer size={12} />}
+        {!cloud ? <span className="chat-remote">{isRemoteControlRun(run) ? "远程" : "本机"}</span> : null}
         <span>{formatRel(run.updatedAt)}</span>
       </span>
     </button>
