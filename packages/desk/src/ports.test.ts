@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   DEFAULT_DESK_UI_PORT,
   DEFAULT_PRODUCTION_CONTROL_PLANE,
-  DEFAULT_WEB_UI_PORT,
   controlPlaneOrigin,
   deskClientOrigin,
   deskRendererUrl,
@@ -12,10 +11,9 @@ import {
   productionControlPlaneCandidates,
 } from "./ports.js";
 
-test("web and desk UIs use different ports from the control plane", () => {
-  assert.equal(DEFAULT_WEB_UI_PORT, 5173);
+test("the desk UI port collides with neither the web UI nor the control plane", () => {
   assert.equal(DEFAULT_DESK_UI_PORT, 5174);
-  assert.notEqual(DEFAULT_WEB_UI_PORT, DEFAULT_DESK_UI_PORT);
+  assert.notEqual(DEFAULT_DESK_UI_PORT, 5173);
   assert.notEqual(DEFAULT_DESK_UI_PORT, 8080);
   assert.equal(deskRendererUrl({}), "");
   assert.equal(deskRendererUrl({ NEO_DESK_PORT: "8082" }), "");

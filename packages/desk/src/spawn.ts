@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { SECRET_ENV_KEYS } from "@neo-cloud-agent/contracts";
 import { isDeskPackaged } from "./ports.js";
 
-export { isDeskPackaged };
+/** How often the worker polls its inbox for the next turn. */
+const DEFAULT_WORKER_POLL_MS = "200";
 
 export function deskRepoRoot(): string {
   return fileURLToPath(new URL("../../..", import.meta.url));
@@ -50,8 +51,6 @@ export function spawnDeskWorker(input: {
   scratchDir: string;
   model: string;
   nodePath?: string;
-  /** Desk default: exit when the turn is done instead of idling on the laptop. */
-  exitAfterTurn?: boolean;
 }): ChildProcess {
   const launch = deskWorkerLaunch({ execPath: input.nodePath ?? process.execPath });
   const env: NodeJS.ProcessEnv = {
@@ -68,8 +67,10 @@ export function spawnDeskWorker(input: {
     // worker has to refuse anything outside it.
     NEO_SANDBOX_ROOT: input.workspaceDir,
     NEO_MODEL: input.model,
-    WORKER_POLL_MS: process.env.WORKER_POLL_MS ?? "200",
-    WORKER_EXIT_AFTER_TURN: input.exitAfterTurn === false ? "0" : "1",
+    WORKER_POLL_MS: process.env.WORKER_POLL_MS ?? DEFAULT_WORKER_POLL_MS,
+    // Not configurable: a resident worker on a laptop dies on an expired run
+    // JWT and holds a concurrency slot it is no longer using. See docs/desk.md.
+    WORKER_EXIT_AFTER_TURN: "1",
     ELECTRON_RUN_AS_NODE: "1",
   };
   for (const key of SECRET_ENV_KEYS) {
