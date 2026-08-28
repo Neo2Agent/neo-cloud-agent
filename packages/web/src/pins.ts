@@ -42,6 +42,22 @@ export function filterRuns<T extends { prompt?: string; id: string }>(runs: T[],
   return runs.filter((run) => (run.prompt ?? "").toLowerCase().includes(needle) || run.id.toLowerCase().includes(needle));
 }
 
+const SHELVED = new Set(["ARCHIVED", "EXPIRED"]);
+
+export function isShelvedRun(status: string): boolean {
+  return SHELVED.has(status);
+}
+
+export function splitShelvedRuns<T extends { status: string }>(runs: T[]): { live: T[]; shelved: T[] } {
+  const live: T[] = [];
+  const shelved: T[] = [];
+  for (const run of runs) {
+    if (isShelvedRun(run.status)) shelved.push(run);
+    else live.push(run);
+  }
+  return { live, shelved };
+}
+
 export function groupRunsByProject<T extends { id: string; status: string; createdAt: string; projectId?: string | null }>(
   runs: T[],
   pinned: string[],

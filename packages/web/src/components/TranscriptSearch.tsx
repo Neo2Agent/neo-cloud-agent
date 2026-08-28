@@ -22,7 +22,7 @@ export function TranscriptSearch({ messages, onJump }: Props) {
         onChange={(event) => setQuery(event.target.value)}
         aria-label="对话内搜索"
       />
-      <button type="button" className="ghost" onClick={() => setOpenQuestions((value) => !value)}>
+      <button type="button" className="toolbar-btn" onClick={() => setOpenQuestions((value) => !value)}>
         历史提问
       </button>
       {query.trim() ? (

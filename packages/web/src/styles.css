@@ -2732,6 +2732,7 @@ textarea {
   .sidebar-close,
   .new-chat,
   .run-item,
+  .toolbar-btn,
   .ghost,
   button.send,
   button.stop,
@@ -3093,16 +3094,27 @@ textarea {
 
 .run-item {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 6px;
+}
+
+.run-item.is-selecting {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.run-main {
+  min-width: 0;
 }
 
 .run-item .pin {
-  position: absolute;
-  right: 6px;
-  top: 6px;
+  position: static;
+  align-self: start;
   border: 0;
   background: transparent;
   color: var(--muted);
-  padding: 0 4px;
+  padding: 2px 4px;
 }
 
 .run-item .pin.is-on {
@@ -3285,11 +3297,12 @@ textarea {
   width: 100%;
   min-height: 88px;
   border: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--panel);
   color: var(--text);
   border-radius: 14px;
   padding: 12px;
   cursor: pointer;
+  box-shadow: var(--shadow);
 }
 
 .recipe-card:hover {
@@ -3363,19 +3376,73 @@ textarea {
 
 .run-tools {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
+}
+
+.run-tools-actions {
+  display: flex;
+  width: 100%;
+  gap: 6px;
 }
 
 .run-search {
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   padding: 8px 10px;
 }
 
+.toolbar-btn {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.transcript-search .toolbar-btn {
+  flex: 0 0 auto;
+}
+
+.toolbar-btn:hover,
+.toolbar-btn.is-on {
+  color: var(--text);
+  background: var(--bg-2);
+}
+
+.toolbar-btn.is-ready {
+  color: #fff;
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
 .run-check {
-  float: left;
-  margin: 4px 8px 0 0;
+  float: none;
+  width: 16px;
+  height: 16px;
+  margin: 4px 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.run-archived {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.run-archived > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.run-archived > summary::-webkit-details-marker {
+  display: none;
 }
 
 .artifact-preview {
