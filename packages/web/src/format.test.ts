@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   fileToolDiff,
+  formatDuration,
   formatMessageTime,
   formatRunTime,
   formatUsage,
@@ -42,6 +43,11 @@ test("formatRunTime and formatMessageTime show update only when the minute chang
     formatMessageTime("2026-08-24T09:30:00.000Z", "2026-08-24T10:05:00.000Z", false, now),
     "8/24 17:30 · 完成 8/24 18:05",
   );
+});
+
+test("formatDuration prints seconds then minutes", () => {
+  assert.equal(formatDuration("2026-08-24T09:30:00.000Z", "2026-08-24T09:30:12.000Z"), "12s");
+  assert.equal(formatDuration("2026-08-24T09:30:00.000Z", "2026-08-24T09:33:00.000Z"), "3m");
 });
 
 test("toolArgPreview prefers command and path", () => {

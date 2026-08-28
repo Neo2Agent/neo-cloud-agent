@@ -4,6 +4,7 @@ import type { Expert } from "@neo-cloud-agent/contracts/expert";
 import { expertPickerLabel } from "@neo-cloud-agent/contracts/expert";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { canManageProject, type Project, type ProjectInvite, type ProjectMember } from "@neo-cloud-agent/contracts/project";
+import { PROJECT_TEMPLATES, projectTemplateById } from "@neo-cloud-agent/contracts/recipe";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
 
@@ -23,6 +24,8 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
   const [runs, setRuns] = useState<Run[]>([]);
   const [name, setName] = useState("");
   const [instruction, setInstruction] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [transferNote, setTransferNote] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [memberPassword, setMemberPassword] = useState("");
@@ -392,7 +395,7 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
                   setBusy(true);
                   void api(token, `/v1/runs/${transferRunId}/transfer`, {
                     method: "POST",
-                    body: JSON.stringify({ toUserId: transferUserId }),
+                    body: JSON.stringify({ toUserId: transferUserId, note: transferNote.trim() || undefined }),
                   })
                     .then(async (res) => {
                       if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "转交失败");
@@ -426,6 +429,11 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
                     ]}
                   />
                 </label>
+                <label>
+                  <span>交接说明</span>
+                  <input value={transferNote} onChange={(event) => setTransferNote(event.target.value)} placeholder="可选，会写进 HANDOFF.md" />
+                </label>
+                <p className="hint">对话记录会交给对方。不会拷 .env、密钥或 SCM 凭证。</p>
                 <button className="ghost" type="submit" disabled={busy || !transferRunId || !transferUserId}>
                   转交
                 </button>
@@ -473,15 +481,22 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
           if (!name.trim()) return;
           setBusy(true);
           setError("");
+          const template = projectTemplateById(templateId);
           void api(token, "/v1/projects", {
             method: "POST",
-            body: JSON.stringify({ name: name.trim(), instruction }),
+            body: JSON.stringify({
+              name: name.trim(),
+              instruction: instruction.trim() || template?.instruction || "",
+              expertIds: template?.expertIds,
+              pluginIds: template?.pluginIds,
+            }),
           })
             .then(async (res) => {
               const body = await readJson<Project & { error?: string }>(res);
               if (!res.ok) throw new Error(body.error || "创建失败");
               setName("");
               setInstruction("");
+              setTemplateId("");
               await refresh();
               onOpenProject(body.id);
             })
@@ -490,6 +505,23 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
         }}
       >
         <p className="proj-card-title">新建项目</p>
+        <label>
+          <span>模板</span>
+          <Select
+            value={templateId}
+            onValueChange={(value) => {
+              setTemplateId(value);
+              const template = projectTemplateById(value);
+              if (template && !instruction.trim()) setInstruction(template.instruction);
+              if (template && !name.trim()) setName(template.name);
+            }}
+            placeholder="空白项目"
+            options={[
+              { value: "", label: "空白项目" },
+              ...PROJECT_TEMPLATES.map((item) => ({ value: item.id, label: item.name })),
+            ]}
+          />
+        </label>
         <label>
           <span>名称</span>
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：官网改版" autoComplete="off" />
