@@ -33,7 +33,7 @@ Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项�
 | 产物进项目是显式动作 | Run 工作区里的文件不会自动变成项目资产。项目资产只走用户在资产页手动上云。 |
 | 看板给人排期，Agent 不擅自改列 | 卡片可以「开对话」。Agent 改状态只走用户明确触发的工具。 |
 | 只有云端项目对话能拉人进会话 | 本机 Run、无 `projectId` 的对话，都没有「邀请加入这条对话」。 |
-| 不抄办公套件 | 专家**市场**、技能市场、在线表格、人机双写、公开整段会话、公共 OAuth 票据共享，全部后置。专家角色包见 [workbuddy-experts.md](./workbuddy-experts.md)。 |
+| 不抄办公套件 | 专家**市场**、办公向技能店、在线表格、人机双写、公开整段会话、公共 OAuth 票据共享，全部后置。专家角色包见 [workbuddy-experts.md](./workbuddy-experts.md)。编码向 Skill / Plugin 目录见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。 |
 
 现网硬约束（设计时不许假装没有）：
 
@@ -114,7 +114,7 @@ Web 已经能改指令、加成员、生成邀请、转交、看动态。Desk �
 
 ### 3.2 先不跟
 
-专家**市场**、技能市场、连接器公共票据、腾讯文档双写、CSV/HTML 协同、`workbuddy.link`、锁屏远程本机、SSO / Credit、自定义工作流引擎、公开整站会话链接、本机待办 SQLite。Desk 专家选择器和项目钉住跟 [workbuddy-experts.md](./workbuddy-experts.md)，不另做市场。
+专家**市场**、办公向技能店、连接器公共票据、腾讯文档双写、CSV/HTML 协同、`workbuddy.link`、锁屏远程本机、SSO / Credit、自定义工作流引擎、公开整站会话链接、本机待办 SQLite。Desk 专家选择器和项目钉住跟 [workbuddy-experts.md](./workbuddy-experts.md)。编码向 Skill / Plugin 目录见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)，Desk 只跟项目钉住，不另做商店。
 
 Desk 也不先做 P3 并排窗格和 SSH 远程机。项目协同叠在现有 Cloud / This Computer 两轴上。
 
@@ -818,6 +818,7 @@ Desk 的 D1–D5 冻结后，Web 再做：
 | --- | --- |
 | WorkBuddy 该跟 / 不该跟 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) |
 | WorkBuddy 专家 / 专家团 | [workbuddy-experts.md](./workbuddy-experts.md) |
+| Codex / WorkBuddy 技能与插件市场 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) |
 | Desk 已落地执行面 | [desk.md](./desk.md) |
 | 项目合约 | `packages/contracts/src/project.ts` |
 | 项目存储 / 邀请 | `packages/control-plane/src/projects/store.ts` |

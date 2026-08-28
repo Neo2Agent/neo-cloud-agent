@@ -152,6 +152,13 @@ import {
   resolveExpert,
   updateExpert,
 } from "../experts/store.js";
+import {
+  getPluginDetail,
+  installPlugin,
+  listPluginsForActor,
+  setPluginEnabled,
+  uninstallPlugin,
+} from "../plugins/store.js";
 import { renderExpertRole } from "@neo-cloud-agent/contracts";
 import {
   addTodoComment,
@@ -916,6 +923,82 @@ export function createApiServer() {
         }
         if (method === "GET" && path === "/v1/expert-teams") {
           send(res, 200, { teams: BUNDLED_EXPERT_TEAMS });
+          return;
+        }
+        if (method === "GET" && path === "/v1/plugins") {
+          send(
+            res,
+            200,
+            {
+              plugins: listPluginsForActor({
+                userId: actor.kind === "user" ? actor.userId : undefined,
+                projectId: url.searchParams.get("projectId"),
+                query: url.searchParams.get("q") ?? undefined,
+              }),
+            },
+          );
+          return;
+        }
+        const pluginItem = /^\/v1\/plugins\/([^/]+)$/.exec(path);
+        if (pluginItem && method === "GET") {
+          const detail = getPluginDetail(pluginItem[1] ?? "", {
+            userId: actor.kind === "user" ? actor.userId : undefined,
+            projectId: url.searchParams.get("projectId"),
+          });
+          if (!detail) {
+            notFound(res);
+            return;
+          }
+          send(res, 200, detail);
+          return;
+        }
+        const pluginInstall = /^\/v1\/plugins\/([^/]+)\/install$/.exec(path);
+        if (pluginInstall && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { scope?: "user" | "project"; projectId?: string; enabled?: boolean };
+            send(res, 200, installPlugin(pluginInstall[1] ?? "", body, { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "install_failed" });
+          }
+          return;
+        }
+        if (pluginInstall && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req).catch(() => ({}))) as { scope?: "user" | "project"; projectId?: string };
+            uninstallPlugin(pluginInstall[1] ?? "", body, { userId: actor.userId, email: actor.email });
+            send(res, 200, { ok: true });
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "uninstall_failed" });
+          }
+          return;
+        }
+        const pluginEnable = /^\/v1\/plugins\/([^/]+)\/enable$/.exec(path);
+        if (pluginEnable && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { enabled?: boolean; scope?: "user" | "project"; projectId?: string };
+            send(
+              res,
+              200,
+              setPluginEnabled(pluginEnable[1] ?? "", { enabled: body.enabled !== false, scope: body.scope, projectId: body.projectId }, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "enable_failed" });
+          }
           return;
         }
         const expertItem = /^\/v1\/experts\/([^/]+)$/.exec(path);

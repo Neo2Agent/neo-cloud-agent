@@ -233,6 +233,41 @@ export type {
   PublishBundledExpertRequest,
   UpdateExpertRequest,
 } from "./expert.js";
+export type {
+  BundledPlugin,
+  BundledSkill,
+  MarketplaceFile,
+  MarketplacePluginEntry,
+  NormalizedPluginManifest,
+  Plugin,
+  PluginCatalogItem,
+  PluginInstall,
+  PluginInstallScope,
+  PluginKind,
+  PluginSource,
+  PluginSourceType,
+  PluginVisibility,
+  PluginWorkspaceEntry,
+  PluginWorkspaceSnapshot,
+  SkillPackage,
+} from "./plugin.js";
+export {
+  MAX_ENABLED_PLUGINS,
+  MAX_PLUGIN_BYTES,
+  MAX_PLUGIN_FILES,
+  WORKSPACE_SKILL_DIRS,
+  assertSafeRelativePath,
+  isSafeRelativePath,
+  isValidSkillName,
+  overlayCatalogItem,
+  parseMarketplaceFile,
+  parsePluginManifest,
+  parseSkillMd,
+  pluginPickerLabel,
+  publicPlugin,
+  sortPluginsForCatalog,
+} from "./plugin.js";
+export { BUNDLED_PLUGINS, bundledPluginById, listBundledPlugins, pluginDigest } from "./bundled-plugins.js";
 export {
   ADMIN_EXPERT_TOOL_CHOICES,
   BUNDLED_EXPERTS,

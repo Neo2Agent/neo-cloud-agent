@@ -1,4 +1,5 @@
 import { expertPickerLabel, type Expert } from "@neo-cloud-agent/contracts/expert";
+import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { canManageProject, type InvitePolicy, type Project } from "@neo-cloud-agent/contracts/project";
 import { Checkbox, Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState } from "react";
@@ -27,7 +28,9 @@ export function SettingsTab({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [catalog, setCatalog] = useState<Expert[]>([]);
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
   const [pinnedIds, setPinnedIds] = useState<string[]>(project.expertIds ?? []);
+  const [pinnedPluginIds, setPinnedPluginIds] = useState<string[]>(project.pluginIds ?? []);
 
   useEffect(() => {
     setName(project.name);
@@ -35,6 +38,7 @@ export function SettingsTab({
     setRepos(project.defaultRepoUrls.join("\n"));
     setPolicy(project.invitePolicy);
     setPinnedIds(project.expertIds ?? []);
+    setPinnedPluginIds(project.pluginIds ?? []);
   }, [project]);
 
   useEffect(() => {
@@ -42,6 +46,12 @@ export function SettingsTab({
       .then(async (response) => {
         if (!response.ok) return;
         setCatalog((await readJson<{ experts?: Expert[] }>(response)).experts ?? []);
+      })
+      .catch(() => undefined);
+    void api(token, `/v1/plugins?projectId=${encodeURIComponent(project.id)}`)
+      .then(async (response) => {
+        if (!response.ok) return;
+        setPluginCatalog((await readJson<{ plugins?: PluginCatalogItem[] }>(response)).plugins ?? []);
       })
       .catch(() => undefined);
   }, [project.id, token]);
@@ -220,6 +230,49 @@ export function SettingsTab({
         {manage ? (
           <button type="submit" className="dash-create" disabled={busy}>
             保存置顶
+          </button>
+        ) : null}
+      </form>
+
+      <form
+        className="settings-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!manage || busy) return;
+          setBusy(true);
+          setError("");
+          void api(token, `/v1/projects/${project.id}`, {
+            method: "POST",
+            body: JSON.stringify({ pluginIds: pinnedPluginIds }),
+          })
+            .then(async (response) => {
+              const body = await readJson<Project & { error?: string }>(response);
+              if (!response.ok) throw new Error(body.error || "保存失败");
+              onChanged(body);
+            })
+            .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <h2>项目技能</h2>
+        <p className="hint">钉住后，这个项目里开的对话会把对应 SKILL.md 写进工作区。</p>
+        <ul className="expert-pin-list">
+          {pluginCatalog.map((item) => (
+            <li key={item.id}>
+              <Checkbox
+                checked={pinnedPluginIds.includes(item.id) || pinnedPluginIds.includes(item.slug)}
+                disabled={!manage}
+                label={pluginPickerLabel(item)}
+                onCheckedChange={(checked) => {
+                  setPinnedPluginIds((prev) => (checked ? [...prev, item.id] : prev.filter((id) => id !== item.id && id !== item.slug)));
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+        {manage ? (
+          <button type="submit" className="dash-create" disabled={busy}>
+            保存技能
           </button>
         ) : null}
       </form>

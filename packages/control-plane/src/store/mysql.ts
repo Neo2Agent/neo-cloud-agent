@@ -7,6 +7,7 @@ import type {
   Device,
   Environment,
   Expert,
+  PluginInstall,
   Project,
   Run,
   RunEvent,
@@ -101,6 +102,11 @@ CREATE TABLE IF NOT EXISTS expert_policies (
   body JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL
 );
+CREATE TABLE IF NOT EXISTS plugin_installs (
+  id VARCHAR(191) PRIMARY KEY,
+  body JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
 `;
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -172,7 +178,8 @@ function asProject(value: unknown): Project | null {
     return null;
   }
   const item = value as Project;
-  return item.id && item.name ? item : null;
+  if (!item.id || !item.name) return null;
+  return { ...item, expertIds: item.expertIds ?? [], pluginIds: item.pluginIds ?? [] };
 }
 
 function asExpert(value: unknown): Expert | null {
@@ -181,6 +188,14 @@ function asExpert(value: unknown): Expert | null {
   }
   const item = value as Expert;
   return item.id && item.name && item.persona ? item : null;
+}
+
+function asPluginInstall(value: unknown): PluginInstall | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as PluginInstall;
+  return item.id && item.pluginId ? item : null;
 }
 
 function asExpertPolicy(value: unknown): BundledExpertPolicyDocument | null {
@@ -401,6 +416,21 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     async loadExpertPolicy() {
       const result = await query(`SELECT body FROM expert_policies WHERE id = ?`, [BUNDLED_EXPERT_POLICY_ID]);
       return parseJson(result.rows[0]?.body, asExpertPolicy);
+    },
+    async savePluginInstall(item) {
+      await query(
+        `INSERT INTO plugin_installs (id, body, updated_at)
+         VALUES (?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE body = incoming.body, updated_at = incoming.updated_at`,
+        [item.id, JSON.stringify(item), mysqlDateTime(item.updatedAt)],
+      );
+    },
+    async loadPluginInstalls() {
+      const result = await query(`SELECT body FROM plugin_installs ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asPluginInstall)).filter((item): item is PluginInstall => Boolean(item));
+    },
+    async deletePluginInstall(id) {
+      await query(`DELETE FROM plugin_installs WHERE id = ?`, [id]);
     },
     async saveDesk(item) {
       await query(

@@ -14,6 +14,7 @@ import {
   intersectSessionTools,
   type WorkerInbound,
 } from "@neo-cloud-agent/contracts";
+import { expertDocRoots } from "@neo-cloud-agent/extensions";
 import { CLOUD_SYSTEM_PROMPT, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { readExpertWorkspace } from "./expert-workspace.js";
 import { getWorkerConfig } from "./config.js";
@@ -117,11 +118,13 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     ),
     settingsManager,
     sandboxRoot: config.sandboxRoot,
+    scratchDir,
   });
   const loaded = summarizeWorkspaceResources(resourceLoader);
-  if (loaded.skills.length > 0 || loaded.agentsFiles.length > 0) {
+  const pluginNames = readPluginSnapshot(input.cwd, scratchDir);
+  if (loaded.skills.length > 0 || loaded.agentsFiles.length > 0 || pluginNames.length > 0) {
     console.log(
-      `workspace resources skills=${loaded.skills.join(",") || "-"} agents=${loaded.agentsFiles.length}`,
+      `workspace resources skills=${loaded.skills.join(",") || "-"} agents=${loaded.agentsFiles.length} plugins=${pluginNames.join(",") || "-"}`,
     );
   }
 
@@ -193,6 +196,23 @@ export async function dispatchInbound(session: AgentSession, message: WorkerInbo
   }
   await session.prompt(text, vision ? { images: vision } : undefined);
   return "continue";
+}
+
+function readPluginSnapshot(cwd: string, scratchDir?: string): string[] {
+  for (const root of expertDocRoots(cwd, scratchDir)) {
+    try {
+      const parsed = JSON.parse(readFileSync(path.join(root, "plugins.json"), "utf8")) as { plugins?: Array<{ slug?: string }> };
+      const names = Array.isArray(parsed.plugins)
+        ? parsed.plugins.map((item) => item.slug).filter((item): item is string => Boolean(item))
+        : [];
+      if (names.length > 0) {
+        return names;
+      }
+    } catch {
+      // Missing or invalid plugins.json — try the next root.
+    }
+  }
+  return [];
 }
 
 export function describeDispatch(message: WorkerInbound): string {

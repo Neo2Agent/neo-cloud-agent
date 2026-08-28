@@ -3,8 +3,16 @@ import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { fileToolDiff, formatMessageTime, formatWhen, toolArgPreview } from "../format";
+import { IconCheck, IconError, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "../markdown";
 import { shouldShowThinking } from "../turn";
+
+const STARTER_PROMPTS = [
+  { title: "看仓库", prompt: "看看仓库结构，总结怎么跑起来。" },
+  { title: "加 README", prompt: "加个 README.md 并跑测试。" },
+  { title: "修类型", prompt: "找出类型错误并修掉。" },
+  { title: "开草稿 PR", prompt: "把这次改动整理成草稿 PR。" },
+];
 
 type Props = {
   messages: TranscriptMessage[];
@@ -15,11 +23,13 @@ type Props = {
   busy?: boolean;
   activity?: string;
   onLoadOlder: () => void;
+  onPickPrompt?: (prompt: string) => void;
 };
 
-function toolMark(tool: TranscriptTool): string {
-  if (tool.status === "running") return "…";
-  return tool.isError ? "✗" : "✓";
+function ToolStatus({ tool }: { tool: TranscriptTool }) {
+  if (tool.status === "running") return <IconSpinner size={14} />;
+  if (tool.isError) return <IconError size={14} />;
+  return <IconCheck size={14} />;
 }
 
 function toolDisplayName(tool: TranscriptTool): string {
@@ -66,8 +76,10 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
       open={running}
     >
       <summary>
-        <span>
-          {toolMark(tool)} {toolDisplayName(tool)}
+        <span className="tool-name">
+          <ToolStatus tool={tool} />
+          <IconTool name={tool.name} size={14} />
+          {toolDisplayName(tool)}
         </span>
         {preview ? <span className="cmd">{preview}</span> : null}
       </summary>
@@ -88,7 +100,8 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
               className={step.status === "running" ? "run" : step.isError ? "err" : undefined}
             >
               <span>
-                {step.status === "running" ? "…" : step.isError ? "✗" : "✓"} {step.agent} / {step.name}
+                {step.status === "running" ? <IconSpinner size={12} /> : step.isError ? <IconError size={12} /> : <IconCheck size={12} />}{" "}
+                {step.agent} / {step.name}
               </span>
               {toolArgPreview(step.args) ? <span className="cmd">{toolArgPreview(step.args)}</span> : null}
             </li>
@@ -150,6 +163,7 @@ export function Transcript({
   busy = false,
   activity,
   onLoadOlder,
+  onPickPrompt,
 }: Props) {
   const scroller = useRef<HTMLElement>(null);
   const stick = useRef(true);
@@ -209,6 +223,16 @@ export function Transcript({
           <div className="empty">
             <h2>有什么可以帮你的？</h2>
             <p>发送后会占用一台云端电脑。仓库和 API Key 在「设置」里。</p>
+            {onPickPrompt ? (
+              <div className="empty-grid">
+                {STARTER_PROMPTS.map((item) => (
+                  <button key={item.title} type="button" className="empty-card" onClick={() => onPickPrompt(item.prompt)}>
+                    <strong>{item.title}</strong>
+                    <span>{item.prompt}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : (
           messages.map((message) => {

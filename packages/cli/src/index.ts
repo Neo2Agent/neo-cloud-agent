@@ -15,6 +15,7 @@ import {
   loginCommand,
   logoutCommand,
   lsCommand,
+  pluginCommand,
   prCommand,
   resumeCommand,
   runCommand,
@@ -75,6 +76,8 @@ export async function dispatch(argv: string[], io: CliIo = defaultIo()): Promise
       return buildCommand(parsed, io);
     case "vms":
       return vmsCommand(parsed, io);
+    case "plugin":
+      return pluginCommand(parsed, io);
     default:
       writeLine(io.err, HELP_TEXT);
       return EXIT_USAGE;
