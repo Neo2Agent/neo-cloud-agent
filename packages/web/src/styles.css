@@ -126,16 +126,20 @@ button {
   align-items: center;
 }
 
-.mark {
+.brand .mark,
+.auth-brand .mark {
   display: grid;
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 700;
+  flex: none;
+  color: var(--accent);
+}
+
+.mark svg {
+  display: block;
+  width: 30px;
+  height: 30px;
 }
 
 .brand strong {
@@ -2701,7 +2705,7 @@ textarea {
     position: fixed;
     inset: 0;
     background: rgba(17, 24, 39, 0.28);
-    z-index: 8;
+    z-index: 40;
   }
 
   .app:not(.sidebar-closed) .sidebar {
@@ -2710,7 +2714,7 @@ textarea {
     bottom: 0;
     left: 0;
     width: min(360px, 92vw);
-    z-index: 9;
+    z-index: 41;
     border-right: 1px solid var(--line);
     box-shadow: var(--shadow);
     background: var(--rail);
@@ -2761,20 +2765,34 @@ textarea {
   }
 
   .topbar {
-    padding: 8px 12px 8px max(12px, env(safe-area-inset-left));
-    padding-right: max(12px, env(safe-area-inset-right));
+    padding: 6px 8px 6px max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
     align-items: center;
-    gap: 8px;
+    gap: 4px;
   }
 
   .topbar-lead {
     flex: 1 1 auto;
-    gap: 8px;
+    gap: 2px;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .topbar-lead::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-tabs {
+    gap: 0;
+    min-width: max-content;
   }
 
   .app-tabs button {
-    min-height: 44px;
-    padding: 8px 10px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 8px;
     font-size: 15px;
   }
 
@@ -2842,12 +2860,17 @@ textarea {
   }
 
   .proj-chip-bar {
+    width: auto;
+    max-width: none;
     margin: 0 8px 8px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .sidebar-toggle {
-    min-width: 44px;
-    padding: 8px 10px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 8px;
   }
 
   .sidebar-toggle-label {
@@ -2870,10 +2893,16 @@ textarea {
   .top-actions {
     flex: 0 0 auto;
     flex-wrap: nowrap;
+    gap: 2px;
+  }
+
+  .status,
+  .desk-badge {
+    display: none;
   }
 
   .top-more {
-    position: relative;
+    position: static;
     display: block;
   }
 
@@ -2881,26 +2910,30 @@ textarea {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 44px;
-    padding: 8px 12px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 8px;
     cursor: pointer;
   }
 
   .top-more-menu {
     display: none;
-    position: absolute;
-    right: 0;
-    top: calc(100% + 6px);
+    position: fixed;
+    right: 12px;
+    top: calc(var(--app-offset-top, 0px) + 56px);
+    left: auto;
     flex-direction: column;
     flex-wrap: nowrap;
     align-items: stretch;
-    min-width: 196px;
+    min-width: min(220px, calc(100vw - 24px));
+    max-height: min(70vh, 480px);
+    overflow: auto;
     padding: 8px;
     border: 1px solid var(--line);
     border-radius: 14px;
     background: var(--panel);
     box-shadow: var(--shadow);
-    z-index: 12;
+    z-index: 30;
   }
 
   .top-more[open] .top-more-menu {
@@ -2945,10 +2978,12 @@ textarea {
   }
 
   .composer {
-    width: calc(100% - 16px);
+    width: auto;
     max-width: none;
     margin: 0 8px max(8px, env(safe-area-inset-bottom));
-    max-height: min(36vh, 220px);
+    max-height: min(46vh, 320px);
+    overflow-x: hidden;
+    overflow-y: auto;
     border-radius: 20px;
   }
 
@@ -2965,7 +3000,24 @@ textarea {
   }
 
   .composer-bar {
+    flex-direction: column;
+    align-items: stretch;
     gap: 8px;
+  }
+
+  .composer-pickers {
+    width: 100%;
+    flex: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+
+  .composer-send-group {
+    width: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
   }
 
   .composer-bar .hint:not([data-busy="true"]) {
@@ -3153,6 +3205,10 @@ textarea {
   position: relative;
 }
 
+.inbox-backdrop {
+  display: none;
+}
+
 .inbox-btn {
   position: relative;
 }
@@ -3199,6 +3255,7 @@ textarea {
   border-radius: 10px;
   padding: 8px 10px;
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 
 .inbox-row.unread {
@@ -3480,10 +3537,165 @@ textarea {
   .transcript-search {
     padding: 0 16px;
   }
-}
 
-@media (max-width: 400px) {
-  .status {
+  .empty:has(.recipe-grid) {
+    padding-bottom: 12px;
+  }
+
+  .catalog-pager {
+    flex-wrap: wrap;
+  }
+
+  .proj-page-head h2,
+  .auto-page-head h2 {
+    white-space: normal;
+  }
+
+  /* These rules must stay after the unscoped inbox / capsule / picker
+     blocks so they actually win on narrow viewports. */
+  .topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "menu title actions"
+      "tabs tabs tabs";
+    row-gap: 2px;
+    column-gap: 6px;
+    align-items: center;
+  }
+
+  .topbar-lead {
+    display: contents;
+    overflow: visible;
+  }
+
+  .sidebar-toggle {
+    grid-area: menu;
+  }
+
+  .topbar-heading {
+    display: flex;
+    grid-area: title;
+    min-width: 0;
+  }
+
+  .topbar-heading h1 {
     display: none;
+  }
+
+  .topbar-heading .eyebrow {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-tabs {
+    grid-area: tabs;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    gap: 2px;
+    padding-top: 4px;
+    border-top: 1px solid var(--line);
+  }
+
+  .app-tabs .tab-label {
+    display: inline;
+  }
+
+  .app-tabs button {
+    min-width: auto;
+    padding: 8px 10px;
+  }
+
+  .top-actions {
+    grid-area: actions;
+  }
+
+  .inbox-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    border: 0;
+    padding: 0;
+    background: rgba(17, 24, 39, 0.2);
+  }
+
+  .inbox-pop {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: calc(var(--app-offset-top, 0px) + 108px);
+    bottom: auto;
+    width: auto;
+    max-width: none;
+    max-height: min(50vh, 360px);
+    z-index: 30;
+  }
+
+  .inbox-pop .eyebrow {
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .top-more-menu {
+    top: calc(var(--app-offset-top, 0px) + 52px);
+  }
+
+  .intent-capsules {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin: 4px 0 8px;
+  }
+
+  .intent-capsule {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .mention-menu {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    max-height: min(200px, 32vh);
+    margin: 4px 0 8px;
+  }
+
+  .composer {
+    width: auto;
+    max-width: none;
+    max-height: min(46vh, 320px);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .composer-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .composer-pickers {
+    width: 100%;
+    flex: none;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .composer-send-group {
+    width: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .composer .neo-select-pill {
+    min-height: 36px;
   }
 }

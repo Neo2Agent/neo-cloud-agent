@@ -49,7 +49,14 @@ export function InboxBell({ token, authed, onOpenRun, onOpenProject }: Props) {
         {unread > 0 ? <span className="inbox-dot">{unread > 9 ? "9+" : unread}</span> : null}
       </button>
       {open ? (
-        <div className="inbox-pop" role="menu">
+        <>
+          <button
+            type="button"
+            className="inbox-backdrop"
+            aria-label="关闭收件箱"
+            onClick={() => setOpen(false)}
+          />
+          <div className="inbox-pop" role="menu">
           <p className="eyebrow">收件箱</p>
           {items.length === 0 ? (
             <p className="hint">没有通知。</p>
@@ -70,7 +77,8 @@ export function InboxBell({ token, authed, onOpenRun, onOpenProject }: Props) {
               </button>
             ))
           )}
-        </div>
+          </div>
+        </>
       ) : null}
     </div>
   );

@@ -1,3 +1,4 @@
+import { BrandMark } from "@neo-cloud-agent/ui";
 import { isDeskApp } from "../desk";
 import { isNarrowViewport } from "../viewport";
 
@@ -58,8 +59,8 @@ export function AuthGate({
         }}
       >
         <div className="auth-brand">
-          <span className="mark" aria-hidden="true">
-            N
+          <span className="mark">
+            <BrandMark />
           </span>
           <p className="login-kicker">Neo Cloud Agent</p>
         </div>

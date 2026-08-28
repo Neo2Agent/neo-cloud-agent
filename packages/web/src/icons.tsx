@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   Menu,
   MessageSquare,
+  MoreHorizontal,
   Monitor,
   Package,
   PanelLeft,
@@ -163,6 +164,10 @@ export function IconSearch(props: IconProps) {
 
 export function IconInbox(props: IconProps) {
   return icon(Bell, props);
+}
+
+export function IconMore(props: IconProps) {
+  return icon(MoreHorizontal, props);
 }
 
 export function IconPr(props: IconProps) {

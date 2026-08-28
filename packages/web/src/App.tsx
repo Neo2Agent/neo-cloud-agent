@@ -44,6 +44,7 @@ import {
   IconFiles,
   IconGear,
   IconMenu,
+  IconMore,
   IconPr,
   IconProjects,
   IconSidebarClose,
@@ -1515,6 +1516,7 @@ export function App() {
   };
 
   const toggleSidebar = () => {
+    if (narrow) topMoreRef.current?.removeAttribute("open");
     setSidebarOpen((value) => {
       const next = !value;
       window.localStorage.setItem("neo.sidebar", next ? "1" : "0");
@@ -1684,7 +1686,9 @@ export function App() {
                 {statusView.label}
               </span>
               <details className="top-more" ref={topMoreRef}>
-                <summary className="ghost top-more-sum">更多</summary>
+                <summary className="icon-btn top-more-sum" aria-label="更多">
+                  <IconMore />
+                </summary>
                 <div
                   className="top-more-menu"
                   onClick={(event) => {

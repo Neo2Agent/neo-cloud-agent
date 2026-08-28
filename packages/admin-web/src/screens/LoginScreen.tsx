@@ -1,3 +1,5 @@
+import { BrandMark } from "@neo-cloud-agent/ui";
+
 type Props = {
   email: string;
   password: string;
@@ -23,8 +25,8 @@ export function LoginScreen({ email, password, busy, error, onEmail, onPassword,
         }}
       >
         <div className="auth-brand">
-          <span className="mark" aria-hidden="true">
-            N
+          <span className="mark">
+            <BrandMark />
           </span>
           <p className="login-kicker">Neo Cloud Agent</p>
         </div>
