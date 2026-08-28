@@ -753,6 +753,7 @@ pnpm typecheck && pnpm test
 - 云 loop + 本机工具 RPC（`loop !== tools`）
 - Firecracker live-fork、headed browser / computer-use
 - Egress 从应用层升到 iptables / 出站代理
+- 跨 Run 的用户 / 项目语义记忆（选型见 [agent-memory-research.md](./agent-memory-research.md)）
 - 完整多租户账务（只有配额打点）
 - Slack 宿主
 - 开放注册、第二套用户表
@@ -774,6 +775,7 @@ pnpm typecheck && pnpm test
 | [workbuddy-experts.md](./workbuddy-experts.md) | WorkBuddy 专家 / 专家团调研与落地顺序 |
 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) | Codex / WorkBuddy 技能与插件市场调研与复刻顺序 |
 | [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md) | 2026-08-28 再对标：骨架已齐之后还值得跟什么 |
+| [agent-memory-research.md](./agent-memory-research.md) | 跨 Run 记忆：第 0 期文件，第 1 期 Mem0，不换 pi |
 | [production-domain.md](./production-domain.md) | `neorun.cloud` / HTTPS / Caddy |
 | [README.md](../README.md) | 命令、环境变量、不要做的五件事 |
 | `packages/contracts` | 类型的权威来源 |
