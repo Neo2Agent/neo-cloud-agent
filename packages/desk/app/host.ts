@@ -6,6 +6,13 @@ import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import type { DeskAssignment, DeskInboxEvent } from "@neo-cloud-agent/contracts";
 import { admitLocalRun, normalizeMaxLocalRuns, type ActiveLocalRun } from "../src/admission.js";
+import {
+  FOLDER_CONFIRM_MESSAGE,
+  HOME_OR_ROOT_REJECT_MESSAGE,
+  OVERLY_BROAD_CONFIRM_MESSAGE,
+  WORKSPACE_SCOPE_HINT,
+} from "../src/folder-auth.js";
+import { normalizeOutOfWorkspacePolicy, type OutOfWorkspacePolicy } from "../src/sandbox-policy.js";
 import { createLeaseClient } from "../src/lease.js";
 import { openDeskInboxStream, type DeskInboxHandle } from "../src/inbox.js";
 import { listLocalPath } from "../src/local-fs.js";
@@ -29,6 +36,7 @@ import {
   readRepoIdentity,
   runScratchDir,
   runStateDir,
+  resolveAuthorizedFolder,
   writeRunBootstrap,
   writeRunExpertFiles,
 } from "../src/workspace.js";
@@ -49,7 +57,13 @@ type BoundWorkspace = { id: string; folder: string; name: string; repoKey: strin
  * control. Off (default) this machine stays private: folders are never
  * published, so no other client can even see it, let alone dispatch to it.
  */
-type DeskPrefs = { requireApproval?: boolean; remoteControl?: boolean; maxLocalRuns?: number };
+type DeskPrefs = {
+  requireApproval?: boolean;
+  remoteControl?: boolean;
+  maxLocalRuns?: number;
+  /** Desk-only. Cloud never reads this. Today only `deny` is honored. */
+  outOfWorkspacePolicy?: OutOfWorkspacePolicy;
+};
 
 type InboxState = { connected: boolean; deskId?: string; error?: string };
 
@@ -206,11 +220,17 @@ function setToken(token: string): void {
 }
 
 function prefs(): DeskPrefs {
-  return readJson<DeskPrefs>(stateFile(PREFS_STATE_FILE), {});
+  const raw = readJson<DeskPrefs>(stateFile(PREFS_STATE_FILE), {});
+  return {
+    ...raw,
+    outOfWorkspacePolicy: normalizeOutOfWorkspacePolicy(raw.outOfWorkspacePolicy),
+  };
 }
 
 function setPrefs(next: DeskPrefs): void {
-  writeJson(stateFile(PREFS_STATE_FILE), { ...prefs(), ...next });
+  const merged = { ...prefs(), ...next };
+  merged.outOfWorkspacePolicy = normalizeOutOfWorkspacePolicy(merged.outOfWorkspacePolicy);
+  writeJson(stateFile(PREFS_STATE_FILE), merged);
 }
 
 /**
@@ -395,9 +415,40 @@ function reportRunStatus(payload: {
   toRenderer("desk:run-status", payload);
 }
 
-async function confirmFolder(folder: string): Promise<boolean> {
-  if (findBound({ folder })) {
-    return true;
+/**
+ * Authorize a picked folder. Returns the real path, or null if the user
+ * refused / the folder is home or the disk root.
+ *
+ * Already-bound folders skip the dialogs: the earlier pick was the grant.
+ */
+async function confirmFolder(folder: string): Promise<string | null> {
+  const authorized = resolveAuthorizedFolder(folder);
+  if (!authorized.ok) {
+    await dialog.showMessageBox({
+      type: "error",
+      buttons: ["好"],
+      defaultId: 0,
+      title: "不能授权这个文件夹",
+      message: authorized.message || HOME_OR_ROOT_REJECT_MESSAGE,
+    });
+    return null;
+  }
+  if (findBound({ folder: authorized.path })) {
+    return authorized.path;
+  }
+  if (authorized.overlyBroad) {
+    const extra = await dialog.showMessageBox({
+      type: "warning",
+      buttons: ["仍然授权", "取消"],
+      defaultId: 1,
+      cancelId: 1,
+      title: "这个目录太宽",
+      message: OVERLY_BROAD_CONFIRM_MESSAGE,
+      detail: authorized.path,
+    });
+    if (extra.response !== 0) {
+      return null;
+    }
   }
   const result = await dialog.showMessageBox({
     type: "warning",
@@ -405,10 +456,10 @@ async function confirmFolder(folder: string): Promise<boolean> {
     defaultId: 1,
     cancelId: 1,
     title: "授权本机文件夹",
-    message: "Agent 会在这个文件夹里跑命令、直接改这里的文件。",
-    detail: folder,
+    message: FOLDER_CONFIRM_MESSAGE,
+    detail: `${authorized.path}\n\n${WORKSPACE_SCOPE_HINT}`,
   });
-  return result.response === 0;
+  return result.response === 0 ? authorized.path : null;
 }
 
 function remoteControlOn(): boolean {
@@ -1016,10 +1067,11 @@ function wireIpc(): void {
     if (!folder) {
       return null;
     }
-    if (!(await confirmFolder(folder))) {
+    const authorized = await confirmFolder(folder);
+    if (!authorized) {
       return null;
     }
-    const bound = await bindWorkspace(folder);
+    const bound = await bindWorkspace(authorized);
     const target = { kind: "desk" as const, folder: bound.folder, deskId, workspaceId: bound.id };
     writeJson(stateFile(TARGET_STATE_FILE), target);
     toRenderer("desk:target", target);

@@ -171,10 +171,10 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 ## 客户端约束（已经写进代码）
 
 - **工作区 = 授权目录本身。** 有 `.git` 才有 commit / PR；没有 git 的文件夹仍可读写、开终端。
-- **沙箱：** pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝（会展开 `~` / `$HOME`，并顺着符号链接看到真实落点）；`bash` 的重定向（含 `1>` / `2>` / `&>` / `>|`）和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂，但 `ln` 不准把工作区名字链到 `/tmp` 或家目录。只对本机 Run 生效（`NEO_SANDBOX_ROOT`）；云端 VM 本身就是隔离盒子。出界是直接拒绝，不再问人。
-- **后续：出界权限可配。** 现在越界一律 `block`，没有「允许 / 拒绝」按钮。以后设置里要能选：继续全拒、每次询问、或按路径放行。这是产品开关，不是现在的默认行为。
-- **工作区里还有几处只读：** `.git/hooks`、`.git/config`、`.git/info/attributes`、`.cursor/hooks.json`、`.cursor/hooks/`、`.neo/`。这些写入会**活过这一轮**——git hook 在用户下次提交时执行；`.cursor/hooks.json` 在下一回合被新 worker 用 `/bin/sh` 跑，不再走沙箱扫描；`.neo/` 是 Desk 和 worker 维护的 per-run 暂存，Agent 改它就能顶掉并行 run 的专家人设。读不拦，git 自己的写也不拦（走 git 进程，不经过工具调用），所以正常 commit / 切分支不受影响。Cursor 出于同样理由把这批路径设成"无论怎么配都不可写"（[sandbox reference](https://cursor.com/docs/reference/sandbox)）。系统提示里也会明说，免得 Agent 撞上才知道。
-- **Run 私货不进仓库：** session / bootstrap / jwt 在 `userData/neo-desk/runs/<runId>/`。要被 Agent 读到的（专家文件、贴图）写 `<workspace>/.neo/runs/<runId>/`，整个 `.neo/` 都在 `.git/info/exclude` 里。
+- **一份 `.neo`。** 仓库认什么、worker 读什么，和云端同一套 `createWorkspaceLoader`。不为 This Computer 另做 Cursor Customize，也不单独加载 `.cursor/rules`、`.cursor/commands`、`.cursorignore`。Cursor 兼容只保留云端已经有的（`environment.json` 回落、skills / agents / hooks 文件名）。
+- **本机多的是墙和寻址。** 云端 VM 本身就是盒子；本机才有「用户选的文件夹」和真磁盘出界。`NEO_SANDBOX_ROOT` 只对本机 Run 生效：pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝（展开 `~` / `$HOME`，顺着符号链接看真实落点）；`bash` 的重定向（含 `1>` / `2>` / `&>` / `>|`）和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂，但 `ln` 不准把工作区名字链到 `/tmp` 或家目录。出界默认 `deny`，不问人。`ask` / `allowlist` 若以后做，只进 Desk prefs + `NEO_SANDBOX_*`，云端 worker 不读。
+- **选目录就是授权。** 家目录和磁盘根直接拒；`/tmp`、`/Users` 这类过宽目录要二次确认。设置页 hint 和确认框用同一套文案：只改这个文件夹；`.neo` 和云端同一套，不是另一产品。设置「This computer」只露文件夹、并发、Remote control，不加「加载 `.cursor`」开关；composer `/` 不接 Cursor commands。
+- **`.neo/` 禁止 Agent 写**（执行墙，防并行串改）。同一文件夹两条对话的专家文件、贴图、boot 日志按 runId 写在 `<workspace>/.neo/runs/<runId>/`；读序是 scratch 优先，再回落 `<cwd>/.neo`。session / bootstrap / jwt 仍在 `userData/neo-desk/runs/<runId>/`。整个 `.neo/` 在 `.git/info/exclude` 里。`.git/hooks`、`.git/config`、`.git/info/attributes` 以及云端本来就读的 `.cursor/hooks.json` / `.cursor/hooks/` 同样只读——写进去会活过这一轮。不要再扩一份本机专用「Cursor 保护清单」当产品功能。
 - **绝对路径不上云。** 绑定只上报机器名 + repoKey + 短名；远程端看到 `机器名 · 仓库名`。也不把本机路径同步成别人的项目默认仓库。
 - **`online` = 正握着 inbox。** 只看时间戳会让一台注册完就退出的电脑看起来还在。
 - **控制面不杀笔记本进程。** `DeskRuntime.destroy` 是空的；停 worker 走 inbox 的 `cancel`，活着靠 worker 心跳。
@@ -185,7 +185,7 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 - **判断 run 是否已结束要带上 `NOT_YET_STARTED`。** 每条 desk run 在这台机器 `claim` 落地之前都是这个状态（`createRun` 的 inline 分支和 `dispatchToDesk` 都走 `queueRun`）。漏掉它，spawn 到 claim 之间的 worker 在下一条对话看来就是「已经结束」，会被回收——开第二条对话把第一条杀掉。主进程复用 `src/stream.ts` 的 `isActiveRunStatus`，不留第二份会漂移的定义。
 - **每条对话的文件夹由 run 自己说。** `localRunFolder(run)` 读 run 的 `repoUrls[0]`；文件树、diff、`resumeLocalRun` 都用它。回落到「当前选中的文件夹」在并行下必然指错——picker 是给空 composer 用的。同理 handoff 不给 `deskWorkspaceId` 也不能用 picker 的补，宁可不给（主进程会用调用方传的 folder）。
 - **worker 起不来只发 `error`，不发 `exit`。** 所以 `error` 也要释放名额并报失败，否则那个槽位一直被占，攒够上限这台机器就再也开不了本机对话。
-- **per-run 私货按 runId 寻址。** 专家文件、贴图、boot 日志都在 `<workspace>/.neo/runs/<runId>/`；共用一个文件夹时才不会串。云端 run 一个工作区只有一条，仍用 `<workspace>/.neo`。
+- **per-run 私货按 runId 寻址。** 专家文件、贴图、boot 日志都在 `<workspace>/.neo/runs/<runId>/`；`availableSubagents` / `readExpertWorkspace` 共用 `expertDocRoots` / `expertAgentDirs`，scratch 优先。云端 run 一个工作区只有一条，仍用 `<workspace>/.neo`。
 - 界面上两个「停止」不是一回事：`停止当前回合` 只打断这一轮，`结束本机进程` 杀掉这条对话的本机 Agent 进程。
 - 一期不允许 Automation 派到本机。
 - 本机 Run **没有**「邀请加入这条对话」。一起干活要开 Cloud，或各开各的云端 Run。
@@ -201,13 +201,13 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 
 | 规约 | Desk 的做法 |
 | --- | --- |
-| 不允许魔法值 | 超时、重试间隔、并发上限、状态文件名、预览截断长度都是命名常量（`LEASE_WAIT_MS`、`RELEASE_RETRY_DELAYS_MS`、`QUIT_GRACE_MS`、`SECRET_FILE_MODE`、`TARGET_STATE_FILE`…），常量声明在用它的模块顶部，不做一个大而全的常量文件 |
+| 不允许魔法值 | 超时、重试间隔、并发上限、状态文件名、预览截断长度、过宽目录名单、出界策略、`.neo` / `agents` 相对路径都是命名常量（`LEASE_WAIT_MS`、`RELEASE_RETRY_DELAYS_MS`、`QUIT_GRACE_MS`、`SECRET_FILE_MODE`、`TARGET_STATE_FILE`、`OVERLY_BROAD_FOLDER_NAMES`、`DEFAULT_OUT_OF_WORKSPACE_POLICY`、`NEO_DIR`…），常量声明在用它的模块顶部，不做一个大而全的常量文件 |
 | 命名 | 常量 `UPPER_SNAKE_CASE`，类型 `PascalCase`，函数与变量 `lowerCamelCase`，文件 `kebab-case`；不让函数和它读的字段同名（`localRunLimit()` 读 `prefs.maxLocalRuns`） |
-| 单一职责、方法别太长 | `startAssignment` 拆成 `resolveRunFolder` / `reserveLocalSlot` / `prepareRunLaunch` / `watchLocalWorker`；run bar 的状态判断从 `App.tsx` 抽到 `ui/chat/local-run-view.ts` |
-| 异常不能吞 | 空 `catch {}` 要么走 logger，要么写清此处为什么确实无事可报（例如首次启动时状态文件不存在） |
-| 日志要带现场信息 | `src/log.ts` 统一 `[desk:<scope>] message key=value`；字段而不是字符串拼接；`error()` 同时打印 message 和 stack。应用运行时不用裸 `console.*`（构建脚本除外） |
-| 不重复定义 | run 活跃状态只有 `src/stream.ts` 那一份 `isActiveRunStatus`，主进程复用而不是自己再列一遍 |
-| 单测可重复、互不依赖 | 决策逻辑抽成纯函数再测：`admitLocalRun`、`localRunView`、`composerMaxWidth`、`formatLine` |
+| 单一职责、方法别太长 | `startAssignment` 拆成 `resolveRunFolder` / `reserveLocalSlot` / `prepareRunLaunch` / `watchLocalWorker`；run bar 的状态判断从 `App.tsx` 抽到 `ui/chat/local-run-view.ts`；`confirmFolder` / `isOverlyBroadFolder` 纯函数在 `workspace.ts` / `folder-auth.ts`，`host.ts` 只弹窗；`loadProjectSubagents` 与 `readExpertWorkspace` 共用 `expertDocRoots` / `expertAgentDirs` |
+| 异常不能吞 | 空 `catch {}` 要么走 logger，要么写清此处为什么确实无事可报（例如首次启动时状态文件不存在；subagent 读不到某个 agent 目录就跳过并写清原因） |
+| 日志要带现场信息 | `src/log.ts` 统一 `[desk:<scope>] message key=value`；字段而不是字符串拼接；`error()` 同时打印 message 和 stack。应用运行时不用裸 `console.*`（构建脚本除外）。本机出界策略不打到云端 worker 日志里 |
+| 不重复定义 | run 活跃状态只有 `src/stream.ts` 那一份 `isActiveRunStatus`，主进程复用而不是自己再列一遍；专家根解析只有 `expert-roots.ts` 一处；出界策略归一化只有 `normalizeOutOfWorkspacePolicy` |
+| 单测可重复、互不依赖 | 决策逻辑抽成纯函数再测：`admitLocalRun`、`localRunView`、`composerMaxWidth`、`formatLine`、`isOverlyBroadFolder`、`expertDocRoots` / `expertAgentDirs`、`normalizeOutOfWorkspacePolicy` |
 
 ```bash
 pnpm dev:web        # Web UI :5173，API :8080

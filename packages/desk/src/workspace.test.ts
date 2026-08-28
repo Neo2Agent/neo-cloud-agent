@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -10,6 +10,7 @@ import {
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
   readRepoIdentity,
+  resolveAuthorizedFolder,
   runScratchDir,
   runStateDir,
   writeRunBootstrap,
@@ -30,14 +31,14 @@ function initRepo(): string {
 test("the workspace is the folder the user picked, not a side worktree", async () => {
   const dir = initRepo();
   const workspace = await prepareDeskWorkspace({ repoDir: dir });
-  assert.equal(workspace, path.resolve(dir));
+  assert.equal(workspace, realpathSync(dir));
   assert.equal(existsSync(path.join(dir, ".neo", "worktrees")), false);
 });
 
 test("a plain folder works too, it just has no git tools", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "neo-desk-plain-"));
   assert.equal(isGitRepo(dir), false);
-  assert.equal(await prepareDeskWorkspace({ repoDir: dir }), path.resolve(dir));
+  assert.equal(await prepareDeskWorkspace({ repoDir: dir }), realpathSync(dir));
   const identity = await readRepoIdentity(dir);
   assert.equal(identity.git, false);
   assert.match(identity.repoKey, /^local:/);
@@ -87,6 +88,26 @@ test("two runs sharing one folder keep separate experts", async () => {
   writeRunExpertFiles(workspace, second, { expertMarkdown: "Role Override: planner\n" });
   assert.match(readFileSync(path.join(first, "EXPERT.md"), "utf8"), /reviewer/);
   assert.match(readFileSync(path.join(second, "EXPERT.md"), "utf8"), /planner/);
+});
+
+test("authorizing a folder uses realpath and refuses home", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "neo-desk-auth-"));
+  const ok = resolveAuthorizedFolder(dir);
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.equal(ok.path, realpathSync(dir));
+    assert.equal(ok.overlyBroad, false);
+  }
+  const home = resolveAuthorizedFolder(homedir());
+  assert.equal(home.ok, false);
+  if (!home.ok) {
+    assert.equal(home.reason, "home-or-root");
+  }
+  const missing = resolveAuthorizedFolder(path.join(tmpdir(), "neo-desk-auth-missing-xyz"));
+  assert.equal(missing.ok, false);
+  if (!missing.ok) {
+    assert.equal(missing.reason, "unreadable");
+  }
 });
 
 test("diff stat counts uncommitted edits in the user's own folder", async () => {

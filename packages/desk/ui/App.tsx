@@ -24,6 +24,7 @@ import {
 } from "./desk";
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
+import { WORKSPACE_SCOPE_HINT } from "../src/folder-auth";
 import { isLoopbackOrigin } from "../src/ports";
 import { groupRailSessions, isLocalPath } from "../src/rail";
 import {
@@ -1592,9 +1593,7 @@ export function App() {
               <button type="button" className="folder-btn" onClick={() => void pickLocalFolder()}>
                 {folder || "选择本机文件夹…"}
               </button>
-              <p className="hint">
-                Agent 会直接改这个文件夹里的文件，包括还没提交的改动。写不出这个文件夹。
-              </p>
+              <p className="hint">{WORKSPACE_SCOPE_HINT} 写不出这个文件夹。</p>
               {workspaces.length > 0 ? (
                 <ul className="ws-list">
                   {workspaces.map((item) => (

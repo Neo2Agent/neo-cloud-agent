@@ -316,6 +316,37 @@ Look for secrets.
   assert.match(ran.content, /ran scout/);
 });
 
+test("availableSubagents reads scratch agents after workspace ones so the run wins", () => {
+  const workspaceDir = mkdtempSync(path.join(tmpdir(), "neo-subagent-scratch-"));
+  const scratchDir = path.join(workspaceDir, ".neo", "runs", "run-a");
+  mkdirSync(path.join(workspaceDir, ".neo", "agents"), { recursive: true });
+  mkdirSync(path.join(scratchDir, "agents"), { recursive: true });
+  writeFileSync(
+    path.join(workspaceDir, ".neo/agents/planner.md"),
+    `---
+name: planner
+description: leftover workspace planner
+---
+
+Workspace leftover.
+`,
+  );
+  writeFileSync(
+    path.join(scratchDir, "agents/planner.md"),
+    `---
+name: planner
+description: this run's planner
+---
+
+Scratch team member.
+`,
+  );
+  const withoutScratch = availableSubagents(workspaceDir).find((item) => item.name === "planner");
+  assert.match(withoutScratch?.systemPrompt ?? "", /Workspace leftover/);
+  const withScratch = availableSubagents(workspaceDir, scratchDir).find((item) => item.name === "planner");
+  assert.match(withScratch?.systemPrompt ?? "", /Scratch team member/);
+});
+
 test("neo_subscribe posts events to the control plane", async () => {
   const tool = createCloudTools(
     ctx(

@@ -1,38 +1,40 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseExpertWorkspaceMeta } from "@neo-cloud-agent/contracts";
+import { expertDocRoots } from "@neo-cloud-agent/extensions";
+
+const EXPERT_DOC_NAMES = ["EXPERT_TEAM.md", "EXPERT.md"] as const;
+const EXPERT_META_FILE = "expert.json";
 
 /**
  * Read the expert role for this run.
  *
- * `scratchDir` wins when set, because several local runs can share one folder
- * and each needs its own persona. Cloud runs own their workspace outright and
- * keep using `<cwd>/.neo`, which is also the fallback for runs that started
- * before the per-run layout existed.
+ * Roots come from `expertDocRoots`: a local run's scratch wins, then
+ * `<cwd>/.neo`. Cloud never sets scratch, so it only sees the workspace root.
  */
 export function readExpertWorkspace(cwd: string, scratchDir?: string): { role: string; tools?: string[] } {
-  const roots = [scratchDir, path.join(cwd, ".neo")].filter((dir): dir is string => Boolean(dir));
+  const roots = expertDocRoots(cwd, scratchDir);
   let tools: string[] | undefined;
   for (const root of roots) {
     try {
-      const meta = parseExpertWorkspaceMeta(readFileSync(path.join(root, "expert.json"), "utf8"));
+      const meta = parseExpertWorkspaceMeta(readFileSync(path.join(root, EXPERT_META_FILE), "utf8"));
       if (meta?.tools) {
         tools = meta.tools;
         break;
       }
     } catch {
-      // try the next root
+      // Missing or invalid expert.json — try the next root.
     }
   }
   for (const root of roots) {
-    for (const name of ["EXPERT_TEAM.md", "EXPERT.md"] as const) {
+    for (const name of EXPERT_DOC_NAMES) {
       try {
         const role = readFileSync(path.join(root, name), "utf8").trim();
         if (role) {
           return { role, tools };
         }
       } catch {
-        // try next
+        // Missing role file — try the next name or root.
       }
     }
   }

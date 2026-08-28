@@ -13,6 +13,7 @@ import {
 } from "@neo-cloud-agent/contracts";
 import { availableSubagents, type CloudToolResult } from "@neo-cloud-agent/extensions";
 import { CLOUD_SYSTEM_PROMPT, sessionToolNames } from "./cloud-tools.js";
+import { getWorkerConfig } from "./config.js";
 import type { LooseAgentEvent } from "./events.js";
 import type { OpenSessionInput } from "./session.js";
 
@@ -100,7 +101,7 @@ async function mapPool<T, R>(items: T[], concurrency: number, fn: (item: T, inde
 }
 
 async function runOne(input: SubagentRunInput, agentName: string, task: string): Promise<CloudToolResult> {
-  const agents = availableSubagents(input.cwd);
+  const agents = availableSubagents(input.cwd, getWorkerConfig().scratchDir || undefined);
   const agent = resolveSubagent(agents, agentName);
   if (!agent) {
     return {

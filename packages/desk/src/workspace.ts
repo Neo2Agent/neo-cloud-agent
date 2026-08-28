@@ -1,11 +1,47 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
 import path from "node:path";
 import type { DeskAssignment } from "@neo-cloud-agent/contracts";
 import { deskRepoKey, deskWorkspaceShortName } from "@neo-cloud-agent/contracts/desk-workspace";
+import {
+  FOLDER_UNREADABLE_MESSAGE,
+  HOME_OR_ROOT_REJECT_MESSAGE,
+  isHomeOrFilesystemRoot,
+  isOverlyBroadFolder,
+} from "./folder-auth.js";
+
+/** Same filenames as a cloud run. Local addressing adds `runs/<id>` under this. */
+const NEO_DIR = ".neo";
+const AGENTS_DIR = "agents";
+const RUNS_DIR = "runs";
 
 export function isGitRepo(folder: string): boolean {
   return existsSync(path.join(folder, ".git"));
+}
+
+export type AuthorizedFolder =
+  | { ok: true; path: string; overlyBroad: boolean }
+  | { ok: false; reason: "unreadable" | "home-or-root"; message: string };
+
+/**
+ * Resolve the folder the user picked before it becomes a workspace.
+ *
+ * `realpath` follows symlinks so a link to home or `/` cannot sneak through.
+ * Home and the filesystem root are refused; overly-broad parents need a second
+ * confirm in the host, which only shows the dialog.
+ */
+export function resolveAuthorizedFolder(folder: string, homeDir = homedir()): AuthorizedFolder {
+  let resolved: string;
+  try {
+    resolved = realpathSync(folder);
+  } catch {
+    return { ok: false, reason: "unreadable", message: `${FOLDER_UNREADABLE_MESSAGE} ${folder}` };
+  }
+  if (isHomeOrFilesystemRoot(resolved, homeDir)) {
+    return { ok: false, reason: "home-or-root", message: HOME_OR_ROOT_REJECT_MESSAGE };
+  }
+  return { ok: true, path: resolved, overlyBroad: isOverlyBroadFolder(resolved) };
 }
 
 /**
@@ -23,7 +59,7 @@ export async function prepareDeskWorkspace(input: { repoDir: string }): Promise<
   if (!existsSync(folder) || !statSync(folder).isDirectory()) {
     throw new Error(`本机工作区不存在：${folder}`);
   }
-  return path.resolve(folder);
+  return realpathSync(folder);
 }
 
 /** Where per-run state lives, kept out of the user's repo. */
@@ -46,7 +82,7 @@ export function writeRunBootstrap(stateDir: string, bootstrap: Record<string, un
  * commits and skipped by workspace copies.
  */
 export function runScratchDir(workspaceDir: string, runId: string): string {
-  const dest = path.join(path.resolve(workspaceDir), ".neo", "runs", runId);
+  const dest = path.join(path.resolve(workspaceDir), NEO_DIR, RUNS_DIR, runId);
   mkdirSync(dest, { recursive: true });
   return dest;
 }
@@ -76,7 +112,7 @@ export function writeRunExpertFiles(
     writeFileSync(path.join(dest, "EXPERT_TEAM.md"), assignment.expertTeamMarkdown);
   }
   if (assignment.expertAgents?.length) {
-    const agentsDir = path.join(dest, "agents");
+    const agentsDir = path.join(dest, AGENTS_DIR);
     mkdirSync(agentsDir, { recursive: true });
     for (const agent of assignment.expertAgents) {
       writeFileSync(path.join(agentsDir, `${agent.slug}.md`), agent.markdown);
@@ -100,7 +136,7 @@ export function ignoreNeoDir(workspaceDir: string): void {
       return;
     }
     const prefix = current && !current.endsWith("\n") ? "\n" : "";
-    writeFileSync(file, `${current}${prefix}.neo/\n`);
+    writeFileSync(file, `${current}${prefix}${NEO_DIR}/\n`);
   } catch {
     // an exclude file we cannot write is not worth failing the run over
   }
