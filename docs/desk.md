@@ -46,7 +46,7 @@
 - 无 `projectId` → `PersonalChatPage`
 - 有 `projectId` → `ProjectChatPage`（项目面包屑、转交、流转待办；**仅云端**可邀请加入这条对话）
 
-`Cmd+W` 关当前会话。本机目标在 composer 上选 This Computer，并先授权一个文件夹。
+`Cmd+W` 关当前会话。本机目标在 composer 上选 This Computer，并先授权一个文件夹。目标只有 **Cloud** 和 **This Computer** 两个：Remote SSH 曾经是一个永久 disabled 的占位项，已经删掉；「别人从网页派活到这台电脑」是设置里的 Remote control 开关，不是 composer 上的目标。
 
 ## 右侧栏
 
@@ -121,7 +121,7 @@
 
 ### worker 逐回合，不常驻
 
-本机 worker **一回合跑完就退**（`WORKER_EXIT_AFTER_TURN=1`）。`session.prompt` 是 await 的，所以 inbox 再拉一次为空就说明这轮结束、后面也没排队，此时上传 session 备份并退出。
+本机 worker **一回合跑完就退**（`WORKER_EXIT_AFTER_TURN=1`，`spawnDeskWorker` 里写死，不给开关——曾经有个 `exitAfterTurn` 参数从没人传，却让这个不变量看起来可配）。`session.prompt` 是 await 的，所以 inbox 再拉一次为空就说明这轮结束、后面也没排队，此时上传 session 备份并退出。
 
 进程寿命比对话回合长会带来三种真故障，都不值得为了省一次冷启去承担：
 
@@ -173,8 +173,11 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 - **`online` = 正握着 inbox。** 只看时间戳会让一台注册完就退出的电脑看起来还在。
 - **控制面不杀笔记本进程。** `DeskRuntime.destroy` 是空的；停 worker 走 inbox 的 `cancel`，活着靠 worker 心跳。
 - **退出 Desk 会带走 worker。** 它们在改用户自己的文件夹，留一个孤儿进程等于让没人看着的仓库继续被改。`claim` 失败同样会把刚起的进程收掉。
-- **本机对话可以并行，边界是资源不是文件夹。** 不同文件夹互不相干；同一个文件夹也允许开第二条（Cursor 也不拦，它的 subagents 文档直说共享 checkout 会互相覆盖），只是会提示未提交改动可能打架。唯一的硬限制是「同时最多几条」，默认 4，设置里可调，理由是每条都是一个独立 Node 进程。
-- **准入只看本机事实。** 活没活由主进程自己的子进程表决定；控制面只用来回收「run 已结束但进程还在」的 worker，问不到就不动它。现网抖一下不该让你在自己的盘上干不了活。
+- **本机对话可以并行，边界是资源不是文件夹。** 不同文件夹互不相干；同一个文件夹也允许开第二条（Cursor 也不拦，它的 subagents 文档直说共享 checkout 会互相覆盖），只是会提示未提交改动可能打架。唯一的硬限制是「同时最多几条」，默认 4，设置里可调，理由是每条都是一个独立 Node 进程。macOS 和 Windows 上路径大小写不敏感，`/Users/me/Web` 和 `/Users/me/web` 是同一个 checkout，同文件夹判断要按平台归一化，否则那条提示会静默失效。
+- **准入只看本机事实，一次网络请求都不发。** 有几条在跑由主进程自己的 `localRuns` 表决定，占位在任何 `await` 之前就写进去。控制面只用来回收「run 已结束但进程还在」的 worker，而且**只有被上限拦住时**才去问（一次并发问完），问不到就不动它。现网抖一下不该让你在自己的盘上干不了活，也不该让开新对话多等几个 RTT。
+- **判断 run 是否已结束要带上 `NOT_YET_STARTED`。** 每条 desk run 在这台机器 `claim` 落地之前都是这个状态（`createRun` 的 inline 分支和 `dispatchToDesk` 都走 `queueRun`）。漏掉它，spawn 到 claim 之间的 worker 在下一条对话看来就是「已经结束」，会被回收——开第二条对话把第一条杀掉。主进程复用 `src/stream.ts` 的 `isActiveRunStatus`，不留第二份会漂移的定义。
+- **每条对话的文件夹由 run 自己说。** `localRunFolder(run)` 读 run 的 `repoUrls[0]`；文件树、diff、`resumeLocalRun` 都用它。回落到「当前选中的文件夹」在并行下必然指错——picker 是给空 composer 用的。同理 handoff 不给 `deskWorkspaceId` 也不能用 picker 的补，宁可不给（主进程会用调用方传的 folder）。
+- **worker 起不来只发 `error`，不发 `exit`。** 所以 `error` 也要释放名额并报失败，否则那个槽位一直被占，攒够上限这台机器就再也开不了本机对话。
 - **per-run 私货按 runId 寻址。** 专家文件、贴图、boot 日志都在 `<workspace>/.neo/runs/<runId>/`；共用一个文件夹时才不会串。云端 run 一个工作区只有一条，仍用 `<workspace>/.neo`。
 - 界面上两个「停止」不是一回事：`停止当前回合` 只打断这一轮，`结束本机进程` 杀掉这条对话的本机 Agent 进程。
 - 一期不允许 Automation 派到本机。
@@ -184,6 +187,20 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 - 会话列表、transcript、跟进队列仍以控制面为准；关窗口不等于删对话。
 
 渲染进程看不到 Node、看不到磁盘，只通过 `window.neoDesk` 选目录、读工作区文件、开终端。
+
+## 代码约定
+
+按阿里巴巴开发手册里能落到 TypeScript 的那几条，Desk 这边的具体做法：
+
+| 规约 | Desk 的做法 |
+| --- | --- |
+| 不允许魔法值 | 超时、重试间隔、并发上限、状态文件名、预览截断长度都是命名常量（`LEASE_WAIT_MS`、`RELEASE_RETRY_DELAYS_MS`、`QUIT_GRACE_MS`、`SECRET_FILE_MODE`、`TARGET_STATE_FILE`…），常量声明在用它的模块顶部，不做一个大而全的常量文件 |
+| 命名 | 常量 `UPPER_SNAKE_CASE`，类型 `PascalCase`，函数与变量 `lowerCamelCase`，文件 `kebab-case`；不让函数和它读的字段同名（`localRunLimit()` 读 `prefs.maxLocalRuns`） |
+| 单一职责、方法别太长 | `startAssignment` 拆成 `resolveRunFolder` / `reserveLocalSlot` / `prepareRunLaunch` / `watchLocalWorker`；run bar 的状态判断从 `App.tsx` 抽到 `ui/chat/local-run-view.ts` |
+| 异常不能吞 | 空 `catch {}` 要么走 logger，要么写清此处为什么确实无事可报（例如首次启动时状态文件不存在） |
+| 日志要带现场信息 | `src/log.ts` 统一 `[desk:<scope>] message key=value`；字段而不是字符串拼接；`error()` 同时打印 message 和 stack。应用运行时不用裸 `console.*`（构建脚本除外） |
+| 不重复定义 | run 活跃状态只有 `src/stream.ts` 那一份 `isActiveRunStatus`，主进程复用而不是自己再列一遍 |
+| 单测可重复、互不依赖 | 决策逻辑抽成纯函数再测：`admitLocalRun`、`localRunView`、`composerMaxWidth`、`formatLine` |
 
 ```bash
 pnpm dev:web        # Web UI :5173，API :8080
