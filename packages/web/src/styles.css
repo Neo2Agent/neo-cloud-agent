@@ -3382,7 +3382,7 @@ textarea {
 
 .run-tools-actions {
   display: flex;
-  justify-content: flex-end;
+  width: 100%;
   gap: 6px;
 }
 
@@ -3393,17 +3393,21 @@ textarea {
 }
 
 .toolbar-btn {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   white-space: nowrap;
-  min-height: 32px;
-  padding: 5px 10px;
+  min-height: 34px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--text);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.transcript-search .toolbar-btn {
+  flex: 0 0 auto;
 }
 
 .toolbar-btn:hover,
