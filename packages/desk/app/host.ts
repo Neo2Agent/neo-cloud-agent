@@ -1089,9 +1089,6 @@ function wireIpc(): void {
     stopRun(runId, "已在这台电脑上停止");
     return true;
   });
-  ipcMain.handle("desk:notify", (_event, title: string, body: string) => {
-    new Notification({ title, body }).show();
-  });
   ipcMain.handle("desk:openPath", async (_event, filePath: string) => {
     if (filePath.startsWith("http")) {
       await shell.openExternal(filePath);
@@ -1178,6 +1175,13 @@ app.whenReady().then(async () => {
   app.setAsDefaultProtocolClient("neo");
 });
 
+/**
+ * A `neo://` link opens the run or invite it names.
+ *
+ * The renderer routes on the hash, so loading the URL is the whole handoff.
+ * There used to be a `desk:deep-link` event alongside it that nothing ever
+ * subscribed to.
+ */
 app.on("open-url", (_event, url) => {
   if (!mainWindow) return;
   const runId = runIdFromDeepLink(url);
@@ -1185,7 +1189,6 @@ app.on("open-url", (_event, url) => {
   const hash = runId ? hashForRun(runId) : inviteToken ? hashForInvite(inviteToken) : "";
   if (!hash) return;
   void mainWindow.loadURL(`${rendererEntry().replace(/\/$/, "")}/${hash}`);
-  mainWindow.webContents.send("desk:deep-link", url);
 });
 
 let shuttingDown = false;

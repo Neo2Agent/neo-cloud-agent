@@ -87,7 +87,6 @@ export type LocalFsListing = {
  * has to tolerate a missing one.
  */
 export type NeoDeskBridge = {
-  platform: string;
   apiBase: string;
   canRunLocal: boolean;
   /** Packaged Desk talks to production through the main process, not from the renderer. */
@@ -98,7 +97,6 @@ export type NeoDeskBridge = {
   pickFolder(): Promise<DeskWorkspaceRef | string | null>;
   getTarget(): Promise<DeskTarget>;
   setTarget(target: DeskTarget): Promise<void>;
-  notify(title: string, body: string): Promise<void>;
   openPath(filePath: string): Promise<void>;
   listWorkspaces?(): Promise<DeskWorkspaceRef[]>;
   unbindWorkspace?(workspaceId: string): Promise<boolean>;
@@ -122,7 +120,6 @@ export type NeoDeskBridge = {
   termOpen?(folder: string): Promise<{ id?: string; cwd?: string; error?: string }>;
   termWrite?(id: string, data: string): Promise<boolean>;
   termClose?(id: string): Promise<boolean>;
-  onDeepLink?(cb: (url: string) => void): () => void;
   onRunStatus?(cb: (status: DeskRunStatus) => void): () => void;
   onDispatched?(cb: (payload: { runId: string; workspace: string }) => void): () => void;
   onTarget?(cb: (target: DeskTarget) => void): () => void;

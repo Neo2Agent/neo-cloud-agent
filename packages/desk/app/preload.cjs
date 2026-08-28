@@ -14,7 +14,6 @@ function on(channel, cb) {
 }
 
 contextBridge.exposeInMainWorld("neoDesk", {
-  platform: process.platform,
   apiBase,
   canRunLocal: true,
   proxyApi: packaged,
@@ -31,14 +30,12 @@ contextBridge.exposeInMainWorld("neoDesk", {
   startRun: (assignment, folder) => ipcRenderer.invoke("desk:startRun", assignment, folder),
   takeAssignment: (runId, folder) => ipcRenderer.invoke("desk:takeAssignment", runId, folder),
   stopRun: (runId) => ipcRenderer.invoke("desk:stopRun", runId),
-  notify: (title, body) => ipcRenderer.invoke("desk:notify", title, body),
   openPath: (filePath) => ipcRenderer.invoke("desk:openPath", filePath),
   listDir: (input) => ipcRenderer.invoke("desk:listDir", input),
   diffStat: (folder) => ipcRenderer.invoke("desk:diffStat", folder),
   termOpen: (folder) => ipcRenderer.invoke("desk:termOpen", folder),
   termWrite: (id, data) => ipcRenderer.invoke("desk:termWrite", { id, data }),
   termClose: (id) => ipcRenderer.invoke("desk:termClose", id),
-  onDeepLink: (cb) => on("desk:deep-link", cb),
   onRunStatus: (cb) => on("desk:run-status", cb),
   onDispatched: (cb) => on("desk:dispatched", cb),
   onTarget: (cb) => on("desk:target", cb),

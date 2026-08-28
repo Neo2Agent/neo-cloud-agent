@@ -25,7 +25,7 @@ import {
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
 import { isLoopbackOrigin } from "../src/ports";
-import { groupRailSessions } from "../src/rail";
+import { groupRailSessions, isLocalPath } from "../src/rail";
 import {
   hashForProject,
   inviteTokenFromDeepLink,
@@ -39,6 +39,7 @@ import { SidePanel, type SidePanelTab } from "./SidePanel";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
 import { localRunView, otherRunningLocalRuns, runningLocalRunIds } from "./chat/local-run-view";
 import { RailSessions } from "./chat/RailSessions";
+import { initials, repoShort } from "./project/helpers";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
@@ -114,12 +115,13 @@ function path0(value: string): string {
   return (value || "").replace(/[\\/]+$/, "");
 }
 
-function isLocalPathLike(value: string): boolean {
-  return value.startsWith("/") || value.startsWith("~") || /^[A-Za-z]:[\\/]/.test(value);
-}
-
 function folderName(value: string): string {
   return path0(value).split(/[\\/]/).pop() || value;
+}
+
+/** `repoShort`, plus the reading a run with no repo at all should get. */
+function repoPath(url?: string): string {
+  return url ? repoShort(url) : "Inbox";
 }
 
 function repoLabel(url?: string): string {
@@ -134,25 +136,12 @@ function repoLabel(url?: string): string {
   }
 }
 
-function repoPath(url?: string): string {
-  if (!url) return "Inbox";
-  try {
-    const parts = new URL(url).pathname.replace(/\.git$/, "").split("/").filter(Boolean);
-    return parts.slice(-2).join("/") || repoLabel(url);
-  } catch {
-    const parts = url.replace(/\/$/, "").replace(/\.git$/, "").split("/").filter(Boolean);
-    return parts.slice(-2).join("/") || repoLabel(url);
-  }
-}
-
-function initials(value: string): string {
-  const parts = value.trim().split(/[@\s./_-]+/).filter(Boolean);
-  if (parts.length === 0) return "N";
-  if (parts.length === 1) return parts[0]!.slice(0, 1).toUpperCase();
-  return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
-}
-
-function formatRel(iso?: string | null): string {
+/**
+ * The rail and the search list need a timestamp that fits next to a title, so
+ * this is the compact form. The project pages use `formatRel` from
+ * `project/helpers`, which spells the same interval out in full.
+ */
+function formatRelShort(iso?: string | null): string {
   if (!iso) return "";
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return "";
@@ -909,7 +898,7 @@ export function App() {
       .map((run) => ({
         id: run.id,
         title: preview(run.prompt, 72),
-        meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRel(run.updatedAt)),
+        meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRelShort(run.updatedAt)),
       }));
   }, [projects, query, runs]);
 
@@ -1197,10 +1186,10 @@ export function App() {
     for (const run of runs) {
       const url = run.repoUrls[0] || "";
       // Local runs carry a path; those show up under 这台电脑 instead.
-      if (url && !isLocalPathLike(url)) map.set(url, repoPath(url));
+      if (url && !isLocalPath(url)) map.set(url, repoShort(url));
     }
     for (const url of activeProject?.defaultRepoUrls ?? []) {
-      if (url) map.set(url, repoPath(url));
+      if (url) map.set(url, repoShort(url));
     }
     return [...map.entries()].map(([url, label]) => ({ url, label }));
   }, [activeProject, runs]);
@@ -1420,7 +1409,7 @@ export function App() {
             inboxExpanded={railInboxExpanded}
             folderOpen={repoOpen}
             runningLocalRunIds={runningRunIds}
-            formatRel={formatRel}
+            formatRel={formatRelShort}
             onToggleInbox={() => setRailInboxOpen((cur) => !cur)}
             onToggleSpaces={() => setRailSpacesOpen((cur) => !cur)}
             onToggleInboxExpanded={() => setRailInboxExpanded((cur) => !cur)}
