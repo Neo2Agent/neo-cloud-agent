@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_PRODUCTION_CONTROL_PLANE } from "../src/ports.ts";
+import { spawnPnpm } from "../../../scripts/spawn-pnpm.ts";
 
 const deskRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(deskRoot, "../..");
@@ -10,7 +11,10 @@ const outDir = path.join(deskRoot, "out");
 
 function run(command: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv }): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: opts.cwd, env: opts.env, stdio: "inherit" });
+    const child =
+      command === "pnpm"
+        ? spawnPnpm(args, { cwd: opts.cwd, env: opts.env, stdio: "inherit" })
+        : spawn(command, args, { cwd: opts.cwd, env: opts.env, stdio: "inherit" });
     child.on("exit", (code) => {
       if (code === 0) resolve();
       else reject(new Error(`${command} ${args.join(" ")} exited ${code}`));

@@ -35,7 +35,7 @@ test("createDesk returns a token that can be looked up", () => {
   assert.equal(findDeskByToken(created.token)?.id, created.desk.id);
   assert.equal(findDeskByToken("desk_nope"), undefined);
   assert.equal(listDesks("user_ada").some((item) => item.id === created.desk.id), true);
-  assert.equal(created.desk.allowRemote, true);
+  assert.equal(created.desk.allowRemote, false);
 });
 
 test("a desk is only reachable while it holds an inbox stream", () => {
@@ -70,8 +70,10 @@ test("binding a folder is idempotent per repo and can be undone", () => {
 
 test("the remote switch is stored on the desk", () => {
   const created = createDesk({ hostname: "ada-4" }, { userId: "user_ada", orgId: "org_local" });
+  assert.equal(created.desk.allowRemote, false);
+  assert.equal(updateDesk(created.desk.id, { allowRemote: true })?.allowRemote, true);
+  assert.equal(getDesk(created.desk.id)?.allowRemote, true);
   assert.equal(updateDesk(created.desk.id, { allowRemote: false })?.allowRemote, false);
-  assert.equal(getDesk(created.desk.id)?.allowRemote, false);
   assert.equal(updateDesk("desk_missing", { allowRemote: true }), undefined);
 });
 

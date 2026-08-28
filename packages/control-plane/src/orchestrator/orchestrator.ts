@@ -116,6 +116,7 @@ import {
   touchDesk,
   waitDeskAssignment,
 } from "../desks/store.js";
+import { deskRunVisibleRemotely } from "../desks/visibility.js";
 
 const runs = new Map<string, Run>();
 const followUps = new Map<string, FollowUp[]>();
@@ -855,10 +856,15 @@ export function projectRunCard(run: Run): ProjectRunCard {
   };
 }
 
-export function listProjectRunCards(projectId: string, actorUserId: string): ProjectRunCard[] {
+export function listProjectRunCards(
+  projectId: string,
+  actorUserId: string,
+  opts: { deskClient?: boolean } = {},
+): ProjectRunCard[] {
   return listRuns()
     .filter((run) => run.projectId === projectId)
     .filter((run) => run.userId === actorUserId || run.assigneeUserId === actorUserId || run.collaborators?.some((item) => item.userId === actorUserId))
+    .filter((run) => opts.deskClient || deskRunVisibleRemotely(run))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .map((run) => {
       const card = projectRunCard(run);
@@ -2119,14 +2125,23 @@ export function abortRun(runId: string): Run {
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     return run;
   }
+  clearActiveTurn(runId);
+  inbound.get(runId)?.push({ type: "abort" });
+  if (isDeskTarget(run.executionTarget)) {
+    pushDeskInbox(run.executionTarget.deskId ?? "", { kind: "cancel", runId, reason: "用户停止" });
+    run.status = "IDLE";
+    run.errorMessage = null;
+    run.idleAt = now();
+    run.updatedAt = now();
+    publish(event(runId, "run.idle", "Stopped"));
+    flushRun(runId);
+    return run;
+  }
   if (isWorkerAttached(runId)) {
-    inbound.get(runId)?.push({ type: "abort" });
-    clearActiveTurn(runId);
     run.updatedAt = now();
     flushRun(runId);
     return run;
   }
-  clearActiveTurn(runId);
   inbound.set(runId, []);
   run.status = "IDLE";
   run.errorMessage = null;

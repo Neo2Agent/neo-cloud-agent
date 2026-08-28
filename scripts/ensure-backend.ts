@@ -1,6 +1,7 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnPnpm } from "./spawn-pnpm.ts";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -31,8 +32,7 @@ export async function ensureBackend(): Promise<ChildProcess | null> {
     // start it
   }
   console.log("starting control-plane :8080 and llm-gateway :8081");
-  const child = spawn(
-    "pnpm",
+  const child = spawnPnpm(
     ["--parallel", "--filter", "@neo-cloud-agent/control-plane", "--filter", "@neo-cloud-agent/llm-gateway", "dev"],
     { cwd: root, stdio: "inherit", env: process.env },
   );

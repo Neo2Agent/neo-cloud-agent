@@ -1,4 +1,4 @@
-import type { FollowUp, PublicLlmSettings } from "@neo-cloud-agent/contracts";
+import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
 import { decodeExpertPick, encodeExpertPick, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
@@ -6,15 +6,21 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ExecutionTarget, Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Select, Tooltip } from "@neo-cloud-agent/ui";
+import { Tooltip } from "@neo-cloud-agent/ui";
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
 import {
   asWorkspaceRef,
   deskBridge,
+  isLocalDeskKind,
   localRunFolder,
+  localRunLabel,
   localRunTarget,
   mergeDeskTarget,
+  DESK_CLIENT_QUERY,
+  TARGET_CLOUD,
+  TARGET_DESK,
+  TARGET_REMOTE,
   MISSING_DESK_ID_HINT,
   STALE_DESK_HINT,
   withApiBase,
@@ -24,9 +30,8 @@ import {
 } from "./desk";
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
-import { WORKSPACE_SCOPE_HINT } from "../src/folder-auth";
 import { isLoopbackOrigin } from "../src/ports";
-import { groupRailSessions, isLocalPath } from "../src/rail";
+import { groupRailSessions } from "../src/rail";
 import {
   hashForProject,
   inviteTokenFromDeepLink,
@@ -40,18 +45,24 @@ import { SidePanel, type SidePanelTab } from "./SidePanel";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
 import { localRunView, otherRunningLocalRuns, runningLocalRunIds } from "./chat/local-run-view";
 import { RailSessions } from "./chat/RailSessions";
-import { initials, repoShort } from "./project/helpers";
+import { initials } from "./project/helpers";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
 import type { WorkbenchTab } from "./project/types";
 import {
+  batchTurnSignal,
   isActiveRunStatus,
-  isTerminalTurnEvent,
   liveActivityLabel,
   parseSse,
+  appendPendingUser,
+  dropResolvedPendingUsers,
+  mergeUnresolvedPending,
+  pendingUserArrived,
   runEventsQuery,
   statusFromEventKind,
+  withPendingUser,
+  type PendingUser,
 } from "../src/stream";
 import {
   AutomationCreateForm,
@@ -61,8 +72,9 @@ import {
   type ComposerMention,
   loadSavedModels,
   Modal,
-  ModelSettingsPage,
   OPENAI_BASE_URL,
+  SettingsPage,
+  type SettingsSection,
   ProjectCreateForm,
   ProjectsPage,
   rememberSavedModel,
@@ -120,11 +132,6 @@ function folderName(value: string): string {
   return path0(value).split(/[\\/]/).pop() || value;
 }
 
-/** `repoShort`, plus the reading a run with no repo at all should get. */
-function repoPath(url?: string): string {
-  return url ? repoShort(url) : "Inbox";
-}
-
 function repoLabel(url?: string): string {
   if (!url) return "Inbox";
   try {
@@ -157,6 +164,8 @@ function formatRelShort(iso?: string | null): string {
 function isCloudRun(run?: Run | null): boolean {
   return run?.executionTarget?.loop !== "desk";
 }
+
+const TURN_IDLE_GRACE_MS = 600;
 
 function diffStats(text: string): { added: number; removed: number } {
   let added = 0;
@@ -205,7 +214,7 @@ export function App() {
   const [runId, setRunId] = useState<string | null>(null);
   const [current, setCurrent] = useState<Run | null>(null);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
-  const [queuedFollowUps, setQueuedFollowUps] = useState<FollowUp[]>([]);
+  const [pendingTurn, setPendingTurn] = useState<PendingUser | null>(null);
   const [queueEpoch, setQueueEpoch] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
@@ -224,7 +233,8 @@ export function App() {
   const [modelKey, setModelKey] = useState("");
   const [modelBaseUrl, setModelBaseUrl] = useState(OPENAI_BASE_URL);
   const [modelBusy, setModelBusy] = useState(false);
-  const [composerRepo, setComposerRepo] = useState("");
+  const [modelError, setModelError] = useState("");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("basics");
   const [contextOpen, setContextOpen] = useState<ContextMenuId>(null);
   const [repoOpen, setRepoOpen] = useState<Record<string, boolean>>({});
   const [railInboxOpen, setRailInboxOpen] = useState(true);
@@ -240,8 +250,6 @@ export function App() {
   // single slot would show whichever one reported last.
   const [localStatuses, setLocalStatuses] = useState<Record<string, DeskRunStatus>>({});
   const [workspaces, setWorkspaces] = useState<DeskWorkspaceRef[]>([]);
-  const [requireApproval, setRequireApproval] = useState(false);
-  const [remoteControl, setRemoteControl] = useState(false);
   const [maxLocalRuns, setMaxLocalRuns] = useState(DEFAULT_MAX_LOCAL_RUNS);
   /** Said once when a new run joins a folder someone else is already editing. */
   const [localNotice, setLocalNotice] = useState("");
@@ -251,7 +259,9 @@ export function App() {
   const tokenRef = useRef("");
   const sourceRef = useRef<EventSource | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
+  const runIdRef = useRef<string | null>(null);
   const streamFrameRef = useRef(0);
+  const idleTimerRef = useRef(0);
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -270,7 +280,14 @@ export function App() {
     const response = await api(tokenRef.current, "/v1/runs");
     if (!response.ok) return;
     const body = await readJson<{ runs?: Run[] }>(response);
-    setRuns(body.runs ?? []);
+    const next = body.runs ?? [];
+    setRuns(next);
+    setCurrent((cur) => {
+      if (!cur) return cur;
+      const fresh = next.find((item) => item.id === cur.id);
+      if (!fresh || fresh.status === cur.status) return cur;
+      return { ...cur, status: fresh.status };
+    });
   }, []);
 
   const refreshAutomations = useCallback(async () => {
@@ -311,6 +328,7 @@ export function App() {
     setActiveProject(detail);
     setWorkbenchTab(tab);
     setInviteToken(null);
+    runIdRef.current = null;
     setRunId(null);
     setCurrent(null);
     setNav("projects");
@@ -345,6 +363,10 @@ export function App() {
       cancelAnimationFrame(streamFrameRef.current);
       streamFrameRef.current = 0;
     }
+    if (idleTimerRef.current) {
+      window.clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = 0;
+    }
     sourceRef.current?.close();
     sourceRef.current = null;
   }, []);
@@ -353,7 +375,7 @@ export function App() {
     (id: string, after?: string | null) => {
       closeStream();
       const cursor = after ?? lastEventIdRef.current;
-      const query = runEventsQuery({ after: cursor, accessToken: tokenRef.current });
+      const query = runEventsQuery({ after: cursor, accessToken: tokenRef.current, client: DESK_CLIENT_QUERY });
       const source = new EventSource(withApiBase(`/v1/runs/${id}/events${query}`));
       const pending: RunEvent[] = [];
       const flush = () => {
@@ -361,20 +383,34 @@ export function App() {
         if (sourceRef.current !== source) return;
         const batch = pending.splice(0);
         if (batch.length === 0) return;
+        const signal = batchTurnSignal(batch);
         setMessages((prev) => {
-          const next = applyRunEventsToMessages(prev, batch);
-          return batch.some((event) => isTerminalTurnEvent(event.kind)) ? settleTranscriptMessages(next) : next;
+          const next = dropResolvedPendingUsers(applyRunEventsToMessages(prev, batch));
+          return signal === "fail" ? settleTranscriptMessages(next) : next;
         });
         setCurrent((prev) => {
           if (!prev || prev.id !== id) return prev;
           let status = prev.status;
           for (const event of batch) {
+            if (event.kind === "run.idle" || event.kind === "agent.end") continue;
             status = (statusFromEventKind(event.kind, status) as Run["status"]) ?? status;
           }
+          if (signal === "work") status = "RUNNING";
           return status === prev.status ? prev : { ...prev, status };
         });
-        if (batch.some((event) => event.kind === "run.idle" || event.kind === "run.error")) {
+        if (idleTimerRef.current) {
+          window.clearTimeout(idleTimerRef.current);
+          idleTimerRef.current = 0;
+        }
+        if (signal === "fail") {
           void refreshRuns();
+        } else if (signal === "idle") {
+          idleTimerRef.current = window.setTimeout(() => {
+            idleTimerRef.current = 0;
+            setMessages((prev) => settleTranscriptMessages(prev));
+            setCurrent((prev) => (prev && prev.id === id ? { ...prev, status: "IDLE" } : prev));
+            void refreshRuns();
+          }, TURN_IDLE_GRACE_MS);
         }
         if (batch.some((event) => event.kind === "followup.queued" || event.kind === "followup.delivered")) {
           setQueueEpoch((cur) => cur + 1);
@@ -404,7 +440,9 @@ export function App() {
   listenRef.current = listen;
 
   const openRun = useCallback(
-    async (id: string, opts?: { record?: boolean }) => {
+    async (id: string, opts?: { record?: boolean; keepPending?: boolean }) => {
+      const previousId = runIdRef.current;
+      runIdRef.current = id;
       setRunId(id);
       setNav("chats");
       if (opts?.record !== false) {
@@ -423,7 +461,10 @@ export function App() {
       if (!runRes.ok) return;
       const run = await readJson<Run>(runRes);
       setCurrent(run);
-      setQueuedFollowUps([]);
+      // Reloading the same run (worker dispatch / refresh) must not wipe the
+      // optimistic bubble. Follow-ups stay off the server transcript until the
+      // worker takes them.
+      if (previousId !== id && !opts?.keepPending) setPendingTurn(null);
       setChatToolsOpen(false);
       if (run.projectId) {
         const projectRes = await api(tokenRef.current, `/v1/projects/${run.projectId}`);
@@ -438,10 +479,11 @@ export function App() {
         const body = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
         const snapshot = body.snapshot;
         const loaded = snapshot?.messages ?? [];
-        setMessages(isActiveRunStatus(run.status) ? loaded : settleTranscriptMessages(loaded));
+        const settled = isActiveRunStatus(run.status) ? loaded : settleTranscriptMessages(loaded);
+        setMessages((prev) => (previousId === id ? mergeUnresolvedPending(settled, prev) : settled));
         lastEventIdRef.current = snapshot?.lastEventId ?? null;
       } else {
-        setMessages([]);
+        setMessages((prev) => (previousId === id ? mergeUnresolvedPending([], prev) : []));
         lastEventIdRef.current = null;
       }
       if (run.executionTarget?.loop === "desk") {
@@ -561,15 +603,16 @@ export function App() {
     }
   };
 
-  const pickLocalFolder = useCallback(async () => {
+  const pickLocalFolder = useCallback(async (kind?: DeskTarget["kind"]) => {
     const bridge = deskBridge();
     if (!bridge) return;
     const picked = asWorkspaceRef(await bridge.pickFolder());
     if (!picked) return;
     setFolder(picked.folder);
     setWorkspaces((await bridge.listWorkspaces?.().catch(() => [])) ?? []);
+    const nextKind = kind && isLocalDeskKind(kind) ? kind : TARGET_DESK;
     applyTargetRef.current({
-      kind: "desk",
+      kind: nextKind,
       folder: picked.folder,
       workspaceId: picked.id || undefined,
       deskId: deskIdRef.current,
@@ -604,10 +647,9 @@ export function App() {
     const handoff = await api(tokenRef.current, `/v1/runs/${id}/handoff`, {
       method: "POST",
       body: JSON.stringify({
-        // Only this run's own workspace. Filling the gap with whatever the
-        // picker holds would hand the run a folder it never worked in; with no
-        // workspace id the main process uses `runFolder`, which is this run's.
-        target: { loop: "desk", tools: "desk", deskId, deskWorkspaceId: deskTarget?.deskWorkspaceId },
+        // Same-machine resume: the folder is `runFolder` (this run's path).
+        // A local workspace id would make dispatch look it up on the server.
+        target: { loop: "desk", tools: "desk", deskId },
       }),
     });
     if (!handoff.ok) {
@@ -621,15 +663,24 @@ export function App() {
     }
   }, []);
 
+  const stopCurrentTurn = () => {
+    if (!current) return;
+    if (current.executionTarget?.loop === "desk") {
+      void deskBridge()?.stopRun?.(current.id);
+    }
+    void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
+    setPendingTurn(null);
+    setCurrent((prev) => (prev && prev.id === current.id ? { ...prev, status: "IDLE" } : prev));
+  };
+
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
     const text = (draft ?? prompt).trim();
     if (!text || sending) return;
     // A failure from an earlier turn must not sit under the composer forever.
     setAuthError("");
-    const local = target.kind === "desk";
-    if (local && !folder) {
-      // Do not create a run that can never start. Ask for the folder first.
-      setAuthError("先选一个本机文件夹，Agent 才知道该改哪里。");
+    const local = isLocalDeskKind(target.kind);
+    if (target.kind === TARGET_REMOTE && !folder) {
+      setAuthError("Remote Control 要先选一个本机文件夹，网页才能在同一目录接着聊。");
       return;
     }
     let localDeskId = target.deskId || deskIdRef.current;
@@ -652,15 +703,28 @@ export function App() {
     const askPrefix = mode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     const startNew = opts?.asNew || !runId;
     const boundTodo = opts && "todo" in opts ? opts.todo : pendingTodo;
+    const composed = `${askPrefix}${startNew && boundTodo ? `待办：${boundTodo.title}\n\n` : ""}${text}`;
+    const pending: PendingUser = {
+      id: `pending-${Date.now()}`,
+      text: composed,
+      createdAt: new Date().toISOString(),
+    };
     setSending(true);
     if (!draft) setPrompt("");
+    setPendingTurn(pending);
+    if (!startNew) {
+      setMessages((prev) => appendPendingUser(prev, pending));
+    }
+    if (!startNew && current && !isActiveRunStatus(current.status)) {
+      setCurrent({ ...current, status: "RUNNING" });
+    }
     try {
       if (startNew) {
         const created = await readJson<Run & { assignment?: DeskAssignment; error?: string }>(
           await api(token, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
-              prompt: `${askPrefix}${boundTodo ? `待办：${boundTodo.title}\n\n` : ""}${text}`,
+              prompt: composed,
               model: selectedModel || undefined,
               source: "desk",
               projectId: activeProject?.id,
@@ -670,15 +734,13 @@ export function App() {
               // This window is the desk, so it starts the worker itself instead
               // of waiting to be handed its own run back.
               start: local ? "inline" : undefined,
-              deskWorkspaceId: local ? target.workspaceId : undefined,
-              repoUrls:
-                local && folder
+              repoUrls: local
+                ? folder
                   ? [folder]
-                  : composerRepo
-                    ? [composerRepo]
-                    : activeProject?.defaultRepoUrls?.length
-                      ? activeProject.defaultRepoUrls
-                      : [],
+                  : []
+                : activeProject?.defaultRepoUrls?.length
+                  ? activeProject.defaultRepoUrls
+                  : [],
               target: local ? localRunTarget(target, localDeskId) : { loop: "cloud", tools: "cloud" },
             }),
           }),
@@ -698,18 +760,21 @@ export function App() {
           // an inline assignment. Pull it off the lease instead of waiting.
           await deskBridge()?.takeAssignment?.(created.id, folder);
         }
-        await openRun(created.id);
+        await openRun(created.id, { keepPending: true });
         return;
       }
       await api(token, `/v1/runs/${runId}/follow-ups`, {
         method: "POST",
-        body: JSON.stringify({ text: `${askPrefix}${text}` }),
+        body: JSON.stringify({ text: pending.text }),
       });
       setQueueEpoch((cur) => cur + 1);
       if (current?.executionTarget?.loop === "desk" && localStatuses[runId]?.state !== "running") {
         await resumeLocalRun(runId, current?.executionTarget, localRunFolder(current));
       }
     } catch (error) {
+      setPendingTurn(null);
+      setMessages((prev) => prev.filter((message) => message.id !== pending.id));
+      setPrompt(text);
       setAuthError(error instanceof Error ? error.message : "发送失败");
     } finally {
       setSending(false);
@@ -753,7 +818,9 @@ export function App() {
     });
     const offDispatch = bridge.onDispatched?.(({ runId: id }) => {
       void refreshRuns();
-      void openRunRef.current(id);
+      if (!runIdRef.current || runIdRef.current === id) {
+        void openRunRef.current(id, { keepPending: true });
+      }
     });
     const offTarget = bridge.onTarget?.((saved) => {
       const next = mergeDeskTarget(saved, deskIdRef.current);
@@ -784,8 +851,6 @@ export function App() {
     void bridge
       .getPrefs?.()
       .then((value) => {
-        setRequireApproval(value.requireApproval === true);
-        setRemoteControl(value.remoteControl === true);
         setMaxLocalRuns(normalizeMaxLocalRuns(value.maxLocalRuns));
         if (value.deskId) {
           deskIdRef.current = value.deskId;
@@ -805,6 +870,7 @@ export function App() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "w") {
         if (!runId) return;
         event.preventDefault();
+        runIdRef.current = null;
         setRunId(null);
         setCurrent(null);
         setMessages([]);
@@ -837,42 +903,23 @@ export function App() {
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
-  }, [messages, runId]);
+  }, [messages, pendingTurn, runId]);
 
-  const queuedFollowUpIds = useMemo(
-    () => queuedFollowUps.filter((item) => item.status === "queued").map((item) => item.id),
-    [queuedFollowUps],
-  );
-  const onQueuedChange = useCallback((items: FollowUp[]) => {
-    setQueuedFollowUps((cur) => {
-      if (
-        cur.length === items.length &&
-        cur.every((item, index) => item.id === items[index]?.id && item.status === items[index]?.status && item.text === items[index]?.text)
-      ) {
-        return cur;
-      }
-      return items;
-    });
-  }, []);
   useEffect(() => {
-    if (!authed || !current || current.projectId) return;
-    let cancelled = false;
-    void api(token, `/v1/runs/${current.id}/follow-ups`).then(async (response) => {
-      if (!response.ok || cancelled) return;
-      const body = await readJson<{ followUps?: FollowUp[] }>(response);
-      onQueuedChange((body.followUps ?? []).filter((item) => item.status === "queued"));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [authed, current, onQueuedChange, queueEpoch, token]);
+    if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {
+      setPendingTurn(null);
+    }
+  }, [messages, pendingTurn]);
 
   // This window is the machine, so the local bar already says what the claim
   // handshake would: 正在启动 / 已在这台电脑上运行.
-  const visible = displayTranscriptMessages(messages, {
-    hideFollowUpIds: queuedFollowUpIds,
-    hideDeskHandshake: true,
-  });
+  const visible = withPendingUser(
+    displayTranscriptMessages(messages, {
+      hideDeskHandshake: true,
+    }),
+    pendingTurn,
+  );
+  const busy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
   const activity = liveActivityLabel(visible);
   const rail = useMemo(() => {
     const names = new Map(projects.map((item) => [item.id, item.name]));
@@ -1054,6 +1101,7 @@ export function App() {
   }, [rail]);
 
   const newChat = () => {
+    runIdRef.current = null;
     setRunId(null);
     setCurrent(null);
     setMessages([]);
@@ -1135,7 +1183,7 @@ export function App() {
     const newApiManaged = Boolean(llm.newApi?.consoleUrl || llm.newApi?.url);
     if (!newApiManaged && !llm.configured && !modelKey.trim()) return;
     setModelBusy(true);
-    setAuthError("");
+    setModelError("");
     try {
       const response = await api(token, "/v1/settings/llm", {
         method: "POST",
@@ -1162,15 +1210,16 @@ export function App() {
       setSelectedModel(modelName.trim());
       await refreshLlm();
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "保存失败");
+      setModelError(error instanceof Error ? error.message : "保存失败");
     } finally {
       setModelBusy(false);
     }
   };
 
-  const openSettings = () => {
+  const openSettings = (section: SettingsSection = "basics") => {
     setSearchOpen(false);
     setModelMenu(false);
+    setSettingsSection(section);
     setNav("settings");
   };
 
@@ -1181,32 +1230,11 @@ export function App() {
     return [...new Set(names)];
   }, [llm.model, savedModels, selectedModel]);
 
-  const repoChoices = useMemo(() => {
-    const map = new Map<string, string>();
-    map.set("", "不关联仓库");
-    for (const run of runs) {
-      const url = run.repoUrls[0] || "";
-      // Local runs carry a path; those show up under 这台电脑 instead.
-      if (url && !isLocalPath(url)) map.set(url, repoShort(url));
-    }
-    for (const url of activeProject?.defaultRepoUrls ?? []) {
-      if (url) map.set(url, repoShort(url));
-    }
-    return [...map.entries()].map(([url, label]) => ({ url, label }));
-  }, [activeProject, runs]);
-
-  const contextRepoUrl = current?.repoUrls[0] || composerRepo;
-  const contextRepoName = current
-    ? repoPath(current.repoUrls[0])
-    : composerRepo
-      ? repoPath(composerRepo)
-      : "选择仓库";
-
   const branch = current?.branchName || "";
 
   const localRun = useMemo(() => localRunView(current, localStatuses), [current, localStatuses]);
-  const turnLive = current?.status === "RUNNING" && !localRun.workerDown;
-  const panelIsLocal = current ? localRun.isLocal : target.kind === "desk";
+  const turnLive = Boolean(sending || pendingTurn || current?.status === "RUNNING");
+  const panelIsLocal = current ? localRun.isLocal : isLocalDeskKind(target.kind);
   // An open run answers with its own folder; only the empty composer follows the
   // picker. Letting an open run fall back to the picker would point the file
   // tree and the diff at the wrong repo as soon as two local runs exist.
@@ -1436,7 +1464,7 @@ export function App() {
             <span className="profile-name">{user}</span>
             {remoteApiHost ? <span className="prod-tag">生产</span> : null}
             <Tooltip content="设置" side="top">
-              <button type="button" className="icon-btn" aria-label="Settings" onClick={openSettings}>
+              <button type="button" className="icon-btn" aria-label="Settings" onClick={() => openSettings()}>
                 <IconGear />
               </button>
             </Tooltip>
@@ -1499,6 +1527,7 @@ export function App() {
             projectId={activeProject?.id}
             onSummon={(pick) => {
               setExpertPick({ expertId: pick.expertId, expertTeamId: pick.expertTeamId });
+              runIdRef.current = null;
               setRunId(null);
               setCurrent(null);
               setMessages([]);
@@ -1560,7 +1589,15 @@ export function App() {
             />
           )
         ) : nav === "settings" ? (
-          <ModelSettingsPage
+          <SettingsPage
+            section={settingsSection}
+            onSection={setSettingsSection}
+            maxLocalRuns={maxLocalRuns}
+            onMaxLocalRuns={(value) => {
+              const next = normalizeMaxLocalRuns(value);
+              setMaxLocalRuns(next);
+              void deskBridge()?.setPrefs?.({ maxLocalRuns: next });
+            }}
             name={modelName}
             setName={setModelName}
             apiKey={modelKey}
@@ -1569,119 +1606,10 @@ export function App() {
             setBaseUrl={setModelBaseUrl}
             configured={llm.configured}
             busy={modelBusy}
-            error={authError || undefined}
+            error={modelError || undefined}
             newApi={llm.newApi}
             onSave={() => void saveModel()}
-          >
-            <div className="settings-card">
-              <h2>This computer</h2>
-              <label>
-                <span>Target</span>
-                <Select
-                  value={target.kind}
-                  onValueChange={(value) => applyTarget({ ...target, kind: value as DeskTarget["kind"] })}
-                  options={[
-                    { value: "cloud", label: "Cloud" },
-                    {
-                      value: "desk",
-                      label: canRunLocal ? "This Computer" : "This Computer (needs Electron)",
-                      disabled: !canRunLocal,
-                    },
-                  ]}
-                />
-              </label>
-              <button type="button" className="folder-btn" onClick={() => void pickLocalFolder()}>
-                {folder || "选择本机文件夹…"}
-              </button>
-              <p className="hint">{WORKSPACE_SCOPE_HINT} 写不出这个文件夹。</p>
-              {workspaces.length > 0 ? (
-                <ul className="ws-list">
-                  {workspaces.map((item) => (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        className={`ws-pick${path0(folder) === path0(item.folder) ? " on" : ""}`}
-                        onClick={() => {
-                          setFolder(item.folder);
-                          applyTarget({ ...target, kind: "desk", folder: item.folder, workspaceId: item.id });
-                        }}
-                      >
-                        {item.name}
-                        {item.git ? "" : "（不是 git 仓库）"}
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={() => {
-                          void deskBridge()
-                            ?.unbindWorkspace?.(item.id)
-                            .then(() => deskBridge()?.listWorkspaces?.())
-                            .then((next) => setWorkspaces(next ?? []));
-                          if (path0(folder) === path0(item.folder)) {
-                            setFolder("");
-                            applyTarget({ ...target, folder: undefined, workspaceId: undefined });
-                          }
-                        }}
-                      >
-                        解绑
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <label>
-                <span>同时最多几条本机对话</span>
-                <Select
-                  value={String(maxLocalRuns)}
-                  onValueChange={(value) => {
-                    const next = normalizeMaxLocalRuns(Number(value));
-                    setMaxLocalRuns(next);
-                    void deskBridge()?.setPrefs?.({ maxLocalRuns: next });
-                  }}
-                  options={[1, 2, 3, 4, 6, 8].map((n) => ({ value: String(n), label: `${n} 条` }))}
-                />
-              </label>
-              <p className="hint">
-                不同文件夹可以同时跑。每条都是一个独立进程，开太多会吃满内存和 CPU。
-              </p>
-              <label className="ws-toggle">
-                <input
-                  type="checkbox"
-                  checked={remoteControl}
-                  onChange={(event) => {
-                    const next = event.target.checked;
-                    setRemoteControl(next);
-                    void deskBridge()
-                      ?.setPrefs?.({ remoteControl: next })
-                      .then(() => deskBridge()?.listWorkspaces?.())
-                      .then((items) => setWorkspaces(items ?? []));
-                  }}
-                />
-                <span>Remote control：允许从网页把任务派到这台电脑</span>
-              </label>
-              <p className="hint">
-                关着的时候这台电脑只为你自己工作，网页上看不到它，也看不到你绑了哪些文件夹。打开后才会把
-                <strong>机器名和仓库名</strong>（不含绝对路径）报给控制面，网页的「目标 → 本机」里才会出现这台电脑。
-              </p>
-              {remoteControl ? (
-                <>
-                  <label className="ws-toggle">
-                    <input
-                      type="checkbox"
-                      checked={requireApproval}
-                      onChange={(event) => {
-                        const next = event.target.checked;
-                        setRequireApproval(next);
-                        void deskBridge()?.setPrefs?.({ requireApproval: next });
-                      }}
-                    />
-                    <span>远程派来的对话，每次都先问我</span>
-                  </label>
-                  <p className="hint">绑定文件夹就等于允许远程在里面开对话。打开这个开关会改成每条都先弹确认。</p>
-                </>
-              ) : null}
-            </div>
-          </ModelSettingsPage>
+          />
         ) : (
           <section
             className={`page chat-page${current?.projectId ? " project-chat" : current ? " personal-chat" : ""}${
@@ -1692,7 +1620,7 @@ export function App() {
             {localRun.isLocal ? (
               <div className="local-bar">
                 <IconComputer size={13} />
-                <span>This Computer · {folderName(localFolder)}</span>
+                <span>{localRunLabel(current)} · {folderName(localFolder)}</span>
                 {localRun.status?.state === "starting" ? <em>正在启动…</em> : null}
                 {localRun.status?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
                 {localRun.status?.state === "failed" ? (
@@ -1713,16 +1641,6 @@ export function App() {
                     在这台电脑上继续
                   </button>
                 ) : null}
-                {localRun.status?.state === "running" ? (
-                  <button
-                    type="button"
-                    className="ghost"
-                    title="结束这条对话在本机的 Agent 进程。只想打断这一轮回答，用「停止当前回合」。"
-                    onClick={() => current && void deskBridge()?.stopRun?.(current.id)}
-                  >
-                    结束本机进程
-                  </button>
-                ) : null}
                 {otherLocalRunCount > 0 ? (
                   <em title="另外这些对话也在这台电脑上改文件">另有 {otherLocalRunCount} 条在本机跑</em>
                 ) : null}
@@ -1739,6 +1657,7 @@ export function App() {
                 toolsOpen={chatToolsOpen}
                 visible={visible}
                 activity={activity}
+                busy={busy}
                 feedRef={feedRef}
                 onOpenProject={() => void openProject(current.projectId!)}
                 onSearch={() => {
@@ -1752,9 +1671,7 @@ export function App() {
                   setCurrent(next);
                   setRuns((prev) => [next, ...prev.filter((item) => item.id !== next.id)]);
                 }}
-                onAbort={() => {
-                  void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
-                }}
+                onAbort={stopCurrentTurn}
                 onTransferred={(next) => {
                   setCurrent(next);
                   setRuns((prev) => [next, ...prev.filter((item) => item.id !== next.id && item.id !== current.id)]);
@@ -1764,51 +1681,50 @@ export function App() {
                 }}
                 onCopy={(text) => void copyText(text)}
                 queueEpoch={queueEpoch}
-                onQueuedChange={onQueuedChange}
               />
             ) : current ? (
               <PersonalChatPage
                 title={title}
                 current={current}
-                running={turnLive}
                 visible={visible}
                 activity={activity}
+                busy={busy}
                 user={user}
                 feedRef={feedRef}
-                onSearch={() => {
-                  setSearchOpen(true);
-                  setSearchFilter("all");
-                  requestAnimationFrame(() => searchRef.current?.focus());
-                }}
-                onRefresh={() => void openRun(current.id, { record: false })}
                 onCopy={(text) => void copyText(text)}
-                onAbort={() => {
-                  void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
-                }}
               />
             ) : null}
 
             <footer className={`composer-wrap${current ? "" : " home-wrap"}`}>
               {current ? null : (
                 <ContextBar
-                  repoLabel={contextRepoName}
-                  repos={repoChoices}
-                  repoUrl={contextRepoUrl}
-                  onRepo={(url) => {
-                    setComposerRepo(url);
-                    applyTarget({ ...target, kind: "cloud" });
-                  }}
                   workspaces={workspaces}
                   folder={folder}
                   onWorkspace={(picked) => {
                     setFolder(picked.folder);
-                    applyTarget({ kind: "desk", folder: picked.folder, workspaceId: picked.id, deskId: target.deskId });
+                    applyTarget({
+                      kind: isLocalDeskKind(target.kind) ? target.kind : TARGET_DESK,
+                      folder: picked.folder,
+                      workspaceId: picked.id,
+                      deskId: target.deskId,
+                    });
                   }}
-                  onPickFolder={() => void pickLocalFolder()}
+                  onClearFolder={() => {
+                    setFolder("");
+                    applyTarget({
+                      kind: TARGET_DESK,
+                      folder: "",
+                      workspaceId: undefined,
+                      deskId: target.deskId,
+                    });
+                  }}
+                  onPickFolder={(kind) => void pickLocalFolder(kind)}
                   branch={branch || "main"}
                   targetKind={target.kind}
                   canRunLocal={canRunLocal}
-                  onTarget={(kind) => applyTarget({ ...target, kind, folder: kind === "desk" ? folder : target.folder })}
+                  onTarget={(kind) =>
+                    applyTarget({ ...target, kind, folder: isLocalDeskKind(kind) ? folder : target.folder })
+                  }
                   open={contextOpen}
                   setOpen={setContextOpen}
                   locked={false}
@@ -1843,7 +1759,7 @@ export function App() {
                   setSelectedModel(name);
                   setModelMenu(false);
                 }}
-                onAddModel={openSettings}
+                onAddModel={() => openSettings("models")}
                 onSubmit={() => void send()}
                 taRef={taRef}
                 onComposerKey={onComposerKey}
@@ -1865,15 +1781,8 @@ export function App() {
                   if (item.kind === "expert") setExpertPick({ expertId: item.id });
                   if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
                 }}
-                queued={queuedFollowUps}
-                waiting={Boolean(current && (queuedFollowUps.length > 0 || turnLive))}
-                onStop={
-                  current
-                    ? () => {
-                        void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
-                      }
-                    : undefined
-                }
+                waiting={turnLive}
+                onStop={current ? stopCurrentTurn : undefined}
               />
               {current ? (
                 <p className="composer-note">

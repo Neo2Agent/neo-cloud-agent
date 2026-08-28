@@ -4,7 +4,7 @@
 
 对标 Cursor **Agents Window**（This Computer / Cloud / Remote），不是对话页的 Diff / 终端 / 产物三标签。
 
-项目协同的对象和阶段见 [desk-project-design.md](./desk-project-design.md)。总图见 [architecture-overview.md](./architecture-overview.md)。
+项目协同的对象和阶段见 [desk-project-design.md](./desk-project-design.md)。This Computer 工作区一期见 [desk-this-computer.md](./desk-this-computer.md)。总图见 [architecture-overview.md](./architecture-overview.md)。
 
 ## 不变量
 
@@ -46,7 +46,7 @@
 - 无 `projectId` → `PersonalChatPage`
 - 有 `projectId` → `ProjectChatPage`（项目面包屑、转交、流转待办；**仅云端**可邀请加入这条对话）
 
-`Cmd+W` 关当前会话。本机目标在 composer 上选 This Computer，并先授权一个文件夹。目标只有 **Cloud** 和 **This Computer** 两个：Remote SSH 曾经是一个永久 disabled 的占位项，已经删掉；「别人从网页派活到这台电脑」是设置里的 Remote control 开关，不是 composer 上的目标。
+`Cmd+W` 关当前会话。本机目标在 composer 上选 **This Computer** 或 **Remote Control**，并先授权一个文件夹。Cloud 走云端。Remote SSH 占位已经删掉。网页新开一条派到这台电脑是二期，不是 composer 上的第三项。
 
 ## 右侧栏
 
@@ -76,16 +76,16 @@
 
 ## This Computer 和 Remote control 是两个东西
 
-登记一台机器不等于同意被派活。Desk 设置里有一个开关，**默认关**：
+一期口径见 [desk-this-computer.md](./desk-this-computer.md)。登记一台机器不等于同意被派活，也不等于上报文件夹。
 
-| | This Computer（默认） | Remote control（手动打开） |
-| --- | --- | --- |
-| 谁能发起 | 只有你，在这台机器前面 | 你在网页 / 其他客户端上发 |
-| 控制面知道什么 | 只知道这台机器存在 | 还知道机器名 + 仓库名（**不含绝对路径**） |
-| 网页「目标 → 本机」 | **看不到这台电脑** | 看得到，可选到具体工作区 |
-| 别人派来的 assignment | 直接拒绝：这台电脑没有开启远程派活 | 按绑定的工作区执行 |
+| | This Computer | Remote Control（同一套本机执行） | 二期：网页新开派活 |
+| --- | --- | --- | --- |
+| 谁能发起 | 只有你，在这台 Desk 前面 | 这台 Desk 开场 | 网页新开一条派到这台电脑 |
+| 控制面知道什么 | `deskId` + 本机路径 | 同上 + `remoteControl: true` | 再加机器名 + 仓库名（**不含绝对路径**） |
+| 网页 | 看不见、不能跟进 | 看得见；Desk 在线可跟进同一条 | 「目标 → 本机」可选到具体工作区 |
+| 工作区记在哪 | **这条 run**，不进 desk 清单 | 同左 | `desk.allowRemote` 打开后报到 `desk.workspaces` |
 
-打开开关才会 `PATCH /v1/desks/:id { allowRemote: true }` 并把已绑定的文件夹上报；关掉就设回 `false`。关着的时候 `bindWorkspace` 只写本机记录，用本地 id，不调控制面。
+`dws_local_*` 只留在 Desk 本机。两种本机开场都不传 `deskWorkspaceId`。`bindWorkspace` 只写本机记录。可见性按对话上的 `remoteControl`，不在设置里开整机开关。文件夹仍在 composer 上选。
 
 ## 两条本机路径
 
@@ -175,9 +175,9 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 - **工作区 = 授权目录本身。** 有 `.git` 才有 commit / PR；没有 git 的文件夹仍可读写、开终端。
 - **一份 `.neo`。** 仓库认什么、worker 读什么，和云端同一套 `createWorkspaceLoader`。不为 This Computer 另做 Cursor Customize，也不单独加载 `.cursor/rules`、`.cursor/commands`、`.cursorignore`。Cursor 兼容只保留云端已经有的（`environment.json` 回落、skills / agents / hooks 文件名）。
 - **本机多的是墙和寻址。** 云端 VM 本身就是盒子；本机才有「用户选的文件夹」和真磁盘出界。`NEO_SANDBOX_ROOT` 只对本机 Run 生效：pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝（展开 `~` / `$HOME`，顺着符号链接看真实落点）；`bash` 的重定向（含 `1>` / `2>` / `&>` / `>|`）和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂，但 `ln` 不准把工作区名字链到 `/tmp` 或家目录。出界默认 `deny`，不问人。`ask` / `allowlist` 若以后做，只进 Desk prefs + `NEO_SANDBOX_*`，云端 worker 不读。
-- **选目录就是授权。** 家目录和磁盘根直接拒；`/tmp`、`/Users` 这类过宽目录要二次确认。设置页 hint 和确认框用同一套文案：只改这个文件夹；`.neo` 和云端同一套，不是另一产品。设置「This computer」只露文件夹、并发、Remote control，不加「加载 `.cursor`」开关；composer `/` 不接 Cursor commands。
+- **选目录就是授权。** 家目录和磁盘根直接拒；`/tmp`、`/Users` 这类过宽目录要二次确认。确认框文案：只改这个文件夹；`.neo` 和云端同一套，不是另一产品。设置一期分栏是基础配置（并发上限）和模型配置，不加「加载 `.cursor`」开关；composer `/` 不接 Cursor commands。
 - **`.neo/` 禁止 Agent 写**（执行墙，防并行串改）。同一文件夹两条对话的专家文件、贴图、boot 日志按 runId 写在 `<workspace>/.neo/runs/<runId>/`；读序是 scratch 优先，再回落 `<cwd>/.neo`。session / bootstrap / jwt 仍在 `userData/neo-desk/runs/<runId>/`。整个 `.neo/` 在 `.git/info/exclude` 里。`.git/hooks`、`.git/config`、`.git/info/attributes` 以及云端本来就读的 `.cursor/hooks.json` / `.cursor/hooks/` 同样只读——写进去会活过这一轮。不要再扩一份本机专用「Cursor 保护清单」当产品功能。
-- **绝对路径不上云。** 绑定只上报机器名 + repoKey + 短名；远程端看到 `机器名 · 仓库名`。也不把本机路径同步成别人的项目默认仓库。
+- **一期路径只挂在发起这条 run 的 Desk 侧。** 工作区记在 run 的 `repoUrls[0]`，不报到 desk 工作区清单。清单上报（机器名 + repoKey + 短名、不含绝对路径）是二期 Remote control。也不把本机路径同步成别人的项目默认仓库。
 - **`online` = 正握着 inbox。** 只看时间戳会让一台注册完就退出的电脑看起来还在。
 - **控制面不杀笔记本进程。** `DeskRuntime.destroy` 是空的；停 worker 走 inbox 的 `cancel`，活着靠 worker 心跳。
 - **退出 Desk 会带走 worker。** 它们在改用户自己的文件夹，留一个孤儿进程等于让没人看着的仓库继续被改。`claim` 失败同样会把刚起的进程收掉。
@@ -188,12 +188,14 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 - **每条对话的文件夹由 run 自己说。** `localRunFolder(run)` 读 run 的 `repoUrls[0]`；文件树、diff、`resumeLocalRun` 都用它。回落到「当前选中的文件夹」在并行下必然指错——picker 是给空 composer 用的。同理 handoff 不给 `deskWorkspaceId` 也不能用 picker 的补，宁可不给（主进程会用调用方传的 folder）。
 - **worker 起不来只发 `error`，不发 `exit`。** 所以 `error` 也要释放名额并报失败，否则那个槽位一直被占，攒够上限这台机器就再也开不了本机对话。
 - **per-run 私货按 runId 寻址。** 专家文件、贴图、boot 日志都在 `<workspace>/.neo/runs/<runId>/`；`availableSubagents` / `readExpertWorkspace` 共用 `expertDocRoots` / `expertAgentDirs`，scratch 优先。云端 run 一个工作区只有一条，仍用 `<workspace>/.neo`。
-- 界面上两个「停止」不是一回事：`停止当前回合` 只打断这一轮，`结束本机进程` 杀掉这条对话的本机 Agent 进程。
+- 打断这一轮只用输入框里的停止键；它会停掉本机这一轮的 worker。
 - 一期不允许 Automation 派到本机。
 - 本机 Run **没有**「邀请加入这条对话」。一起干活要开 Cloud，或各开各的云端 Run。
 - **本机对话不能切到云端。** 活儿在你自己的文件夹里，通常还没提交，「搬到云端」只会把真正的改动留在原地。要在云端跑就另开一条云端对话。反向（云端 → 本机）仍然可以，且要求该仓库已在那台机器上绑定。
-- **一个回合就是一个回复气泡。** 模型在一轮里可能多次在文字和工具之间来回，这些是同一条消息里的 blocks，不是多条「Neo 已完成」。
-- 会话列表、transcript、跟进队列仍以控制面为准；关窗口不等于删对话。
+- **一个回合就是一个回复气泡。** 模型在一轮里可能多次在文字和工具之间来回，这些是同一条消息里的 blocks，不是多条「Neo 已完成」。pi 每个 LLM 回合都会 `agent_end`，那不是对话结束；worker 只在 `session.prompt` 返回后发一次 `agent.end`。
+- **跟进是对话，不是排队条。** 当前这条没有未完成回合时，发出去立刻出用户气泡，下面跟 Web 一样的「正在思考…」。本机 FIFO（同一文件夹同时只跑一轮）仍在控制面执行，不再用「排队中 · 用户 · 正文」挡着。
+- **自己在这扇窗口里发的，不弹系统通知。** 本机 worker 一回合一进程，跟进会再拉起进程；那是预期，不是「远程派活」。只有窗口不在前台、或 Remote control 派来的活，才用「本机开始一条对话」。
+- 会话列表、transcript 仍以控制面为准；关窗口不等于删对话。
 
 渲染进程看不到 Node、看不到磁盘，只通过 `window.neoDesk` 选目录、读工作区文件、开终端。
 

@@ -2,7 +2,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
-import type { DeskTargetKind } from "../desk";
+import { isLocalDeskKind, type DeskTargetKind } from "../desk";
 import { IconArrowUp, IconCloud, IconComputer } from "../icons";
 import { ActivityTab } from "./ActivityTab";
 import { AssetsTab } from "./AssetsTab";
@@ -145,8 +145,8 @@ export function ProjectWorkbench({
               />
               <div className="project-composer-tools">
                 <span className="task-kind">
-                  {targetKind === "desk" ? <IconComputer size={14} /> : <IconCloud size={14} />}
-                  {targetKind === "desk" ? "本机任务" : "云端任务"}
+                  {isLocalDeskKind(targetKind) ? <IconComputer size={14} /> : <IconCloud size={14} />}
+                  {targetKind === "remote" ? "Remote Control" : targetKind === "desk" ? "本机任务" : "云端任务"}
                 </span>
                 <button
                   type="button"

@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
 import { repoRoot } from "./ensure-backend.ts";
+import { spawnPnpm, killSpawned } from "./spawn-pnpm.ts";
 
 function run(filter: string): void {
-  const child = spawn("pnpm", ["--filter", filter, "dev"], {
+  const child = spawnPnpm(["--filter", filter, "dev"], {
     cwd: repoRoot(),
     stdio: "inherit",
     env: process.env,
@@ -10,8 +10,8 @@ function run(filter: string): void {
   child.on("exit", (code) => {
     if (code) process.exit(code);
   });
-  process.on("SIGINT", () => child.kill("SIGINT"));
-  process.on("SIGTERM", () => child.kill("SIGTERM"));
+  process.on("SIGINT", () => killSpawned(child, "SIGINT"));
+  process.on("SIGTERM", () => killSpawned(child, "SIGTERM"));
 }
 
 console.log("admin-api :8090  admin-web :5176  (does not start the chat UI or control-plane)");

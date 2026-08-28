@@ -1406,7 +1406,7 @@ export function App() {
         if (picked) {
           return `会在 ${picked.desk.name} 的 ${picked.ws.name} 里跑。`;
         }
-        const available = desks.some((desk) => desk.online && desk.allowRemote !== false && (desk.workspaces?.length ?? 0) > 0);
+        const available = desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0);
         return available
           ? "选一台已打开 Desk 的电脑。"
           : "没有可用的电脑。先打开 Desk 并在设置里绑定一个文件夹。";

@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_DESK_UI_PORT, deskClientOrigin, isLoopbackOrigin } from "../src/ports.ts";
 import { ensureBackend, waitForHttp } from "../../../scripts/ensure-backend.ts";
+import { spawnPnpm, killSpawned } from "../../../scripts/spawn-pnpm.ts";
 
 const deskRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     console.log(`desk client → ${apiBase} (not starting local :8080)`);
   }
 
-  const vite = spawn("pnpm", ["exec", "vite", "--config", "ui/vite.config.ts"], {
+  const vite = spawnPnpm(["exec", "vite", "--config", "ui/vite.config.ts"], {
     cwd: deskRoot,
     stdio: "inherit",
     env: { ...process.env, NEO_DESK_UI_PORT: String(uiPort), NEO_CONTROL_PLANE_URL: apiBase },
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   await waitForHttp(uiUrl);
   console.log(`desk UI vite on ${uiUrl}; opening Electron (not a browser tab)`);
 
-  const electron = spawn("pnpm", ["exec", "electron", "app/main.cjs"], {
+  const electron = spawnPnpm(["exec", "electron", "app/main.cjs"], {
     cwd: deskRoot,
     stdio: "inherit",
     env: {
@@ -37,13 +37,13 @@ async function main(): Promise<void> {
   });
 
   const stop = () => {
-    electron.kill("SIGTERM");
-    vite.kill("SIGTERM");
+    killSpawned(electron);
+    killSpawned(vite);
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
   electron.on("exit", (code) => {
-    vite.kill("SIGTERM");
+    killSpawned(vite);
     process.exit(code ?? 0);
   });
 }

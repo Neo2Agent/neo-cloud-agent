@@ -290,6 +290,7 @@ const RESTART_HEARTBEAT = /heartbeat lost after control plane restart/i;
 const SLOT_BUSY_NOTICE = /all VM slots are busy/i;
 /** Control plane waiting for a desk to pick the run up. Never user-facing on the desk itself. */
 const DESK_CLAIM_NOTICE = /(等待本机 Desk 认领|等待 Desk 认领|已派给这台电脑，等待启动)/;
+const INTERRUPTED_QUEUE_NOTICE = /中断的回合已自动排队/;
 
 function isTransientInfraNotice(text: string | undefined): boolean {
   const value = text ?? "";
@@ -297,7 +298,8 @@ function isTransientInfraNotice(text: string | undefined): boolean {
 }
 
 export function isDeskHandshakeNotice(text: string | undefined): boolean {
-  return DESK_CLAIM_NOTICE.test(text ?? "");
+  const value = text ?? "";
+  return DESK_CLAIM_NOTICE.test(value) || INTERRUPTED_QUEUE_NOTICE.test(value);
 }
 
 export function isStaleRestartNotice(message: TranscriptMessage, later: TranscriptMessage[]): boolean {
@@ -371,8 +373,27 @@ function finishAssistant(state: BuildState): void {
   state.open = null;
 }
 
+function lastTurnAssistant(state: BuildState): TranscriptMessage | null {
+  for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+    const message = state.messages[index];
+    if (message?.role === "user") {
+      return null;
+    }
+    if (message?.role === "assistant") {
+      return message;
+    }
+  }
+  return null;
+}
+
 function ensureAssistant(state: BuildState, event: RunEvent): TranscriptMessage {
   if (!state.open) {
+    const existing = lastTurnAssistant(state);
+    if (existing) {
+      state.open = existing;
+      existing.streaming = true;
+      return existing;
+    }
     state.open = {
       id: event.id,
       role: "assistant",
@@ -509,7 +530,14 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     return;
   }
   if (event.kind === "agent.start") {
-    finishAssistant(state);
+    // pi emits this for every LLM round. Closing here splits write/read/text
+    // into separate Neo avatars. A new bubble starts on the next user.message.
+    const open = state.open ?? lastTurnAssistant(state);
+    if (open) {
+      state.open = open;
+      open.streaming = true;
+      touch(open, event.createdAt);
+    }
     return;
   }
   // One user turn is one reply bubble. The model may alternate text and tools
@@ -533,7 +561,25 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     }
     return;
   }
-  if (event.kind === "agent.end" || event.kind === "run.idle") {
+  if (event.kind === "agent.end") {
+    for (const message of state.messages) {
+      if (message.role === "assistant") {
+        markToolsDone(message);
+      }
+    }
+    const open = state.open ?? lastTurnAssistant(state);
+    if (open && !hasAssistantContent(open)) {
+      finishAssistant(state);
+      return;
+    }
+    if (open) {
+      // More LLM rounds may follow in this user turn. run.idle closes it.
+      state.open = open;
+      open.streaming = true;
+    }
+    return;
+  }
+  if (event.kind === "run.idle") {
     settleAll(state, event.createdAt);
     return;
   }

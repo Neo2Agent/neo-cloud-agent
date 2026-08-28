@@ -18,7 +18,7 @@ type MachineOption = { deskId: string; workspaceId: string; label: string };
 function machineOptions(desks: Desk[]): MachineOption[] {
   const out: MachineOption[] = [];
   for (const desk of desks) {
-    if (!desk.online || desk.allowRemote === false) {
+    if (!desk.online || desk.allowRemote !== true) {
       continue;
     }
     for (const workspace of desk.workspaces ?? []) {
