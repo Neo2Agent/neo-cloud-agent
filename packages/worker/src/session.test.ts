@@ -66,6 +66,8 @@ test("gateway model spec uses each model's advertised window", () => {
   assert.equal(supportsVision("deepseek-v4-flash"), false);
   assert.equal(supportsVision("deepseek-v4-flash-vision-exp"), true);
   assert.equal(supportsVision("gpt-4o-mini"), true);
+  assert.equal(gatewayModelSpec("deepseek-v4-flash").maxTokens, 16_384);
+  assert.ok(gatewayModelSpec("deepseek-v4-flash").maxTokens < 384_000);
 });
 
 test("readExpertWorkspace loads Role Override and tool allowlist", () => {

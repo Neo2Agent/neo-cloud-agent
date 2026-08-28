@@ -6,6 +6,14 @@ export interface ModelLimits {
   maxOutputTokens: number;
 }
 
+/**
+ * Cap sent as `max_tokens` on each chat request.
+ * DeepSeek V4 advertises 384k output, but New API pre-deducts wallet
+ * against that reservation (~$33). A long browse turn then 403s every
+ * follow-up even though the wallet still has tens of dollars.
+ */
+export const MAX_REQUEST_OUTPUT_TOKENS = 16_384;
+
 const DEEPSEEK_V4: ModelLimits = {
   contextWindow: 1_000_000,
   maxOutputTokens: 384_000,
@@ -39,6 +47,15 @@ function guessUpstream(modelId: string): LlmUpstreamMode {
     return "deepseek";
   }
   return "mock";
+}
+
+/** Tokens we actually send as max_tokens. Unknown models keep the old 8k default. */
+export function resolveRequestMaxTokens(modelId?: string | null): number {
+  const limits = resolveModelLimits(modelId);
+  if (!limits) {
+    return 8192;
+  }
+  return Math.min(limits.maxOutputTokens, MAX_REQUEST_OUTPUT_TOKENS);
 }
 
 /** Resolve a public or upstream model id to its advertised limits. Unknown models return null. */

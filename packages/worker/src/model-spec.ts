@@ -1,4 +1,4 @@
-import { isDeepseekVisionModel, resolveModelLimits } from "@neo-cloud-agent/contracts";
+import { isDeepseekVisionModel, resolveModelLimits, resolveRequestMaxTokens } from "@neo-cloud-agent/contracts";
 
 export function publicModelId(modelId: string): string {
   return modelId.includes("/") ? modelId.split("/")[1]! : modelId;
@@ -16,7 +16,7 @@ export function gatewayModelSpec(modelId: string) {
     id: publicModelId(modelId),
     name: modelId,
     contextWindow: limits?.contextWindow ?? 0,
-    maxTokens: limits?.maxOutputTokens ?? 8192,
+    maxTokens: resolveRequestMaxTokens(modelId),
     compactionEnabled: Boolean(limits?.contextWindow),
   };
 }

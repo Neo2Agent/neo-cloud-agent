@@ -5,6 +5,7 @@ import {
   applyRunEventsToMessages,
   buildTranscriptSnapshot,
   displayTranscriptMessages,
+  isSetupKind,
   pageTranscriptMessages,
   pageTranscriptSnapshot,
   sortRunEvents,
@@ -159,6 +160,35 @@ test("stale control-plane restart notices hide after the conversation continues"
     { hideStaleRestart: true },
   );
   assert.equal(busy.length, 0);
+});
+
+test("llm.error shows as a setup notice; llm.usage does not", () => {
+  assert.equal(isSetupKind("llm.error"), true);
+  assert.equal(isSetupKind("llm.usage"), false);
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "继续啊" } }),
+    ev({ id: "s1", kind: "agent.start" }),
+    ev({ id: "m1", kind: "message.start" }),
+    ev({ id: "e1", kind: "message.end" }),
+    ev({ id: "z1", kind: "agent.end" }),
+    ev({
+      id: "err",
+      kind: "llm.error",
+      level: "error",
+      title: "模型没有返回内容",
+      detail: "上游拒绝了这次请求",
+    }),
+    ev({ id: "use", kind: "llm.usage", title: "Token usage", data: { promptTokens: 12 } }),
+  ]);
+  assert.deepEqual(
+    snapshot.messages.map((item) => item.role),
+    ["user", "setup"],
+  );
+  assert.match(snapshot.messages[1]?.text ?? "", /模型没有返回内容/);
+  assert.equal(
+    snapshot.messages.some((item) => /Token usage/.test(item.text)),
+    false,
+  );
 });
 
 test("one user turn is one reply bubble even when text and tools alternate", () => {
