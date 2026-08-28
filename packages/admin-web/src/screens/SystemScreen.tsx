@@ -10,12 +10,20 @@ export function SystemScreen({ overview, limits }: Props) {
   const policies = Object.entries(limits?.policies ?? {});
   const consoleUrl = overview.newApi.consoleUrl || overview.newApi.url;
   return (
-    <div className="stack">
+    <section className="page catalog-page">
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">系统</p>
+          <h2>运行时和限流</h2>
+          <p className="hint">管理台只读，渠道和密钥不在这里改。</p>
+        </div>
+      </header>
+
       <section className="panel">
         <header className="panel-head">
           <div>
-            <h2>运行时</h2>
-            <p className="muted">管理台只读，不改渠道和密钥。</p>
+            <h3>运行时</h3>
+            <p className="hint">元数据、事件总线和 worker 从控制面读出来。</p>
           </div>
         </header>
         <dl className="facts facts-wide">
@@ -43,8 +51,8 @@ export function SystemScreen({ overview, limits }: Props) {
       <section className="panel">
         <header className="panel-head">
           <div>
-            <h2>模型 / New API</h2>
-            <p className="muted">渠道和定价在 New API。这里只给入口。</p>
+            <h3>模型 / New API</h3>
+            <p className="hint">渠道和定价在 New API。这里只给入口。</p>
           </div>
         </header>
         <p className="body">
@@ -52,23 +60,23 @@ export function SystemScreen({ overview, limits }: Props) {
           {overview.llm.model ? ` · ${overview.llm.model}` : ""}
         </p>
         {consoleUrl ? (
-          <a className="link-btn" href={consoleUrl} target="_blank" rel="noreferrer">
+          <a className="primary-btn" href={consoleUrl} target="_blank" rel="noreferrer">
             打开 New API 控制台
           </a>
         ) : (
-          <p className="muted">未配置 NEW_API_CONSOLE_URL</p>
+          <p className="hint">未配置 NEW_API_CONSOLE_URL</p>
         )}
       </section>
 
       <section className="panel">
         <header className="panel-head">
           <div>
-            <h2>限流快照</h2>
-            <p className="muted">改阈值请改环境变量，这里不能写。</p>
+            <h3>限流快照</h3>
+            <p className="hint">改阈值请改环境变量，这里不能写。</p>
           </div>
         </header>
         {policies.length === 0 ? (
-          <p className="muted">还没有限流快照。</p>
+          <p className="hint">还没有限流快照。</p>
         ) : (
           <ul className="limit-list">
             {policies.map(([name, policy]) => {
@@ -78,7 +86,7 @@ export function SystemScreen({ overview, limits }: Props) {
                 <li key={name} className="limit-row">
                   <div className="limit-copy">
                     <strong>{policyLabel(name)}</strong>
-                    <span className="muted">
+                    <span className="hint">
                       {policy.kind === "concurrency" ? "并发" : "配额"} · {formatWindow(policy.windowMs)}
                     </span>
                   </div>
@@ -96,6 +104,6 @@ export function SystemScreen({ overview, limits }: Props) {
           </ul>
         )}
       </section>
-    </div>
+    </section>
   );
 }
