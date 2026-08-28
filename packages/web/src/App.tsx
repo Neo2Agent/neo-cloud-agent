@@ -30,15 +30,33 @@ import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import { Tooltip } from "@neo-cloud-agent/ui";
+import {
+  IconArtifacts,
+  IconAutomations,
+  IconChat,
+  IconClose,
+  IconDiff,
+  IconExperts,
+  IconFiles,
+  IconGear,
+  IconMenu,
+  IconPr,
+  IconProjects,
+  IconSidebarClose,
+  IconSkills,
+  IconTerminal,
+} from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
+import { VmSlots } from "./components/VmSlots";
 import {
   baselineContextUsage,
   overlayContextUsage,
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatRunTime, formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
+import { formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
 import {
   activityLabel,
   isActiveRunStatus,
@@ -207,7 +225,7 @@ export function App() {
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sessionTab, setSessionTab] = useState<"chat" | "diff" | "terminal" | "artifacts">("chat");
+  const [sessionTab, setSessionTab] = useState<"chat" | "files" | "diff" | "terminal" | "artifacts">("chat");
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [deskFolder, setDeskFolder] = useState("");
@@ -1299,6 +1317,53 @@ export function App() {
         ? `${Math.max(0, (vms.total || vms.slots.length) - vms.busy)}/${vms.total || vms.slots.length} 个 VM 空闲，发送后占用其中一个（${vms.backend === "loop" ? "loop 挂载" : vms.backend}）。`
         : `${vms.total || vms.slots.length} 个 VM 都在忙。新对话会排队，有空闲槽再自动开始。`;
 
+  const inspectorOpen = mainTab === "chat" && sessionTab !== "chat";
+
+  const openInspector = (id: "files" | "diff" | "terminal" | "artifacts" | "chat") => {
+    setSessionTab(id);
+    setFilesOpen(id === "files");
+    setDiffOpen(id === "diff");
+    setSettingsOpen(false);
+    if (id === "chat" || !runId) return;
+    if (id === "diff") {
+      setDiffLoading(true);
+      setDiffError("");
+      void (async () => {
+        const response = await api(token, `/v1/runs/${runId}/diff`);
+        const body = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
+        if (!response.ok) throw new Error(body.error || "读取 diff 失败");
+        setDiffStat(body.stat ?? "");
+        setDiffPatch(body.patch ?? "");
+      })()
+        .catch((error) => setDiffError(error instanceof Error ? error.message : "读取 diff 失败"))
+        .finally(() => setDiffLoading(false));
+    }
+    if (id === "terminal") {
+      setDiagLoading(true);
+      setDiagError("");
+      void (async () => {
+        const response = await api(token, `/v1/runs/${runId}/diagnostics`);
+        const body = await readJson<{ logs?: Array<{ name: string; content?: string }>; error?: string }>(response);
+        if (!response.ok) throw new Error(body.error || "读取日志失败");
+        setDiagLogs(body.logs ?? []);
+      })()
+        .catch((error) => setDiagError(error instanceof Error ? error.message : "读取日志失败"))
+        .finally(() => setDiagLoading(false));
+    }
+    if (id === "artifacts") {
+      setArtifactsLoading(true);
+      setArtifactsError("");
+      void (async () => {
+        const response = await api(token, `/v1/runs/${runId}/artifacts`);
+        const body = await readJson<{ artifacts?: Array<{ name: string; url?: string; contentType?: string }>; error?: string }>(response);
+        if (!response.ok) throw new Error(body.error || "读取产物失败");
+        setArtifacts(body.artifacts ?? []);
+      })()
+        .catch((error) => setArtifactsError(error instanceof Error ? error.message : "读取产物失败"))
+        .finally(() => setArtifactsLoading(false));
+    }
+  };
+
   const localTargetHint = deskBridge()?.canRunLocal
     ? deskFolder
       ? `本机 · ${deskFolder}`
@@ -1354,15 +1419,13 @@ export function App() {
         <Sidebar
           runs={runs}
           currentRunId={runId}
-          slots={vms.slots}
-          backend={vms.backend}
           userEmail={userEmail}
           authed={Boolean(userEmail)}
           authBusy={authBusy}
           health={healthText}
           pinnedIds={pinnedIds}
           onPin={(id) => setPinnedIds(togglePinnedRun(id))}
-          onClose={toggleSidebar}
+          onClose={narrow ? toggleSidebar : undefined}
           onNewChat={() => {
             setActiveProject(null);
             setMainTab("chat");
@@ -1406,57 +1469,41 @@ export function App() {
         <main className="main">
           <header className="topbar">
             <div className="topbar-lead">
-              <button
-                className="ghost sidebar-toggle"
-                id="sidebar-toggle"
-                type="button"
-                aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
-                onClick={toggleSidebar}
-              >
-                <span aria-hidden="true">{sidebarOpen ? "‹" : "☰"}</span>
-                <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
-              </button>
+              <Tooltip content={sidebarOpen ? "收起侧栏" : "打开对话列表"} side="bottom">
+                <button
+                  className="icon-btn sidebar-toggle"
+                  id="sidebar-toggle"
+                  type="button"
+                  aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
+                  onClick={toggleSidebar}
+                >
+                  {sidebarOpen ? <IconSidebarClose /> : <IconMenu />}
+                  <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
+                </button>
+              </Tooltip>
               <nav className="app-tabs" id="app-tabs" aria-label="主导航">
-                <button
-                  type="button"
-                  className={mainTab === "chat" ? "active" : ""}
-                  aria-current={mainTab === "chat" ? "page" : undefined}
-                  onClick={openChat}
-                >
-                  对话
-                </button>
-                <button
-                  type="button"
-                  className={mainTab === "projects" ? "active" : ""}
-                  aria-current={mainTab === "projects" ? "page" : undefined}
-                  onClick={() => openProjects()}
-                >
-                  项目
-                </button>
-                <button
-                  type="button"
-                  className={mainTab === "experts" ? "active" : ""}
-                  aria-current={mainTab === "experts" ? "page" : undefined}
-                  onClick={() => openExperts()}
-                >
-                  专家
-                </button>
-                <button
-                  type="button"
-                  className={mainTab === "skills" ? "active" : ""}
-                  aria-current={mainTab === "skills" ? "page" : undefined}
-                  onClick={() => openSkills()}
-                >
-                  技能
-                </button>
-                <button
-                  type="button"
-                  className={mainTab === "automations" ? "active" : ""}
-                  aria-current={mainTab === "automations" ? "page" : undefined}
-                  onClick={openAutomations}
-                >
-                  定时任务
-                </button>
+                {(
+                  [
+                    ["chat", "对话", IconChat, openChat],
+                    ["projects", "项目", IconProjects, () => openProjects()],
+                    ["experts", "专家", IconExperts, () => openExperts()],
+                    ["skills", "技能", IconSkills, () => openSkills()],
+                    ["automations", "定时任务", IconAutomations, openAutomations],
+                  ] as const
+                ).map(([id, label, Icon, onClick]) => (
+                  <Tooltip key={id} content={label} side="bottom">
+                    <button
+                      type="button"
+                      className={mainTab === id ? "active" : ""}
+                      aria-label={label}
+                      aria-current={mainTab === id ? "page" : undefined}
+                      onClick={onClick}
+                    >
+                      <Icon size={16} />
+                      <span className="tab-label">{label}</span>
+                    </button>
+                  </Tooltip>
+                ))}
               </nav>
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
@@ -1469,13 +1516,7 @@ export function App() {
                       : mainTab === "automations"
                       ? "定时任务"
                       : currentRun
-                        ? [
-                            currentRun.buildId
-                              ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
-                              : currentRun.branchName ?? shortId(currentRun.id),
-                            runRoleLabel(currentRun, experts, teams),
-                            formatRunTime(currentRun.createdAt, currentRun.updatedAt),
-                          ]
+                        ? [currentRun.branchName ?? shortId(currentRun.id), runRoleLabel(currentRun, experts, teams)]
                             .filter(Boolean)
                             .join(" · ")
                         : expertPick.expertTeamId || expertPick.expertId
@@ -1543,65 +1584,25 @@ export function App() {
               <nav className="session-tabs" hidden={!runId} aria-label="会话标签">
                 {(
                   [
-                    ["chat", "对话"],
-                    ["diff", "Diff"],
-                    ["terminal", "终端"],
-                    ["artifacts", "产物"],
+                    ["chat", "对话", IconChat],
+                    ["files", "工作区", IconFiles],
+                    ["diff", "Diff", IconDiff],
+                    ["terminal", "终端", IconTerminal],
+                    ["artifacts", "产物", IconArtifacts],
                   ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={sessionTab === id ? "active" : ""}
-                    aria-current={sessionTab === id ? "page" : undefined}
-                    onClick={() => {
-                      setSessionTab(id);
-                      setFilesOpen(false);
-                      setDiffOpen(id === "diff");
-                      setSettingsOpen(false);
-                      if (id === "diff" && runId) {
-                        setDiffLoading(true);
-                        setDiffError("");
-                        void (async () => {
-                          const response = await api(token, `/v1/runs/${runId}/diff`);
-                          const body = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
-                          if (!response.ok) throw new Error(body.error || "读取 diff 失败");
-                          setDiffStat(body.stat ?? "");
-                          setDiffPatch(body.patch ?? "");
-                        })()
-                          .catch((error) => setDiffError(error instanceof Error ? error.message : "读取 diff 失败"))
-                          .finally(() => setDiffLoading(false));
-                      }
-                      if (id === "terminal" && runId) {
-                        setDiagLoading(true);
-                        setDiagError("");
-                        void (async () => {
-                          const response = await api(token, `/v1/runs/${runId}/diagnostics`);
-                          const body = await readJson<{ logs?: Array<{ name: string; content?: string }>; error?: string }>(response);
-                          if (!response.ok) throw new Error(body.error || "读取日志失败");
-                          setDiagLogs(body.logs ?? []);
-                        })()
-                          .catch((error) => setDiagError(error instanceof Error ? error.message : "读取日志失败"))
-                          .finally(() => setDiagLoading(false));
-                      }
-                      if (id === "artifacts" && runId) {
-                        setArtifactsLoading(true);
-                        setArtifactsError("");
-                        void (async () => {
-                          const response = await api(token, `/v1/runs/${runId}/artifacts`);
-                          const body = await readJson<{ artifacts?: Array<{ name: string; url?: string; contentType?: string }>; error?: string }>(
-                            response,
-                          );
-                          if (!response.ok) throw new Error(body.error || "读取产物失败");
-                          setArtifacts(body.artifacts ?? []);
-                        })()
-                          .catch((error) => setArtifactsError(error instanceof Error ? error.message : "读取产物失败"))
-                          .finally(() => setArtifactsLoading(false));
-                      }
-                    }}
-                  >
-                    {label}
-                  </button>
+                ).map(([id, label, Icon]) => (
+                  <Tooltip key={id} content={label} side="bottom">
+                    <button
+                      type="button"
+                      className={sessionTab === id ? "active" : ""}
+                      aria-label={label}
+                      aria-current={sessionTab === id ? "page" : undefined}
+                      onClick={() => openInspector(id)}
+                    >
+                      <Icon size={14} />
+                      <span className="tab-label">{label}</span>
+                    </button>
+                  </Tooltip>
                 ))}
               </nav>
               {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
@@ -1637,9 +1638,10 @@ export function App() {
                 归档
               </button>
               <button
-                className="ghost"
+                className="icon-btn"
                 id="toggle-settings"
                 type="button"
+                aria-label={settingsOpen ? "收起设置" : "设置"}
                 aria-expanded={settingsOpen}
                 onClick={() => {
                   const next = !settingsOpen;
@@ -1650,10 +1652,12 @@ export function App() {
                   }
                 }}
               >
-                {settingsOpen ? "收起设置" : "设置"}
+                <IconGear size={16} />
+                <span className="tab-label">{settingsOpen ? "收起设置" : "设置"}</span>
               </button>
               {pr?.url ? (
                 <a className="pr-link" id="pr-link" href={pr.url} target="_blank" rel="noreferrer">
+                  <IconPr size={14} />
                   {pr.draft === false ? "PR" : "草稿 PR"}
                 </a>
               ) : null}
@@ -1685,7 +1689,8 @@ export function App() {
               </details>
             </div>
           </header>
-          <div className="workspace-col">
+          <div className={inspectorOpen ? "workspace-col has-inspector" : "workspace-col"}>
+          <div className="workspace-stage">
           {settingsOpen ? (
             <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label="设置">
               <div className="workspace-drawer-bar">
@@ -1703,6 +1708,17 @@ export function App() {
                   关闭
                 </button>
               </div>
+              <VmSlots
+                slots={vms.slots}
+                backend={vms.backend}
+                currentRunId={runId}
+                runs={runs}
+                onOpenRun={(id) => {
+                  setSettingsOpen(false);
+                  setMainTab("chat");
+                  void openRun(id);
+                }}
+              />
                 <SettingsPanel
                   repo={repo}
                   envId={envId}
@@ -1812,7 +1828,6 @@ export function App() {
                     });
                   }}
                 />
-              <FileTree token={token} runId={runId} open={Boolean(runId)} />
             </aside>
           ) : null}
             {mainTab === "projects" ? (
@@ -1857,33 +1872,6 @@ export function App() {
                   void openRun(id);
                 }}
               />
-            ) : sessionTab === "diff" ? (
-              <DiffPanel
-                open
-                loading={diffLoading}
-                error={diffError}
-                stat={diffStat}
-                patch={diffPatch}
-                committing={committing}
-                commitError={commitError}
-                onCommit={(message) => void commitWorkspace(message)}
-              />
-            ) : sessionTab === "terminal" ? (
-              <TerminalPanel open loading={diagLoading} error={diagError} logs={diagLogs} />
-            ) : sessionTab === "artifacts" ? (
-              <ArtifactsPanel
-                open
-                loading={artifactsLoading}
-                error={artifactsError}
-                artifacts={artifacts}
-                onOpen={
-                  deskBridge()?.openPath
-                    ? (item) => {
-                        if (item.url) void deskBridge()?.openPath?.(item.url);
-                      }
-                    : undefined
-                }
-              />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
                 <Transcript
@@ -1895,9 +1883,58 @@ export function App() {
                   busy={busy}
                   activity={activity}
                   onLoadOlder={loadOlder}
+                  onPickPrompt={setPrompt}
                 />
               </ChatErrorBoundary>
             )}
+          </div>
+          {inspectorOpen ? (
+            <aside className="inspector" id="workspace-inspector" aria-label="工作区">
+              <div className="inspector-bar">
+                <strong>
+                  {sessionTab === "files"
+                    ? "工作区"
+                    : sessionTab === "diff"
+                      ? "Diff"
+                      : sessionTab === "terminal"
+                        ? "终端"
+                        : "产物"}
+                </strong>
+                <button type="button" className="icon-btn" aria-label="关闭检查器" onClick={() => openInspector("chat")}>
+                  <IconClose size={16} />
+                </button>
+              </div>
+              {sessionTab === "files" ? <FileTree token={token} runId={runId} open={Boolean(runId)} /> : null}
+              {sessionTab === "diff" ? (
+                <DiffPanel
+                  open
+                  loading={diffLoading}
+                  error={diffError}
+                  stat={diffStat}
+                  patch={diffPatch}
+                  committing={committing}
+                  commitError={commitError}
+                  onCommit={(message) => void commitWorkspace(message)}
+                />
+              ) : null}
+              {sessionTab === "terminal" ? <TerminalPanel open loading={diagLoading} error={diagError} logs={diagLogs} /> : null}
+              {sessionTab === "artifacts" ? (
+                <ArtifactsPanel
+                  open
+                  loading={artifactsLoading}
+                  error={artifactsError}
+                  artifacts={artifacts}
+                  onOpen={
+                    deskBridge()?.openPath
+                      ? (item) => {
+                          if (item.url) void deskBridge()?.openPath?.(item.url);
+                        }
+                      : undefined
+                  }
+                />
+              ) : null}
+            </aside>
+          ) : null}
           </div>
           {mainTab === "chat" && (activeProject || expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
             <div className="proj-chip-bar" id="project-chip">

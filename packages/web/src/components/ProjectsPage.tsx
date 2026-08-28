@@ -6,6 +6,9 @@ import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/cont
 import { canManageProject, type Project, type ProjectInvite, type ProjectMember } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
+import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
+import { IconBack } from "../icons.js";
+import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
 
 type Props = {
   token: string;
@@ -17,11 +20,16 @@ type Props = {
   onOpenRun: (id: string) => void;
 };
 
+type DetailTab = "chats" | "config" | "members" | "activity";
+type ConfigTab = "instruction" | "experts" | "skills";
+
 export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenProject, onStartChat, onOpenRun }: Props) {
   const [items, setItems] = useState<Project[]>([]);
   const [detail, setDetail] = useState<Project | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [name, setName] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createInstruction, setCreateInstruction] = useState("");
   const [instruction, setInstruction] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
@@ -35,10 +43,37 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
   const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [pinnedPluginIds, setPinnedPluginIds] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [tab, setTab] = useState<DetailTab>("chats");
+  const [configTab, setConfigTab] = useState<ConfigTab>("instruction");
+  const [runPage, setRunPage] = useState(1);
+  const [eventPage, setEventPage] = useState(1);
 
   const selected = detail ?? items.find((item) => item.id === selectedId) ?? null;
   const members = selected?.members ?? [];
   const others = members.filter((item) => item.userId !== userId);
+  const canManage = canManageProject(members.find((member) => member.userId === userId)?.role);
+
+  const filtered = useMemo(
+    () => filterByQuery(items, query, (item) => [item.name, item.instruction]),
+    [items, query],
+  );
+  const listPage = clampPage(page, filtered.length);
+  const visible = paginate(filtered, listPage);
+
+  const pending = useMemo(
+    () => (selected?.invites ?? []).filter((item) => item.status === "pending"),
+    [selected],
+  );
+  const events = useMemo(
+    () => (selected?.events ?? []).slice().reverse(),
+    [selected],
+  );
+  const runListPage = clampPage(runPage, runs.length, 10);
+  const visibleRuns = paginate(runs, runListPage, 10);
+  const eventListPage = clampPage(eventPage, events.length);
+  const visibleEvents = paginate(events, eventListPage);
 
   const refresh = async () => {
     const res = await api(token, "/v1/projects");
@@ -78,9 +113,20 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
   }, [token]);
 
   useEffect(() => {
-    if (selectedId) void loadDetail(selectedId).catch(() => undefined);
-    else setDetail(null);
+    if (selectedId) {
+      setTab("chats");
+      setConfigTab("instruction");
+      setRunPage(1);
+      setEventPage(1);
+      void loadDetail(selectedId).catch(() => undefined);
+    } else {
+      setDetail(null);
+    }
   }, [selectedId, token]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
 
   useEffect(() => {
     if (!inviteToken) {
@@ -96,14 +142,46 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
       .catch((item) => setError(item instanceof Error ? item.message : "邀请无效"));
   }, [inviteToken, token]);
 
-  const pending = useMemo(
-    () => (selected?.invites ?? []).filter((item) => item.status === "pending"),
-    [selected],
-  );
+  const createProject = () => {
+    if (busy || !createName.trim()) return;
+    setBusy(true);
+    setError("");
+    void api(token, "/v1/projects", {
+      method: "POST",
+      body: JSON.stringify({ name: createName.trim(), instruction: createInstruction }),
+    })
+      .then(async (res) => {
+        const body = await readJson<Project & { error?: string }>(res);
+        if (!res.ok) throw new Error(body.error || "创建失败");
+        setCreateName("");
+        setCreateInstruction("");
+        setCreateOpen(false);
+        await refresh();
+        onOpenProject(body.id);
+      })
+      .catch((item) => setError(item instanceof Error ? item.message : "创建失败"))
+      .finally(() => setBusy(false));
+  };
+
+  const saveProject = (body: Record<string, unknown>) => {
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    void api(token, `/v1/projects/${selected.id}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "保存失败");
+        await loadDetail(selected.id);
+      })
+      .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
+      .finally(() => setBusy(false));
+  };
 
   if (inviteToken) {
     return (
-      <section className="proj-page" id="projects-page">
+      <section className="proj-page catalog-page" id="projects-page">
         <header className="proj-page-head">
           <div>
             <p className="eyebrow">项目邀请</p>
@@ -140,248 +218,63 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
 
   if (selected) {
     return (
-      <section className="proj-page" id="projects-page">
+      <section className="proj-page catalog-page" id="projects-page">
         <header className="proj-page-head">
           <div>
-            <button className="ghost" type="button" onClick={() => onOpenProject(null)}>
+            <button className="catalog-back" type="button" onClick={() => onOpenProject(null)}>
+              <IconBack />
               全部项目
             </button>
             <h2>{selected.name}</h2>
-            <p className="hint">{selected.members.length} 位成员 · {runs.length} 条对话</p>
+            <p className="hint">
+              {selected.members.length} 位成员 · {runs.length} 条对话
+            </p>
           </div>
           <button className="proj-add" type="button" onClick={() => onStartChat(selected)}>
             在项目里开对话
           </button>
         </header>
 
-        <form
-          className="proj-card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setBusy(true);
-            setError("");
-            void api(token, `/v1/projects/${selected.id}`, {
-              method: "POST",
-              body: JSON.stringify({ instruction }),
-            })
-              .then(async (res) => {
-                if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "保存失败");
-                await loadDetail(selected.id);
-              })
-              .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
-              .finally(() => setBusy(false));
-          }}
-        >
-          <p className="proj-card-title">项目指令</p>
-          <p className="hint">写给 AI 的团队规则。这个项目里开的对话都会自动带上。</p>
-          <textarea
-            value={instruction}
-            onChange={(event) => setInstruction(event.target.value)}
-            rows={5}
-            placeholder="例如：用中文回复，改代码先跑测试，提交信息写清楚。"
-          />
-          <button className="proj-add" type="submit" disabled={busy}>
-            保存指令
-          </button>
-        </form>
+        <CatalogTabs
+          tabs={[
+            { id: "chats", label: "对话", count: runs.length },
+            { id: "config", label: "配置" },
+            { id: "members", label: "成员", count: members.length },
+            { id: "activity", label: "动态", count: events.length },
+          ]}
+          active={tab}
+          onChange={setTab}
+        />
 
-        <form
-          className="proj-card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setBusy(true);
-            setError("");
-            void api(token, `/v1/projects/${selected.id}`, {
-              method: "POST",
-              body: JSON.stringify({ expertIds: pinnedIds }),
-            })
-              .then(async (res) => {
-                if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "保存失败");
-                await loadDetail(selected.id);
-              })
-              .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
-              .finally(() => setBusy(false));
-          }}
-        >
-          <p className="proj-card-title">项目专家</p>
-          <p className="hint">置顶后，这个项目里开对话时专家选择器会把它们排在前面。</p>
-          <ul className="expert-pin-list">
-            {catalog.map((item) => (
-              <li key={item.id}>
-                <Checkbox
-                  checked={pinnedIds.includes(item.id)}
-                  disabled={!canManageProject(members.find((member) => member.userId === userId)?.role)}
-                  label={expertPickerLabel(item)}
-                  onCheckedChange={(checked) => {
-                    setPinnedIds((prev) => (checked ? [...prev, item.id] : prev.filter((id) => id !== item.id)));
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-          {canManageProject(members.find((member) => member.userId === userId)?.role) ? (
-            <button className="proj-add" type="submit" disabled={busy}>
-              保存置顶
-            </button>
-          ) : (
-            <p className="hint">只有所有者或管理员能改置顶。</p>
-          )}
-        </form>
-
-        <form
-          className="proj-card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setBusy(true);
-            setError("");
-            void api(token, `/v1/projects/${selected.id}`, {
-              method: "POST",
-              body: JSON.stringify({ pluginIds: pinnedPluginIds }),
-            })
-              .then(async (res) => {
-                if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "保存失败");
-                await loadDetail(selected.id);
-              })
-              .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
-              .finally(() => setBusy(false));
-          }}
-        >
-          <p className="proj-card-title">项目技能</p>
-          <p className="hint">钉住后，这个项目里开的对话会把对应 SKILL.md 写进工作区，不必每人自己安装。</p>
-          <ul className="expert-pin-list">
-            {pluginCatalog.map((item) => (
-              <li key={item.id}>
-                <Checkbox
-                  checked={pinnedPluginIds.includes(item.id) || pinnedPluginIds.includes(item.slug)}
-                  disabled={!canManageProject(members.find((member) => member.userId === userId)?.role)}
-                  label={pluginPickerLabel(item)}
-                  onCheckedChange={(checked) => {
-                    setPinnedPluginIds((prev) => (checked ? [...prev, item.id] : prev.filter((id) => id !== item.id && id !== item.slug)));
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-          {canManageProject(members.find((member) => member.userId === userId)?.role) ? (
-            <button className="proj-add" type="submit" disabled={busy}>
-              保存技能
-            </button>
-          ) : (
-            <p className="hint">只有所有者或管理员能改项目技能。</p>
-          )}
-        </form>
-
-        <div className="proj-grid">
-          <div className="proj-card">
-            <p className="proj-card-title">成员</p>
-            <ul className="proj-members">
-              {members.map((item) => (
-                <li key={item.userId}>
-                  <strong>{item.email}</strong>
-                  <span className={`proj-badge ${item.role}`}>{roleLabel(item.role)}</span>
-                </li>
-              ))}
-            </ul>
-            <form
-              className="proj-member-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!memberEmail.trim()) return;
-                setBusy(true);
-                setError("");
-                void api(token, `/v1/projects/${selected.id}/members`, {
-                  method: "POST",
-                  body: JSON.stringify({ email: memberEmail.trim(), password: memberPassword || undefined }),
-                })
-                  .then(async (res) => {
-                    if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "添加失败");
-                    setMemberEmail("");
-                    setMemberPassword("");
-                    await loadDetail(selected.id);
-                  })
-                  .catch((item) => setError(item instanceof Error ? item.message : "添加失败"))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              <label>
-                <span>账号</span>
-                <input value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="同事账号" autoComplete="off" />
-              </label>
-              <label>
-                <span>新账号密码</span>
-                <input
-                  type="password"
-                  value={memberPassword}
-                  onChange={(event) => setMemberPassword(event.target.value)}
-                  placeholder="已有账号可留空"
-                  autoComplete="off"
-                />
-              </label>
-              <button className="ghost" type="submit" disabled={busy || !memberEmail.trim()}>
-                添加成员
-              </button>
-            </form>
-            <div className="proj-invite-row">
-              <button
-                className="ghost"
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setBusy(true);
-                  void api(token, `/v1/projects/${selected.id}/invites`, { method: "POST", body: JSON.stringify({}) })
-                    .then(async (res) => {
-                      const body = await readJson<ProjectInvite & { url?: string; error?: string }>(res);
-                      if (!res.ok) throw new Error(body.error || "创建失败");
-                      setInviteUrl(body.url || `${location.origin}/#/invite/${body.token}`);
-                    })
-                    .catch((item) => setError(item instanceof Error ? item.message : "创建失败"))
-                    .finally(() => setBusy(false));
-                }}
-              >
-                生成邀请链接
-              </button>
-              {inviteUrl ? <input readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} /> : null}
-            </div>
-            {pending.length > 0 ? (
-              <ul className="proj-pending">
-                {pending.map((item) => (
-                  <li key={item.token}>
-                    <span>{item.requestedEmail} 申请加入</span>
-                    <button
-                      className="ghost"
-                      type="button"
-                      onClick={() => {
-                        void api(token, `/v1/projects/${selected.id}/invites/${item.token}/approve`, { method: "POST" }).then(
-                          () => loadDetail(selected.id),
-                        );
-                      }}
-                    >
-                      通过
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-
-          <div className="proj-card">
-            <p className="proj-card-title">项目对话</p>
+        {tab === "chats" ? (
+          <div className="catalog-panel">
             {runs.length === 0 ? (
-              <div className="proj-empty">
-                <strong>还没有对话</strong>
-                <p>点右上角「在项目里开对话」，指令会自动带上。</p>
-              </div>
+              <CatalogEmpty
+                title="还没有对话"
+                hint="点右上角「在项目里开对话」，项目指令会自动带上。"
+                action={
+                  <button className="proj-add" type="button" onClick={() => onStartChat(selected)}>
+                    开对话
+                  </button>
+                }
+              />
             ) : (
-              <ul className="proj-runs">
-                {runs.map((item) => (
-                  <li key={item.id}>
-                    <button type="button" onClick={() => onOpenRun(item.id)}>
-                      <strong>{item.prompt}</strong>
-                      <small>{item.assigneeUserId === userId ? "交给我" : "项目对话"}</small>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="proj-runs">
+                  {visibleRuns.map((item) => (
+                    <li key={item.id}>
+                      <button type="button" onClick={() => onOpenRun(item.id)}>
+                        <strong>{item.prompt}</strong>
+                        <small>
+                          {item.assigneeUserId === userId ? "交给我" : "项目对话"}
+                          {item.createdAt ? ` · ${formatShortDate(item.createdAt)}` : ""}
+                        </small>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <CatalogPager page={runListPage} total={runs.length} pageSize={10} onPage={setRunPage} />
+              </>
             )}
             {others.length > 0 && runs.length > 0 ? (
               <form
@@ -432,102 +325,325 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
               </form>
             ) : null}
           </div>
-        </div>
+        ) : null}
 
-        {selected.events.length > 0 ? (
-          <div className="proj-card">
-            <p className="proj-card-title">动态</p>
-            <ul className="proj-events">
-              {selected.events
-                .slice()
-                .reverse()
-                .slice(0, 12)
-                .map((item) => (
-                  <li key={item.id}>
-                    <strong>{item.actorEmail}</strong>
-                    <span>{item.detail}</span>
-                  </li>
-                ))}
-            </ul>
+        {tab === "config" ? (
+          <div className="catalog-panel">
+            <CatalogTabs
+              tabs={[
+                { id: "instruction", label: "指令" },
+                { id: "experts", label: "专家", count: pinnedIds.length },
+                { id: "skills", label: "技能", count: pinnedPluginIds.length },
+              ]}
+              active={configTab}
+              onChange={setConfigTab}
+            />
+            {configTab === "instruction" ? (
+              <form
+                className="proj-card"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  saveProject({ instruction });
+                }}
+              >
+                <p className="proj-card-title">项目指令</p>
+                <p className="hint">写给 AI 的团队规则。这个项目里开的对话都会自动带上。</p>
+                <textarea
+                  value={instruction}
+                  onChange={(event) => setInstruction(event.target.value)}
+                  rows={6}
+                  placeholder="例如：用中文回复，改代码先跑测试，提交信息写清楚。"
+                />
+                <button className="proj-add" type="submit" disabled={busy}>
+                  保存指令
+                </button>
+              </form>
+            ) : null}
+            {configTab === "experts" ? (
+              <form
+                className="proj-card"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  saveProject({ expertIds: pinnedIds });
+                }}
+              >
+                <p className="proj-card-title">项目专家</p>
+                <p className="hint">置顶后，这个项目里开对话时专家选择器会把它们排在前面。</p>
+                <ul className="expert-pin-list">
+                  {catalog.map((item) => (
+                    <li key={item.id}>
+                      <Checkbox
+                        checked={pinnedIds.includes(item.id)}
+                        disabled={!canManage}
+                        label={expertPickerLabel(item)}
+                        onCheckedChange={(checked) => {
+                          setPinnedIds((prev) => (checked ? [...prev, item.id] : prev.filter((id) => id !== item.id)));
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                {canManage ? (
+                  <button className="proj-add" type="submit" disabled={busy}>
+                    保存置顶
+                  </button>
+                ) : (
+                  <p className="hint">只有所有者或管理员能改置顶。</p>
+                )}
+              </form>
+            ) : null}
+            {configTab === "skills" ? (
+              <form
+                className="proj-card"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  saveProject({ pluginIds: pinnedPluginIds });
+                }}
+              >
+                <p className="proj-card-title">项目技能</p>
+                <p className="hint">钉住后，这个项目里开的对话会把对应 SKILL.md 写进工作区，不必每人自己安装。</p>
+                <ul className="expert-pin-list">
+                  {pluginCatalog.map((item) => (
+                    <li key={item.id}>
+                      <Checkbox
+                        checked={pinnedPluginIds.includes(item.id) || pinnedPluginIds.includes(item.slug)}
+                        disabled={!canManage}
+                        label={pluginPickerLabel(item)}
+                        onCheckedChange={(checked) => {
+                          setPinnedPluginIds((prev) =>
+                            checked ? [...prev, item.id] : prev.filter((id) => id !== item.id && id !== item.slug),
+                          );
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                {canManage ? (
+                  <button className="proj-add" type="submit" disabled={busy}>
+                    保存技能
+                  </button>
+                ) : (
+                  <p className="hint">只有所有者或管理员能改项目技能。</p>
+                )}
+              </form>
+            ) : null}
           </div>
         ) : null}
+
+        {tab === "members" ? (
+          <div className="catalog-panel">
+            <div className="proj-card">
+              <p className="proj-card-title">成员</p>
+              <ul className="proj-members">
+                {members.map((item) => (
+                  <li key={item.userId}>
+                    <strong>{item.email}</strong>
+                    <span className={`proj-badge ${item.role}`}>{roleLabel(item.role)}</span>
+                  </li>
+                ))}
+              </ul>
+              <form
+                className="proj-member-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!memberEmail.trim()) return;
+                  setBusy(true);
+                  setError("");
+                  void api(token, `/v1/projects/${selected.id}/members`, {
+                    method: "POST",
+                    body: JSON.stringify({ email: memberEmail.trim(), password: memberPassword || undefined }),
+                  })
+                    .then(async (res) => {
+                      if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "添加失败");
+                      setMemberEmail("");
+                      setMemberPassword("");
+                      await loadDetail(selected.id);
+                    })
+                    .catch((item) => setError(item instanceof Error ? item.message : "添加失败"))
+                    .finally(() => setBusy(false));
+                }}
+              >
+                <label>
+                  <span>账号</span>
+                  <input value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="同事账号" autoComplete="off" />
+                </label>
+                <label>
+                  <span>新账号密码</span>
+                  <input
+                    type="password"
+                    value={memberPassword}
+                    onChange={(event) => setMemberPassword(event.target.value)}
+                    placeholder="已有账号可留空"
+                    autoComplete="off"
+                  />
+                </label>
+                <button className="ghost" type="submit" disabled={busy || !memberEmail.trim()}>
+                  添加成员
+                </button>
+              </form>
+              <div className="proj-invite-row">
+                <button
+                  className="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    void api(token, `/v1/projects/${selected.id}/invites`, { method: "POST", body: JSON.stringify({}) })
+                      .then(async (res) => {
+                        const body = await readJson<ProjectInvite & { url?: string; error?: string }>(res);
+                        if (!res.ok) throw new Error(body.error || "创建失败");
+                        setInviteUrl(body.url || `${location.origin}/#/invite/${body.token}`);
+                      })
+                      .catch((item) => setError(item instanceof Error ? item.message : "创建失败"))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  生成邀请链接
+                </button>
+                {inviteUrl ? <input readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} /> : null}
+              </div>
+              {pending.length > 0 ? (
+                <ul className="proj-pending">
+                  {pending.map((item) => (
+                    <li key={item.token}>
+                      <span>{item.requestedEmail} 申请加入</span>
+                      <button
+                        className="ghost"
+                        type="button"
+                        onClick={() => {
+                          void api(token, `/v1/projects/${selected.id}/invites/${item.token}/approve`, { method: "POST" }).then(
+                            () => loadDetail(selected.id),
+                          );
+                        }}
+                      >
+                        通过
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {tab === "activity" ? (
+          <div className="catalog-panel">
+            {events.length === 0 ? (
+              <CatalogEmpty title="还没有动态" hint="改指令、加人、开对话会出现在这里。" />
+            ) : (
+              <>
+                <ul className="proj-events">
+                  {visibleEvents.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.actorEmail}</strong>
+                      <span>{item.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+                <CatalogPager page={eventListPage} total={events.length} onPage={setEventPage} />
+              </>
+            )}
+          </div>
+        ) : null}
+
         {error ? <p className="auth-error">{error}</p> : null}
       </section>
     );
   }
 
   return (
-    <section className="proj-page" id="projects-page">
+    <section className="proj-page catalog-page" id="projects-page">
       <header className="proj-page-head">
         <div>
           <p className="eyebrow">项目</p>
           <h2>人和 Agent 共用一份上下文</h2>
         </div>
-        <p className="proj-count">{items.length} 个项目</p>
       </header>
 
-      <form
-        className="proj-card"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!name.trim()) return;
-          setBusy(true);
-          setError("");
-          void api(token, "/v1/projects", {
-            method: "POST",
-            body: JSON.stringify({ name: name.trim(), instruction }),
-          })
-            .then(async (res) => {
-              const body = await readJson<Project & { error?: string }>(res);
-              if (!res.ok) throw new Error(body.error || "创建失败");
-              setName("");
-              setInstruction("");
-              await refresh();
-              onOpenProject(body.id);
-            })
-            .catch((item) => setError(item instanceof Error ? item.message : "创建失败"))
-            .finally(() => setBusy(false));
+      <CatalogToolbar
+        search={query}
+        onSearch={setQuery}
+        placeholder="搜索项目"
+        actionLabel="新建项目"
+        onAction={() => {
+          setCreateName("");
+          setCreateInstruction("");
+          setCreateOpen(true);
         }}
-      >
-        <p className="proj-card-title">新建项目</p>
-        <label>
-          <span>名称</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：官网改版" autoComplete="off" />
-        </label>
-        <label>
-          <span>项目指令</span>
-          <textarea
-            value={instruction}
-            onChange={(event) => setInstruction(event.target.value)}
-            rows={3}
-            placeholder="给这个项目里所有对话看的规则，可先留空"
-          />
-        </label>
-        <button className="proj-add" type="submit" disabled={busy || !name.trim()}>
-          创建项目
-        </button>
-      </form>
+      />
 
-      {items.length === 0 ? (
-        <div className="proj-empty">
-          <strong>还没有项目</strong>
-          <p>建一个项目，把团队规则写进去。之后开对话不用每次重讲。</p>
-        </div>
-      ) : (
-        <ul className="proj-list">
-          {items.map((item) => (
-            <li key={item.id}>
-              <button type="button" onClick={() => onOpenProject(item.id)}>
-                <div className="proj-item-top">
-                  <strong>{item.name}</strong>
-                  <span className="proj-badge">{item.members.length} 人</span>
-                </div>
-                <p>{item.instruction || "还没写指令"}</p>
+      {filtered.length === 0 ? (
+        <CatalogEmpty
+          title={items.length === 0 ? "还没有项目" : "没有匹配的项目"}
+          hint={items.length === 0 ? "建一个项目，把团队规则写进去。之后开对话不用每次重讲。" : "换个关键词再试试。"}
+          action={
+            items.length === 0 ? (
+              <button className="proj-add" type="button" onClick={() => setCreateOpen(true)}>
+                新建项目
               </button>
-            </li>
-          ))}
-        </ul>
+            ) : null
+          }
+        />
+      ) : (
+        <>
+          <CatalogGrid>
+            {visible.map((item) => (
+              <CatalogCard
+                key={item.id}
+                title={item.name}
+                description={snippet(item.instruction, 80) || "还没写指令"}
+                badge={`${item.members.length} 人`}
+                meta={item.createdAt ? `添加于 ${formatShortDate(item.createdAt)}` : undefined}
+                onOpen={() => onOpenProject(item.id)}
+              />
+            ))}
+          </CatalogGrid>
+          <CatalogPager page={listPage} total={filtered.length} onPage={setPage} />
+        </>
       )}
+
+      <CatalogModal
+        title="新建项目"
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        footer={
+          <>
+            <button type="button" className="ghost" onClick={() => setCreateOpen(false)}>
+              取消
+            </button>
+            <button type="button" className="proj-add" disabled={busy || !createName.trim()} onClick={createProject}>
+              创建项目
+            </button>
+          </>
+        }
+      >
+        <CatalogForm
+          onSubmit={(event) => {
+            event.preventDefault();
+            createProject();
+          }}
+        >
+          <label>
+            <span>名称</span>
+            <input
+              value={createName}
+              onChange={(event) => setCreateName(event.target.value)}
+              placeholder="例如：官网改版"
+              autoComplete="off"
+              autoFocus
+            />
+          </label>
+          <label>
+            <span>项目指令</span>
+            <textarea
+              value={createInstruction}
+              onChange={(event) => setCreateInstruction(event.target.value)}
+              rows={4}
+              placeholder="给这个项目里所有对话看的规则，可先留空"
+            />
+          </label>
+        </CatalogForm>
+      </CatalogModal>
       {error ? <p className="auth-error">{error}</p> : null}
     </section>
   );
