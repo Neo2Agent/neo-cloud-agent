@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   admitLocalRun,
   DEFAULT_MAX_LOCAL_RUNS,
+  MAX_LOCAL_RUNS_CEILING,
   normalizeMaxLocalRuns,
   type ActiveLocalRun,
 } from "./admission.js";
@@ -80,10 +81,26 @@ test("the limit is clamped rather than trusted", () => {
   assert.equal(normalizeMaxLocalRuns("4" as unknown), DEFAULT_MAX_LOCAL_RUNS);
   assert.equal(normalizeMaxLocalRuns(2), 2);
   assert.equal(normalizeMaxLocalRuns(2.7), 2);
-  assert.equal(normalizeMaxLocalRuns(9_999), 16);
+  assert.equal(normalizeMaxLocalRuns(9_999), MAX_LOCAL_RUNS_CEILING);
   // A limit of 1 keeps the old one-at-a-time behaviour available.
   assert.equal(
     admitLocalRun({ runId: "b", folder: "/b", active: active(["a", "/a"]), limit: 1 }).ok,
     false,
   );
+});
+
+test("on macOS and Windows two spellings are the same folder", () => {
+  const warningWhen = (caseInsensitivePaths: boolean) => {
+    const decision = admitLocalRun({
+      runId: "run-b",
+      folder: "/Users/me/Web",
+      active: active(["run-a", "/Users/me/web"]),
+      limit,
+      caseInsensitivePaths,
+    });
+    return decision.ok ? (decision.warning ?? "") : "";
+  };
+  // On Linux those are two different directories, so there is nothing to warn about.
+  assert.equal(warningWhen(false), "");
+  assert.match(warningWhen(true), /同一个文件夹/);
 });
