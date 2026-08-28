@@ -37,6 +37,7 @@ export function InboxBell({ token, authed, onOpenRun, onOpenProject }: Props) {
       <button
         type="button"
         className="icon-btn inbox-btn"
+        title="收件箱"
         aria-label="收件箱"
         aria-expanded={open}
         onClick={() => {

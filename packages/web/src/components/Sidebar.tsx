@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
 import { IconClose, IconNewChat, IconStar } from "../icons";
-import { filterRuns, groupRunsByProject } from "../pins";
+import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "../turn";
 
 export type VmSlotView = {
@@ -55,7 +55,8 @@ export function Sidebar({
     return rightAt.localeCompare(leftAt) || right.createdAt.localeCompare(left.createdAt);
   });
   const visible = filterRuns(items, query);
-  const grouped = groupRunsByProject(visible, pinnedIds, projectNames);
+  const { live, shelved } = splitShelvedRuns(visible);
+  const grouped = groupRunsByProject(live, pinnedIds, projectNames);
 
   const toggle = (id: string) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
@@ -64,25 +65,26 @@ export function Sidebar({
   const renderRun = (run: Run) => {
     const running = isActiveRunStatus(run.status);
     const pinned = pinnedIds.includes(run.id);
+    const canSelect = selecting && !isShelvedRun(run.status);
     return (
       <div
         key={run.id}
-        className={`run-item${run.id === currentRunId ? " active" : ""}${running ? " busy" : ""}`}
+        className={`run-item${canSelect ? " is-selecting" : ""}${run.id === currentRunId ? " active" : ""}${running ? " busy" : ""}`}
         data-id={run.id}
         data-busy={running ? "true" : "false"}
         role="button"
         tabIndex={0}
         aria-current={run.id === currentRunId ? "true" : undefined}
-        onClick={() => (selecting ? toggle(run.id) : onOpenRun(run.id))}
+        onClick={() => (canSelect ? toggle(run.id) : onOpenRun(run.id))}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            if (selecting) toggle(run.id);
+            if (canSelect) toggle(run.id);
             else onOpenRun(run.id);
           }
         }}
       >
-        {selecting ? (
+        {canSelect ? (
           <input
             type="checkbox"
             className="run-check"
@@ -92,17 +94,19 @@ export function Sidebar({
             aria-label="选择对话"
           />
         ) : null}
-        <span className="run-title">
-          {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
-          {preview(run.prompt)}
-        </span>
-        <small>
-          {STATUS_LABELS[run.status] ?? run.status}
-          {run.executionTarget?.loop === "desk" ? " · 本机" : run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
-        </small>
-        <time className="run-time" dateTime={run.updatedAt || run.createdAt}>
-          {formatRunTime(run.createdAt, run.updatedAt)}
-        </time>
+        <div className="run-main">
+          <span className="run-title">
+            {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
+            {preview(run.prompt)}
+          </span>
+          <small>
+            {STATUS_LABELS[run.status] ?? run.status}
+            {run.executionTarget?.loop === "desk" ? " · 本机" : run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
+          </small>
+          <time className="run-time" dateTime={run.updatedAt || run.createdAt}>
+            {formatRunTime(run.createdAt, run.updatedAt)}
+          </time>
+        </div>
         {onPin ? (
           <button
             type="button"
@@ -152,22 +156,31 @@ export function Sidebar({
           aria-label="搜索对话"
         />
         {onArchiveMany ? (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => {
-              if (selecting && selected.length > 0) {
-                onArchiveMany(selected);
+          <div className="run-tools-actions">
+            {selecting && selected.length > 0 ? (
+              <button
+                type="button"
+                className="toolbar-btn is-ready"
+                onClick={() => {
+                  onArchiveMany(selected);
+                  setSelected([]);
+                  setSelecting(false);
+                }}
+              >
+                归档 {selected.length} 条
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={selecting ? "toolbar-btn is-on" : "toolbar-btn"}
+              onClick={() => {
+                setSelecting((value) => !value);
                 setSelected([]);
-                setSelecting(false);
-                return;
-              }
-              setSelecting((value) => !value);
-              setSelected([]);
-            }}
-          >
-            {selecting ? (selected.length ? `归档 ${selected.length} 条` : "取消多选") : "批量归档"}
-          </button>
+              }}
+            >
+              {selecting ? "取消" : "批量归档"}
+            </button>
+          </div>
         ) : null}
       </div>
       <div className="run-list" id="run-list">
@@ -186,6 +199,12 @@ export function Sidebar({
             </section>
           ),
         )}
+        {shelved.length > 0 ? (
+          <details className="run-group run-archived">
+            <summary className="eyebrow">已归档 · {shelved.length}</summary>
+            {shelved.map(renderRun)}
+          </details>
+        ) : null}
       </div>
       <footer className="sidebar-foot">
         <div className="account" id="account">
