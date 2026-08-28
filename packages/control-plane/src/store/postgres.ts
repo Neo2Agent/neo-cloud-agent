@@ -6,6 +6,7 @@ import type {
   Device,
   Environment,
   Expert,
+  PluginInstall,
   Project,
   Run,
   RunEvent,
@@ -98,6 +99,11 @@ CREATE TABLE IF NOT EXISTS expert_policies (
   body JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS plugin_installs (
+  id TEXT PRIMARY KEY,
+  body JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -126,6 +132,9 @@ export interface PostgresMetadataStore extends AccountStore {
   deleteExpert(id: string): Promise<void>;
   saveExpertPolicy(item: BundledExpertPolicyDocument): Promise<void>;
   loadExpertPolicy(): Promise<BundledExpertPolicyDocument | null>;
+  savePluginInstall(item: PluginInstall): Promise<void>;
+  loadPluginInstalls(): Promise<PluginInstall[]>;
+  deletePluginInstall(id: string): Promise<void>;
   saveDesk(item: Desk): Promise<void>;
   loadDesks(): Promise<Desk[]>;
   deleteDesk(id: string): Promise<void>;
@@ -211,7 +220,8 @@ function asProject(value: unknown): Project | null {
     return null;
   }
   const item = value as Project;
-  return item.id && item.name ? item : null;
+  if (!item.id || !item.name) return null;
+  return { ...item, expertIds: item.expertIds ?? [], pluginIds: item.pluginIds ?? [] };
 }
 
 function asExpert(value: unknown): Expert | null {
@@ -220,6 +230,14 @@ function asExpert(value: unknown): Expert | null {
   }
   const item = value as Expert;
   return item.id && item.name && item.persona ? item : null;
+}
+
+function asPluginInstall(value: unknown): PluginInstall | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as PluginInstall;
+  return item.id && item.pluginId ? item : null;
 }
 
 function asExpertPolicy(value: unknown): BundledExpertPolicyDocument | null {
@@ -406,6 +424,21 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     async loadExpertPolicy() {
       const result = await query(`SELECT body FROM expert_policies WHERE id = $1`, [BUNDLED_EXPERT_POLICY_ID]);
       return parseJson(result.rows[0]?.body, asExpertPolicy);
+    },
+    async savePluginInstall(item) {
+      await query(
+        `INSERT INTO plugin_installs (id, body, updated_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body, updated_at = EXCLUDED.updated_at`,
+        [item.id, JSON.stringify(item), item.updatedAt],
+      );
+    },
+    async loadPluginInstalls() {
+      const result = await query(`SELECT body FROM plugin_installs ORDER BY updated_at ASC`);
+      return result.rows.map((row) => parseJson(row.body, asPluginInstall)).filter((item): item is PluginInstall => Boolean(item));
+    },
+    async deletePluginInstall(id) {
+      await query(`DELETE FROM plugin_installs WHERE id = $1`, [id]);
     },
     async saveDesk(item) {
       await query(

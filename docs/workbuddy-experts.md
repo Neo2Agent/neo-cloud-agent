@@ -4,6 +4,8 @@
 对象：腾讯云 WorkBuddy 的 **专家 / 专家团**（专家中心、我的专家、项目专家、`@` 召唤），不是 Skill 市场，也不是 IDE Plan Mode。  
 目的：弄清它到底卖什么、底层怎么装，再对照 Neo Cloud Agent 现在的 `neo_subagent` / 项目指令 / 工作区 Skill，给出一份能跟着做、又不照抄办公套件和市场积分的落地顺序。
 
+2026-08-28 再对标见 [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md)。本文 §4.4 缺口表写于 Expert 实体落地前，已经过时；专家还缺的是 `@` 和置顶排序，不是从零做实体。
+
 本文依据官方文档、更新日志和公开拆解文整理。没有登录 WorkBuddy 客户端点过每一个按钮；文中把「官方写死的行为」和「第三方解读」分开写。
 
 项目协作那一层（项目 / 任务 / 看板 / 资产）已经写过，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。那份文档把专家**市场**后置。本文把专家作为角色包和召唤面单独摊开。
@@ -515,7 +517,7 @@ IM（Telegram / 微信）第一期不解析 `@专家`，避免和群 @人冲突�
 
 ## 7. 分期
 
-原则：**先让用户能点一个角色开对话，再让用户能存自己的角色，最后才把团做成卡片。** 市场永远后置。
+原则：**先让用户能点一个角色开对话，再让用户能存自己的角色，最后才把团做成卡片。** 专家商店永远后置。Skill / Plugin 目录见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。
 
 ### 第 0 期：锁语义和合约
 
@@ -609,11 +611,13 @@ IM（Telegram / 微信）第一期不解析 `@专家`，避免和群 @人冲突�
 
 ## 10. 和旧调研的关系
 
-[workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) 第 10 节写过：项目协作第一期只用项目指令 + 项目 skills + 现有 subagent，不必做专家市场。那个判断 **仍然成立**——市场不做。
+[workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) 第 10 节写过：项目协作第一期只用项目指令 + 项目 skills + 现有 subagent，不必做专家市场。那个判断 **仍然成立**——专家上传站不做。
 
 现在要补的是：**专家作为召唤面和角色包**，不是市场。项目协作继续包上下文；专家包的是身份。两者叠在同一次 Run 上，不互相替代。
 
-Desk 方案 [desk-project-design.md](./desk-project-design.md) 把专家中心列在「不抄办公套件」里。本文落地后，Desk 只跟 **选择器 + 项目钉住**，仍然不做市场、双写、公开会话。
+Skill / Plugin 目录（Codex marketplace、WorkBuddy 技能市场）见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。那是能力包的发现和安装，不是专家商店。
+
+Desk 方案 [desk-project-design.md](./desk-project-design.md) 把专家中心列在「不抄办公套件」里。本文落地后，Desk 只跟 **选择器 + 项目钉住**，仍然不做专家商店、双写、公开会话。
 
 ---
 
@@ -631,6 +635,7 @@ Desk 方案 [desk-project-design.md](./desk-project-design.md) 把专家中心�
 | 五大概念 | https://www.woshipm.com/ai/6448550.html |
 | 三层模型 / 「训练」 | https://jishuzhan.net/article/2063614638046130177 |
 | 自定义专家字段 | https://www.171host.com/790079.html |
+| Neo 技能 / 插件市场调研 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) |
 | Neo 项目协作调研 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) |
 | Neo 现状总览 | [architecture-overview.md](./architecture-overview.md) |
 | Neo 原则 | [architecture.md](./architecture.md) |

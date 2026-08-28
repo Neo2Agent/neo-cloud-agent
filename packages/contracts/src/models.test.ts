@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveModelLimits } from "./models.js";
+import { MAX_REQUEST_OUTPUT_TOKENS, resolveModelLimits, resolveRequestMaxTokens } from "./models.js";
 
 test("DeepSeek V4 flash and pro both advertise a 1M window", () => {
   assert.deepEqual(resolveModelLimits("deepseek-v4-flash"), {
@@ -31,4 +31,12 @@ test("unknown models have no invented window", () => {
   assert.equal(resolveModelLimits("some-local-70b"), null);
   assert.equal(resolveModelLimits(""), null);
   assert.equal(resolveModelLimits(undefined), null);
+});
+
+test("request max tokens cap DeepSeek's 384k reservation without shrinking GPT-4o", () => {
+  assert.equal(resolveRequestMaxTokens("deepseek-v4-flash"), MAX_REQUEST_OUTPUT_TOKENS);
+  assert.equal(resolveRequestMaxTokens("deepseek-v4-pro"), MAX_REQUEST_OUTPUT_TOKENS);
+  assert.ok(resolveRequestMaxTokens("deepseek-v4-flash") < (resolveModelLimits("deepseek-v4-flash")?.maxOutputTokens ?? 0));
+  assert.equal(resolveRequestMaxTokens("gpt-4o-mini"), 16_384);
+  assert.equal(resolveRequestMaxTokens("mystery-local"), 8192);
 });

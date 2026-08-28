@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { RunEvent } from "@neo-cloud-agent/contracts";
+import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts";
+import { transcriptGroups } from "@neo-cloud-agent/contracts";
 import { buildTranscriptSnapshot } from "./transcript.js";
+
+/** One reply bubble, read as the rows a user sees: text, then tools, then text. */
+function rows(message: TranscriptMessage | undefined): string[] {
+  if (!message) {
+    return [];
+  }
+  return transcriptGroups(message).map((group) =>
+    group.type === "tools" ? `tools:${group.tools.map((tool) => tool.name).join(",")}` : `text:${group.text}`,
+  );
+}
 
 function ev(partial: Partial<RunEvent> & Pick<RunEvent, "id" | "kind">): RunEvent {
   return {
@@ -63,18 +74,10 @@ test("tools after message.end stay between the intro and the reply", () => {
     ev({ id: "z1", kind: "agent.end" }),
   ]);
   const assistants = snapshot.messages.filter((item) => item.role === "assistant");
-  assert.deepEqual(
-    assistants.map((item) => ({
-      text: item.text,
-      tools: (item.tools ?? []).map((tool) => tool.name),
-    })),
-    [
-      { text: "Let me look.", tools: [] },
-      { text: "", tools: ["bash"] },
-      { text: "There is a README.", tools: [] },
-    ],
-  );
-  assert.deepEqual(assistants[1]?.tools, [
+  // One reply, with the tool card sitting between the two pieces of text.
+  assert.equal(assistants.length, 1);
+  assert.deepEqual(rows(assistants[0]), ["text:Let me look.", "tools:bash", "text:There is a README."]);
+  assert.deepEqual(assistants[0]?.tools, [
     {
       id: "call-1",
       name: "bash",
@@ -136,10 +139,8 @@ test("tools that run before the final reply stay above that reply", () => {
     ev({ id: "z1", kind: "agent.end" }),
   ]);
   const assistants = snapshot.messages.filter((item) => item.role === "assistant");
-  assert.equal(assistants[0]?.tools?.[0]?.name, "neo_browse");
-  assert.equal(assistants[0]?.text, "");
-  assert.equal(assistants[1]?.text, "According to the page, this is example.com.");
-  assert.equal(assistants[1]?.tools?.length ?? 0, 0);
+  assert.equal(assistants.length, 1);
+  assert.deepEqual(rows(assistants[0]), ["tools:neo_browse", "text:According to the page, this is example.com."]);
 });
 
 test("late tool posts still sit between the intro and the reply", () => {
@@ -177,17 +178,12 @@ test("late tool posts still sit between the intro and the reply", () => {
     ev({ id: "z1", kind: "agent.end", data: { workerSeq: 11 }, createdAt: "2026-08-21T00:00:11.000Z" }),
   ]);
   const assistants = snapshot.messages.filter((item) => item.role === "assistant");
-  assert.deepEqual(
-    assistants.map((item) => ({
-      text: item.text,
-      tools: (item.tools ?? []).map((tool) => tool.name),
-    })),
-    [
-      { text: "Let me check.", tools: [] },
-      { text: "", tools: ["neo_browse"] },
-      { text: "According to the page, this is example.com.", tools: [] },
-    ],
-  );
+  assert.equal(assistants.length, 1);
+  assert.deepEqual(rows(assistants[0]), [
+    "text:Let me check.",
+    "tools:neo_browse",
+    "text:According to the page, this is example.com.",
+  ]);
 });
 
 test("empty assistant turns without tools are dropped", () => {

@@ -1,5 +1,22 @@
 {
   "name": "neo-cloud-agent",
-  "install": "bash .cursor/install-docker.sh",
-  "start": "bash .cursor/start-docker.sh && bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh"
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start-docker.sh && bash .cursor/skills/tencent-lighthouse-deploy/bootstrap-agent-access.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "description": "control-plane :8080 + llm-gateway :8081 (mock upstream unless a provider key is set)",
+      "command": "export PATH=\"$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH\"; pnpm dev"
+    },
+    {
+      "name": "web",
+      "description": "Web chat UI on :5173 (proxies /v1 and /health to :8080). Login admin / 123456.",
+      "command": "export PATH=\"$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH\"; until curl -sf http://127.0.0.1:8080/health >/dev/null 2>&1; do sleep 1; done; pnpm --filter @neo-cloud-agent/web dev"
+    }
+  ],
+  "ports": [
+    { "name": "control-plane", "port": 8080 },
+    { "name": "llm-gateway", "port": 8081 },
+    { "name": "web", "port": 5173 }
+  ]
 }

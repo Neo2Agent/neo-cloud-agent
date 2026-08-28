@@ -21,6 +21,7 @@ export type {
   TransferRunMode,
   TransferRunRequest,
   RunSource,
+  RunStart,
   RunStatus,
   SetupStatus,
 } from "./run.js";
@@ -31,17 +32,24 @@ export {
   isDeskTarget,
   parseExecutionTarget,
   parseRunSource,
+  parseRunStart,
 } from "./run.js";
 export type { CreateDeviceRequest, Device, DevicePlatform } from "./device.js";
 export { parseDevicePlatform } from "./device.js";
 export type {
+  BindDeskWorkspaceRequest,
   CreateDeskRequest,
   Desk,
   DeskAssignment,
   DeskClaimRequest,
+  DeskInboxEvent,
   DeskLeaseResponse,
+  DeskRejectRequest,
+  DeskWorkspace,
   HandoffRequest,
+  UpdateDeskRequest,
 } from "./desk.js";
+export { deskRepoKey, deskWorkspaceShortName } from "./desk-workspace.js";
 
 export type {
   Build,
@@ -98,6 +106,7 @@ export {
   clampTranscriptPage,
   cloneTranscriptMessage,
   displayTranscriptMessages,
+  isDeskHandshakeNotice,
   isSetupKind,
   isStaleRestartNotice,
   pageTranscriptMessages,
@@ -146,7 +155,7 @@ export {
   writeLlmSettings,
 } from "./llm-settings.js";
 export type { ModelLimits } from "./models.js";
-export { resolveModelLimits } from "./models.js";
+export { MAX_REQUEST_OUTPUT_TOKENS, resolveModelLimits, resolveRequestMaxTokens } from "./models.js";
 export { BASELINE_TOOL_TEXT, CLOUD_SYSTEM_PROMPT } from "./system-prompt.js";
 export {
   BUNDLED_SUBAGENTS,
@@ -224,6 +233,41 @@ export type {
   PublishBundledExpertRequest,
   UpdateExpertRequest,
 } from "./expert.js";
+export type {
+  BundledPlugin,
+  BundledSkill,
+  MarketplaceFile,
+  MarketplacePluginEntry,
+  NormalizedPluginManifest,
+  Plugin,
+  PluginCatalogItem,
+  PluginInstall,
+  PluginInstallScope,
+  PluginKind,
+  PluginSource,
+  PluginSourceType,
+  PluginVisibility,
+  PluginWorkspaceEntry,
+  PluginWorkspaceSnapshot,
+  SkillPackage,
+} from "./plugin.js";
+export {
+  MAX_ENABLED_PLUGINS,
+  MAX_PLUGIN_BYTES,
+  MAX_PLUGIN_FILES,
+  WORKSPACE_SKILL_DIRS,
+  assertSafeRelativePath,
+  isSafeRelativePath,
+  isValidSkillName,
+  overlayCatalogItem,
+  parseMarketplaceFile,
+  parsePluginManifest,
+  parseSkillMd,
+  pluginPickerLabel,
+  publicPlugin,
+  sortPluginsForCatalog,
+} from "./plugin.js";
+export { BUNDLED_PLUGINS, bundledPluginById, listBundledPlugins, pluginDigest } from "./bundled-plugins.js";
 export {
   ADMIN_EXPERT_TOOL_CHOICES,
   BUNDLED_EXPERTS,
@@ -300,6 +344,17 @@ export {
   subscriptionKindForEvent,
   subscriptionTargetsFrom,
 } from "./subscription.js";
+
+export type { IntentCapsule, ProjectTemplate, Recipe } from "./recipe.js";
+export {
+  BUNDLED_RECIPES,
+  INTENT_CAPSULES,
+  PROJECT_TEMPLATES,
+  formatHandoffMarkdown,
+  matchIntentCapsules,
+  projectTemplateById,
+  recipeById,
+} from "./recipe.js";
 
 export type {
   RunDiagnostics,

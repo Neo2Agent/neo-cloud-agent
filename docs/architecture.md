@@ -23,7 +23,7 @@
 
 - 复刻 Cursor 的 IDE、Tab、本地 sandbox，或把 pi 再嵌进一份本机 TUI
 - 多租户计费的完整账务系统（先打点，后对账）
-- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）
+- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）——二期重新评估见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 让 VM 直连 Anthropic / OpenAI / 自建 GPU（密钥与配额会泄漏到不可信环境）
 - 让 CLI 在开发者机器上执行工具来「加速」——CLI 只打 `/v1`，见 [cli.md](./cli.md)
 

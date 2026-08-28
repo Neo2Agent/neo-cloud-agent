@@ -1,20 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertColocatedTarget, colocatedTarget, isDeskTarget, parseExecutionTarget, parseRunSource } from "./run.js";
+import {
+  assertColocatedTarget,
+  colocatedTarget,
+  isDeskTarget,
+  parseExecutionTarget,
+  parseRunSource,
+  parseRunStart,
+} from "./run.js";
 
 test("parseExecutionTarget accepts the two-axis shape", () => {
   assert.deepEqual(parseExecutionTarget({ loop: "cloud", tools: "cloud" }), {
     loop: "cloud",
     tools: "cloud",
     deskId: undefined,
+    deskWorkspaceId: undefined,
   });
   assert.deepEqual(parseExecutionTarget({ loop: "desk", tools: "desk", deskId: "desk_1" }), {
     loop: "desk",
     tools: "desk",
     deskId: "desk_1",
+    deskWorkspaceId: undefined,
   });
+  assert.deepEqual(
+    parseExecutionTarget({ loop: "desk", tools: "desk", deskId: "desk_1", deskWorkspaceId: " dws_9 " }),
+    { loop: "desk", tools: "desk", deskId: "desk_1", deskWorkspaceId: "dws_9" },
+  );
   assert.equal(parseExecutionTarget({ loop: "cloud" }), undefined);
   assert.equal(parseExecutionTarget(null), undefined);
+});
+
+test("parseRunStart only accepts the two start modes", () => {
+  assert.equal(parseRunStart("inline"), "inline");
+  assert.equal(parseRunStart("dispatch"), "dispatch");
+  assert.equal(parseRunStart("later"), undefined);
+  assert.equal(parseRunStart(undefined), undefined);
 });
 
 test("parseRunSource accepts mobile hosts", () => {

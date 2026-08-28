@@ -66,6 +66,8 @@ test("gateway model spec uses each model's advertised window", () => {
   assert.equal(supportsVision("deepseek-v4-flash"), false);
   assert.equal(supportsVision("deepseek-v4-flash-vision-exp"), true);
   assert.equal(supportsVision("gpt-4o-mini"), true);
+  assert.equal(gatewayModelSpec("deepseek-v4-flash").maxTokens, 16_384);
+  assert.ok(gatewayModelSpec("deepseek-v4-flash").maxTokens < 384_000);
 });
 
 test("readExpertWorkspace loads Role Override and tool allowlist", () => {
@@ -79,4 +81,28 @@ test("readExpertWorkspace loads Role Override and tool allowlist", () => {
   const expert = readExpertWorkspace(cwd);
   assert.match(expert.role, /Role Override/);
   assert.deepEqual(expert.tools, ["read", "grep"]);
+});
+
+test("a run's own scratch wins over the folder it shares", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-expert-scratch-"));
+  mkdirSync(path.join(cwd, ".neo"), { recursive: true });
+  writeFileSync(path.join(cwd, ".neo", "EXPERT.md"), "Role Override: the other run's expert.\n");
+  const scratch = path.join(cwd, ".neo", "runs", "run-a");
+  mkdirSync(scratch, { recursive: true });
+  writeFileSync(
+    path.join(scratch, "expert.json"),
+    `${JSON.stringify({ id: "exp_planner", slug: "planner", name: "计划", kind: "expert", tools: ["read"] })}\n`,
+  );
+  writeFileSync(path.join(scratch, "EXPERT.md"), "Role Override: my own expert.\n");
+  const expert = readExpertWorkspace(cwd, scratch);
+  assert.match(expert.role, /my own expert/);
+  assert.deepEqual(expert.tools, ["read"]);
+});
+
+test("a run with no scratch files still reads the workspace expert", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-expert-fallback-"));
+  mkdirSync(path.join(cwd, ".neo"), { recursive: true });
+  writeFileSync(path.join(cwd, ".neo", "EXPERT.md"), "Role Override: cloud expert.\n");
+  const expert = readExpertWorkspace(cwd, path.join(cwd, ".neo", "runs", "missing"));
+  assert.match(expert.role, /cloud expert/);
 });

@@ -30,6 +30,9 @@ const SETUP_PREFIXES = [
 ];
 
 export function isSetupKind(kind: string): boolean {
+  if (kind === "llm.usage") {
+    return false;
+  }
   return SETUP_PREFIXES.some((prefix) => kind.startsWith(prefix));
 }
 
@@ -46,6 +49,16 @@ function workerSeq(event: RunEvent): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/**
+ * Which worker process emitted this. A desk run is served by one process per
+ * turn, and each starts its sequence at 1, so a sequence only orders events
+ * from the same process.
+ */
+function workerEpoch(event: RunEvent): string {
+  const value = event.data?.workerEpoch;
+  return typeof value === "string" ? value : "";
+}
+
 /** Restore emission order when HTTP ingest races or clocks stay close. */
 export function sortRunEvents(events: RunEvent[]): RunEvent[] {
   return events
@@ -53,7 +66,8 @@ export function sortRunEvents(events: RunEvent[]): RunEvent[] {
     .sort((left, right) => {
       const leftSeq = workerSeq(left.event);
       const rightSeq = workerSeq(right.event);
-      if (leftSeq != null && rightSeq != null && leftSeq !== rightSeq) {
+      const sameProcess = workerEpoch(left.event) === workerEpoch(right.event);
+      if (sameProcess && leftSeq != null && rightSeq != null && leftSeq !== rightSeq) {
         return leftSeq - rightSeq;
       }
       const leftAt = Date.parse(left.event.createdAt) || 0;
@@ -274,14 +288,20 @@ export function settleTranscriptMessages(messages: TranscriptMessage[]): Transcr
 
 const RESTART_HEARTBEAT = /heartbeat lost after control plane restart/i;
 const SLOT_BUSY_NOTICE = /all VM slots are busy/i;
+/** Control plane waiting for a desk to pick the run up. Never user-facing on the desk itself. */
+const DESK_CLAIM_NOTICE = /(等待本机 Desk 认领|等待 Desk 认领|已派给这台电脑，等待启动)/;
 
 function isTransientInfraNotice(text: string | undefined): boolean {
   const value = text ?? "";
   return RESTART_HEARTBEAT.test(value) || SLOT_BUSY_NOTICE.test(value);
 }
 
+export function isDeskHandshakeNotice(text: string | undefined): boolean {
+  return DESK_CLAIM_NOTICE.test(text ?? "");
+}
+
 export function isStaleRestartNotice(message: TranscriptMessage, later: TranscriptMessage[]): boolean {
-  if (!isTransientInfraNotice(message.text)) {
+  if (!isTransientInfraNotice(message.text) && !isDeskHandshakeNotice(message.text)) {
     return false;
   }
   return later.some(
@@ -308,7 +328,12 @@ export function transcriptHasUnsettledWork(messages: TranscriptMessage[]): boole
 
 export function displayTranscriptMessages(
   messages: TranscriptMessage[],
-  options?: { hideStaleRestart?: boolean; hideFollowUpIds?: Iterable<string> },
+  options?: {
+    hideStaleRestart?: boolean;
+    /** This window is the machine, so its own claim handshake is noise. */
+    hideDeskHandshake?: boolean;
+    hideFollowUpIds?: Iterable<string>;
+  },
 ): TranscriptMessage[] {
   const hidden = options?.hideFollowUpIds ? new Set(options.hideFollowUpIds) : null;
   return messages.filter((message, index) => {
@@ -316,6 +341,9 @@ export function displayTranscriptMessages(
       return false;
     }
     if (options?.hideStaleRestart && isTransientInfraNotice(message.text)) {
+      return false;
+    }
+    if (options?.hideDeskHandshake && isDeskHandshakeNotice(message.text)) {
       return false;
     }
     return !isStaleRestartNotice(message, messages.slice(index + 1));
@@ -484,19 +512,15 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     finishAssistant(state);
     return;
   }
+  // One user turn is one reply bubble. The model may alternate text and tools
+  // several times inside it; those become blocks, not separate bubbles.
   if (event.kind === "message.start") {
-    if (state.open && hasAssistantContent(state.open)) {
-      finishAssistant(state);
-    }
     const assistant = ensureAssistant(state, event);
     assistant.streaming = true;
     touch(assistant, event.createdAt);
     return;
   }
   if (event.kind === "message.delta") {
-    if (state.open?.tools?.length && !state.open.streaming) {
-      finishAssistant(state);
-    }
     const assistant = ensureAssistant(state, event);
     appendText(assistant, String(event.data?.delta ?? ""));
     touch(assistant, event.createdAt);
@@ -506,10 +530,6 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     if (state.open) {
       state.open.streaming = false;
       touch(state.open, event.createdAt);
-      const busy = state.open.tools?.some((tool) => tool.status === "running");
-      if (state.open.text.trim() && !busy) {
-        finishAssistant(state);
-      }
     }
     return;
   }
@@ -534,9 +554,6 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
       upsertTool(existing, event);
       touch(existing, event.createdAt);
       return;
-    }
-    if (state.open?.text.trim() && state.open.streaming === false) {
-      finishAssistant(state);
     }
     const assistant = ensureAssistant(state, event);
     upsertTool(assistant, event);

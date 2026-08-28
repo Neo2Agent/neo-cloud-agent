@@ -18,7 +18,12 @@
 
 ### 完整架构图
 
-一张图把客户端、入口、控制面、执行面、推理、存储和外部依赖摊开。源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）。
+一张图把客户端、入口、控制面、执行面、推理、存储和外部依赖摊开。现网不用登录：
+
+- http://62.234.211.200/architecture
+- https://neorun.cloud/architecture
+
+源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）。
 
 ![Neo Cloud Agent 完整架构图](./diagrams/architecture-complete.png)
 
@@ -339,7 +344,7 @@ adopt(runId, lease) → handle | null   // 控制面重启后认领还在的进�
 | `vm` | 有 `/dev/kvm` 走 Firecracker，否则 **loop 挂 ext4 槽** 再跑本地 worker | **现网轻量**（无 KVM → 2×4GiB 槽） |
 | `docker` | 一容器一 Run，工作区 bind-mount | compose / `pnpm test:docker` |
 | `firecracker` | 真微 VM：kernel + rootfs + tap | 有 KVM 的宿主；嵌套 AMX 会 skip |
-| `desk` | 不在云端起进程；等 Desk `claim` | `target.loop === "desk"` |
+| `desk` | 不在云端起进程也不发信号；等 Desk `claim`，取消走 inbox | `target.loop === "desk"` |
 | `none` | 不拉起 worker | 测编排 |
 
 `vm` 槽满时新 Run 停在 `NOT_YET_STARTED`。空闲超时必须先把工作区写回 `hostRunsDir/<runId>`（跳过 `node_modules` 等缓存）再 `releaseVmSlot`（卸槽会擦盘）。写回失败则留下槽。持久化工作区有全站预算和 TTL 回收，见 [workspace-persistence.md](./workspace-persistence.md)。`WORKER_MEMORY_MIB` 打进 V8 堆上限；control-plane unit 开了 cgroup `Delegate=` 时再套 RSS。
@@ -518,13 +523,21 @@ GitHub PR 评论和 Actions 经 `POST /webhooks/github`（HMAC）进跟进队列
 | Telegram / 微信 | `ingress/` | 云端 | 发一句开新对话；做完 / 开 PR 可推回来 |
 | Slack | — | — | `source` 预留，未做 |
 
-Desk 本机路径（已落地）：
+Desk 本机路径（已落地）。`start` 分开「谁起这个 worker」：
 
-1. 登录后 `POST /v1/desks`，拿 `deskId` + desk token。
-2. `POST /v1/desks/:id/lease` 长轮询。
-3. `POST /v1/runs { target: { loop: "desk", tools: "desk", deskId } }`。
-4. Desk 开 worktree、写 `.neo/run-bootstrap.json`、fork `packages/worker`、再 `claim`。
-5. 掉线走 `detachOrQueue`，不标 ERROR。双向 handoff 是干净 clone，未提交改动不跟随。
+**A `inline`（你就在这台 Desk 前面）**
+
+1. 登录后 `POST /v1/desks`，拿 `deskId` + desk token；绑定的文件夹上报机器名 + repoKey，绝对路径留本机。
+2. `POST /v1/runs { source:"desk", start:"inline", target:{ loop:"desk", tools:"desk", deskId } }`，**响应直接带 assignment**。
+3. Desk 用**用户选的那个文件夹本身**当工作区（不开 worktree），把 bootstrap 写进 `userData`，fork `packages/worker`，再 `claim`。
+
+**B `dispatch`（缺省：Web / handoff / 控制面恢复）**
+
+1. Desk 常驻 `GET /v1/desks/:id/inbox`（SSE，出向）。控制面打不进 NAT 后面的笔记本。
+2. 控制面严格匹配 user + 机器在线且允许远程 + 仓库对得上，然后往 inbox 推 assignment；对不上就明确报错，不回落云端。
+3. Desk 用已绑定的工作区 spawn，再 `claim`。
+
+两条路径之后完全一样。共同约束：`online` 就是「正握着 inbox」；控制面**不**杀笔记本 pid（取消走 inbox，活着靠 worker 心跳）；本机 Run 的文件工具和 bash 写操作锁在工作区根内；掉线走 `detachOrQueue`，不标 ERROR；handoff 到云要可 clone 的远端，切回本机要求该仓库已有绑定，未提交改动都不跟随。
 
 设计细节：[cli.md](./cli.md)、[desk.md](./desk.md)、[mobile.md](./mobile.md)。
 
@@ -532,7 +545,7 @@ Desk 本机路径（已落地）：
 
 ## 14. 协作面：Project / Todo / Automation
 
-对话是一次 Run。项目是共享上下文 + 看板 + 成员。分层对齐 WorkBuddy 调研里「项目包上下文、任务包一次 Run」，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。专家 / 专家团（角色包绑到 Run，团走现有 `neo_subagent`）见 [workbuddy-experts.md](./workbuddy-experts.md)。
+对话是一次 Run。项目是共享上下文 + 看板 + 成员。分层对齐 WorkBuddy 调研里「项目包上下文、任务包一次 Run」，见 [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md)。专家 / 专家团（角色包绑到 Run，团走现有 `neo_subagent`）见 [workbuddy-experts.md](./workbuddy-experts.md)。Skill / Plugin 目录（安装后物化进 `.neo/skills`）见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。骨架落地之后还值得跟的功能见 [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md)。
 
 | 实体 | 作用 |
 | --- | --- |
@@ -544,7 +557,7 @@ Desk 本机路径（已落地）：
 | `Automation` | 每天 / 每小时按调度 `POST /v1/runs`，`source: automation` |
 | Collaborator / Transfer | 单条 Run 可邀请 editor，或 reassign / fork 给别人 |
 
-Desk UI 是 Agents Window：transcript + composer，项目工作台默认停在任务（任务 / 对话 / 资产 / 动态 / 设置）。Web 对话页也有 Projects / Automations 页。
+Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Terminal 右侧栏，项目工作台默认停在任务（任务 / 对话 / 资产 / 动态 / 设置）。Web 对话页也有 Projects / Automations 页。
 
 ---
 
@@ -759,6 +772,8 @@ pnpm typecheck && pnpm test
 | [nginx-research.md](./nginx-research.md) | 现网入口是 Caddy；不要再引入 Nginx |
 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) | 项目协作对标 |
 | [workbuddy-experts.md](./workbuddy-experts.md) | WorkBuddy 专家 / 专家团调研与落地顺序 |
+| [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) | Codex / WorkBuddy 技能与插件市场调研与复刻顺序 |
+| [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md) | 2026-08-28 再对标：骨架已齐之后还值得跟什么 |
 | [production-domain.md](./production-domain.md) | `neorun.cloud` / HTTPS / Caddy |
 | [README.md](../README.md) | 命令、环境变量、不要做的五件事 |
 | `packages/contracts` | 类型的权威来源 |

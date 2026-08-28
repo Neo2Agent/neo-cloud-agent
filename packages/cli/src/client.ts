@@ -4,6 +4,7 @@ import type {
   CreateRunRequest,
   Environment,
   FollowUp,
+  PluginCatalogItem,
   PublicLlmSettings,
   Run,
   RunDiagnostics,
@@ -181,6 +182,28 @@ export class ControlPlaneClient {
 
   vms(): Promise<unknown> {
     return this.request("GET", "/v1/vms");
+  }
+
+  listPlugins(projectId?: string): Promise<{ plugins: PluginCatalogItem[] }> {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return this.request("GET", `/v1/plugins${query}`);
+  }
+
+  getPlugin(id: string, projectId?: string): Promise<PluginCatalogItem> {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return this.request("GET", `/v1/plugins/${encodeURIComponent(id)}${query}`);
+  }
+
+  installPlugin(id: string, input: { scope?: "user" | "project"; projectId?: string; enabled?: boolean }): Promise<PluginCatalogItem> {
+    return this.request("POST", `/v1/plugins/${encodeURIComponent(id)}/install`, input);
+  }
+
+  enablePlugin(id: string, input: { enabled: boolean; scope?: "user" | "project"; projectId?: string }): Promise<PluginCatalogItem> {
+    return this.request("POST", `/v1/plugins/${encodeURIComponent(id)}/enable`, input);
+  }
+
+  uninstallPlugin(id: string, input: { scope?: "user" | "project"; projectId?: string }): Promise<{ ok: boolean }> {
+    return this.request("DELETE", `/v1/plugins/${encodeURIComponent(id)}/install`, input);
   }
 
   streamEvents(

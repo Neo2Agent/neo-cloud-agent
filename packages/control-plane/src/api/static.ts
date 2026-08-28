@@ -6,6 +6,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 const WEB_PACKAGE = fileURLToPath(new URL("../../../web", import.meta.url));
 const WEB_DIST = path.join(WEB_PACKAGE, "dist");
+const ARCHITECTURE_HTML = fileURLToPath(
+  new URL("../../../../docs/diagrams/architecture-complete.html", import.meta.url),
+);
+const ARCHITECTURE_PATHS = new Set(["/architecture", "/architecture.html", "/architecture-complete.html"]);
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -54,6 +58,17 @@ export function acceptsGzip(req: IncomingMessage): boolean {
   return value.split(",").some((part) => part.trim().toLowerCase().startsWith("gzip"));
 }
 
+/** Public, no-auth architecture poster. Same file the docs repo keeps. */
+export function resolveArchitectureFile(requestPath: string): string | null {
+  if (!ARCHITECTURE_PATHS.has(requestPath)) {
+    return null;
+  }
+  if (!existsSync(ARCHITECTURE_HTML) || !statSync(ARCHITECTURE_HTML).isFile()) {
+    return null;
+  }
+  return ARCHITECTURE_HTML;
+}
+
 export function resolveWebFile(requestPath: string): string | null {
   const relative = requestPath === "/" ? "/index.html" : requestPath;
   const decoded = decodeURIComponent(relative);
@@ -79,7 +94,7 @@ export function serveWebFile(req: IncomingMessage, res: ServerResponse): boolean
   if (url.pathname.startsWith("/v1/") || url.pathname.startsWith("/internal/") || url.pathname === "/health") {
     return false;
   }
-  const file = resolveWebFile(url.pathname);
+  const file = resolveArchitectureFile(url.pathname) ?? resolveWebFile(url.pathname);
   if (!file) {
     return false;
   }

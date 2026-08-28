@@ -9,6 +9,8 @@ import { listProjects, replaceProjects } from "./projects/store.js";
 import { setProjectPersistHooks } from "./projects/persist-hooks.js";
 import { listStoredExperts, replaceExperts } from "./experts/store.js";
 import { setExpertPersistHooks } from "./experts/persist-hooks.js";
+import { listStoredPluginInstalls, replacePluginInstalls } from "./plugins/store.js";
+import { setPluginPersistHooks } from "./plugins/persist-hooks.js";
 import { readBundledExpertPolicy, replaceBundledExpertPolicy } from "./experts/policy.js";
 import { setBundledExpertPolicyPersistHooks } from "./experts/policy-persist.js";
 import { listDesks, replaceDesks } from "./desks/store.js";
@@ -65,6 +67,7 @@ export function resetPlatformForTests(): void {
   setAutomationPersistHooks({});
   setProjectPersistHooks({});
   setExpertPersistHooks({});
+  setPluginPersistHooks({});
   setDeskPersistHooks({});
   setDevicePersistHooks({});
   attachHotBus(null);
@@ -134,6 +137,11 @@ async function doStart(): Promise<void> {
         void mirrorExperts(metadata, items).catch((error) => console.error("metadata saveExpert failed", error));
       },
     });
+    setPluginPersistHooks({
+      onWrite: (items) => {
+        void mirrorPluginInstalls(metadata, items).catch((error) => console.error("metadata savePluginInstall failed", error));
+      },
+    });
     setBundledExpertPolicyPersistHooks({
       onWrite: (doc) => {
         void metadata?.saveExpertPolicy(doc).catch((error) => console.error("metadata saveExpertPolicy failed", error));
@@ -163,6 +171,7 @@ async function doStart(): Promise<void> {
       await hydrateAutomationsFromStore(metadata);
       await hydrateProjectsFromStore(metadata);
       await hydrateExpertsFromStore(metadata);
+      await hydratePluginInstallsFromStore(metadata);
       await hydrateExpertPolicyFromStore(metadata);
       await hydrateDesksFromStore(metadata);
       await hydrateDevicesFromStore(metadata);
@@ -322,6 +331,36 @@ async function mirrorExperts(store: MetadataStore | null, items: import("@neo-cl
   for (const old of remote) {
     if (!keep.has(old.id)) {
       await store.deleteExpert(old.id);
+    }
+  }
+}
+
+async function hydratePluginInstallsFromStore(store: MetadataStore): Promise<void> {
+  const remote = await store.loadPluginInstalls();
+  if (remote.length > 0) {
+    replacePluginInstalls(remote, { mirror: false });
+    return;
+  }
+  for (const item of listStoredPluginInstalls()) {
+    await store.savePluginInstall(item);
+  }
+}
+
+async function mirrorPluginInstalls(
+  store: MetadataStore | null,
+  items: import("@neo-cloud-agent/contracts").PluginInstall[],
+): Promise<void> {
+  if (!store) {
+    return;
+  }
+  const remote = await store.loadPluginInstalls();
+  const keep = new Set(items.map((item) => item.id));
+  for (const item of items) {
+    await store.savePluginInstall(item);
+  }
+  for (const old of remote) {
+    if (!keep.has(old.id)) {
+      await store.deletePluginInstall(old.id);
     }
   }
 }

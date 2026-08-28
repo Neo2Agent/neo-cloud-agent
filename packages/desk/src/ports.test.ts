@@ -3,17 +3,17 @@ import test from "node:test";
 import {
   DEFAULT_DESK_UI_PORT,
   DEFAULT_PRODUCTION_CONTROL_PLANE,
-  DEFAULT_WEB_UI_PORT,
   controlPlaneOrigin,
   deskClientOrigin,
   deskRendererUrl,
+  isDeskApiProxyPath,
   isLoopbackOrigin,
+  productionControlPlaneCandidates,
 } from "./ports.js";
 
-test("web and desk UIs use different ports from the control plane", () => {
-  assert.equal(DEFAULT_WEB_UI_PORT, 5173);
+test("the desk UI port collides with neither the web UI nor the control plane", () => {
   assert.equal(DEFAULT_DESK_UI_PORT, 5174);
-  assert.notEqual(DEFAULT_WEB_UI_PORT, DEFAULT_DESK_UI_PORT);
+  assert.notEqual(DEFAULT_DESK_UI_PORT, 5173);
   assert.notEqual(DEFAULT_DESK_UI_PORT, 8080);
   assert.equal(deskRendererUrl({}), "");
   assert.equal(deskRendererUrl({ NEO_DESK_PORT: "8082" }), "");
@@ -24,6 +24,7 @@ test("web and desk UIs use different ports from the control plane", () => {
 test("production Desk launch ignores a local CONTROL_PLANE_URL from .env", () => {
   assert.equal(isLoopbackOrigin("http://127.0.0.1:8080"), true);
   assert.equal(isLoopbackOrigin("http://62.234.211.200"), false);
+  assert.equal(DEFAULT_PRODUCTION_CONTROL_PLANE, "http://62.234.211.200");
   assert.equal(
     deskClientOrigin({ CONTROL_PLANE_URL: "http://127.0.0.1:8080" }, { production: true }),
     DEFAULT_PRODUCTION_CONTROL_PLANE,
@@ -36,4 +37,9 @@ test("production Desk launch ignores a local CONTROL_PLANE_URL from .env", () =>
     deskClientOrigin({ NEO_CONTROL_PLANE_URL: "http://127.0.0.1:8080" }, { production: true }),
     DEFAULT_PRODUCTION_CONTROL_PLANE,
   );
+  assert.equal(controlPlaneOrigin({ NEO_DESK_PACKAGED: "1", CONTROL_PLANE_URL: "http://127.0.0.1:8080" }), DEFAULT_PRODUCTION_CONTROL_PLANE);
+  assert.deepEqual(productionControlPlaneCandidates(), [DEFAULT_PRODUCTION_CONTROL_PLANE]);
+  assert.equal(isDeskApiProxyPath("/v1/auth/login"), true);
+  assert.equal(isDeskApiProxyPath("/health"), true);
+  assert.equal(isDeskApiProxyPath("/index.html"), false);
 });

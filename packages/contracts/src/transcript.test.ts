@@ -5,8 +5,10 @@ import {
   applyRunEventsToMessages,
   buildTranscriptSnapshot,
   displayTranscriptMessages,
+  isSetupKind,
   pageTranscriptMessages,
   pageTranscriptSnapshot,
+  sortRunEvents,
   transcriptHasUnsettledWork,
   transcriptGroups,
 } from "./transcript.js";
@@ -158,6 +160,103 @@ test("stale control-plane restart notices hide after the conversation continues"
     { hideStaleRestart: true },
   );
   assert.equal(busy.length, 0);
+});
+
+test("llm.error shows as a setup notice; llm.usage does not", () => {
+  assert.equal(isSetupKind("llm.error"), true);
+  assert.equal(isSetupKind("llm.usage"), false);
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "继续啊" } }),
+    ev({ id: "s1", kind: "agent.start" }),
+    ev({ id: "m1", kind: "message.start" }),
+    ev({ id: "e1", kind: "message.end" }),
+    ev({ id: "z1", kind: "agent.end" }),
+    ev({
+      id: "err",
+      kind: "llm.error",
+      level: "error",
+      title: "模型没有返回内容",
+      detail: "上游拒绝了这次请求",
+    }),
+    ev({ id: "use", kind: "llm.usage", title: "Token usage", data: { promptTokens: 12 } }),
+  ]);
+  assert.deepEqual(
+    snapshot.messages.map((item) => item.role),
+    ["user", "setup"],
+  );
+  assert.match(snapshot.messages[1]?.text ?? "", /模型没有返回内容/);
+  assert.equal(
+    snapshot.messages.some((item) => /Token usage/.test(item.text)),
+    false,
+  );
+});
+
+test("one user turn is one reply bubble even when text and tools alternate", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "只回复 order2" } }),
+    ev({ id: "s1", kind: "agent.start" }),
+    ev({ id: "t1", kind: "tool.start", data: { toolCallId: "ls", toolName: "ls" } }),
+    ev({ id: "t2", kind: "tool.end", data: { toolCallId: "ls", toolName: "ls", output: "README.md" } }),
+    ev({ id: "m1", kind: "message.delta", data: { delta: "先看看目录。" } }),
+    ev({ id: "m2", kind: "message.end" }),
+    ev({ id: "t3", kind: "tool.start", data: { toolCallId: "read", toolName: "read" } }),
+    ev({ id: "t4", kind: "tool.end", data: { toolCallId: "read", toolName: "read", output: "target" } }),
+    ev({ id: "m3", kind: "message.delta", data: { delta: "order2" } }),
+    ev({ id: "m4", kind: "message.end" }),
+    ev({ id: "z1", kind: "agent.end" }),
+  ]);
+  assert.deepEqual(snapshot.messages.map((item) => item.role), ["user", "assistant"]);
+  const reply = snapshot.messages[1];
+  assert.equal(reply?.text, "先看看目录。order2");
+  // Tools stay in place between the two pieces of text.
+  assert.deepEqual(
+    transcriptGroups(reply as TranscriptMessage).map((group) =>
+      group.type === "tools" ? group.tools.map((tool) => tool.name).join("+") : group.text,
+    ),
+    ["ls", "先看看目录。", "read", "order2"],
+  );
+});
+
+test("a second worker process does not sort its turn in front of the first", () => {
+  const at = (seconds: number) => `2026-08-27T10:0${seconds}:00.000Z`;
+  const ev = (id: string, kind: string, seq: number, epoch: string, seconds: number, extra?: Record<string, unknown>) => ({
+    id,
+    runId: "run-1",
+    createdAt: at(seconds),
+    category: "agent_run" as const,
+    level: "info" as const,
+    kind: kind as RunEvent["kind"],
+    title: kind,
+    data: { workerSeq: seq, workerEpoch: epoch, ...extra },
+  });
+  // Turn one ran in process A; turn two in process B, whose seq restarts at 1.
+  const sorted = sortRunEvents([
+    ev("b1", "user.message", 1, "B", 5, { text: "second" }),
+    ev("a1", "user.message", 1, "A", 1, { text: "first" }),
+    ev("a2", "message.delta", 2, "A", 2, { delta: "one" }),
+    ev("b2", "message.delta", 2, "B", 6, { delta: "two" }),
+  ]);
+  assert.deepEqual(sorted.map((item) => item.id), ["a1", "a2", "b1", "b2"]);
+});
+
+test("the desk claim handshake never shows on the machine, and disappears elsewhere once it starts", () => {
+  const claim: TranscriptMessage = {
+    id: "q1",
+    role: "setup",
+    text: "等待本机 Desk 认领",
+    createdAt: "2026-08-27T00:00:00.000Z",
+    kind: "run.queued",
+  };
+  // On the desk itself the local bar covers this, so it is always hidden.
+  assert.equal(displayTranscriptMessages([claim], { hideDeskHandshake: true }).length, 0);
+  // On the web it is real information while the machine has not picked it up.
+  assert.equal(displayTranscriptMessages([claim]).length, 1);
+  // Once the run actually started it is stale everywhere.
+  const started = displayTranscriptMessages([
+    claim,
+    { id: "a1", role: "assistant", text: "local-ok", createdAt: "2026-08-27T00:00:05.000Z" },
+  ]);
+  assert.deepEqual(started.map((item) => item.role), ["assistant"]);
 });
 
 test("transcriptHasUnsettledWork sees running tools on either tools or blocks", () => {

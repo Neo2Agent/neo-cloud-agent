@@ -84,10 +84,15 @@ function startMustSucceed(plan: { config: { startMustSucceed?: boolean } }): boo
   return plan.config.startMustSucceed === true || process.env.START_MUST_SUCCEED === "1";
 }
 
-export async function runWorkspaceBoot(input: { runId: string; workspaceDir: string }): Promise<BootResult> {
+export async function runWorkspaceBoot(input: {
+  runId: string;
+  workspaceDir: string;
+  /** Per-run scratch, so runs sharing a folder do not interleave their logs. */
+  scratchDir?: string;
+}): Promise<BootResult> {
   const events: RunEvent[] = [];
   const terminals: TerminalHandle[] = [];
-  const logDir = path.join(input.workspaceDir, ".neo", "logs");
+  const logDir = path.join(input.scratchDir || path.join(input.workspaceDir, ".neo"), "logs");
   let fatal = false;
 
   for (const plan of findBootPlans(input.workspaceDir)) {
