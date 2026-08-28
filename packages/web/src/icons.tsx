@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Cloud,
   FileCode,
@@ -20,6 +21,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   PanelRight,
+  Plus,
   Puzzle,
   Search,
   Settings,
@@ -92,6 +94,22 @@ export function IconStop(props: IconProps) {
 
 export function IconClose(props: IconProps) {
   return icon(X, props);
+}
+
+export function IconX(props: IconProps) {
+  return icon(X, props);
+}
+
+export function IconPlus(props: IconProps) {
+  return icon(Plus, props);
+}
+
+export function IconChevronLeft(props: IconProps) {
+  return icon(ChevronLeft, props);
+}
+
+export function IconChevronRight(props: IconProps) {
+  return icon(ChevronRight, props);
 }
 
 export function IconStar(props: IconProps) {
