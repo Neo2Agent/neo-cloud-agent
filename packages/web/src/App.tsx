@@ -43,11 +43,11 @@ import {
   IconExperts,
   IconFiles,
   IconGear,
-  IconMenu,
   IconMore,
   IconPr,
   IconProjects,
   IconSidebarClose,
+  IconSidebarOpen,
   IconSkills,
   IconTerminal,
 } from "./icons";
@@ -1591,7 +1591,7 @@ export function App() {
                   aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
                   onClick={toggleSidebar}
                 >
-                  {sidebarOpen ? <IconSidebarClose /> : <IconMenu />}
+                  {sidebarOpen ? <IconSidebarClose size={18} /> : <IconSidebarOpen size={18} />}
                   <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
                 </button>
               </Tooltip>
