@@ -14,6 +14,7 @@ import { hasSavedSession } from "./session";
 import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
+import { cloudSafeRepoUrls, isLocalFolderRef } from "./repo";
 import { cycle, shortcutAction } from "./shortcuts";
 import { applyLiveEvents, parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
@@ -673,7 +674,8 @@ export function App() {
       } else {
         setActiveProject(null);
       }
-      setRepo(run.repoUrls?.[0] ?? "");
+      const firstRepo = run.repoUrls?.[0] ?? "";
+      setRepo(!isDeskApp() && isLocalFolderRef(firstRepo) ? "" : firstRepo);
       setEnvId(run.envId ?? "");
       setBuildId(run.buildId ?? "");
       setRuns((prev) => {
@@ -916,7 +918,7 @@ export function App() {
     if (runId && !isActiveRunStatus(currentRun?.status)) {
       patchRun(runId, (run) => ({ ...run, status: "RUNNING" }));
     }
-    const repoUrls = repo.trim() ? [repo.trim()] : [];
+    const repoUrls = deskTarget.kind === "desk" ? (repo.trim() ? [repo.trim()] : deskFolder ? [deskFolder] : []) : cloudSafeRepoUrls(repo.trim() ? [repo.trim()] : []);
     const model = resolveChatModel(llm.upstream, llm.model, attached.length > 0);
     const buildPayload = buildId === "cold" ? { reuseBuild: false } : buildId ? { buildId, reuseBuild: true } : { reuseBuild: true };
     try {
@@ -926,7 +928,7 @@ export function App() {
             method: "POST",
             body: JSON.stringify({
               prompt: `${askPrefix}${text || "（图片）"}`,
-              repoUrls: deskTarget.kind === "desk" ? (repoUrls.length ? repoUrls : deskFolder ? [deskFolder] : []) : repoUrls,
+              repoUrls,
               source: deskTarget.kind === "desk" ? "desk" : "web",
               envId: envId || undefined,
               model,

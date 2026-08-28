@@ -338,6 +338,17 @@ test("fatal start failure marks the run ERROR", async () => {
   assert.match(getRun(run.id)?.errorMessage ?? "", /start|exit 7/i);
 });
 
+test("cloud createRun drops a missing host folder instead of failing prepare", async () => {
+  const run = await createRun({
+    prompt: "ignore stale desk folder",
+    repoUrls: ["/tmp/desk-local-verify-missing"],
+    source: "web",
+    target: { loop: "cloud", tools: "cloud" },
+  });
+  assert.notEqual(run.status, "ERROR");
+  assert.deepEqual(run.repoUrls, []);
+});
+
 test("createRun fails when the local repo path does not exist", async () => {
   const run = await createRun({
     prompt: "nope",

@@ -415,6 +415,7 @@ button[type="submit"]:disabled {
   gap: 10px;
   min-width: 0;
   flex: 1 1 160px;
+  overflow: hidden;
 }
 
 .topbar-lead,
@@ -426,6 +427,14 @@ button[type="submit"]:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.topbar-heading .eyebrow,
+.topbar-heading h1 {
+  max-width: 100%;
 }
 
 .app-tabs {
@@ -480,6 +489,10 @@ h1 {
   align-items: center;
   flex: 0 1 auto;
   min-width: 0;
+  max-width: min(100%, 62%);
+  position: relative;
+  z-index: 1;
+  background: var(--bg);
 }
 
 .status {
@@ -2668,6 +2681,16 @@ textarea {
 
 .sidebar-closed .sidebar {
   display: none;
+}
+
+@media (max-width: 1200px) {
+  .topbar-heading {
+    display: none;
+  }
+
+  .top-actions {
+    max-width: none;
+  }
 }
 
 @media (max-width: 1100px) {
