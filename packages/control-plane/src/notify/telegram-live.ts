@@ -9,7 +9,12 @@ const EDIT_MS = 1500;
 export async function startTelegramLive(runId: string, chatId: string): Promise<void> {
   const token = readNotifySecrets().telegramBotToken;
   if (!token || !chatId) return;
-  const messageId = await sendTelegramMessage(token, chatId, "已收到，正在做…");
+  let messageId: number | null = null;
+  try {
+    messageId = await sendTelegramMessage(token, chatId, "已收到，正在做…");
+  } catch {
+    return;
+  }
   if (!messageId) return;
   live.set(runId, { chatId, messageId, lastEdit: Date.now(), text: "已收到，正在做…" });
   const off = subscribe(runId, (event) => {
