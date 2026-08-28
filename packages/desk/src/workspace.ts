@@ -45,9 +45,16 @@ export function writeRunBootstrap(stateDir: string, bootstrap: Record<string, un
  */
 export function writeRunExpertFiles(
   workspaceDir: string,
-  assignment: Pick<DeskAssignment, "expertMarkdown" | "expertTeamMarkdown" | "expertMeta" | "expertAgents">,
+  assignment: Pick<DeskAssignment, "expertMarkdown" | "expertTeamMarkdown" | "expertMeta" | "expertAgents" | "pluginSkills" | "pluginSnapshot">,
 ): void {
-  if (!assignment.expertMeta && !assignment.expertMarkdown && !assignment.expertTeamMarkdown && !assignment.expertAgents?.length) {
+  if (
+    !assignment.expertMeta &&
+    !assignment.expertMarkdown &&
+    !assignment.expertTeamMarkdown &&
+    !assignment.expertAgents?.length &&
+    !assignment.pluginSnapshot &&
+    !assignment.pluginSkills?.length
+  ) {
     return;
   }
   const dest = path.join(workspaceDir, ".neo");
@@ -66,6 +73,21 @@ export function writeRunExpertFiles(
     mkdirSync(agentsDir, { recursive: true });
     for (const agent of assignment.expertAgents) {
       writeFileSync(path.join(agentsDir, `${agent.slug}.md`), agent.markdown);
+    }
+  }
+  if (assignment.pluginSnapshot) {
+    writeFileSync(
+      path.join(dest, "plugins.json"),
+      assignment.pluginSnapshot.endsWith("\n") ? assignment.pluginSnapshot : `${assignment.pluginSnapshot}\n`,
+    );
+  }
+  if (assignment.pluginSkills?.length) {
+    for (const skill of assignment.pluginSkills) {
+      const skillDir = path.join(dest, "skills", skill.slug);
+      mkdirSync(skillDir, { recursive: true });
+      for (const file of skill.files) {
+        writeFileSync(path.join(skillDir, file.relativePath), file.content);
+      }
     }
   }
   ignoreNeoDir(workspaceDir);

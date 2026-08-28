@@ -128,12 +128,16 @@ function normalize(value: unknown): Project | null {
   const expertIds = Array.isArray(record.expertIds)
     ? record.expertIds.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     : [];
+  const pluginIds = Array.isArray(record.pluginIds)
+    ? record.pluginIds.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : [];
   return {
     id: record.id,
     name: record.name.trim() || "未命名项目",
     instruction: typeof record.instruction === "string" ? record.instruction : "",
     defaultRepoUrls: repos,
     expertIds,
+    pluginIds,
     invitePolicy: asPolicy(record.invitePolicy),
     createdBy: typeof record.createdBy === "string" ? record.createdBy : members[0]?.userId ?? "",
     createdAt,
@@ -190,6 +194,7 @@ export function createProject(input: {
   instruction?: string;
   defaultRepoUrls?: string[];
   expertIds?: string[];
+  pluginIds?: string[];
   invitePolicy?: InvitePolicy;
   actor: { userId: string; email: string };
 }): Project {
@@ -204,6 +209,7 @@ export function createProject(input: {
     instruction: (input.instruction ?? "").trim(),
     defaultRepoUrls: (input.defaultRepoUrls ?? []).map((item) => item.trim()).filter(Boolean),
     expertIds: (input.expertIds ?? []).map((item) => item.trim()).filter(Boolean),
+    pluginIds: (input.pluginIds ?? []).map((item) => item.trim()).filter(Boolean),
     invitePolicy: input.invitePolicy === "open" ? "open" : "approve",
     createdBy: input.actor.userId,
     createdAt: now,
@@ -217,7 +223,7 @@ export function createProject(input: {
 
 export function updateProject(
   id: string,
-  patch: { name?: string; instruction?: string; defaultRepoUrls?: string[]; expertIds?: string[]; invitePolicy?: InvitePolicy },
+  patch: { name?: string; instruction?: string; defaultRepoUrls?: string[]; expertIds?: string[]; pluginIds?: string[]; invitePolicy?: InvitePolicy },
   actor: { userId: string; email: string },
 ): Project {
   const current = getProject(id);
@@ -229,6 +235,7 @@ export function updateProject(
     instruction: patch.instruction !== undefined ? patch.instruction : current.instruction,
     defaultRepoUrls: patch.defaultRepoUrls ?? current.defaultRepoUrls,
     expertIds: patch.expertIds ?? current.expertIds,
+    pluginIds: patch.pluginIds ?? current.pluginIds,
     invitePolicy: patch.invitePolicy ?? current.invitePolicy,
   };
   return save(pushEvent(next, actor, "updated", "更新了项目设置"));

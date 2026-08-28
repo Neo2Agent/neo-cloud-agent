@@ -117,9 +117,10 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     sandboxRoot: config.sandboxRoot,
   });
   const loaded = summarizeWorkspaceResources(resourceLoader);
-  if (loaded.skills.length > 0 || loaded.agentsFiles.length > 0) {
+  const pluginNames = readPluginSnapshot(input.cwd);
+  if (loaded.skills.length > 0 || loaded.agentsFiles.length > 0 || pluginNames.length > 0) {
     console.log(
-      `workspace resources skills=${loaded.skills.join(",") || "-"} agents=${loaded.agentsFiles.length}`,
+      `workspace resources skills=${loaded.skills.join(",") || "-"} agents=${loaded.agentsFiles.length} plugins=${pluginNames.join(",") || "-"}`,
     );
   }
 
@@ -189,6 +190,15 @@ export async function dispatchInbound(session: AgentSession, message: WorkerInbo
   }
   await session.prompt(text, vision ? { images: vision } : undefined);
   return "continue";
+}
+
+function readPluginSnapshot(cwd: string): string[] {
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(cwd, ".neo", "plugins.json"), "utf8")) as { plugins?: Array<{ slug?: string }> };
+    return Array.isArray(parsed.plugins) ? parsed.plugins.map((item) => item.slug).filter((item): item is string => Boolean(item)) : [];
+  } catch {
+    return [];
+  }
 }
 
 export function describeDispatch(message: WorkerInbound): string {

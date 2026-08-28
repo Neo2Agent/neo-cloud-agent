@@ -145,6 +145,7 @@ test("mysql store upserts run JSON, events, and users", async () => {
     instruction: "用中文回复",
     defaultRepoUrls: [],
     expertIds: [],
+    pluginIds: [],
     invitePolicy: "open",
     createdBy: "user_ada",
     createdAt: record.run.createdAt,

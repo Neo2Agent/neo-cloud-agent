@@ -56,6 +56,17 @@ test("run state stays out of the repo", () => {
   assert.equal(existsSync(path.join(repo, "sessions")), false);
 });
 
+test("plugin files land next to expert files", async () => {
+  const dir = initRepo();
+  const workspace = await prepareDeskWorkspace({ repoDir: dir });
+  writeRunExpertFiles(workspace, {
+    pluginSnapshot: JSON.stringify({ plugins: [{ slug: "pr-review", version: "1.0.0", digest: "abc" }], warnings: [] }),
+    pluginSkills: [{ slug: "pr-review", files: [{ relativePath: "SKILL.md", content: "---\nname: pr-review\ndescription: Review a PR.\n---\n\nReview.\n" }] }],
+  });
+  assert.match(readFileSync(path.join(workspace, ".neo", "plugins.json"), "utf8"), /pr-review/);
+  assert.match(readFileSync(path.join(workspace, ".neo", "skills", "pr-review", "SKILL.md"), "utf8"), /Review/);
+});
+
 test("expert files land in the workspace and .neo is excluded from git", async () => {
   const dir = initRepo();
   const workspace = await prepareDeskWorkspace({ repoDir: dir });

@@ -1,17 +1,11 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { WORKSPACE_SKILL_DIRS } from "@neo-cloud-agent/contracts";
 import { DefaultResourceLoader, type ResourceLoader, type SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createWorkspaceHookExtension, isInsideWorkspace } from "./hooks.js";
 import { createWorkspaceSandboxExtension } from "./sandbox.js";
 
-export const WORKSPACE_SKILL_DIRS = [
-  ".pi/skills",
-  ".cursor/skills",
-  ".claude/skills",
-  ".codex/skills",
-  ".neo/skills",
-  ".agents/skills",
-] as const;
+export { WORKSPACE_SKILL_DIRS };
 
 export function existingWorkspaceSkillPaths(cwd: string): string[] {
   const found: string[] = [];

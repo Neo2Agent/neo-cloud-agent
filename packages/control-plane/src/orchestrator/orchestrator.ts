@@ -98,6 +98,8 @@ import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 import { assignmentExpertFields, buildExpertFiles, resolveTeam, writeExpertFiles } from "../experts/materialize.js";
+import { assignmentPluginFields, buildPluginFiles, writePluginFiles } from "../plugins/materialize.js";
+import { resolveEnabledPlugins } from "../plugins/store.js";
 import { requireUsableExpert } from "../experts/store.js";
 import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
 import { bindTodoRun } from "../projects/todos.js";
@@ -786,6 +788,29 @@ function writeExpertRole(run: Run): void {
   }
 }
 
+function pluginFilesForRun(run: Run, extraIds?: string[]) {
+  let wantedSkillNames: string[] | undefined;
+  try {
+    if (run.expertId) {
+      wantedSkillNames = requireUsableExpert(run.expertId, { userId: run.userId, projectId: run.projectId }).skillNames;
+    }
+  } catch {
+    wantedSkillNames = undefined;
+  }
+  const extras = extraIds ?? run.plugins?.map((item) => item.slug) ?? [];
+  return buildPluginFiles({
+    plugins: resolveEnabledPlugins({ userId: run.userId, projectId: run.projectId, extraIds: extras }),
+    workspaceDir: workspaceFor(run.id),
+    wantedSkillNames,
+  });
+}
+
+function writeRunPlugins(run: Run, extraIds?: string[]): void {
+  const files = pluginFilesForRun(run, extraIds);
+  writePluginFiles(workspaceFor(run.id), files);
+  run.plugins = files.snapshot.plugins;
+}
+
 function seedHostCollaborator(run: Run, owner?: { userId?: string; email?: string }): void {
   if (!run.projectId) {
     run.collaborators = [];
@@ -1052,9 +1077,10 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
       data: { text: input.prompt, source: run.source, images: input.images },
     }),
   );
+  writeExpertRole(run);
+  writeRunPlugins(run, input.pluginIds);
   mintJwtForRun(run);
   flushRun(run.id);
-  writeExpertRole(run);
 
   if (isDeskTarget(run.executionTarget)) {
     if (start === "inline") {
@@ -1221,6 +1247,8 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   try {
     writeProjectMemory(run);
     writeExpertRole(run);
+    writeRunPlugins(run, input.pluginIds);
+    flushRun(run.id);
     await attachWorker(run, runningTitle());
   } catch (error) {
     if (isSlotBusyError(error)) {
@@ -1446,6 +1474,7 @@ function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
     expertId: run.expertId ?? null,
     expertTeamId: run.expertTeamId ?? null,
     ...assignmentExpertFields(files),
+    ...assignmentPluginFields(pluginFilesForRun(run)),
   };
 }
 

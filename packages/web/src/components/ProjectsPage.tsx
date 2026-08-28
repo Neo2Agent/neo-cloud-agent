@@ -2,6 +2,7 @@ import { Checkbox, Select } from "@neo-cloud-agent/ui";
 import { useEffect, useMemo, useState } from "react";
 import type { Expert } from "@neo-cloud-agent/contracts/expert";
 import { expertPickerLabel } from "@neo-cloud-agent/contracts/expert";
+import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { canManageProject, type Project, type ProjectInvite, type ProjectMember } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
@@ -31,7 +32,9 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [catalog, setCatalog] = useState<Expert[]>([]);
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [pinnedPluginIds, setPinnedPluginIds] = useState<string[]>([]);
 
   const selected = detail ?? items.find((item) => item.id === selectedId) ?? null;
   const members = selected?.members ?? [];
@@ -52,10 +55,17 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
       setDetail(project);
       setInstruction(project.instruction);
       setPinnedIds(project.expertIds ?? []);
+      setPinnedPluginIds(project.pluginIds ?? []);
     }
-    const expertRes = await api(token, `/v1/experts?projectId=${encodeURIComponent(id)}`);
+    const [expertRes, pluginRes] = await Promise.all([
+      api(token, `/v1/experts?projectId=${encodeURIComponent(id)}`),
+      api(token, `/v1/plugins?projectId=${encodeURIComponent(id)}`),
+    ]);
     if (expertRes.ok) {
       setCatalog((await readJson<{ experts?: Expert[] }>(expertRes)).experts ?? []);
+    }
+    if (pluginRes.ok) {
+      setPluginCatalog((await readJson<{ plugins?: PluginCatalogItem[] }>(pluginRes)).plugins ?? []);
     }
     if (runsRes.ok) {
       const body = await readJson<{ runs?: Run[] }>(runsRes);
@@ -215,6 +225,49 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
             </button>
           ) : (
             <p className="hint">只有所有者或管理员能改置顶。</p>
+          )}
+        </form>
+
+        <form
+          className="proj-card"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setBusy(true);
+            setError("");
+            void api(token, `/v1/projects/${selected.id}`, {
+              method: "POST",
+              body: JSON.stringify({ pluginIds: pinnedPluginIds }),
+            })
+              .then(async (res) => {
+                if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "保存失败");
+                await loadDetail(selected.id);
+              })
+              .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
+              .finally(() => setBusy(false));
+          }}
+        >
+          <p className="proj-card-title">项目技能</p>
+          <p className="hint">钉住后，这个项目里开的对话会把对应 SKILL.md 写进工作区，不必每人自己安装。</p>
+          <ul className="expert-pin-list">
+            {pluginCatalog.map((item) => (
+              <li key={item.id}>
+                <Checkbox
+                  checked={pinnedPluginIds.includes(item.id) || pinnedPluginIds.includes(item.slug)}
+                  disabled={!canManageProject(members.find((member) => member.userId === userId)?.role)}
+                  label={pluginPickerLabel(item)}
+                  onCheckedChange={(checked) => {
+                    setPinnedPluginIds((prev) => (checked ? [...prev, item.id] : prev.filter((id) => id !== item.id && id !== item.slug)));
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+          {canManageProject(members.find((member) => member.userId === userId)?.role) ? (
+            <button className="proj-add" type="submit" disabled={busy}>
+              保存技能
+            </button>
+          ) : (
+            <p className="hint">只有所有者或管理员能改项目技能。</p>
           )}
         </form>
 

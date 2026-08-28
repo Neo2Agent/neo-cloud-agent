@@ -25,9 +25,11 @@ import { FileTree } from "./components/FileTree";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { AutomationsPage } from "./components/AutomationsPage";
 import { ExpertsPage } from "./components/ExpertsPage";
+import { SkillsPage } from "./components/SkillsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import type { Project } from "@neo-cloud-agent/contracts/project";
+import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
 import {
@@ -141,10 +143,19 @@ function hashExperts(): boolean {
   return location.hash === "#/experts" || Boolean(hashExpertId());
 }
 
-function initialMainTab(): "chat" | "automations" | "projects" | "experts" {
+function hashSkillId(): string | null {
+  return /^#\/skills\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
+}
+
+function hashSkills(): boolean {
+  return location.hash === "#/skills" || Boolean(hashSkillId());
+}
+
+function initialMainTab(): "chat" | "automations" | "projects" | "experts" | "skills" {
   if (hashAutomations()) return "automations";
   if (hashProjects()) return "projects";
   if (hashExperts()) return "experts";
+  if (hashSkills()) return "skills";
   return "chat";
 }
 
@@ -211,7 +222,9 @@ export function App() {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
-  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts">(initialMainTab);
+  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts" | "skills">(initialMainTab);
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(hashSkillId);
+  const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
   const [selectedExpertId, setSelectedExpertId] = useState<string | null>(hashExpertId);
   const [experts, setExperts] = useState<Expert[]>([]);
   const [teams, setTeams] = useState<ExpertTeam[]>([]);
@@ -669,6 +682,44 @@ export function App() {
     history.replaceState(null, "", id ? `/#/experts/${id}` : "/#/experts");
   }, []);
 
+  const openSkills = useCallback((id?: string | null) => {
+    setMainTab("skills");
+    setFilesOpen(false);
+    setDiffOpen(false);
+    setSettingsOpen(false);
+    setSelectedSkillId(id ?? null);
+    history.replaceState(null, "", id ? `/#/skills/${id}` : "/#/skills");
+  }, []);
+
+  const useSkill = useCallback(
+    async (plugin: PluginCatalogItem) => {
+      try {
+        if (!plugin.installed) {
+          const res = await api(tokenRef.current, `/v1/plugins/${plugin.id}/install`, {
+            method: "POST",
+            body: JSON.stringify({ scope: "user" }),
+          });
+          if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "安装失败");
+        } else if (!plugin.enabled) {
+          const res = await api(tokenRef.current, `/v1/plugins/${plugin.id}/enable`, {
+            method: "POST",
+            body: JSON.stringify({ enabled: true, scope: plugin.installScope ?? "user" }),
+          });
+          if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "启用失败");
+        }
+      } catch {
+        // 仍带上 pluginIds，这次对话会额外启用
+      }
+      resetComposer();
+      setPluginPick(plugin);
+      if (plugin.interface?.defaultPrompt?.[0]) {
+        setPrompt(plugin.interface.defaultPrompt[0]);
+      }
+      setMainTab("chat");
+    },
+    [resetComposer],
+  );
+
   const openProjects = useCallback((id?: string | null, invite?: string | null) => {
     setMainTab("projects");
     setFilesOpen(false);
@@ -696,7 +747,7 @@ export function App() {
 
   const openChat = useCallback(() => {
     setMainTab("chat");
-    if (hashAutomations() || hashProjects() || hashExperts()) {
+    if (hashAutomations() || hashProjects() || hashExperts() || hashSkills()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
   }, [runId]);
@@ -731,6 +782,12 @@ export function App() {
       await Promise.all(refreshShell);
       return;
     }
+    if (hashSkills()) {
+      setMainTab("skills");
+      setSelectedSkillId(hashSkillId());
+      await Promise.all(refreshShell);
+      return;
+    }
     const invite = hashInviteToken();
     const projectId = hashProjectId();
     if (invite || projectId || location.hash === "#/projects") {
@@ -750,7 +807,7 @@ export function App() {
       refreshVms(),
       refreshDesks(),
     ]);
-    if (!match && !hashRunId() && !hashProjects() && !hashExperts()) resetComposer();
+    if (!match && !hashRunId() && !hashProjects() && !hashExperts() && !hashSkills()) resetComposer();
   }, [openRun, refreshDesks, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
@@ -845,6 +902,7 @@ export function App() {
               projectId: activeProject?.id,
               expertId: expertPick.expertId,
               expertTeamId: expertPick.expertTeamId,
+              pluginIds: pluginPick ? [pluginPick.id] : undefined,
               mode: agentMode,
               deskWorkspaceId: deskTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
               target:
@@ -892,7 +950,7 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, agentMode, buildId, currentRun?.status, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, agentMode, buildId, currentRun?.status, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
 
   const queueMessage = useCallback(async () => {
     const text = prompt.trim();
@@ -1091,6 +1149,15 @@ export function App() {
       if (hashExperts()) {
         setMainTab("experts");
         setSelectedExpertId(hashExpertId());
+        setInviteToken(null);
+        setFilesOpen(false);
+        setDiffOpen(false);
+        setSettingsOpen(false);
+        return;
+      }
+      if (hashSkills()) {
+        setMainTab("skills");
+        setSelectedSkillId(hashSkillId());
         setInviteToken(null);
         setFilesOpen(false);
         setDiffOpen(false);
@@ -1376,6 +1443,14 @@ export function App() {
                 </button>
                 <button
                   type="button"
+                  className={mainTab === "skills" ? "active" : ""}
+                  aria-current={mainTab === "skills" ? "page" : undefined}
+                  onClick={() => openSkills()}
+                >
+                  技能
+                </button>
+                <button
+                  type="button"
                   className={mainTab === "automations" ? "active" : ""}
                   aria-current={mainTab === "automations" ? "page" : undefined}
                   onClick={openAutomations}
@@ -1389,6 +1464,8 @@ export function App() {
                     ? "项目"
                     : mainTab === "experts"
                       ? "专家"
+                      : mainTab === "skills"
+                      ? "技能"
                       : mainTab === "automations"
                       ? "定时任务"
                       : currentRun
@@ -1416,6 +1493,8 @@ export function App() {
                     ? "人和 Agent 共用一份上下文"
                     : mainTab === "experts"
                       ? "换角色干活"
+                      : mainTab === "skills"
+                      ? "给 Agent 装工作手册"
                       : mainTab === "automations"
                       ? "到点自动开对话"
                       : currentRun
@@ -1762,6 +1841,14 @@ export function App() {
                   setMainTab("chat");
                 }}
               />
+            ) : mainTab === "skills" ? (
+              <SkillsPage
+                token={token}
+                selectedId={selectedSkillId}
+                projectId={activeProject?.id}
+                onOpenPlugin={(id) => openSkills(id)}
+                onUse={(plugin) => void useSkill(plugin)}
+              />
             ) : mainTab === "automations" ? (
               <AutomationsPage
                 token={token}
@@ -1812,7 +1899,7 @@ export function App() {
               </ChatErrorBoundary>
             )}
           </div>
-          {mainTab === "chat" && (activeProject || expertPick.expertId || expertPick.expertTeamId) ? (
+          {mainTab === "chat" && (activeProject || expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
             <div className="proj-chip-bar" id="project-chip">
               {activeProject ? (
                 <span className="proj-chip">
@@ -1826,6 +1913,9 @@ export function App() {
                     : `专家 · ${experts.find((item) => item.id === expertPick.expertId)?.name ?? "已选"}`}
                 </span>
               ) : null}
+              {pluginPick ? (
+                <span className="proj-chip">技能 · {pluginPickerLabel(pluginPick)}</span>
+              ) : null}
               {runId && activeProject ? (
                 <button type="button" className="ghost" onClick={() => openProjects(activeProject.id)}>
                   打开项目
@@ -1838,6 +1928,11 @@ export function App() {
               {!runId && (expertPick.expertId || expertPick.expertTeamId) ? (
                 <button type="button" className="ghost" onClick={() => setExpertPick({})}>
                   不用专家
+                </button>
+              ) : null}
+              {!runId && pluginPick ? (
+                <button type="button" className="ghost" onClick={() => setPluginPick(null)}>
+                  不用技能
                 </button>
               ) : null}
             </div>
