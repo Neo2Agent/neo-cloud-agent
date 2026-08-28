@@ -770,6 +770,7 @@ pnpm typecheck && pnpm test
 | [desk.md](./desk.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为与项目工作台 |
 | [mobile.md](./mobile.md) | 手机端蓝图与 P0 |
 | [admin-platform-research.md](./admin-platform-research.md) | 后管 vs New API 怎么拆 |
+| [nginx-research.md](./nginx-research.md) | 现网入口是 Caddy；不要再引入 Nginx |
 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) | 项目协作对标 |
 | [workbuddy-experts.md](./workbuddy-experts.md) | WorkBuddy 专家 / 专家团调研与落地顺序 |
 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) | Codex / WorkBuddy 技能与插件市场调研与复刻顺序 |
