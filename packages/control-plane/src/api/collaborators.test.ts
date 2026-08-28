@@ -142,6 +142,10 @@ test("cloud project runs invite collaborators without a second worker", async (t
   assert.equal(followUps.filter((item) => item.status === "queued").length >= 1, true);
   assert.equal(actors.has(mate.user.id), true);
   assert.equal(followUps.some((item) => item.actorUserId === admin.user.id || item.actorUserId === mate.user.id), true);
+  const transcript = await fetch(`${base}/v1/runs/${run.id}/transcript`, { headers: auth(mate.token) });
+  assert.equal(transcript.status, 200);
+  const snapshot = ((await transcript.json()) as { snapshot?: { messages?: Array<{ role: string; text: string }> } }).snapshot;
+  assert.equal(snapshot?.messages?.some((item) => item.role === "user" && item.text === "同事排队"), false);
 
   const own = await fetch(`${base}/v1/runs`, {
     method: "POST",
@@ -162,6 +166,12 @@ test("cloud project runs invite collaborators without a second worker", async (t
   assert.equal(nextHost.userId, mate.user.id);
   assert.equal(nextHost.collaborators?.some((item) => item.userId === admin.user.id), true);
   assert.equal((await fetch(`${base}/v1/runs/${run.id}`, { headers: auth(admin.token) })).status, 200);
+  const handoff = await fetch(`${base}/v1/runs/${run.id}/artifacts`, { headers: auth(mate.token) });
+  assert.equal(handoff.status, 200);
+  assert.equal(
+    ((await handoff.json()) as { artifacts: Array<{ name: string }> }).artifacts.some((item) => item.name === "HANDOFF.md"),
+    true,
+  );
 
   const forked = await fetch(`${base}/v1/runs/${ownRun.id}/transfer`, {
     method: "POST",

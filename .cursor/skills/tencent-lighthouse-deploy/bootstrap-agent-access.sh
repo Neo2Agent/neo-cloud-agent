@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Wire Cloud Agent Secrets onto this VM so `ssh lighthouse` / tccli work.
+# Wire Cloud Agent Secrets onto this VM so `ssh lighthouse` / `ssh lighthouse-db` / tccli work.
 # Never print secret values. Missing secrets is OK (exit 0).
 set -euo pipefail
 
@@ -10,6 +10,7 @@ REGION="${TENCENTCLOUD_REGION:-ap-beijing}"
 
 wrote_ssh=0
 have_tccli=0
+have_lns=0
 
 normalize_key() {
   local raw="$1"
@@ -45,7 +46,7 @@ install_lighthouse_identity() {
   fi
   if [[ -f "$CONFIG_FILE" ]]; then
     awk '
-      $1 == "Host" && $2 == "lighthouse" { skip = 1; next }
+      $1 == "Host" && ($2 == "lighthouse" || $2 == "lighthouse-db") { skip = 1; next }
       skip && $1 == "Host" { skip = 0 }
       !skip { print }
     ' "$CONFIG_FILE" >"${CONFIG_FILE}.tmp"
@@ -54,6 +55,12 @@ install_lighthouse_identity() {
   cat >>"$CONFIG_FILE" <<EOF
 Host lighthouse
   HostName 62.234.211.200
+  User ubuntu
+  IdentityFile ${KEY_FILE}
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+Host lighthouse-db
+  HostName 101.42.105.230
   User ubuntu
   IdentityFile ${KEY_FILE}
   IdentitiesOnly yes
@@ -91,8 +98,12 @@ if [[ -n "${TENCENTCLOUD_SECRET_ID:-}" && -n "${TENCENTCLOUD_SECRET_KEY:-}" ]]; 
   export TENCENTCLOUD_REGION="$REGION"
 fi
 
+if [[ -n "${TENCENTCLOUD_LNS_SECRET_ID:-}" && -n "${TENCENTCLOUD_LNS_SECRET_KEY:-}" ]]; then
+  have_lns=1
+fi
+
 if [[ "$wrote_ssh" -eq 1 ]]; then
-  echo "ssh: lighthouse identity installed"
+  echo "ssh: lighthouse + lighthouse-db identity installed"
 else
   echo "ssh: NEO_LIGHTHOUSE_SSH_KEY_B64 missing (skip)"
 fi
@@ -100,4 +111,9 @@ if [[ "$have_tccli" -eq 1 ]]; then
   echo "tccli: credentials present region=${REGION}"
 else
   echo "tccli: TENCENTCLOUD_SECRET_ID/KEY missing (skip)"
+fi
+if [[ "$have_lns" -eq 1 ]]; then
+  echo "tccli-lns: credentials present (db account)"
+else
+  echo "tccli-lns: TENCENTCLOUD_LNS_SECRET_ID/KEY missing (skip)"
 fi

@@ -26,3 +26,10 @@ test("lists a workspace directory and rejects path escape", () => {
 
   assert.throws(() => listWorkspacePath(root, "../secret"), /escapes workspace/);
 });
+
+test("lists an empty directory when the workspace root is missing", () => {
+  const root = path.join(mkdtempSync(path.join(tmpdir(), "neo-fs-missing-")), "gone");
+  const listing = listWorkspacePath(root, "");
+  assert.equal(listing.type, "dir");
+  assert.deepEqual(listing.entries, []);
+});

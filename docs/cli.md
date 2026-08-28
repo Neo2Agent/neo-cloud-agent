@@ -73,6 +73,7 @@ neo commit <runId> -m <message>
 neo env ls
 neo build ls
 neo vms
+neo plugin ls|install|enable|disable|uninstall [id] [--project]
 ```
 
 没有子命令时，剩余参数当作 `run` 的 prompt，和 Cursor 的 `agent "fix the tests"` 一样：

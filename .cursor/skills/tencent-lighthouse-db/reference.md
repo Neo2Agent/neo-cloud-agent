@@ -21,6 +21,7 @@
 | 3306 | MySQL（现网 `0.0.0.0/0`，只靠密码；能收到应用机出口 IP 就收窄） |
 | 6379 | Redis（同上） |
 | 20041 | 旧 OpenClaw 端口，可删 |
+| 3000 | New API 控制台 + OpenAI 兼容 `/v1`（它自己的登录） |
 | ICMP | ping |
 
 ## TAT 写入 SSH 公钥（首次）
@@ -35,12 +36,14 @@ chown -R ubuntu:ubuntu /home/ubuntu/.ssh
 chmod 600 /home/ubuntu/.ssh/authorized_keys
 ```
 
-本机：
+本机（历史钥匙，新对话不必再配）：
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/neo_lighthouse_new -C neo-db-deploy -N ""
 # 把 ~/.ssh/neo_lighthouse_new.pub 填进上面的 TAT
 ```
+
+Cloud Agent 现网用应用机同一把 `neo-cloud-agent-deploy`（`NEO_LIGHTHOUSE_SSH_KEY_B64`）。库机账号云 API 是 `TENCENTCLOUD_LNS_SECRET_ID` / `TENCENTCLOUD_LNS_SECRET_KEY`。操作步骤见 [SKILL.md](SKILL.md)「Cloud Agent 怎么操作」。
 
 ## Docker
 

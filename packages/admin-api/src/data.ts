@@ -10,6 +10,8 @@ import { listDesks } from "../../control-plane/src/desks/store.js";
 import { listBuilds } from "../../control-plane/src/env/builds.js";
 import { listEnvironments } from "../../control-plane/src/env/store.js";
 import { listProjects } from "../../control-plane/src/projects/store.js";
+import { readBundledExpertPolicy, replaceBundledExpertPolicy } from "../../control-plane/src/experts/policy.js";
+import { setBundledExpertPolicyPersistHooks } from "../../control-plane/src/experts/policy-persist.js";
 
 let metadata: MetadataStore | null = null;
 let metadataKind: "fs" | DatabaseKind = "fs";
@@ -36,6 +38,20 @@ async function doStart(): Promise<void> {
     metadata = connected.store;
     metadataKind = connected.kind;
     setAccountStore(connected.store, connected.kind);
+    setBundledExpertPolicyPersistHooks({
+      onWrite: (doc) => {
+        void connected.store.saveExpertPolicy(doc).catch((error) => console.error("admin-api saveExpertPolicy failed", error));
+      },
+    });
+    const remote = await connected.store.loadExpertPolicy();
+    if (remote) {
+      replaceBundledExpertPolicy(remote, { mirror: false });
+    } else {
+      const local = readBundledExpertPolicy();
+      if (Object.keys(local.experts).length > 0) {
+        await connected.store.saveExpertPolicy(local);
+      }
+    }
   }
   if (redisUrl) {
     attachRateLimitRedis(await connectRedis(redisUrl));
@@ -50,8 +66,7 @@ async function doStart(): Promise<void> {
 
 export async function loadAdminRuns(): Promise<Run[]> {
   if (metadata) {
-    const records = await metadata.loadRuns();
-    return records.map((record) => record.run);
+    return metadata.loadRunSummaries();
   }
   return loadPersistedRuns().map((record) => record.run);
 }

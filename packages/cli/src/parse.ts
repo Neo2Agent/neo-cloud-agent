@@ -23,6 +23,7 @@ export type CommandName =
   | "env"
   | "build"
   | "vms"
+  | "plugin"
   | "help";
 
 export const COMMANDS: readonly CommandName[] = [
@@ -45,6 +46,7 @@ export const COMMANDS: readonly CommandName[] = [
   "env",
   "build",
   "vms",
+  "plugin",
   "help",
 ];
 
@@ -66,6 +68,10 @@ export interface CliFlags {
   envId?: string;
   buildId?: string;
   model?: string;
+  expertId?: string;
+  expertTeamId?: string;
+  plugins: string[];
+  projectId?: string;
   ref?: string;
   reuseBuild?: boolean;
   timeoutMs?: number;
@@ -90,6 +96,7 @@ const DEFAULT_FLAGS: CliFlags = {
   version: false,
   repos: [],
   dirs: [],
+  plugins: [],
   follow: false,
 };
 
@@ -142,6 +149,7 @@ export function parseArgv(argv: string[]): ParsedCli {
     ...DEFAULT_FLAGS,
     repos: [],
     dirs: [],
+    plugins: [],
   };
   const rest: string[] = [];
   let i = 0;
@@ -260,6 +268,30 @@ export function parseArgv(argv: string[]): ParsedCli {
     if (arg === "--model" || arg.startsWith("--model=")) {
       const taken = takeValue(argv, i, "--model");
       flags.model = taken.value;
+      i = taken.next;
+      continue;
+    }
+    if (arg === "--expert" || arg.startsWith("--expert=")) {
+      const taken = takeValue(argv, i, "--expert");
+      flags.expertId = taken.value;
+      i = taken.next;
+      continue;
+    }
+    if (arg === "--expert-team" || arg.startsWith("--expert-team=")) {
+      const taken = takeValue(argv, i, "--expert-team");
+      flags.expertTeamId = taken.value;
+      i = taken.next;
+      continue;
+    }
+    if (arg === "--plugin" || arg.startsWith("--plugin=")) {
+      const taken = takeValue(argv, i, "--plugin");
+      flags.plugins.push(taken.value);
+      i = taken.next;
+      continue;
+    }
+    if (arg === "--project" || arg.startsWith("--project=")) {
+      const taken = takeValue(argv, i, "--project");
+      flags.projectId = taken.value;
       i = taken.next;
       continue;
     }

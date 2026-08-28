@@ -177,13 +177,8 @@ button, textarea, input, select {
   align-items: center;
 }
 
-.composer-row select {
+.composer-row .neo-select-trigger {
   flex: 1;
-  min-height: 44px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  padding: 0 10px;
 }
 
 .auth {

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type {
   CreateCommitRequest,
@@ -10,6 +10,7 @@ import type {
   DeskAssignment,
   DeskLeaseResponse,
   DiskCloneMethod,
+  RunStart,
   EgressPolicy,
   ExecutionTarget,
   FollowUp,
@@ -27,13 +28,16 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import {
   assertColocatedTarget,
+  deskRepoKey,
   evaluateEgress,
   isDeskTarget,
   MAX_SUBSCRIPTION_WAKES,
   mintRunToken,
+  verifyRunToken,
   parseContextUsage,
   parseExecutionTarget,
   parseRunSource,
+  parseRunStart,
   parseSubscriptionEvents,
   redactText,
   SUBSCRIPTION_COALESCE_MS,
@@ -65,8 +69,15 @@ import { keepHotHistory } from "../events/history.js";
 import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
 import { persistRunWorkspace } from "../runtime/persist-workspace.js";
+import { vmWorkspaceFor } from "../runtime/vm-slots.js";
+import {
+  loadWorkspaceMeta,
+  markWorkspacePresent,
+  reclaimPersistedWorkspaces,
+  workspaceReclaimIntervalMs,
+} from "../runtime/workspace-store.js";
 import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
-import { materializeRepos, repoName } from "../scm/workspace.js";
+import { materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
   listSessionFiles,
@@ -86,14 +97,22 @@ import {
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
+import { assignmentExpertFields, buildExpertFiles, resolveTeam, writeExpertFiles } from "../experts/materialize.js";
+import { assignmentPluginFields, buildPluginFiles, writePluginFiles } from "../plugins/materialize.js";
+import { resolveEnabledPlugins } from "../plugins/store.js";
+import { requireUsableExpert } from "../experts/store.js";
 import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
 import { bindTodoRun } from "../projects/todos.js";
 import { listProjectAssetsUnchecked } from "../projects/assets.js";
+import { attachHandoffPack, buildHandoffMarkdown } from "../projects/handoff.js";
 import { pushInbox } from "../projects/inbox.js";
 import {
+  dropDeskAssignment,
+  findDeskWorkspace,
   getDesk,
   isDeskOnline,
   offerDeskAssignment,
+  pushDeskInbox,
   touchDesk,
   waitDeskAssignment,
 } from "../desks/store.js";
@@ -111,6 +130,7 @@ const activeTurns = new Map<string, ActiveTurn>();
 const deskWorkspaces = new Map<string, string>();
 let startingQueued = false;
 let leaseWatch: ReturnType<typeof setInterval> | null = null;
+let lastWorkspaceReclaimAt = 0;
 
 const LIVE_STATUSES = new Set<Run["status"]>([
   "NOT_YET_STARTED",
@@ -276,13 +296,28 @@ function settleDetachedRun(run: Run, title: string): void {
 function detachOrQueue(run: Run, queuedTitle: string, idleTitle: string): void {
   const resumed = requeueActiveTurn(run);
   if (isDeskTarget(run.executionTarget)) {
-    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
+    const deskId = run.executionTarget.deskId ?? "";
+    offerDeskAssignment(deskId, run.id);
+    pushDeskInbox(deskId, { kind: "assignment", assignment: assignmentFor(run) });
   }
   if (hasPendingUserInbound(run.id)) {
     queueRun(run, resumed ? "中断的回合已自动排队，空出来会继续" : queuedTitle);
     return;
   }
   settleDetachedRun(run, idleTitle);
+}
+
+/**
+ * Tear down whatever is running this turn. Cloud handles are destroyed here;
+ * a desk worker lives on the user's computer, so we ask that desk to stop it.
+ */
+async function stopWorker(runId: string, handle: RuntimeHandle, reason?: string): Promise<void> {
+  if (handle.runtime === "desk") {
+    const deskId = runs.get(runId)?.executionTarget?.deskId ?? "";
+    pushDeskInbox(deskId, { kind: "cancel", runId, reason });
+    return;
+  }
+  await getRuntime().destroy(handle);
 }
 
 function bindWorkerExit(runId: string) {
@@ -362,11 +397,14 @@ export function expireStaleWorkers(at = Date.now()): string[] {
     if (!LIVE_STATUSES.has(run.status) || run.status === "NOT_YET_STARTED") {
       continue;
     }
-    if (handles.has(run.id)) {
+    const handle = handles.get(run.id);
+    if (handle && handle.runtime !== "desk") {
       // Process/container liveness is owned by the runtime. Heartbeats only
       // cover the post-restart gap when adopt() could not reattach.
       continue;
     }
+    // Desk workers run on someone else's computer, so there is no local process
+    // to watch. Their heartbeat is the only signal that they are still alive.
     const lastSeen = heartbeats.get(run.id) ?? Date.parse(run.updatedAt);
     if (Number.isFinite(lastSeen) && at - lastSeen < timeout) {
       continue;
@@ -445,6 +483,32 @@ export async function tryStartQueued(): Promise<string | null> {
   }
 }
 
+export function reclaimAndPublish(exceptRunId?: string, at = Date.now()): string[] {
+  const protectedIds = new Set<string>();
+  for (const run of runs.values()) {
+    if (LIVE_STATUSES.has(run.status) || handles.has(run.id) || vmWorkspaceFor(run.id)) {
+      protectedIds.add(run.id);
+    }
+  }
+  const result = reclaimPersistedWorkspaces({
+    runs: runs.values(),
+    protectedIds,
+    exceptRunId,
+    now: at,
+  });
+  for (const item of result.evicted) {
+    publish(
+      event(item.runId, "workspace.reclaimed", "Workspace reclaimed to free disk", {
+        data: { reason: item.reason, bytes: item.bytes },
+      }),
+    );
+    if (runs.has(item.runId)) {
+      flushRun(item.runId);
+    }
+  }
+  return result.evicted.map((item) => item.runId);
+}
+
 export async function releaseIdleWorker(runId: string): Promise<boolean> {
   const run = runs.get(runId);
   if (!run || run.status !== "IDLE" || !handles.has(runId)) {
@@ -456,13 +520,32 @@ export async function releaseIdleWorker(runId: string): Promise<boolean> {
   }
   releasingIdle.add(runId);
   try {
-    await persistRunWorkspace(runId).catch((error) => {
-      console.error(`failed to persist idle workspace for ${runId}`, error);
-    });
+    const persisted = await persistRunWorkspace(runId);
+    if (!persisted.ok) {
+      publish(
+        event(runId, "workspace.persist_failed", "Failed to persist workspace; keeping VM slot", {
+          level: "error",
+          data: { error: persisted.error },
+        }),
+      );
+      flushRun(runId);
+      return false;
+    }
+    if (!persisted.persisted && persisted.reason === "no-slot" && getConfig().workerRuntime === "vm") {
+      publish(
+        event(runId, "workspace.persist_failed", "VM slot binding missing; keeping worker", {
+          level: "error",
+          data: { reason: persisted.reason },
+        }),
+      );
+      flushRun(runId);
+      return false;
+    }
+    reclaimAndPublish(runId);
     inbound.get(runId)?.push({ type: "shutdown", reason: "idle" });
     const handle = handles.get(runId);
     if (handle) {
-      await getRuntime().destroy(handle);
+      await stopWorker(runId, handle, "空闲释放");
     }
     handles.delete(runId);
     deleteWorkerLease(runId);
@@ -518,6 +601,11 @@ export function startWorkerLeaseWatch(): void {
   leaseWatch = setInterval(() => {
     expireStaleWorkers();
     void expireIdleWorkers();
+    const at = Date.now();
+    if (at - lastWorkspaceReclaimAt >= workspaceReclaimIntervalMs()) {
+      lastWorkspaceReclaimAt = at;
+      reclaimAndPublish();
+    }
   }, 2000);
   leaseWatch.unref();
 }
@@ -531,7 +619,10 @@ export function event(runId: string, kind: RunEvent["kind"], title: string, extr
       extra?.category ??
       (kind.startsWith("build.")
         ? "build"
-        : kind.startsWith("run.") || kind.startsWith("scm.") || kind.startsWith("subscription.")
+        : kind.startsWith("run.") ||
+            kind.startsWith("scm.") ||
+            kind.startsWith("subscription.") ||
+            kind.startsWith("workspace.")
           ? "agent_setup"
           : "agent_run"),
     level: extra?.level ?? (kind === "run.error" ? "error" : "info"),
@@ -540,6 +631,29 @@ export function event(runId: string, kind: RunEvent["kind"], title: string, extr
     detail: extra?.detail,
     data: extra?.data,
   };
+}
+
+/** Re-mint before this much life is left, so a worker never boots on a dead token. */
+const JWT_RENEW_MARGIN_MS = 5 * 60 * 1000;
+
+/**
+ * A desk worker outlives one turn, so the cached token can already be expired
+ * by the time the run is handed back. Reuse it only while it still works.
+ */
+function usableRunJwt(run: Run): string {
+  const cached = runJwts.get(run.id);
+  if (!cached) {
+    return mintJwtForRun(run);
+  }
+  try {
+    const claims = verifyRunToken(getConfig().jwtSecret, cached);
+    if (claims.exp * 1000 - Date.now() > JWT_RENEW_MARGIN_MS) {
+      return cached;
+    }
+  } catch {
+    // expired or signed with an older secret
+  }
+  return mintJwtForRun(run);
 }
 
 export function mintJwtForRun(run: Run): string {
@@ -650,6 +764,52 @@ function writeProjectMemory(run: Run): void {
   const dest = path.join(workspaceFor(run.id), ".neo");
   mkdirSync(dest, { recursive: true });
   writeFileSync(path.join(dest, "PROJECT.md"), formatProjectMemory(project, listProjectAssetsUnchecked(project.id)));
+}
+
+function expertFilesForRun(run: Run) {
+  try {
+    if (run.expertTeamId) {
+      const team = resolveTeam(run.expertTeamId);
+      return team ? buildExpertFiles({ team }) : null;
+    }
+    if (run.expertId) {
+      const expert = requireUsableExpert(run.expertId, { userId: run.userId, projectId: run.projectId });
+      return buildExpertFiles({ expert });
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function writeExpertRole(run: Run): void {
+  const files = expertFilesForRun(run);
+  if (files) {
+    writeExpertFiles(workspaceFor(run.id), files);
+  }
+}
+
+function pluginFilesForRun(run: Run, extraIds?: string[]) {
+  let wantedSkillNames: string[] | undefined;
+  try {
+    if (run.expertId) {
+      wantedSkillNames = requireUsableExpert(run.expertId, { userId: run.userId, projectId: run.projectId }).skillNames;
+    }
+  } catch {
+    wantedSkillNames = undefined;
+  }
+  const extras = extraIds ?? run.plugins?.map((item) => item.slug) ?? [];
+  return buildPluginFiles({
+    plugins: resolveEnabledPlugins({ userId: run.userId, projectId: run.projectId, extraIds: extras }),
+    workspaceDir: workspaceFor(run.id),
+    wantedSkillNames,
+  });
+}
+
+function writeRunPlugins(run: Run, extraIds?: string[]): void {
+  const files = pluginFilesForRun(run, extraIds);
+  writePluginFiles(workspaceFor(run.id), files);
+  run.plugins = files.snapshot.plugins;
 }
 
 function seedHostCollaborator(run: Run, owner?: { userId?: string; email?: string }): void {
@@ -765,6 +925,64 @@ export function removeRunCollaborator(runId: string, userId: string, actor: { us
   return run;
 }
 
+/**
+ * Match a desk target the way Cursor's My Machines does: the desk must belong to
+ * the caller, and the bound workspace has to be the one the request asked for.
+ * A near miss fails loudly instead of running against the wrong checkout.
+ */
+function resolveDeskTarget(
+  target: ExecutionTarget,
+  options: { ownerUserId?: string; start: RunStart; repoUrls: string[] },
+): { deskWorkspaceId?: string } {
+  const desk = getDesk(target.deskId ?? "");
+  if (!desk) {
+    throw new Error("本机未登记");
+  }
+  if (options.ownerUserId && desk.userId !== options.ownerUserId) {
+    throw new Error("不是这台本机的主人");
+  }
+  const dispatch = options.start === "dispatch";
+  if (dispatch && desk.allowRemote === false) {
+    throw new Error("这台电脑关闭了远程派活");
+  }
+  if (dispatch && !isDeskOnline(desk)) {
+    throw new Error("这台电脑没打开 Desk");
+  }
+  const bound = desk.workspaces ?? [];
+  if (target.deskWorkspaceId) {
+    const picked = findDeskWorkspace(desk, { workspaceId: target.deskWorkspaceId });
+    if (!picked) {
+      throw new Error("这台电脑没有这个本机工作区");
+    }
+    const wanted = requestedRepoKey(options.repoUrls);
+    if (wanted && picked.repoKey !== wanted) {
+      throw new Error("这台电脑绑的是别的仓库");
+    }
+    return { deskWorkspaceId: picked.id };
+  }
+  if (!dispatch) {
+    // The desk itself is calling, so it already knows which folder it authorized.
+    return {};
+  }
+  if (bound.length === 0) {
+    throw new Error("这台电脑还没有绑定本机工作区");
+  }
+  const wanted = requestedRepoKey(options.repoUrls);
+  if (!wanted) {
+    throw new Error("远程派活需要指定这台电脑上的本机工作区");
+  }
+  const matched = findDeskWorkspace(desk, { repoKey: wanted });
+  if (!matched) {
+    throw new Error("这台电脑绑的是别的仓库");
+  }
+  return { deskWorkspaceId: matched.id };
+}
+
+function requestedRepoKey(repoUrls: string[]): string {
+  const remote = repoUrls.find((url) => looksRemoteRepo(url));
+  return remote ? deskRepoKey({ remoteUrl: remote }) : "";
+}
+
 export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string; email?: string }): Promise<Run> {
   const config = getConfig();
   assertCreateRunAllowed([...runs.values()], owner?.orgId ?? config.orgId);
@@ -791,17 +1009,27 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   if (target) {
     assertColocatedTarget(target);
   }
+  const start = parseRunStart(input.start) ?? "dispatch";
   if (isDeskTarget(target)) {
-    const desk = getDesk(target.deskId ?? "");
-    if (!desk) {
-      throw new Error("本机未登记");
+    if (input.source === "automation") {
+      throw new Error("定时任务不能派到本机");
     }
-    if (owner?.userId && desk.userId !== owner.userId) {
-      throw new Error("不是这台本机的主人");
-    }
-    if (!isDeskOnline(desk)) {
-      throw new Error("本机未在线");
-    }
+    const requested = input.deskWorkspaceId?.trim() || target.deskWorkspaceId;
+    const resolved = resolveDeskTarget(
+      { ...target, deskWorkspaceId: requested },
+      { ownerUserId: owner?.userId, start, repoUrls },
+    );
+    target.deskWorkspaceId = resolved.deskWorkspaceId;
+  }
+  if (input.expertId && input.expertTeamId) {
+    throw new Error("一次对话只能选专家或专家团");
+  }
+  const expert = input.expertId
+    ? requireUsableExpert(input.expertId, { userId: owner?.userId, projectId: projectId ?? input.projectId })
+    : null;
+  const team = input.expertTeamId ? resolveTeam(input.expertTeamId) : null;
+  if (input.expertTeamId && !team) {
+    throw new Error("专家团不存在");
   }
   const run: Run = {
     id: crypto.randomUUID(),
@@ -816,7 +1044,9 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     setupStatus: null,
     source: parseRunSource(input.source) ?? (isDeskTarget(target) ? "desk" : "api"),
     executionTarget: target ?? { loop: "cloud", tools: "cloud" },
-    model: input.model ?? config.defaultModel,
+    expertId: expert?.id ?? null,
+    expertTeamId: team?.id ?? null,
+    model: input.model ?? expert?.model ?? config.defaultModel,
     prompt: input.prompt,
     branchName: null,
     baseBranch: null,
@@ -848,12 +1078,19 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
       data: { text: input.prompt, source: run.source, images: input.images },
     }),
   );
+  writeExpertRole(run);
+  writeRunPlugins(run, input.pluginIds);
   mintJwtForRun(run);
   flushRun(run.id);
 
   if (isDeskTarget(run.executionTarget)) {
-    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
-    queueRun(run, "等待本机 Desk 认领");
+    if (start === "inline") {
+      // The caller is that desk: it spawns the worker from this response, so
+      // there is nothing to hand out and nothing to wait for.
+      queueRun(run, "正在这台电脑上启动 Agent");
+      return run;
+    }
+    dispatchToDesk(run, owner?.email);
     return run;
   }
 
@@ -1010,6 +1247,9 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
 
   try {
     writeProjectMemory(run);
+    writeExpertRole(run);
+    writeRunPlugins(run, input.pluginIds);
+    flushRun(run.id);
     await attachWorker(run, runningTitle());
   } catch (error) {
     if (isSlotBusyError(error)) {
@@ -1024,7 +1264,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
 }
 
 async function attachWorker(run: Run, title: string): Promise<void> {
-  const handle = await getRuntime().provision(launchSpec(run, runJwts.get(run.id) ?? mintJwtForRun(run)), {
+  const handle = await getRuntime().provision(launchSpec(run, usableRunJwt(run)), {
     onExit: bindWorkerExit(run.id),
   });
   handles.set(run.id, handle);
@@ -1057,9 +1297,23 @@ export async function resumeRun(runId: string): Promise<Run> {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
   if (isDeskTarget(run.executionTarget)) {
-    offerDeskAssignment(run.executionTarget.deskId ?? "", run.id);
-    queueRun(run, "等待本机 Desk 认领");
+    dispatchToDesk(run);
     return run;
+  }
+  if (loadWorkspaceMeta(runId)?.state === "evicted" && run.repoUrls.length > 0) {
+    try {
+      await materializeRepos(run.repoUrls, hostWorkspaceFor(runId), repoRoot());
+      markWorkspacePresent(runId, measureWorkspaceBytes(hostWorkspaceFor(runId)));
+      publish(event(runId, "workspace.restored", "Workspace restored from repo after reclaim"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "workspace restore failed";
+      publish(
+        event(runId, "workspace.persist_failed", "Failed to restore workspace from repo", {
+          level: "warn",
+          data: { error: message },
+        }),
+      );
+    }
   }
   restoreSessionToDir(runId, path.join(workspaceFor(runId), "sessions"));
   run.status = "PROVISIONING";
@@ -1105,14 +1359,32 @@ export function adoptRun(runId: string, userId: string, orgId?: string): Run | u
   return run;
 }
 
+async function ensureEventsLoaded(runId: string): Promise<void> {
+  if (eventsForRun(runId).length > 0) {
+    return;
+  }
+  try {
+    const { getPostgresStore } = await import("../platform.js");
+    const events = (await getPostgresStore()?.loadEvents(runId)) ?? [];
+    if (events.length > 0) {
+      replacePersistedEvents(runId, events);
+      seedEvents(runId, events);
+    }
+  } catch {
+    // mysql / postgres is optional
+  }
+}
+
 export async function loadRunIntoMemory(runId: string): Promise<Run | undefined> {
   const existing = runs.get(runId);
   if (existing) {
+    await ensureEventsLoaded(runId);
     return existing;
   }
   const local = loadPersistedRun(runId);
   if (local?.run?.id) {
     hydrateRecord(local);
+    await ensureEventsLoaded(runId);
     return local.run;
   }
   try {
@@ -1121,10 +1393,7 @@ export async function loadRunIntoMemory(runId: string): Promise<Run | undefined>
     const remote = await store?.loadRun(runId);
     if (remote?.run?.id) {
       persistRunRecord(remote, undefined, { mirror: false });
-      const events = (await store?.loadEvents(runId)) ?? [];
-      if (events.length > 0) {
-        replacePersistedEvents(runId, events);
-      }
+      await ensureEventsLoaded(runId);
       hydrateRecord(remote);
       return remote.run;
     }
@@ -1153,17 +1422,21 @@ export async function transferRun(
   }
   const resolved: TransferRunMode = mode ?? (run.executionTarget?.loop === "desk" ? "fork" : "reassign");
   if (resolved === "fork") {
-    const summary = [`交接自 ${run.id}`, note.trim(), `原任务：${run.prompt.slice(0, 800)}`].filter(Boolean).join("\n");
+    const pack = buildHandoffMarkdown(run, note, actor.email);
+    const summary = (pack || [`交接自 ${run.id}`, note.trim(), `原任务：${run.prompt.slice(0, 800)}`].filter(Boolean).join("\n")).slice(0, 2400);
     const forked = await createRun(
       {
         prompt: summary,
         repoUrls: run.repoUrls,
         projectId: run.projectId,
-        source: "desk",
+        source: run.source === "desk" ? "desk" : "web",
         todoId: run.todoId ?? undefined,
+        expertId: run.expertId ?? undefined,
+        expertTeamId: run.expertTeamId ?? undefined,
       },
       { userId: toUserId, orgId: run.orgId },
     );
+    await attachHandoffPack({ source: run, target: forked, actor, note }).catch(() => undefined);
     recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `分出了新对话：${note.trim()}` : "分出了一条新对话");
     pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 给你开了一条新对话`, projectId: run.projectId, runId: forked.id });
     return forked;
@@ -1180,6 +1453,7 @@ export async function transferRun(
   run.assigneeUserId = toUserId;
   run.updatedAt = now();
   flushRun(run.id);
+  await attachHandoffPack({ source: run, target: run, actor, note }).catch(() => undefined);
   recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `转交了对话：${note.trim()}` : "转交了一条对话");
   pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 把一条对话转交给你`, projectId: run.projectId, runId: run.id });
   return run;
@@ -1189,18 +1463,64 @@ export function listRuns(): Run[] {
   return [...runs.values()];
 }
 
-function assignmentFor(run: Run): DeskAssignment {
+function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
   const config = getConfig();
+  const files = expertFilesForRun(run);
   return {
     runId: run.id,
-    jwt: runJwts.get(run.id) ?? mintJwtForRun(run),
+    jwt: usableRunJwt(run),
     model: run.model,
     prompt: run.prompt,
     repoUrls: run.repoUrls,
     controlPlaneUrl: config.controlPlaneUrl,
     llmGatewayUrl: config.workerLlmGatewayUrl,
     target: run.executionTarget ?? { loop: "desk", tools: "desk" },
+    workspaceId: run.executionTarget?.deskWorkspaceId ?? null,
+    requestedBy: requestedBy ?? null,
+    expertId: run.expertId ?? null,
+    expertTeamId: run.expertTeamId ?? null,
+    ...assignmentExpertFields(files),
+    ...assignmentPluginFields(pluginFilesForRun(run)),
   };
+}
+
+/**
+ * Everything the calling desk needs to spawn its own worker. Used by the inline
+ * path, where the desk is the one that just created the run.
+ */
+export function deskAssignmentForRun(runId: string): DeskAssignment {
+  const run = requireRun(runId);
+  if (!isDeskTarget(run.executionTarget)) {
+    throw new Error("run is not a desk run");
+  }
+  return assignmentFor(run);
+}
+
+/** Notify the desk over its own outbound stream, and keep a lease offer as fallback. */
+function dispatchToDesk(run: Run, requestedBy?: string | null): void {
+  const deskId = run.executionTarget?.deskId ?? "";
+  offerDeskAssignment(deskId, run.id);
+  const delivered = pushDeskInbox(deskId, { kind: "assignment", assignment: assignmentFor(run, requestedBy) });
+  queueRun(run, delivered ? "已派给这台电脑，等待启动" : "等待这台电脑上线");
+}
+
+/** Desk could not take the run. Surface why instead of leaving it queued forever. */
+export function rejectDeskRun(deskId: string, runId: string, reason?: string): Run {
+  const run = requireRun(runId);
+  if (!isDeskTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
+    throw new Error("run is not assigned to this desk");
+  }
+  dropDeskAssignment(deskId, runId);
+  touchDesk(deskId);
+  clearActiveTurn(runId);
+  inbound.set(runId, []);
+  run.status = "ERROR";
+  run.errorMessage = reason?.trim() || "这台电脑没有接下这条对话";
+  run.workerHandle = null;
+  run.updatedAt = now();
+  publish(event(runId, "run.error", run.errorMessage));
+  flushRun(runId);
+  return run;
 }
 
 export async function leaseDesk(deskId: string, waitMs = 20_000): Promise<DeskLeaseResponse> {
@@ -1266,6 +1586,41 @@ export async function claimDeskRun(
   return run;
 }
 
+/**
+ * A desk worker exits after its turn, so the desk says so instead of leaving a
+ * handle behind. Without this the next follow-up thinks a worker is still there
+ * and never gets dispatched back to the machine.
+ */
+export function releaseDeskRun(deskId: string, runId: string, input: { code?: number | null } = {}): Run {
+  const run = requireRun(runId);
+  if (!isDeskTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
+    throw new Error("run is not assigned to this desk");
+  }
+  touchDesk(deskId);
+  handles.delete(runId);
+  deleteWorkerLease(runId);
+  heartbeats.delete(runId);
+  run.workerHandle = null;
+  run.vmSlotId = null;
+  const failed = input.code != null && input.code !== 0;
+  if (failed && run.status === "RUNNING") {
+    failRun(run, `本机 worker 退出（${input.code}）`);
+    return run;
+  }
+  if (run.status === "RUNNING" && !hasPendingUserInbound(runId)) {
+    clearActiveTurn(runId);
+    run.status = "IDLE";
+    run.idleAt = now();
+  }
+  run.updatedAt = now();
+  flushRun(runId);
+  if (hasPendingUserInbound(runId)) {
+    // Work arrived while the process was on its way out; hand it back.
+    dispatchToDesk(run);
+  }
+  return run;
+}
+
 function looksRemoteRepo(url: string): boolean {
   return /^(https?:\/\/|git@|github\.com\/)/i.test(url);
 }
@@ -1280,30 +1635,37 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
+  // A This Computer conversation stays on that computer. Its work sits in the
+  // user's own folder, usually uncommitted, so "move it to the cloud" would
+  // quietly leave the actual changes behind.
+  if (isDeskTarget(run.executionTarget) && !isDeskTarget(target)) {
+    throw new Error("本机对话不能切到云端。要在云端跑就开一条新的云端对话。");
+  }
   const handle = handles.get(runId);
   if (handle) {
     inbound.get(runId)?.push({ type: "shutdown", reason: "idle" });
-    await getRuntime(handle.runtime === "desk" ? "desk" : undefined).destroy(handle);
+    await stopWorker(runId, handle, "对话已切换执行位置");
     handles.delete(runId);
     deleteWorkerLease(runId);
     heartbeats.delete(runId);
     run.workerHandle = null;
     run.vmSlotId = null;
   }
-  run.executionTarget = target;
-  run.updatedAt = now();
   if (isDeskTarget(target)) {
-    const desk = getDesk(target.deskId ?? "");
-    if (!desk) {
-      throw new Error("本机未登记");
-    }
-    if (!isDeskOnline(desk)) {
-      throw new Error("本机未在线");
-    }
-    offerDeskAssignment(target.deskId ?? "", run.id);
-    queueRun(run, "已交给本机，等待 Desk 认领");
+    // Same posture as Cursor: only pull back to a machine that already has this
+    // repo bound. No generic "clone it somewhere" fallback.
+    const resolved = resolveDeskTarget(
+      { ...target, deskWorkspaceId: input.deskWorkspaceId?.trim() || target.deskWorkspaceId },
+      { ownerUserId: run.userId, start: "dispatch", repoUrls: run.repoUrls },
+    );
+    target.deskWorkspaceId = resolved.deskWorkspaceId;
+    run.executionTarget = target;
+    run.updatedAt = now();
+    dispatchToDesk(run);
     return run;
   }
+  run.executionTarget = target;
+  run.updatedAt = now();
   if (!run.repoUrls.some(looksRemoteRepo)) {
     throw new Error("切到云端需要可 clone 的远端仓库。未提交的改动不会带过去。");
   }
@@ -1328,7 +1690,7 @@ export function getBootstrap(runId: string) {
   const config = getConfig();
   return {
     run,
-    jwt: runJwts.get(runId) ?? mintJwtForRun(run),
+    jwt: usableRunJwt(run),
     llmGatewayUrl: config.workerLlmGatewayUrl,
     workspaceDir: isDeskTarget(run.executionTarget)
       ? (deskWorkspaces.get(runId) ?? "")
@@ -1457,23 +1819,11 @@ export async function enqueueFollowUp(
     type: delivery,
     text: input.text,
     images: input.images,
+    followUpId: item.id,
   });
   publish(
     event(runId, "followup.queued", "Follow-up queued", {
       data: { followUpId: item.id, delivery, actorUserId: actor?.userId, actorEmail: actor?.email },
-    }),
-  );
-  publish(
-    event(runId, "user.message", "User message", {
-      category: "agent_run",
-      data: {
-        text: input.text,
-        followUpId: item.id,
-        delivery,
-        images: input.images,
-        actorUserId: actor?.userId,
-        actorEmail: actor?.email,
-      },
     }),
   );
   flushRun(runId);
@@ -1661,18 +2011,55 @@ function flushAllSubscriptions(): void {
   }
 }
 
+function publishFollowUpUserMessage(item: FollowUp): void {
+  publish(
+    event(item.runId, "user.message", "User message", {
+      category: "agent_run",
+      data: {
+        text: item.text,
+        followUpId: item.id,
+        delivery: item.delivery,
+        images: item.images,
+        actorUserId: item.actorUserId,
+        actorEmail: item.actorEmail,
+      },
+    }),
+  );
+}
+
+function deliverTakenFollowUps(runId: string, taken: WorkerInbound[]): void {
+  const deliveredAt = now();
+  const byId = new Map((followUps.get(runId) ?? []).map((item) => [item.id, item]));
+  for (const inboundItem of taken) {
+    if (inboundItem.type !== "prompt" && inboundItem.type !== "steer" && inboundItem.type !== "follow_up") {
+      continue;
+    }
+    const item = inboundItem.followUpId ? byId.get(inboundItem.followUpId) : undefined;
+    if (!item || item.status !== "queued") {
+      continue;
+    }
+    item.status = "delivered";
+    item.deliveredAt = deliveredAt;
+    publish(
+      event(runId, "followup.delivered", "Follow-up delivered", {
+        data: {
+          followUpId: item.id,
+          delivery: item.delivery,
+          actorUserId: item.actorUserId,
+          actorEmail: item.actorEmail,
+        },
+      }),
+    );
+    publishFollowUpUserMessage(item);
+  }
+}
+
 export function takeInbound(runId: string): WorkerInbound[] {
   noteWorkerHeartbeat(runId);
   const queued = inbound.get(runId) ?? [];
   inbound.set(runId, []);
   rememberActiveTurns(runId, queued);
-  const deliveredAt = now();
-  for (const item of followUps.get(runId) ?? []) {
-    if (item.status === "queued") {
-      item.status = "delivered";
-      item.deliveredAt = deliveredAt;
-    }
-  }
+  deliverTakenFollowUps(runId, queued);
   flushRun(runId);
   return queued;
 }
@@ -1685,12 +2072,19 @@ export async function archiveRun(runId: string): Promise<Run> {
   run.status = "ARCHIVED";
   run.updatedAt = now();
   inbound.get(runId)?.push({ type: "shutdown", reason: "archived" });
-  await persistRunWorkspace(runId).catch((error) => {
-    console.error(`failed to persist workspace before archive ${runId}`, error);
-  });
+  const persisted = await persistRunWorkspace(runId);
+  if (!persisted.ok) {
+    publish(
+      event(runId, "workspace.persist_failed", "Failed to persist workspace before archive", {
+        level: "error",
+        data: { error: persisted.error },
+      }),
+    );
+  }
+  reclaimAndPublish(runId);
   const handle = handles.get(runId);
   if (handle) {
-    await getRuntime().destroy(handle);
+    await stopWorker(runId, handle, "对话已归档");
     handles.delete(runId);
   }
   deleteWorkerLease(runId);
@@ -1751,10 +2145,27 @@ export function mintRunGitToken(runId: string, input: CreateGitTokenRequest) {
   };
 }
 
+/**
+ * Git runs where the files are. A desk run's files are on someone's laptop, so
+ * `workspaceFor` points at a directory this host does not have — which used to
+ * surface as a baffling `spawn git ENOENT`.
+ */
+function gitCwdFor(runId: string): string {
+  const run = runs.get(runId);
+  if (!isDeskTarget(run?.executionTarget)) {
+    return workspaceFor(runId);
+  }
+  const folder = deskWorkspaces.get(runId) ?? "";
+  if (!folder || !existsSync(folder)) {
+    throw new Error("这条对话的文件在那台电脑上，控制面看不到；请在本机用 git 提交");
+  }
+  return folder;
+}
+
 export async function commitRun(runId: string, input: CreateCommitRequest) {
   const run = requireRun(runId);
   try {
-    const result = await commitRunWorkspace(workspaceFor(runId), input);
+    const result = await commitRunWorkspace(gitCwdFor(runId), input);
     run.updatedAt = now();
     publish(
       event(runId, "scm.commit_succeeded", result.empty ? "Nothing to commit" : "Committed workspace", {
@@ -1775,7 +2186,7 @@ export async function openRunDraftPr(runId: string, input: CreatePullRequestRequ
   const run = requireRun(runId);
   try {
     const extra = formatPrArtifactMarkdown(runId, await listRunArtifacts(runId));
-    const result = await openRunPullRequest(workspaceFor(runId), run, {
+    const result = await openRunPullRequest(gitCwdFor(runId), run, {
       ...input,
       body: [input.body, extra].filter((part) => part && part.trim()).join("\n\n"),
     });
@@ -1870,7 +2281,9 @@ export function getRunSession(runId: string, options?: { includeContent?: boolea
 
 export async function getRunDiff(runId: string) {
   const run = requireRun(runId);
-  const diff = await diffRunWorkspace(workspaceFor(runId), run);
+  // A desk run is diffed by the desk itself; this host has no such folder.
+  const cwd = isDeskTarget(run.executionTarget) ? (deskWorkspaces.get(runId) ?? "") : workspaceFor(runId);
+  const diff = cwd && existsSync(cwd) ? await diffRunWorkspace(cwd, run) : { stat: "", patch: "" };
   return {
     branch: run.branchName,
     baseBranch: run.baseBranch,

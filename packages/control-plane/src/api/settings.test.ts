@@ -12,6 +12,8 @@ process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-settings-runs-"));
 process.env.LLM_SETTINGS_DIR = mkdtempSync(path.join(tmpdir(), "neo-settings-llm-"));
 delete process.env.WORKER_WORKSPACE_MOUNT;
 process.env.ACCOUNTS_REQUIRED = "0";
+process.env.NEW_API_URL = "http://127.0.0.1:3000";
+process.env.NEW_API_CONSOLE_URL = "http://127.0.0.1:3000";
 delete process.env.QUOTA_MAX_TOKENS_MONTH;
 delete process.env.QUOTA_MAX_CONCURRENT_RUNS;
 delete process.env.DATABASE_URL;
@@ -42,8 +44,11 @@ test("llm settings API stores a key without ever returning it", async (t) => {
   const before = (await (await fetch(`${base}/v1/settings/llm`, { headers: AUTH })).json()) as {
     configured: boolean;
     upstream: string;
+    newApi?: { url: string | null; consoleUrl: string | null };
   };
   assert.equal(before.configured, false);
+  assert.equal(before.newApi?.url, "http://127.0.0.1:3000");
+  assert.equal(before.newApi?.consoleUrl, "http://127.0.0.1:3000");
 
   const missing = await fetch(`${base}/v1/settings/llm`, {
     method: "POST",
@@ -69,11 +74,13 @@ test("llm settings API stores a key without ever returning it", async (t) => {
     llmUpstream: string;
     llmModel?: string | null;
     llmContextWindow?: number | null;
+    newApi?: { url: string | null; consoleUrl: string | null };
   };
   assert.equal(health.llmConfigured, true);
   assert.equal(health.llmUpstream, "deepseek");
   assert.equal(health.llmModel, "deepseek-v4-flash");
   assert.equal(health.llmContextWindow, 1_000_000);
+  assert.equal(health.newApi?.consoleUrl, "http://127.0.0.1:3000");
   assert.doesNotMatch(JSON.stringify(health), /sk-never-echo/);
 
   const scmDenied = await fetch(`${base}/v1/settings/scm`);

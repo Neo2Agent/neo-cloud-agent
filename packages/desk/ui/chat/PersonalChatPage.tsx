@@ -8,6 +8,7 @@ import { ChatTranscript } from "./transcript";
 export function PersonalChatPage({
   title,
   current,
+  running,
   visible,
   activity,
   user,
@@ -19,6 +20,8 @@ export function PersonalChatPage({
 }: {
   title: string;
   current: Run;
+  /** The desk knows more than the run status: its local worker may be gone. */
+  running?: boolean;
   visible: TranscriptMessage[];
   activity: string | null;
   user: string;
@@ -31,7 +34,7 @@ export function PersonalChatPage({
   return (
     <div className="personal-chat-shell">
       <PersonalChatHeader title={title} onSearch={onSearch} onRefresh={onRefresh} />
-      <PersonalRunBar running={current.status === "RUNNING"} onAbort={onAbort} />
+      <PersonalRunBar running={running ?? current.status === "RUNNING"} onAbort={onAbort} />
       <ChatTranscript current={current} visible={visible} activity={activity} user={user} feedRef={feedRef} onCopy={onCopy} />
     </div>
   );

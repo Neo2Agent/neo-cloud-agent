@@ -1,12 +1,19 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { CreateDeskRequest, Desk } from "@neo-cloud-agent/contracts";
+import type {
+  BindDeskWorkspaceRequest,
+  CreateDeskRequest,
+  Desk,
+  DeskInboxEvent,
+  DeskWorkspace,
+  UpdateDeskRequest,
+} from "@neo-cloud-agent/contracts";
 import { controlStateDir } from "../store/persist.js";
 import { deskPersistHooks } from "./persist-hooks.js";
 
-const ONLINE_MS = 45_000;
 const MAX_DESKS = 20;
+const MAX_WORKSPACES = 20;
 
 export type StoredDesk = Desk & { tokenHash: string };
 
@@ -15,8 +22,15 @@ type Waiter = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+type InboxSink = (event: DeskInboxEvent) => void;
+
 const assignments = new Map<string, string[]>();
 const waiters = new Map<string, Waiter[]>();
+/**
+ * Live desk inbox streams. A desk is only reachable while it holds one, so this
+ * map is the authority for `online` instead of a polled timestamp.
+ */
+const inboxes = new Map<string, Set<InboxSink>>();
 
 export function desksFile(): string {
   return path.join(controlStateDir(), "desks.json");
@@ -30,8 +44,7 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function publicDesk(item: StoredDesk, at = Date.now()): Desk {
-  const lastSeen = Date.parse(item.lastSeenAt);
+function publicDesk(item: StoredDesk, _at = Date.now()): Desk {
   return {
     id: item.id,
     userId: item.userId,
@@ -41,8 +54,31 @@ function publicDesk(item: StoredDesk, at = Date.now()): Desk {
     platform: item.platform,
     createdAt: item.createdAt,
     lastSeenAt: item.lastSeenAt,
-    online: Number.isFinite(lastSeen) && at - lastSeen < ONLINE_MS,
+    online: hasInbox(item.id),
+    workspaces: item.workspaces ?? [],
+    allowRemote: item.allowRemote !== false,
   };
+}
+
+function normalizeWorkspaces(value: unknown): DeskWorkspace[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const items: DeskWorkspace[] = [];
+  for (const entry of value) {
+    const record = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null;
+    if (!record || typeof record.id !== "string" || typeof record.repoKey !== "string") {
+      continue;
+    }
+    items.push({
+      id: record.id,
+      name: typeof record.name === "string" && record.name.trim() ? record.name.trim() : record.repoKey,
+      repoKey: record.repoKey,
+      git: record.git === true,
+      boundAt: typeof record.boundAt === "string" ? record.boundAt : now(),
+    });
+  }
+  return items.slice(0, MAX_WORKSPACES);
 }
 
 function normalize(value: unknown): StoredDesk | null {
@@ -61,6 +97,8 @@ function normalize(value: unknown): StoredDesk | null {
     createdAt,
     lastSeenAt: typeof record.lastSeenAt === "string" ? record.lastSeenAt : createdAt,
     online: false,
+    workspaces: normalizeWorkspaces(record.workspaces),
+    allowRemote: record.allowRemote !== false,
     tokenHash: typeof record.tokenHash === "string" ? record.tokenHash : "",
   };
 }
@@ -110,9 +148,14 @@ export function getStoredDesk(id: string): StoredDesk | undefined {
   return readAll().find((item) => item.id === id);
 }
 
-export function isDeskOnline(desk: Pick<Desk, "lastSeenAt">, at = Date.now()): boolean {
-  const lastSeen = Date.parse(desk.lastSeenAt);
-  return Number.isFinite(lastSeen) && at - lastSeen < ONLINE_MS;
+/**
+ * Reachable means "holding an inbox stream right now".
+ *
+ * A recent timestamp is not good enough: a desk that registered and quit would
+ * still look alive, and remote runs would queue against a machine that is gone.
+ */
+export function isDeskOnline(desk: Pick<Desk, "id">): boolean {
+  return Boolean(desk.id) && hasInbox(desk.id);
 }
 
 export function createDesk(
@@ -135,6 +178,8 @@ export function createDesk(
     createdAt,
     lastSeenAt: createdAt,
     online: true,
+    workspaces: [],
+    allowRemote: true,
     tokenHash: hashToken(token),
   };
   items.push(stored);
@@ -164,6 +209,85 @@ export function touchDesk(id: string, at = Date.now()): Desk | undefined {
   return publicDesk(current, at);
 }
 
+function mutateDesk(id: string, apply: (desk: StoredDesk) => void): Desk | undefined {
+  const items = readAll();
+  const index = items.findIndex((item) => item.id === id);
+  const current = index < 0 ? undefined : items[index];
+  if (!current) {
+    return undefined;
+  }
+  apply(current);
+  items[index] = current;
+  writeAll(items);
+  return publicDesk(current);
+}
+
+export function updateDesk(id: string, input: UpdateDeskRequest): Desk | undefined {
+  return mutateDesk(id, (desk) => {
+    if (typeof input.name === "string" && input.name.trim()) {
+      desk.name = input.name.trim();
+    }
+    if (typeof input.allowRemote === "boolean") {
+      desk.allowRemote = input.allowRemote;
+    }
+  });
+}
+
+/** Bind one folder. Re-binding the same repo key refreshes it instead of duplicating. */
+export function bindDeskWorkspace(id: string, input: BindDeskWorkspaceRequest): DeskWorkspace {
+  const repoKey = input.repoKey.trim();
+  const name = input.name.trim();
+  if (!repoKey || !name) {
+    throw new Error("workspace name and repoKey are required");
+  }
+  let bound: DeskWorkspace | undefined;
+  const updated = mutateDesk(id, (desk) => {
+    const existing = (desk.workspaces ?? []).find((item) => item.repoKey === repoKey);
+    if (existing) {
+      existing.name = name;
+      existing.git = input.git === true;
+      bound = existing;
+      return;
+    }
+    if ((desk.workspaces ?? []).length >= MAX_WORKSPACES) {
+      throw new Error(`at most ${MAX_WORKSPACES} workspaces per desk`);
+    }
+    bound = {
+      id: `dws_${randomBytes(6).toString("hex")}`,
+      name,
+      repoKey,
+      git: input.git === true,
+      boundAt: now(),
+    };
+    desk.workspaces = [...(desk.workspaces ?? []), bound];
+  });
+  if (!updated || !bound) {
+    throw new Error("desk not found");
+  }
+  return bound;
+}
+
+export function unbindDeskWorkspace(id: string, workspaceId: string): boolean {
+  let removed = false;
+  mutateDesk(id, (desk) => {
+    const next = (desk.workspaces ?? []).filter((item) => item.id !== workspaceId);
+    removed = next.length !== (desk.workspaces ?? []).length;
+    desk.workspaces = next;
+  });
+  return removed;
+}
+
+export function findDeskWorkspace(desk: Desk, selector: { workspaceId?: string; repoKey?: string }): DeskWorkspace | undefined {
+  const items = desk.workspaces ?? [];
+  if (selector.workspaceId) {
+    return items.find((item) => item.id === selector.workspaceId);
+  }
+  if (selector.repoKey) {
+    return items.find((item) => item.repoKey === selector.repoKey);
+  }
+  return undefined;
+}
+
 export function deleteDesk(id: string, userId?: string): boolean {
   const items = readAll();
   const next = items.filter((item) => item.id !== id || (userId && item.userId !== userId));
@@ -172,6 +296,43 @@ export function deleteDesk(id: string, userId?: string): boolean {
   }
   writeAll(next);
   assignments.delete(id);
+  inboxes.delete(id);
+  return true;
+}
+
+export function hasInbox(deskId: string): boolean {
+  return (inboxes.get(deskId)?.size ?? 0) > 0;
+}
+
+/** Attach a desk inbox stream. The returned function detaches it. */
+export function openDeskInbox(deskId: string, sink: InboxSink): () => void {
+  const set = inboxes.get(deskId) ?? new Set<InboxSink>();
+  set.add(sink);
+  inboxes.set(deskId, set);
+  return () => {
+    const current = inboxes.get(deskId);
+    if (!current) {
+      return;
+    }
+    current.delete(sink);
+    if (current.size === 0) {
+      inboxes.delete(deskId);
+    }
+  };
+}
+
+export function pushDeskInbox(deskId: string, event: DeskInboxEvent): boolean {
+  const set = inboxes.get(deskId);
+  if (!set || set.size === 0) {
+    return false;
+  }
+  for (const sink of set) {
+    try {
+      sink(event);
+    } catch {
+      // a dead stream is dropped by its own close handler
+    }
+  }
   return true;
 }
 
@@ -195,6 +356,15 @@ export function takeDeskAssignment(deskId: string): string | null {
   const runId = queue.shift() ?? null;
   assignments.set(deskId, queue);
   return runId;
+}
+
+/** Drop a pending offer, e.g. after the desk rejected it. */
+export function dropDeskAssignment(deskId: string, runId: string): void {
+  const queue = assignments.get(deskId) ?? [];
+  assignments.set(
+    deskId,
+    queue.filter((item) => item !== runId),
+  );
 }
 
 export function waitDeskAssignment(deskId: string, waitMs: number): Promise<string | null> {
@@ -231,4 +401,5 @@ export function resetDeskAssignmentsForTests(): void {
     }
   }
   waiters.clear();
+  inboxes.clear();
 }

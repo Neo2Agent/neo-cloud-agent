@@ -1,10 +1,59 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SKIP_NAMES = new Set(["node_modules", "dist", ".pnpm-store", ".control", ".builds", ".warm", ".firecracker"]);
+
+/** Caches and slot leftovers. User source, `.git`, and `.neo` stay. */
+export const DURABLE_SKIP_NAMES = new Set([
+  "lost+found",
+  "node_modules",
+  "dist",
+  ".pnpm-store",
+  ".builds",
+  ".warm",
+  ".firecracker",
+]);
+
+export function skipDurablePersist(from: string, root?: string): boolean {
+  const rel = root ? path.relative(root, from) : from;
+  if (root && (rel.startsWith("..") || path.isAbsolute(rel))) {
+    return true;
+  }
+  return rel.split(path.sep).some((part) => DURABLE_SKIP_NAMES.has(part));
+}
+
+export function measureWorkspaceBytes(root: string): number {
+  if (!existsSync(root) || !statSync(root).isDirectory()) {
+    return 0;
+  }
+  let total = 0;
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (DURABLE_SKIP_NAMES.has(entry.name)) {
+        continue;
+      }
+      const full = path.join(dir, entry.name);
+      try {
+        const st = lstatSync(full);
+        if (st.isSymbolicLink()) {
+          continue;
+        }
+        if (st.isDirectory()) {
+          walk(full);
+        } else if (st.isFile()) {
+          total += st.size;
+        }
+      } catch {
+        // file disappeared mid-walk
+      }
+    }
+  };
+  walk(root);
+  return total;
+}
 
 /** Copy `.neo/environment.json`, but never copy run workspaces or caches. */
 export function skipCopy(from: string, root?: string): boolean {
@@ -134,6 +183,49 @@ export async function persistWorkspaceTree(src: string, dest: string): Promise<v
     }
     await cp(path.join(src, entry.name), path.join(dest, entry.name), { recursive: true, force: true });
   }
+}
+
+/** Persist user-visible files. Skip caches. Mirror dest so stale files disappear. */
+export async function persistDurableWorkspace(src: string, dest: string): Promise<void> {
+  if (!existsSync(src) || !statSync(src).isDirectory()) {
+    throw new Error(`workspace source missing: ${src}`);
+  }
+  mkdirSync(dest, { recursive: true });
+  const keep = new Set<string>();
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    if (skipDurablePersist(entry.name)) {
+      continue;
+    }
+    keep.add(entry.name);
+    const from = path.join(src, entry.name);
+    await cp(from, path.join(dest, entry.name), {
+      recursive: true,
+      force: true,
+      filter: (fromPath) => !skipDurablePersist(fromPath, src),
+    });
+  }
+  for (const entry of readdirSync(dest)) {
+    if (keep.has(entry)) {
+      continue;
+    }
+    rmSync(path.join(dest, entry), { recursive: true, force: true });
+  }
+}
+
+/** Copy a previously persisted host tree onto a fresh slot. */
+export async function restoreDurableWorkspace(src: string, dest: string): Promise<boolean> {
+  if (!existsSync(src) || !statSync(src).isDirectory()) {
+    return false;
+  }
+  if (path.resolve(src) === path.resolve(dest)) {
+    return true;
+  }
+  const names = readdirSync(src).filter((name) => !skipDurablePersist(name));
+  if (names.length === 0) {
+    return false;
+  }
+  await persistWorkspaceTree(src, dest);
+  return true;
 }
 
 export async function materializeRepos(

@@ -62,9 +62,22 @@ export interface ExecutionTarget {
   loop: ExecutionPlace;
   tools: ExecutionPlace;
   deskId?: string;
+  /** Which bound workspace on that desk runs this. Absolute path stays local. */
+  deskWorkspaceId?: string;
 }
 
 export type AgentMode = "agent" | "ask";
+
+/**
+ * Who starts the worker for a desk target.
+ * `inline`: the caller is that desk, so it spawns right after the response.
+ * `dispatch`: someone else asked this desk to run it, so the desk is notified.
+ */
+export type RunStart = "inline" | "dispatch";
+
+export function parseRunStart(value: unknown): RunStart | undefined {
+  return value === "inline" || value === "dispatch" ? value : undefined;
+}
 
 export function parseExecutionTarget(value: unknown): ExecutionTarget | undefined {
   if (!value || typeof value !== "object") {
@@ -77,7 +90,9 @@ export function parseExecutionTarget(value: unknown): ExecutionTarget | undefine
     return undefined;
   }
   const deskId = typeof record.deskId === "string" && record.deskId.trim() ? record.deskId.trim() : undefined;
-  return { loop, tools, deskId };
+  const deskWorkspaceId =
+    typeof record.deskWorkspaceId === "string" && record.deskWorkspaceId.trim() ? record.deskWorkspaceId.trim() : undefined;
+  return { loop, tools, deskId, deskWorkspaceId };
 }
 
 export function colocatedTarget(place: ExecutionPlace, deskId?: string): ExecutionTarget {
@@ -113,6 +128,9 @@ export interface Run {
   assigneeUserId?: string | null;
   collaborators?: RunCollaborator[];
   todoId?: string | null;
+  expertId?: string | null;
+  expertTeamId?: string | null;
+  plugins?: Array<{ slug: string; version: string; digest: string }>;
   executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
@@ -224,9 +242,16 @@ export interface CreateRunRequest {
   source?: RunSource;
   projectId?: string;
   todoId?: string;
+  expertId?: string;
+  expertTeamId?: string;
+  pluginIds?: string[];
   images?: ImageRef[];
   notifyChatId?: string;
   target?: ExecutionTarget;
+  /** Desk targets only. Default `dispatch`. */
+  start?: RunStart;
+  /** Desk targets only. Which bound workspace on that desk should run this. */
+  deskWorkspaceId?: string;
   mode?: AgentMode;
 }
 

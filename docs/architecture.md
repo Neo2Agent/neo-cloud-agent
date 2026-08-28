@@ -2,7 +2,7 @@
 
 对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离 VM 运行；**LLM 推理走云端网关**；**Agent 循环和工具执行在 VM 内**；Agent 内核使用 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
 
-本文是实现蓝图，不是产品文案。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
+本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（包、进程、现网、数据流）见 [architecture-overview.md](./architecture-overview.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
 
 ---
 
@@ -23,7 +23,7 @@
 
 - 复刻 Cursor 的 IDE、Tab、本地 sandbox，或把 pi 再嵌进一份本机 TUI
 - 多租户计费的完整账务系统（先打点，后对账）
-- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）
+- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）——二期重新评估见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 让 VM 直连 Anthropic / OpenAI / 自建 GPU（密钥与配额会泄漏到不可信环境）
 - 让 CLI 在开发者机器上执行工具来「加速」——CLI 只打 `/v1`，见 [cli.md](./cli.md)
 
@@ -826,5 +826,5 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 - Worker 把 `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` 注册成 pi `customTools`。Agent 用它们走控制面 commit / 开草稿 PR / 看 setup 与 egress / 抓网页 / 调 MCP / 上传产物；不要让 bash 拿长期 git token。`GET /v1/runs/:id/diagnostics` 给 UI，worker 走 `/internal`。
 - `packages/cli` 是 `/v1` 的 headless 宿主：创建 Run（`source: "cli"`）、订 SSE、跟进 / 归档 / diff / PR。不在终端里跑 pi，不持有 Provider Key。
 - DeepSeek：`deepseek-v4-flash` 是默认便宜模型；`deepseek-chat` / `deepseek-reasoner` 已退役，读写设置时改写成 flash。`deepseek-v4-pro` 显式保留。对话页可以切 Flash / Pro。
-- `WORKER_RUNTIME=vm`：无 KVM 时用 loop ext4 槽。空闲超时先 `persistWorkspaceTree` 再 `releaseVmSlot`（卸槽会擦盘）。两槽都忙则新对话 `run.queued`。loop/local worker 套 `WORKER_MEMORY_MIB` 堆上限；control-plane 有 cgroup `Delegate=` 时再套 RSS。归档 / 过期 run 不把事件树留在控制面内存里，补播从 persist 读并折叠 `message.delta`。
+- `WORKER_RUNTIME=vm`：无 KVM 时用 loop ext4 槽。空闲超时先把工作区写回 `hostRunsDir/<runId>` 再 `releaseVmSlot`（卸槽会擦盘）。写回失败则留下槽。工作区有全站预算和 TTL 回收，见 [workspace-persistence.md](./workspace-persistence.md)。两槽都忙则新对话 `run.queued`。loop/local worker 套 `WORKER_MEMORY_MIB` 堆上限；control-plane 有 cgroup `Delegate=` 时再套 RSS。归档 / 过期 run 不把事件树留在控制面内存里，补播从 persist 读并折叠 `message.delta`。
 - 对话页 React 包在 `packages/web`；control-plane 托管 `dist/`。工具卡和模型文字按时间拆行，见 §9.3。

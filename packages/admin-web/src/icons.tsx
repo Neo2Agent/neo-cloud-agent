@@ -1,69 +1,94 @@
-import type { ReactNode } from "react";
+import {
+  Bot,
+  ChevronLeft,
+  ChevronRight,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  MessageSquare,
+  MessageSquarePlus,
+  PanelLeftClose,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings,
+  Users,
+  X,
+  type LucideProps,
+} from "lucide-react";
 
-type IconProps = { size?: number };
+type IconProps = { size?: number; className?: string };
 
-function Svg({ size = 22, children }: IconProps & { children: ReactNode }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {children}
-    </svg>
-  );
+const stroke: Pick<LucideProps, "strokeWidth"> = { strokeWidth: 1.75 };
+
+function icon(Icon: typeof Search, props: IconProps) {
+  return <Icon {...stroke} size={props.size ?? 16} className={props.className} aria-hidden="true" />;
 }
 
 export function IconOverview(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="3" y="3" width="7" height="9" rx="2" />
-      <rect x="14" y="3" width="7" height="5" rx="2" />
-      <rect x="14" y="12" width="7" height="9" rx="2" />
-      <rect x="3" y="16" width="7" height="5" rx="2" />
-    </Svg>
-  );
+  return icon(LayoutDashboard, props);
 }
 
 export function IconUsers(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <circle cx="9" cy="8" r="3.2" />
-      <path d="M3.6 19.2c.6-3 2.7-4.6 5.4-4.6s4.8 1.6 5.4 4.6" />
-      <circle cx="17" cy="9" r="2.4" />
-      <path d="M16.2 14.8c2.1.3 3.6 1.6 4.2 3.8" />
-    </Svg>
-  );
+  return icon(Users, props);
 }
 
 export function IconRuns(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M5 6h14M5 12h10M5 18h12" />
-      <circle cx="19" cy="12" r="1.2" fill="currentColor" stroke="none" />
-    </Svg>
-  );
+  return icon(MessageSquare, props);
+}
+
+export function IconExperts(props: IconProps) {
+  return icon(Bot, props);
 }
 
 export function IconSystem(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 4.5v2.2M12 17.3V19.5M4.5 12h2.2M17.3 12H19.5M6.4 6.4l1.6 1.6M16 16l1.6 1.6M17.6 6.4 16 8M8 16l-1.6 1.6" />
-    </Svg>
-  );
+  return icon(Settings, props);
 }
 
 export function IconRefresh(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M20 12a8 8 0 1 1-2.2-5.5" />
-      <path d="M20 4v5h-5" />
-    </Svg>
-  );
+  return icon(RefreshCw, props);
 }
 
 export function IconLogout(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M10 7V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-1" />
-      <path d="M4 12h10M11 9l3 3-3 3" />
-    </Svg>
-  );
+  return icon(LogOut, props);
+}
+
+export function IconMenu(props: IconProps) {
+  return icon(Menu, props);
+}
+
+export function IconSidebarClose(props: IconProps) {
+  return icon(PanelLeftClose, props);
+}
+
+export function IconClose(props: IconProps) {
+  return icon(X, props);
+}
+
+export function IconX(props: IconProps) {
+  return icon(X, props);
+}
+
+export function IconSearch(props: IconProps) {
+  return icon(Search, props);
+}
+
+export function IconPlus(props: IconProps) {
+  return icon(Plus, props);
+}
+
+export function IconChevronLeft(props: IconProps) {
+  return icon(ChevronLeft, props);
+}
+
+export function IconChevronRight(props: IconProps) {
+  return icon(ChevronRight, props);
+}
+
+export function IconBack(props: IconProps) {
+  return icon(ChevronLeft, props);
+}
+
+export function IconChatHome(props: IconProps) {
+  return icon(MessageSquarePlus, props);
 }

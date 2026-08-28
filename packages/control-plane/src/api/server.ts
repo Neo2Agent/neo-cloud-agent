@@ -9,8 +9,12 @@ import type {
   CreateRunRequest,
   CreateSubscriptionRequest,
   CreateAutomationRequest,
+  BindDeskWorkspaceRequest,
   CreateDeskRequest,
   CreateDeviceRequest,
+  DeskInboxEvent,
+  UpdateDeskRequest,
+  CreateExpertRequest,
   CreateProjectRequest,
   CreateProjectMessageRequest,
   CreateTodoRequest,
@@ -18,28 +22,35 @@ import type {
   TransitionTodoRequest,
   UpdateTodoRequest,
   RunEvent,
+  UpdateExpertRequest,
   UpdateProjectRequest,
 } from "@neo-cloud-agent/contracts";
 import {
+  BUNDLED_EXPERT_TEAMS,
   canManageProject,
   evaluateEgress,
+  isDeskTarget,
   pageTranscriptSnapshot,
   parseAutomationSchedule,
   parseLlmSettingsRequest,
   publicLlmSettings,
   readLlmSettings,
+  readNewApiInfo,
   resolveModelLimits,
   writeLlmSettings,
 } from "@neo-cloud-agent/contracts";
 import { eventsForRun } from "../events/bus.js";
 import { snapshotForRun } from "../events/snapshot.js";
-import { attachEventStream } from "../events/stream.js";
+import { SSE_HEADERS, attachEventStream } from "../events/stream.js";
 import {
   abortRun,
   archiveRun,
   claimDeskRun,
   commitRun,
   createRun,
+  deskAssignmentForRun,
+  rejectDeskRun,
+  releaseDeskRun,
   enqueueFollowUp,
   inviteRunCollaborator,
   canInviteRunCollaborator,
@@ -69,6 +80,7 @@ import {
   takeInbound,
 } from "../orchestrator/orchestrator.js";
 import { listWorkspacePath } from "../workspace-fs.js";
+import { loadWorkspaceMeta, summarizeWorkspaceStore } from "../runtime/workspace-store.js";
 import { workspaceFor } from "../worker-spawn.js";
 import {
   AccountError,
@@ -134,6 +146,21 @@ import {
   updateProject,
 } from "../projects/store.js";
 import {
+  createExpert,
+  deleteExpert,
+  listExpertsForActor,
+  resolveExpert,
+  updateExpert,
+} from "../experts/store.js";
+import {
+  getPluginDetail,
+  installPlugin,
+  listPluginsForActor,
+  setPluginEnabled,
+  uninstallPlugin,
+} from "../plugins/store.js";
+import { renderExpertRole } from "@neo-cloud-agent/contracts";
+import {
   addTodoComment,
   attachTodoFiles,
   createTodo,
@@ -146,7 +173,18 @@ import {
 import { deleteProjectAsset, listProjectAssets, putProjectAsset, readProjectAsset } from "../projects/assets.js";
 import { createProjectMessage, deleteProjectMessage, listProjectMessages, updateProjectMessage } from "../projects/messages.js";
 import { listInbox, markInboxRead, unreadInboxCount } from "../projects/inbox.js";
-import { createDesk, deleteDesk, findDeskByToken, listDesks } from "../desks/store.js";
+import {
+  bindDeskWorkspace,
+  createDesk,
+  deleteDesk,
+  findDeskByToken,
+  listDesks,
+  openDeskInbox,
+  takeDeskAssignment,
+  touchDesk,
+  unbindDeskWorkspace,
+  updateDesk,
+} from "../desks/store.js";
 import { deleteDevice, listDevices, upsertDevice } from "../devices/store.js";
 import { ingestTelegramWebhook, ingestWeChatXml, verifyWeChatQuery } from "../ingress/chat.js";
 import {
@@ -169,7 +207,7 @@ const CORS = {
 } as const;
 
 async function requireRun(runId: string) {
-  return getRun(runId) ?? (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
+  return (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
 }
 
 function denyUnless(run: { userId: string } | null | undefined, actor: Actor, res: ServerResponse): boolean {
@@ -269,6 +307,38 @@ function notFound(res: ServerResponse): void {
   send(res, 404, { error: "not_found" });
 }
 
+/**
+ * The desk's own outbound stream. The control plane cannot dial into a laptop
+ * behind NAT, so remote dispatch rides down this connection. Holding it open is
+ * also what marks the desk online.
+ */
+function openDeskInboxStream(req: IncomingMessage, res: ServerResponse, deskId: string): void {
+  res.writeHead(200, SSE_HEADERS);
+  const write = (event: DeskInboxEvent) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+  const detach = openDeskInbox(deskId, write);
+  touchDesk(deskId);
+  // Anything offered while the desk was away is still waiting in the queue.
+  for (let pending = takeDeskAssignment(deskId); pending; pending = takeDeskAssignment(deskId)) {
+    try {
+      write({ kind: "assignment", assignment: deskAssignmentForRun(pending) });
+    } catch {
+      // run vanished or is no longer a desk run
+    }
+  }
+  write({ kind: "ping" });
+  const ping = setInterval(() => {
+    touchDesk(deskId);
+    write({ kind: "ping" });
+  }, 15_000);
+  ping.unref();
+  req.on("close", () => {
+    detach();
+    clearInterval(ping);
+  });
+}
+
 export function createApiServer() {
   void startPlatform()
     .catch((error) => {
@@ -308,9 +378,11 @@ export function createApiServer() {
           llmModel: llm.model,
           llmContextWindow: resolveModelLimits(llm.model)?.contextWindow ?? null,
           llmConfigured: llm.configured,
+          newApi: readNewApiInfo(),
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           vmSlots: summarizeVmSlots(config.workerRuntime),
+          workspaceStore: summarizeWorkspaceStore(),
           objectStore: getObjectStore().kind,
           scmPush: publicScmSettings(),
           workerMemoryMiB: defaultWorkerResources(config.workerRuntime).memoryMiB,
@@ -487,7 +559,19 @@ export function createApiServer() {
           return;
         }
       } else if (path.startsWith("/v1/")) {
-        const deskAction = /^\/v1\/desks\/([^/]+)\/(lease|claim)$/.exec(path);
+        const deskInbox = /^\/v1\/desks\/([^/]+)\/inbox$/.exec(path);
+        if (deskInbox && method === "GET") {
+          const deskId = deskInbox[1] ?? "";
+          const token = readBearer(req) || url.searchParams.get("token") || "";
+          const desk = token ? findDeskByToken(token) : undefined;
+          if (!desk || desk.id !== deskId) {
+            send(res, 401, { error: "unauthorized" });
+            return;
+          }
+          openDeskInboxStream(req, res, deskId);
+          return;
+        }
+        const deskAction = /^\/v1\/desks\/([^/]+)\/(lease|claim|reject|release|workspaces)$/.exec(path);
         if (deskAction && method === "POST") {
           const deskId = deskAction[1] ?? "";
           const action = deskAction[2];
@@ -511,6 +595,33 @@ export function createApiServer() {
               send(res, 200, await leaseDesk(deskId, Number(body.waitMs ?? 20_000)));
               return;
             }
+            if (action === "reject") {
+              const body = (await readJson(req)) as { runId?: string; reason?: string };
+              if (!body.runId) {
+                send(res, 400, { error: "runId is required" });
+                return;
+              }
+              send(res, 200, rejectDeskRun(deskId, body.runId, body.reason));
+              return;
+            }
+            if (action === "release") {
+              const body = (await readJson(req)) as { runId?: string; code?: number | null };
+              if (!body.runId) {
+                send(res, 400, { error: "runId is required" });
+                return;
+              }
+              send(res, 200, releaseDeskRun(deskId, body.runId, { code: body.code ?? null }));
+              return;
+            }
+            if (action === "workspaces") {
+              const body = (await readJson(req)) as BindDeskWorkspaceRequest;
+              if (!body.name || !body.repoKey) {
+                send(res, 400, { error: "name and repoKey are required" });
+                return;
+              }
+              send(res, 201, bindDeskWorkspace(deskId, body));
+              return;
+            }
             const body = (await readJson(req)) as { runId?: string; workspaceDir?: string; pid?: number };
             if (!body.runId || !body.workspaceDir) {
               send(res, 400, { error: "runId and workspaceDir are required" });
@@ -520,6 +631,19 @@ export function createApiServer() {
           } catch (error) {
             send(res, 400, { error: error instanceof Error ? error.message : "desk_action_failed" });
           }
+          return;
+        }
+        const deskWorkspaceDelete = /^\/v1\/desks\/([^/]+)\/workspaces\/([^/]+)$/.exec(path);
+        if (deskWorkspaceDelete && method === "DELETE") {
+          const deskId = deskWorkspaceDelete[1] ?? "";
+          const token = readBearer(req);
+          const desk = token ? findDeskByToken(token) : undefined;
+          if (!desk || desk.id !== deskId) {
+            send(res, 401, { error: "unauthorized" });
+            return;
+          }
+          const ok = unbindDeskWorkspace(deskId, deskWorkspaceDelete[2] ?? "");
+          send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
           return;
         }
         const actor = await resolveActor(req, url);
@@ -539,7 +663,10 @@ export function createApiServer() {
           return;
         }
         if (method === "GET" && path === "/v1/vms") {
-          send(res, 200, summarizeVmSlots(getConfig().workerRuntime));
+          send(res, 200, {
+            ...summarizeVmSlots(getConfig().workerRuntime),
+            workspaceStore: summarizeWorkspaceStore(),
+          });
           return;
         }
         if (method === "GET" && path === "/v1/settings/llm") {
@@ -762,6 +889,163 @@ export function createApiServer() {
             return;
           }
           send(res, 200, updated);
+          return;
+        }
+        if (method === "GET" && path === "/v1/experts") {
+          if (actor.kind !== "user") {
+            send(res, 200, { experts: listExpertsForActor({ query: url.searchParams.get("q") ?? undefined }) });
+            return;
+          }
+          send(
+            res,
+            200,
+            {
+              experts: listExpertsForActor({
+                userId: actor.userId,
+                projectId: url.searchParams.get("projectId"),
+                query: url.searchParams.get("q") ?? undefined,
+              }),
+            },
+          );
+          return;
+        }
+        if (method === "POST" && path === "/v1/experts") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 201, createExpert((await readJson(req)) as CreateExpertRequest, { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "invalid_expert" });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/expert-teams") {
+          send(res, 200, { teams: BUNDLED_EXPERT_TEAMS });
+          return;
+        }
+        if (method === "GET" && path === "/v1/plugins") {
+          send(
+            res,
+            200,
+            {
+              plugins: listPluginsForActor({
+                userId: actor.kind === "user" ? actor.userId : undefined,
+                projectId: url.searchParams.get("projectId"),
+                query: url.searchParams.get("q") ?? undefined,
+              }),
+            },
+          );
+          return;
+        }
+        const pluginItem = /^\/v1\/plugins\/([^/]+)$/.exec(path);
+        if (pluginItem && method === "GET") {
+          const detail = getPluginDetail(pluginItem[1] ?? "", {
+            userId: actor.kind === "user" ? actor.userId : undefined,
+            projectId: url.searchParams.get("projectId"),
+          });
+          if (!detail) {
+            notFound(res);
+            return;
+          }
+          send(res, 200, detail);
+          return;
+        }
+        const pluginInstall = /^\/v1\/plugins\/([^/]+)\/install$/.exec(path);
+        if (pluginInstall && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { scope?: "user" | "project"; projectId?: string; enabled?: boolean };
+            send(res, 200, installPlugin(pluginInstall[1] ?? "", body, { userId: actor.userId, email: actor.email }));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "install_failed" });
+          }
+          return;
+        }
+        if (pluginInstall && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req).catch(() => ({}))) as { scope?: "user" | "project"; projectId?: string };
+            uninstallPlugin(pluginInstall[1] ?? "", body, { userId: actor.userId, email: actor.email });
+            send(res, 200, { ok: true });
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "uninstall_failed" });
+          }
+          return;
+        }
+        const pluginEnable = /^\/v1\/plugins\/([^/]+)\/enable$/.exec(path);
+        if (pluginEnable && method === "POST") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { enabled?: boolean; scope?: "user" | "project"; projectId?: string };
+            send(
+              res,
+              200,
+              setPluginEnabled(pluginEnable[1] ?? "", { enabled: body.enabled !== false, scope: body.scope, projectId: body.projectId }, {
+                userId: actor.userId,
+                email: actor.email,
+              }),
+            );
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "enable_failed" });
+          }
+          return;
+        }
+        const expertItem = /^\/v1\/experts\/([^/]+)$/.exec(path);
+        if (expertItem && method === "GET") {
+          const expert = resolveExpert(expertItem[1] ?? "");
+          if (!expert) {
+            notFound(res);
+            return;
+          }
+          if (actor.kind === "user") {
+            const visible = listExpertsForActor({ userId: actor.userId, projectId: expert.projectId }).some((item) => item.id === expert.id);
+            if (!visible) {
+              notFound(res);
+              return;
+            }
+          } else if (expert.visibility !== "bundled") {
+            notFound(res);
+            return;
+          }
+          send(res, 200, { ...expert, markdown: renderExpertRole(expert) });
+          return;
+        }
+        if (expertItem && (method === "PATCH" || method === "POST")) {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            send(res, 200, updateExpert(expertItem[1] ?? "", (await readJson(req)) as UpdateExpertRequest, { userId: actor.userId }));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "update_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        if (expertItem && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            deleteExpert(expertItem[1] ?? "", { userId: actor.userId });
+            send(res, 200, { ok: true });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "delete_failed";
+            send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
           return;
         }
         if (method === "GET" && path === "/v1/projects") {
@@ -1168,14 +1452,29 @@ export function createApiServer() {
           }
           return;
         }
-        const deskDelete = /^\/v1\/desks\/([^/]+)$/.exec(path);
-        if (deskDelete && method === "DELETE") {
+        const deskById = /^\/v1\/desks\/([^/]+)$/.exec(path);
+        if (deskById && method === "DELETE") {
           if (actor.kind === "anonymous") {
             send(res, 401, { error: "login_required" });
             return;
           }
-          const ok = deleteDesk(deskDelete[1] ?? "", actor.kind === "user" ? actor.userId : undefined);
+          const ok = deleteDesk(deskById[1] ?? "", actor.kind === "user" ? actor.userId : undefined);
           send(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not_found" });
+          return;
+        }
+        if (deskById && method === "PATCH") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const deskId = deskById[1] ?? "";
+          const owned = listDesks(actor.userId).some((item) => item.id === deskId);
+          if (!owned) {
+            send(res, 404, { error: "not_found" });
+            return;
+          }
+          const updated = updateDesk(deskId, (await readJson(req)) as UpdateDeskRequest);
+          send(res, updated ? 200 : 404, updated ?? { error: "not_found" });
           return;
         }
         if (method === "GET" && path === "/v1/devices") {
@@ -1220,15 +1519,15 @@ export function createApiServer() {
           }
           body.repoUrls = Array.isArray(body.repoUrls) ? body.repoUrls : [];
           try {
-            send(
-              res,
-              201,
-              await createRun(body, {
-                userId: actor.kind === "user" ? actor.userId : undefined,
-                orgId: actor.orgId,
-                email: actor.kind === "user" ? actor.email : undefined,
-              }),
-            );
+            const run = await createRun(body, {
+              userId: actor.kind === "user" ? actor.userId : undefined,
+              orgId: actor.orgId,
+              email: actor.kind === "user" ? actor.email : undefined,
+            });
+            // An inline desk run is started by the caller itself, so hand back
+            // everything it needs to spawn instead of making it poll for it.
+            const inline = body.start === "inline" && isDeskTarget(run.executionTarget);
+            send(res, 201, inline ? { ...run, assignment: deskAssignmentForRun(run.id) } : run);
           } catch (error) {
             if (error instanceof QuotaError) {
               send(res, 429, { error: error.message });
@@ -1324,6 +1623,23 @@ export function createApiServer() {
           send(res, 200, await handoffRun(handoffMatch[1] ?? "", (await readJson(req)) as HandoffRequest));
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : "handoff_failed" });
+        }
+        return;
+      }
+
+      // Lets the desk pick a local run back up in place, e.g. after its worker
+      // exited, without waiting to be handed its own run back.
+      const deskStartMatch = /^\/v1\/runs\/([^/]+)\/desk-start$/.exec(path);
+      if (deskStartMatch && method === "POST") {
+        const runId = deskStartMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res)) {
+          return;
+        }
+        try {
+          send(res, 200, { assignment: deskAssignmentForRun(runId) });
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "desk_start_failed" });
         }
         return;
       }
@@ -1762,13 +2078,17 @@ export function createApiServer() {
           return;
         }
         try {
-          send(
-            res,
-            200,
-            listWorkspacePath(workspaceFor(runId), url.searchParams.get("path") ?? "", {
+          send(res, 200, {
+            ...listWorkspacePath(workspaceFor(runId), url.searchParams.get("path") ?? "", {
               content: url.searchParams.get("content") === "1",
             }),
-          );
+            workspace: loadWorkspaceMeta(runId) ?? {
+              version: 1,
+              state: "missing",
+              bytes: 0,
+              persistedAt: null,
+            },
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : "fs failed";
           send(res, message.includes("not found") ? 404 : 400, { error: message });

@@ -1,5 +1,7 @@
 node_modules/
 dist/
+packages/desk/out/
+packages/desk/release/
 *.log
 .DS_Store
 .env

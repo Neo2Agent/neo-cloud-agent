@@ -14,6 +14,7 @@ import {
   parseSse,
   runEventsQuery,
   shouldShowAssistantActions,
+  statusFromEventKind,
 } from "./stream.js";
 
 function ev(partial: Partial<RunEvent> & Pick<RunEvent, "id" | "kind">): RunEvent {
@@ -67,6 +68,18 @@ test("parseSse and terminal kinds match the web stream contract", () => {
   assert.equal(isTerminalTurnEvent("user.message"), false);
   assert.equal(isActiveRunStatus("RUNNING"), true);
   assert.equal(isActiveRunStatus("IDLE"), false);
+});
+
+test("the open run leaves RUNNING when the turn ends", () => {
+  assert.equal(statusFromEventKind("user.message", "IDLE"), "RUNNING");
+  assert.equal(statusFromEventKind("agent.start", "IDLE"), "RUNNING");
+  assert.equal(statusFromEventKind("run.idle", "RUNNING"), "IDLE");
+  assert.equal(statusFromEventKind("agent.end", "RUNNING"), "IDLE");
+  assert.equal(statusFromEventKind("run.error", "RUNNING"), "ERROR");
+  assert.equal(statusFromEventKind("tool.start", "RUNNING"), null);
+  // A follow-up queued against a finished run still means work is coming.
+  assert.equal(statusFromEventKind("followup.queued", "IDLE"), "RUNNING");
+  assert.equal(statusFromEventKind("followup.queued", "RUNNING"), "RUNNING");
 });
 
 test("replaying the snapshot event log duplicates user bubbles", () => {

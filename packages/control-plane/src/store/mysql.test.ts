@@ -44,13 +44,15 @@ test("mysql store upserts run JSON, events, and users", async () => {
     calls.push({ text, values: values ?? [] });
     const key = text.includes("FROM runs WHERE")
       ? "run"
-      : text.includes("FROM events")
-        ? "events"
-        : text.includes("FROM users WHERE email")
-          ? "user"
-          : text.includes("FROM users ORDER BY")
-            ? "users"
-            : "other";
+      : text.includes("FROM runs")
+        ? "runs"
+        : text.includes("FROM events")
+          ? "events"
+          : text.includes("FROM users WHERE email")
+            ? "user"
+            : text.includes("FROM users ORDER BY")
+              ? "users"
+              : "other";
     return { rows: rowsByQuery[key] ?? [] };
   });
 
@@ -77,6 +79,22 @@ test("mysql store upserts run JSON, events, and users", async () => {
   rowsByQuery.run = [{ record }];
   const loaded = await store.loadRun("run-mysql-1");
   assert.equal(loaded?.run.prompt, "hello mysql");
+
+  const older = { version: 1 as const, run: sampleRun("run-old"), followUps: [], inbound: [] };
+  older.run.updatedAt = "2026-08-01T00:00:00.000Z";
+  rowsByQuery.runs = [{ record: older }, { record }];
+  const listedRuns = await store.loadRuns();
+  assert.equal(listedRuns[0]?.run.id, "run-mysql-1");
+  const loadRunsSql = calls.find((item) => item.text.includes("FROM runs") && !item.text.includes("WHERE") && item.text.includes("SELECT record"))?.text ?? "";
+  assert.match(loadRunsSql, /SELECT record FROM runs/);
+  assert.doesNotMatch(loadRunsSql, /ORDER BY/);
+
+  rowsByQuery.runs = [{ run: record.run }];
+  const summaries = await store.loadRunSummaries();
+  assert.equal(summaries[0]?.id, "run-mysql-1");
+  const summarySql = calls.find((item) => item.text.includes("JSON_EXTRACT"))?.text ?? "";
+  assert.match(summarySql, /JSON_EXTRACT\(record, '\$\.run'\)/);
+  assert.doesNotMatch(summarySql, /SELECT record FROM runs/);
 
   await store.createUser({
     id: "user-1",
@@ -126,6 +144,8 @@ test("mysql store upserts run JSON, events, and users", async () => {
     name: "官网改版",
     instruction: "用中文回复",
     defaultRepoUrls: [],
+    expertIds: [],
+    pluginIds: [],
     invitePolicy: "open",
     createdBy: "user_ada",
     createdAt: record.run.createdAt,
@@ -135,4 +155,35 @@ test("mysql store upserts run JSON, events, and users", async () => {
     events: [],
   });
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO projects/);
+
+  await store.saveExpertPolicy({
+    version: 1,
+    updatedAt: record.run.createdAt,
+    experts: {
+      exp_reviewer: {
+        enabled: true,
+        audience: "all",
+        userIds: [],
+        override: { name: "审查加强" },
+        updatedAt: record.run.createdAt,
+        publishedAt: null,
+      },
+    },
+  });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO expert_policies/);
+
+  await store.saveExpert({
+    id: "exp_mine",
+    slug: "release-check",
+    name: "发布检查",
+    description: "发版前核对",
+    persona: "You are a release checker.",
+    methodology: "Read the diff.",
+    deliverables: "## Notes",
+    visibility: "user",
+    ownerUserId: "user-1",
+    createdAt: record.run.createdAt,
+    updatedAt: record.run.createdAt,
+  });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO experts/);
 });

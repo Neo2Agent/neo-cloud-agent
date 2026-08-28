@@ -22,6 +22,7 @@ export function RailSessions({
   spacesOpen,
   inboxExpanded,
   folderOpen,
+  runningLocalRunIds,
   formatRel,
   onToggleInbox,
   onToggleSpaces,
@@ -36,6 +37,8 @@ export function RailSessions({
   spacesOpen: boolean;
   inboxExpanded: boolean;
   folderOpen: Record<string, boolean>;
+  /** Local runs holding a worker, so a background one is visible from any chat. */
+  runningLocalRunIds?: Set<string>;
   formatRel: (iso?: string | null) => string;
   onToggleInbox: () => void;
   onToggleSpaces: () => void;
@@ -57,7 +60,14 @@ export function RailSessions({
           ) : (
             <>
               {shownInbox.map((run) => (
-                <ChatRow key={run.id} run={run} active={run.id === runId} formatRel={formatRel} onOpen={onOpenRun} />
+                <ChatRow
+                  key={run.id}
+                  run={run}
+                  active={run.id === runId}
+                  localRunning={runningLocalRunIds?.has(run.id)}
+                  formatRel={formatRel}
+                  onOpen={onOpenRun}
+                />
               ))}
               {inbox.length > INBOX_PREVIEW ? (
                 <button type="button" className="rail-more" onClick={onToggleInboxExpanded}>
@@ -94,6 +104,7 @@ export function RailSessions({
                           run={run}
                           active={run.id === runId}
                           nested
+                          localRunning={runningLocalRunIds?.has(run.id)}
                           formatRel={formatRel}
                           onOpen={onOpenRun}
                         />
@@ -113,12 +124,14 @@ function ChatRow({
   run,
   active,
   nested,
+  localRunning,
   formatRel,
   onOpen,
 }: {
   run: Run;
   active: boolean;
   nested?: boolean;
+  localRunning?: boolean;
   formatRel: (iso?: string | null) => string;
   onOpen: (id: string) => void;
 }) {
@@ -132,6 +145,7 @@ function ChatRow({
       <span className={`chat-dot${active ? " on" : ""}`} />
       <span className="chat-title">{preview(run.prompt, 40)}</span>
       <span className="chat-meta">
+        {localRunning ? <i className="chat-local-dot" title="正在这台电脑上改文件" /> : null}
         {cloud ? <IconCloud size={12} /> : <IconComputer size={12} />}
         <span>{formatRel(run.updatedAt)}</span>
       </span>

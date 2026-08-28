@@ -2,7 +2,7 @@
 
 对话页、CLI、Desk、Telegram / 微信公众号都已经是 `/v1` 的宿主。手机端是**下一个同级客户端**，不是新的 Agent 内核，也不是 Desk 的缩小版。
 
-本文是落地蓝图。合约仍在 [`packages/contracts`](../packages/contracts)。终端客户端见 [cli.md](./cli.md)。Desk 本机执行见 [desk.md](./desk.md)。总架构见 [architecture.md](./architecture.md)。
+本文是落地蓝图。合约仍在 [`packages/contracts`](../packages/contracts)。终端客户端见 [cli.md](./cli.md)。Desk 本机执行见 [desk.md](./desk.md)。总架构见 [architecture.md](./architecture.md)。现状地图见 [architecture-overview.md](./architecture-overview.md)。
 
 ---
 
@@ -143,7 +143,7 @@ iOS / Android / PWA
 - 在 App 里贴 `DEEPSEEK_API_KEY`
 - 把 Telegram 用户直接映射成 App 账号（ingress 仍然是公开 webhook）
 - 为了手机把 Agent loop 搬到控制面
-- 复制 Desk 的 lease / claim / worktree
+- 复制 Desk 的登记 / claim / 本机工作区
 
 ---
 

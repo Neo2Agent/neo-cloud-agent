@@ -142,6 +142,14 @@ test("cli wait follows SSE until agent.end", async (t) => {
   assert.equal(lines.at(-1)?.subtype, "success");
 });
 
+test("cli plugin ls lists bundled skills", async (t) => {
+  const base = await startServer(t);
+  const listed = captureIo();
+  assert.equal(await main(["--url", base, "plugin", "ls"], listed.io), 0, listed.err());
+  assert.match(listed.out(), /pr-review/);
+  assert.match(listed.out(), /catalog/);
+});
+
 test("cli login --token talks to a token-gated control plane", async (t) => {
   process.env.CONTROL_PLANE_TOKEN = "cli-e2e-token";
   const base = await startServer(t);

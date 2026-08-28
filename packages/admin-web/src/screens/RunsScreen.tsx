@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react";
-import { formatTokens, formatWhen, preview, shortId, sourceLabel, statusLabel, statusTone } from "../format";
+import { useEffect, useMemo, useState } from "react";
+import { clampPage, filterByQuery, paginate, snippet } from "../catalog";
+import { CatalogCard, CatalogEmpty, CatalogGrid, CatalogPager, CatalogToolbar } from "../components/Catalog";
+import { formatTokens, formatWhen, sourceLabel, statusLabel } from "../format";
 import type { AdminRun } from "../types";
 
 type Props = {
@@ -8,85 +10,61 @@ type Props = {
 
 export function RunsScreen({ runs }: Props) {
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return runs;
-    return runs.filter((item) => {
-      const hay = [item.prompt, item.status, statusLabel(item.status), item.model, item.userId, item.source, sourceLabel(item.source)]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(needle);
-    });
-  }, [query, runs]);
+  const [page, setPage] = useState(1);
+  const filtered = useMemo(
+    () =>
+      filterByQuery(runs, query, (item) => [
+        item.prompt,
+        item.status,
+        statusLabel(item.status),
+        item.model,
+        item.userId,
+        item.source,
+        sourceLabel(item.source),
+      ]),
+    [query, runs],
+  );
+  const listPage = clampPage(page, filtered.length);
+  const visible = paginate(filtered, listPage);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
 
   return (
-    <div className="stack">
-      <label className="search">
-        <span className="sr-only">搜索对话</span>
-        <input
-          type="search"
-          inputMode="search"
-          enterKeyHint="search"
-          placeholder="搜索提示、状态或模型"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </label>
+    <section className="page catalog-page">
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">对话</p>
+          <h2>全平台最近对话</h2>
+          <p className="hint">最近 50 条，全平台可见。</p>
+        </div>
+        <p className="count-pill">{filtered.length} 条</p>
+      </header>
+
+      <CatalogToolbar search={query} onSearch={setQuery} placeholder="搜索提示、状态或模型" />
+
       {filtered.length === 0 ? (
-        <div className="empty">没有匹配的对话。</div>
+        <CatalogEmpty
+          title={runs.length === 0 ? "还没有对话" : "没有匹配的对话"}
+          hint={runs.length === 0 ? "用户开对话之后会出现在这里。" : "换个关键词再试试。"}
+        />
       ) : (
         <>
-          <ul className="cards cards-only-narrow">
-            {filtered.map((item) => (
-              <li key={item.id} className="row-card">
-                <div className="row-card-top">
-                  <span className={`status status-${statusTone(item.status)}`}>{statusLabel(item.status)}</span>
-                  <time>{formatWhen(item.updatedAt)}</time>
-                </div>
-                <strong>{preview(item.prompt)}</strong>
-                <p className="muted">
-                  {sourceLabel(item.source) || "对话"}
-                  {item.model ? ` · ${item.model}` : ""}
-                  {` · ${shortId(item.userId)}`}
-                  {item.usage?.totalTokens ? ` · ${formatTokens(item.usage.totalTokens)} tok` : ""}
-                </p>
-              </li>
+          <CatalogGrid>
+            {visible.map((item) => (
+              <CatalogCard
+                key={item.id}
+                title={snippet(item.prompt, 56) || "未命名任务"}
+                badge={statusLabel(item.status)}
+                description={[sourceLabel(item.source) || "对话", item.model].filter(Boolean).join(" · ")}
+                meta={`${item.usage?.totalTokens ? `${formatTokens(item.usage.totalTokens)} tok · ` : ""}${formatWhen(item.updatedAt)}`}
+              />
             ))}
-          </ul>
-          <div className="table-wrap table-only-wide">
-            <table>
-              <thead>
-                <tr>
-                  <th>状态</th>
-                  <th>提示</th>
-                  <th>来源</th>
-                  <th>模型</th>
-                  <th>用量</th>
-                  <th>更新</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <span className={`status status-${statusTone(item.status)}`}>{statusLabel(item.status)}</span>
-                    </td>
-                    <td>
-                      <strong>{preview(item.prompt, 56)}</strong>
-                      <div className="muted mono">{shortId(item.userId)}</div>
-                    </td>
-                    <td>{sourceLabel(item.source) || "—"}</td>
-                    <td>{item.model || "—"}</td>
-                    <td>{item.usage?.totalTokens ? `${formatTokens(item.usage.totalTokens)} tok` : "—"}</td>
-                    <td>{formatWhen(item.updatedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          </CatalogGrid>
+          <CatalogPager page={listPage} total={filtered.length} onPage={setPage} />
         </>
       )}
-    </div>
+    </section>
   );
 }

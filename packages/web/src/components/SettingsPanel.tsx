@@ -1,3 +1,4 @@
+import { Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
 
@@ -5,6 +6,7 @@ export type LlmSettings = {
   configured: boolean;
   upstream: string;
   model: string | null;
+  newApi?: { url: string | null; consoleUrl: string | null };
 };
 
 export type ScmSettings = {
@@ -64,6 +66,8 @@ export function SettingsPanel({
 }: Props) {
   const envBuilds = builds.filter((item) => item.status === "SUCCEEDED" && (!envId || item.envId === envId));
   const deepseek = llm.upstream !== "openai";
+  const newApiConsole = llm.newApi?.consoleUrl || llm.newApi?.url || "";
+  const newApiManaged = Boolean(newApiConsole);
   const [quotaHint, setQuotaHint] = useState("配额未加载");
   const [quotaTokens, setQuotaTokens] = useState("");
   const [quotaConcurrent, setQuotaConcurrent] = useState("");
@@ -138,27 +142,35 @@ export function SettingsPanel({
       <div className="env-row">
         <label>
           <span>环境</span>
-          <select id="environment" name="environment" value={envId} onChange={(event) => onEnv(event.target.value)}>
-            <option value="">仓库默认</option>
-            {environments.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name || item.id.slice(0, 8)}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="environment"
+            name="environment"
+            value={envId}
+            onValueChange={onEnv}
+            placeholder="仓库默认"
+            options={[
+              { value: "", label: "仓库默认" },
+              ...environments.map((item) => ({ value: item.id, label: item.name || item.id.slice(0, 8) })),
+            ]}
+          />
         </label>
         <label>
           <span>快照</span>
-          <select id="build" name="build" value={buildId} onChange={(event) => onBuild(event.target.value)}>
-            <option value="">自动（复用 active）</option>
-            <option value="cold">冷装</option>
-            {envBuilds.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.id.slice(0, 8)}
-                {item.draft ? " · draft" : ""}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="build"
+            name="build"
+            value={buildId}
+            onValueChange={onBuild}
+            placeholder="自动（复用 active）"
+            options={[
+              { value: "", label: "自动（复用 active）" },
+              { value: "cold", label: "冷装" },
+              ...envBuilds.map((item) => ({
+                value: item.id,
+                label: `${item.id.slice(0, 8)}${item.draft ? " · draft" : ""}`,
+              })),
+            ]}
+          />
         </label>
         <button className="ghost" id="warm-build" type="button" onClick={onWarm}>
           预热
@@ -167,19 +179,20 @@ export function SettingsPanel({
       <div className="env-row llm-row">
         <label>
           <span>模型上游</span>
-          <select
+          <Select
             id="llm-upstream"
             name="llm-upstream"
             value={llm.upstream === "openai" ? "openai" : "deepseek"}
-            onChange={(event) => onLlmUpstream(event.target.value)}
-          >
-            <option value="deepseek">DeepSeek</option>
-            <option value="openai">OpenAI</option>
-          </select>
+            onValueChange={onLlmUpstream}
+            options={[
+              { value: "deepseek", label: "DeepSeek" },
+              { value: "openai", label: "OpenAI" },
+            ]}
+          />
         </label>
         <label hidden={!deepseek}>
           <span>DeepSeek 型号</span>
-          <select
+          <Select
             id="llm-model"
             name="llm-model"
             value={
@@ -189,39 +202,48 @@ export function SettingsPanel({
                   ? "deepseek-v4-pro"
                   : "deepseek-v4-flash"
             }
-            onChange={(event) => onLlmModel(event.target.value)}
-          >
-            <option value="deepseek-v4-flash">Flash（便宜）</option>
-            <option value="deepseek-v4-flash-vision-exp">Flash Vision（看图）</option>
-            <option value="deepseek-v4-pro">Pro</option>
-          </select>
-        </label>
-        <label>
-          <span>API Key</span>
-          <input
-            id="llm-key"
-            name="llm-key"
-            type="password"
-            autoComplete="new-password"
-            placeholder={llm.configured ? "已保存，留空则保持" : "sk-…"}
-            value={llmKey}
-            onChange={(event) => onLlmKey(event.target.value)}
-            onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                onSaveLlm();
-              }
-            }}
+            onValueChange={onLlmModel}
+            options={[
+              { value: "deepseek-v4-flash", label: "Flash（便宜）" },
+              { value: "deepseek-v4-flash-vision-exp", label: "Flash Vision（看图）" },
+              { value: "deepseek-v4-pro", label: "Pro" },
+            ]}
           />
         </label>
+        {newApiManaged ? (
+          <a className="ghost llm-console-link" href={newApiConsole} target="_blank" rel="noreferrer">
+            New API
+          </a>
+        ) : (
+          <label>
+            <span>API Key</span>
+            <input
+              id="llm-key"
+              name="llm-key"
+              type="password"
+              autoComplete="new-password"
+              placeholder={llm.configured ? "已保存，留空则保持" : "sk-…"}
+              value={llmKey}
+              onChange={(event) => onLlmKey(event.target.value)}
+              onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onSaveLlm();
+                }
+              }}
+            />
+          </label>
+        )}
         <button className="ghost" id="save-llm" type="button" onClick={onSaveLlm}>
           保存
         </button>
       </div>
       <p className="hint" id="llm-status">
-        {llm.configured
-          ? `已配置 ${deepseek ? (/vision/i.test(llm.model ?? "") ? "DeepSeek Flash Vision" : /pro/i.test(llm.model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash") : "OpenAI"}，对话走真实模型。贴图时会自动走视觉模型。`
-          : "未配置 API Key，当前是 mock 回复。"}
+        {newApiManaged
+          ? `渠道在 New API。这里只选型号；贴图时会自动走视觉模型。`
+          : llm.configured
+            ? `已配置 ${deepseek ? (/vision/i.test(llm.model ?? "") ? "DeepSeek Flash Vision" : /pro/i.test(llm.model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash") : "OpenAI"}，对话走真实模型。贴图时会自动走视觉模型。`
+            : "未配置 API Key，当前是 mock 回复。"}
       </p>
       <div className="env-row llm-row">
         <label>

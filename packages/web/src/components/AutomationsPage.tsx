@@ -1,3 +1,4 @@
+import { Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState } from "react";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { api, readJson } from "../api";
@@ -107,13 +108,11 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
         <div className="auto-create-row">
           <label>
             <span>频率</span>
-            <select value={preset} onChange={(event) => setPreset(event.target.value as ScheduleKind)}>
-              {PRESETS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={preset}
+              onValueChange={(value) => setPreset(value as ScheduleKind)}
+              options={PRESETS.map((item) => ({ value: item.id, label: item.label }))}
+            />
           </label>
           <button className="auto-add" type="submit" disabled={busy || !prompt.trim()}>
             添加任务

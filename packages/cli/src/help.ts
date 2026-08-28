@@ -29,6 +29,7 @@ export const HELP_TEXT = `neo — Neo Cloud Agent 的终端客户端
   env ls                环境列表
   build ls              Build 列表
   vms                   VM 槽位
+  plugin                官方技能：ls / install / enable / disable / uninstall
 
 常用旗标:
   --url                 控制面地址（默认 http://127.0.0.1:8080）
@@ -57,10 +58,21 @@ export function commandHelp(command: string): string {
   --email     账号登录
 密码可用 --password 或 NEO_PASSWORD；TTY 下会提示。`;
     case "run":
-      return `neo run [prompt…] --repo <url> [--env] [--build] [--model]
+      return `neo run [prompt…] --repo <url> [--env] [--build] [--model] [--expert] [--expert-team]
   --detach    打印 run id 后退出
   --timeout   等待上限，默认 10m
+  --expert    专家 id 或 slug，例如 reviewer
+  --expert-team 专家团 id 或 slug，例如 ship-change
+  --plugin    这次额外启用的技能 id 或 slug，可重复
 没有子命令时，剩余参数也当作 run 的 prompt。`;
+    case "plugin":
+      return `neo plugin ls|install|enable|disable|uninstall [id] [--project]
+  ls          官方目录和当前安装状态
+  install     安装并默认启用
+  enable      启用（未安装则先装）
+  disable     关闭，不卸载
+  uninstall   卸安装记录
+  --project   挂到项目（钉住 + 项目安装）`;
     case "follow":
       return `neo follow <runId> [text…] [--delivery prompt|steer|follow_up]`;
     case "log":

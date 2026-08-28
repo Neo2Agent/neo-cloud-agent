@@ -3,9 +3,9 @@ import type { RunEvent } from "./events.js";
 
 /** Control plane → VM */
 export type WorkerInbound =
-  | { type: "prompt"; text: string; images?: ImageRef[] }
-  | { type: "steer"; text: string; images?: ImageRef[] }
-  | { type: "follow_up"; text: string; images?: ImageRef[] }
+  | { type: "prompt"; text: string; images?: ImageRef[]; followUpId?: string }
+  | { type: "steer"; text: string; images?: ImageRef[]; followUpId?: string }
+  | { type: "follow_up"; text: string; images?: ImageRef[]; followUpId?: string }
   | { type: "abort" }
   | { type: "set_model"; model: string }
   | { type: "shutdown"; reason: "idle" | "archived" | "expired" | "error" };

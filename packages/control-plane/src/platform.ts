@@ -7,6 +7,12 @@ import { listAutomations, replaceAutomations } from "./automations/store.js";
 import { setAutomationPersistHooks } from "./automations/persist-hooks.js";
 import { listProjects, replaceProjects } from "./projects/store.js";
 import { setProjectPersistHooks } from "./projects/persist-hooks.js";
+import { listStoredExperts, replaceExperts } from "./experts/store.js";
+import { setExpertPersistHooks } from "./experts/persist-hooks.js";
+import { listStoredPluginInstalls, replacePluginInstalls } from "./plugins/store.js";
+import { setPluginPersistHooks } from "./plugins/persist-hooks.js";
+import { readBundledExpertPolicy, replaceBundledExpertPolicy } from "./experts/policy.js";
+import { setBundledExpertPolicyPersistHooks } from "./experts/policy-persist.js";
 import { listDesks, replaceDesks } from "./desks/store.js";
 import { setDeskPersistHooks } from "./desks/persist-hooks.js";
 import { listStoredDevices, replaceDevices } from "./devices/store.js";
@@ -18,7 +24,7 @@ import { attachRateLimitRedis, resetRateLimitStore } from "./security/rate-limit
 import { reloadPersistedState } from "./orchestrator/orchestrator.js";
 import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
-import { persistRunRecord, persistWorkerLease, replacePersistedEvents, setPersistHooks } from "./store/persist.js";
+import { persistRunRecord, persistWorkerLease, setPersistHooks } from "./store/persist.js";
 
 let started: Promise<void> | null = null;
 let metadata: MetadataStore | null = null;
@@ -60,6 +66,8 @@ export function resetPlatformForTests(): void {
   setEnvPersistHooks({});
   setAutomationPersistHooks({});
   setProjectPersistHooks({});
+  setExpertPersistHooks({});
+  setPluginPersistHooks({});
   setDeskPersistHooks({});
   setDevicePersistHooks({});
   attachHotBus(null);
@@ -67,10 +75,34 @@ export function resetPlatformForTests(): void {
   resetRateLimitStore();
 }
 
+async function attachRedisBus(redisUrl: string): Promise<void> {
+  redis = await connectRedis(redisUrl);
+  eventBusKind = "redis";
+  attachRateLimitRedis(redis);
+  attachHotBus({
+    publish(event) {
+      const payload = JSON.stringify(event);
+      void redis?.xAdd(runStreamKey(event.runId), payload).catch((error) => console.error("redis xadd failed", error));
+      void redis?.publish(runChannel(event.runId), payload).catch((error) => console.error("redis publish failed", error));
+    },
+  });
+  await redis.pSubscribe("neo:run:*", (message) => {
+    const event = parseHotEvent(message);
+    if (event) {
+      ingestRemoteEvent(event);
+    }
+  });
+  console.log("control-plane event bus: redis");
+}
+
 async function doStart(): Promise<void> {
   ensureGitHubWebhookSecret();
   const databaseUrl = (process.env.DATABASE_URL ?? "").trim();
   const redisUrl = (process.env.REDIS_URL ?? "").trim();
+  // Redis first: login /v1 rate limits must not wait on MySQL hydrate.
+  if (redisUrl) {
+    await attachRedisBus(redisUrl);
+  }
   if (databaseUrl) {
     const connected = await connectDatabase(databaseUrl);
     metadata = connected.store;
@@ -100,6 +132,21 @@ async function doStart(): Promise<void> {
         void mirrorProjects(metadata, items).catch((error) => console.error("metadata saveProject failed", error));
       },
     });
+    setExpertPersistHooks({
+      onWrite: (items) => {
+        void mirrorExperts(metadata, items).catch((error) => console.error("metadata saveExpert failed", error));
+      },
+    });
+    setPluginPersistHooks({
+      onWrite: (items) => {
+        void mirrorPluginInstalls(metadata, items).catch((error) => console.error("metadata savePluginInstall failed", error));
+      },
+    });
+    setBundledExpertPolicyPersistHooks({
+      onWrite: (doc) => {
+        void metadata?.saveExpertPolicy(doc).catch((error) => console.error("metadata saveExpertPolicy failed", error));
+      },
+    });
     setDeskPersistHooks({
       onWrite: (items) => {
         void mirrorDesks(metadata, items).catch((error) => console.error("metadata saveDesk failed", error));
@@ -118,33 +165,21 @@ async function doStart(): Promise<void> {
         void metadata?.saveBuild(build).catch((error) => console.error("metadata saveBuild failed", error));
       },
     });
-    await hydrateFromStore(metadata);
-    await hydrateEnvFromStore(metadata);
-    await hydrateAutomationsFromStore(metadata);
-    await hydrateProjectsFromStore(metadata);
-    await hydrateDesksFromStore(metadata);
-    await hydrateDevicesFromStore(metadata);
-    reloadPersistedState();
-    console.log(`control-plane metadata store: ${metadataKind}`);
-  }
-  if (redisUrl) {
-    redis = await connectRedis(redisUrl);
-    eventBusKind = "redis";
-    attachRateLimitRedis(redis);
-    attachHotBus({
-      publish(event) {
-        const payload = JSON.stringify(event);
-        void redis?.xAdd(runStreamKey(event.runId), payload).catch((error) => console.error("redis xadd failed", error));
-        void redis?.publish(runChannel(event.runId), payload).catch((error) => console.error("redis publish failed", error));
-      },
-    });
-    await redis.pSubscribe("neo:run:*", (message) => {
-      const event = parseHotEvent(message);
-      if (event) {
-        ingestRemoteEvent(event);
-      }
-    });
-    console.log("control-plane event bus: redis");
+    try {
+      await hydrateFromStore(metadata);
+      await hydrateEnvFromStore(metadata);
+      await hydrateAutomationsFromStore(metadata);
+      await hydrateProjectsFromStore(metadata);
+      await hydrateExpertsFromStore(metadata);
+      await hydratePluginInstallsFromStore(metadata);
+      await hydrateExpertPolicyFromStore(metadata);
+      await hydrateDesksFromStore(metadata);
+      await hydrateDevicesFromStore(metadata);
+      reloadPersistedState();
+      console.log(`control-plane metadata store: ${metadataKind}`);
+    } catch (error) {
+      console.error("platform hydrate failed", error);
+    }
   }
   if (!process.env.NODE_TEST_CONTEXT) {
     await ensureDefaultAdmin().catch((error) => {
@@ -160,10 +195,6 @@ async function hydrateFromStore(store: MetadataStore): Promise<void> {
   const records = await store.loadRuns();
   for (const record of records) {
     persistRunRecord(record, undefined, { mirror: false });
-    const events = await store.loadEvents(record.run.id);
-    if (events.length > 0) {
-      replacePersistedEvents(record.run.id, events);
-    }
     const lease = await store.loadLease(record.run.id);
     if (lease) {
       persistWorkerLease(lease, undefined, { mirror: false });
@@ -261,6 +292,75 @@ async function mirrorDesks(store: MetadataStore | null, items: import("@neo-clou
   for (const old of remote) {
     if (!keep.has(old.id)) {
       await store.deleteDesk(old.id);
+    }
+  }
+}
+
+async function hydrateExpertPolicyFromStore(store: MetadataStore): Promise<void> {
+  const remote = await store.loadExpertPolicy();
+  if (remote) {
+    replaceBundledExpertPolicy(remote, { mirror: false });
+    return;
+  }
+  const local = readBundledExpertPolicy();
+  if (Object.keys(local.experts).length > 0) {
+    await store.saveExpertPolicy(local);
+  }
+}
+
+async function hydrateExpertsFromStore(store: MetadataStore): Promise<void> {
+  const remote = await store.loadExperts();
+  if (remote.length > 0) {
+    replaceExperts(remote, { mirror: false });
+    return;
+  }
+  for (const item of listStoredExperts()) {
+    await store.saveExpert(item);
+  }
+}
+
+async function mirrorExperts(store: MetadataStore | null, items: import("@neo-cloud-agent/contracts").Expert[]): Promise<void> {
+  if (!store) {
+    return;
+  }
+  const remote = await store.loadExperts();
+  const keep = new Set(items.map((item) => item.id));
+  for (const item of items) {
+    await store.saveExpert(item);
+  }
+  for (const old of remote) {
+    if (!keep.has(old.id)) {
+      await store.deleteExpert(old.id);
+    }
+  }
+}
+
+async function hydratePluginInstallsFromStore(store: MetadataStore): Promise<void> {
+  const remote = await store.loadPluginInstalls();
+  if (remote.length > 0) {
+    replacePluginInstalls(remote, { mirror: false });
+    return;
+  }
+  for (const item of listStoredPluginInstalls()) {
+    await store.savePluginInstall(item);
+  }
+}
+
+async function mirrorPluginInstalls(
+  store: MetadataStore | null,
+  items: import("@neo-cloud-agent/contracts").PluginInstall[],
+): Promise<void> {
+  if (!store) {
+    return;
+  }
+  const remote = await store.loadPluginInstalls();
+  const keep = new Set(items.map((item) => item.id));
+  for (const item of items) {
+    await store.savePluginInstall(item);
+  }
+  for (const old of remote) {
+    if (!keep.has(old.id)) {
+      await store.deletePluginInstall(old.id);
     }
   }
 }

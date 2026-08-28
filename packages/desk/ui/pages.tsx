@@ -1,4 +1,7 @@
+import type { FollowUp } from "@neo-cloud-agent/contracts";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
+import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import { Select } from "@neo-cloud-agent/ui";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
@@ -7,7 +10,8 @@ import {
   composerMaxWidth,
   composerTextareaHeight,
 } from "../src/composer-size";
-import { IconArrowUp, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch } from "./icons";
+import type { DeskTargetKind } from "./desk";
+import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop } from "./icons";
 
 export type ContextMenuId = "repo" | "target" | null;
 export type RepoChoice = { url: string; label: string };
@@ -51,7 +55,7 @@ export function rememberSavedModel(model: SavedModel): SavedModel[] {
   return next;
 }
 
-export function formatAddedAt(iso: string): string {
+function formatAddedAt(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return "刚刚";
   const min = Math.round(ms / 60_000);
@@ -269,6 +273,7 @@ export function ModelSettingsPage({
   busy,
   error,
   onSave,
+  newApi,
   children,
 }: {
   name: string;
@@ -281,54 +286,87 @@ export function ModelSettingsPage({
   busy: boolean;
   error?: string;
   onSave: () => void;
+  newApi?: { url: string | null; consoleUrl: string | null } | null;
   children?: ReactNode;
 }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onSave();
   };
+  const consoleUrl = newApi?.consoleUrl || newApi?.url || "";
+  const managed = Boolean(consoleUrl);
+  const selectedModel = /vision/i.test(name)
+    ? "deepseek-v4-flash-vision-exp"
+    : /pro/i.test(name)
+      ? "deepseek-v4-pro"
+      : "deepseek-v4-flash";
   return (
     <Page>
       <header className="dash-head compact">
         <div>
           <h1>Models</h1>
-          <p>先只支持 OpenAI 协议。填模型名、API Key 和 Base URL。</p>
+          <p>{managed ? "渠道和 Key 在 New API。这里只选对外型号。" : "先只支持 OpenAI 协议。填模型名、API Key 和 Base URL。"}</p>
         </div>
       </header>
       <div className="page-body">
         <form className="settings-card" onSubmit={submit}>
-          <h2>OpenAI compatible</h2>
-          <label>
-            <span>模型名</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
-          </label>
-          <label>
-            <span>API Key</span>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder={configured ? "已保存，留空则保持" : "sk-…"}
-              autoComplete="new-password"
-            />
-          </label>
-          <label>
-            <span>Base URL</span>
-            <input
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder={OPENAI_BASE_URL}
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            <span>协议</span>
-            <select value="openai" disabled>
-              <option value="openai">OpenAI</option>
-            </select>
-          </label>
+          <h2>{managed ? "New API" : "OpenAI compatible"}</h2>
+          {managed ? (
+            <>
+              <label>
+                <span>型号</span>
+                <Select
+                  value={selectedModel}
+                  onValueChange={setName}
+                  options={[
+                    { value: "deepseek-v4-flash", label: "Flash（便宜）" },
+                    { value: "deepseek-v4-flash-vision-exp", label: "Flash Vision（看图）" },
+                    { value: "deepseek-v4-pro", label: "Pro" },
+                  ]}
+                />
+              </label>
+              <p className="hint">对话走控制面 Gateway，再打 New API。不要在 Desk 里贴上游 Key。</p>
+              <a className="link-btn" href={consoleUrl} target="_blank" rel="noreferrer">
+                打开 New API 控制台
+              </a>
+            </>
+          ) : (
+            <>
+              <label>
+                <span>模型名</span>
+                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
+              </label>
+              <label>
+                <span>API Key</span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder={configured ? "已保存，留空则保持" : "sk-…"}
+                  autoComplete="new-password"
+                />
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input
+                  value={baseUrl}
+                  onChange={(event) => setBaseUrl(event.target.value)}
+                  placeholder={OPENAI_BASE_URL}
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                <span>协议</span>
+                <Select value="openai" disabled onValueChange={() => undefined} options={[{ value: "openai", label: "OpenAI" }]} />
+              </label>
+            </>
+          )}
           {error ? <p className="error">{error}</p> : null}
-          <button type="submit" className="dash-create" disabled={busy || !name.trim() || (!configured && !apiKey.trim())}>
+          <button
+            type="submit"
+            className="dash-create"
+            disabled={busy || !name.trim() || (!managed && !configured && !apiKey.trim())}
+          >
             {busy ? "保存中…" : "保存"}
           </button>
         </form>
@@ -468,11 +506,22 @@ export function ProjectsPage({
   );
 }
 
+/**
+ * Workspace / branch / where-it-runs, under the composer.
+ *
+ * The workspace pill is also where you authorize a local folder, the way
+ * Cursor puts Open Folder inside the repo pill. Picking a folder is what makes
+ * This Computer available at all, so the two controls belong next to each other.
+ */
 export function ContextBar({
   repoLabel,
   repos,
   repoUrl,
   onRepo,
+  workspaces,
+  folder,
+  onWorkspace,
+  onPickFolder,
   branch,
   targetKind,
   canRunLocal,
@@ -485,15 +534,21 @@ export function ContextBar({
   repos: RepoChoice[];
   repoUrl: string;
   onRepo: (url: string) => void;
+  workspaces: Array<{ id: string; folder: string; name: string; git: boolean }>;
+  folder: string;
+  onWorkspace: (workspace: { id: string; folder: string }) => void;
+  onPickFolder: () => void;
   branch: string;
-  targetKind: "cloud" | "desk" | "remote";
+  targetKind: DeskTargetKind;
   canRunLocal: boolean;
   onTarget: (kind: "cloud" | "desk") => void;
   open: ContextMenuId;
   setOpen: (id: ContextMenuId) => void;
   locked?: boolean;
 }) {
-  const targetLabel = targetKind === "desk" ? "This Computer" : "Cloud";
+  const local = targetKind === "desk";
+  const activeFolder = workspaces.find((item) => trimTrailingSlash(item.folder) === trimTrailingSlash(folder));
+  const workspaceLabel = local ? activeFolder?.name || (folder ? lastSegment(folder) : "选择文件夹") : repoLabel;
   return (
     <div className="context-bar">
       <div className="context-item-wrap">
@@ -503,31 +558,65 @@ export function ContextBar({
           disabled={locked}
           onClick={() => setOpen(open === "repo" ? null : "repo")}
         >
-          <span>{repoLabel}</span>
-          <em>▾</em>
+          {local ? <IconComputer size={13} /> : null}
+          <span>{workspaceLabel}</span>
+          <IconChevronDown size={12} />
         </button>
         {open === "repo" && !locked ? (
           <div className="context-menu" role="menu">
+            {canRunLocal ? (
+              <>
+                <p className="context-menu-label">这台电脑</p>
+                {workspaces.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={item === activeFolder && local ? "on" : ""}
+                    onClick={() => {
+                      onWorkspace(item);
+                      setOpen(null);
+                    }}
+                  >
+                    <IconComputer size={13} />
+                    {item.name}
+                    {item.git ? "" : "（不是 git 仓库）"}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onPickFolder();
+                    setOpen(null);
+                  }}
+                >
+                  <IconAddRepo size={13} />
+                  打开文件夹…
+                </button>
+                <p className="context-menu-label">云端仓库</p>
+              </>
+            ) : null}
             {repos.map((item) => (
               <button
                 key={item.url || "inbox"}
                 type="button"
-                className={item.url === repoUrl ? "on" : ""}
+                className={!local && item.url === repoUrl ? "on" : ""}
                 onClick={() => {
                   onRepo(item.url);
                   setOpen(null);
                 }}
               >
-                {item.label}
+                {item.url ? <IconCloud size={13} /> : null}
+                {item.url ? item.label : "不关联仓库"}
               </button>
             ))}
           </div>
         ) : null}
       </div>
-      <button type="button" className="context-item" disabled>
-        <span>{branch}</span>
-        <em>▾</em>
-      </button>
+      {local ? null : (
+        <button type="button" className="context-item" disabled>
+          <span>{branch}</span>
+        </button>
+      )}
       <div className="context-item-wrap">
         <button
           type="button"
@@ -535,9 +624,9 @@ export function ContextBar({
           disabled={locked}
           onClick={() => setOpen(open === "target" ? null : "target")}
         >
-          {targetKind === "desk" ? <IconComputer size={14} /> : <IconCloud size={14} />}
-          <span>{targetLabel}</span>
-          <em>▾</em>
+          {local ? <IconComputer size={14} /> : <IconCloud size={14} />}
+          <span>{local ? "This Computer" : "Cloud"}</span>
+          <IconChevronDown size={12} />
         </button>
         {open === "target" && !locked ? (
           <div className="context-menu" role="menu">
@@ -554,17 +643,30 @@ export function ContextBar({
             </button>
             <button
               type="button"
-              className={targetKind === "desk" ? "on" : ""}
+              className={local ? "on" : ""}
               disabled={!canRunLocal}
               onClick={() => {
                 if (!canRunLocal) return;
-                onTarget("desk");
+                // No folder yet means there is nothing to run against, so ask
+                // for one instead of switching to a target that cannot start.
+                if (workspaces.length === 0 && !folder) {
+                  onPickFolder();
+                } else {
+                  onTarget("desk");
+                }
                 setOpen(null);
               }}
             >
               <IconComputer size={14} />
-              {canRunLocal ? "This Computer" : "This Computer（需要 Desk）"}
+              {canRunLocal
+                ? workspaces.length === 0 && !folder
+                  ? "This Computer（先打开一个文件夹）"
+                  : "This Computer"
+                : "This Computer（需要 Desk）"}
             </button>
+            <p className="context-menu-note">
+              别人从 Web 或手机派活到这台电脑，是设置里的「允许远程派活」，不在这里切。
+            </p>
           </div>
         ) : null}
       </div>
@@ -572,14 +674,22 @@ export function ContextBar({
   );
 }
 
+function trimTrailingSlash(value: string): string {
+  return (value || "").replace(/[\\/]+$/, "");
+}
+
+function lastSegment(value: string): string {
+  return trimTrailingSlash(value).split(/[\\/]/).pop() || value;
+}
+
 export type ComposerMention = {
-  kind: "asset" | "todo" | "file" | "command";
+  kind: "asset" | "todo" | "file" | "command" | "expert" | "team";
   id: string;
   label: string;
   insert: string;
 };
 
-export function mentionTrigger(text: string): { trigger: "@" | "/"; query: string } | null {
+function mentionTrigger(text: string): { trigger: "@" | "/"; query: string } | null {
   const at = text.lastIndexOf("@");
   const slash = text.lastIndexOf("/");
   const idx = Math.max(at, slash);
@@ -594,6 +704,8 @@ function mentionKindLabel(kind: ComposerMention["kind"]): string {
   if (kind === "asset") return "资产";
   if (kind === "todo") return "待办";
   if (kind === "file") return "文件";
+  if (kind === "expert") return "专家";
+  if (kind === "team") return "专家团";
   return "自动化";
 }
 
@@ -613,6 +725,15 @@ export function ChatComposer({
   onComposerKey,
   home,
   mentions,
+  queued,
+  waiting,
+  onStop,
+  experts,
+  teams,
+  expertValue,
+  expertLocked,
+  onExpert,
+  onMention,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -629,6 +750,15 @@ export function ChatComposer({
   onComposerKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   home?: boolean;
   mentions?: ComposerMention[];
+  queued?: FollowUp[];
+  waiting?: boolean;
+  onStop?: () => void;
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
+  onExpert?: (value: string) => void;
+  onMention?: (item: ComposerMention) => void;
 }) {
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
@@ -645,6 +775,7 @@ export function ChatComposer({
     const idx = Math.max(prompt.lastIndexOf("@"), prompt.lastIndexOf("/"));
     const next = `${prompt.slice(0, Math.max(0, idx))}${item.insert} `;
     setPrompt(next);
+    onMention?.(item);
     requestAnimationFrame(() => {
       const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
       ta?.focus();
@@ -675,12 +806,10 @@ export function ChatComposer({
     ta.style.height = `${composerTextareaHeight(ta.scrollHeight, Boolean(home))}px`;
   }, [home, prompt, taRef]);
 
-  return (
-    <div
-      ref={boxRef}
-      className={`composer composer-stack${home ? " home" : " follow"}`}
-      style={home ? { width: "100%", maxWidth } : undefined}
-    >
+  const waitingNow = Boolean(waiting);
+  const queuedNow = queued?.filter((item) => item.status === "queued") ?? [];
+  const inner = (
+    <>
       <textarea
         ref={taRef}
         value={prompt}
@@ -712,31 +841,85 @@ export function ChatComposer({
         </div>
       ) : null}
       <div className="composer-tools">
-        <div className="model-wrap">
-          <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
-            {label}
-            <span aria-hidden="true">▾</span>
-          </button>
-          {menuOpen ? (
-            <div className="model-menu" role="menu">
-              <p className="palette-label">Your models</p>
-              {models.length === 0 ? <p className="pane-note">还没有配置模型</p> : null}
-              {models.map((name) => (
-                <button key={name} type="button" className={name === selected ? "on" : ""} onClick={() => onSelectModel(name)}>
-                  <span>{name}</span>
-                  {name === selected ? <span className="check">✓</span> : null}
+        {onExpert ? (
+          <label className="expert-pick">
+            <span>专家</span>
+            <Select
+              size="pill"
+              aria-label="专家"
+              value={expertValue ?? ""}
+              disabled={expertLocked}
+              onValueChange={onExpert}
+              groups={[
+                { label: "默认", options: [{ value: "", label: "Neo" }] },
+                ...((experts ?? []).length > 0
+                  ? [{ label: "专家", options: (experts ?? []).map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
+                  : []),
+                ...((teams ?? []).length > 0
+                  ? [{ label: "专家团", options: (teams ?? []).map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: `团 · ${item.name}` })) }]
+                  : []),
+              ]}
+            />
+          </label>
+        ) : null}
+        {/* Model and send belong together on the right; spreading them apart
+            left a wide gap where the eye expects one control group. */}
+        <div className="composer-send-group">
+          <div className="model-wrap">
+            <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
+              {label}
+              <IconChevronDown size={12} />
+            </button>
+            {menuOpen ? (
+              <div className="model-menu" role="menu">
+                <p className="palette-label">Your models</p>
+                {models.length === 0 ? <p className="pane-note">还没有配置模型</p> : null}
+                {models.map((name) => (
+                  <button key={name} type="button" className={name === selected ? "on" : ""} onClick={() => onSelectModel(name)}>
+                    <span>{name}</span>
+                    {name === selected ? <span className="check">✓</span> : null}
+                  </button>
+                ))}
+                <button type="button" className="add-model" onClick={onAddModel}>
+                  Add Models
                 </button>
-              ))}
-              <button type="button" className="add-model" onClick={onAddModel}>
-                Add Models
-              </button>
-            </div>
-          ) : null}
+              </div>
+            ) : null}
+          </div>
+          {onStop && waitingNow && !prompt.trim() ? (
+            <button type="button" className="send-btn stop" aria-label="停止" onClick={onStop}>
+              <IconStop size={14} />
+            </button>
+          ) : (
+            <button type="button" className="send-btn" aria-label="Send" disabled={sending || !prompt.trim()} onClick={onSubmit}>
+              <IconArrowUp size={16} />
+            </button>
+          )}
         </div>
-        <button type="button" className="send-btn" aria-label="Send" disabled={sending || !prompt.trim()} onClick={onSubmit}>
-          <IconArrowUp size={16} />
-        </button>
       </div>
+    </>
+  );
+
+  if (home) {
+    return (
+      <div ref={boxRef} className="composer composer-stack home" style={{ width: "100%", maxWidth }}>
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={boxRef} className="composer-follow">
+      {queuedNow.length > 0 ? (
+        <ul className="composer-queue">
+          {queuedNow.map((item) => (
+            <li key={item.id}>
+              排队中 · {item.actorEmail || "跟进"} · {item.text}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="composer composer-stack follow">{inner}</div>
     </div>
   );
 }
@@ -836,13 +1019,11 @@ export function AutomationCreateForm({
       </label>
       <label>
         <span>频率</span>
-        <select value={preset} onChange={(event) => setPreset(event.target.value as ScheduleKind)}>
-          {SCHEDULE_PRESETS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={preset}
+          onValueChange={(value) => setPreset(value as ScheduleKind)}
+          options={SCHEDULE_PRESETS.map((item) => ({ value: item.id, label: item.label }))}
+        />
       </label>
       {error ? <p className="error">{error}</p> : null}
       <footer className="modal-actions">

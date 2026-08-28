@@ -397,7 +397,7 @@ export function publicRateLimitPolicies(method: string, path: string): RateLimit
 }
 
 export function isExpensiveWrite(method: string, path: string): boolean {
-  if (method !== "POST" && method !== "DELETE") {
+  if (method !== "POST" && method !== "DELETE" && method !== "PATCH") {
     return false;
   }
   if (path.startsWith("/v1/settings/")) {
@@ -412,7 +412,7 @@ export function isExpensiveWrite(method: string, path: string): boolean {
   if (/^\/v1\/runs\/[^/]+\/(commit|pull-request|scm\/pull-request|handoff|transfer)$/.test(path)) {
     return true;
   }
-  if (path === "/v1/desks" || (method === "DELETE" && /^\/v1\/desks\/[^/]+$/.test(path))) {
+  if (path === "/v1/desks" || ((method === "DELETE" || method === "PATCH") && /^\/v1\/desks\/[^/]+$/.test(path))) {
     return true;
   }
   if (path === "/v1/automations" || /^\/v1\/automations\/[^/]+/.test(path)) {

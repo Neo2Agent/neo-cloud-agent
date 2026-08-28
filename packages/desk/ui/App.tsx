@@ -1,15 +1,32 @@
-import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
+import type { FollowUp, PublicLlmSettings } from "@neo-cloud-agent/contracts";
+import { decodeExpertPick, encodeExpertPick, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import type { ExecutionTarget, Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Select, Tooltip } from "@neo-cloud-agent/ui";
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
-import { deskBridge, withApiBase, type DeskTarget } from "./desk";
+import {
+  asWorkspaceRef,
+  deskBridge,
+  localRunFolder,
+  localRunTarget,
+  mergeDeskTarget,
+  MISSING_DESK_ID_HINT,
+  STALE_DESK_HINT,
+  withApiBase,
+  type DeskRunStatus,
+  type DeskTarget,
+  type DeskWorkspaceRef,
+} from "./desk";
+import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
+import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
+import { WORKSPACE_SCOPE_HINT } from "../src/folder-auth";
 import { isLoopbackOrigin } from "../src/ports";
-import { groupRailSessions } from "../src/rail";
+import { groupRailSessions, isLocalPath } from "../src/rail";
 import {
   hashForProject,
   inviteTokenFromDeepLink,
@@ -18,8 +35,12 @@ import {
   runIdFromDeepLink,
   runIdFromHash,
 } from "../src/protocol";
+import { ExpertsPage } from "./ExpertsPage";
+import { SidePanel, type SidePanelTab } from "./SidePanel";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
+import { localRunView, otherRunningLocalRuns, runningLocalRunIds } from "./chat/local-run-view";
 import { RailSessions } from "./chat/RailSessions";
+import { initials, repoShort } from "./project/helpers";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
@@ -30,6 +51,7 @@ import {
   liveActivityLabel,
   parseSse,
   runEventsQuery,
+  statusFromEventKind,
 } from "../src/stream";
 import {
   AutomationCreateForm,
@@ -55,15 +77,18 @@ import {
 import {
   IconAutomations,
   IconBack,
+  IconComputer,
+  IconExperts,
   IconForward,
   IconGear,
   IconNewChat,
+  IconPanelRight,
   IconProjects,
   IconSearch,
   IconSort,
 } from "./icons";
 
-type NavId = "chats" | "automations" | "projects" | "settings";
+type NavId = "chats" | "automations" | "projects" | "experts" | "settings";
 
 type InboxRow = {
   id: string;
@@ -86,6 +111,20 @@ function preview(text: string, n = 56): string {
   return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
 }
 
+/** Compare folder paths without caring about a trailing separator. */
+function path0(value: string): string {
+  return (value || "").replace(/[\\/]+$/, "");
+}
+
+function folderName(value: string): string {
+  return path0(value).split(/[\\/]/).pop() || value;
+}
+
+/** `repoShort`, plus the reading a run with no repo at all should get. */
+function repoPath(url?: string): string {
+  return url ? repoShort(url) : "Inbox";
+}
+
 function repoLabel(url?: string): string {
   if (!url) return "Inbox";
   try {
@@ -98,25 +137,12 @@ function repoLabel(url?: string): string {
   }
 }
 
-function repoPath(url?: string): string {
-  if (!url) return "Inbox";
-  try {
-    const parts = new URL(url).pathname.replace(/\.git$/, "").split("/").filter(Boolean);
-    return parts.slice(-2).join("/") || repoLabel(url);
-  } catch {
-    const parts = url.replace(/\/$/, "").replace(/\.git$/, "").split("/").filter(Boolean);
-    return parts.slice(-2).join("/") || repoLabel(url);
-  }
-}
-
-function initials(value: string): string {
-  const parts = value.trim().split(/[@\s./_-]+/).filter(Boolean);
-  if (parts.length === 0) return "N";
-  if (parts.length === 1) return parts[0]!.slice(0, 1).toUpperCase();
-  return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
-}
-
-function formatRel(iso?: string | null): string {
+/**
+ * The rail and the search list need a timestamp that fits next to a title, so
+ * this is the compact form. The project pages use `formatRel` from
+ * `project/helpers`, which spells the same interval out in full.
+ */
+function formatRelShort(iso?: string | null): string {
   if (!iso) return "";
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return "";
@@ -163,6 +189,9 @@ export function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [experts, setExperts] = useState<Expert[]>([]);
+  const [teams, setTeams] = useState<ExpertTeam[]>([]);
+  const [expertPick, setExpertPick] = useState<ExpertPick>({});
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [projectName, setProjectName] = useState("");
   const [projectInstruction, setProjectInstruction] = useState("");
@@ -176,6 +205,8 @@ export function App() {
   const [runId, setRunId] = useState<string | null>(null);
   const [current, setCurrent] = useState<Run | null>(null);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [queuedFollowUps, setQueuedFollowUps] = useState<FollowUp[]>([]);
+  const [queueEpoch, setQueueEpoch] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [query, setQuery] = useState("");
@@ -200,8 +231,23 @@ export function App() {
   const [railSpacesOpen, setRailSpacesOpen] = useState(true);
   const [railInboxExpanded, setRailInboxExpanded] = useState(false);
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
+  const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem("neo.desk.panel") === "1");
+  const [panelTab, setPanelTab] = useState<SidePanelTab>(
+    () => (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || "files",
+  );
+  const [panelEpoch, setPanelEpoch] = useState(0);
+  // Keyed by runId: several local conversations can hold a worker at once, and a
+  // single slot would show whichever one reported last.
+  const [localStatuses, setLocalStatuses] = useState<Record<string, DeskRunStatus>>({});
+  const [workspaces, setWorkspaces] = useState<DeskWorkspaceRef[]>([]);
+  const [requireApproval, setRequireApproval] = useState(false);
+  const [remoteControl, setRemoteControl] = useState(false);
+  const [maxLocalRuns, setMaxLocalRuns] = useState(DEFAULT_MAX_LOCAL_RUNS);
+  /** Said once when a new run joins a folder someone else is already editing. */
+  const [localNotice, setLocalNotice] = useState("");
   const [copied, setCopied] = useState("");
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
+  const deskIdRef = useRef("");
   const tokenRef = useRef("");
   const sourceRef = useRef<EventSource | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
@@ -248,6 +294,16 @@ export function App() {
     setProjects(body.projects ?? []);
   }, []);
 
+  const refreshExperts = useCallback(async (projectId?: string | null) => {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const [expertRes, teamRes] = await Promise.all([
+      api(tokenRef.current, `/v1/experts${query}`),
+      api(tokenRef.current, "/v1/expert-teams"),
+    ]);
+    if (expertRes.ok) setExperts((await readJson<{ experts?: Expert[] }>(expertRes)).experts ?? []);
+    if (teamRes.ok) setTeams((await readJson<{ teams?: ExpertTeam[] }>(teamRes)).teams ?? []);
+  }, []);
+
   const openProject = useCallback(async (id: string, tab: WorkbenchTab = "board") => {
     const response = await api(tokenRef.current, `/v1/projects/${id}`);
     if (!response.ok) return;
@@ -273,6 +329,7 @@ export function App() {
       upstream: settings.upstream || "mock",
       model: settings.model ?? null,
       baseUrl: settings.baseUrl ?? null,
+      newApi: settings.newApi ?? { url: null, consoleUrl: null },
     };
     setLlm(next);
     const stored = loadSavedModels();
@@ -308,8 +365,19 @@ export function App() {
           const next = applyRunEventsToMessages(prev, batch);
           return batch.some((event) => isTerminalTurnEvent(event.kind)) ? settleTranscriptMessages(next) : next;
         });
+        setCurrent((prev) => {
+          if (!prev || prev.id !== id) return prev;
+          let status = prev.status;
+          for (const event of batch) {
+            status = (statusFromEventKind(event.kind, status) as Run["status"]) ?? status;
+          }
+          return status === prev.status ? prev : { ...prev, status };
+        });
         if (batch.some((event) => event.kind === "run.idle" || event.kind === "run.error")) {
           void refreshRuns();
+        }
+        if (batch.some((event) => event.kind === "followup.queued" || event.kind === "followup.delivered")) {
+          setQueueEpoch((cur) => cur + 1);
         }
       };
       source.onmessage = (event) => {
@@ -355,6 +423,7 @@ export function App() {
       if (!runRes.ok) return;
       const run = await readJson<Run>(runRes);
       setCurrent(run);
+      setQueuedFollowUps([]);
       setChatToolsOpen(false);
       if (run.projectId) {
         const projectRes = await api(tokenRef.current, `/v1/projects/${run.projectId}`);
@@ -375,7 +444,14 @@ export function App() {
         setMessages([]);
         lastEventIdRef.current = null;
       }
-      if (diffRes.ok) {
+      if (run.executionTarget?.loop === "desk") {
+        // The files live on this machine, so the control plane has nothing to
+        // diff. It has to be this run's own folder: reading the picker would
+        // count changes in whatever folder is selected right now, which is the
+        // wrong one as soon as a second local conversation is open.
+        const runFolder = localRunFolder(run);
+        setDiff(runFolder ? ((await deskBridge()?.diffStat?.(runFolder).catch(() => null)) ?? null) : null);
+      } else if (diffRes.ok) {
         setDiff(diffStats(await diffRes.text()));
       } else {
         setDiff(null);
@@ -384,6 +460,11 @@ export function App() {
     },
     [listen],
   );
+
+  const openRunRef = useRef(openRun);
+  useEffect(() => {
+    openRunRef.current = openRun;
+  }, [openRun]);
 
   const finishLogin = useCallback(async () => {
     const me = await api(tokenRef.current, "/v1/me");
@@ -394,15 +475,19 @@ export function App() {
     setAuthed(true);
     const desk = deskBridge();
     if (desk) {
-      await desk.setToken(tokenRef.current).catch(() => undefined);
+      const registered = await desk.setToken(tokenRef.current).catch(() => undefined);
+      if (registered?.deskId) deskIdRef.current = registered.deskId;
+      if (registered?.error) setAuthError(registered.error);
       const saved = await desk.getTarget().catch(() => undefined);
       if (saved) {
-        setTarget(saved);
-        if (saved.folder) setFolder(saved.folder);
+        const next = mergeDeskTarget(saved, deskIdRef.current || registered?.deskId);
+        if (next.deskId) deskIdRef.current = next.deskId;
+        setTarget(next);
+        if (next.folder) setFolder(next.folder);
       }
     }
-    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshLlm(), refreshInbox()]);
-  }, [refreshAutomations, refreshInbox, refreshLlm, refreshProjects, refreshRuns]);
+    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshExperts(), refreshLlm(), refreshInbox()]);
+  }, [refreshAutomations, refreshExperts, refreshInbox, refreshLlm, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     if (!authed) return;
@@ -469,15 +554,101 @@ export function App() {
       await finishLogin();
     } catch (error) {
       persist("");
-      setAuthError(error instanceof Error ? error.message : "登录失败");
+      const message = error instanceof Error ? error.message : "登录失败";
+      setAuthError(message === "Failed to fetch" ? "连不上现网控制面。检查网络后重试，或换一份新的安装包。" : message);
     } finally {
       setAuthBusy(false);
     }
   };
 
+  const pickLocalFolder = useCallback(async () => {
+    const bridge = deskBridge();
+    if (!bridge) return;
+    const picked = asWorkspaceRef(await bridge.pickFolder());
+    if (!picked) return;
+    setFolder(picked.folder);
+    setWorkspaces((await bridge.listWorkspaces?.().catch(() => [])) ?? []);
+    applyTargetRef.current({
+      kind: "desk",
+      folder: picked.folder,
+      workspaceId: picked.id || undefined,
+      deskId: deskIdRef.current,
+    });
+  }, []);
+
+  /** Bring a local run's worker back on this machine, in the same folder. */
+  const resumeLocalRun = useCallback(async (id: string, deskTarget?: ExecutionTarget | null, runFolder?: string) => {
+    const bridge = deskBridge();
+    const start = bridge?.startRun;
+    if (!start) {
+      setAuthError(STALE_DESK_HINT);
+      return;
+    }
+    setAuthError("");
+    const response = await api(tokenRef.current, `/v1/runs/${id}/desk-start`, { method: "POST" });
+    const body = await readJson<{ assignment?: DeskAssignment; error?: string }>(response);
+    if (response.ok && body.assignment) {
+      await start(body.assignment, runFolder);
+      return;
+    }
+    if (await bridge?.takeAssignment?.(id, runFolder).then((taken) => taken?.started)) {
+      return;
+    }
+    // Older control planes have no desk-start. Handing the run back to this
+    // same machine re-queues an assignment we can then claim.
+    const deskId = deskTarget?.deskId || deskIdRef.current;
+    if (!deskId) {
+      setAuthError(MISSING_DESK_ID_HINT);
+      return;
+    }
+    const handoff = await api(tokenRef.current, `/v1/runs/${id}/handoff`, {
+      method: "POST",
+      body: JSON.stringify({
+        // Only this run's own workspace. Filling the gap with whatever the
+        // picker holds would hand the run a folder it never worked in; with no
+        // workspace id the main process uses `runFolder`, which is this run's.
+        target: { loop: "desk", tools: "desk", deskId, deskWorkspaceId: deskTarget?.deskWorkspaceId },
+      }),
+    });
+    if (!handoff.ok) {
+      const failed = await readJson<{ error?: string }>(handoff);
+      setAuthError(failed.error || body.error || "本机启动失败");
+      return;
+    }
+    const retaken = await bridge?.takeAssignment?.(id, runFolder);
+    if (!retaken?.started) {
+      setAuthError("现网还没把这条对话交回这台电脑，稍等再试。");
+    }
+  }, []);
+
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
     const text = (draft ?? prompt).trim();
     if (!text || sending) return;
+    // A failure from an earlier turn must not sit under the composer forever.
+    setAuthError("");
+    const local = target.kind === "desk";
+    if (local && !folder) {
+      // Do not create a run that can never start. Ask for the folder first.
+      setAuthError("先选一个本机文件夹，Agent 才知道该改哪里。");
+      return;
+    }
+    let localDeskId = target.deskId || deskIdRef.current;
+    if (local && !localDeskId) {
+      const bridge = deskBridge();
+      const [prefs, saved] = await Promise.all([
+        bridge?.getPrefs?.().catch(() => undefined),
+        bridge?.getTarget().catch(() => undefined),
+      ]);
+      localDeskId = prefs?.deskId || saved?.deskId || "";
+      if (localDeskId) {
+        deskIdRef.current = localDeskId;
+        setTarget((prev) => mergeDeskTarget(prev, localDeskId));
+      }
+    }
+    if (local && !localDeskId) {
+      setAuthError(MISSING_DESK_ID_HINT);
+      return;
+    }
     const askPrefix = mode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     const startNew = opts?.asNew || !runId;
     const boundTodo = opts && "todo" in opts ? opts.todo : pendingTodo;
@@ -485,7 +656,7 @@ export function App() {
     if (!draft) setPrompt("");
     try {
       if (startNew) {
-        const created = await readJson<Run & { error?: string }>(
+        const created = await readJson<Run & { assignment?: DeskAssignment; error?: string }>(
           await api(token, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
@@ -494,24 +665,39 @@ export function App() {
               source: "desk",
               projectId: activeProject?.id,
               todoId: boundTodo?.id,
+              expertId: expertPick.expertId,
+              expertTeamId: expertPick.expertTeamId,
+              // This window is the desk, so it starts the worker itself instead
+              // of waiting to be handed its own run back.
+              start: local ? "inline" : undefined,
+              deskWorkspaceId: local ? target.workspaceId : undefined,
               repoUrls:
-                target.kind === "desk" && folder
+                local && folder
                   ? [folder]
                   : composerRepo
                     ? [composerRepo]
                     : activeProject?.defaultRepoUrls?.length
                       ? activeProject.defaultRepoUrls
                       : [],
-              target:
-                target.kind === "desk"
-                  ? { loop: "desk", tools: "desk", deskId: target.deskId }
-                  : { loop: "cloud", tools: "cloud" },
+              target: local ? localRunTarget(target, localDeskId) : { loop: "cloud", tools: "cloud" },
             }),
           }),
         );
         if (created.error) throw new Error(created.error);
         setPendingTodo(null);
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+        if (created.assignment) {
+          const start = deskBridge()?.startRun;
+          if (start) {
+            await start(created.assignment, local ? folder : undefined);
+          } else {
+            setAuthError(STALE_DESK_HINT);
+          }
+        } else if (local) {
+          // Production still queues desk runs for claim and does not return
+          // an inline assignment. Pull it off the lease instead of waiting.
+          await deskBridge()?.takeAssignment?.(created.id, folder);
+        }
         await openRun(created.id);
         return;
       }
@@ -519,6 +705,10 @@ export function App() {
         method: "POST",
         body: JSON.stringify({ text: `${askPrefix}${text}` }),
       });
+      setQueueEpoch((cur) => cur + 1);
+      if (current?.executionTarget?.loop === "desk" && localStatuses[runId]?.state !== "running") {
+        await resumeLocalRun(runId, current?.executionTarget, localRunFolder(current));
+      }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "发送失败");
     } finally {
@@ -526,10 +716,84 @@ export function App() {
     }
   };
 
-  const applyTarget = (next: DeskTarget) => {
-    setTarget(next);
-    void deskBridge()?.setTarget(next);
-  };
+  const applyTarget = useCallback((next: DeskTarget) => {
+    const merged = mergeDeskTarget(next, deskIdRef.current);
+    if (merged.deskId) deskIdRef.current = merged.deskId;
+    setTarget(merged);
+    void deskBridge()?.setTarget(merged);
+  }, []);
+
+  const applyTargetRef = useRef(applyTarget);
+  useEffect(() => {
+    applyTargetRef.current = applyTarget;
+  }, [applyTarget]);
+
+  useEffect(() => {
+    localStorage.setItem("neo.desk.panel", panelOpen ? "1" : "0");
+    localStorage.setItem("neo.desk.panelTab", panelTab);
+  }, [panelOpen, panelTab]);
+
+  // Surface what the main process is doing with local runs, instead of leaving
+  // failures in a terminal the user never sees.
+  useEffect(() => {
+    const bridge = deskBridge();
+    if (!bridge) return;
+    const offStatus = bridge.onRunStatus?.((status) => {
+      setLocalStatuses((prev) => ({ ...prev, [status.runId]: status }));
+      if (status.state === "failed" && status.detail) {
+        setAuthError(status.detail);
+      }
+      if (status.notice) {
+        setLocalNotice(status.notice);
+      }
+      if (status.state === "running" || status.state === "stopped") {
+        setPanelEpoch((n) => n + 1);
+        void refreshRuns();
+      }
+    });
+    const offDispatch = bridge.onDispatched?.(({ runId: id }) => {
+      void refreshRuns();
+      void openRunRef.current(id);
+    });
+    const offTarget = bridge.onTarget?.((saved) => {
+      const next = mergeDeskTarget(saved, deskIdRef.current);
+      if (next.deskId) deskIdRef.current = next.deskId;
+      setTarget(next);
+      if (next.folder) setFolder(next.folder);
+      void bridge.listWorkspaces?.().then(setWorkspaces).catch(() => undefined);
+    });
+    const offInbox = bridge.onInboxState?.((state) => {
+      if (state.deskId) {
+        deskIdRef.current = state.deskId;
+        setTarget((prev) => mergeDeskTarget(prev, state.deskId));
+      }
+      if (state.error) setAuthError(state.error);
+    });
+    return () => {
+      offStatus?.();
+      offDispatch?.();
+      offTarget?.();
+      offInbox?.();
+    };
+  }, [refreshRuns]);
+
+  useEffect(() => {
+    const bridge = deskBridge();
+    if (!bridge || !authed) return;
+    void bridge.listWorkspaces?.().then(setWorkspaces).catch(() => undefined);
+    void bridge
+      .getPrefs?.()
+      .then((value) => {
+        setRequireApproval(value.requireApproval === true);
+        setRemoteControl(value.remoteControl === true);
+        setMaxLocalRuns(normalizeMaxLocalRuns(value.maxLocalRuns));
+        if (value.deskId) {
+          deskIdRef.current = value.deskId;
+          setTarget((prev) => mergeDeskTarget(prev, value.deskId));
+        }
+      })
+      .catch(() => undefined);
+  }, [authed, folder]);
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -575,7 +839,40 @@ export function App() {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [messages, runId]);
 
-  const visible = displayTranscriptMessages(messages);
+  const queuedFollowUpIds = useMemo(
+    () => queuedFollowUps.filter((item) => item.status === "queued").map((item) => item.id),
+    [queuedFollowUps],
+  );
+  const onQueuedChange = useCallback((items: FollowUp[]) => {
+    setQueuedFollowUps((cur) => {
+      if (
+        cur.length === items.length &&
+        cur.every((item, index) => item.id === items[index]?.id && item.status === items[index]?.status && item.text === items[index]?.text)
+      ) {
+        return cur;
+      }
+      return items;
+    });
+  }, []);
+  useEffect(() => {
+    if (!authed || !current || current.projectId) return;
+    let cancelled = false;
+    void api(token, `/v1/runs/${current.id}/follow-ups`).then(async (response) => {
+      if (!response.ok || cancelled) return;
+      const body = await readJson<{ followUps?: FollowUp[] }>(response);
+      onQueuedChange((body.followUps ?? []).filter((item) => item.status === "queued"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authed, current, onQueuedChange, queueEpoch, token]);
+
+  // This window is the machine, so the local bar already says what the claim
+  // handshake would: 正在启动 / 已在这台电脑上运行.
+  const visible = displayTranscriptMessages(messages, {
+    hideFollowUpIds: queuedFollowUpIds,
+    hideDeskHandshake: true,
+  });
   const activity = liveActivityLabel(visible);
   const rail = useMemo(() => {
     const names = new Map(projects.map((item) => [item.id, item.name]));
@@ -602,7 +899,7 @@ export function App() {
       .map((run) => ({
         id: run.id,
         title: preview(run.prompt, 72),
-        meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRel(run.updatedAt)),
+        meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRelShort(run.updatedAt)),
       }));
   }, [projects, query, runs]);
 
@@ -645,11 +942,42 @@ export function App() {
             label: item.name,
             insert: `/自动化 ${item.name}`,
           })),
+          ...experts.map((item) => ({
+            kind: "expert" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家 ${item.name}`,
+          })),
+          ...teams.map((item) => ({
+            kind: "team" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家团 ${item.name}`,
+          })),
         ]);
         return;
       }
       if (!activeProject || current?.projectId !== activeProject.id) {
-        setMentions([]);
+        setMentions([
+          ...automations.map((item) => ({
+            kind: "command" as const,
+            id: item.id,
+            label: item.name,
+            insert: `/自动化 ${item.name}`,
+          })),
+          ...experts.map((item) => ({
+            kind: "expert" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家 ${item.name}`,
+          })),
+          ...teams.map((item) => ({
+            kind: "team" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家团 ${item.name}`,
+          })),
+        ]);
         return;
       }
       const [todoRes, assetRes] = await Promise.all([
@@ -676,12 +1004,24 @@ export function App() {
           label: item.path,
           insert: `@资产 ${item.path}`,
         })),
+        ...experts.map((item) => ({
+          kind: "expert" as const,
+          id: item.id,
+          label: item.name,
+          insert: `@专家 ${item.name}`,
+        })),
+        ...teams.map((item) => ({
+          kind: "team" as const,
+          id: item.id,
+          label: item.name,
+          insert: `@专家团 ${item.name}`,
+        })),
       ]);
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeProject, authed, automations, current]);
+  }, [activeProject, authed, automations, current, experts, teams]);
 
   useEffect(() => {
     if (!searchOpen || !authed) return;
@@ -792,18 +1132,23 @@ export function App() {
 
   const saveModel = async () => {
     if (!modelName.trim() || modelBusy) return;
-    if (!llm.configured && !modelKey.trim()) return;
+    const newApiManaged = Boolean(llm.newApi?.consoleUrl || llm.newApi?.url);
+    if (!newApiManaged && !llm.configured && !modelKey.trim()) return;
     setModelBusy(true);
     setAuthError("");
     try {
       const response = await api(token, "/v1/settings/llm", {
         method: "POST",
-        body: JSON.stringify({
-          upstream: "openai",
-          model: modelName.trim(),
-          baseUrl: (modelBaseUrl.trim() || OPENAI_BASE_URL).replace(/\/$/, ""),
-          ...(modelKey.trim() ? { apiKey: modelKey.trim() } : {}),
-        }),
+        body: JSON.stringify(
+          newApiManaged
+            ? { upstream: "deepseek", model: modelName.trim() }
+            : {
+                upstream: "openai",
+                model: modelName.trim(),
+                baseUrl: (modelBaseUrl.trim() || OPENAI_BASE_URL).replace(/\/$/, ""),
+                ...(modelKey.trim() ? { apiKey: modelKey.trim() } : {}),
+              },
+        ),
       });
       const body = await readJson<PublicLlmSettings & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || "保存失败");
@@ -838,22 +1183,36 @@ export function App() {
 
   const repoChoices = useMemo(() => {
     const map = new Map<string, string>();
-    map.set("", "Inbox");
+    map.set("", "不关联仓库");
     for (const run of runs) {
       const url = run.repoUrls[0] || "";
-      if (url) map.set(url, repoPath(url));
+      // Local runs carry a path; those show up under 这台电脑 instead.
+      if (url && !isLocalPath(url)) map.set(url, repoShort(url));
     }
-    if (folder) map.set(folder, repoPath(folder));
     for (const url of activeProject?.defaultRepoUrls ?? []) {
-      if (url) map.set(url, repoPath(url));
+      if (url) map.set(url, repoShort(url));
     }
     return [...map.entries()].map(([url, label]) => ({ url, label }));
-  }, [activeProject, folder, runs]);
+  }, [activeProject, runs]);
 
   const contextRepoUrl = current?.repoUrls[0] || composerRepo;
-  const contextRepoName = current ? repoPath(current.repoUrls[0]) : repoPath(composerRepo) || repoChoices.find((item) => item.url === composerRepo)?.label || "Inbox";
+  const contextRepoName = current
+    ? repoPath(current.repoUrls[0])
+    : composerRepo
+      ? repoPath(composerRepo)
+      : "选择仓库";
 
   const branch = current?.branchName || "";
+
+  const localRun = useMemo(() => localRunView(current, localStatuses), [current, localStatuses]);
+  const turnLive = current?.status === "RUNNING" && !localRun.workerDown;
+  const panelIsLocal = current ? localRun.isLocal : target.kind === "desk";
+  // An open run answers with its own folder; only the empty composer follows the
+  // picker. Letting an open run fall back to the picker would point the file
+  // tree and the diff at the wrong repo as soon as two local runs exist.
+  const localFolder = current ? localRun.folder : panelIsLocal ? folder : "";
+  const runningRunIds = useMemo(() => runningLocalRunIds(localStatuses), [localStatuses]);
+  const otherLocalRunCount = otherRunningLocalRuns(localStatuses, current?.id);
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -911,36 +1270,44 @@ export function App() {
     <div className="agents-app" data-nav={nav}>
       <aside className="rail">
         <div className="rail-history">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Back"
-            disabled={trail.at <= 0}
-            onClick={() => {
-              const at = trail.at - 1;
-              const id = trail.ids[at];
-              if (!id) return;
-              setTrail((cur) => ({ ...cur, at }));
-              void openRun(id, { record: false });
-            }}
-          >
-            <IconBack />
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Forward"
-            disabled={trail.at < 0 || trail.at >= trail.ids.length - 1}
-            onClick={() => {
-              const at = trail.at + 1;
-              const id = trail.ids[at];
-              if (!id) return;
-              setTrail((cur) => ({ ...cur, at }));
-              void openRun(id, { record: false });
-            }}
-          >
-            <IconForward />
-          </button>
+          <Tooltip content="后退">
+            <span>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Back"
+                disabled={trail.at <= 0}
+                onClick={() => {
+                  const at = trail.at - 1;
+                  const id = trail.ids[at];
+                  if (!id) return;
+                  setTrail((cur) => ({ ...cur, at }));
+                  void openRun(id, { record: false });
+                }}
+              >
+                <IconBack />
+              </button>
+            </span>
+          </Tooltip>
+          <Tooltip content="前进">
+            <span>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Forward"
+                disabled={trail.at < 0 || trail.at >= trail.ids.length - 1}
+                onClick={() => {
+                  const at = trail.at + 1;
+                  const id = trail.ids[at];
+                  if (!id) return;
+                  setTrail((cur) => ({ ...cur, at }));
+                  void openRun(id, { record: false });
+                }}
+              >
+                <IconForward />
+              </button>
+            </span>
+          </Tooltip>
         </div>
 
         <nav className="rail-nav">
@@ -998,22 +1365,38 @@ export function App() {
             </span>
             Projects
           </button>
+          <button
+            type="button"
+            className={`rail-item${nav === "experts" ? " on" : ""}`}
+            onClick={() => {
+              setSearchOpen(false);
+              setNav("experts");
+              void refreshExperts(activeProject?.id);
+            }}
+          >
+            <span className="rail-icon">
+              <IconExperts />
+            </span>
+            Experts
+          </button>
         </nav>
 
         <div className="repo-head">
           <span>会话</span>
           <div className="repo-head-actions">
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Search agents"
-              onClick={() => {
-                setSearchOpen(true);
-                requestAnimationFrame(() => searchRef.current?.focus());
-              }}
-            >
-              <IconSort />
-            </button>
+            <Tooltip content="筛选会话">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Search agents"
+                onClick={() => {
+                  setSearchOpen(true);
+                  requestAnimationFrame(() => searchRef.current?.focus());
+                }}
+              >
+                <IconSort />
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -1026,7 +1409,8 @@ export function App() {
             spacesOpen={railSpacesOpen}
             inboxExpanded={railInboxExpanded}
             folderOpen={repoOpen}
-            formatRel={formatRel}
+            runningLocalRunIds={runningRunIds}
+            formatRel={formatRelShort}
             onToggleInbox={() => setRailInboxOpen((cur) => !cur)}
             onToggleSpaces={() => setRailSpacesOpen((cur) => !cur)}
             onToggleInboxExpanded={() => setRailInboxExpanded((cur) => !cur)}
@@ -1051,9 +1435,11 @@ export function App() {
             </button>
             <span className="profile-name">{user}</span>
             {remoteApiHost ? <span className="prod-tag">生产</span> : null}
-            <button type="button" className="icon-btn" aria-label="Settings" onClick={openSettings}>
-              <IconGear />
-            </button>
+            <Tooltip content="设置" side="top">
+              <button type="button" className="icon-btn" aria-label="Settings" onClick={openSettings}>
+                <IconGear />
+              </button>
+            </Tooltip>
           </div>
           {inboxOpen ? (
             <div className="inbox-pop">
@@ -1083,6 +1469,18 @@ export function App() {
       </aside>
 
       <main className="stage">
+        <Tooltip content={panelOpen ? "收起右侧栏" : "Files / Terminal"} side="left">
+          <span className="panel-toggle-wrap">
+            <button
+              type="button"
+              className={`panel-toggle${panelOpen ? " on" : ""}`}
+              aria-label={panelOpen ? "收起右侧栏" : "打开右侧栏"}
+              onClick={() => setPanelOpen((cur) => !cur)}
+            >
+              <IconPanelRight size={15} />
+            </button>
+          </span>
+        </Tooltip>
         <div className="stage-col" key={nav}>
         {nav === "automations" ? (
           <AutomationsPage
@@ -1093,6 +1491,20 @@ export function App() {
             }}
             onToggle={(item) => void toggleAutomation(item)}
             onOpenRun={(id) => void openRun(id)}
+          />
+        ) : nav === "experts" ? (
+          <ExpertsPage
+            token={token}
+            userId={userId}
+            projectId={activeProject?.id}
+            onSummon={(pick) => {
+              setExpertPick({ expertId: pick.expertId, expertTeamId: pick.expertTeamId });
+              setRunId(null);
+              setCurrent(null);
+              setMessages([]);
+              closeStream();
+              setNav("chats");
+            }}
           />
         ) : nav === "projects" ? (
           inviteToken ? (
@@ -1158,46 +1570,164 @@ export function App() {
             configured={llm.configured}
             busy={modelBusy}
             error={authError || undefined}
+            newApi={llm.newApi}
             onSave={() => void saveModel()}
           >
             <div className="settings-card">
               <h2>This computer</h2>
               <label>
                 <span>Target</span>
-                <select
+                <Select
                   value={target.kind}
-                  onChange={(event) => applyTarget({ ...target, kind: event.target.value as DeskTarget["kind"] })}
-                >
-                  <option value="cloud">Cloud</option>
-                  <option value="desk" disabled={!canRunLocal}>
-                    {canRunLocal ? "This Computer" : "This Computer (needs Electron)"}
-                  </option>
-                  <option value="remote" disabled>
-                    Remote SSH
-                  </option>
-                </select>
+                  onValueChange={(value) => applyTarget({ ...target, kind: value as DeskTarget["kind"] })}
+                  options={[
+                    { value: "cloud", label: "Cloud" },
+                    {
+                      value: "desk",
+                      label: canRunLocal ? "This Computer" : "This Computer (needs Electron)",
+                      disabled: !canRunLocal,
+                    },
+                  ]}
+                />
               </label>
-              {target.kind === "desk" ? (
-                <button
-                  type="button"
-                  className="folder-btn"
-                  onClick={() => {
-                    void deskBridge()
-                      ?.pickFolder()
-                      .then((picked) => {
-                        if (!picked) return;
-                        setFolder(picked);
-                        applyTarget({ ...target, kind: "desk", folder: picked });
-                      });
+              <button type="button" className="folder-btn" onClick={() => void pickLocalFolder()}>
+                {folder || "选择本机文件夹…"}
+              </button>
+              <p className="hint">{WORKSPACE_SCOPE_HINT} 写不出这个文件夹。</p>
+              {workspaces.length > 0 ? (
+                <ul className="ws-list">
+                  {workspaces.map((item) => (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        className={`ws-pick${path0(folder) === path0(item.folder) ? " on" : ""}`}
+                        onClick={() => {
+                          setFolder(item.folder);
+                          applyTarget({ ...target, kind: "desk", folder: item.folder, workspaceId: item.id });
+                        }}
+                      >
+                        {item.name}
+                        {item.git ? "" : "（不是 git 仓库）"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => {
+                          void deskBridge()
+                            ?.unbindWorkspace?.(item.id)
+                            .then(() => deskBridge()?.listWorkspaces?.())
+                            .then((next) => setWorkspaces(next ?? []));
+                          if (path0(folder) === path0(item.folder)) {
+                            setFolder("");
+                            applyTarget({ ...target, folder: undefined, workspaceId: undefined });
+                          }
+                        }}
+                      >
+                        解绑
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <label>
+                <span>同时最多几条本机对话</span>
+                <Select
+                  value={String(maxLocalRuns)}
+                  onValueChange={(value) => {
+                    const next = normalizeMaxLocalRuns(Number(value));
+                    setMaxLocalRuns(next);
+                    void deskBridge()?.setPrefs?.({ maxLocalRuns: next });
                   }}
-                >
-                  {folder || "Folder…"}
-                </button>
+                  options={[1, 2, 3, 4, 6, 8].map((n) => ({ value: String(n), label: `${n} 条` }))}
+                />
+              </label>
+              <p className="hint">
+                不同文件夹可以同时跑。每条都是一个独立进程，开太多会吃满内存和 CPU。
+              </p>
+              <label className="ws-toggle">
+                <input
+                  type="checkbox"
+                  checked={remoteControl}
+                  onChange={(event) => {
+                    const next = event.target.checked;
+                    setRemoteControl(next);
+                    void deskBridge()
+                      ?.setPrefs?.({ remoteControl: next })
+                      .then(() => deskBridge()?.listWorkspaces?.())
+                      .then((items) => setWorkspaces(items ?? []));
+                  }}
+                />
+                <span>Remote control：允许从网页把任务派到这台电脑</span>
+              </label>
+              <p className="hint">
+                关着的时候这台电脑只为你自己工作，网页上看不到它，也看不到你绑了哪些文件夹。打开后才会把
+                <strong>机器名和仓库名</strong>（不含绝对路径）报给控制面，网页的「目标 → 本机」里才会出现这台电脑。
+              </p>
+              {remoteControl ? (
+                <>
+                  <label className="ws-toggle">
+                    <input
+                      type="checkbox"
+                      checked={requireApproval}
+                      onChange={(event) => {
+                        const next = event.target.checked;
+                        setRequireApproval(next);
+                        void deskBridge()?.setPrefs?.({ requireApproval: next });
+                      }}
+                    />
+                    <span>远程派来的对话，每次都先问我</span>
+                  </label>
+                  <p className="hint">绑定文件夹就等于允许远程在里面开对话。打开这个开关会改成每条都先弹确认。</p>
+                </>
               ) : null}
             </div>
           </ModelSettingsPage>
         ) : (
-          <section className={`page chat-page${current?.projectId ? " project-chat" : current ? " personal-chat" : ""}`}>
+          <section
+            className={`page chat-page${current?.projectId ? " project-chat" : current ? " personal-chat" : ""}${
+              panelOpen ? " with-panel" : ""
+            }`}
+          >
+            <div className="chat-stage">
+            {localRun.isLocal ? (
+              <div className="local-bar">
+                <IconComputer size={13} />
+                <span>This Computer · {folderName(localFolder)}</span>
+                {localRun.status?.state === "starting" ? <em>正在启动…</em> : null}
+                {localRun.status?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
+                {localRun.status?.state === "failed" ? (
+                  <em className="bad">{localRun.status.detail || "启动失败"}</em>
+                ) : null}
+                {/* A worker exits after its turn, so "no process" is the resting
+                    state, not something to recover from. */}
+                {localRun.idle ? <em>本机就绪 · 发送即在这里继续</em> : null}
+                {localRun.needsRestart ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    title="重新在这台电脑上拉起这条对话的 Agent 进程"
+                    onClick={() =>
+                      current && void resumeLocalRun(current.id, current.executionTarget, localRun.folder)
+                    }
+                  >
+                    在这台电脑上继续
+                  </button>
+                ) : null}
+                {localRun.status?.state === "running" ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    title="结束这条对话在本机的 Agent 进程。只想打断这一轮回答，用「停止当前回合」。"
+                    onClick={() => current && void deskBridge()?.stopRun?.(current.id)}
+                  >
+                    结束本机进程
+                  </button>
+                ) : null}
+                {otherLocalRunCount > 0 ? (
+                  <em title="另外这些对话也在这台电脑上改文件">另有 {otherLocalRunCount} 条在本机跑</em>
+                ) : null}
+              </div>
+            ) : null}
             {current?.projectId ? (
               <ProjectChatPage
                 title={title}
@@ -1233,11 +1763,14 @@ export function App() {
                   }
                 }}
                 onCopy={(text) => void copyText(text)}
+                queueEpoch={queueEpoch}
+                onQueuedChange={onQueuedChange}
               />
             ) : current ? (
               <PersonalChatPage
                 title={title}
                 current={current}
+                running={turnLive}
                 visible={visible}
                 activity={activity}
                 user={user}
@@ -1261,7 +1794,17 @@ export function App() {
                   repoLabel={contextRepoName}
                   repos={repoChoices}
                   repoUrl={contextRepoUrl}
-                  onRepo={setComposerRepo}
+                  onRepo={(url) => {
+                    setComposerRepo(url);
+                    applyTarget({ ...target, kind: "cloud" });
+                  }}
+                  workspaces={workspaces}
+                  folder={folder}
+                  onWorkspace={(picked) => {
+                    setFolder(picked.folder);
+                    applyTarget({ kind: "desk", folder: picked.folder, workspaceId: picked.id, deskId: target.deskId });
+                  }}
+                  onPickFolder={() => void pickLocalFolder()}
                   branch={branch || "main"}
                   targetKind={target.kind}
                   canRunLocal={canRunLocal}
@@ -1305,7 +1848,32 @@ export function App() {
                 taRef={taRef}
                 onComposerKey={onComposerKey}
                 home={!current}
-                mentions={current ? mentions : []}
+                mentions={mentions}
+                experts={experts}
+                teams={teams}
+                expertValue={
+                  current
+                    ? encodeExpertPick({
+                        expertId: current.expertId ?? undefined,
+                        expertTeamId: current.expertTeamId ?? undefined,
+                      })
+                    : encodeExpertPick(expertPick)
+                }
+                expertLocked={Boolean(current)}
+                onExpert={(value) => setExpertPick(decodeExpertPick(value))}
+                onMention={(item) => {
+                  if (item.kind === "expert") setExpertPick({ expertId: item.id });
+                  if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
+                }}
+                queued={queuedFollowUps}
+                waiting={Boolean(current && (queuedFollowUps.length > 0 || turnLive))}
+                onStop={
+                  current
+                    ? () => {
+                        void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
+                      }
+                    : undefined
+                }
               />
               {current ? (
                 <p className="composer-note">
@@ -1313,8 +1881,29 @@ export function App() {
                 </p>
               ) : null}
               {authError ? <p className="error toast-inline">{authError}</p> : null}
+              {localNotice ? (
+                <p className="toast-inline local-notice">
+                  {localNotice}
+                  <button type="button" className="ghost" onClick={() => setLocalNotice("")}>
+                    知道了
+                  </button>
+                </p>
+              ) : null}
               {copied ? <p className="copied">Copied</p> : null}
             </footer>
+            </div>
+            {panelOpen ? (
+              <SidePanel
+                tab={panelTab}
+                onTab={setPanelTab}
+                onClose={() => setPanelOpen(false)}
+                folder={localFolder}
+                token={token}
+                runId={runId}
+                local={panelIsLocal}
+                refreshKey={panelEpoch}
+              />
+            ) : null}
           </section>
         )}
         </div>

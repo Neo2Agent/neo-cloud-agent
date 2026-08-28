@@ -63,11 +63,18 @@ test("projects share runs, inject instruction, and keep registration closed", as
   const created = await fetch(`${base}/v1/projects`, {
     method: "POST",
     headers: auth(admin.token),
-    body: JSON.stringify({ name: "官网改版", instruction: "用中文回复，先跑测试。" }),
+    body: JSON.stringify({
+      name: "官网改版",
+      instruction: "用中文回复，先跑测试。",
+      expertIds: ["exp_reviewer"],
+      pluginIds: ["plug_pr_review"],
+    }),
   });
   assert.equal(created.status, 201);
   const project = (await created.json()) as Project;
   assert.equal(project.name, "官网改版");
+  assert.deepEqual(project.expertIds, ["exp_reviewer"]);
+  assert.deepEqual(project.pluginIds, ["plug_pr_review"]);
   assert.equal(project.invitePolicy, "approve");
   assert.equal(project.members[0]?.role, "owner");
 

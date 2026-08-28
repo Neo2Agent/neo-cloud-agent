@@ -4,7 +4,7 @@ import { runWorkspaceBoot, stopTerminals } from "./boot.js";
 import { downloadSession, enqueueEvents, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
 import { installEgressGuard, policyFromEnv } from "./egress.js";
 import { inspectSessionContext } from "./context-usage.js";
-import { contextUsageEvent, stampWorkerSeq, toRunEvents } from "./events.js";
+import { contextUsageEvent, emptyAgentTurnEvent, stampWorkerSeq, toRunEvents, type LooseAgentEvent } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { readSessionBackupPolicy, shouldBackupSession } from "./session-backup-schedule.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
@@ -62,7 +62,11 @@ async function main(): Promise<void> {
     `worker ${config.runId} version=${config.workerVersion} model=${bootstrap.model} gateway=${bootstrap.llmGatewayUrl}`,
   );
 
-  const boot = await runWorkspaceBoot({ runId: config.runId, workspaceDir });
+  const boot = await runWorkspaceBoot({
+    runId: config.runId,
+    workspaceDir,
+    scratchDir: config.scratchDir,
+  });
   if (boot.events.length > 0) {
     await pushEvents(config.runId, stampWorkerSeq(boot.events, workerSeq));
   }
@@ -112,6 +116,7 @@ async function main(): Promise<void> {
 
   const backupPolicy = readSessionBackupPolicy();
   let agentRunning = false;
+  let turnHadVisibleWork = false;
   let toolsSinceBackup = 0;
   let lastBackupAt = 0;
   let backupInFlight = false;
@@ -141,7 +146,28 @@ async function main(): Promise<void> {
   };
 
   const unsubscribe = session.subscribe((event) => {
-    const mapped = stampWorkerSeq(toRunEvents(config.runId, event), workerSeq);
+    const loose = event as LooseAgentEvent;
+    if (loose.type === "agent_start") {
+      turnHadVisibleWork = false;
+    }
+    if (loose.type === "tool_execution_start") {
+      turnHadVisibleWork = true;
+    }
+    if (
+      loose.type === "message_update" &&
+      loose.assistantMessageEvent?.type === "text_delta" &&
+      loose.assistantMessageEvent.delta
+    ) {
+      turnHadVisibleWork = true;
+    }
+    const mapped = stampWorkerSeq(toRunEvents(config.runId, loose), workerSeq);
+    if (
+      event.type === "agent_end" &&
+      !turnHadVisibleWork &&
+      !mapped.some((item) => item.kind === "llm.error")
+    ) {
+      mapped.push(...stampWorkerSeq([emptyAgentTurnEvent(config.runId)], workerSeq));
+    }
     enqueueEvents(config.runId, mapped).catch((error: unknown) => {
       console.error("failed to push events", error);
     });
@@ -183,6 +209,7 @@ async function main(): Promise<void> {
 
   let consecutiveFailures = 0;
   const maxFailures = Number(process.env.WORKER_INBOX_MAX_FAILURES ?? 75);
+  let servedTurn = false;
 
   try {
     while (running) {
@@ -201,11 +228,21 @@ async function main(): Promise<void> {
       }
       for (const message of messages) {
         console.log(`[worker ${config.runId}] ${describeDispatch(message)}`);
+        if (message.type === "prompt" || message.type === "steer" || message.type === "follow_up") {
+          servedTurn = true;
+        }
         const next = await dispatchInbound(session, message);
         if (next === "stop") {
           running = false;
           break;
         }
+      }
+      // `session.prompt` is awaited, so an empty inbox here means the turn is
+      // finished and nothing else was queued behind it.
+      if (running && config.exitAfterTurn && servedTurn && messages.length === 0 && !session.isStreaming) {
+        console.log(`[worker ${config.runId}] turn finished, exiting`);
+        running = false;
+        break;
       }
       if (running) {
         await sleep(config.pollMs);

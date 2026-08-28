@@ -25,11 +25,20 @@ export interface LlmSettings {
   baseUrl?: string;
 }
 
+export type NewApiPublicInfo = { url: string | null; consoleUrl: string | null };
+
 export interface PublicLlmSettings {
   configured: boolean;
   upstream: LlmUpstreamMode;
   model: string | null;
   baseUrl: string | null;
+  newApi?: NewApiPublicInfo;
+}
+
+export function readNewApiInfo(env: NodeJS.ProcessEnv = process.env): NewApiPublicInfo {
+  const url = (env.NEW_API_URL ?? "").trim() || null;
+  const consoleUrl = (env.NEW_API_CONSOLE_URL ?? "").trim() || null;
+  return { url, consoleUrl };
 }
 
 export interface LlmSettingsRequest {
@@ -171,8 +180,9 @@ export function writeLlmSettings(settings: LlmSettingsRequest, root?: string): P
 }
 
 export function publicLlmSettings(settings: LlmSettings | null): PublicLlmSettings {
+  const newApi = readNewApiInfo();
   if (!settings) {
-    return { configured: false, upstream: "mock", model: null, baseUrl: null };
+    return { configured: false, upstream: "mock", model: null, baseUrl: null, newApi };
   }
   return {
     configured: Boolean(settings.apiKey) && settings.upstream !== "mock",
@@ -183,5 +193,6 @@ export function publicLlmSettings(settings: LlmSettings | null): PublicLlmSettin
         ? defaultLlmModel(settings.upstream)
         : null,
     baseUrl: settings.baseUrl ?? null,
+    newApi,
   };
 }

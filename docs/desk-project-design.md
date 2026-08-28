@@ -30,17 +30,17 @@ Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项�
 | Desk 先于 Web | 信息架构、状态机、权限、文案先在 Desk 锁死。Web 只做后置适配，不另开一套语义。 |
 | 项目包上下文，任务包一次 Run | 项目不是聊天分组，也不是第二套 Agent。 |
 | 共享的是项目，隔离的是 Run | 并行靠「各开各的对话」。同 Run 协作是例外，必须串行。 |
-| 产物进项目是显式动作 | Run 工作区里的文件不会自动变成项目资产。对话历史已经持久，文件必须「保存到项目」或「流转为待办」。 |
+| 产物进项目是显式动作 | Run 工作区里的文件不会自动变成项目资产。项目资产只走用户在资产页手动上云。 |
 | 看板给人排期，Agent 不擅自改列 | 卡片可以「开对话」。Agent 改状态只走用户明确触发的工具。 |
 | 只有云端项目对话能拉人进会话 | 本机 Run、无 `projectId` 的对话，都没有「邀请加入这条对话」。 |
-| 不抄办公套件 | 专家中心、技能市场、在线表格、人机双写、公开整段会话、公共 OAuth 票据共享，全部后置。 |
+| 不抄办公套件 | 专家**市场**、办公向技能店、在线表格、人机双写、公开整段会话、公共 OAuth 票据共享，全部后置。专家角色包见 [workbuddy-experts.md](./workbuddy-experts.md)。编码向 Skill / Plugin 目录见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)。 |
 
 现网硬约束（设计时不许假装没有）：
 
 - 应用机大约 **2 个 VM 槽**。多人并行靠排队 + 各开各的 Run，不承诺无限沙箱。空闲默认 **15 分钟**卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）；槽会先把工作区写回 `hostRunsDir/<runId>` 再释放。下一任占用前会 `wipeMount`。详见 [附录 A](#附录-a运行时问答)。
 - Agent loop 只在 VM 或本机 worker 里跑，控制面只编排。
 - Provider Key 只在 gateway。转交、分享、资产都不得带出密钥。
-- Desk 本机路径：`POST /v1/desks` → lease → `target: { loop: "desk", tools: "desk" }` → 本地 git worktree。P0–P2 不允许拆开 loop / tools。
+- Desk 本机路径：`POST /v1/desks` 登记 → `start: "inline"` 自己起 或 `dispatch` 走 inbox 派 → `target: { loop: "desk", tools: "desk" }` → **用户选的那个文件夹本身**当工作区。P0–P2 不允许拆开 loop / tools。
 - 会话权威在控制面。Desk 不做本地项目库、本地待办库。
 - **不要为了「模拟 WB」再买一台 BTRFS / NBD 机器。** 协作语义挂在现有云端 Run 上，隔离盘用现成的 VM loop 槽。理由见 [§4.1](#41-要不要新开一台-btrfs-服务器)。
 
@@ -70,23 +70,18 @@ Web 这一期不改交互。控制面 API 按 Desk 需要补，Web 现有的项�
 
 ### 2.2 Desk UI（现在的壳）
 
-左侧 rail：`Chats` / `Automations` / `Projects` / Settings。
+独立 Agents Window，不是 Web 的 Diff / 终端 / 产物三标签。左侧 rail：New Chat / Search / Automations / Projects，会话树拆成 **对话（Inbox）** 和 **空间（项目 / 本机目录 / git remote）**。
 
 已落地：
 
-- 项目列表网格 + 搜索 + 新建弹窗（名称 15 字、指令）
-- 点项目只做两件事：`activeProject` 过滤左侧对话树，新对话带上 `projectId`
-- 云 / 本机目标、模型、仓库选择仍在 composer
+- 点项目进入工作台，默认停在 **任务**（没有单独的「概览」页）
+- 工作台标签：任务 / 对话 / 资产 / 动态（含留言）/ 设置
+- 云端建项目（`POST /v1/projects`），没有本地项目库
+- 项目对话：面包屑、转交、流转待办；仅云端可邀请加入该会话
+- 跟进队列条、收件箱小点
+- composer 上的 Cloud / This Computer / 模型
 
-没有落地：
-
-- 项目主页（指令、成员、邀请、动态）
-- 对话上的项目徽章、分享、转交
-- 跟进队列谁在说、谁在等
-- 看板、资产、留言、站内收件箱
-- 本机 Run 与云 Run 在协作上的差异说明
-
-点项目卡片时，主舞台仍停在项目列表，对话还要再切回 Chats。这是 Desk 这一期要改掉的第一处断裂。
+本机目录只是 This Computer 的工作区，不能当成项目。项目资产由用户在资产页上传；工作区不会自动进项目盘。
 
 ### 2.3 Web（对照，不是这一期的活）
 
@@ -113,13 +108,13 @@ Web 已经能改指令、加成员、生成邀请、转交、看动态。Desk �
 | 分享 / 转交 / 多人进同一任务 | 项目内只读 + 跟进入队；转交要补交接包 |
 | 房主制 | Run 的 `assigneeUserId` 是房主；成员能看、能排队发言（仅云 Run） |
 | 计划看板 | 新实体 `project_todos`，卡片可开 Run |
-| 资料库 / 项目资产 | 对象存储前缀 + 「保存到项目」 |
+| 资料库 / 项目资产 | 对象存储前缀 + 用户手动上传 |
 | 留言板 | 项目级异步讨论，和 Todo 评论分开 |
 | 产物流转 | 对话产物 → 待办附件 |
 
 ### 3.2 先不跟
 
-专家中心、技能市场、连接器公共票据、腾讯文档双写、CSV/HTML 协同、`workbuddy.link`、锁屏远程本机、SSO / Credit、自定义工作流引擎、公开整站会话链接、本机待办 SQLite。
+专家**市场**、办公向技能店、连接器公共票据、腾讯文档双写、CSV/HTML 协同、`workbuddy.link`、锁屏远程本机、SSO / Credit、自定义工作流引擎、公开整站会话链接、本机待办 SQLite。Desk 专家选择器和项目钉住跟 [workbuddy-experts.md](./workbuddy-experts.md)。编码向 Skill / Plugin 目录见 [skill-plugin-marketplace.md](./skill-plugin-marketplace.md)，Desk 只跟项目钉住，不另做商店。
 
 Desk 也不先做 P3 并排窗格和 SSH 远程机。项目协同叠在现有 Cloud / This Computer 两轴上。
 
@@ -138,7 +133,7 @@ Project
 ├── messages[]         留言板（项目级）
 └── runs[]             真正干活的会话
       ├── Cloud Run    VM 槽 + 共享 /workspace
-      └── Desk Run     房主这台机器上的 git worktree
+      └── Desk Run     房主这台机器上、他自己选的那个文件夹
 ```
 
 翻译表：
@@ -185,7 +180,7 @@ Neo 已经有对等物，不必再仿一套文件系统：
 3. 两端「共用 JSONL」是 **同一条 Run 的同一份 session + 同一份 transcript**，不是两台机器挂同一子卷。协作者的 Desk 只订 SSE，不 ssh、不挂载发起人磁盘。
 4. 2 个槽已经被并行 Run 用着。协作 **不占第二槽**：加入的人挤进发起人已经占着的那一个。
 
-本机 `This Computer` 对话：worktree 在房主电脑上，**禁止**「邀请加入这条对话」。要一起干活，先把对话开在 Cloud，或各开各的云端 Run。
+本机 `This Computer` 对话：文件就在房主电脑上他自己的目录里，**禁止**「邀请加入这条对话」。要一起干活，先把对话开在 Cloud，或各开各的云端 Run。
 
 ---
 
@@ -196,7 +191,7 @@ WorkBuddy 实测是沙箱子卷 / 对话历史上云 / 项目云盘三层。Neo 
 ```text
 第一层  Run 工作区                         会话级，默认不共享给项目里其他人
         Cloud: VM 槽 /workspace
-        Desk:  本机 .neo/worktrees/<run>
+        Desk:  用户授权的本机文件夹（就地）
 
 第二层  控制面权威                          已持久，刷新/换机器还在
         Run 元数据、transcript、follow-up
@@ -210,7 +205,7 @@ WorkBuddy 实测是沙箱子卷 / 对话历史上云 / 项目云盘三层。Neo 
 规则：
 
 - 第一层 → 第二层：对话事件已经在走。Desk 本机 worker 的 session 备份沿用现有增量备份。
-- 第一层 → 第三层：**绝不自动。** 用户点「保存到项目」或「流转为待办」才上传。
+- 第一层 → 第三层：**绝不自动。** 只有用户在资产页手动上传。
 - 第二层的 transcript 转交时可以复制给接手人；`.env`、`.neo/llm-upstream.env`、gateway 密钥不跟。
 - 现网磁盘小。第三层走对象存储或库机盘，不进 VM 槽 ext4，也不进 Desk 用户仓库的 git。
 
@@ -224,12 +219,12 @@ Desk 本机还有第四个物理位置：用户选中的 git 文件夹。它**�
 
 ```text
 ┌──────── rail ────────┬──────── 会话树 ────────┬──────────── 主舞台 ────────────┐
-│ New Chat             │ 项目胶囊 [青柠 ×]      │  无选中项目：项目网格（现状）     │
-│ Search               │ Repositories           │  选中项目：项目工作台             │
-│ Automations          │  ├ repo / Inbox        │    概览 | 对话 | 看板 | 资产     │
-│ Projects  ← 在这里选 │  └ 该项目下的 Run      │    动态 | 设置                    │
+│ New Chat             │ 对话 (Inbox)           │  无选中项目：项目网格             │
+│ Search               │ 空间                   │  选中项目：项目工作台             │
+│ Automations          │  ├ 项目 / 本机目录     │    任务 | 对话 | 资产             │
+│ Projects  ← 在这里选 │  └ git remote          │    动态 | 设置                    │
 │ ────────             │                        │                                  │
-│ 头像 / Settings      │                        │  打开某条 Run：仍是现有对话页     │
+│ 头像 / 收件箱 / 设置 │                        │  打开 Run：transcript + composer │
 └──────────────────────┴────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -247,15 +242,14 @@ Desk 本机还有第四个物理位置：用户选中的 git 文件夹。它**�
 
 ### 6.2 项目工作台（Desk 新增的主表面）
 
-选中项目后，主舞台默认停在工作台，不再停在空白 New Chat。顶部一排标签：
+选中项目后，主舞台默认停在工作台的 **任务** 页（实现里若路由写 `overview` 也会落到任务，不再单独做概览）。顶部标签：
 
-| 标签 | 谁能看 | 第一期做完的样子 |
+| 标签 | 谁能看 | 现在的样子 |
 | --- | --- | --- |
-| 概览 | 全员 | 指令摘要、成员头像、最近 5 条动态、「在项目里开对话」 |
+| 任务 | 全员 | 四列待办；没有卡片时引导新建或从对话流转 |
 | 对话 | 全员 | 该项目 Run 列表：状态、房主、Cloud / This Computer、更新时间 |
-| 看板 | 全员 | 四列待办；没有卡片时引导「从对话流转」或「新建」 |
-| 资产 | 全员 | 文件列表；空时说明「对话里的文件要手动保存过来」 |
-| 动态 | 全员 | 项目事件时间线 |
+| 资产 | 全员 | 用户手动上传的文件；工作区不会自动进来 |
+| 动态 | 全员 | 项目事件 + 留言 |
 | 设置 | 全员只读，admin 可写 | 名称、指令、默认仓库、邀请策略、成员、邀请链接 |
 
 「在项目里开对话」落到现有 composer：`projectId`、项目 `defaultRepoUrls`、当前 Cloud / This Computer。本机目标仍要先选 git 文件夹。
@@ -435,7 +429,7 @@ Desk 第一期把转交收成两种，文案必须写清「对话记录会交给
 - artifact 列表引用（不拷 `.env`）
 - 若挂了待办：更新日期不丢，`runId` 指到新 Run 或仍指旧 Run（换房主时指旧）
 
-本机 Run 不允许假装「把我这台电脑的 worktree 交给对方」。未提交改动不跟随，和现有 Desk handoff 一致。对方要本机接着干，自己在自己的 Desk 上选文件夹，从交接摘要开新 Run。
+本机 Run 不允许假装「把我这台电脑的文件夹交给对方」。未提交改动不跟随，和现有 Desk handoff 一致。对方要本机接着干，自己在自己的 Desk 上选文件夹，从交接摘要开新 Run。
 
 ---
 
@@ -518,7 +512,7 @@ Desk 第一期把转交收成两种，文案必须写清「对话记录会交给
 | --- | --- |
 | `artifact.uploaded` | 已经在 transcript 里，最稳 |
 | 对话页以后的产物标签 | 与 Web artifacts 面板对齐，Desk 补标签页时一并接入 |
-| 本机 worktree 新文件 | 第一期**不做**目录监听。本机误伤太大，只提示用户点产物或选文件 |
+| 本机工作区新文件 | 第一期**不做**目录监听。本机误伤太大，只提示用户点产物或选文件 |
 
 「流转」按钮的候选列表 = 当前 Run 已上传的 artifacts。没有产物仍可建纯文本待办。
 
@@ -564,17 +558,13 @@ POST /v1/projects/:id/todos
 
 动作：
 
-- 本地上传（Desk 用系统文件框，走签传 URL）
-- Run 产物「保存到项目」
+- **只有**用户在资产页手动上传（Desk 用系统文件框）
 - 预览 / 下载（签名 URL，过期重签）
 - admin 可删
 
-新 Run 注入方式（两期）：
+工作区文件、Run artifact、Agent 工具都 **不会** 写进项目资产。新 Run 最多在 `.neo/PROJECT.md` 追加资产清单给 Agent 看，不把文件 checkout 进工作区。
 
-1. 第一期：`.neo/PROJECT.md` 末尾追加资产清单（路径、大小、更新人）
-2. 第二期：Cloud Run 把勾选的资产 checkout 到 `/workspace/.neo/assets` 只读；Desk 本机 Run 下载到 worktree 下同样的相对路径
-
-权限跟人走：不是成员就不注入。Agent 不另做 ACL。
+权限跟人走：不是成员就看不到清单。Agent 不另做 ACL。
 
 版本先用 `objectKey` + `updatedAt`，不做网盘历史。配额先做软限制（建议 1 GB / 项目），超了拒绝上传并写进动态，不做计费。
 
@@ -622,7 +612,7 @@ Desk 放在工作台「动态」旁的子视图，或动态页上半留言、下
 
 第二期若做工具，走现有 worker 扩展（`neo_artifact_upload` 同款），挂控制面 `/internal`，**不要**在 Desk 主进程再开一套 MCP 代理。Desk 前端继续打 REST；Agent 打内部工具。两套入口同一张表。
 
-委派 AI（`todo_delegate`）更后。现有 `neo_subagent` 够用，不做专家团市场。
+委派 AI（`todo_delegate`）更后。现有 `neo_subagent` 够用。专家团召唤面见 [workbuddy-experts.md](./workbuddy-experts.md)，不做市场。
 
 ---
 
@@ -724,7 +714,7 @@ Webhook、Telegram、GitHub 仍不进登录 `/v1`。要开进某项目，用项�
 
 控制面几乎不用加表。Desk：
 
-- 点项目进入工作台（概览 / 对话 / 设置 / 动态）
+- 点项目进入工作台（任务 / 对话 / 资产 / 动态 / 设置）
 - 改指令、默认仓库、邀请策略
 - 成员、邀请链接、审批、直接加账号
 - 左侧胶囊 + 对话列表带房主 / Cloud 标记
@@ -755,12 +745,12 @@ Webhook、Telegram、GitHub 仍不进登录 `/v1`。要开进某项目，用项�
 
 ### D4 — 资产与附件
 
-- 项目资产列表、上传、从 artifact 保存
-- 流转待办时挂产物
-- 新 Run 的 `PROJECT.md` 带资产清单
+- 项目资产列表、用户在资产页手动上传
+- 工作区 / Run artifact **不会**自动或一键进项目盘
+- 新 Run 的 `PROJECT.md` 可带资产清单（给 Agent 看目录，不拷文件）
 - 签名 URL 过期重签
 
-验收：A 上传 `MEMORY.md` 或从对话保存一份；B 新开 Run 能在清单里看到；子卷/本机 worktree 清掉之后项目里还在。
+验收：A 在资产页上传 `MEMORY.md`；B 新开 Run 能在清单里看到；子卷清掉、本机文件删掉之后项目里还在。
 
 ### D5 — 留言与收件箱
 
@@ -797,9 +787,9 @@ D1 + D2 做完，Desk 就已经是「项目」而不只是过滤器：
 | 为模拟 WB 新开 BTRFS 机 | 抄的是 Spacelet 磁盘，不是协作语义 | 用现有 VM loop 槽 + 同一 Run；协作者只订 SSE |
 | 给协作者第二份 JSONL / 第二槽 | 变成两条会话 | 禁止 spawn 第二个 worker |
 | 项目成员自动能跟进所有对话 | 旧实现用 `projectHasMember` 通读 | 已删该条；只保留房主 / assignee / collaborators / 自动化 |
-| 把本机 worktree 当成可分享沙箱 | 文件只在房主电脑上 | 本机禁止邀请加入；转交默认 fork |
+| 把本机工作区当成可分享沙箱 | 文件只在房主电脑上 | 本机禁止邀请加入；转交默认 fork |
 | 转交拷走密钥 | transcript / 工作区可能有 `.env` | 沿用打码；交接不拷 `.env` / `llm-upstream.env` |
-| 产物当永久盘 | WB artifact 管道关着，子卷会丢；Neo 槽会卸 | 显式保存到项目；文案写「对话文件不会自动进项目」 |
+| 产物当永久盘 | WB artifact 管道关着，子卷会丢；Neo 槽会卸 | 用户手动上云；文案写「对话文件不会自动进项目」 |
 | 2 个槽被并行打满 | 各开各的 Run 是对的，但会排队 | 产品写排队，不写无限并行 |
 | 看板做成第二套 Agent | 和 Run、Automation 搅在一起 | 三张表、三个入口 |
 | 办公套件回潮 | 范围会散 | §3.2 / §14 后置名单不准偷偷做 |
@@ -813,7 +803,7 @@ D1 + D2 做完，Desk 就已经是「项目」而不只是过滤器：
 
 Desk 的 D1–D5 冻结后，Web 再做：
 
-- 现有项目页换成与 Desk 相同的标签（概览 / 对话 / 看板 / 资产 / 动态 / 设置）
+- 现有项目页换成与 Desk 相同的标签（任务 / 对话 / 资产 / 动态 / 设置）
 - 对话页补分享、转交、流转、队列条
 - 邀请继续用 `/#/invite/:token`
 - 手机宽度沿用现有触控尺寸，看板改卡片流，不在窄屏上硬做四列拖拽
@@ -827,6 +817,8 @@ Desk 的 D1–D5 冻结后，Web 再做：
 | 主题 | 位置 |
 | --- | --- |
 | WorkBuddy 该跟 / 不该跟 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) |
+| WorkBuddy 专家 / 专家团 | [workbuddy-experts.md](./workbuddy-experts.md) |
+| Codex / WorkBuddy 技能与插件市场 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) |
 | Desk 已落地执行面 | [desk.md](./desk.md) |
 | 项目合约 | `packages/contracts/src/project.ts` |
 | 项目存储 / 邀请 | `packages/control-plane/src/projects/store.ts` |
@@ -835,7 +827,7 @@ Desk 的 D1–D5 冻结后，Web 再做：
 | Desk 项目列表 | `packages/desk/ui/pages.tsx` `ProjectsPage` |
 | Desk 过滤与创建 Run | `packages/desk/ui/App.tsx` |
 | Web 已有成员/转交（对照） | `packages/web/src/components/ProjectsPage.tsx` |
-| 本机 worktree | `packages/desk/src/workspace.ts` |
+| 本机工作区 | `packages/desk/src/workspace.ts` |
 | 跟进队列 | `enqueueFollowUp` |
 | 用户提供的 WB 实测材料 | 项目协同架构图、沙箱生命周期、待办 / MCP / 留言板 / 产物流转文稿 |
 
@@ -847,8 +839,8 @@ Desk 的 D1–D5 冻结后，Web 再做：
 - 不要给协作者第二份 session JSONL、第二个 worker、第二槽。
 - 不要让两端直接 mount 或 tail 发起人磁盘上的 JSONL；UI 只走 transcript + SSE。
 - 不要在 Desk 主进程做待办 SQLite「加速缓存」当权威源。
-- 不要为了协作把两个人的本机 Agent 指到同一 worktree。
-- 不要自动把 `/workspace` 或 worktree 同步进项目资产。
+- 不要为了协作把两个人的本机 Agent 指到同一个文件夹。
+- 不要自动把 `/workspace` 或本机工作区同步进项目资产。
 - 不要把 Automations 画进看板列。
 - 不要在第一期做 MCP 工具完整集「对齐 27 个名字」。
 - 不要把 Web 项目页和 Desk 工作台做成两套字段名。
@@ -863,21 +855,23 @@ Desk 的 D1–D5 冻结后，Web 再做：
 
 会自动释放，默认 **15 分钟**空闲。`WORKER_IDLE_RELEASE_MS` 没设就是 `15 * 60_000`；设成 `0` 则不卸槽。控制面每 2 秒扫一次 `expireIdleWorkers`：Run 已是 `IDLE`、还挂着 worker、且 `now - idleAt >= ttl` 才释放。释放时 **不标 ERROR**，只发 `Released idle VM slot`。
 
-释放顺序：
+释放顺序（细则见 [workspace-persistence.md](./workspace-persistence.md)）：
 
-1. `persistRunWorkspace`：槽上的盘拷回 `hostRunsDir/<runId>`（按 Run 分目录，不是按槽）
+1. `persistRunWorkspace`：槽上的用户文件拷回 `hostRunsDir/<runId>`（跳过 `node_modules` 等缓存）。失败则**留下槽**，发 `workspace.persist_failed`
 2. 给 worker 发 `shutdown`
 3. `destroy` worker，`releaseVmSlot`：`umount`，槽标 `idle`，`runId` 清空
-4. 有人在排队就 `tryStartQueued`
+4. 按预算 / TTL 回收别的空闲工作区
+5. 有人在排队就 `tryStartQueued`
 
-下一任占用同一槽时，`VmSlotRuntime.provision` 会先 `wipeMount`（清掉挂载点里除 `lost+found` 以外的东西），再把 **这一条 Run** 自己的 host 工作区拷进去。所以：
+下一任占用同一槽时，`VmSlotRuntime.provision` 会先 `wipeMount`，再把 **这一条 Run** 自己的 host 工作区拷进去。所以：
 
 | 担心 | 现网怎么处理 |
 | --- | --- |
 | 槽卸了对话是不是没了 | 不是。对话在控制面，工作区文件在 `hostRunsDir/<runId>` |
 | 槽被 B 占用，A 的文件会不会混进 B | 正常路径不会。卸槽前按 runId 写回，占槽前 wipe，再只拷 B 的目录 |
 | 同一条 Run 过一会儿又说话 | `resumeRun`：session 备份还原进新工作区，再占槽、拉 worker。槽可能是另一块盘 |
-| 卸槽失败 / wipe 失败 | 上一任残留才可能干扰。这是运维故障，不是产品语义 |
+| 写回失败 | 空闲释放中止，槽还挂着，文件还在热盘上 |
+| 磁盘满了 | 先回收 ARCHIVED / 最老的 IDLE 工作区（对话留下）。见工作区持久化文档 |
 
 2 个槽限制的是 **同时挂着的执行面**，不是同时存在的对话数。空闲对话卸槽后，卡片还在，发跟进再排队占槽。
 
@@ -896,7 +890,7 @@ Desk 的 D1–D5 冻结后，Web 再做：
 
 两端协作 **不要**去读工作区 JSONL。流式同步走 SSE（事件已经 persist）。槽卸了、工作区被 wipe 了，对话记录仍在 `.control` 和对象存储。工作区 JSONL 丢了，靠 session 备份还原后再继续跑 Agent。
 
-和 WB 的差别：WB 对话史每轮推到腾讯文档网盘，文件产物管道是关的。Neo 对话史已经在控制面 + 对象存储；文件产物同样要显式「保存到项目」。
+和 WB 的差别：WB 对话史每轮推到腾讯文档网盘，文件产物管道是关的。Neo 对话史已经在控制面 + 对象存储；项目文件只走用户手动上云。
 
 ### A.3 串行动态：Neo 现在 vs WB 参考
 

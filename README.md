@@ -2,7 +2,7 @@
 
 对标 [Cursor Cloud Agent](https://cursor.com/docs/cloud-agent) 的云端 Agent 服务：LLM 推理在云端网关，任务在隔离 VM 里执行，Agent 内核使用 [pi-agent](https://github.com/earendil-works/pi)。
 
-**设计见 [docs/architecture.md](docs/architecture.md)。** 后管与 New API 怎么拆见 [docs/admin-platform-research.md](docs/admin-platform-research.md)。跨 Run 的 Agent 记忆接谁、不接谁见 [docs/agent-memory-research.md](docs/agent-memory-research.md)。现网两台轻量不要混：应用机（北京 `62.234.211.200`，部署本仓库）见 [.cursor/skills/tencent-lighthouse-deploy/SKILL.md](.cursor/skills/tencent-lighthouse-deploy/SKILL.md)；库机（`101.42.105.230`，Docker MySQL / Redis）见 [.cursor/skills/tencent-lighthouse-db/SKILL.md](.cursor/skills/tencent-lighthouse-db/SKILL.md)。域名 `neorun.cloud` 的解析与 HTTPS 见 [docs/production-domain.md](docs/production-domain.md) 和 [.cursor/skills/tencent-lighthouse-domain/SKILL.md](.cursor/skills/tencent-lighthouse-domain/SKILL.md)。
+**现状总览见 [docs/architecture-overview.md](docs/architecture-overview.md)。** 完整架构图见 [docs/diagrams/architecture-complete.png](docs/diagrams/architecture-complete.png)。设计蓝图与原则见 [docs/architecture.md](docs/architecture.md)。后管与 New API 怎么拆见 [docs/admin-platform-research.md](docs/admin-platform-research.md)。WorkBuddy 专家 / 专家团怎么跟见 [docs/workbuddy-experts.md](docs/workbuddy-experts.md)。Codex / WorkBuddy 技能与插件市场怎么跟见 [docs/skill-plugin-marketplace.md](docs/skill-plugin-marketplace.md)。骨架齐了之后 WorkBuddy 还值得跟什么见 [docs/workbuddy-feature-gap-2026-08.md](docs/workbuddy-feature-gap-2026-08.md)。跨 Run 的 Agent 记忆接谁、不接谁见 [docs/agent-memory-research.md](docs/agent-memory-research.md)。现网两台轻量不要混：应用机（北京 `62.234.211.200`，部署本仓库）见 [.cursor/skills/tencent-lighthouse-deploy/SKILL.md](.cursor/skills/tencent-lighthouse-deploy/SKILL.md)；库机（`101.42.105.230`，Docker MySQL / Redis）见 [.cursor/skills/tencent-lighthouse-db/SKILL.md](.cursor/skills/tencent-lighthouse-db/SKILL.md)。域名 `neorun.cloud` 的解析与 HTTPS 见 [docs/production-domain.md](docs/production-domain.md) 和 [.cursor/skills/tencent-lighthouse-domain/SKILL.md](.cursor/skills/tencent-lighthouse-domain/SKILL.md)。
 
 ## 怎么拆
 
@@ -112,7 +112,7 @@ WORKER_DISK_GIB=4
 WORKER_IDLE_RELEASE_MS=900000   # 空闲 15 分钟卸槽；0 = 不自动释放
 ```
 
-卸槽前必须把 slot 工作区拷回 `RUNS_DIR`，否则下一轮 claim 会擦盘。两个槽都忙时 `POST /v1/runs` 返回 `NOT_YET_STARTED` 并发 `run.queued`。
+卸槽前必须把 slot 工作区拷回 `RUNS_DIR`（跳过 `node_modules` 等缓存），否则下一轮 claim 会擦盘。写回失败则留下槽。`WORKER_RUNTIME=vm` 时持久化工作区默认合计 12GiB，空闲 7 天 / 归档 3 天后可回收；见 `docs/workspace-persistence.md`。两个槽都忙时 `POST /v1/runs` 返回 `NOT_YET_STARTED` 并发 `run.queued`。
 
 接 GitHub 远程（只放控制面，不要进 worker）。也可以在对话页设置里贴 PAT，写到 `.neo/scm-push.env`：
 
@@ -145,7 +145,8 @@ GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVA
 # BOOTSTRAP_EMAIL=you@example.com
 # BOOTSTRAP_PASSWORD=at-least-8-chars
 # ADMIN_EMAILS=ops@example.com
-# NEW_API_CONSOLE_URL=http://127.0.0.1:3000
+# NEW_API_URL=http://101.42.105.230:3000
+# NEW_API_CONSOLE_URL=http://101.42.105.230:3000
 
 # MySQL 或 Postgres / Redis（不设则用 .control JSON + 进程内事件总线）
 # DATABASE_URL=mysql://app:app@127.0.0.1:3306/app
