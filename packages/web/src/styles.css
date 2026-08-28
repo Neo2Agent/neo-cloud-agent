@@ -2423,9 +2423,14 @@ textarea {
   background: #eff6ff;
 }
 
+.context-usage-backdrop {
+  display: none;
+}
+
 .context-usage-pop {
   position: absolute;
-  left: 0;
+  right: 0;
+  left: auto;
   bottom: calc(100% + 10px);
   width: min(360px, calc(100vw - 48px));
   padding: 12px 14px;
@@ -2433,7 +2438,7 @@ textarea {
   border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  z-index: 8;
+  z-index: 12;
 }
 
 .context-usage-head {
@@ -3697,5 +3702,32 @@ textarea {
 
   .composer .neo-select-pill {
     min-height: 36px;
+  }
+
+  .context-usage-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    border: 0;
+    padding: 0;
+    background: rgba(17, 24, 39, 0.2);
+  }
+
+  .context-usage-pop {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: max(96px, calc(env(safe-area-inset-bottom) + 88px));
+    width: auto;
+    max-width: none;
+    max-height: min(48vh, 360px);
+    overflow: auto;
+    z-index: 30;
+  }
+
+  .context-usage-status {
+    flex-wrap: wrap;
   }
 }
