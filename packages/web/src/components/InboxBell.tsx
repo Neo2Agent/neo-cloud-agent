@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import { api, readJson } from "../api";
+import { IconInbox } from "../icons";
 
 type Props = {
   token: string;
@@ -35,7 +36,7 @@ export function InboxBell({ token, authed, onOpenRun, onOpenProject }: Props) {
     <div className="inbox-bell">
       <button
         type="button"
-        className="ghost inbox-btn"
+        className="icon-btn inbox-btn"
         aria-label="收件箱"
         aria-expanded={open}
         onClick={() => {
@@ -43,7 +44,7 @@ export function InboxBell({ token, authed, onOpenRun, onOpenProject }: Props) {
           if (!open) void refresh();
         }}
       >
-        收件箱
+        <IconInbox size={16} />
         {unread > 0 ? <span className="inbox-dot">{unread > 9 ? "9+" : unread}</span> : null}
       </button>
       {open ? (

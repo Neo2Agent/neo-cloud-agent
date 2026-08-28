@@ -6,6 +6,7 @@ import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { DeskTarget } from "../desk";
+import { IconArrowUp, IconStop } from "../icons";
 import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
 import { Select } from "@neo-cloud-agent/ui";
@@ -108,8 +109,8 @@ export function Composer({
     : busy
       ? "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
       : isNarrowViewport()
-      ? "描述任务，点发送。可粘贴图片。"
-      : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
+        ? "描述任务，点发送。可粘贴图片。"
+        : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
   return (
     <form
       className={busy ? "composer is-busy" : archived ? "composer is-locked" : "composer"}
@@ -196,17 +197,16 @@ export function Composer({
           ))}
         </div>
       ) : null}
-      <div className="composer-pickers">
-        <TargetPicker
-          target={target}
-          canRunLocal={canRunLocal}
-          folder={folder}
-          desks={desks}
-          onTarget={onTarget}
-          onPickFolder={onPickFolder}
-        />
-        <label className="picker">
-          <span className="picker-label">模式</span>
+      <div className="composer-bar">
+        <div className="composer-pickers">
+          <TargetPicker
+            target={target}
+            canRunLocal={canRunLocal}
+            folder={folder}
+            desks={desks}
+            onTarget={onTarget}
+            onPickFolder={onPickFolder}
+          />
           <Select
             id="agent-mode"
             size="pill"
@@ -218,9 +218,6 @@ export function Composer({
               { value: "ask", label: "Ask" },
             ]}
           />
-        </label>
-        <label className="picker">
-          <span className="picker-label">模型</span>
           <Select
             id="agent-model"
             size="pill"
@@ -229,9 +226,6 @@ export function Composer({
             onValueChange={onModel}
             options={models.map((item) => ({ value: item.id, label: item.label }))}
           />
-        </label>
-        <label className="picker">
-          <span className="picker-label">专家</span>
           <Select
             id="agent-expert"
             size="pill"
@@ -249,26 +243,27 @@ export function Composer({
                 : []),
             ]}
           />
-        </label>
-      </div>
-      <div className="composer-bar">
-        {contextUsage ? (
-          <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
-        ) : null}
-        <p className="hint" id="vm-status" data-busy={busy ? "true" : "false"}>
-          {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
-          {hint}
-        </p>
-        {busy && canStop ? (
-          <button type="button" id="abort" className="stop" aria-label="停止生成" onClick={onStop}>
-            <span className="stop-icon" aria-hidden="true" />
-            {stopping ? "停止中" : "停止"}
-          </button>
-        ) : (
-          <button type="submit" id="send" className="send" disabled={archived || empty || busy} aria-label={busy ? "发送中" : "发送"}>
-            {busy ? "发送中" : "发送"}
-          </button>
-        )}
+        </div>
+        <div className="composer-send-group">
+          {contextUsage ? (
+            <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
+          ) : null}
+          <p className="hint" id="vm-status" data-busy={busy ? "true" : "false"}>
+            {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
+            {hint}
+          </p>
+          {busy && canStop ? (
+            <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
+              <span className="stop-icon" aria-hidden="true">
+                <IconStop size={10} />
+              </span>
+            </button>
+          ) : (
+            <button type="submit" id="send" className="send" disabled={archived || empty || busy} aria-label={busy ? "发送中" : "发送"}>
+              <IconArrowUp size={16} />
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );

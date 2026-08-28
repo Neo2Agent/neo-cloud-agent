@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
+import { IconClose, IconNewChat, IconStar } from "../icons";
 import { filterRuns, groupRunsByProject } from "../pins";
 import { isActiveRunStatus } from "../turn";
 
@@ -13,8 +14,6 @@ export type VmSlotView = {
 type Props = {
   runs: Run[];
   currentRunId: string | null;
-  slots: VmSlotView[];
-  backend: string;
   userEmail: string;
   authed: boolean;
   authBusy: boolean;
@@ -33,8 +32,6 @@ type Props = {
 export function Sidebar({
   runs,
   currentRunId,
-  slots,
-  backend,
   userEmail,
   authed,
   authBusy,
@@ -116,7 +113,7 @@ export function Sidebar({
               onPin(run.id);
             }}
           >
-            {pinned ? "★" : "☆"}
+            <IconStar size={14} />
           </button>
         ) : null}
       </div>
@@ -136,54 +133,15 @@ export function Sidebar({
           </div>
         </div>
         {onClose ? (
-          <button className="ghost sidebar-close" id="sidebar-close" type="button" onClick={onClose}>
-            关闭
+          <button className="icon-btn sidebar-close" id="sidebar-close" type="button" aria-label="关闭" onClick={onClose}>
+            <IconClose />
           </button>
         ) : null}
       </div>
       <button className="new-chat" id="new-chat" type="button" onClick={onNewChat}>
-        <span className="new-chat-plus" aria-hidden="true">
-          +
-        </span>
+        <IconNewChat size={16} />
         新对话
       </button>
-      <section className="vm-block">
-        <p className="eyebrow">虚拟机</p>
-        <div className="vm-rail" id="vm-rail" aria-label="VM 槽">
-          {slots.length === 0 ? (
-            <p className="hint">{backend === "none" ? "当前未启用 VM" : "VM 槽还在初始化"}</p>
-          ) : (
-            slots.map((slot) => {
-              const occupant = items.find((run) => run.id === slot.runId || run.vmSlotId === slot.id);
-              const held = slot.status === "busy" || Boolean(slot.runId);
-              const current = Boolean(currentRunId && (slot.runId === currentRunId || occupant?.id === currentRunId));
-              const running = Boolean(occupant && isActiveRunStatus(occupant.status));
-              const title = occupant ? preview(occupant.prompt) : held ? slot.runId?.slice(0, 8) : "空闲";
-              const occupancy = running ? "占用" : held ? "待命" : "空闲";
-              return (
-                <article
-                  key={slot.id}
-                  className="vm-slot"
-                  data-busy={String(running)}
-                  data-held={String(held && !running)}
-                  data-active={String(running)}
-                  data-current={String(current)}
-                  data-open={occupant?.id || slot.runId || undefined}
-                  onClick={() => {
-                    const id = occupant?.id || slot.runId;
-                    if (id) onOpenRun(id);
-                  }}
-                >
-                  <strong>{slotLabel(slot.id)}</strong>
-                  <small>
-                    {occupancy} · {title}
-                  </small>
-                </article>
-              );
-            })
-          )}
-        </div>
-      </section>
       <div className="run-tools">
         <input
           type="search"

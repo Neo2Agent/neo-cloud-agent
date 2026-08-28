@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { api, readJson } from "../api";
+import { clampPage, filterByQuery, paginate, snippet } from "../catalog.js";
+import { IconBack } from "../icons.js";
+import { CatalogCard, CatalogEmpty, CatalogGrid, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
 
 type Props = {
   token: string;
@@ -10,18 +13,30 @@ type Props = {
   onUse: (plugin: PluginCatalogItem) => void;
 };
 
+type SkillTab = "installed" | "catalog";
+
 export function SkillsPage({ token, selectedId, projectId, onOpenPlugin, onUse }: Props) {
   const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<SkillTab>("installed");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
 
   const selected = plugins.find((item) => item.id === selectedId || item.slug === selectedId) ?? null;
   const installed = useMemo(() => plugins.filter((item) => item.installed), [plugins]);
   const catalog = useMemo(() => plugins.filter((item) => !item.installed), [plugins]);
+  const pool = tab === "installed" ? installed : catalog;
+  const filtered = useMemo(
+    () => filterByQuery(pool, query, (item) => [item.name, item.slug, item.description, item.category]),
+    [pool, query],
+  );
+  const listPage = clampPage(page, filtered.length);
+  const visible = paginate(filtered, listPage);
 
   const refresh = async () => {
-    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-    const res = await api(token, `/v1/plugins${query}`);
+    const queryStr = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const res = await api(token, `/v1/plugins${queryStr}`);
     if (res.ok) {
       setPlugins((await readJson<{ plugins?: PluginCatalogItem[] }>(res)).plugins ?? []);
     }
@@ -30,6 +45,10 @@ export function SkillsPage({ token, selectedId, projectId, onOpenPlugin, onUse }
   useEffect(() => {
     void refresh().catch(() => undefined);
   }, [token, projectId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, tab]);
 
   const act = async (path: string, body: Record<string, unknown>, method = "POST") => {
     setBusy(true);
@@ -49,16 +68,16 @@ export function SkillsPage({ token, selectedId, projectId, onOpenPlugin, onUse }
 
   if (selected) {
     return (
-      <section className="proj-page" id="skills-page">
+      <section className="proj-page catalog-page" id="skills-page">
         <header className="proj-page-head">
           <div>
-            <p className="eyebrow">技能</p>
+            <button className="catalog-back" type="button" onClick={() => onOpenPlugin(null)}>
+              <IconBack />
+              全部技能
+            </button>
             <h2>{pluginPickerLabel(selected)}</h2>
             <p className="hint">{selected.description}</p>
           </div>
-          <button type="button" className="ghost" onClick={() => onOpenPlugin(null)}>
-            返回列表
-          </button>
         </header>
         <div className="proj-card">
           <p className="hint">
@@ -100,76 +119,70 @@ export function SkillsPage({ token, selectedId, projectId, onOpenPlugin, onUse }
   }
 
   return (
-    <section className="proj-page" id="skills-page">
+    <section className="proj-page catalog-page" id="skills-page">
       <header className="proj-page-head">
         <div>
           <p className="eyebrow">技能</p>
           <h2>给 Agent 装工作手册</h2>
           <p className="hint">安装并启用后，下一次对话会把 SKILL.md 写进工作区。主操作是安装 / 启停，不是召唤角色。</p>
         </div>
-        <p className="proj-count">{plugins.length} 个</p>
       </header>
-      <PluginGroup title="已安装" items={installed} busy={busy} onOpen={onOpenPlugin} onUse={onUse} onEnable={(item, enabled) => void act(`/v1/plugins/${item.id}/enable`, { enabled, scope: item.installScope ?? "user" })} />
-      <PluginGroup
-        title="官方目录"
-        items={catalog}
-        busy={busy}
-        onOpen={onOpenPlugin}
-        onUse={onUse}
-        onInstall={(item) => void act(`/v1/plugins/${item.id}/install`, { scope: "user" })}
+
+      <CatalogTabs
+        tabs={[
+          { id: "installed", label: "已安装", count: installed.length },
+          { id: "catalog", label: "官方目录", count: catalog.length },
+        ]}
+        active={tab}
+        onChange={setTab}
       />
+
+      <CatalogToolbar search={query} onSearch={setQuery} placeholder="搜索技能" />
+
+      {filtered.length === 0 ? (
+        <CatalogEmpty
+          title={pool.length === 0 ? (tab === "installed" ? "还没有安装技能" : "目录是空的") : "没有匹配的技能"}
+          hint={pool.length === 0 ? (tab === "installed" ? "到官方目录里挑一个装上。" : "控制面还没放出技能包。") : "换个关键词再试试。"}
+        />
+      ) : (
+        <>
+          <CatalogGrid>
+            {visible.map((item) => (
+              <CatalogCard
+                key={item.id}
+                title={pluginPickerLabel(item)}
+                description={snippet(item.description, 90)}
+                badge={item.pinned ? "项目" : item.enabled ? "已启用" : item.installed ? "已关闭" : "官方"}
+                meta={item.category}
+                onOpen={() => onOpenPlugin(item.id)}
+                actions={
+                  <>
+                    {!item.installed ? (
+                      <button type="button" className="ghost" disabled={busy} onClick={() => void act(`/v1/plugins/${item.id}/install`, { scope: "user" })}>
+                        安装
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="ghost"
+                        disabled={busy}
+                        onClick={() => void act(`/v1/plugins/${item.id}/enable`, { enabled: !item.enabled, scope: item.installScope ?? "user" })}
+                      >
+                        {item.enabled ? "关闭" : "启用"}
+                      </button>
+                    )}
+                    <button type="button" className="ghost" onClick={() => onUse(item)}>
+                      用这个
+                    </button>
+                  </>
+                }
+              />
+            ))}
+          </CatalogGrid>
+          <CatalogPager page={listPage} total={filtered.length} onPage={setPage} />
+        </>
+      )}
       {error ? <p className="auth-error">{error}</p> : null}
     </section>
-  );
-}
-
-function PluginGroup({
-  title,
-  items,
-  busy,
-  onOpen,
-  onUse,
-  onInstall,
-  onEnable,
-}: {
-  title: string;
-  items: PluginCatalogItem[];
-  busy: boolean;
-  onOpen: (id: string) => void;
-  onUse: (item: PluginCatalogItem) => void;
-  onInstall?: (item: PluginCatalogItem) => void;
-  onEnable?: (item: PluginCatalogItem, enabled: boolean) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div className="proj-card">
-      <p className="proj-card-title">{title}</p>
-      <ul className="expert-grid">
-        {items.map((item) => (
-          <li key={item.id}>
-            <article className="expert-card">
-              <button type="button" className="expert-card-main" onClick={() => onOpen(item.id)}>
-                <strong>{pluginPickerLabel(item)}</strong>
-                <span className="expert-badge">{item.pinned ? "项目" : item.enabled ? "已启用" : item.installed ? "已关闭" : "官方"}</span>
-                <p>{item.description}</p>
-              </button>
-              {onInstall && !item.installed ? (
-                <button type="button" className="ghost" disabled={busy} onClick={() => onInstall(item)}>
-                  安装
-                </button>
-              ) : null}
-              {onEnable && item.installed ? (
-                <button type="button" className="ghost" disabled={busy} onClick={() => onEnable(item, !item.enabled)}>
-                  {item.enabled ? "关闭" : "启用"}
-                </button>
-              ) : null}
-              <button type="button" className="ghost" onClick={() => onUse(item)}>
-                用这个开对话
-              </button>
-            </article>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

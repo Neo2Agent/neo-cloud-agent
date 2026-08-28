@@ -5,6 +5,7 @@ import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contrac
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { BUNDLED_RECIPES } from "@neo-cloud-agent/contracts/recipe";
 import { fileToolDiff, formatDuration, formatMessageTime, formatWhen, toolArgPreview } from "../format";
+import { IconCheck, IconError, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "../markdown";
 import { shouldShowThinking } from "../turn";
 
@@ -22,9 +23,10 @@ type Props = {
   onPickRecipe?: (recipe: Recipe) => void;
 };
 
-function toolMark(tool: TranscriptTool): string {
-  if (tool.status === "running") return "…";
-  return tool.isError ? "✗" : "✓";
+function ToolStatus({ tool }: { tool: TranscriptTool }) {
+  if (tool.status === "running") return <IconSpinner size={14} />;
+  if (tool.isError) return <IconError size={14} />;
+  return <IconCheck size={14} />;
 }
 
 function toolDisplayName(tool: TranscriptTool): string {
@@ -71,8 +73,10 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
       open={running}
     >
       <summary>
-        <span>
-          {toolMark(tool)} {toolDisplayName(tool)}
+        <span className="tool-name">
+          <ToolStatus tool={tool} />
+          <IconTool name={tool.name} size={14} />
+          {toolDisplayName(tool)}
         </span>
         {preview ? <span className="cmd">{preview}</span> : null}
       </summary>
@@ -93,7 +97,8 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
               className={step.status === "running" ? "run" : step.isError ? "err" : undefined}
             >
               <span>
-                {step.status === "running" ? "…" : step.isError ? "✗" : "✓"} {step.agent} / {step.name}
+                {step.status === "running" ? <IconSpinner size={12} /> : step.isError ? <IconError size={12} /> : <IconCheck size={12} />}{" "}
+                {step.agent} / {step.name}
               </span>
               {toolArgPreview(step.args) ? <span className="cmd">{toolArgPreview(step.args)}</span> : null}
             </li>
@@ -226,7 +231,7 @@ export function Transcript({
         {empty ? (
           <div className="empty">
             <h2>有什么可以帮你的？</h2>
-            <p>发送后会占用一台云端电脑。也可以先点一张做法再改。</p>
+            <p>发送后会占用一台云端电脑。也可以先点一张做法再改。仓库和 API Key 在「设置」里。</p>
             {onPickRecipe ? (
               <ul className="recipe-grid">
                 {BUNDLED_RECIPES.map((item) => (
