@@ -833,8 +833,9 @@ pnpm typecheck && pnpm test
 - 云 loop + 本机工具 RPC（`loop !== tools`），见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 插件 git marketplace、zip 上传、插件自带 MCP / hooks
 - `GET /v1/search`、`GET /v1/recipes`（配方只在客户端）
-- Firecracker live-fork、headed browser / computer-use
+- Firecracker live-fork、headed browser / computer-use（分期见 [browser-computer-use.md](./browser-computer-use.md)）
 - Egress 从应用层升到 iptables / 出站代理
+- 跨 Run 的用户 / 项目语义记忆（选型见 [agent-memory-research.md](./agent-memory-research.md)）
 - 完整多租户账务（只有配额打点）；专家团积分倍率
 - Slack 宿主
 - 开放注册、第二套用户表；New API 不是 Neo 进程，也不接管用户表
@@ -853,10 +854,13 @@ pnpm typecheck && pnpm test
 | [workspace-persistence.md](./workspace-persistence.md) | 空闲槽写回、预算、TTL |
 | [mobile.md](./mobile.md) | 手机端蓝图与 P0 |
 | [admin-platform-research.md](./admin-platform-research.md) | 后管 vs New API 怎么拆 |
+| [nginx-research.md](./nginx-research.md) | 现网入口是 Caddy；不要再引入 Nginx |
 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) | 项目协作对标 |
 | [workbuddy-experts.md](./workbuddy-experts.md) | WorkBuddy 专家 / 专家团调研与落地顺序 |
 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) | Codex / WorkBuddy 技能与插件市场调研与复刻顺序 |
 | [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md) | 2026-08-28 再对标：骨架已齐之后还值得跟什么 |
+| [agent-memory-research.md](./agent-memory-research.md) | 跨 Run 记忆：第 0 期文件，第 1 期 Mem0，不换 pi |
+| [browser-computer-use.md](./browser-computer-use.md) | 先做 Playwright a11y browser-use；桌面和远程接管后置 |
 | [production-domain.md](./production-domain.md) | `neorun.cloud` / HTTPS / Caddy |
 | [README.md](../README.md) | 命令、环境变量、不要做的五件事 |
 | `packages/contracts` | 类型的权威来源 |
