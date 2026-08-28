@@ -217,11 +217,13 @@ WorkBuddy 和常见多 Agent 框架的差别：它把几种工作流 **写进团
 | 工具 | 子角色可收窄工具；scout 有 `neo_browse` 没有乱 curl |
 | 事件 | transcript 里能标 `subagent` / `subagentId`，Web 显示「正在执行子代理」 |
 
-父会话的系统提示永远是 `CLOUD_SYSTEM_PROMPT`（编码云端 Agent）+ 项目指令。用户 **不能** 在开 Run 时说「这次请以安全审查专家身份干活」并真正换掉父人格。`CreateRunRequest` 只有 `prompt` / `repoUrls` / `model` / `projectId` / `mode`（`agent` \| `ask`），没有专家字段。Composer 只有目标、模式、模型三个选择器。
+父会话的系统提示曾经永远是 `CLOUD_SYSTEM_PROMPT`（编码云端 Agent）+ 项目指令。**2026-08-28 的 main 已经不是这样：** `CreateRunRequest` 接受 `expertId` xor `expertTeamId`，控制面写 `.neo/EXPERT.md` / `EXPERT_TEAM.md`，worker 用角色覆盖父人格并收窄工具。Composer 可选专家 / 专家团，也可用 `@`。下面 §4.4 是落地前的缺口表，不要当现状读。
 
-### 4.4 缺口表
+### 4.4 缺口表（落地前快照，2026-08-26）
 
-| WorkBuddy | Neo 现在 | 缺口 |
+下表写于 Expert 实体落地前。2026-08-28 的 main 已经有 `Expert` / `ExpertTeam`、`CreateRunRequest.expertId`、角色覆盖、用户 CRUD、后管下发。还缺的是项目专家置顶排序、专家市场、积分倍率，不是从零做实体。现状以 [architecture-overview.md](./architecture-overview.md) §14.2 为准。
+
+| WorkBuddy | Neo 当时 | 当时缺口 |
 | --- | --- | --- |
 | 专家是可召唤的产品对象 | 没有 `Expert` 实体 | 控制面对象 + API + 持久化 |
 | 点卡片 / `@` 开对话并切角色 | 开 Run 永远是通用编码 Agent | `CreateRunRequest.expertId` + Role Override |
