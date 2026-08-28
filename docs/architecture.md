@@ -87,6 +87,8 @@ flowchart TB
   end
 ```
 
+图上的 `API Gateway` 是职责框，不是第四个进程。现网入口是 Caddy；鉴权 / 限流 / `/v1` 仍在 `control-plane` 的 `api` 模块。不要为了这个框再引入 Nginx，见 [nginx-research.md](./nginx-research.md)。
+
 三层职责：
 
 | 层 | 信任级 | 职责 |
