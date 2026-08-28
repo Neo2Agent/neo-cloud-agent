@@ -18,7 +18,12 @@
 
 ### 完整架构图
 
-一张图把客户端、入口、控制面、执行面、推理、存储和外部依赖摊开。源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）。
+一张图把客户端、入口、控制面、执行面、推理、存储和外部依赖摊开。现网不用登录：
+
+- http://62.234.211.200/architecture
+- https://neorun.cloud/architecture
+
+源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）。
 
 ![Neo Cloud Agent 完整架构图](./diagrams/architecture-complete.png)
 
