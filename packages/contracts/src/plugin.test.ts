@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { BUNDLED_PLUGINS, bundledPluginById, pluginDigest } from "./bundled-plugins.js";
 import {
-  BUNDLED_PLUGINS,
   assertSafeRelativePath,
-  bundledPluginById,
   isSafeRelativePath,
   overlayCatalogItem,
   parseMarketplaceFile,
   parsePluginManifest,
   parseSkillMd,
-  pluginDigest,
   sortPluginsForCatalog,
   type PluginInstall,
 } from "./plugin.js";

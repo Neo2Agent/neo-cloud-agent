@@ -252,25 +252,22 @@ export type {
   SkillPackage,
 } from "./plugin.js";
 export {
-  BUNDLED_PLUGINS,
   MAX_ENABLED_PLUGINS,
   MAX_PLUGIN_BYTES,
   MAX_PLUGIN_FILES,
   WORKSPACE_SKILL_DIRS,
   assertSafeRelativePath,
-  bundledPluginById,
   isSafeRelativePath,
   isValidSkillName,
-  listBundledPlugins,
   overlayCatalogItem,
   parseMarketplaceFile,
   parsePluginManifest,
   parseSkillMd,
-  pluginDigest,
   pluginPickerLabel,
   publicPlugin,
   sortPluginsForCatalog,
 } from "./plugin.js";
+export { BUNDLED_PLUGINS, bundledPluginById, listBundledPlugins, pluginDigest } from "./bundled-plugins.js";
 export {
   ADMIN_EXPERT_TOOL_CHOICES,
   BUNDLED_EXPERTS,
