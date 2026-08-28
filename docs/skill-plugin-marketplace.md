@@ -368,9 +368,9 @@ Frontmatter 扩展（**Neo 第一期不要全吃**）：`allowed-tools`、`disab
 
 `.cursor/hooks.json` / `.neo/hooks.json` 走 pi inline 钩子。Codex / CodeBuddy 的插件 hooks 若要跟，只能合并进这两个文件，并且默认不信任。
 
-### 6.5 项目只有专家钉住，没有 Skill 钉住
+### 6.5 项目可以钉住 Skill
 
-`Project.expertIds` 已有。没有 `skillIds` / `pluginIds`。任务里「项目 Skill 置顶」这一条还是空的。
+`Project.expertIds` 旁边现在有 `pluginIds`。创建 Run 时用户已启用 ∪ 项目钉住 ∪ 请求体额外 `pluginIds` 会物化进 `.neo/skills`。第 3 期的 Git 市场 / zip 导入还没做。
 
 ### 6.6 架构蓝图把「公开 extension 注册表」留在第二仓
 
@@ -380,15 +380,15 @@ Frontmatter 扩展（**Neo 第一期不要全吃**）：`allowed-tools`、`disab
 
 | Codex / WorkBuddy | Neo 现在 | 缺口 |
 | --- | --- | --- |
-| 可浏览的官方目录 | 无 | `BUNDLED_PLUGINS` + `GET /v1/plugins` |
-| 一键安装 / 启停 | 无 | `plugin_installs` + enabled |
-| 项目置顶 Skill | 只有仓库里已有的目录 | `Project.pluginIds`，创建 Run 物化 |
-| Git marketplace add | 无 | 控制面拉目录，不进 worker |
-| 上传技能包 / AI 创建 | 无 | 第二期：zip → 校验 → 用户插件；AI 创建更后 |
-| `plugin.json` / `marketplace.json` 导入 | loader 只认散落的 `SKILL.md` | 控制面解析器 |
-| 安装缓存带版本 | 无 | 对象存储或 `.control/plugin-cache/<slug>/<version>/` |
-| 安全扫描 | 无 | 安装时静态检查，不执行 |
-| 专家绑 Skill | 字段在，磁盘无 | 物化时按名拷，缺的只警告 |
+| 可浏览的官方目录 | `BUNDLED_PLUGINS` + `GET /v1/plugins` + Web `#/skills` | 社区源、审核门户 |
+| 一键安装 / 启停 | `plugin_installs` + enable/disable | 自动升级 digest |
+| 项目置顶 Skill | `Project.pluginIds`，创建 Run 物化 | 项目级上传包 |
+| Git marketplace add | 解析器已有，API 未开 | 控制面拉目录，不进 worker |
+| 上传技能包 / AI 创建 | 无 | zip → 校验 → 用户插件；AI 创建更后 |
+| `plugin.json` / `marketplace.json` 导入 | 控制面解析器，第 3 期才吃外部源 | 只物化 skills |
+| 安装缓存带版本 | bundled 用 contracts 里的 SKILL.md digest | 对象存储或 `.control/plugin-cache/` |
+| 安全扫描 | 路径逃逸 + 拒 npm | 安装时静态检查，不执行 |
+| 专家绑 Skill | 缺的名字写入 `plugins.json` warnings | 不失败、不自动装 |
 | 公开商店审核 | 无 | 刻意不做 |
 | 积分 / LSP / Apps UI | 无 | 刻意不做 |
 
@@ -762,6 +762,8 @@ IM 第一期不解析「装个技能」，避免和群文件上传冲突。
 ## 9. 分期
 
 原则：**先让用户能从一个官方列表把 Skill 装进下一次 Run，再让项目能钉住，最后才允许添加外部目录。** 公开商店和 AI 生成永远后置。
+
+第 0–2 期已经落地：官方四份 bundled Skill、`/v1/plugins` 安装启停、创建 Run 物化 `.neo/skills`、`Project.pluginIds`、Web `#/skills`、CLI `plugin`。第 3 期（Git 市场 / zip）还没做。
 
 ### 第 0 期：锁语义和解析器
 
