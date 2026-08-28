@@ -145,8 +145,8 @@ export function isSafeRelativePath(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed.startsWith("./")) return false;
   if (trimmed.includes("\0")) return false;
-  const parts = trimmed.slice(2).split(/[\\/]/);
-  return parts.every((part) => part.length > 0 && part !== "." && part !== ".." && !part.includes(":"));
+  const parts = trimmed.slice(2).split(/[\\/]/).filter((part) => part.length > 0);
+  return parts.length > 0 && parts.every((part) => part !== "." && part !== ".." && !part.includes(":"));
 }
 
 export function assertSafeRelativePath(value: string): string {
