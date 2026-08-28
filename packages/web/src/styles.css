@@ -131,11 +131,14 @@ button {
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 700;
+  flex: none;
+  color: var(--accent);
+}
+
+.mark svg {
+  display: block;
+  width: 30px;
+  height: 30px;
 }
 
 .brand strong {

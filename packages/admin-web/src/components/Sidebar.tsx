@@ -1,3 +1,4 @@
+import { BrandMark } from "@neo-cloud-agent/ui";
 import { formatWhen, preview, slotBusy, slotLabel, statusLabel } from "../format";
 import { IconChatHome, IconClose } from "../icons";
 import type { AdminOverview, AdminRun } from "../types";
@@ -17,8 +18,8 @@ export function Sidebar({ userEmail, health, overview, liveRuns, onOpenRuns, onC
     <aside className="sidebar" aria-label="管理台侧栏">
       <div className="sidebar-head">
         <div className="brand">
-          <span className="mark" aria-hidden="true">
-            N
+          <span className="mark">
+            <BrandMark />
           </span>
           <div>
             <strong>Neo</strong>

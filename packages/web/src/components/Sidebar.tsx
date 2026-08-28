@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
+import { BrandMark } from "@neo-cloud-agent/ui";
 import { IconClose, IconNewChat, IconStar } from "../icons";
 import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "../turn";
@@ -128,8 +129,8 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-head">
         <div className="brand">
-          <span className="mark" aria-hidden="true">
-            N
+          <span className="mark">
+            <BrandMark />
           </span>
           <div>
             <strong>Neo</strong>
