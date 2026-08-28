@@ -15,7 +15,7 @@
 | 云端推理 | Provider API Key / 自建推理集群只存在于 LLM Gateway，VM 看不到明文密钥 |
 | 隔离执行 | 每个 Run 独占一台短暂 VM（或等价隔离单元），可编译、跑测试、开服务、操作浏览器 |
 | pi 内核 | 不自研 Agent loop。用 pi 的 `createAgentSession`、工具、session、compaction、steer / follow-up、extensions |
-| 可恢复 | Run 可跟进、可空闲挂起、可在快照上恢复；会话以 JSONL 持久化 |
+| 可恢复 | Run 可跟进、可空闲挂起、可在快照上恢复；会话以 JSONL 持久化。跨 Run 的用户 / 项目事实是控制面旁路，不是 pi session，见 [agent-memory-research.md](./agent-memory-research.md) |
 | 可交付 | 在独立分支上改代码，push，开 PR，附带 artifacts |
 | 可加速 | Environment Builds：后台预装依赖并打盘，新 Run 从热快照启动，而不是每次冷装 |
 
@@ -86,6 +86,8 @@ flowchart TB
     WS --> Egress[Egress proxy]
   end
 ```
+
+图上的 `API Gateway` 是职责框，不是第四个进程。现网入口是 Caddy；鉴权 / 限流 / `/v1` 仍在 `control-plane` 的 `api` 模块。不要为了这个框再引入 Nginx，见 [nginx-research.md](./nginx-research.md)。
 
 三层职责：
 
@@ -337,6 +339,7 @@ pi-ai                        ← 多 Provider 流式、用量、自定义 baseUr
 - 环境 Builds
 - 客户端与 transcript 存储
 - Egress、密钥分级、审计
+- 跨 Run 的用户 / 项目语义记忆（旁路服务，不进 VM；选型见 [agent-memory-research.md](./agent-memory-research.md)）
 
 ### 6.3 云扩展（pi Package，装在 VM 镜像里）
 
