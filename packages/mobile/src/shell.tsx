@@ -21,7 +21,7 @@ export function BuddyLogin(props: {
         }}
       >
         <div className="auth-brand buddy-login">
-          <BuddyMascot size={88} />
+          <BuddyMascot size={108} face />
           <h1 className="buddy-hello">Neo</h1>
           <p className="buddy-login-kicker">Cloud Agent</p>
         </div>

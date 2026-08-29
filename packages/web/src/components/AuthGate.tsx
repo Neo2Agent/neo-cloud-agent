@@ -59,7 +59,7 @@ export function AuthGate({
         }}
       >
         <div className={phone ? "auth-brand buddy-login" : "auth-brand"}>
-          {phone ? <BuddyMascot size={88} /> : (
+          {phone ? <BuddyMascot size={108} face /> : (
             <span className="mark">
               <BrandMark />
             </span>

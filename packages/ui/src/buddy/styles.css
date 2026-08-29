@@ -27,11 +27,13 @@
 .buddy-mascot {
   display: block;
   object-fit: contain;
+  filter: drop-shadow(0 10px 18px rgba(214, 148, 160, 0.22));
 }
 
 .buddy-mascot.is-compact {
   width: 30px;
   height: 30px;
+  filter: none;
 }
 
 .buddy-hello {
