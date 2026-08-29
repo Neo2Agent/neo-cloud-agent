@@ -37,6 +37,7 @@ import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, Tooltip, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
 import {
+  IconArchive,
   IconArtifacts,
   IconAutomations,
   IconChat,
@@ -1839,7 +1840,7 @@ export function App() {
               </nav>
               {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
                 <button
-                  className="ghost"
+                  className="icon-btn"
                   type="button"
                   title="未提交的改动不会带过去，先 commit 或 stash"
                   onClick={() => void handoffCurrent("desk")}
@@ -1848,10 +1849,12 @@ export function App() {
                 </button>
               ) : null}
               {handoffError ? <span className="setup err">{handoffError}</span> : null}
+              {narrow ? null : <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />}
               <button
-                className="ghost"
+                className="icon-btn"
                 id="archive-run"
                 type="button"
+                aria-label="归档"
                 hidden={!runId || currentRun?.status === "ARCHIVED"}
                 onClick={() => {
                   if (!runId || !window.confirm("归档后会释放 VM。确定？")) return;
@@ -1867,7 +1870,8 @@ export function App() {
                   });
                 }}
               >
-                归档
+                <IconArchive size={16} />
+                <span className="tab-label">归档</span>
               </button>
               <button
                 className="icon-btn"
@@ -1892,13 +1896,15 @@ export function App() {
                 </a>
               ) : null}
               <button
-                className="ghost"
+                className="icon-btn"
                 id="open-pr"
                 type="button"
+                aria-label="开草稿 PR"
                 hidden={Boolean(pr?.url) || !runId}
                 onClick={() => void openDraftPr()}
               >
-                开草稿 PR
+                <IconPr size={14} />
+                <span className="tab-label">开草稿 PR</span>
               </button>
                 </div>
               </details>
@@ -2087,7 +2093,6 @@ export function App() {
               />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
-                {narrow ? null : <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />}
                 {narrow && !runId && !loadingTranscript ? (
                   <BuddyHome
                     moreOpen={moreOpen}

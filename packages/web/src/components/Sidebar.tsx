@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
-import { BrandMark, BuddyMascot } from "@neo-cloud-agent/ui";
+import { BuddyMascot } from "@neo-cloud-agent/ui";
 import { IconAutomations, IconClose, IconExperts, IconNewChat, IconProjects, IconSkills, IconStar } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
@@ -141,7 +141,7 @@ export function Sidebar({
       <div className="sidebar-head">
         <div className="brand">
           <span className="mark">
-            {buddy ? <BuddyMascot size={30} compact /> : <BrandMark />}
+            <BuddyMascot size={30} compact />
           </span>
           <div>
             <strong>Neo</strong>
