@@ -4,6 +4,7 @@ import { canManageProject, type InvitePolicy, type Project } from "@neo-cloud-ag
 import { Checkbox, Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
+import { IslandButton, IslandInput } from "../island";
 import { roleLabel } from "./helpers";
 
 export function SettingsTab({
@@ -183,9 +184,9 @@ export function SettingsTab({
           />
         </label>
         {manage ? (
-          <button type="submit" className="dash-create" disabled={busy}>
+          <IslandButton type="primary" htmlType="submit" disabled={busy}>
             {busy ? "保存中…" : "保存设置"}
-          </button>
+          </IslandButton>
         ) : (
           <p className="hint">只有所有者或管理员能改设置。</p>
         )}
@@ -228,9 +229,9 @@ export function SettingsTab({
           ))}
         </ul>
         {manage ? (
-          <button type="submit" className="dash-create" disabled={busy}>
+          <IslandButton type="primary" htmlType="submit" disabled={busy}>
             保存置顶
-          </button>
+          </IslandButton>
         ) : null}
       </form>
 
@@ -271,9 +272,9 @@ export function SettingsTab({
           ))}
         </ul>
         {manage ? (
-          <button type="submit" className="dash-create" disabled={busy}>
+          <IslandButton type="primary" htmlType="submit" disabled={busy}>
             保存技能
-          </button>
+          </IslandButton>
         ) : null}
       </form>
 
@@ -297,11 +298,11 @@ export function SettingsTab({
           >
             <label>
               <span>账号</span>
-              <input value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="同事账号" autoComplete="off" />
+              <IslandInput value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="同事账号" autoComplete="off" />
             </label>
             <label>
               <span>新账号密码</span>
-              <input
+              <IslandInput
                 type="password"
                 value={memberPassword}
                 onChange={(event) => setMemberPassword(event.target.value)}
@@ -309,15 +310,15 @@ export function SettingsTab({
                 autoComplete="off"
               />
             </label>
-            <button type="submit" className="ghost" disabled={busy || !memberEmail.trim()}>
+            <IslandButton type="default" htmlType="submit" disabled={busy || !memberEmail.trim()}>
               添加成员
-            </button>
+            </IslandButton>
           </form>
         ) : null}
         <div className="invite-row">
-          <button type="button" className="ghost" disabled={busy} onClick={() => void makeInvite()}>
+          <IslandButton type="default" disabled={busy} onClick={() => void makeInvite()}>
             生成并复制邀请链接
-          </button>
+          </IslandButton>
           {inviteUrl ? <input readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} /> : null}
         </div>
         {pending.length > 0 && manage ? (
@@ -325,9 +326,9 @@ export function SettingsTab({
             {pending.map((item) => (
               <li key={item.token}>
                 <span>{item.requestedEmail} 申请加入</span>
-                <button type="button" className="ghost" onClick={() => void approve(item.token)}>
+                <IslandButton type="default" onClick={() => void approve(item.token)}>
                   通过
-                </button>
+                </IslandButton>
               </li>
             ))}
           </ul>

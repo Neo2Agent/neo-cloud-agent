@@ -3,6 +3,7 @@ import type { ProjectMessage } from "@neo-cloud-agent/contracts/project-message"
 import { Select } from "@neo-cloud-agent/ui";
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson } from "../api";
+import { IslandButton } from "../island";
 import { displayName, formatRel, initials } from "./helpers";
 
 export function MessagesTab({
@@ -125,9 +126,9 @@ export function MessagesTab({
                 .map((item) => ({ value: item.userId, label: `@${displayName(item.email)}` })),
             ]}
           />
-          <button type="submit" className="ghost" disabled={!body.trim()}>
+          <IslandButton type="default" htmlType="submit" disabled={!body.trim()}>
             发送
-          </button>
+          </IslandButton>
           {replyId ? (
             <button type="button" className="text-btn" onClick={() => setReplyId(null)}>
               取消回复

@@ -12,7 +12,14 @@ import type {
   RunEvent,
 } from "@neo-cloud-agent/contracts";
 import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
-import type { AccountStore, SessionRecord, UserRecord } from "../accounts/types.js";
+import {
+  applyAvatarPatch,
+  parseStoredAvatar,
+  serializeStoredAvatar,
+  type AccountStore,
+  type SessionRecord,
+  type UserRecord,
+} from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 
 export type SqlQuery = (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
@@ -23,7 +30,9 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   org_id TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL
+  created_at TIMESTAMPTZ NOT NULL,
+  avatar_json TEXT,
+  neo_avatar_json TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
@@ -263,6 +272,12 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
   return {
     async migrate() {
       await query(POSTGRES_SCHEMA);
+      for (const statement of [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_json TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS neo_avatar_json TEXT",
+      ]) {
+        await query(statement);
+      }
     },
     async saveRun(record) {
       await query(
@@ -488,26 +503,43 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async findUserByEmail(email) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at FROM users WHERE email = $1`,
+        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE email = $1`,
         [email],
       );
       return mapUser(result.rows[0]);
     },
     async findUserById(id) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at FROM users WHERE id = $1`,
+        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
         [id],
       );
       return mapUser(result.rows[0]);
     },
     async listUsers() {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at FROM users ORDER BY created_at ASC`,
+        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
       );
       return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
     },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);
+    },
+    async updateUserAvatars(userId, patch) {
+      const result = await query(
+        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
+        [userId],
+      );
+      const user = mapUser(result.rows[0]);
+      if (!user) {
+        throw new Error("user not found");
+      }
+      const next = applyAvatarPatch(user, patch);
+      await query(`UPDATE users SET avatar_json = $1, neo_avatar_json = $2 WHERE id = $3`, [
+        serializeStoredAvatar(next.avatar),
+        serializeStoredAvatar(next.neoAvatar),
+        userId,
+      ]);
+      return next;
     },
     async createSession(session) {
       await query(
@@ -550,6 +582,8 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
     passwordHash: String(row.password_hash),
     orgId: String(row.org_id),
     createdAt: toIso(row.created_at),
+    avatar: parseStoredAvatar(row.avatar_json),
+    neoAvatar: parseStoredAvatar(row.neo_avatar_json),
   };
 }
 

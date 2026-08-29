@@ -3,6 +3,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson } from "../api";
+import { IslandButton } from "../island";
 import { displayName, formatRel } from "./helpers";
 
 function prettySize(bytes: number): string {
@@ -78,9 +79,8 @@ export function AssetsTab({ token, project, userId }: { token: string; project: 
                 </span>
               </span>
               <span className="task-ago">{formatRel(item.updatedAt)}</span>
-              <button
-                type="button"
-                className="ghost"
+              <IslandButton
+                type="text"
                 onClick={() => {
                   void api(token, `/v1/projects/${project.id}/assets/${item.id}`)
                     .then(async (response) => {
@@ -97,11 +97,11 @@ export function AssetsTab({ token, project, userId }: { token: string; project: 
                 }}
               >
                 下载
-              </button>
+              </IslandButton>
               {manage ? (
-                <button
-                  type="button"
-                  className="ghost"
+                <IslandButton
+                  type="default"
+                  danger
                   onClick={() => {
                     void api(token, `/v1/projects/${project.id}/assets/${item.id}`, { method: "DELETE" }).then(async (response) => {
                       if (!response.ok) {
@@ -113,7 +113,7 @@ export function AssetsTab({ token, project, userId }: { token: string; project: 
                   }}
                 >
                   删除
-                </button>
+                </IslandButton>
               ) : null}
             </li>
           ))}

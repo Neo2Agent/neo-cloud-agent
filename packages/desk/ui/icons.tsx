@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  Bell,
   Bot,
   ChevronDown,
   ChevronLeft,
@@ -11,6 +12,7 @@ import {
   FilePlus,
   FolderMinus,
   LayoutGrid,
+  LogOut,
   Maximize2,
   ListFilter,
   Monitor,
@@ -31,7 +33,11 @@ import {
 
 type IconProps = { size?: number; className?: string };
 
-const stroke: Pick<LucideProps, "strokeWidth"> = { strokeWidth: 1.75 };
+const stroke: Pick<LucideProps, "strokeWidth" | "strokeLinecap" | "strokeLinejoin"> = {
+  strokeWidth: 2.15,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+};
 
 function icon(Icon: typeof Search, props: IconProps) {
   return <Icon {...stroke} size={props.size ?? 16} className={props.className} aria-hidden="true" />;
@@ -75,6 +81,14 @@ export function IconPeople(props: IconProps) {
 
 export function IconGear(props: IconProps) {
   return icon(Settings, props);
+}
+
+export function IconBell(props: IconProps) {
+  return icon(Bell, props);
+}
+
+export function IconLogOut(props: IconProps) {
+  return icon(LogOut, props);
 }
 
 export function IconArrowUp(props: IconProps) {
@@ -157,12 +171,12 @@ export function IconRailDock(props: IconProps) {
       className={props.className}
       aria-hidden="true"
     >
-      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M11.25 3.2v9.6" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" stroke="currentColor" strokeWidth="2.15" />
+      <path d="M11.25 3.2v9.6" stroke="currentColor" strokeWidth="2.15" />
       <path
         d="M5.1 8h4.1m0 0L7.7 6.55M9.2 8 7.7 9.45"
         stroke="currentColor"
-        strokeWidth="1.5"
+        strokeWidth="2.15"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

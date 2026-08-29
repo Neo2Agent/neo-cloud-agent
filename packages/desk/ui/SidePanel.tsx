@@ -5,6 +5,7 @@ import { api, readJson } from "./api";
 import { deskBridge, STALE_DESK_HINT, type LocalFsListing } from "./desk";
 import { FileGlyph } from "./FileGlyph";
 import { IconClose, IconExpand, IconFile, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";
+import { IslandButton, IslandCard, IslandInput } from "./island";
 
 export type SidePanelTab = "home" | "files" | "terminal";
 
@@ -77,14 +78,40 @@ export function SidePanel({ tab, onTab, onClose, folder, token, runId, local, re
       </header>
       {page === "home" ? (
         <div className="wb-home">
-          <button type="button" className="wb-tile" onClick={openTerminal}>
+          <IslandCard
+            hoverable
+            color="app-teal"
+            className="wb-tile"
+            role="button"
+            tabIndex={0}
+            onClick={openTerminal}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openTerminal();
+              }
+            }}
+          >
             <IconTerminal size={22} />
             <span>{local ? "Terminal" : "输出"}</span>
-          </button>
-          <button type="button" className="wb-tile" onClick={openFiles}>
+          </IslandCard>
+          <IslandCard
+            hoverable
+            color="app-yellow"
+            className="wb-tile"
+            role="button"
+            tabIndex={0}
+            onClick={openFiles}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openFiles();
+              }
+            }}
+          >
             <IconFile size={22} />
             <span>File</span>
-          </button>
+          </IslandCard>
         </div>
       ) : page === "files" ? (
         <FilesView
@@ -529,23 +556,23 @@ function FilesView({
                       void createFile();
                     }}
                   >
-                    <input
+                    <IslandInput
                       value={newName}
                       autoFocus
                       aria-label="文件名"
                       onChange={(event) => setNewName(event.target.value)}
                     />
-                    <button type="submit" className="wb-empty-btn">
+                    <IslandButton type="primary" htmlType="submit">
                       创建
-                    </button>
-                    <button type="button" className="wb-empty-btn" onClick={() => setCreating(false)}>
+                    </IslandButton>
+                    <IslandButton type="default" onClick={() => setCreating(false)}>
                       取消
-                    </button>
+                    </IslandButton>
                   </form>
                 ) : (
-                  <button type="button" className="wb-empty-btn" onClick={startCreate}>
+                  <IslandButton type="primary" onClick={startCreate}>
                     New File
-                  </button>
+                  </IslandButton>
                 )
               ) : null}
             </div>

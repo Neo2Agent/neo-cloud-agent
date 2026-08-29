@@ -89,6 +89,7 @@ import {
   findPublicUserByEmail,
   findPublicUserById,
   loginAccount,
+  patchUserAvatars,
   logoutSession,
   sessionCookieHeader,
   clearSessionCookieHeader,
@@ -207,7 +208,7 @@ import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slo
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization, X-Neo-Client",
-  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
   "access-control-expose-headers":
     "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Policy",
 } as const;
@@ -670,7 +671,31 @@ export function createApiServer() {
           return;
         }
         if (method === "GET" && path === "/v1/me") {
-          send(res, 200, { user: actor.kind === "user" ? { id: actor.userId, email: actor.email, orgId: actor.orgId } : null, actor: actor.kind });
+          const user =
+            actor.kind === "user"
+              ? ((await findPublicUserById(actor.userId)) ?? {
+                  id: actor.userId,
+                  email: actor.email,
+                  orgId: actor.orgId,
+                  createdAt: "",
+                  avatar: null,
+                  neoAvatar: null,
+                })
+              : null;
+          send(res, 200, { user, actor: actor.kind });
+          return;
+        }
+        if (method === "PATCH" && path === "/v1/me") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { avatar?: unknown; neoAvatar?: unknown };
+            send(res, 200, { user: await patchUserAvatars(actor.userId, body) });
+          } catch (error) {
+            sendAccountError(res, error);
+          }
           return;
         }
         if (method === "GET" && path === "/v1/vms") {

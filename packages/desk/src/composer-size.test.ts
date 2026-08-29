@@ -20,7 +20,7 @@ test("a very narrow window still leaves a usable composer", () => {
 });
 
 test("follow-up starts short and shares the New Chat max height", () => {
-  assert.equal(composerTextareaHeight(20, true), 128);
+  assert.equal(composerTextareaHeight(20, true), 56);
   assert.equal(composerTextareaHeight(20, false), 24);
   assert.equal(composerTextareaHeight(180, false), 180);
   assert.equal(composerTextareaHeight(300, false), COMPOSER_HOME_TEXTAREA_MAX);

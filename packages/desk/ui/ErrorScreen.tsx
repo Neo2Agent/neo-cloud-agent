@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { IslandButton } from "./island";
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
@@ -30,12 +31,12 @@ export class ErrorScreen extends Component<Props, State> {
         <p>如果你刚更新过代码，退出 Desk 再重新打开：主进程和 preload 不会热更新。</p>
         <pre>{error.message}</pre>
         <div className="crash-actions">
-          <button type="button" onClick={() => window.location.reload()}>
+          <IslandButton type="primary" onClick={() => window.location.reload()}>
             重新加载界面
-          </button>
-          <button type="button" className="ghost" onClick={() => this.setState({ error: null })}>
+          </IslandButton>
+          <IslandButton type="default" onClick={() => this.setState({ error: null })}>
             再试一次
-          </button>
+          </IslandButton>
         </div>
       </div>
     );

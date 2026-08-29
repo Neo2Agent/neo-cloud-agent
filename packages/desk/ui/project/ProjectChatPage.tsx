@@ -2,7 +2,7 @@ import type { FollowUp } from "@neo-cloud-agent/contracts";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 import { ChatTranscript } from "../chat/transcript";
 import { ChatHeader } from "./ChatHeader";
 import { RunChrome } from "./run-chrome";
@@ -14,6 +14,8 @@ export function ProjectChatPage({
   token,
   userId,
   user,
+  userAvatar,
+  neoAvatar,
   toolsOpen,
   visible,
   activity,
@@ -29,6 +31,9 @@ export function ProjectChatPage({
   onCopy,
   queueEpoch = 0,
   onQueuedChange,
+  headerMeta,
+  headerEnd,
+  thinkingHint,
 }: {
   title: string;
   project: Project | null;
@@ -36,6 +41,8 @@ export function ProjectChatPage({
   token: string;
   userId: string;
   user: string;
+  userAvatar?: string | null;
+  neoAvatar?: string | null;
   toolsOpen: boolean;
   visible: TranscriptMessage[];
   activity: string | null;
@@ -51,6 +58,9 @@ export function ProjectChatPage({
   onCopy: (text: string) => void;
   queueEpoch?: number;
   onQueuedChange?: (items: FollowUp[]) => void;
+  headerMeta?: ReactNode;
+  headerEnd?: ReactNode;
+  thinkingHint?: string;
 }) {
   return (
     <div className="project-chat-shell">
@@ -66,6 +76,8 @@ export function ProjectChatPage({
         onRefresh={onRefresh}
         onToggleTools={onToggleTools}
         onRunChange={onRunChange}
+        meta={headerMeta}
+        end={headerEnd}
       />
       <RunChrome
         token={token}
@@ -78,7 +90,18 @@ export function ProjectChatPage({
         onAbort={onAbort}
         onTransferred={onTransferred}
       />
-      <ChatTranscript current={current} visible={visible} activity={activity} busy={busy} user={user} feedRef={feedRef} onCopy={onCopy} />
+      <ChatTranscript
+        current={current}
+        visible={visible}
+        activity={activity}
+        busy={busy}
+        user={user}
+        userAvatar={userAvatar}
+        neoAvatar={neoAvatar}
+        feedRef={feedRef}
+        onCopy={onCopy}
+        thinkingHint={thinkingHint}
+      />
     </div>
   );
 }

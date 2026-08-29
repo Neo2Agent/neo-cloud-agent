@@ -1,6 +1,7 @@
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
+import { IslandButton } from "../island";
 import { Page } from "../pages";
 
 export function InviteAcceptPage({
@@ -39,9 +40,8 @@ export function InviteAcceptPage({
           <p className="hint">
             {info?.status === "pending" ? "你已经申请过了，等管理员通过。" : "用这个链接加入项目，不会自动看到别人的会话。"}
           </p>
-          <button
-            type="button"
-            className="dash-create"
+          <IslandButton
+            type="primary"
             disabled={busy || info?.status === "pending"}
             onClick={() => {
               setBusy(true);
@@ -62,7 +62,7 @@ export function InviteAcceptPage({
             }}
           >
             {info?.status === "pending" ? "已申请，等待通过" : busy ? "加入中…" : "加入项目"}
-          </button>
+          </IslandButton>
           {error ? <p className="error">{error}</p> : null}
         </div>
       </div>

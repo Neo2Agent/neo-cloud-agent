@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
 import { isLocalDeskKind, type DeskTargetKind } from "../desk";
 import { IconArrowUp, IconCloud, IconComputer } from "../icons";
+import { IslandButton } from "../island";
 import { ActivityTab } from "./ActivityTab";
 import { AssetsTab } from "./AssetsTab";
 import { BoardTab } from "./BoardTab";
@@ -97,9 +98,9 @@ export function ProjectWorkbench({
               <span aria-hidden="true">/</span>
               <strong>{project.name}</strong>
             </div>
-            <button type="button" className="ghost invite-btn" disabled={inviteBusy} onClick={() => void invite()}>
+            <IslandButton type="default" className="invite-btn" disabled={inviteBusy} onClick={() => void invite()}>
               {inviteBusy ? "生成中…" : inviteUrl ? "已复制邀请" : "邀请"}
-            </button>
+            </IslandButton>
           </header>
           {inviteError ? <p className="error workbench-invite-error">{inviteError}</p> : null}
 

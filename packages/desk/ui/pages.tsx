@@ -1,14 +1,13 @@
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { Select } from "@neo-cloud-agent/ui";
+import { Avatar } from "./Avatar";
+import { IslandButton, IslandInput, IslandSwitch } from "./island";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
-import {
-  COMPOSER_MAX_PX,
-  composerMaxWidth,
-  composerTextareaHeight,
-} from "../src/composer-size";
+import { useDismissOnOutside } from "./dismiss";
+import { composerTextareaHeight } from "../src/composer-size";
 import { isLocalDeskKind, localRunLabel, TARGET_CLOUD, TARGET_DESK, TARGET_REMOTE, type DeskTargetKind } from "./desk";
 import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop, IconUnbindFolder } from "./icons";
 
@@ -260,18 +259,73 @@ export function SearchPalette({
   );
 }
 
-export type SettingsSection = "basics" | "models";
+export type SettingsSection = "basics" | "avatars" | "models";
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string; hint: string }> = [
   { id: "basics", label: "基础配置", hint: "这台电脑上的本机对话怎么跑。" },
+  { id: "avatars", label: "头像", hint: "换设备登录同一账号也能看到。" },
   { id: "models", label: "模型配置", hint: "选对外型号。渠道和 Key 在 New API。" },
 ];
+
+function AvatarSettingRow({
+  title,
+  src,
+  label,
+  fallback,
+  previewClass,
+  busy,
+  onPick,
+  onClear,
+}: {
+  title: string;
+  src: string | null;
+  label: string;
+  fallback?: string;
+  previewClass?: string;
+  busy: boolean;
+  onPick: (file: File) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="avatar-setting">
+      <Avatar src={src} label={label} fallback={fallback} className={`avatar-setting-preview${previewClass ? ` ${previewClass}` : ""}`} />
+      <div className="avatar-setting-copy">
+        <strong>{title}</strong>
+        <div className="avatar-setting-actions">
+          <label className="avatar-setting-pick">
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/*"
+              disabled={busy}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) onPick(file);
+              }}
+            />
+            更换
+          </label>
+          <IslandButton type="default" htmlType="button" disabled={busy || !src} onClick={onClear}>
+            恢复默认
+          </IslandButton>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function SettingsPage({
   section,
   onSection,
   maxLocalRuns,
   onMaxLocalRuns,
+  user,
+  userAvatar,
+  neoAvatar,
+  avatarBusy,
+  avatarError,
+  onPickAvatar,
+  onClearAvatar,
   name,
   setName,
   apiKey,
@@ -288,6 +342,13 @@ export function SettingsPage({
   onSection: (section: SettingsSection) => void;
   maxLocalRuns: number;
   onMaxLocalRuns: (value: number) => void;
+  user: string;
+  userAvatar: string | null;
+  neoAvatar: string | null;
+  avatarBusy: boolean;
+  avatarError?: string;
+  onPickAvatar: (kind: "avatar" | "neoAvatar", file: File) => void;
+  onClearAvatar: (kind: "avatar" | "neoAvatar") => void;
   name: string;
   setName: (value: string) => void;
   apiKey: string;
@@ -334,7 +395,31 @@ export function SettingsPage({
           ))}
         </nav>
         <div className="settings-main">
-          {section === "basics" ? (
+          {section === "avatars" ? (
+            <div className="settings-card">
+              <h2>头像</h2>
+              <AvatarSettingRow
+                title="用户头像"
+                src={userAvatar}
+                label={user}
+                busy={avatarBusy}
+                onPick={(file) => onPickAvatar("avatar", file)}
+                onClear={() => onClearAvatar("avatar")}
+              />
+              <AvatarSettingRow
+                title="Neo 头像"
+                src={neoAvatar}
+                label="Neo"
+                fallback="N"
+                previewClass="neo-avatar"
+                busy={avatarBusy}
+                onPick={(file) => onPickAvatar("neoAvatar", file)}
+                onClear={() => onClearAvatar("neoAvatar")}
+              />
+              <p className="hint">选图后立刻保存到账号。最长边会压到 256px。</p>
+              {avatarError ? <p className="error">{avatarError}</p> : null}
+            </div>
+          ) : section === "basics" ? (
             <div className="settings-card">
               <h2>本机对话</h2>
               <label>
@@ -375,11 +460,11 @@ export function SettingsPage({
                 <>
                   <label>
                     <span>模型名</span>
-                    <input value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
+                    <IslandInput value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
                   </label>
                   <label>
                     <span>API Key</span>
-                    <input
+                    <IslandInput
                       type="password"
                       value={apiKey}
                       onChange={(event) => setApiKey(event.target.value)}
@@ -389,7 +474,7 @@ export function SettingsPage({
                   </label>
                   <label>
                     <span>Base URL</span>
-                    <input
+                    <IslandInput
                       value={baseUrl}
                       onChange={(event) => setBaseUrl(event.target.value)}
                       placeholder={OPENAI_BASE_URL}
@@ -403,13 +488,14 @@ export function SettingsPage({
                 </>
               )}
               {error ? <p className="error">{error}</p> : null}
-              <button
-                type="submit"
-                className="dash-create"
+              <IslandButton
+                type="primary"
+                htmlType="submit"
+                loading={busy}
                 disabled={busy || !name.trim() || (!managed && !configured && !apiKey.trim())}
               >
                 {busy ? "保存中…" : "保存"}
-              </button>
+              </IslandButton>
             </form>
           )}
         </div>
@@ -436,10 +522,10 @@ export function AutomationsPage({
           <h1>定时任务</h1>
           <p>到点自动开一轮对话，走同一控制面 /v1/automations。</p>
         </div>
-        <button type="button" className="dash-create" onClick={onCreate}>
+        <IslandButton type="primary" onClick={onCreate}>
           <IconPlus size={16} />
           新建任务
-        </button>
+        </IslandButton>
       </header>
       <div className="page-body">
         {items.length === 0 ? (
@@ -453,19 +539,19 @@ export function AutomationsPage({
                 <div>
                   <strong>{item.name || item.prompt}</strong>
                   <p>{describeAutomationSchedule(item.schedule)}</p>
-                  <p className="pane-note">
-                    {item.enabled ? "开启" : "暂停"} · 下次 {formatAddedAt(item.nextRunAt)}
-                  </p>
+                  <p className="pane-note">下次 {formatAddedAt(item.nextRunAt)}</p>
                 </div>
                 <div className="card-actions">
                   {item.lastRunId ? (
-                    <button type="button" onClick={() => onOpenRun(item.lastRunId!)}>
+                    <IslandButton type="text" onClick={() => onOpenRun(item.lastRunId!)}>
                       打开上次对话
-                    </button>
+                    </IslandButton>
                   ) : null}
-                  <button type="button" onClick={() => onToggle(item)}>
-                    {item.enabled ? "暂停" : "开启"}
-                  </button>
+                  <IslandSwitch
+                    checked={item.enabled}
+                    aria-label={item.enabled ? "暂停任务" : "开启任务"}
+                    onChange={() => onToggle(item)}
+                  />
                 </div>
               </li>
             ))}
@@ -499,10 +585,10 @@ export function ProjectsPage({
           <h1>项目</h1>
           <p>多人协同，打造超级团队</p>
         </div>
-        <button type="button" className="dash-create" onClick={onCreate}>
+        <IslandButton type="primary" onClick={onCreate}>
           <IconPlus size={16} />
           新建项目
-        </button>
+        </IslandButton>
       </header>
       <div className="page-body">
         <div className="mine-head">
@@ -581,6 +667,8 @@ export function ContextBar({
   setOpen: (id: ContextMenuId) => void;
   locked?: boolean;
 }) {
+  const barRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(open !== null && !locked, () => setOpen(null), barRef);
   const local = isLocalDeskKind(targetKind);
   const remoteNeedsFolder = !folder;
   const folderPickerOpen = !locked && local && open === "repo";
@@ -590,7 +678,7 @@ export function ContextBar({
     : "不关联仓库";
 
   return (
-    <div className="context-bar">
+    <div className="context-bar" ref={barRef}>
       <div className="context-item-wrap">
         <button
           type="button"
@@ -639,8 +727,7 @@ export function ContextBar({
                 }}
               >
                 <IconComputer size={13} />
-                {item.name}
-                {item.git ? "" : "（不是 git 仓库）"}
+                <span title={item.git ? undefined : "不是 git 仓库"}>{item.name}</span>
               </button>
             ))}
           </div>
@@ -794,7 +881,8 @@ export function ChatComposer({
 }) {
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
-  const [maxWidth, setMaxWidth] = useState(COMPOSER_MAX_PX);
+  const modelRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(menuOpen, () => setMenuOpen(false), modelRef);
   const typed = mentionTrigger(prompt);
   const mentionHits = (mentions ?? []).filter((item) => {
     if (typed === null) return false;
@@ -813,23 +901,6 @@ export function ChatComposer({
       ta?.focus();
     });
   };
-
-  useLayoutEffect(() => {
-    if (!home) {
-      setMaxWidth(COMPOSER_MAX_PX);
-      return;
-    }
-    const page = boxRef.current?.closest(".chat-page") ?? boxRef.current?.closest(".stage") ?? boxRef.current?.closest(".composer-wrap");
-    if (!page) return;
-    const apply = () => {
-      const width = page.clientWidth;
-      setMaxWidth(composerMaxWidth(width));
-    };
-    apply();
-    const observer = new ResizeObserver(apply);
-    observer.observe(page);
-    return () => observer.disconnect();
-  }, [home]);
 
   useLayoutEffect(() => {
     const ta = taRef && typeof taRef !== "function" ? taRef.current : null;
@@ -897,7 +968,7 @@ export function ChatComposer({
         {/* Model and send belong together on the right; spreading them apart
             left a wide gap where the eye expects one control group. */}
         <div className="composer-send-group">
-          <div className="model-wrap">
+          <div className="model-wrap" ref={modelRef}>
             <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
               {label}
               <IconChevronDown size={12} />
@@ -934,7 +1005,7 @@ export function ChatComposer({
 
   if (home) {
     return (
-      <div ref={boxRef} className="composer composer-stack home" style={{ width: "100%", maxWidth }}>
+      <div className="composer composer-stack home">
         {inner}
       </div>
     );
@@ -974,7 +1045,7 @@ export function ProjectCreateForm({
     <form className="modal-form" onSubmit={submit}>
       <label>
         <span>项目名称</span>
-        <input
+        <IslandInput
           value={name}
           maxLength={15}
           onChange={(event) => setName(event.target.value.slice(0, 15))}
@@ -994,12 +1065,12 @@ export function ProjectCreateForm({
       </label>
       {error ? <p className="error">{error}</p> : null}
       <footer className="modal-actions">
-        <button type="button" className="ghost" onClick={onCancel}>
+        <IslandButton type="default" onClick={onCancel}>
           取消
-        </button>
-        <button type="submit" disabled={busy || !name.trim()}>
+        </IslandButton>
+        <IslandButton type="primary" htmlType="submit" disabled={busy || !name.trim()}>
           {busy ? "创建中…" : "确定"}
-        </button>
+        </IslandButton>
       </footer>
     </form>
   );
@@ -1032,7 +1103,7 @@ export function AutomationCreateForm({
     <form className="modal-form" onSubmit={submit}>
       <label>
         <span>要做的事</span>
-        <input
+        <IslandInput
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           placeholder="每天检查一下仓库有没有测试失败"
@@ -1050,12 +1121,12 @@ export function AutomationCreateForm({
       </label>
       {error ? <p className="error">{error}</p> : null}
       <footer className="modal-actions">
-        <button type="button" className="ghost" onClick={onCancel}>
+        <IslandButton type="default" onClick={onCancel}>
           取消
-        </button>
-        <button type="submit" disabled={busy || !prompt.trim()}>
+        </IslandButton>
+        <IslandButton type="primary" htmlType="submit" disabled={busy || !prompt.trim()}>
           {busy ? "创建中…" : "确定"}
-        </button>
+        </IslandButton>
       </footer>
     </form>
   );

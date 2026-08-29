@@ -3,8 +3,9 @@ import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { Ref } from "react";
 import { messageIsLive, shouldShowAssistantActions, shouldShowThinking } from "../../src/stream";
-import { initials as memberInitials } from "../project/helpers";
-import { IconCopy, IconThumbsDown, IconThumbsUp } from "../icons";
+import { Avatar } from "../Avatar";
+import { IconCopy } from "../icons";
+import { IslandCollapse } from "../island";
 import { ToolCard } from "../ToolCard";
 
 function isThought(message: TranscriptMessage): boolean {
@@ -41,16 +42,22 @@ export function ChatTranscript({
   activity,
   busy,
   user,
+  userAvatar,
+  neoAvatar,
   feedRef,
   onCopy,
+  thinkingHint,
 }: {
   current: Run;
   visible: TranscriptMessage[];
   activity: string | null;
   busy?: boolean;
   user: string;
+  userAvatar?: string | null;
+  neoAvatar?: string | null;
   feedRef: Ref<HTMLDivElement>;
   onCopy: (text: string) => void;
+  thinkingHint?: string;
 }) {
   let currentTurnStart = 0;
   for (let index = 0; index < visible.length; index += 1) {
@@ -63,7 +70,7 @@ export function ChatTranscript({
           <div className="chat-col">
             <div className="chat-bubble user">{current.prompt}</div>
           </div>
-          <span className="avatar">{memberInitials(user)}</span>
+          <Avatar src={userAvatar} label={user} />
         </article>
       ) : null}
       {visible.map((message, messageIndex) => {
@@ -72,11 +79,11 @@ export function ChatTranscript({
           return (
             <article key={message.id} className="msg-row user">
               <div className="chat-col">
-                {message.actorEmail ? <span className="chat-actor">{message.actorEmail}</span> : null}
-                <div className="chat-bubble user">
-                  {message.text || current.prompt}
-                  {message.createdAt ? <span className="chat-time">{formatAgo(message.createdAt)}</span> : null}
-                </div>
+                {message.actorEmail && message.actorEmail.toLowerCase() !== user.toLowerCase() ? (
+                  <span className="chat-actor">{message.actorEmail}</span>
+                ) : null}
+                <div className="chat-bubble user">{message.text || current.prompt}</div>
+                {message.createdAt ? <span className="chat-time">{formatAgo(message.createdAt)}</span> : null}
                 {message.images?.length ? (
                   <div className="thumbs">
                     {message.images.map((image, index) => (
@@ -85,51 +92,45 @@ export function ChatTranscript({
                   </div>
                 ) : null}
               </div>
-              <span className="avatar">{memberInitials(sender)}</span>
+              <Avatar
+                src={!message.actorEmail || message.actorEmail.toLowerCase() === user.toLowerCase() ? userAvatar : null}
+                label={sender}
+              />
             </article>
           );
         }
         if (isThought(message)) {
           return (
-            <details key={message.id} className="thought">
-              <summary>思考过程</summary>
-              <p>{message.text}</p>
-            </details>
+            <div key={message.id} className="thought">
+              <IslandCollapse question="思考过程" answer={<p>{message.text}</p>} />
+            </div>
           );
         }
         if (isStatus(message) || looksLikeCi(message.text)) {
           return (
-            <div key={message.id} className={`status-line${looksLikeCi(message.text) ? " ok" : ""}`}>
-              <span />
-              <p>{message.text}</p>
-            </div>
+            <p key={message.id} className="status-whisper">
+              {message.text}
+            </p>
           );
         }
         const groups = transcriptGroups(message);
         const showActions = shouldShowAssistantActions(visible, messageIndex, !busy);
         const live = Boolean(busy) && messageIndex >= currentTurnStart;
+        const ago = formatAgo(message.createdAt);
         const actions = showActions ? (
           <div className="assistant-actions">
             <button type="button" className="icon-btn" aria-label="复制" onClick={() => void onCopy(message.text)}>
               <IconCopy />
             </button>
-            <button type="button" className="icon-btn" aria-label="有用">
-              <IconThumbsUp />
-            </button>
-            <button type="button" className="icon-btn" aria-label="没用">
-              <IconThumbsDown />
-            </button>
-            <span className="ago">{formatAgo(message.createdAt)}</span>
+            {ago ? <span className="ago">{ago}</span> : null}
           </div>
         ) : null;
         const brand = (
           <div className="chat-brand">
-            <span className="avatar neo-avatar" aria-hidden="true">
-              N
-            </span>
+            <Avatar src={neoAvatar} label="Neo" fallback="N" className="neo-avatar" />
             <div className="chat-brand-copy">
               <strong>Neo</strong>
-              <span>{live ? activity || "进行中" : `已完成${formatAgo(message.createdAt) ? ` ${formatAgo(message.createdAt)}` : ""}`}</span>
+              <span>{live ? activity || "进行中" : "已完成"}</span>
             </div>
           </div>
         );
@@ -169,12 +170,14 @@ export function ChatTranscript({
       })}
       {shouldShowThinking(Boolean(busy), visible) ? (
         <div className="turn-progress">
-          <span className="think-dots" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span>{activity || "正在思考…"}</span>
+          {thinkingHint ? null : (
+            <span className="think-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
+          <span>{thinkingHint || activity || "正在思考…"}</span>
         </div>
       ) : null}
     </div>

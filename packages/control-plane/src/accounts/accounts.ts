@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { getConfig } from "../config.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { accountStoreKind, getAccountStore } from "./store.js";
+import { AvatarError, parseAvatarInput } from "./avatars.js";
 import { isValidLogin, normalizeEmail, toPublicUser, type PublicUser, type SessionRecord } from "./types.js";
 
 export const DEFAULT_ADMIN_LOGIN = "admin";
@@ -157,6 +158,27 @@ export async function findPublicUserById(id: string): Promise<PublicUser | null>
 export async function listPublicUsers(): Promise<PublicUser[]> {
   const users = await getAccountStore().listUsers();
   return users.map(toPublicUser);
+}
+
+export async function patchUserAvatars(
+  userId: string,
+  input: { avatar?: unknown; neoAvatar?: unknown },
+): Promise<PublicUser> {
+  try {
+    const user = await getAccountStore().updateUserAvatars(userId, {
+      avatar: parseAvatarInput(input.avatar),
+      neoAvatar: parseAvatarInput(input.neoAvatar),
+    });
+    return toPublicUser(user);
+  } catch (error) {
+    if (error instanceof AvatarError) {
+      throw new AccountError(error.message, 400);
+    }
+    if (error instanceof Error && error.message === "user not found") {
+      throw new AccountError("unauthorized", 401);
+    }
+    throw error;
+  }
 }
 
 export async function lookupSession(token: string): Promise<{ user: PublicUser; session: SessionRecord } | null> {

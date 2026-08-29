@@ -13,7 +13,13 @@ import type {
   RunEvent,
 } from "@neo-cloud-agent/contracts";
 import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
-import type { SessionRecord, UserRecord } from "../accounts/types.js";
+import {
+  applyAvatarPatch,
+  parseStoredAvatar,
+  serializeStoredAvatar,
+  type SessionRecord,
+  type UserRecord,
+} from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
 
@@ -25,7 +31,9 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(191) UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   org_id VARCHAR(191) NOT NULL,
-  created_at DATETIME(3) NOT NULL
+  created_at DATETIME(3) NOT NULL,
+  avatar_json MEDIUMTEXT NULL,
+  neo_avatar_json MEDIUMTEXT NULL
 );
 CREATE TABLE IF NOT EXISTS sessions (
   id VARCHAR(191) PRIMARY KEY,
@@ -243,12 +251,14 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "CREATE INDEX events_run_seq ON events (run_id, seq)",
         "CREATE INDEX builds_fingerprint ON builds (fingerprint)",
         "CREATE INDEX runs_updated_at ON runs (updated_at)",
+        "ALTER TABLE users ADD COLUMN avatar_json MEDIUMTEXT NULL",
+        "ALTER TABLE users ADD COLUMN neo_avatar_json MEDIUMTEXT NULL",
       ]) {
         try {
           await query(statement);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (!/duplicate key name|already exists/i.test(message)) {
+          if (!/duplicate key name|already exists|duplicate column/i.test(message)) {
             throw error;
           }
         }
@@ -479,26 +489,43 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async findUserByEmail(email) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at FROM users WHERE email = ?`,
+        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE email = ?`,
         [email],
       );
       return mapUser(result.rows[0]);
     },
     async findUserById(id) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at FROM users WHERE id = ?`,
+        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
         [id],
       );
       return mapUser(result.rows[0]);
     },
     async listUsers() {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at FROM users ORDER BY created_at ASC`,
+        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
       );
       return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
     },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = ? WHERE id = ?`, [passwordHash, userId]);
+    },
+    async updateUserAvatars(userId, patch) {
+      const result = await query(
+        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
+        [userId],
+      );
+      const user = mapUser(result.rows[0]);
+      if (!user) {
+        throw new Error("user not found");
+      }
+      const next = applyAvatarPatch(user, patch);
+      await query(`UPDATE users SET avatar_json = ?, neo_avatar_json = ? WHERE id = ?`, [
+        serializeStoredAvatar(next.avatar),
+        serializeStoredAvatar(next.neoAvatar),
+        userId,
+      ]);
+      return next;
     },
     async createSession(session) {
       await query(
@@ -541,6 +568,8 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
     passwordHash: String(row.password_hash),
     orgId: String(row.org_id),
     createdAt: toIso(row.created_at),
+    avatar: parseStoredAvatar(row.avatar_json),
+    neoAvatar: parseStoredAvatar(row.neo_avatar_json),
   };
 }
 

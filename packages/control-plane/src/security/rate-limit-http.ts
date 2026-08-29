@@ -21,7 +21,7 @@ import {
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization",
-  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
   "access-control-expose-headers":
     "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Policy",
 } as const;

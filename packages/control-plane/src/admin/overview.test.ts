@@ -59,9 +59,9 @@ test("isAdminLogin treats admin, ADMIN_EMAILS, and service tokens as platform ad
 
 test("admin user rows sort by utilization and never expose password hashes", () => {
   const users = [
-    { id: "u-ada", email: "ada@example.com", orgId: "org_local", createdAt: "2026-08-01T00:00:00.000Z" },
-    { id: "u-admin", email: "admin", orgId: "org_local", createdAt: "2026-08-01T00:00:00.000Z" },
-    { id: "u-idle", email: "idle", orgId: "org_local", createdAt: "2026-08-02T00:00:00.000Z" },
+    { id: "u-ada", email: "ada@example.com", orgId: "org_local", createdAt: "2026-08-01T00:00:00.000Z", avatar: null, neoAvatar: null },
+    { id: "u-admin", email: "admin", orgId: "org_local", createdAt: "2026-08-01T00:00:00.000Z", avatar: null, neoAvatar: null },
+    { id: "u-idle", email: "idle", orgId: "org_local", createdAt: "2026-08-02T00:00:00.000Z", avatar: null, neoAvatar: null },
   ];
   const now = new Date("2026-08-25T12:00:00.000Z");
   const rows = buildAdminUserRows(

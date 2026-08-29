@@ -652,20 +652,20 @@ function releaseSleepBlockerIfIdle(): void {
  * Both paths land here: the user sending from this window, and a run dispatched
  * from somewhere else. The only difference is who asked.
  */
-async function startAssignment(assignment: DeskAssignment, folderHint?: string): Promise<void> {
+async function startAssignment(assignment: DeskAssignment, folderHint?: string): Promise<boolean> {
   const runId = assignment.runId;
   if (hasLocalRun(runId)) {
-    return;
+    return true;
   }
   const target = resolveRunFolder(assignment, folderHint);
   if ("reason" in target) {
     await failRun(runId, target.reason);
-    return;
+    return false;
   }
   const slot = await reserveLocalSlot(runId, target.folder);
   if ("reason" in slot) {
     await failRun(runId, slot.reason);
-    return;
+    return false;
   }
   reportRunStatus({ runId, state: "starting", workspace: target.folder, notice: slot.notice });
   let child: ChildProcess | undefined;
@@ -694,6 +694,7 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
     await leaseClient().claim({ deskId, deskToken, runId, workspaceDir, pid: child.pid ?? undefined });
     runLog.info("worker claimed", { runId, folder: workspaceDir });
     reportRunStatus({ runId, state: "running", workspace: workspaceDir });
+    return true;
   } catch (error) {
     if (child && !child.killed) {
       child.kill("SIGTERM");
@@ -701,6 +702,7 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
     localRuns.delete(runId);
     runLog.error("local start failed", error, { runId, folder: target.folder });
     await failRun(runId, errorText(error, "本机启动失败"));
+    return false;
   }
 }
 
@@ -1072,8 +1074,7 @@ function wireIpc(): void {
     return prefs();
   });
   ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment, folder?: string) => {
-    await withStartingHere(assignment.runId, () => startAssignment(assignment, folder));
-    return true;
+    return withStartingHere(assignment.runId, () => startAssignment(assignment, folder));
   });
   ipcMain.handle("desk:takeAssignment", async (_event, runId?: string, folder?: string) => {
     return withStartingHere(runId, async () => {

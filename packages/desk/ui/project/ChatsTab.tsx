@@ -1,5 +1,7 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { IconCloud, IconComputer } from "../icons";
+import { isRemoteControlRun } from "../desk";
+import { IslandButton, IslandTag } from "../island";
 import { formatRel } from "./helpers";
 
 function statusDot(status: string): string {
@@ -22,9 +24,9 @@ export function ChatsTab({
     <div className="workbench-stack">
       <div className="workbench-row">
         <p className="hint">只显示你自己的本机对话、你发起的云端对话，以及你被邀请进的协作对话。</p>
-        <button type="button" className="ghost" onClick={onStartChat}>
+        <IslandButton type="default" onClick={onStartChat}>
           新对话
-        </button>
+        </IslandButton>
       </div>
       {runs.length === 0 ? (
         <div className="workbench-empty">
@@ -44,8 +46,10 @@ export function ChatsTab({
                   <span className="task-copy">
                     <strong>{(item.prompt || "对话").replace(/\s+/g, " ").slice(0, 72)}</strong>
                     <span className="task-tags">
-                      <em>{cloud ? "云端" : "本机"}</em>
-                      {item.assigneeUserId ? <em>有房主</em> : null}
+                      <span className="chat-place">
+                        {cloud ? "cloud" : isRemoteControlRun(item) ? "remote" : "local"}
+                      </span>
+                      {item.assigneeUserId ? <IslandTag color="brown">有房主</IslandTag> : null}
                     </span>
                   </span>
                   <span className={`status-dot ${statusDot(item.status)}`} title={item.status} />

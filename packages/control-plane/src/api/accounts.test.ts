@@ -79,6 +79,32 @@ test("registration is disabled and only admin/123456 can log in", async (t) => {
   const me = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${session.token}` } });
   assert.equal(((await me.json()) as { user: { email: string } }).user.email, "admin");
 
+  const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const patched = await fetch(`${base}/v1/me`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({ avatar: pixel, neoAvatar: pixel }),
+  });
+  assert.equal(patched.status, 200);
+  const saved = (await patched.json()) as { user: { avatar: string | null; neoAvatar: string | null } };
+  assert.equal(saved.user.avatar, pixel);
+  assert.equal(saved.user.neoAvatar, pixel);
+
+  const reread = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${session.token}` } });
+  const again = (await reread.json()) as { user: { avatar: string | null; neoAvatar: string | null } };
+  assert.equal(again.user.avatar, pixel);
+  assert.equal(again.user.neoAvatar, pixel);
+
+  const cleared = await fetch(`${base}/v1/me`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({ avatar: null, neoAvatar: null }),
+  });
+  assert.equal(cleared.status, 200);
+  const empty = (await cleared.json()) as { user: { avatar: string | null; neoAvatar: string | null } };
+  assert.equal(empty.user.avatar, null);
+  assert.equal(empty.user.neoAvatar, null);
+
   const health = (await (await fetch(`${base}/health`)).json()) as {
     bootstrapLogin: boolean;
     defaultAdmin: boolean;

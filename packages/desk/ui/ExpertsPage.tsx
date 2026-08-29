@@ -2,6 +2,7 @@ import { canEditExpert, expertPickerLabel, expertVisibilityLabel, type Expert, t
 import { useEffect, useMemo, useState } from "react";
 import { api, readJson } from "./api";
 import { IconPlus } from "./icons";
+import { IslandButton, IslandInput } from "./island";
 import { Modal, Page } from "./pages";
 
 type Draft = {
@@ -113,9 +114,8 @@ export function ExpertsPage({
           <h1>专家</h1>
           <p>换角色干活。选专家或专家团后再开对话，一次只绑一个。</p>
         </div>
-        <button
-          type="button"
-          className="dash-create"
+        <IslandButton
+          type="primary"
           onClick={() => {
             setDraft(emptyDraft());
             setCreating(true);
@@ -123,7 +123,7 @@ export function ExpertsPage({
         >
           <IconPlus size={16} />
           新建专家
-        </button>
+        </IslandButton>
       </header>
       <div className="page-body expert-page-body">
         <ExpertGroup title="内置专家" items={bundled} userId={userId} onSummon={onSummon} onEdit={openEdit} />
@@ -141,9 +141,9 @@ export function ExpertsPage({
                   <p>{item.description}</p>
                 </div>
                 <div className="card-actions">
-                  <button type="button" onClick={() => onSummon({ expertTeamId: item.id, name: item.name })}>
+                  <IslandButton type="text" onClick={() => onSummon({ expertTeamId: item.id, name: item.name })}>
                     召唤
-                  </button>
+                  </IslandButton>
                 </div>
               </li>
             ))}
@@ -168,11 +168,11 @@ export function ExpertsPage({
           >
             <label>
               <span>名称</span>
-              <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required />
+              <IslandInput value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required />
             </label>
             <label>
               <span>简介</span>
-              <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} required />
+              <IslandInput value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} required />
             </label>
             <label>
               <span>人设</span>
@@ -188,13 +188,13 @@ export function ExpertsPage({
             </label>
             <div className="modal-actions">
               {editing && canEditExpert(editing, { userId }) ? (
-                <button type="button" className="ghost" disabled={busy} onClick={() => void remove(editing)}>
+                <IslandButton type="primary" danger disabled={busy} onClick={() => void remove(editing)}>
                   删除
-                </button>
+                </IslandButton>
               ) : null}
-              <button type="submit" className="dash-create" disabled={busy}>
+              <IslandButton type="primary" htmlType="submit" disabled={busy}>
                 {busy ? "保存中…" : "保存"}
-              </button>
+              </IslandButton>
             </div>
           </form>
         </Modal>
@@ -234,18 +234,18 @@ function ExpertGroup({
                 </p>
               </div>
               <div className="card-actions">
-                <button type="button" onClick={() => onSummon({ expertId: item.id, name: item.name })}>
+                <IslandButton type="text" onClick={() => onSummon({ expertId: item.id, name: item.name })}>
                   召唤
-                </button>
+                </IslandButton>
                 {canEditExpert(item, { userId }) ? (
-                  <button
-                    type="button"
+                  <IslandButton
+                    type="default"
                     onClick={() => {
                       onEdit(item);
                     }}
                   >
                     编辑
-                  </button>
+                  </IslandButton>
                 ) : null}
               </div>
             </li>

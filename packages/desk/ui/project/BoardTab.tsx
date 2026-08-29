@@ -3,6 +3,7 @@ import type { ProjectTodo, TodoStatus } from "@neo-cloud-agent/contracts/project
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, readJson } from "../api";
 import { IconPlus, IconSearch } from "../icons";
+import { IslandButton } from "../island";
 import { displayName, formatRel, initials } from "./helpers";
 
 const COLUMNS: Array<{ id: TodoStatus; label: string }> = [
@@ -156,9 +157,9 @@ export function BoardTab({
         }}
       >
         <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="新任务标题" />
-        <button type="submit" className="ghost" disabled={!title.trim()}>
+        <IslandButton type="default" htmlType="submit" disabled={!title.trim()}>
           新建
-        </button>
+        </IslandButton>
       </form>
 
       {view === "list" ? (
@@ -254,12 +255,12 @@ export function BoardTab({
           ) : null}
           {open.runId ? <p className="hint">已关联对话 {open.runId.slice(0, 8)}</p> : null}
           <div className="card-actions">
-            <button type="button" className="dash-create" onClick={() => onStartChat(open.id, open.title)}>
+            <IslandButton type="primary" onClick={() => onStartChat(open.id, open.title)}>
               在这条任务上开对话
-            </button>
-            <button type="button" className="ghost" onClick={() => setOpenId(null)}>
+            </IslandButton>
+            <IslandButton type="default" onClick={() => setOpenId(null)}>
               关闭
-            </button>
+            </IslandButton>
           </div>
         </aside>
       ) : null}
@@ -278,10 +279,12 @@ export function BoardTab({
             >
               <textarea value={pauseReason} onChange={(event) => setPauseReason(event.target.value)} required />
               <footer className="modal-actions">
-                <button type="button" className="ghost" onClick={() => setPauseFor(null)}>
+                <IslandButton type="default" onClick={() => setPauseFor(null)}>
                   取消
-                </button>
-                <button type="submit">暂停</button>
+                </IslandButton>
+                <IslandButton type="primary" htmlType="submit">
+                  暂停
+                </IslandButton>
               </footer>
             </form>
           </div>

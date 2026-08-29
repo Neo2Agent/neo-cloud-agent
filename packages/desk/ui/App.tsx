@@ -5,7 +5,7 @@ import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ExecutionTarget, Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Tooltip } from "@neo-cloud-agent/ui";
 import { createPortal } from "react-dom";
 import { api, persistSessionToken, readJson } from "./api";
@@ -40,12 +40,26 @@ import {
   runIdFromDeepLink,
   runIdFromHash,
 } from "../src/protocol";
+import { Avatar } from "./Avatar";
+import { compressAvatarFile } from "./avatar-file";
 import { ExpertsPage } from "./ExpertsPage";
+import { IslandButton, IslandCard, IslandInput, IslandTag, IslandTitle } from "./island";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
+import {
+  PANEL_W_DEFAULT,
+  PANEL_W_KEY,
+  PANEL_W_MIN,
+  RAIL_W_DEFAULT,
+  RAIL_W_KEY,
+  RAIL_W_MAX,
+  RAIL_W_MIN,
+  panelWidthMax,
+  useSplitWidth,
+} from "./split";
+import { LocalRunMeta } from "./chat/LocalRunMeta";
 import { PersonalChatPage } from "./chat/PersonalChatPage";
 import { localRunView, otherRunningLocalRuns, runningLocalRunIds } from "./chat/local-run-view";
 import { RailSessions } from "./chat/RailSessions";
-import { initials } from "./project/helpers";
 import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
@@ -86,13 +100,15 @@ import {
   type ScheduleKind,
   type SearchFilter,
 } from "./pages";
+import { useDismissOnOutside } from "./dismiss";
 import {
   IconAutomations,
   IconBack,
-  IconComputer,
+  IconBell,
   IconExperts,
   IconForward,
   IconGear,
+  IconLogOut,
   IconNewChat,
   IconPanelRight,
   IconProjects,
@@ -121,15 +137,6 @@ function workbenchTabForInbox(kind?: string): WorkbenchTab {
 
 function preview(text: string, n = 56): string {
   return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
-}
-
-/** Compare folder paths without caring about a trailing separator. */
-function path0(value: string): string {
-  return (value || "").replace(/[\\/]+$/, "");
-}
-
-function folderName(value: string): string {
-  return path0(value).split(/[\\/]/).pop() || value;
 }
 
 function repoLabel(url?: string): string {
@@ -167,6 +174,12 @@ function isCloudRun(run?: Run | null): boolean {
 
 const TURN_IDLE_GRACE_MS = 600;
 
+function homeGreeting(now = new Date()): { hello: string; ask: string } {
+  const hour = now.getHours();
+  const hello = hour < 5 || hour >= 18 ? "晚上好" : hour < 12 ? "早上好" : "下午好";
+  return { hello, ask: "今天想做点什么" };
+}
+
 function diffStats(text: string): { added: number; removed: number } {
   let added = 0;
   let removed = 0;
@@ -187,9 +200,14 @@ export function App() {
   const [authed, setAuthed] = useState(false);
   const [user, setUser] = useState("");
   const [userId, setUserId] = useState("");
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
+  const [neoAvatar, setNeoAvatar] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [pendingTodo, setPendingTodo] = useState<{ id: string; title: string } | null>(null);
   const [inboxOpen, setInboxOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxRow[]>([]);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("board");
   const [chatToolsOpen, setChatToolsOpen] = useState(false);
@@ -265,6 +283,7 @@ export function App() {
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const inboxRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const canRunLocal = Boolean(deskBridge()?.canRunLocal);
   const apiBase = deskBridge()?.apiBase || "";
@@ -511,9 +530,13 @@ export function App() {
   const finishLogin = useCallback(async () => {
     const me = await api(tokenRef.current, "/v1/me");
     if (!me.ok) throw new Error("unauthorized");
-    const body = await readJson<{ user?: { id?: string; email?: string; username?: string } }>(me);
+    const body = await readJson<{
+      user?: { id?: string; email?: string; username?: string; avatar?: string | null; neoAvatar?: string | null };
+    }>(me);
     setUser(body.user?.username || body.user?.email || "desk");
     setUserId(body.user?.id || "");
+    setUserAvatar(body.user?.avatar ?? null);
+    setNeoAvatar(body.user?.neoAvatar ?? null);
     setAuthed(true);
     const desk = deskBridge();
     if (desk) {
@@ -631,7 +654,10 @@ export function App() {
     const response = await api(tokenRef.current, `/v1/runs/${id}/desk-start`, { method: "POST" });
     const body = await readJson<{ assignment?: DeskAssignment; error?: string }>(response);
     if (response.ok && body.assignment) {
-      await start(body.assignment, runFolder);
+      const started = await start(body.assignment, runFolder);
+      if (!started) {
+        setAuthError("本机没有拉起这条对话的进程，点「在这台电脑上继续」再试。");
+      }
       return;
     }
     if (await bridge?.takeAssignment?.(id, runFolder).then((taken) => taken?.started)) {
@@ -769,10 +795,14 @@ export function App() {
         await openRun(created.id, { keepPending: true });
         return;
       }
-      await api(token, `/v1/runs/${runId}/follow-ups`, {
+      const follow = await api(token, `/v1/runs/${runId}/follow-ups`, {
         method: "POST",
         body: JSON.stringify({ text: pending.text }),
       });
+      const followBody = await readJson<{ error?: string }>(follow);
+      if (!follow.ok) {
+        throw new Error(followBody.error || "发送失败");
+      }
       setQueueEpoch((cur) => cur + 1);
       if (current?.executionTarget?.loop === "desk" && localStatuses[runId]?.state !== "running") {
         await resumeLocalRun(runId, current?.executionTarget, localRunFolder(current));
@@ -872,6 +902,8 @@ export function App() {
         setSearchOpen(false);
         setModelMenu(false);
         setContextOpen(null);
+        setInboxOpen(false);
+        setAccountOpen(false);
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "w") {
         if (!runId) return;
@@ -1115,6 +1147,8 @@ export function App() {
     setSearchOpen(false);
     setModelMenu(false);
     setContextOpen(null);
+    setAccountOpen(false);
+    setInboxOpen(false);
     setNav("chats");
     lastEventIdRef.current = null;
     closeStream();
@@ -1222,11 +1256,59 @@ export function App() {
     }
   };
 
+  const saveAvatars = async (patch: { avatar?: string | null; neoAvatar?: string | null }) => {
+    setAvatarBusy(true);
+    setAvatarError("");
+    try {
+      const response = await api(token, "/v1/me", {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      const body = await readJson<{ user?: { avatar?: string | null; neoAvatar?: string | null }; error?: string }>(response);
+      if (!response.ok) throw new Error(body.error || "保存失败");
+      if (patch.avatar !== undefined) setUserAvatar(body.user?.avatar ?? null);
+      if (patch.neoAvatar !== undefined) setNeoAvatar(body.user?.neoAvatar ?? null);
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const pickAvatar = (kind: "avatar" | "neoAvatar", file: File) => {
+    void compressAvatarFile(file)
+      .then((dataUrl) => saveAvatars({ [kind]: dataUrl }))
+      .catch((error: unknown) => {
+        setAvatarError(error instanceof Error ? error.message : "无法处理图片");
+      });
+  };
+
   const openSettings = (section: SettingsSection = "basics") => {
     setSearchOpen(false);
     setModelMenu(false);
+    setContextOpen(null);
+    setInboxOpen(false);
+    setAccountOpen(false);
     setSettingsSection(section);
     setNav("settings");
+  };
+
+  const logout = () => {
+    closeStream();
+    persist("");
+    setAuthed(false);
+    setUser("");
+    setUserId("");
+    setUserAvatar(null);
+    setNeoAvatar(null);
+    setAvatarError("");
+    setCurrent(null);
+    setRunId(null);
+    runIdRef.current = null;
+    setMessages([]);
+    setAccountOpen(false);
+    setInboxOpen(false);
+    setNav("chats");
   };
 
   const modelNames = useMemo(() => {
@@ -1248,6 +1330,25 @@ export function App() {
   const localFolder = current ? localRun.folder : panelIsLocal ? folder : "";
   const runningRunIds = useMemo(() => runningLocalRunIds(localStatuses), [localStatuses]);
   const otherLocalRunCount = otherRunningLocalRuns(localStatuses, current?.id);
+  const greet = homeGreeting();
+  const greetLine = `${greet.hello}，${greet.ask}`;
+  const railSplit = useSplitWidth({
+    key: RAIL_W_KEY,
+    fallback: RAIL_W_DEFAULT,
+    min: RAIL_W_MIN,
+    max: RAIL_W_MAX,
+  });
+  const panelSplit = useSplitWidth({
+    key: PANEL_W_KEY,
+    fallback: PANEL_W_DEFAULT,
+    min: PANEL_W_MIN,
+    max: panelWidthMax,
+    invert: true,
+  });
+  useDismissOnOutside(inboxOpen || accountOpen, () => {
+    setInboxOpen(false);
+    setAccountOpen(false);
+  }, inboxRef);
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1255,6 +1356,41 @@ export function App() {
       void send();
     }
   };
+
+  const headerPanelSlot = (
+    <span className="panel-toggle-slot">
+      {!panelOpen ? (
+        <Tooltip content="Files / Terminal" side="left">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="打开右侧栏"
+            onClick={() => {
+              setPanelOpen(true);
+            }}
+          >
+            <IconPanelRight size={15} />
+          </button>
+        </Tooltip>
+      ) : null}
+    </span>
+  );
+  const homePanelToggle = !panelOpen ? (
+    <Tooltip content="Files / Terminal" side="left">
+      <span className="panel-toggle-wrap">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="打开右侧栏"
+          onClick={() => {
+            setPanelOpen(true);
+          }}
+        >
+          <IconPanelRight size={15} />
+        </button>
+      </span>
+    </Tooltip>
+  ) : null;
 
   const copyText = async (text: string) => {
     try {
@@ -1269,40 +1405,57 @@ export function App() {
   if (!authed) {
     return (
       <div className="login-shell">
-        <form
-          className="login-card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void login();
-          }}
-        >
-          <p className="login-kicker">Neo Desk</p>
-          <h1>Sign in</h1>
-          <p>表单故意留空。默认账号是 admin / 123456，和 Web 同一控制面。</p>
-          <label>
-            Username
-            <input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-            />
-          </label>
-          {authError ? <p className="error">{authError}</p> : null}
-          <button type="submit" disabled={authBusy}>
-            {authBusy ? "Signing in…" : "Continue"}
-          </button>
-        </form>
+        <div className="login-scene">
+          <IslandTitle color="app-teal" size="large">
+            Neo Desk
+          </IslandTitle>
+          <IslandCard className="login-card">
+            <form
+              className="login-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void login();
+              }}
+            >
+              <h1>欢迎回来</h1>
+              <p className="login-hint">默认账号 admin / 123456</p>
+              <label>
+                Username
+                <IslandInput value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
+              </label>
+              <label>
+                Password
+                <IslandInput
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="current-password"
+                />
+              </label>
+              {authError ? <p className="error">{authError}</p> : null}
+              <IslandButton
+                type="primary"
+                htmlType="submit"
+                block
+                className="login-continue"
+                loading={authBusy}
+                disabled={authBusy}
+              >
+                {authBusy ? "Signing in…" : "Continue"}
+              </IslandButton>
+            </form>
+          </IslandCard>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="agents-app" data-nav={nav}>
+    <div
+      className="agents-app"
+      data-nav={nav}
+      style={{ "--rail-w": `${railSplit.width}px`, "--panel-w": `${panelSplit.width}px` } as CSSProperties}
+    >
       <aside className="rail">
         <div className="rail-history">
           <Tooltip content="后退">
@@ -1346,12 +1499,9 @@ export function App() {
         </div>
 
         <nav className="rail-nav">
-          <button type="button" className={`rail-item${nav === "chats" ? " on" : ""}`} onClick={newChat}>
-            <span className="rail-icon">
-              <IconNewChat />
-            </span>
+          <IslandButton type="primary" block className="rail-new-chat" icon={<IconNewChat />} onClick={newChat}>
             New Chat
-          </button>
+          </IslandButton>
           <button
             type="button"
             className="rail-item"
@@ -1454,28 +1604,69 @@ export function App() {
           />
         </div>
 
-        <div className="rail-foot">
+        <div className="rail-foot" ref={inboxRef}>
           <div className="profile">
             <button
               type="button"
-              className="avatar inbox-avatar"
-              aria-label="收件箱"
+              className={`profile-who${accountOpen ? " on" : ""}`}
+              aria-label="账户菜单"
+              aria-expanded={accountOpen}
               onClick={() => {
-                setInboxOpen((cur) => !cur);
-                void refreshInbox();
+                setAccountOpen((cur) => !cur);
+                setInboxOpen(false);
+                setModelMenu(false);
+                setContextOpen(null);
               }}
             >
-              {initials(user)}
-              {inboxItems.some((item) => !item.read) ? <i className="inbox-dot" /> : null}
+              <Avatar src={userAvatar} label={user} />
+              <span className="profile-name">{user}</span>
+              {remoteApiHost ? <IslandTag color="app-teal">生产</IslandTag> : null}
             </button>
-            <span className="profile-name">{user}</span>
-            {remoteApiHost ? <span className="prod-tag">生产</span> : null}
-            <Tooltip content="设置" side="top">
-              <button type="button" className="icon-btn" aria-label="Settings" onClick={() => openSettings()}>
-                <IconGear />
-              </button>
-            </Tooltip>
+            <div className="profile-tools">
+              <Tooltip content="收件箱" side="top">
+                <button
+                  type="button"
+                  className={`icon-btn inbox-avatar${inboxOpen ? " on" : ""}`}
+                  aria-label="收件箱"
+                  aria-expanded={inboxOpen}
+                  onClick={() => {
+                    setInboxOpen((cur) => !cur);
+                    setAccountOpen(false);
+                    setModelMenu(false);
+                    setContextOpen(null);
+                    void refreshInbox();
+                  }}
+                >
+                  <IconBell size={15} />
+                  {inboxItems.some((item) => !item.read) ? <i className="inbox-dot" /> : null}
+                </button>
+              </Tooltip>
+              <Tooltip content="设置" side="top">
+                <button type="button" className="icon-btn" aria-label="Settings" onClick={() => openSettings()}>
+                  <IconGear />
+                </button>
+              </Tooltip>
+            </div>
           </div>
+          {accountOpen ? (
+            <div className="account-pop" role="menu" aria-label="账户">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setAccountOpen(false);
+                  openSettings();
+                }}
+              >
+                <IconGear size={15} />
+                Settings
+              </button>
+              <button type="button" role="menuitem" onClick={logout}>
+                <IconLogOut size={15} />
+                Log out
+              </button>
+            </div>
+          ) : null}
           {inboxOpen ? (
             <div className="inbox-pop">
               <p className="palette-label">收件箱</p>
@@ -1502,24 +1693,15 @@ export function App() {
           ) : null}
         </div>
       </aside>
+      <button
+        type="button"
+        className={`split-bar rail-split${railSplit.dragging ? " is-dragging" : ""}`}
+        aria-label="调整左侧栏宽度"
+        {...railSplit.bind}
+      />
 
       <main className="stage">
-        {panelOpen ? null : (
-          <Tooltip content="Files / Terminal" side="left">
-            <span className="panel-toggle-wrap">
-              <button
-                type="button"
-                className="panel-toggle"
-                aria-label="打开右侧栏"
-                onClick={() => {
-                  setPanelOpen(true);
-                }}
-              >
-                <IconPanelRight size={15} />
-              </button>
-            </span>
-          </Tooltip>
-        )}
+        {nav === "chats" && !current ? homePanelToggle : null}
         <div className="stage-col" key={nav}>
         {nav === "automations" ? (
           <AutomationsPage
@@ -1604,6 +1786,13 @@ export function App() {
             section={settingsSection}
             onSection={setSettingsSection}
             maxLocalRuns={maxLocalRuns}
+            user={user}
+            userAvatar={userAvatar}
+            neoAvatar={neoAvatar}
+            avatarBusy={avatarBusy}
+            avatarError={avatarError || undefined}
+            onPickAvatar={pickAvatar}
+            onClearAvatar={(kind) => void saveAvatars({ [kind]: null })}
             onMaxLocalRuns={(value) => {
               const next = normalizeMaxLocalRuns(value);
               setMaxLocalRuns(next);
@@ -1628,35 +1817,6 @@ export function App() {
             }`}
           >
             <div className="chat-stage">
-            {localRun.isLocal ? (
-              <div className="local-bar">
-                <IconComputer size={13} />
-                <span>{localRunLabel(current)} · {folderName(localFolder)}</span>
-                {localRun.status?.state === "starting" ? <em>正在启动…</em> : null}
-                {localRun.status?.state === "running" ? <em className="ok">已在这台电脑上运行</em> : null}
-                {localRun.status?.state === "failed" ? (
-                  <em className="bad">{localRun.status.detail || "启动失败"}</em>
-                ) : null}
-                {/* A worker exits after its turn, so "no process" is the resting
-                    state, not something to recover from. */}
-                {localRun.idle ? <em>本机就绪 · 发送即在这里继续</em> : null}
-                {localRun.needsRestart ? (
-                  <button
-                    type="button"
-                    className="ghost"
-                    title="重新在这台电脑上拉起这条对话的 Agent 进程"
-                    onClick={() =>
-                      current && void resumeLocalRun(current.id, current.executionTarget, localRun.folder)
-                    }
-                  >
-                    在这台电脑上继续
-                  </button>
-                ) : null}
-                {otherLocalRunCount > 0 ? (
-                  <em title="另外这些对话也在这台电脑上改文件">另有 {otherLocalRunCount} 条在本机跑</em>
-                ) : null}
-              </div>
-            ) : null}
             {current?.projectId ? (
               <ProjectChatPage
                 title={title}
@@ -1665,6 +1825,8 @@ export function App() {
                 token={token}
                 userId={userId}
                 user={user}
+                userAvatar={userAvatar}
+                neoAvatar={neoAvatar}
                 toolsOpen={chatToolsOpen}
                 visible={visible}
                 activity={activity}
@@ -1692,6 +1854,18 @@ export function App() {
                 }}
                 onCopy={(text) => void copyText(text)}
                 queueEpoch={queueEpoch}
+                thinkingHint={
+                  localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
+                }
+                headerMeta={
+                  <LocalRunMeta
+                    view={localRun}
+                    placeLabel={localRunLabel(current)}
+                    otherCount={otherLocalRunCount}
+                    onResume={() => void resumeLocalRun(current.id, current.executionTarget, localRun.folder)}
+                  />
+                }
+                headerEnd={headerPanelSlot}
               />
             ) : current ? (
               <PersonalChatPage
@@ -1701,46 +1875,26 @@ export function App() {
                 activity={activity}
                 busy={busy}
                 user={user}
+                userAvatar={userAvatar}
+                neoAvatar={neoAvatar}
                 feedRef={feedRef}
                 onCopy={(text) => void copyText(text)}
+                thinkingHint={
+                  localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
+                }
+                headerMeta={
+                  <LocalRunMeta
+                    view={localRun}
+                    placeLabel={localRunLabel(current)}
+                    otherCount={otherLocalRunCount}
+                    onResume={() => void resumeLocalRun(current.id, current.executionTarget, localRun.folder)}
+                  />
+                }
+                headerEnd={headerPanelSlot}
               />
             ) : null}
 
             <footer className={`composer-wrap${current ? "" : " home-wrap"}`}>
-              {current ? null : (
-                <ContextBar
-                  workspaces={workspaces}
-                  folder={folder}
-                  onWorkspace={(picked) => {
-                    setFolder(picked.folder);
-                    applyTarget({
-                      kind: isLocalDeskKind(target.kind) ? target.kind : TARGET_DESK,
-                      folder: picked.folder,
-                      workspaceId: picked.id,
-                      deskId: target.deskId,
-                    });
-                  }}
-                  onClearFolder={() => {
-                    setFolder("");
-                    applyTarget({
-                      kind: TARGET_DESK,
-                      folder: "",
-                      workspaceId: undefined,
-                      deskId: target.deskId,
-                    });
-                  }}
-                  onPickFolder={(kind) => void pickLocalFolder(kind)}
-                  branch={branch || "main"}
-                  targetKind={target.kind}
-                  canRunLocal={canRunLocal}
-                  onTarget={(kind) =>
-                    applyTarget({ ...target, kind, folder: isLocalDeskKind(kind) ? folder : target.folder })
-                  }
-                  open={contextOpen}
-                  setOpen={setContextOpen}
-                  locked={false}
-                />
-              )}
               {current && diff && (diff.added > 0 || diff.removed > 0) ? (
                 <div className="chips">
                   <button type="button" className="chip">
@@ -1748,77 +1902,152 @@ export function App() {
                   </button>
                 </div>
               ) : null}
-              <ChatComposer
-                prompt={prompt}
-                setPrompt={setPrompt}
-                placeholder={
-                  hostLock.locked
-                    ? hostLock.hint
-                    : current?.projectId
-                      ? "今天帮你做些什么？@ 引用资产文件或项目待办"
-                      : current
-                        ? "今天帮你做些什么？@ 引用对话文件，/ 调用已有自动化"
-                        : "今天帮你做些什么？"
-                }
-                sending={sending}
-                locked={hostLock.locked}
-                models={modelNames}
-                selected={selectedModel}
-                menuOpen={modelMenu}
-                setMenuOpen={(next) => {
-                  setModelMenu(next);
-                  if (next) setContextOpen(null);
-                }}
-                onSelectModel={(name) => {
-                  setSelectedModel(name);
-                  setModelMenu(false);
-                }}
-                onAddModel={() => openSettings("models")}
-                onSubmit={() => void send()}
-                taRef={taRef}
-                onComposerKey={onComposerKey}
-                home={!current}
-                mentions={mentions}
-                experts={experts}
-                teams={teams}
-                expertValue={
-                  current
-                    ? encodeExpertPick({
-                        expertId: current.expertId ?? undefined,
-                        expertTeamId: current.expertTeamId ?? undefined,
-                      })
-                    : encodeExpertPick(expertPick)
-                }
-                expertLocked={Boolean(current)}
-                onExpert={(value) => setExpertPick(decodeExpertPick(value))}
-                onMention={(item) => {
-                  if (item.kind === "expert") setExpertPick({ expertId: item.id });
-                  if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
-                }}
-                waiting={turnLive}
-                onStop={current ? stopCurrentTurn : undefined}
-              />
               {current ? (
-                <p className="composer-note">
-                  {hostLock.locked
-                    ? hostLock.hint
-                    : current.projectId
-                      ? "内容由模型生成，请核实重要信息"
-                      : "内容由 AI 生成，请核实重要信息"}
-                </p>
-              ) : null}
+                <ChatComposer
+                  prompt={prompt}
+                  setPrompt={setPrompt}
+                  placeholder={
+                    hostLock.locked
+                      ? hostLock.hint
+                      : current.projectId
+                        ? `${greetLine}  @ 引用资产文件或项目待办`
+                        : `${greetLine}  @ 引用对话文件，/ 调用已有自动化`
+                  }
+                  sending={sending}
+                  locked={hostLock.locked}
+                  models={modelNames}
+                  selected={selectedModel}
+                  menuOpen={modelMenu}
+                  setMenuOpen={(next) => {
+                    setModelMenu(next);
+                    if (next) {
+                      setContextOpen(null);
+                      setInboxOpen(false);
+                    }
+                  }}
+                  onSelectModel={(name) => {
+                    setSelectedModel(name);
+                    setModelMenu(false);
+                  }}
+                  onAddModel={() => openSettings("models")}
+                  onSubmit={() => void send()}
+                  taRef={taRef}
+                  onComposerKey={onComposerKey}
+                  home={false}
+                  mentions={mentions}
+                  experts={experts}
+                  teams={teams}
+                  expertValue={encodeExpertPick({
+                    expertId: current.expertId ?? undefined,
+                    expertTeamId: current.expertTeamId ?? undefined,
+                  })}
+                  expertLocked
+                  onExpert={(value) => setExpertPick(decodeExpertPick(value))}
+                  onMention={(item) => {
+                    if (item.kind === "expert") setExpertPick({ expertId: item.id });
+                    if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
+                  }}
+                  waiting={turnLive}
+                  onStop={stopCurrentTurn}
+                />
+              ) : (
+                <div className="home-composer">
+                  <ContextBar
+                    workspaces={workspaces}
+                    folder={folder}
+                    onWorkspace={(picked) => {
+                      setFolder(picked.folder);
+                      applyTarget({
+                        kind: isLocalDeskKind(target.kind) ? target.kind : TARGET_DESK,
+                        folder: picked.folder,
+                        workspaceId: picked.id,
+                        deskId: target.deskId,
+                      });
+                    }}
+                    onClearFolder={() => {
+                      setFolder("");
+                      applyTarget({
+                        kind: TARGET_DESK,
+                        folder: "",
+                        workspaceId: undefined,
+                        deskId: target.deskId,
+                      });
+                    }}
+                    onPickFolder={(kind) => void pickLocalFolder(kind)}
+                    branch={branch || "main"}
+                    targetKind={target.kind}
+                    canRunLocal={canRunLocal}
+                    onTarget={(kind) =>
+                      applyTarget({ ...target, kind, folder: isLocalDeskKind(kind) ? folder : target.folder })
+                    }
+                    open={contextOpen}
+                    setOpen={(id) => {
+                      setContextOpen(id);
+                      if (id) {
+                        setModelMenu(false);
+                        setInboxOpen(false);
+                      }
+                    }}
+                    locked={false}
+                  />
+                  <ChatComposer
+                    prompt={prompt}
+                    setPrompt={setPrompt}
+                    placeholder={hostLock.locked ? hostLock.hint : greetLine}
+                    sending={sending}
+                    locked={hostLock.locked}
+                    models={modelNames}
+                    selected={selectedModel}
+                    menuOpen={modelMenu}
+                    setMenuOpen={(next) => {
+                      setModelMenu(next);
+                      if (next) {
+                        setContextOpen(null);
+                        setInboxOpen(false);
+                      }
+                    }}
+                    onSelectModel={(name) => {
+                      setSelectedModel(name);
+                      setModelMenu(false);
+                    }}
+                    onAddModel={() => openSettings("models")}
+                    onSubmit={() => void send()}
+                    taRef={taRef}
+                    onComposerKey={onComposerKey}
+                    home
+                    mentions={mentions}
+                    experts={experts}
+                    teams={teams}
+                    expertValue={encodeExpertPick(expertPick)}
+                    onExpert={(value) => setExpertPick(decodeExpertPick(value))}
+                    onMention={(item) => {
+                      if (item.kind === "expert") setExpertPick({ expertId: item.id });
+                      if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
+                    }}
+                    waiting={turnLive}
+                  />
+                </div>
+              )}
               {authError ? <p className="error toast-inline">{authError}</p> : null}
               {localNotice ? (
                 <p className="toast-inline local-notice">
                   {localNotice}
-                  <button type="button" className="ghost" onClick={() => setLocalNotice("")}>
+                  <IslandButton type="text" onClick={() => setLocalNotice("")}>
                     知道了
-                  </button>
+                  </IslandButton>
                 </p>
               ) : null}
               {copied ? <p className="copied">Copied</p> : null}
             </footer>
             </div>
+            {panelOpen ? (
+              <button
+                type="button"
+                className={`split-bar panel-split${panelSplit.dragging ? " is-dragging" : ""}`}
+                aria-label="调整右侧栏宽度"
+                {...panelSplit.bind}
+              />
+            ) : null}
             <div className={`side-panel-slot${panelOpen ? "" : " off"}`}>
               <SidePanel
                 tab={panelTab}

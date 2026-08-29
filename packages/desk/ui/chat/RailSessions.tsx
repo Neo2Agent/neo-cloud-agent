@@ -2,6 +2,7 @@ import type { Run } from "@neo-cloud-agent/contracts/run";
 import { isRemoteControlRun } from "../desk";
 import type { RailSpaceGroup } from "../../src/rail";
 import { IconChevron, IconCloud, IconComputer, IconProjects } from "../icons";
+import { IslandTag } from "../island";
 
 const INBOX_PREVIEW = 8;
 
@@ -53,7 +54,8 @@ export function RailSessions({
       <section className="rail-block">
         <button type="button" className="rail-block-head" onClick={onToggleInbox}>
           <IconChevron open={inboxOpen} size={13} />
-          <span>对话 ({inbox.length})</span>
+          <span>对话</span>
+          <IslandTag color="brown">{inbox.length}</IslandTag>
         </button>
         {inboxOpen ? (
           inbox.length === 0 ? (
@@ -83,7 +85,8 @@ export function RailSessions({
       <section className="rail-block">
         <button type="button" className="rail-block-head" onClick={onToggleSpaces}>
           <IconChevron open={spacesOpen} size={13} />
-          <span>空间 ({spaces.length})</span>
+          <span>空间</span>
+          <IslandTag color="brown">{spaces.length}</IslandTag>
         </button>
         {spacesOpen ? (
           spaces.length === 0 ? (
@@ -145,10 +148,14 @@ function ChatRow({
     >
       <span className="chat-title">{preview(run.prompt, 40)}</span>
       <span className="chat-meta">
-        {localRunning ? <i className="chat-local-dot" title="正在这台电脑上改文件" /> : null}
-        {cloud ? <IconCloud size={12} /> : <IconComputer size={12} />}
-        {!cloud ? <span className="chat-remote">{isRemoteControlRun(run) ? "远程" : "本机"}</span> : null}
-        <span>{formatRel(run.updatedAt)}</span>
+        <i
+          className={`chat-local-dot${localRunning ? " on" : ""}`}
+          title={localRunning ? "正在这台电脑上改文件" : undefined}
+        />
+        <span className="chat-place">
+          {cloud ? "cloud" : isRemoteControlRun(run) ? "remote" : "local"}
+        </span>
+        <span className="chat-ago">{formatRel(run.updatedAt)}</span>
       </span>
     </button>
   );

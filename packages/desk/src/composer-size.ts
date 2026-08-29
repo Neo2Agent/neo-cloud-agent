@@ -7,7 +7,7 @@ export const COMPOSER_MIN_PX = 320;
 /** Share of the chat stage the composer fills below the cap. */
 const COMPOSER_MAX_RATIO = 0.92;
 
-export const COMPOSER_HOME_TEXTAREA_MIN = 128;
+export const COMPOSER_HOME_TEXTAREA_MIN = 56;
 export const COMPOSER_HOME_TEXTAREA_MAX = 240;
 export const COMPOSER_FOLLOW_TEXTAREA_MIN = 24;
 
@@ -21,8 +21,8 @@ export function composerMaxWidth(stageWidth: number): number {
 /**
  * Grow the textarea with its content, between the two limits.
  *
- * New Chat starts tall because it is the whole page; a follow-up starts on one
- * line and they share a ceiling so the transcript never gets squeezed out.
+ * New Chat starts a few lines tall; a follow-up starts on one line. They share
+ * a ceiling so the transcript never gets squeezed out.
  */
 export function composerTextareaHeight(scrollHeight: number, home: boolean): number {
   const min = home ? COMPOSER_HOME_TEXTAREA_MIN : COMPOSER_FOLLOW_TEXTAREA_MIN;

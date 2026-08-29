@@ -4,6 +4,7 @@ import type { Run } from "@neo-cloud-agent/contracts/run";
 import { Checkbox, Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
+import { IslandButton } from "../island";
 import { hostHint } from "./helpers";
 
 export function RunChrome({
@@ -104,9 +105,8 @@ export function RunChrome({
             onChange={(event) => setArtifactName(event.target.value)}
             placeholder="产物文件名，保存到项目"
           />
-          <button
-            type="button"
-            className="ghost"
+          <IslandButton
+            type="default"
             disabled={!artifactName.trim() || busy}
             onClick={() => {
               setBusy(true);
@@ -125,7 +125,7 @@ export function RunChrome({
             }}
           >
             保存到项目
-          </button>
+          </IslandButton>
           {artifacts.length > 0 ? (
             <fieldset className="handoff-artifacts">
               <legend>一并保存到项目</legend>
@@ -141,9 +141,8 @@ export function RunChrome({
               ))}
             </fieldset>
           ) : null}
-          <button
-            type="button"
-            className="ghost"
+          <IslandButton
+            type="default"
             disabled={!handoffTitle.trim() || busy}
             onClick={() => {
               setBusy(true);
@@ -171,7 +170,7 @@ export function RunChrome({
             }}
           >
             流转为待办
-          </button>
+          </IslandButton>
         </div>
       ) : null}
       {toolsOpen && run.projectId && cloud ? (
@@ -191,9 +190,9 @@ export function RunChrome({
             />
           </label>
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="交接备注（可选）" />
-          <button type="button" className="ghost" disabled={!transferTo || busy} onClick={() => void transfer()}>
+          <IslandButton type="default" disabled={!transferTo || busy} onClick={() => void transfer()}>
             转交房主
-          </button>
+          </IslandButton>
         </div>
       ) : toolsOpen && run.projectId ? (
         <div className="run-chrome-actions">
@@ -213,9 +212,9 @@ export function RunChrome({
             />
           </label>
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="交接备注（可选）" />
-          <button type="button" className="ghost" disabled={!transferTo || busy} onClick={() => void transfer()}>
+          <IslandButton type="default" disabled={!transferTo || busy} onClick={() => void transfer()}>
             开新对话
-          </button>
+          </IslandButton>
         </div>
       ) : null}
       {error ? <p className="error">{error}</p> : null}

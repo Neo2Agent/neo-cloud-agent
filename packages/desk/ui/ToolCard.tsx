@@ -2,6 +2,7 @@ import { readSubagentSteps } from "@neo-cloud-agent/contracts/subagent";
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { toolArgPreview } from "../src/format";
+import { IslandTag } from "./island";
 
 function toolMark(tool: TranscriptTool): string {
   if (tool.status === "running") return "…";
@@ -53,11 +54,12 @@ function ToolBody({ tool, running }: { tool: TranscriptTool; running: boolean })
 
 function ToolHead({ tool }: { tool: TranscriptTool }) {
   const preview = toolArgPreview(tool.args);
+  const color = tool.isError ? "app-red" : tool.status === "running" ? "app-teal" : "app-green";
   return (
     <div className="tool-head">
-      <span>
+      <IslandTag color={color}>
         {toolMark(tool)} {toolDisplayName(tool)}
-      </span>
+      </IslandTag>
       {preview ? <span className="cmd">{preview}</span> : null}
     </div>
   );
