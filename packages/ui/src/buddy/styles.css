@@ -16,12 +16,22 @@
   min-height: 200px;
 }
 
+.buddy-home.is-more {
+  justify-content: flex-end;
+}
+
 .buddy-home.is-more .buddy-home-hero {
   display: none;
 }
 
 .buddy-mascot {
   display: block;
+  object-fit: contain;
+}
+
+.buddy-mascot.is-compact {
+  width: 30px;
+  height: 30px;
 }
 
 .buddy-hello {
@@ -33,18 +43,24 @@
 }
 
 .buddy-toggle {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 168px;
   padding: 3px;
   border-radius: 999px;
   background: #ececee;
+}
+
+.buddy-toggle.is-wide {
+  width: 100%;
 }
 
 .buddy-toggle button {
   border: 0;
   background: transparent;
   color: #8a8a8e;
-  min-height: 34px;
-  padding: 0 16px;
+  min-height: 32px;
+  padding: 0;
   border-radius: 999px;
   font-size: 13px;
 }
@@ -75,8 +91,8 @@
 
 .buddy-skill-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-content: end;
-  flex: 1;
+  align-content: start;
+  flex: 0 0 auto;
 }
 
 .buddy-shortcuts button.is-on,
@@ -90,13 +106,35 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
+  width: 100%;
   border: 0;
   background: transparent;
   color: #6f6f72;
   min-height: 64px;
   padding: 8px 4px;
   font-size: 12px;
+}
+
+.buddy-icon-slot {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.buddy-shortcuts button > span:last-child,
+.buddy-skill-grid button > span:last-child,
+.buddy-sheet-grid button > span:last-child {
+  display: block;
+  width: 100%;
+  text-align: center;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .buddy-shortcuts svg,
@@ -276,9 +314,21 @@
   font-size: 16px;
 }
 
+.buddy-nav button > :first-child {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
 .buddy-nav button svg:last-child {
   margin-left: auto;
   color: #c4c4c6;
+}
+
+.buddy-login .buddy-mascot {
+  margin: 0 auto;
 }
 
 .buddy-task-head {

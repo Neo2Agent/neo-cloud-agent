@@ -33,3 +33,13 @@ export const BUDDY_SHORTCUTS: Array<{ id: "experts" | "skills" | "projects" | "m
   { id: "projects", label: "项目", icon: "project" },
   { id: "more", label: "更多", icon: "more" },
 ];
+
+export function padBuddyGrid<T>(items: T[], columns: number): Array<T | undefined> {
+  const rem = items.length % columns;
+  if (rem === 0 || columns < 2) return items;
+  if (rem === 1) {
+    return [...items.slice(0, -1), undefined, items[items.length - 1], undefined];
+  }
+  return [...items, ...Array.from({ length: columns - rem }, () => undefined)];
+}
+

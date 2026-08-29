@@ -1,4 +1,4 @@
-import { BrandMark } from "@neo-cloud-agent/ui";
+import { BrandMark, BuddyMascot } from "@neo-cloud-agent/ui";
 import { isDeskApp } from "../desk";
 import { isNarrowViewport } from "../viewport";
 
@@ -59,9 +59,11 @@ export function AuthGate({
         }}
       >
         <div className={phone ? "auth-brand buddy-login" : "auth-brand"}>
-          <span className="mark">
-            <BrandMark />
-          </span>
+          {phone ? <BuddyMascot size={88} /> : (
+            <span className="mark">
+              <BrandMark />
+            </span>
+          )}
           {phone ? (
             <>
               <h2 id="auth-title" className="buddy-hello">

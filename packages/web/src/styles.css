@@ -3914,6 +3914,21 @@ html.is-narrow,
   margin-bottom: 8px;
 }
 
+.auth-gate.is-buddy .buddy-login .buddy-mascot {
+  margin: 0 auto;
+}
+
+.app.is-buddy .brand .mark {
+  overflow: visible;
+}
+
+.app.is-buddy .brand .mark img {
+  display: block;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
 .auth-gate.is-buddy .auth-submit {
   background: #111;
   border-radius: 999px;

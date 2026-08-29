@@ -1,4 +1,4 @@
-import { BrandMark, BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
+import { BuddyIcon, BuddyMascot, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { preview, STATUS_LABELS } from "./format";
 import { isActiveRunStatus } from "./turn";
@@ -21,9 +21,7 @@ export function BuddyLogin(props: {
         }}
       >
         <div className="auth-brand buddy-login">
-          <span className="mark">
-            <BrandMark />
-          </span>
+          <BuddyMascot size={88} />
           <h1 className="buddy-hello">Neo</h1>
           <p className="buddy-login-kicker">Cloud Agent</p>
         </div>
@@ -67,12 +65,12 @@ export function BuddyDrawer(props: {
         <div className="sidebar-head">
           <div className="brand">
             <span className="mark">
-              <BrandMark />
+              <BuddyMascot size={30} compact />
             </span>
             <strong>Neo</strong>
           </div>
         </div>
-        <BuddyTargetToggle value={props.target} deskDisabled={props.deskDisabled} onChange={props.onTarget} />
+        <BuddyTargetToggle value={props.target} deskDisabled={props.deskDisabled} wide onChange={props.onTarget} />
         <nav className="buddy-nav" aria-label="目录">
           {(
             [

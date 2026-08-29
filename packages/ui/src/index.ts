@@ -9,7 +9,7 @@ export { BuddyIcon, type BuddyIconName } from "./buddy/icons";
 export { BuddyMascot } from "./buddy/mascot";
 export { BuddyPlusSheet, type BuddyPlusAction } from "./buddy/plus-sheet";
 export { BuddyTargetToggle } from "./buddy/target-toggle";
-export { BUDDY_SHORTCUTS, buddySkillsFromRecipes, type BuddySkill } from "./buddy/catalog";
+export { BUDDY_SHORTCUTS, buddySkillsFromRecipes, padBuddyGrid, type BuddySkill } from "./buddy/catalog";
 export {
   HOLD_MS,
   browserSpeechCtor,

@@ -42,7 +42,9 @@ export function BuddyPlusSheet({ open, canOpenPr = false, onClose, onAction }: P
         <div className="buddy-sheet-grid">
           {GRID.map((item) => (
             <button key={item.id} type="button" onClick={() => onAction(item.id)}>
-              <BuddyIcon name={item.icon} />
+              <span className="buddy-icon-slot">
+                <BuddyIcon name={item.icon} />
+              </span>
               <span>{item.label}</span>
             </button>
           ))}

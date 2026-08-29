@@ -1,4 +1,4 @@
-import { BUDDY_SHORTCUTS, type BuddySkill } from "./catalog";
+import { BUDDY_SHORTCUTS, padBuddyGrid, type BuddySkill } from "./catalog";
 import { BuddyIcon } from "./icons";
 import { BuddyMascot } from "./mascot";
 import { BuddyTargetToggle } from "./target-toggle";
@@ -23,12 +23,16 @@ export function BuddyHome({ moreOpen, target, deskDisabled, skills, onTarget, on
       </div>
       {moreOpen ? (
         <ul className="buddy-skill-grid">
-          {skills.map((item) => (
-            <li key={item.id}>
-              <button type="button" onClick={() => onSkill(item.id)}>
-                <BuddyIcon name={item.icon} />
-                <span>{item.label}</span>
-              </button>
+          {padBuddyGrid(skills, 3).map((item, index) => (
+            <li key={item?.id ?? `pad-${index}`}>
+              {item ? (
+                <button type="button" onClick={() => onSkill(item.id)}>
+                  <span className="buddy-icon-slot">
+                    <BuddyIcon name={item.icon} />
+                  </span>
+                  <span>{item.label}</span>
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -41,7 +45,9 @@ export function BuddyHome({ moreOpen, target, deskDisabled, skills, onTarget, on
             className={item.id === "more" && moreOpen ? "is-on" : undefined}
             onClick={() => onShortcut(item.id)}
           >
-            <BuddyIcon name={item.icon} />
+            <span className="buddy-icon-slot">
+              <BuddyIcon name={item.icon} />
+            </span>
             <span>{item.id === "more" && moreOpen ? "收起" : item.label}</span>
           </button>
         ))}
