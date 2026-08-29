@@ -118,6 +118,13 @@ export {
   transcriptBlocks,
   transcriptGroups,
 } from "./transcript.js";
+export type { ConversationTurn } from "./conversation-replay.js";
+export {
+  conversationReplayFromMessages,
+  formatConversationReplay,
+  priorConversationTurns,
+  wrapPromptWithConversationReplay,
+} from "./conversation-replay.js";
 
 export type {
   ExecutionRuntime,

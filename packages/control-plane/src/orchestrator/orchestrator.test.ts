@@ -315,6 +315,62 @@ test("follow-up after reload resumes the worker from session backup", async () =
   assert.ok(listEvents(run.id).some((item) => item.title === "Resuming worker from session backup"));
 });
 
+test("follow-up after a completed turn carries conversation replay for a fresh worker", async () => {
+  const run = await createRun({
+    prompt: "郑州明天天气",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  const at = new Date().toISOString();
+  ingestEvents(run.id, [
+    {
+      id: "weather-start",
+      runId: run.id,
+      createdAt: at,
+      category: "agent_run",
+      level: "info",
+      kind: "message.start",
+      title: "start",
+    },
+    {
+      id: "weather-delta",
+      runId: run.id,
+      createdAt: at,
+      category: "agent_run",
+      level: "info",
+      kind: "message.delta",
+      title: "delta",
+      data: { delta: "明天 23–27°C，多云" },
+    },
+    {
+      id: "weather-end",
+      runId: run.id,
+      createdAt: at,
+      category: "agent_run",
+      level: "info",
+      kind: "message.end",
+      title: "end",
+    },
+    {
+      id: "weather-agent-end",
+      runId: run.id,
+      createdAt: at,
+      category: "agent_run",
+      level: "info",
+      kind: "agent.end",
+      title: "done",
+    },
+  ]);
+  await enqueueFollowUp(run.id, { text: "我们刚才聊了什么" });
+  const inbox = takeInbound(run.id);
+  const prompt = inbox.find((item) => item.type === "prompt" || item.type === "follow_up");
+  assert.ok(prompt && "text" in prompt);
+  assert.equal(prompt.text, "我们刚才聊了什么");
+  assert.match(prompt.conversationReplay ?? "", /郑州明天天气/);
+  assert.match(prompt.conversationReplay ?? "", /23–27°C/);
+  assert.doesNotMatch(prompt.conversationReplay ?? "", /我们刚才聊了什么/);
+});
+
 test("fatal start failure marks the run ERROR", async () => {
   const run = await createRun({
     prompt: "start must succeed",

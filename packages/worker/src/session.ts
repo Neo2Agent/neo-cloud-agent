@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   createAgentSession,
   ModelRuntime,
-  SessionManager,
   SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
@@ -12,6 +11,7 @@ import {
   appendProjectInstruction,
   deliveryForPi,
   intersectSessionTools,
+  wrapPromptWithConversationReplay,
   type WorkerInbound,
 } from "@neo-cloud-agent/contracts";
 import { expertDocRoots } from "@neo-cloud-agent/extensions";
@@ -21,6 +21,7 @@ import { getWorkerConfig } from "./config.js";
 import { inboundPrompt } from "./images.js";
 import { gatewayModelSpec } from "./model-spec.js";
 import { abortNestedSubagents, executeNestedSubagent, type SubagentEventHandler } from "./subagent.js";
+import { resumeOrCreateSessionManager } from "./session-resume.js";
 import { createWorkspaceLoader, summarizeWorkspaceResources } from "./workspace-loader.js";
 
 export interface OpenSessionInput {
@@ -128,6 +129,10 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     );
   }
 
+  const opened = resumeOrCreateSessionManager(input.cwd, input.sessionDir);
+  console.log(
+    `pi session ${opened.resumed ? "resumed" : "created"} file=${opened.file ?? "new"} cwd=${input.cwd}`,
+  );
   const { session } = await createAgentSession({
     cwd: input.cwd,
     agentDir,
@@ -137,7 +142,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     resourceLoader,
     tools: toolNames,
     customTools,
-    sessionManager: SessionManager.create(input.cwd, input.sessionDir),
+    sessionManager: opened.manager,
     settingsManager,
   });
   return session;
@@ -185,17 +190,48 @@ export async function dispatchInbound(session: AgentSession, message: WorkerInbo
   const method = deliveryForPi(message.type);
   const config = getWorkerConfig();
   const { text, images } = inboundPrompt(config.workspaceDir, message, config.scratchDir);
+  const replayed = applyConversationReplay(session, text, inboundConversationReplay(message));
   const vision = images.length ? images : undefined;
   if (session.isStreaming) {
     if (method === "steer") {
-      await session.steer(text, vision);
+      await session.steer(replayed, vision);
     } else {
-      await session.followUp(text, vision);
+      await session.followUp(replayed, vision);
     }
     return "continue";
   }
-  await session.prompt(text, vision ? { images: vision } : undefined);
+  await session.prompt(replayed, vision ? { images: vision } : undefined);
   return "continue";
+}
+
+function inboundConversationReplay(message: WorkerInbound): string | undefined {
+  if (message.type === "prompt" || message.type === "steer" || message.type === "follow_up") {
+    return message.conversationReplay;
+  }
+  return undefined;
+}
+
+export function sessionHasConversation(session: Pick<AgentSession, "messages">): boolean {
+  try {
+    return session.messages.some((message) => {
+      const role = (message as { role?: string }).role;
+      return role === "user" || role === "assistant";
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** Only inject transcript when the live pi session has no turns (restore missed). */
+export function applyConversationReplay(
+  session: Pick<AgentSession, "messages">,
+  text: string,
+  replay?: string,
+): string {
+  if (!replay?.trim() || sessionHasConversation(session)) {
+    return text;
+  }
+  return wrapPromptWithConversationReplay(text, replay);
 }
 
 function readPluginSnapshot(cwd: string, scratchDir?: string): string[] {

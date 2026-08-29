@@ -6,6 +6,7 @@ import test from "node:test";
 import { CLOUD_SYSTEM_PROMPT, CLOUD_TOOL_NAMES, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { gatewayModelSpec, supportsVision } from "./model-spec.js";
 import { readExpertWorkspace } from "./expert-workspace.js";
+import { applyConversationReplay } from "./session.js";
 
 test("session tools include filesystem tools plus neo-git, neo-pr, and neo-diag", () => {
   assert.deepEqual(sessionToolNames(), [
@@ -105,4 +106,20 @@ test("a run with no scratch files still reads the workspace expert", () => {
   writeFileSync(path.join(cwd, ".neo", "EXPERT.md"), "Role Override: cloud expert.\n");
   const expert = readExpertWorkspace(cwd, path.join(cwd, ".neo", "runs", "missing"));
   assert.match(expert.role, /cloud expert/);
+});
+
+test("conversation replay is injected only when the live session is empty", () => {
+  assert.equal(applyConversationReplay({ messages: [] }, "我们刚才聊了什么"), "我们刚才聊了什么");
+  assert.match(
+    applyConversationReplay({ messages: [] }, "我们刚才聊了什么", "【系统】历史\n用户：天气"),
+    /【用户继续】\n我们刚才聊了什么$/,
+  );
+  assert.equal(
+    applyConversationReplay(
+      { messages: [{ role: "user", content: "天气" }] as never },
+      "我们刚才聊了什么",
+      "【系统】历史",
+    ),
+    "我们刚才聊了什么",
+  );
 });

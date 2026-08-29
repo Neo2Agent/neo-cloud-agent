@@ -28,6 +28,8 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import {
   assertColocatedTarget,
+  buildTranscriptSnapshot,
+  conversationReplayFromMessages,
   deskRepoKey,
   evaluateEgress,
   isDeskTarget,
@@ -272,7 +274,12 @@ function requeueActiveTurn(run: Run): boolean {
   if (!active) {
     return false;
   }
-  inbound.get(run.id)?.push({ type: active.type, text: active.text, images: active.images });
+  inbound.get(run.id)?.push({
+    type: active.type,
+    text: active.text,
+    images: active.images,
+    conversationReplay: conversationReplayFor(run.id),
+  });
   publish(
     event(run.id, "followup.queued", "中断的回合已自动排队继续", {
       data: { resume: true, delivery: active.type, text: active.text },
@@ -1844,6 +1851,7 @@ export async function enqueueFollowUp(
     text: input.text,
     images: input.images,
     followUpId: item.id,
+    conversationReplay: conversationReplayFor(runId),
   });
   publish(
     event(runId, "followup.queued", "Follow-up queued", {
@@ -2039,6 +2047,11 @@ function flushAllSubscriptions(): void {
       flushRun(runId);
     }
   }
+}
+
+function conversationReplayFor(runId: string): string | undefined {
+  const replay = conversationReplayFromMessages(buildTranscriptSnapshot(runId, eventsForRun(runId)).messages);
+  return replay || undefined;
 }
 
 function publishFollowUpUserMessage(item: FollowUp): void {
