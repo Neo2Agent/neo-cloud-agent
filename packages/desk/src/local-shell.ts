@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import os from "node:os";
+import { StringDecoder } from "node:string_decoder";
 import { SECRET_ENV_KEYS } from "@neo-cloud-agent/contracts";
 
 export type LocalShell = {
@@ -16,12 +17,17 @@ export type LocalShellHooks = {
   onExit: (id: string, code: number | null) => void;
 };
 
-function defaultShell(): { command: string; args: string[] } {
-  if (process.platform === "win32") {
-    return { command: process.env.COMSPEC || "cmd.exe", args: [] };
+export function shellLaunch(platform = process.platform): {
+  command: string;
+  args: string[];
+  stdoutEncoding: BufferEncoding;
+} {
+  if (platform === "win32") {
+    // /U is output-only. Stdin stays 8-bit; writing UTF-16 makes cmd show More?
+    return { command: process.env.COMSPEC || "cmd.exe", args: ["/d", "/u"], stdoutEncoding: "utf16le" };
   }
   const shell = process.env.SHELL || "/bin/bash";
-  return { command: shell, args: ["-i"] };
+  return { command: shell, args: ["-i"], stdoutEncoding: "utf8" };
 }
 
 /**
@@ -35,7 +41,7 @@ function defaultShell(): { command: string; args: string[] } {
  */
 export function createLocalShell(input: { cwd: string; hooks: LocalShellHooks; env?: NodeJS.ProcessEnv }): LocalShell {
   const id = `term_${randomBytes(4).toString("hex")}`;
-  const { command, args } = defaultShell();
+  const { command, args, stdoutEncoding } = shellLaunch();
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...input.env,
@@ -53,9 +59,22 @@ export function createLocalShell(input: { cwd: string; hooks: LocalShellHooks; e
     cwd: input.cwd,
     env,
     stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
   });
-  child.stdout?.on("data", (chunk) => input.hooks.onData(id, String(chunk)));
-  child.stderr?.on("data", (chunk) => input.hooks.onData(id, String(chunk)));
+  const stdoutDec = new StringDecoder(stdoutEncoding);
+  const stderrDec = new StringDecoder(stdoutEncoding);
+  child.stdout?.on("data", (chunk: Buffer) => {
+    const text = stdoutDec.write(chunk);
+    if (text) {
+      input.hooks.onData(id, text);
+    }
+  });
+  child.stderr?.on("data", (chunk: Buffer) => {
+    const text = stderrDec.write(chunk);
+    if (text) {
+      input.hooks.onData(id, text);
+    }
+  });
   child.on("exit", (code) => input.hooks.onExit(id, code));
   child.on("error", (error) => {
     input.hooks.onData(id, `${error instanceof Error ? error.message : String(error)}\n`);

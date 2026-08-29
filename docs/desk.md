@@ -50,18 +50,18 @@
 
 ## 右侧栏
 
-右上角按钮开合，记住展开状态和停在哪个 tab。中间永远是对话，**不是** Web 那种「切到终端页就把对话切走」。
+右上角按钮开合。刚打开时先出 Terminal / File 两个入口；点进去才是终端或文件树。中间永远是对话，**不是** Web 那种「切到终端页就把对话切走」。
 
 | tab | 本机 | 云端 |
 | --- | --- | --- |
-| Files | 主进程 IPC 列目录 / 预览 / 交给系统编辑器，锁在授权根 | `GET /v1/runs/:id/fs`，只读 |
-| Terminal | 工作区根下的 shell，可多标签 | 命令输出 + setup 日志，标题写「输出」，**不能打字** |
+| Files | 可展开的文件树 + 只读预览，锁在授权根 | `GET /v1/runs/:id/fs`，只读 |
+| Terminal | 浅色工作区 + 右侧会话列表，可新开多个 | 命令输出 + setup 日志，标题写「输出」，**不能打字** |
 
 **不做 IDE。** Files 只有树 + 只读预览，没有栏内编辑保存。要改文件：让 Agent 改，或自己在编辑器里改，Files 刷新即可。
 
 两点如实说明：
 
-- 本机终端是**管道 shell，不是 pty**。真终端设备要 native 模块，而本仓库 `onlyBuiltDependencies` 只放行 esbuild。命令、输出、输入都能用；需要 tty 的全屏 TUI 不行。`createLocalShell` 是留好的接缝。
+- 本机终端是**管道 shell，不是 pty**。真终端设备要 native 模块，而本仓库 `onlyBuiltDependencies` 只放行 esbuild。在黑色区域里直接输入（中文输入法走隐藏输入框）；需要 tty 的全屏 TUI 不行。`createLocalShell` 是留好的接缝。
 - 云端交互式 PTY 没做（要另开一条打进 VM 的通道）。
 
 ## 已落地的执行面

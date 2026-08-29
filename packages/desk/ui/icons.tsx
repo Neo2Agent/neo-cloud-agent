@@ -7,9 +7,11 @@ import {
   CirclePlus,
   Cloud,
   Copy,
+  File,
   FilePlus,
   FolderMinus,
   LayoutGrid,
+  Maximize2,
   ListFilter,
   Monitor,
   PanelRight,
@@ -18,6 +20,7 @@ import {
   Settings,
   Square,
   SquarePlus,
+  SquareTerminal,
   ThumbsDown,
   ThumbsUp,
   Users,
@@ -140,4 +143,41 @@ export function IconClose(props: IconProps) {
 /** Panel toggle, same idea as the Agents Window right-sidebar button. */
 export function IconPanelRight(props: IconProps) {
   return icon(PanelRight, props);
+}
+
+/** Codex pane-bar dock: square with a chevron pointing at the right rail. */
+export function IconRailDock(props: IconProps) {
+  const size = props.size ?? 16;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      className={props.className}
+      aria-hidden="true"
+    >
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M11.25 3.2v9.6" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M5.1 8h4.1m0 0L7.7 6.55M9.2 8 7.7 9.45"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function IconTerminal(props: IconProps) {
+  return icon(SquareTerminal, props);
+}
+
+export function IconFile(props: IconProps) {
+  return icon(File, props);
+}
+
+export function IconExpand(props: IconProps) {
+  return icon(Maximize2, props);
 }

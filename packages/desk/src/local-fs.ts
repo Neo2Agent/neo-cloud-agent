@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export type LocalEntry = { name: string; path: string; type: "file" | "dir"; size?: number };
@@ -73,4 +73,18 @@ export function listLocalPath(root: string, relative = "", options?: { content?:
     content: slice.toString("utf8"),
     truncated: raw.length > slice.length,
   };
+}
+
+export function writeLocalFile(root: string, relative: string, content = ""): { path: string } {
+  const name = relative.replace(/\\/g, "/").trim();
+  if (!name || name.endsWith("/")) {
+    throw new Error("文件名不能为空");
+  }
+  const dest = resolveInsideRoot(root, name);
+  if (existsSync(dest)) {
+    throw new Error("文件已存在");
+  }
+  mkdirSync(path.dirname(dest), { recursive: true });
+  writeFileSync(dest, content);
+  return { path: path.relative(path.resolve(root), dest).split(path.sep).join("/") };
 }

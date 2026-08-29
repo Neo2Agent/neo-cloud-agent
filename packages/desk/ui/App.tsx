@@ -243,7 +243,7 @@ export function App() {
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem("neo.desk.panel") === "1");
   const [panelTab, setPanelTab] = useState<SidePanelTab>(
-    () => (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || "files",
+    () => (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || "home",
   );
   const [panelEpoch, setPanelEpoch] = useState(0);
   // Keyed by runId: several local conversations can hold a worker at once, and a
@@ -1504,18 +1504,22 @@ export function App() {
       </aside>
 
       <main className="stage">
-        <Tooltip content={panelOpen ? "收起右侧栏" : "Files / Terminal"} side="left">
-          <span className="panel-toggle-wrap">
-            <button
-              type="button"
-              className={`panel-toggle${panelOpen ? " on" : ""}`}
-              aria-label={panelOpen ? "收起右侧栏" : "打开右侧栏"}
-              onClick={() => setPanelOpen((cur) => !cur)}
-            >
-              <IconPanelRight size={15} />
-            </button>
-          </span>
-        </Tooltip>
+        {panelOpen ? null : (
+          <Tooltip content="Files / Terminal" side="left">
+            <span className="panel-toggle-wrap">
+              <button
+                type="button"
+                className="panel-toggle"
+                aria-label="打开右侧栏"
+                onClick={() => {
+                  setPanelOpen(true);
+                }}
+              >
+                <IconPanelRight size={15} />
+              </button>
+            </span>
+          </Tooltip>
+        )}
         <div className="stage-col" key={nav}>
         {nav === "automations" ? (
           <AutomationsPage
@@ -1815,7 +1819,7 @@ export function App() {
               {copied ? <p className="copied">Copied</p> : null}
             </footer>
             </div>
-            {panelOpen ? (
+            <div className={`side-panel-slot${panelOpen ? "" : " off"}`}>
               <SidePanel
                 tab={panelTab}
                 onTab={setPanelTab}
@@ -1826,7 +1830,7 @@ export function App() {
                 local={panelIsLocal}
                 refreshKey={panelEpoch}
               />
-            ) : null}
+            </div>
           </section>
         )}
         </div>

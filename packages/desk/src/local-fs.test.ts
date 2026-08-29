@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { listLocalPath, resolveInsideRoot } from "./local-fs.js";
+import { listLocalPath, resolveInsideRoot, writeLocalFile } from "./local-fs.js";
 
 function fixture(): string {
   const root = mkdtempSync(path.join(tmpdir(), "neo-local-fs-"));
@@ -47,4 +47,12 @@ test("nothing outside the workspace can be read", () => {
   assert.throws(() => listLocalPath(root, "/etc/passwd"), /超出/);
   assert.throws(() => resolveInsideRoot(root, "../../etc/passwd"), /超出/);
   assert.equal(resolveInsideRoot(root, "src/foo.ts"), path.join(root, "src/foo.ts"));
+});
+
+test("new files stay inside the workspace and pick an unused name", () => {
+  const root = fixture();
+  const created = writeLocalFile(root, "notes.md", "hi\n");
+  assert.equal(created.path, "notes.md");
+  assert.equal(listLocalPath(root, "notes.md", { content: true }).content, "hi\n");
+  assert.throws(() => writeLocalFile(root, "../escape.md"), /超出/);
 });

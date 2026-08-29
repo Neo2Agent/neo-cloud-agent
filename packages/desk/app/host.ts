@@ -16,7 +16,7 @@ import {
 import { normalizeOutOfWorkspacePolicy, type OutOfWorkspacePolicy } from "../src/sandbox-policy.js";
 import { createLeaseClient } from "../src/lease.js";
 import { openDeskInboxStream, type DeskInboxHandle } from "../src/inbox.js";
-import { listLocalPath } from "../src/local-fs.js";
+import { listLocalPath, writeLocalFile } from "../src/local-fs.js";
 import { createLocalShell, type LocalShell } from "../src/local-shell.js";
 import { deskLogger } from "../src/log.js";
 import {
@@ -1114,6 +1114,13 @@ function wireIpc(): void {
       return listLocalPath(input.folder, input.path ?? "", { content: input.content === true });
     } catch (error) {
       return { error: errorText(error, "读取失败") };
+    }
+  });
+  ipcMain.handle("desk:writeFile", (_event, input: { folder: string; path: string; content?: string }) => {
+    try {
+      return writeLocalFile(input.folder, input.path, input.content ?? "");
+    } catch (error) {
+      return { error: errorText(error, "写文件失败") };
     }
   });
   ipcMain.handle("desk:diffStat", async (_event, folder: string) => {
