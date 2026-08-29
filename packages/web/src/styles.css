@@ -988,8 +988,7 @@ h1 {
 }
 
 .icon-btn:hover,
-.icon-btn.is-on,
-.transcript-search[open] > summary {
+.icon-btn.is-on {
   background: var(--bg-2);
   color: var(--text);
 }
@@ -3457,23 +3456,12 @@ textarea {
 }
 
 .transcript-search {
-  position: relative;
   flex: 0 0 auto;
 }
 
-.transcript-search > summary {
-  list-style: none;
-}
-
-.transcript-search > summary::-webkit-details-marker {
-  display: none;
-}
-
 .transcript-search-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 24;
+  position: fixed;
+  z-index: 40;
   width: min(360px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
@@ -3638,8 +3626,7 @@ textarea {
   }
 
   .transcript-search-pop {
-    right: auto;
-    left: 0;
+    width: min(360px, calc(100vw - 24px));
   }
 
   .empty:has(.recipe-grid) {
