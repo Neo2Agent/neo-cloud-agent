@@ -145,7 +145,9 @@ test("cloud project runs invite collaborators without a second worker", async (t
   const transcript = await fetch(`${base}/v1/runs/${run.id}/transcript`, { headers: auth(mate.token) });
   assert.equal(transcript.status, 200);
   const snapshot = ((await transcript.json()) as { snapshot?: { messages?: Array<{ role: string; text: string }> } }).snapshot;
-  assert.equal(snapshot?.messages?.some((item) => item.role === "user" && item.text === "同事排队"), false);
+  // followup.queued is already a user bubble; the worker has not delivered it yet.
+  assert.equal(snapshot?.messages?.some((item) => item.role === "user" && item.text === "同事排队"), true);
+  assert.equal(queued.status, "queued");
 
   const own = await fetch(`${base}/v1/runs`, {
     method: "POST",
