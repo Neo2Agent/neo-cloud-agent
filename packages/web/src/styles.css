@@ -133,13 +133,19 @@ button {
   width: 30px;
   height: 30px;
   flex: none;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #111;
   color: var(--accent);
 }
 
-.mark svg {
+.mark svg,
+.brand .mark img,
+.auth-brand .mark img {
   display: block;
   width: 30px;
   height: 30px;
+  object-fit: contain;
 }
 
 .brand strong {
@@ -981,7 +987,9 @@ h1 {
   cursor: pointer;
 }
 
-.icon-btn:hover {
+.icon-btn:hover,
+.icon-btn.is-on,
+.transcript-search[open] > summary {
   background: var(--bg-2);
   color: var(--text);
 }
@@ -2733,7 +2741,7 @@ textarea {
 @media (max-width: 1100px) {
   .app-tabs .tab-label,
   .session-tabs .tab-label,
-  #toggle-settings .tab-label {
+  .top-more-menu .tab-label {
     display: none;
   }
 }
@@ -3008,10 +3016,15 @@ textarea {
 
   .top-more-menu .ghost,
   .top-more-menu .pr-link,
-  .top-more-menu .vm-badge {
+  .top-more-menu .vm-badge,
+  .top-more-menu > .icon-btn {
     width: 100%;
     justify-content: flex-start;
     text-align: left;
+  }
+
+  .top-more-menu .tab-label {
+    display: inline;
   }
 
   .transcript {
@@ -3444,20 +3457,49 @@ textarea {
 }
 
 .transcript-search {
-  flex: 0 0 auto;
-  width: min(768px, 100%);
-  margin: 8px auto 0;
-  padding: 0 24px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
   position: relative;
+  flex: 0 0 auto;
 }
 
-.transcript-search input[type="search"] {
-  flex: 1 1 180px;
+.transcript-search > summary {
+  list-style: none;
+}
+
+.transcript-search > summary::-webkit-details-marker {
+  display: none;
+}
+
+.transcript-search-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 24;
+  width: min(360px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.transcript-search-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.transcript-search-row input[type="search"] {
+  flex: 1 1 auto;
   min-width: 0;
+  padding: 8px 10px;
+}
+
+.transcript-search-row .icon-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .search-hits {
@@ -3467,8 +3509,7 @@ textarea {
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
+  background: var(--bg-2);
 }
 
 .search-hits button {
@@ -3527,10 +3568,6 @@ textarea {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-}
-
-.transcript-search .toolbar-btn {
-  flex: 0 0 auto;
 }
 
 .toolbar-btn:hover,
@@ -3600,8 +3637,9 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .transcript-search {
-    padding: 0 16px;
+  .transcript-search-pop {
+    right: auto;
+    left: 0;
   }
 
   .empty:has(.recipe-grid) {
@@ -3919,14 +3957,7 @@ html.is-narrow,
 }
 
 .app.is-buddy .brand .mark {
-  overflow: visible;
-}
-
-.app.is-buddy .brand .mark img {
-  display: block;
-  width: 30px;
-  height: 30px;
-  object-fit: contain;
+  overflow: hidden;
 }
 
 .auth-gate.is-buddy .auth-submit {
