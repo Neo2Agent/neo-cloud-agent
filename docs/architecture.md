@@ -779,7 +779,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置；分期见 [browser-computer-use.md](./browser-computer-use.md) |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
-| 手机查看 / 跟进 | `packages/mobile`（方案） | 与 CLI 同级的 `/v1` 宿主；见 [mobile.md](./mobile.md)。未实现 |
+| 手机查看 / 跟进 | `packages/mobile` | Expo 壳 + `/v1`；新开只 cloud，列表含 Desk Remote。见 [mobile.md](./mobile.md) |
 | Agent 内核（自研） | **pi-coding-agent** | 这是唯一故意不对齐的地方 |
 
 不对齐是优点：pi 已经有 SDK、RPC、session、extensions。你们的差异化在 **编排、环境和安全**，不在再写一遍 tool loop。

@@ -21,7 +21,7 @@ neo-cloud-agent/
   packages/admin-web        管理台前端（独立 Vite，默认 :5176）
   packages/desk             Electron 桌面壳 + 本机 worker（可选）
   packages/cli              终端客户端 `neo`（打 /v1，不跑 Agent loop）
-  packages/mobile           手机客户端（`pnpm dev:mobile` :5175；Expo 入口 App.tsx）
+  packages/mobile           手机客户端（Expo 壳；`pnpm dev:mobile` :5175 视觉实验室）
   infra/                    compose 与三份 Dockerfile
   .neo/environment.json     本仓库自己的环境描述
 ```
@@ -40,7 +40,7 @@ neo-cloud-agent/
 | CLI | `pnpm neo`，见 [docs/cli.md](docs/cli.md) |
 | 云工具 | `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` |
 | 桌面端 | Electron 壳 + This Computer / Remote。inline 响应带 assignment；dispatch 走 inbox SSE。见 [docs/desk.md](docs/desk.md) |
-| 手机端 | P0：`pnpm dev:mobile`（:5175）。登录、列表、开 Run、SSE、跟进；`source` 为 ios/android。推送走 `/v1/devices`。方案见 [docs/mobile.md](docs/mobile.md) |
+| 手机端 | Expo 壳只订 `/v1`：新开只 cloud，列表含 Desk Remote。`pnpm start` 于 `packages/mobile`；`pnpm dev:mobile` 是 :5175 实验室。见 [docs/mobile.md](docs/mobile.md) |
 | 架构图 | 现网不用登录：`https://neorun.cloud/architecture` 或 `http://62.234.211.200/architecture` |
 
 ```mermaid

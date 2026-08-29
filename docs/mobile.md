@@ -253,8 +253,10 @@ packages/
   contracts/          已有。RunSource / RunEvent / transcript 给所有客户端
   cli/                已有。ControlPlaneClient 是协议参考实现
   web/                已有。产品语义参考，不给 RN import
-  mobile/             手机客户端。`src/` 是 P0 预览（Vite :5175），`App.tsx` 是 Expo 原生入口
+  mobile/             Expo 壳（App.tsx）；Vite :5175 视觉实验室在 src/web
     src/api/          对齐 cli 的 client + sse（Bearer，不走 query token）
+    src/screens/      RN 登录 / 首页 / 列表 / 对话
+    src/native/       SecureStore、推送登记、neo:// 深链
 ```
 
 以后若 CLI 和 Mobile 开始复制粘贴 HTTP，再抽 `@neo-cloud-agent/client`。P0 **不要**为了手机先拆 SDK 包——CLI 文档已经写了「稳定 SDK 以后再做」。先让 App 直接打 `/v1`，合约继续只从 `packages/contracts` 出类型。
@@ -285,8 +287,8 @@ RN 不能直接依赖 Node 的 `http.get`（CLI 的 `streamSse` 是这个）。�
 1. **现网 HTTPS + 域名**（没有这个，原生包在真机上就卡死）
 2. 合约：`RunSource` 增加 `ios` / `android`；控制面创建 Run 时原样保存
 3. `POST /v1/devices` + 在现有 notify 触发点扇出 Expo / FCM / APNs
-4. `packages/mobile`：登录、列表、开 Run、snapshot + SSE、跟进（`pnpm dev:mobile` 在 `:5175` 预览；Expo 原生入口是 `packages/mobile/App.tsx`）
-5. 推送深链、钥匙串、TestFlight / 内部测试轨道
+4. `packages/mobile`：登录、列表、开 Run、snapshot + SSE、跟进。`pnpm dev:mobile` 是 `:5175` 视觉实验室；真机用 `cd packages/mobile && pnpm start`（Expo Go）。默认 API `https://neorun.cloud`，局域网调试填电脑 `http://IP:8080`（不要填 `127.0.0.1`）。
+5. 登录后 `POST /v1/devices`；`neo://runs/:id` 和通知点回该 Run；前台已有 SSE 时不重复本地横幅
 6. P1：图片、产物、Diff、环境选择
 7. （可选）Web 加 PWA / Web Push，给不想装 App 的人
 

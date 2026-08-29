@@ -5,23 +5,43 @@
     "scheme": "neo",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "agent.neo.mobile",
       "supportsTablet": false,
       "infoPlist": {
         "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "NSMicrophoneUsageDescription": "Neo 用麦克风把你说的话写进发送框。",
+        "NSSpeechRecognitionUsageDescription": "Neo 用语音识别把你说的话写成文字。"
       }
     },
     "android": {
       "package": "agent.neo.mobile",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "permissions": ["android.permission.RECORD_AUDIO"]
     },
-    "plugins": ["expo-secure-store", "expo-notifications"],
+    "androidStatusBar": {
+      "barStyle": "dark-content",
+      "backgroundColor": "#f7f3df",
+      "translucent": true
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Neo 用麦克风把你说的话写进发送框。",
+          "speechRecognitionPermission": "Neo 用语音识别把你说的话写成文字。",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ]
+    ],
     "extra": {
-      "apiUrl": ""
+      "apiUrl": "http://62.234.211.200"
     }
   }
 }

@@ -2837,10 +2837,12 @@ textarea {
   }
 
   .topbar {
-    padding: 6px 8px 6px max(8px, env(safe-area-inset-left));
-    padding-right: max(8px, env(safe-area-inset-right));
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
+    padding-bottom: 8px;
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
     align-items: center;
-    gap: 4px;
+    gap: 6px;
   }
 
   .topbar-lead {
@@ -2939,10 +2941,12 @@ textarea {
     gap: 8px;
   }
 
-  .sidebar-toggle {
-    min-width: 40px;
-    min-height: 40px;
-    padding: 8px;
+  .sidebar-toggle,
+  .top-actions .icon-btn,
+  .top-actions .inbox-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
   }
 
   .sidebar-toggle-label {
@@ -2966,7 +2970,9 @@ textarea {
     display: flex;
     flex: 0 0 auto;
     flex-wrap: nowrap;
-    gap: 2px;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0 2px 8px;
   }
 
   .status,
@@ -2983,17 +2989,17 @@ textarea {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 40px;
-    min-height: 40px;
-    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
     cursor: pointer;
   }
 
   .top-more-menu {
     display: none;
     position: fixed;
-    right: 12px;
-    top: calc(var(--app-offset-top, 0px) + 56px);
+    right: max(12px, env(safe-area-inset-right, 0px));
+    top: calc(var(--app-offset-top, 0px) + env(safe-area-inset-top, 0px) + 64px);
     left: auto;
     flex-direction: column;
     flex-wrap: nowrap;
@@ -3718,9 +3724,9 @@ textarea {
 
   .inbox-pop {
     position: fixed;
-    left: 12px;
-    right: 12px;
-    top: calc(var(--app-offset-top, 0px) + 108px);
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    top: calc(var(--app-offset-top, 0px) + env(safe-area-inset-top, 0px) + 116px);
     bottom: auto;
     width: auto;
     max-width: none;
@@ -3734,7 +3740,7 @@ textarea {
   }
 
   .top-more-menu {
-    top: calc(var(--app-offset-top, 0px) + 52px);
+    top: calc(var(--app-offset-top, 0px) + env(safe-area-inset-top, 0px) + 64px);
   }
 
   .intent-capsules {
@@ -3858,7 +3864,8 @@ html.is-narrow,
 .app.is-buddy .topbar {
   background: transparent;
   border-bottom: 0;
-  padding: 8px 12px 0;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) 4px
+    max(20px, env(safe-area-inset-left, 0px));
 }
 
 .app.is-buddy .top-actions .status {
@@ -3958,8 +3965,10 @@ html.is-narrow,
     display: none;
   }
 
-  .app.is-buddy .inbox-bell button {
-    min-width: 40px;
-    min-height: 40px;
+  .app.is-buddy .inbox-bell button,
+  .app.is-buddy .top-actions .icon-btn,
+  .top-actions .inbox-btn {
+    min-width: 44px;
+    min-height: 44px;
   }
 }

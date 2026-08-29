@@ -1,10 +1,11 @@
+import type { Automation, CreateAutomationRequest } from "@neo-cloud-agent/contracts/automation";
 import type { CreateDeviceRequest, Device } from "@neo-cloud-agent/contracts/device";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { RunEvent, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
-import type { Expert } from "@neo-cloud-agent/contracts/expert";
+import type { CreateExpertRequest, Expert, ExpertTeam, UpdateExpertRequest } from "@neo-cloud-agent/contracts/expert";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
-import type { Project } from "@neo-cloud-agent/contracts/project";
+import type { CreateProjectRequest, Project } from "@neo-cloud-agent/contracts/project";
 import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, Run } from "@neo-cloud-agent/contracts/run";
 
 import { readSseEvents } from "./sse.js";
@@ -25,6 +26,13 @@ export class MobileApiError extends Error {
   }
 }
 
+export function describeNetworkError(error: unknown, url: string): string {
+  const raw = error instanceof Error ? error.message : "network_error";
+  if (!/network request failed|failed to fetch|network_error/i.test(raw)) return raw;
+  const host = url.replace(/\/v1\/.*$/, "") || url;
+  return `连不上 ${host}。手机浏览器能开页面，但 App 请求到不了接口。可改填电脑局域网 http://IP:8080（不要 127.0.0.1）。`;
+}
+
 export interface TranscriptResponse {
   events?: RunEvent[];
   snapshot: TranscriptSnapshot;
@@ -42,13 +50,19 @@ export class MobileClient {
   }
 
   headers(json = false, extra?: Record<string, string>): Record<string, string> {
-    const headers: Record<string, string> = { ...extra };
+    const headers: Record<string, string> = {
+      accept: "application/json",
+      "user-agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 NeoMobile/0.1",
+      ...extra,
+    };
     if (json) headers["content-type"] = "application/json";
     if (this.token) headers.authorization = `Bearer ${this.token}`;
     return headers;
   }
 
   private resolve(path: string): string {
+    // Never append `?client=desk` or send `X-Neo-Client: desk`. Mobile uses the
+    // default control-plane visibility: cloud runs plus Desk Remote Control.
     if (!this.url) return path;
     return `${this.url.replace(/\/$/, "")}${path}`;
   }
@@ -63,7 +77,7 @@ export class MobileClient {
         signal: init?.signal,
       });
     } catch (error) {
-      throw new MobileApiError(error instanceof Error ? error.message : "network_error", 0);
+      throw new MobileApiError(describeNetworkError(error, this.resolve(path)), 0);
     }
     const text = await response.text();
     let parsed: unknown = undefined;
@@ -89,7 +103,7 @@ export class MobileClient {
     return this.request("POST", "/v1/auth/logout", {});
   }
 
-  me(): Promise<{ user: { id: string; email: string; orgId: string } | null }> {
+  me(): Promise<{ user: { id: string; email: string; orgId?: string; avatar?: string | null; neoAvatar?: string | null } | null }> {
     return this.request("GET", "/v1/me");
   }
 
@@ -143,6 +157,50 @@ export class MobileClient {
 
   listProjects(): Promise<{ projects: Project[] }> {
     return this.request("GET", "/v1/projects");
+  }
+
+  getProject(id: string): Promise<Project> {
+    return this.request("GET", `/v1/projects/${id}`);
+  }
+
+  createProject(input: CreateProjectRequest): Promise<Project> {
+    return this.request("POST", "/v1/projects", input);
+  }
+
+  listAutomations(): Promise<{ automations: Automation[] }> {
+    return this.request("GET", "/v1/automations");
+  }
+
+  createAutomation(input: CreateAutomationRequest): Promise<Automation> {
+    return this.request("POST", "/v1/automations", input);
+  }
+
+  updateAutomation(id: string, input: { enabled?: boolean }): Promise<Automation> {
+    return this.request("POST", `/v1/automations/${id}`, input);
+  }
+
+  listExpertTeams(): Promise<{ teams: ExpertTeam[] }> {
+    return this.request("GET", "/v1/expert-teams");
+  }
+
+  createExpert(input: CreateExpertRequest): Promise<Expert> {
+    return this.request("POST", "/v1/experts", input);
+  }
+
+  updateExpert(id: string, input: UpdateExpertRequest): Promise<Expert> {
+    return this.request("POST", `/v1/experts/${id}`, input);
+  }
+
+  deleteExpert(id: string): Promise<{ ok?: boolean }> {
+    return this.request("DELETE", `/v1/experts/${id}`);
+  }
+
+  getInvite(token: string): Promise<{ projectName: string; status: string }> {
+    return this.request("GET", `/v1/invites/${token}`);
+  }
+
+  acceptInvite(token: string): Promise<Project> {
+    return this.request("POST", `/v1/invites/${token}`, {});
   }
 
   openPullRequest(id: string, title: string): Promise<{ pullRequest?: { url?: string } }> {

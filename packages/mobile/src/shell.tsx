@@ -1,6 +1,7 @@
-import { BuddyIcon, BuddyMascot, BuddyTargetToggle } from "@neo-cloud-agent/ui";
+import { BuddyIcon, BuddyMascot } from "@neo-cloud-agent/ui";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { preview, STATUS_LABELS } from "./format";
+import { preview } from "./format";
+import { runRowMeta } from "./session";
 import { isActiveRunStatus } from "./turn";
 
 export function BuddyLogin(props: {
@@ -49,9 +50,6 @@ export function BuddyDrawer(props: {
   runs: Run[];
   userEmail: string;
   health: string;
-  target: "cloud" | "desk";
-  deskDisabled: boolean;
-  onTarget: (value: "cloud" | "desk") => void;
   onClose: () => void;
   onNew: () => void;
   onOpenRun: (id: string) => void;
@@ -70,7 +68,6 @@ export function BuddyDrawer(props: {
             <strong>Neo</strong>
           </div>
         </div>
-        <BuddyTargetToggle value={props.target} deskDisabled={props.deskDisabled} wide onChange={props.onTarget} />
         <nav className="buddy-nav" aria-label="目录">
           {(
             [
@@ -101,10 +98,7 @@ export function BuddyDrawer(props: {
                 {isActiveRunStatus(run.status) ? "● " : ""}
                 {preview(run.prompt)}
               </b>
-              <span>
-                {STATUS_LABELS[run.status] ?? run.status}
-                {run.vmSlotId ? " · VM" : ""}
-              </span>
+              <span>{runRowMeta(run)}</span>
             </button>
           ))}
         </div>

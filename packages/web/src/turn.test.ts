@@ -9,10 +9,14 @@ import {
   isTerminalTurnEvent,
   isTurnBusy,
   pendingUserArrived,
+  QUEUED_SLOT_NOTICE,
+  shouldRefreshTranscript,
+  shouldShowBuddyHome,
   shouldShowThinking,
   statusFromEventKind,
   turnStatusLabel,
   withPendingUser,
+  withQueuedNotice,
 } from "./turn.js";
 
 function message(partial: Partial<TranscriptMessage> & Pick<TranscriptMessage, "id" | "role">): TranscriptMessage {
@@ -94,4 +98,24 @@ test("withPendingUser shows an optimistic bubble until the real event arrives", 
   assert.equal(withPendingUser(arrived, pending).length, 1);
   assert.equal(pendingUserArrived(arrived, pending), true);
   assert.equal(pendingUserArrived([], pending), false);
+});
+
+test("shouldRefreshTranscript polls while queued or when SSE is quiet", () => {
+  assert.equal(shouldRefreshTranscript({ lastSseAt: Date.now(), status: "NOT_YET_STARTED" }), true);
+  assert.equal(shouldRefreshTranscript({ lastSseAt: Date.now(), status: "RUNNING" }), false);
+  assert.equal(shouldRefreshTranscript({ lastSseAt: 0, now: 4000, status: "RUNNING" }), true);
+});
+
+test("withQueuedNotice inserts the slot-wait line once", () => {
+  const first = withQueuedNotice([], "NOT_YET_STARTED", "2026-08-29T00:00:00.000Z");
+  assert.equal(first.at(-1)?.text, QUEUED_SLOT_NOTICE);
+  assert.equal(withQueuedNotice(first, "NOT_YET_STARTED").length, 1);
+  assert.equal(withQueuedNotice(first, "RUNNING").length, 1);
+});
+
+test("shouldShowBuddyHome hides the welcome screen after send", () => {
+  assert.equal(shouldShowBuddyHome({ narrow: true, runId: null }), true);
+  assert.equal(shouldShowBuddyHome({ narrow: true, runId: null, pending: true }), false);
+  assert.equal(shouldShowBuddyHome({ narrow: true, runId: null, messageCount: 1 }), false);
+  assert.equal(shouldShowBuddyHome({ narrow: false, runId: null }), false);
 });

@@ -175,3 +175,49 @@ export function pendingUserArrived(messages: TranscriptMessage[], pending: Pendi
       Date.parse(message.createdAt) >= Date.parse(pending.createdAt) - 5000,
   );
 }
+
+export const QUEUED_SLOT_NOTICE = "两台云端电脑都在忙，已排队，空出来会自动开始";
+
+export function shouldRefreshTranscript(input: {
+  lastSseAt: number;
+  now?: number;
+  staleMs?: number;
+  status?: string | null;
+}): boolean {
+  if (input.status === "NOT_YET_STARTED") return true;
+  return (input.now ?? Date.now()) - input.lastSseAt >= (input.staleMs ?? 3000);
+}
+
+export function withQueuedNotice(
+  messages: TranscriptMessage[],
+  status?: string | null,
+  now = new Date().toISOString(),
+): TranscriptMessage[] {
+  if (status !== "NOT_YET_STARTED") return messages;
+  if (messages.some((message) => message.kind === "run.queued" || message.text.includes("已排队，空出来"))) {
+    return messages;
+  }
+  return [
+    ...messages,
+    {
+      id: `local-queued-${now}`,
+      role: "setup",
+      text: QUEUED_SLOT_NOTICE,
+      createdAt: now,
+      kind: "run.queued",
+    },
+  ];
+}
+
+/** Phone home hides the transcript until a run exists; keep it after send so the bubble is visible. */
+export function shouldShowBuddyHome(input: {
+  narrow: boolean;
+  runId?: string | null;
+  loadingTranscript?: boolean;
+  pending?: boolean;
+  messageCount?: number;
+}): boolean {
+  return Boolean(
+    input.narrow && !input.runId && !input.loadingTranscript && !input.pending && !(input.messageCount ?? 0),
+  );
+}

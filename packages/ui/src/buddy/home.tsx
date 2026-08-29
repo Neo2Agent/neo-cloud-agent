@@ -5,21 +5,34 @@ import { BuddyTargetToggle } from "./target-toggle";
 
 type Props = {
   moreOpen: boolean;
-  target: "cloud" | "desk";
+  target?: "cloud" | "desk";
   deskDisabled?: boolean;
+  showTarget?: boolean;
   skills: BuddySkill[];
-  onTarget: (value: "cloud" | "desk") => void;
+  onTarget?: (value: "cloud" | "desk") => void;
   onShortcut: (id: (typeof BUDDY_SHORTCUTS)[number]["id"]) => void;
   onSkill: (id: string) => void;
 };
 
-export function BuddyHome({ moreOpen, target, deskDisabled, skills, onTarget, onShortcut, onSkill }: Props) {
+export function BuddyHome({
+  moreOpen,
+  target = "cloud",
+  deskDisabled,
+  showTarget,
+  skills,
+  onTarget,
+  onShortcut,
+  onSkill,
+}: Props) {
+  const targetToggle = (showTarget ?? Boolean(onTarget)) && onTarget;
   return (
     <div className={moreOpen ? "buddy-home is-more" : "buddy-home"}>
       <div className="buddy-home-hero">
         <BuddyMascot />
         <h2 className="buddy-hello">Neo，我帮你</h2>
-        <BuddyTargetToggle value={target} deskDisabled={deskDisabled} onChange={onTarget} />
+        {targetToggle ? (
+          <BuddyTargetToggle value={target} deskDisabled={deskDisabled} onChange={onTarget} />
+        ) : null}
       </div>
       {moreOpen ? (
         <ul className="buddy-skill-grid">

@@ -139,7 +139,7 @@ neo-cloud-agent/
     admin-web        管理台前端，独立 Vite :5176；现网挂 /admin/
     desk             Electron 壳 + 独立 UI + 本机 worker
     cli              终端客户端 neo，打 /v1
-    mobile           手机客户端（Vite :5175 + Expo 入口）
+    mobile           手机客户端（Expo 壳 + Vite :5175 视觉实验室）
   infra/             compose 与三份 Dockerfile + Firecracker 配方
   docs/              架构、CLI、Desk、Mobile、域名、后管调研
   .neo/environment.json
@@ -157,7 +157,7 @@ neo-cloud-agent/
 | `admin-api` + `admin-web` | 平台管理台 | `:8090` + `:5176`；现网 `/admin/` |
 | `desk` | 桌面壳 + 本机执行目标 | UI `:5174` + Electron（无 `:8082` 浏览器预览） |
 | `cli` | headless `/v1` 宿主 | `pnpm neo` |
-| `mobile` | 手机 `/v1` 宿主 | `:5175` |
+| `mobile` | 手机 `/v1` 宿主 | Expo Go；实验室 `:5175` |
 
 `orchestrator` / `scm` / `env` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
 
@@ -533,7 +533,7 @@ GitHub PR 评论和 Actions 经 `POST /webhooks/github`（HMAC）进跟进队列
 | 管理台 | `admin-web` + `admin-api` | 无 | 总览 / 用户 / Run / 内置专家配置与下发 / 限流；仅平台管理员 |
 | Desk | `packages/desk` | 云或本机 | Electron + 独立 UI；This Computer（默认）vs Remote control；inline 直接带 assignment，dispatch 走 inbox SSE |
 | CLI | `packages/cli` | 云端 | `pnpm neo`：创建、SSE、跟进、归档、diff、PR；headless |
-| Mobile | `packages/mobile` | 云端 | P0：登录、列表、开 Run、SSE、跟进；`source` 为 ios/android；推送 `/v1/devices` |
+| Mobile | `packages/mobile` | 云端 + Desk Remote | Expo 壳：新开只 cloud；列表 / 跟进含 Desk Remote；`source` ios/android；推送 `/v1/devices` |
 | Telegram / 微信 | `ingress/` | 云端 | 发一句开新对话；做完 / 开 PR 可推回来 |
 | Slack | — | — | `source` 预留，未做 |
 

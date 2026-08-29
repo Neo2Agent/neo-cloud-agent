@@ -75,9 +75,12 @@ import {
   isTurnBusy,
   pendingUserArrived,
   runningToolName,
+  shouldRefreshTranscript,
+  shouldShowBuddyHome,
   statusFromEventKind,
   turnStatusLabel,
   withPendingUser,
+  withQueuedNotice,
   type PendingUser,
 } from "./turn";
 import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
@@ -285,6 +288,7 @@ export function App() {
   const streamFrameRef = useRef(0);
   const streamTimerRef = useRef(0);
   const lastEventIdRef = useRef<string | null>(null);
+  const lastSseAtRef = useRef(0);
   const appliedEventIdsRef = useRef<Set<string>>(new Set());
   const openGenRef = useRef(0);
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
@@ -292,10 +296,12 @@ export function App() {
   const sendingRef = useRef(false);
   const pendingRef = useRef<PendingUser | null>(null);
   const keepPendingRef = useRef(false);
+  const currentStatusRef = useRef<string | null | undefined>(null);
   const projectNamesRef = useRef(projectNames);
   tokenRef.current = token;
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
+  currentStatusRef.current = currentRun?.status;
   projectNamesRef.current = projectNames;
 
   const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
@@ -426,7 +432,11 @@ export function App() {
           }
         }
       };
+      source.onopen = () => {
+        lastSseAtRef.current = Date.now();
+      };
       source.onmessage = (message) => {
+        lastSseAtRef.current = Date.now();
         const event = parseSseData(message.data);
         if (!event || appliedEventIdsRef.current.has(event.id)) {
           return;
@@ -700,7 +710,9 @@ export function App() {
         if (openGenRef.current !== gen) return false;
         const snapshot = transcript.snapshot;
         const loaded = snapshot?.messages ?? [];
-        setMessages(isActiveRunStatus(run.status) ? loaded : settleTranscriptMessages(loaded));
+        setMessages(
+          withQueuedNotice(isActiveRunStatus(run.status) ? loaded : settleTranscriptMessages(loaded), run.status),
+        );
         setRemaining(snapshot?.remaining ?? 0);
         setNextBefore(snapshot?.nextBefore ?? snapshot?.messages?.[0]?.id ?? null);
         lastEventIdRef.current = snapshot?.lastEventId ?? null;
@@ -709,6 +721,7 @@ export function App() {
         lastEventIdRef.current = null;
       }
       setLoadingTranscript(false);
+      lastSseAtRef.current = Date.now();
       listen(run.id, lastEventIdRef.current);
       void refreshVms();
       if (run.executionTarget?.loop === "desk") {
@@ -1192,6 +1205,53 @@ export function App() {
     }, 5000);
     return () => window.clearInterval(timer);
   }, [applyVms, refreshDesks, refreshRuns, refreshVms, runId]);
+
+  useEffect(() => {
+    if (!runId) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (!tokenRef.current) return;
+      const status = currentStatusRef.current;
+      if (!shouldRefreshTranscript({ lastSseAt: lastSseAtRef.current, status })) return;
+      try {
+        const [runRes, transcriptRes] = await Promise.all([
+          api(tokenRef.current, `/v1/runs/${runId}`),
+          api(tokenRef.current, `/v1/runs/${runId}/transcript?limit=${HISTORY_PAGE}`),
+        ]);
+        if (cancelled) return;
+        const fresh = runRes.ok ? await readJson<Run>(runRes) : null;
+        if (fresh && fresh.id === runId) {
+          setCurrentRun((prev) => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
+          setRuns((prev) => prev.map((item) => (item.id === fresh.id ? { ...item, ...fresh } : item)));
+        }
+        if (!transcriptRes.ok) return;
+        const body = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
+        const snapshot = body.snapshot;
+        if (!snapshot) return;
+        const nextStatus = fresh?.status ?? status;
+        if (snapshot.lastEventId && snapshot.lastEventId === lastEventIdRef.current) {
+          setMessages((prev) => withQueuedNotice(prev, nextStatus));
+          return;
+        }
+        const loaded = snapshot.messages ?? [];
+        lastEventIdRef.current = snapshot.lastEventId ?? lastEventIdRef.current;
+        setMessages(
+          withQueuedNotice(
+            isActiveRunStatus(nextStatus) ? loaded : settleTranscriptMessages(loaded),
+            nextStatus,
+          ),
+        );
+      } catch {
+        // keep the last painted transcript
+      }
+    };
+    const timer = window.setInterval(() => void tick(), 2500);
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [runId]);
 
   useEffect(() => () => closeStream(), [closeStream]);
 
@@ -2093,7 +2153,13 @@ export function App() {
               />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
-                {narrow && !runId && !loadingTranscript ? (
+                {shouldShowBuddyHome({
+                  narrow,
+                  runId,
+                  loadingTranscript,
+                  pending: Boolean(pendingTurn),
+                  messageCount: displayMessages.length,
+                }) ? (
                   <BuddyHome
                     moreOpen={moreOpen}
                     target={deskTarget.kind === "desk" ? "desk" : "cloud"}

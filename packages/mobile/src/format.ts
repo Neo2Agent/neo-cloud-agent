@@ -29,6 +29,11 @@ export function toolArgPreview(args: unknown): string {
   return typeof command === "string" ? command.replace(/\s+/g, " ").slice(0, 80) : "";
 }
 
+export function toolBodyText(tool: Pick<TranscriptTool, "output" | "status">): string {
+  if (tool.output?.trim()) return tool.output.trim();
+  return tool.status === "running" ? "执行中…" : "";
+}
+
 export function toolDisplayName(tool: TranscriptTool): string {
   const nested = typeof tool.details?.subagent === "string" ? tool.details.subagent : "";
   if (nested && tool.name !== "neo_subagent") {
@@ -37,7 +42,25 @@ export function toolDisplayName(tool: TranscriptTool): string {
   return tool.name === "neo_subagent" ? "subagent" : tool.name;
 }
 
+export const CHAT_MODELS = [
+  { id: "deepseek-v4-flash", label: "DeepSeek Flash", short: "Flash" },
+  { id: "deepseek-v4-pro", label: "DeepSeek Pro", short: "Pro" },
+] as const;
+
 export function resolveChatModel(model?: string | null): string {
   if (/pro/i.test(model ?? "") && !/vision/i.test(model ?? "")) return "deepseek-v4-pro";
   return "deepseek-v4-flash";
+}
+
+export function chatModelLabel(model?: string | null): string {
+  return resolveChatModel(model) === "deepseek-v4-pro" ? "DeepSeek Pro" : "DeepSeek Flash";
+}
+
+export function chatModelShort(model?: string | null): string {
+  return resolveChatModel(model) === "deepseek-v4-pro" ? "Pro" : "Flash";
+}
+
+export function avatarLetter(email: string, fallback = "我"): string {
+  const letter = (email.trim().split("@")[0] ?? "").charAt(0);
+  return letter ? letter.toUpperCase() : fallback;
 }
