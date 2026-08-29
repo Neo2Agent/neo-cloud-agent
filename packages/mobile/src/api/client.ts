@@ -2,6 +2,9 @@ import type { CreateDeviceRequest, Device } from "@neo-cloud-agent/contracts/dev
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { RunEvent, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
+import type { Expert } from "@neo-cloud-agent/contracts/expert";
+import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, Run } from "@neo-cloud-agent/contracts/run";
 
 import { readSseEvents } from "./sse.js";
@@ -128,6 +131,22 @@ export class MobileClient {
 
   listDesks(): Promise<{ desks: Desk[] }> {
     return this.request("GET", "/v1/desks");
+  }
+
+  listExperts(): Promise<{ experts: Expert[] }> {
+    return this.request("GET", "/v1/experts");
+  }
+
+  listPlugins(): Promise<{ plugins: PluginCatalogItem[] }> {
+    return this.request("GET", "/v1/plugins");
+  }
+
+  listProjects(): Promise<{ projects: Project[] }> {
+    return this.request("GET", "/v1/projects");
+  }
+
+  openPullRequest(id: string, title: string): Promise<{ pullRequest?: { url?: string } }> {
+    return this.request("POST", `/v1/runs/${id}/pull-request`, { title });
   }
 
   registerDevice(input: CreateDeviceRequest): Promise<Device> {

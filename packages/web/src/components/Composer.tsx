@@ -1,4 +1,4 @@
-import { useMemo, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
@@ -6,10 +6,19 @@ import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { DeskTarget } from "../desk";
-import { IconArrowUp, IconStop } from "../icons";
+import { IconArrowUp, IconGear, IconPlus, IconStop } from "../icons";
 import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
-import { Select } from "@neo-cloud-agent/ui";
+import {
+  Select,
+  browserSpeechCtor,
+  classifyPointer,
+  holdPadLabel,
+  mergeSpokenText,
+  modelShortLabel,
+  startSpeechRecognition,
+  type SpeechSession,
+} from "@neo-cloud-agent/ui";
 import { ContextUsageControl } from "./ContextUsage";
 import { TargetPicker } from "./TargetPicker";
 
@@ -55,6 +64,10 @@ type Props = {
   onSend: () => void;
   onQueue?: () => void;
   onStop?: () => void;
+  layout?: "default" | "buddy";
+  followUp?: boolean;
+  onOpenSettings?: () => void;
+  onOpenPlus?: () => void;
 };
 
 export function Composer({
@@ -99,8 +112,20 @@ export function Composer({
   onSend,
   onQueue,
   onStop,
+  layout = "default",
+  followUp = false,
+  onOpenSettings,
+  onOpenPlus,
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const [holding, setHolding] = useState(false);
+  const holdStarted = useRef(0);
+  const speechRef = useRef<SpeechSession | null>(null);
+  const promptRef = useRef(prompt);
+  promptRef.current = prompt;
+  const buddy = layout === "buddy";
+  const speechCtor = typeof window === "undefined" ? null : browserSpeechCtor(window);
   const trigger = mentionTrigger(prompt);
   const mentionHits = useMemo(
     () => (trigger ? filterMentions(mentions, trigger.query) : []),
@@ -125,13 +150,49 @@ export function Composer({
     : blocked
       ? (blockedHint || "发起这条对话的 Desk 离线。打开 Desk 后才能继续。")
       : busy
-        ? "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
-        : isNarrowViewport()
-          ? "描述任务，点发送。可粘贴图片。"
-          : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
+        ? buddy
+          ? "继续说一句…"
+          : "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
+        : buddy
+          ? followUp
+            ? "继续说一句…"
+            : "说说你要做什么"
+          : isNarrowViewport()
+            ? "描述任务，点发送。可粘贴图片。"
+            : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
+  const showHold = buddy && !typing && empty && !archived && !blocked;
+  const beginHold = (event: PointerEvent<HTMLButtonElement>) => {
+    if (sendLocked || busy) return;
+    holdStarted.current = Date.now();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (!speechCtor) return;
+    setHolding(true);
+    try {
+      speechRef.current = startSpeechRecognition(new speechCtor(), (text) => onPrompt(mergeSpokenText("", text)));
+    } catch {
+      setHolding(false);
+      speechRef.current = null;
+    }
+  };
+  const endHold = async () => {
+    const kind = classifyPointer(Date.now() - holdStarted.current);
+    holdStarted.current = 0;
+    const session = speechRef.current;
+    speechRef.current = null;
+    setHolding(false);
+    if (kind === "tap" || !session) {
+      setTyping(true);
+      document.getElementById("prompt")?.focus();
+      return;
+    }
+    const spoken = await session.stop();
+    const next = mergeSpokenText(promptRef.current, spoken);
+    if (next !== promptRef.current) onPrompt(next);
+    if (spoken && !sendLocked && !busy) onSend();
+  };
   return (
     <form
-      className={busy ? "composer is-busy" : sendLocked ? "composer is-locked" : "composer"}
+      className={`${busy ? "composer is-busy" : sendLocked ? "composer is-locked" : "composer"}${buddy ? " buddy-composer" : ""}`}
       id="composer"
       aria-busy={busy}
       onSubmit={(event: FormEvent) => {
@@ -154,14 +215,37 @@ export function Composer({
           ))}
         </div>
       ) : null}
+      {showHold ? (
+        <button
+          type="button"
+          className={holding ? "buddy-hold is-holding" : "buddy-hold"}
+          aria-label={holdPadLabel({ supported: Boolean(speechCtor), holding, followUp })}
+          onPointerDown={beginHold}
+          onPointerUp={() => void endHold()}
+          onPointerCancel={() => {
+            setHolding(false);
+            void speechRef.current?.stop();
+            speechRef.current = null;
+          }}
+        >
+          {holdPadLabel({ supported: Boolean(speechCtor), holding, followUp })}
+        </button>
+      ) : null}
       <textarea
         id="prompt"
         name="prompt"
-        rows={isNarrowViewport() ? 2 : 3}
+        className={showHold ? "buddy-prompt-sr" : undefined}
+        rows={buddy ? 2 : isNarrowViewport() ? 2 : 3}
         placeholder={placeholder}
-        required={!busy && !sendLocked && images.length === 0}
+        required={!busy && !sendLocked && images.length === 0 && !showHold}
         disabled={archived}
         value={prompt}
+        onFocus={() => {
+          if (buddy) setTyping(true);
+        }}
+        onBlur={() => {
+          if (buddy && empty) setTyping(false);
+        }}
         onChange={(event) => onPrompt(event.target.value)}
         onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
           const files = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
@@ -215,81 +299,113 @@ export function Composer({
           ))}
         </div>
       ) : null}
-      <div className="composer-bar">
-        <div className="composer-pickers">
-          <TargetPicker
-            target={target}
-            canRunLocal={canRunLocal}
-            folder={folder}
-            desks={desks}
-            locked={targetLocked}
-            lockLabel={targetLockLabel}
-            onTarget={onTarget}
-            onPickFolder={onPickFolder}
-          />
-          <Select
-            id="agent-mode"
-            size="pill"
-            aria-label="模式"
-            value={mode}
-            onValueChange={(value) => onMode(value as AgentMode)}
-            options={[
-              { value: "agent", label: "Agent" },
-              { value: "ask", label: "Ask" },
-            ]}
-          />
-          <Select
-            id="agent-model"
-            size="pill"
-            aria-label="模型"
-            value={model}
-            onValueChange={onModel}
-            options={models.map((item) => ({ value: item.id, label: item.label }))}
-          />
-          <Select
-            id="agent-expert"
-            size="pill"
-            aria-label="专家"
-            value={expertValue}
-            disabled={expertLocked || !onExpert}
-            onValueChange={(value) => onExpert?.(value)}
-            groups={[
-              { label: "默认", options: [{ value: "", label: "Neo" }] },
-              ...(experts.length > 0
-                ? [{ label: "专家", options: experts.map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
-                : []),
-              ...(teams.length > 0
-                ? [{ label: "专家团", options: teams.map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: item.name })) }]
-                : []),
-            ]}
-          />
-        </div>
-        <div className="composer-send-group">
-          {contextUsage ? (
-            <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
-          ) : null}
-          <p className="hint" id="vm-status" data-busy={busy ? "true" : "false"}>
-            {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
-            {hint}
-          </p>
+      {buddy ? (
+        <div className="buddy-composer-bar">
+          <button type="button" className="buddy-icon-btn" aria-label="设置" onClick={onOpenSettings}>
+            <IconGear size={18} />
+          </button>
+          <div className="buddy-model">
+            <Select
+              id="agent-model"
+              size="pill"
+              aria-label="模型"
+              value={model}
+              onValueChange={onModel}
+              options={models.map((item) => ({ value: item.id, label: modelShortLabel(item.id) }))}
+            />
+          </div>
           {busy && canStop ? (
             <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
               <span className="stop-icon" aria-hidden="true">
                 <IconStop size={10} />
               </span>
             </button>
-          ) : (
-            <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label={busy ? "发送中" : "发送"}>
+          ) : empty ? null : (
+            <button type="submit" id="send" className="send" disabled={sendLocked || busy} aria-label="发送">
               <IconArrowUp size={16} />
             </button>
           )}
+          <button type="button" className="buddy-plus" aria-label="添加" onClick={onOpenPlus}>
+            <IconPlus size={20} />
+          </button>
         </div>
-      </div>
+      ) : (
+        <div className="composer-bar">
+          <div className="composer-pickers">
+            <TargetPicker
+              target={target}
+              canRunLocal={canRunLocal}
+              folder={folder}
+              desks={desks}
+              locked={targetLocked}
+              lockLabel={targetLockLabel}
+              onTarget={onTarget}
+              onPickFolder={onPickFolder}
+            />
+            <Select
+              id="agent-mode"
+              size="pill"
+              aria-label="模式"
+              value={mode}
+              onValueChange={(value) => onMode(value as AgentMode)}
+              options={[
+                { value: "agent", label: "Agent" },
+                { value: "ask", label: "Ask" },
+              ]}
+            />
+            <Select
+              id="agent-model"
+              size="pill"
+              aria-label="模型"
+              value={model}
+              onValueChange={onModel}
+              options={models.map((item) => ({ value: item.id, label: item.label }))}
+            />
+            <Select
+              id="agent-expert"
+              size="pill"
+              aria-label="专家"
+              value={expertValue}
+              disabled={expertLocked || !onExpert}
+              onValueChange={(value) => onExpert?.(value)}
+              groups={[
+                { label: "默认", options: [{ value: "", label: "Neo" }] },
+                ...(experts.length > 0
+                  ? [{ label: "专家", options: experts.map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
+                  : []),
+                ...(teams.length > 0
+                  ? [{ label: "专家团", options: teams.map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: item.name })) }]
+                  : []),
+              ]}
+            />
+          </div>
+          <div className="composer-send-group">
+            {contextUsage ? (
+              <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
+            ) : null}
+            <p className="hint" id="vm-status" data-busy={busy ? "true" : "false"}>
+              {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
+              {hint}
+            </p>
+            {busy && canStop ? (
+              <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
+                <span className="stop-icon" aria-hidden="true">
+                  <IconStop size={10} />
+                </span>
+              </button>
+            ) : (
+              <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label={busy ? "发送中" : "发送"}>
+                <IconArrowUp size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </form>
   );
 }
 
-function readImageRef(file: File): Promise<ImageRef> {
+export function readImageRef(file: File): Promise<ImageRef> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error ?? new Error("read image failed"));

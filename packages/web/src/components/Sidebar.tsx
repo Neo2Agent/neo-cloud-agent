@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
 import { BrandMark } from "@neo-cloud-agent/ui";
-import { IconClose, IconNewChat, IconStar } from "../icons";
+import { IconAutomations, IconClose, IconExperts, IconNewChat, IconProjects, IconSkills, IconStar } from "../icons";
+import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "../turn";
 
@@ -28,6 +29,11 @@ type Props = {
   onLogin: () => void;
   onLogout: () => void;
   onClose?: () => void;
+  buddy?: boolean;
+  target?: "cloud" | "desk";
+  deskDisabled?: boolean;
+  onTarget?: (value: "cloud" | "desk") => void;
+  onOpenNav?: (id: "automations" | "experts" | "projects" | "skills") => void;
 };
 
 export function Sidebar({
@@ -46,6 +52,11 @@ export function Sidebar({
   onLogin,
   onLogout,
   onClose,
+  buddy = false,
+  target = "cloud",
+  deskDisabled = false,
+  onTarget,
+  onOpenNav,
 }: Props) {
   const [query, setQuery] = useState("");
   const [selecting, setSelecting] = useState(false);
@@ -143,20 +154,57 @@ export function Sidebar({
           </button>
         ) : null}
       </div>
+      {buddy ? (
+        <>
+          {onTarget ? <BuddyTargetToggle value={target} deskDisabled={deskDisabled} onChange={onTarget} /> : null}
+          <nav className="buddy-nav" aria-label="目录">
+            {(
+              [
+                ["automations", "自动化", IconAutomations],
+                ["experts", "专家", IconExperts],
+                ["projects", "项目", IconProjects],
+                ["skills", "技能", IconSkills],
+              ] as const
+            ).map(([id, label, Icon]) => (
+              <button key={id} type="button" onClick={() => onOpenNav?.(id)}>
+                <Icon size={18} />
+                <span>{label}</span>
+                <BuddyIcon name="chevron" size={16} />
+              </button>
+            ))}
+          </nav>
+          <div className="buddy-task-head">
+            <span>任务</span>
+            {onArchiveMany ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelecting((value) => !value);
+                  setSelected([]);
+                }}
+              >
+                {selecting ? "取消" : "编辑"}
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : null}
       <button className="new-chat" id="new-chat" type="button" onClick={onNewChat}>
         <IconNewChat size={16} />
-        新对话
+        {buddy ? "新建任务" : "新对话"}
       </button>
       <div className="run-tools">
-        <input
-          type="search"
-          className="run-search"
-          placeholder="搜索对话"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label="搜索对话"
-        />
-        {onArchiveMany ? (
+        {buddy ? null : (
+          <input
+            type="search"
+            className="run-search"
+            placeholder="搜索对话"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="搜索对话"
+          />
+        )}
+        {onArchiveMany && (!buddy || selecting) ? (
           <div className="run-tools-actions">
             {selecting && selected.length > 0 ? (
               <button
@@ -171,16 +219,18 @@ export function Sidebar({
                 归档 {selected.length} 条
               </button>
             ) : null}
-            <button
-              type="button"
-              className={selecting ? "toolbar-btn is-on" : "toolbar-btn"}
-              onClick={() => {
-                setSelecting((value) => !value);
-                setSelected([]);
-              }}
-            >
-              {selecting ? "取消" : "批量归档"}
-            </button>
+            {buddy ? null : (
+              <button
+                type="button"
+                className={selecting ? "toolbar-btn is-on" : "toolbar-btn"}
+                onClick={() => {
+                  setSelecting((value) => !value);
+                  setSelected([]);
+                }}
+              >
+                {selecting ? "取消" : "批量归档"}
+              </button>
+            )}
           </div>
         ) : null}
       </div>

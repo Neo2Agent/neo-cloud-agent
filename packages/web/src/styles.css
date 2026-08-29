@@ -3793,3 +3793,140 @@ textarea {
     flex-wrap: wrap;
   }
 }
+
+html.is-narrow,
+.app.is-buddy {
+  --bg: #f7f7f8;
+  --bg-2: #f4f4f5;
+  --rail: #ffffff;
+  --stage: #f7f7f8;
+  --panel: #ffffff;
+  --line: #ececee;
+  --muted: #8a8a8e;
+  --text: #1a1a1a;
+  --user: #efefef;
+  --shadow: 0 10px 28px rgba(17, 17, 16, 0.07);
+}
+
+.app.is-buddy .main {
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    "topbar"
+    "workspace"
+    "projectchip"
+    "composer"
+    "footer";
+}
+
+.app.is-buddy .buddy-footer {
+  grid-area: footer;
+}
+
+.app.is-buddy .app-tabs,
+.app.is-buddy .topbar-heading,
+.app.is-buddy .sidebar-toggle-label,
+.app.is-buddy .desk-badge,
+.app.is-buddy .top-more-sum {
+  display: none;
+}
+
+.app.is-buddy .topbar {
+  background: transparent;
+  border-bottom: 0;
+  padding: 8px 12px 0;
+}
+
+.app.is-buddy .top-actions .status {
+  display: none;
+}
+
+.app.is-buddy .workspace-stage {
+  background: transparent;
+}
+
+.app.is-buddy .transcript {
+  background: transparent;
+}
+
+.app.is-buddy .buddy-home {
+  height: 100%;
+}
+
+.app.is-buddy .composer.buddy-composer {
+  width: auto;
+  max-width: none;
+  margin: 0 12px 4px;
+  padding: 8px 12px 10px;
+  border: 0;
+  border-radius: 28px;
+  box-shadow: 0 8px 28px rgba(17, 17, 16, 0.08);
+  max-height: none;
+}
+
+.app.is-buddy .composer.buddy-composer textarea:not(.buddy-prompt-sr) {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.app.is-buddy .composer-bar .hint,
+.app.is-buddy #vm-status {
+  display: none;
+}
+
+.app.is-buddy .sidebar {
+  background: #ffffff;
+  box-shadow: 8px 0 32px rgba(17, 17, 16, 0.08);
+}
+
+.app.is-buddy .new-chat {
+  background: transparent;
+  color: var(--text);
+  justify-content: flex-start;
+  padding-left: 4px;
+  font-size: 16px;
+}
+
+.app.is-buddy .new-chat:hover {
+  background: var(--bg-2);
+}
+
+.app.is-buddy .run-item {
+  border: 0;
+  background: transparent;
+  padding: 10px 4px;
+}
+
+.auth-gate.is-buddy {
+  align-items: center;
+  background: #f7f7f8;
+}
+
+.auth-gate.is-buddy .auth-card {
+  border: 0;
+  box-shadow: 0 10px 32px rgba(17, 17, 16, 0.07);
+  border-radius: 24px;
+  padding: 28px 22px 22px;
+}
+
+.auth-gate.is-buddy .auth-brand {
+  flex-direction: column;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.auth-gate.is-buddy .auth-submit {
+  background: #111;
+  border-radius: 999px;
+  min-height: 48px;
+}
+
+@media (max-width: 860px) {
+  .app.is-buddy .top-more {
+    display: none;
+  }
+
+  .app.is-buddy .inbox-bell button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

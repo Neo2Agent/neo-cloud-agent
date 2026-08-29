@@ -7,6 +7,7 @@ import "@fontsource/geist-sans/400.css";
 import "@fontsource/geist-sans/500.css";
 import "@fontsource/geist-sans/600.css";
 import "@neo-cloud-agent/ui/styles.css";
+import "@neo-cloud-agent/ui/buddy.css";
 import "./styles.css";
 
 bindVisualViewport(document, window);

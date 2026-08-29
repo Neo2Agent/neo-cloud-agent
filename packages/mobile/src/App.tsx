@@ -7,22 +7,35 @@ import {
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import { remoteControlSendLock, type Desk } from "@neo-cloud-agent/contracts/desk";
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import type { Expert } from "@neo-cloud-agent/contracts/expert";
+import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import { pluginPickerLabel } from "@neo-cloud-agent/contracts/plugin";
+import type { Project } from "@neo-cloud-agent/contracts/project";
+import { BUNDLED_RECIPES, recipeById } from "@neo-cloud-agent/contracts/recipe";
+import type { ExecutionTarget, Run } from "@neo-cloud-agent/contracts/run";
+import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { MobileApiError, MobileClient } from "./api/client";
 import { webCredentials, type CredentialStore } from "./api/credentials";
-import { detectMobileSource, parseRunIdFromHref } from "./api/source";
+import { detectMobileSource, parseMobileScreen } from "./api/source";
+import { BuddyComposer } from "./composer";
 import { preview, resolveChatModel, STATUS_LABELS, toolArgPreview, toolDisplayName } from "./format";
+import { BuddyDrawer, BuddyLogin, CatalogList } from "./shell";
 import { applyLiveEvents } from "./stream";
 import { isComposerClosed, isTerminalTurnEvent, statusFromEventKind } from "./turn";
-import { Select } from "@neo-cloud-agent/ui";
 
-type Screen = "login" | "list" | "chat" | "settings";
+function hashScreen() {
+  return parseMobileScreen(location.hash || location.href);
+}
 
-function hashScreen(): { screen: Exclude<Screen, "login">; runId: string | null } {
-  if (location.hash === "#/settings") return { screen: "settings", runId: null };
-  const runId = parseRunIdFromHref(location.hash || location.href);
-  if (runId) return { screen: "chat", runId };
-  return { screen: "list", runId: null };
+function firstDeskTarget(desks: Desk[]): ExecutionTarget {
+  for (const desk of desks) {
+    if (!desk.online || desk.allowRemote !== true) continue;
+    const workspace = desk.workspaces?.[0];
+    if (workspace) {
+      return { loop: "desk", tools: "desk", deskId: desk.id, deskWorkspaceId: workspace.id, remoteControl: true };
+    }
+  }
+  return { loop: "cloud", tools: "cloud" };
 }
 
 export function App({ store = webCredentials() }: { store?: CredentialStore }) {
@@ -30,24 +43,33 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   const [token, setToken] = useState("");
   const [apiUrl, setApiUrl] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [busy, setBusy] = useState(false);
   const [route, setRoute] = useState(hashScreen);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [envs, setEnvs] = useState<Environment[]>([]);
+  const [, setEnvs] = useState<Environment[]>([]);
   const [envId, setEnvId] = useState("");
   const [model, setModel] = useState("deepseek-v4-flash");
   const [current, setCurrent] = useState<Run | null>(null);
   const [desks, setDesks] = useState<Desk[]>([]);
+  const [experts, setExperts] = useState<Expert[]>([]);
+  const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [targetKind, setTargetKind] = useState<"cloud" | "desk">("cloud");
+  const [expertId, setExpertId] = useState("");
+  const [pluginId, setPluginId] = useState("");
   const lastEventId = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const source = useMemo(() => detectMobileSource(navigator.userAgent), []);
   const client = useMemo(() => new MobileClient(apiUrl, token), [apiUrl, token]);
+  const deskDisabled = !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0);
 
   const persistToken = useCallback(
     async (next: string) => {
@@ -78,15 +100,21 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
 
   const refreshList = useCallback(async () => {
     if (!token) return;
-    const [listed, environments, settings, deskList] = await Promise.all([
+    const [listed, environments, settings, deskList, expertList, pluginList, projectList] = await Promise.all([
       client.listRuns(),
       client.listEnvironments().catch(() => ({ environments: [] })),
       client.llmSettings().catch(() => null),
       client.listDesks().catch(() => ({ desks: [] })),
+      client.listExperts().catch(() => ({ experts: [] })),
+      client.listPlugins().catch(() => ({ plugins: [] })),
+      client.listProjects().catch(() => ({ projects: [] })),
     ]);
     setRuns(listed.runs);
     setEnvs(environments.environments);
     setDesks(deskList.desks);
+    setExperts(expertList.experts);
+    setPlugins(pluginList.plugins);
+    setProjects(projectList.projects);
     if (settings?.model) setModel(resolveChatModel(settings.model));
     if (!envId && environments.environments[0]) setEnvId(environments.environments[0].id);
   }, [client, envId, token]);
@@ -159,6 +187,7 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
       setMessages(transcript.snapshot.messages);
       lastEventId.current = transcript.snapshot.lastEventId;
       listen(id, transcript.snapshot.lastEventId);
+      setSidebarOpen(false);
       go(`/runs/${id}`);
     },
     [client, listen],
@@ -192,12 +221,23 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
       const next = new MobileClient(nextUrl, "");
       const session = await next.login(nextEmail.trim(), nextPassword);
       await persistToken(session.token);
-      setPassword("");
+      setEmail(session.user.email ?? nextEmail);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "登录失败");
     } finally {
       setBusy(false);
     }
+  };
+
+  const resetHome = () => {
+    setCurrent(null);
+    setMessages([]);
+    setPrompt("");
+    setMoreOpen(false);
+    setPlusOpen(false);
+    setExpertId("");
+    setPluginId("");
+    go("/");
   };
 
   const send = async () => {
@@ -214,7 +254,9 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
           envId: envId || undefined,
           source,
           model: resolveChatModel(model),
-          target: { loop: "cloud", tools: "cloud" },
+          expertId: expertId || undefined,
+          pluginIds: pluginId ? [pluginId] : undefined,
+          target: targetKind === "desk" ? firstDeskTarget(desks) : { loop: "cloud", tools: "cloud" },
         });
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
         await openRun(created.id);
@@ -239,46 +281,38 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
     }
   };
 
+  const applyPlus = (action: BuddyPlusAction) => {
+    setPlusOpen(false);
+    if (action === "expert") {
+      go("/experts");
+      return;
+    }
+    if (action === "skill") {
+      go("/skills");
+      return;
+    }
+    if (action === "repo" || action === "image" || action === "file" || action === "camera") {
+      go("/settings");
+      return;
+    }
+    if (action === "new") {
+      resetHome();
+      return;
+    }
+    if (action === "pr" && current) {
+      void client.openPullRequest(current.id, current.prompt || "Agent changes").catch(() => undefined);
+    }
+  };
+
   if (!ready) return <div className="auth"><p>正在进入…</p></div>;
 
   if (!token) {
     return (
-      <div className="auth">
-        <form
-          className="auth-card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const nextUrl = (form.elements.namedItem("apiUrl") as HTMLInputElement | null)?.value ?? apiUrl;
-            const nextEmail = (form.elements.namedItem("account") as HTMLInputElement | null)?.value ?? email;
-            const nextPassword = (form.elements.namedItem("secret") as HTMLInputElement | null)?.value ?? password;
-            setApiUrl(nextUrl);
-            setEmail(nextEmail);
-            setPassword(nextPassword);
-            void store.setApiUrl(nextUrl);
-            void loginWith(nextEmail, nextPassword, nextUrl);
-          }}
-        >
-          <h1>Neo</h1>
-          <p>手机端只打云端 /v1，不在本机跑 Agent。</p>
-          <label>
-            控制面地址
-            <input name="apiUrl" defaultValue={apiUrl} placeholder="留空则走本机代理" />
-          </label>
-          <label>
-            账号
-            <input name="account" autoComplete="username" defaultValue={email} placeholder="admin" />
-          </label>
-          <label>
-            密码
-            <input name="secret" type="password" autoComplete="current-password" defaultValue={password} />
-          </label>
-          {authError ? <p className="error">{authError}</p> : null}
-          <button className="primary" type="submit" disabled={busy}>
-            {busy ? "登录中…" : "登录"}
-          </button>
-        </form>
-      </div>
+      <BuddyLogin
+        busy={busy}
+        error={authError}
+        onSubmit={(nextEmail, nextPassword) => void loginWith(nextEmail, nextPassword)}
+      />
     );
   }
 
@@ -289,7 +323,7 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
           <button className="ghost" type="button" onClick={() => go("/")}>返回</button>
           <h1>设置</h1>
         </header>
-        <div className="auth-card" style={{ margin: 16 }}>
+        <div className="auth-card settings-card">
           <label>
             控制面地址
             <input
@@ -315,16 +349,106 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
     );
   }
 
-  if (route.screen === "chat") {
-    const archived = isComposerClosed(current?.status);
-    const hostLock = remoteControlSendLock(current, desks);
-    const locked = archived || hostLock.locked;
+  if (route.screen === "experts") {
     return (
-      <div className="app">
+      <CatalogList
+        title="专家"
+        empty="还没有专家。"
+        items={experts.map((item) => ({ id: item.id, label: item.name, hint: item.title ?? item.description }))}
+        onBack={() => go("/")}
+        onPick={(id) => {
+          setExpertId(id);
+          go("/");
+        }}
+      />
+    );
+  }
+
+  if (route.screen === "skills") {
+    return (
+      <CatalogList
+        title="技能"
+        empty="还没有技能。"
+        items={plugins.map((item) => ({ id: item.id, label: pluginPickerLabel(item), hint: item.description }))}
+        onBack={() => go("/")}
+        onPick={(id) => {
+          setPluginId(id);
+          const plugin = plugins.find((item) => item.id === id);
+          if (plugin?.interface?.defaultPrompt?.[0]) setPrompt(plugin.interface.defaultPrompt[0]);
+          go("/");
+        }}
+      />
+    );
+  }
+
+  if (route.screen === "projects") {
+    return (
+      <CatalogList
+        title="项目"
+        empty="还没有项目。"
+        items={projects.map((item) => ({ id: item.id, label: item.name, hint: item.instruction }))}
+        onBack={() => go("/")}
+        onPick={() => go("/")}
+      />
+    );
+  }
+
+  const archived = isComposerClosed(current?.status);
+  const hostLock = remoteControlSendLock(current, desks);
+  const locked = Boolean(current) && (archived || hostLock.locked);
+  const running = current?.status === "RUNNING";
+  const composer = (
+    <>
+      <BuddyComposer
+        prompt={prompt}
+        followUp={Boolean(current)}
+        locked={locked}
+        placeholder={archived ? "对话已归档。" : hostLock.locked ? hostLock.hint : "说说你要做什么"}
+        sending={sending}
+        canStop={Boolean(current) && running}
+        model={model}
+        onModel={setModel}
+        onPrompt={setPrompt}
+        onSend={() => void send()}
+        onStop={current ? () => void client.abort(current.id) : undefined}
+        onOpenSettings={() => go("/settings")}
+        onOpenPlus={() => setPlusOpen(true)}
+      />
+      <p className="buddy-footer">内容由 AI 生成 · DeepSeek</p>
+      <BuddyPlusSheet open={plusOpen} canOpenPr={Boolean(current)} onClose={() => setPlusOpen(false)} onAction={applyPlus} />
+    </>
+  );
+
+  const drawer = (
+    <BuddyDrawer
+      open={sidebarOpen}
+      runs={runs}
+      userEmail={email}
+      health={`在线 · ${model.includes("pro") ? "Pro" : "Flash"}`}
+      target={targetKind}
+      deskDisabled={deskDisabled}
+      onTarget={setTargetKind}
+      onClose={() => setSidebarOpen(false)}
+      onNew={resetHome}
+      onOpenRun={(id) => void openRun(id)}
+      onOpenNav={(id) => {
+        setSidebarOpen(false);
+        if (id === "automations") go("/settings");
+        else go(`/${id}`);
+      }}
+    />
+  );
+
+  if (route.screen === "chat") {
+    return (
+      <div className="app is-buddy">
         <header className="topbar">
-          <button className="ghost" type="button" onClick={() => go("/")}>列表</button>
-          <h2>{preview(current?.prompt ?? "对话")}</h2>
-          <span className="status">{STATUS_LABELS[current?.status ?? ""] ?? current?.status}</span>
+          <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>
+            ☰
+          </button>
+          <span className={running ? "buddy-status-pill is-busy" : "buddy-status-pill"}>
+            {running ? "跑着" : STATUS_LABELS[current?.status ?? ""] ?? current?.status ?? "对话"}
+          </span>
         </header>
         <div className="transcript" ref={transcriptRef}>
           {messages.length === 0 ? <p className="empty">还没有消息。</p> : null}
@@ -341,7 +465,6 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
                           {tool.status === "running" ? "…" : tool.isError ? "✗" : "✓"} {toolDisplayName(tool)}
                         </b>
                         {toolArgPreview(tool.args) ? <span className="cmd">{toolArgPreview(tool.args)}</span> : null}
-                        {tool.output ? <pre>{tool.output}</pre> : null}
                       </div>
                     ))}
                   </div>
@@ -350,84 +473,43 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
             </article>
           ))}
         </div>
-        <form
-          className="composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
-          }}
-        >
-          <textarea
-            value={prompt}
-            disabled={locked}
-            placeholder={archived ? "对话已归档。" : hostLock.locked ? hostLock.hint : "描述任务，点发送。"}
-            onChange={(event) => setPrompt(event.target.value)}
-          />
-          <div className="composer-row">
-            {current ? (
-              <button className="ghost" type="button" disabled={!current || current.status !== "RUNNING"} onClick={() => void client.abort(current.id)}>
-                停止
-              </button>
-            ) : null}
-            <button className="primary" type="submit" disabled={locked || sending || !prompt.trim()}>
-              {sending ? "发送中…" : "发送"}
-            </button>
-          </div>
-        </form>
+        {composer}
+        {drawer}
       </div>
     );
   }
 
   return (
-    <div className="app">
+    <div className="app is-buddy">
       <header className="topbar">
-        <h1>对话</h1>
-        <button className="ghost" type="button" onClick={() => go("/settings")}>设置</button>
+        <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>
+          ☰
+        </button>
       </header>
-      <form
-        className="composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setCurrent(null);
-          setMessages([]);
-          void send();
+      <BuddyHome
+        moreOpen={moreOpen}
+        target={targetKind}
+        deskDisabled={deskDisabled}
+        skills={buddySkillsFromRecipes(BUNDLED_RECIPES)}
+        onTarget={setTargetKind}
+        onShortcut={(id) => {
+          if (id === "more") setMoreOpen((value) => !value);
+          if (id === "experts") go("/experts");
+          if (id === "skills") go("/skills");
+          if (id === "projects") go("/projects");
         }}
-      >
-        <textarea value={prompt} placeholder="新任务。先选环境，再发送。" onChange={(event) => setPrompt(event.target.value)} />
-        <div className="composer-row">
-          <Select
-            value={envId}
-            onValueChange={setEnvId}
-            placeholder="选择环境"
-            options={[
-              { value: "", label: "选择环境" },
-              ...envs.map((item) => ({ value: item.id, label: item.name })),
-            ]}
-          />
-          <Select
-            value={model}
-            onValueChange={setModel}
-            options={[
-              { value: "deepseek-v4-flash", label: "Flash" },
-              { value: "deepseek-v4-pro", label: "Pro" },
-            ]}
-          />
-          <button className="primary" type="submit" disabled={sending || !prompt.trim() || !envId}>
-            开始
-          </button>
-        </div>
-      </form>
-      <div className="list">
-        {runs.length === 0 ? <p className="empty">还没有对话。</p> : null}
-        {runs.map((run) => (
-          <button key={run.id} className="run-row" type="button" onClick={() => void openRun(run.id)}>
-            <b>{preview(run.prompt)}</b>
-            <span>
-              {STATUS_LABELS[run.status] ?? run.status} · {run.source}
-            </span>
-          </button>
-        ))}
-      </div>
+        onSkill={(id) => {
+          const recipe = recipeById(id);
+          if (recipe) {
+            setPrompt(recipe.prompt);
+            if (recipe.expertId) setExpertId(recipe.expertId);
+            if (recipe.pluginIds?.[0]) setPluginId(recipe.pluginIds[0]);
+            setMoreOpen(false);
+          }
+        }}
+      />
+      {composer}
+      {drawer}
     </div>
   );
 }

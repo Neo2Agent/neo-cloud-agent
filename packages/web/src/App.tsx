@@ -21,7 +21,6 @@ import { applyLiveEvents, parseSseData } from "./stream-apply";
 import { AuthGate } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { ArtifactsPanel } from "./components/ArtifactsPanel";
-import { Composer } from "./components/Composer";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
 import { TerminalPanel } from "./components/TerminalPanel";
@@ -32,10 +31,11 @@ import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
-import type { IntentCapsule, Recipe } from "@neo-cloud-agent/contracts/recipe";
+import { BUNDLED_RECIPES, recipeById, type IntentCapsule, type Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { InboxBell } from "./components/InboxBell";
-import { Tooltip } from "@neo-cloud-agent/ui";
+import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, Tooltip, type BuddyPlusAction } from "@neo-cloud-agent/ui";
+import { Composer, readImageRef } from "./components/Composer";
 import {
   IconArtifacts,
   IconAutomations,
@@ -275,6 +275,10 @@ export function App() {
     return window.innerWidth >= 860;
   });
   const [narrow, setNarrow] = useState(() => isNarrowViewport());
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const imagePickRef = useRef<HTMLInputElement>(null);
+  const cameraPickRef = useRef<HTMLInputElement>(null);
   const topMoreRef = useRef<HTMLDetailsElement>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const streamFrameRef = useRef(0);
@@ -633,6 +637,8 @@ export function App() {
     setEnvId("");
     setBuildId("");
     setHighlightId(null);
+    setMoreOpen(false);
+    setPlusOpen(false);
     history.replaceState(null, "", "/");
   }, [closeStream]);
 
@@ -1501,6 +1507,63 @@ export function App() {
   const applyRecipe = (recipe: Recipe) => {
     setPrompt(recipe.prompt);
     applyRole(recipe);
+    setMoreOpen(false);
+    setMainTab("chat");
+  };
+
+  const openDraftPr = async () => {
+    if (!runId) return;
+    try {
+      const created = await readJson<{ error?: string; pullRequest?: PullRequest }>(
+        await api(token, `/v1/runs/${runId}/pull-request`, {
+          method: "POST",
+          body: JSON.stringify({ title: currentRun?.prompt || "Agent changes" }),
+        }),
+      );
+      if (created.error) throw new Error(created.error);
+      const next = created.pullRequest ?? created;
+      setCurrentRun((run) => (run ? { ...run, pullRequests: [next as Run["pullRequests"][number]] } : run));
+    } catch (error) {
+      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "开 PR 失败")]);
+    }
+  };
+
+  const applyBuddyPlus = (action: BuddyPlusAction) => {
+    setPlusOpen(false);
+    if (action === "image" || action === "file") {
+      imagePickRef.current?.click();
+      return;
+    }
+    if (action === "camera") {
+      cameraPickRef.current?.click();
+      return;
+    }
+    if (action === "repo") {
+      setSettingsOpen(true);
+      return;
+    }
+    if (action === "expert") {
+      setPrompt((value) => (value.includes("@") ? value : `${value} @`.trimStart()));
+      return;
+    }
+    if (action === "skill") {
+      openSkills();
+      return;
+    }
+    if (action === "new") {
+      resetComposer();
+      setMainTab("chat");
+      return;
+    }
+    if (action === "pr") void openDraftPr();
+  };
+
+  const addPickedImages = (files: FileList | null) => {
+    const imagesOnly = [...(files ?? [])].filter((file) => file.type.startsWith("image/")).slice(0, 4);
+    if (imagesOnly.length === 0) return;
+    void Promise.all(imagesOnly.map(readImageRef)).then((next) => {
+      setImages((prev) => [...prev, ...next].slice(0, 4));
+    });
   };
 
   const archiveMany = async (ids: string[]) => {
@@ -1553,7 +1616,7 @@ export function App() {
 
   return (
     <>
-      <div className={sidebarOpen ? "app" : "app sidebar-closed"}>
+      <div className={`${sidebarOpen ? "app" : "app sidebar-closed"}${narrow ? " is-buddy" : ""}`}>
         {sidebarOpen ? <div className="sidebar-backdrop" id="sidebar-backdrop" onClick={toggleSidebar} /> : null}
         <Sidebar
           runs={runs}
@@ -1564,6 +1627,17 @@ export function App() {
           health={healthText}
           pinnedIds={pinnedIds}
           projectNames={projectNames}
+          buddy={narrow}
+          target={deskTarget.kind === "desk" ? "desk" : "cloud"}
+          deskDisabled={!deskBridge()?.canRunLocal && !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0)}
+          onTarget={(value) => applyTarget({ ...deskTarget, kind: value })}
+          onOpenNav={(id) => {
+            setSidebarOpen(false);
+            if (id === "automations") openAutomations();
+            if (id === "experts") openExperts();
+            if (id === "projects") openProjects();
+            if (id === "skills") openSkills();
+          }}
           onPin={(id) => setPinnedIds(togglePinnedRun(id))}
           onArchiveMany={(ids) => void archiveMany(ids)}
           onClose={narrow ? toggleSidebar : undefined}
@@ -1708,10 +1782,16 @@ export function App() {
                   Desk
                 </span>
               ) : null}
-              <span className="status" id="status" data-state={statusView.state} data-busy={busy ? "true" : "false"}>
-                {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
-                {statusView.label}
-              </span>
+              {narrow && mainTab === "chat" && (busy || currentRun) ? (
+                <span id="status" className={busy ? "buddy-status-pill is-busy" : "buddy-status-pill"} data-state={statusView.state} data-busy={busy ? "true" : "false"}>
+                  {busy ? "跑着" : statusView.label}
+                </span>
+              ) : (
+                <span className="status" id="status" data-state={statusView.state} data-busy={busy ? "true" : "false"}>
+                  {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
+                  {statusView.label}
+                </span>
+              )}
               <details className="top-more" ref={topMoreRef}>
                 <summary className="icon-btn top-more-sum" aria-label="更多">
                   <IconMore />
@@ -1816,22 +1896,7 @@ export function App() {
                 id="open-pr"
                 type="button"
                 hidden={Boolean(pr?.url) || !runId}
-                onClick={async () => {
-                  if (!runId) return;
-                  try {
-                    const created = await readJson<{ error?: string; pullRequest?: PullRequest }>(
-                      await api(token, `/v1/runs/${runId}/pull-request`, {
-                        method: "POST",
-                        body: JSON.stringify({ title: currentRun?.prompt || "Agent changes" }),
-                      }),
-                    );
-                    if (created.error) throw new Error(created.error);
-                    const next = created.pullRequest ?? created;
-                    setCurrentRun((run) => (run ? { ...run, pullRequests: [next as Run["pullRequests"][number]] } : run));
-                  } catch (error) {
-                    setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "开 PR 失败")]);
-                  }
-                }}
+                onClick={() => void openDraftPr()}
               >
                 开草稿 PR
               </button>
@@ -2022,20 +2087,40 @@ export function App() {
               />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
-                <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />
-                <Transcript
-                  messages={displayMessages}
-                  remaining={remaining}
-                  empty={!loadingTranscript && displayMessages.length === 0}
-                  loading={loadingTranscript && displayMessages.length === 0}
-                  loadingOlder={loadingOlder}
-                  busy={busy}
-                  activity={activity}
-                  highlightId={highlightId}
-                  onLoadOlder={loadOlder}
-                  onOpenDiagnostics={openDiagnostics}
-                  onPickRecipe={applyRecipe}
-                />
+                {narrow && !runId && !loadingTranscript ? null : <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />}
+                {narrow && !runId && !loadingTranscript ? (
+                  <BuddyHome
+                    moreOpen={moreOpen}
+                    target={deskTarget.kind === "desk" ? "desk" : "cloud"}
+                    deskDisabled={!deskBridge()?.canRunLocal && !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0)}
+                    skills={buddySkillsFromRecipes(BUNDLED_RECIPES)}
+                    onTarget={(value) => applyTarget({ ...deskTarget, kind: value })}
+                    onShortcut={(id) => {
+                      if (id === "more") setMoreOpen((value) => !value);
+                      if (id === "experts") openExperts();
+                      if (id === "skills") openSkills();
+                      if (id === "projects") openProjects();
+                    }}
+                    onSkill={(id) => {
+                      const recipe = recipeById(id);
+                      if (recipe) applyRecipe(recipe);
+                    }}
+                  />
+                ) : (
+                  <Transcript
+                    messages={displayMessages}
+                    remaining={remaining}
+                    empty={!loadingTranscript && displayMessages.length === 0}
+                    loading={loadingTranscript && displayMessages.length === 0}
+                    loadingOlder={loadingOlder}
+                    busy={busy}
+                    activity={activity}
+                    highlightId={highlightId}
+                    onLoadOlder={loadOlder}
+                    onOpenDiagnostics={openDiagnostics}
+                    onPickRecipe={applyRecipe}
+                  />
+                )}
               </ChatErrorBoundary>
             )}
           </div>
@@ -2197,10 +2282,38 @@ export function App() {
               onSend={() => void sendMessage()}
               onQueue={() => void queueMessage()}
               onStop={stopTurn}
+              layout={narrow ? "buddy" : "default"}
+              followUp={Boolean(runId)}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenPlus={() => setPlusOpen(true)}
             />
           ) : null}
+          {narrow && mainTab === "chat" ? <p className="buddy-footer">内容由 AI 生成 · DeepSeek</p> : null}
         </main>
       </div>
+      <input
+        ref={imagePickRef}
+        type="file"
+        accept="image/*"
+        hidden
+        multiple
+        onChange={(event) => {
+          addPickedImages(event.target.files);
+          event.currentTarget.value = "";
+        }}
+      />
+      <input
+        ref={cameraPickRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(event) => {
+          addPickedImages(event.target.files);
+          event.currentTarget.value = "";
+        }}
+      />
+      <BuddyPlusSheet open={plusOpen} canOpenPr={Boolean(runId) && !pr?.url} onClose={() => setPlusOpen(false)} onAction={applyBuddyPlus} />
       <AuthGate
         open={authOpen}
         mode={authMode}

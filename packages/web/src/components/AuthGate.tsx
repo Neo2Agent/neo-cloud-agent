@@ -46,7 +46,7 @@ export function AuthGate({
   const submit = busy ? "登录中…" : effectiveMode === "token" ? "使用令牌" : "登录";
 
   return (
-    <div className="auth-gate" id="auth-gate" hidden={!open}>
+    <div className={phone ? "auth-gate is-buddy" : "auth-gate"} id="auth-gate" hidden={!open}>
       <form
         className="auth-card"
         id="auth-form"
@@ -58,14 +58,23 @@ export function AuthGate({
           onSubmit();
         }}
       >
-        <div className="auth-brand">
+        <div className={phone ? "auth-brand buddy-login" : "auth-brand"}>
           <span className="mark">
             <BrandMark />
           </span>
-          <p className="login-kicker">Neo Cloud Agent</p>
+          {phone ? (
+            <>
+              <h2 id="auth-title" className="buddy-hello">
+                Neo
+              </h2>
+              <p className="buddy-login-kicker">Cloud Agent</p>
+            </>
+          ) : (
+            <p className="login-kicker">Neo Cloud Agent</p>
+          )}
         </div>
-        <h2 id="auth-title">{title}</h2>
-        <p id="auth-copy">{copy}</p>
+        {phone ? null : <h2 id="auth-title">{title}</h2>}
+        <p id="auth-copy">{phone ? "先登录，再下任务" : copy}</p>
         {phone ? null : (
           <div className="auth-tabs" id="auth-tabs">
             {(["login", "token"] as const).map((item) => (
@@ -126,6 +135,7 @@ export function AuthGate({
         <button type="submit" id="auth-submit" className="auth-submit" disabled={busy || !canSubmit}>
           {submit}
         </button>
+        {phone ? <p className="buddy-login-hint">手机只打云端 /v1，不在本机跑 Agent。</p> : null}
       </form>
     </div>
   );
