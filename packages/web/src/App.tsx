@@ -2087,7 +2087,7 @@ export function App() {
               />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
-                {narrow && !runId && !loadingTranscript ? null : <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />}
+                {narrow ? null : <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />}
                 {narrow && !runId && !loadingTranscript ? (
                   <BuddyHome
                     moreOpen={moreOpen}
