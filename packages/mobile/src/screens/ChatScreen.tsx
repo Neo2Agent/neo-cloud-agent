@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { avatarLetter, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { runPlaceLabel } from "../place";
+import { generationStarted, hasVisibleTranscript, isStartupWhisper } from "../turn";
 import { colors } from "./theme";
 
 type Props = {
@@ -12,6 +13,7 @@ type Props = {
   status: string;
   running: boolean;
   messages: TranscriptMessage[];
+  thinking?: string | null;
   userEmail: string;
   userAvatar?: string | null;
   neoAvatar?: string | null;
@@ -26,7 +28,7 @@ function Avatar({ src, letter, neo }: { src?: string | null; letter: string; neo
   );
 }
 
-function ToolBlock({ tool }: { tool: TranscriptTool }) {
+function ToolCard({ tool }: { tool: TranscriptTool }) {
   const running = tool.status === "running";
   const [open, setOpen] = useState(running);
   useEffect(() => {
@@ -35,13 +37,47 @@ function ToolBlock({ tool }: { tool: TranscriptTool }) {
   const preview = toolArgPreview(tool.args);
   const body = toolBodyText(tool);
   return (
-    <Pressable onPress={() => setOpen((value) => !value)} style={styles.tool} accessibilityRole="button">
-      <Text style={styles.toolTitle}>
-        {running ? "…" : tool.isError ? "✗" : "✓"} {toolDisplayName(tool)} {open ? "▾" : "▸"}
-      </Text>
-      {preview ? <Text style={styles.cmd}>{preview}</Text> : null}
-      {open ? <Text style={styles.toolOut} selectable>{body || "没有输出"}</Text> : null}
+    <Pressable
+      onPress={() => setOpen((value) => !value)}
+      style={[styles.toolCard, running ? styles.toolRun : null, tool.isError ? styles.toolErr : null]}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+    >
+      <View style={styles.toolHead}>
+        <Text style={[styles.toolMark, running ? styles.toolMarkRun : tool.isError ? styles.toolMarkErr : null]}>
+          {running ? "…" : tool.isError ? "✗" : "✓"}
+        </Text>
+        <Text style={styles.toolName} numberOfLines={1}>{toolDisplayName(tool)}</Text>
+        <Text style={styles.toolChevron}>{open ? "收起" : "展开"}</Text>
+      </View>
+      {preview ? <Text style={styles.cmd} numberOfLines={open ? 0 : 1}>{preview}</Text> : null}
+      {open ? (
+        <View style={styles.toolPanel}>
+          <Text style={styles.toolOut} selectable>{body || "没有输出"}</Text>
+        </View>
+      ) : null}
     </Pressable>
+  );
+}
+
+function ThinkingRow({ hint, neoAvatar }: { hint: string; neoAvatar?: string | null }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((value) => (value + 1) % 3), 380);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <View style={[styles.row, styles.rowAgent]}>
+      <Avatar src={neoAvatar} letter="N" neo />
+      <View style={styles.thinkBox}>
+        <View style={styles.thinkDots}>
+          {[0, 1, 2].map((index) => (
+            <View key={index} style={[styles.thinkDot, index === tick ? styles.thinkDotOn : null]} />
+          ))}
+        </View>
+        <Text style={styles.thinkText}>{hint}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -50,12 +86,19 @@ export function ChatScreen({
   status,
   running,
   messages,
+  thinking,
   userEmail,
   userAvatar,
   neoAvatar,
   onOpenDrawer,
 }: Props) {
   const mine = avatarLetter(userEmail);
+  const started = generationStarted(messages);
+  const scrollRef = useRef<ScrollView>(null);
+  const tail = messages.at(-1);
+  useEffect(() => {
+    scrollRef.current?.scrollToEnd({ animated: false });
+  }, [messages.length, tail?.id, tail?.text, tail?.streaming, thinking]);
   return (
     <View style={styles.page}>
       <View style={styles.topbar}>
@@ -67,10 +110,22 @@ export function ChatScreen({
         </View>
         <Text style={styles.place}>{run ? runPlaceLabel(run) : ""}</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.list}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.list}>
         {messages.length === 0 ? <Text style={styles.empty}>还没有消息。</Text> : null}
         {messages.map((message) => {
+          if (isStartupWhisper(message)) {
+            if (started || thinking) return null;
+            return (
+              <Text key={message.id} style={styles.whisper}>
+                {message.text}
+              </Text>
+            );
+          }
+          if (!hasVisibleTranscript(message)) return null;
           const mineMsg = message.role === "user";
+          const groups = transcriptGroups(message).filter((group) =>
+            group.type === "tools" ? group.tools.length > 0 : Boolean(group.text.trim()),
+          );
           return (
             <View key={message.id} style={[styles.row, mineMsg ? styles.rowUser : styles.rowAgent]}>
               <Avatar
@@ -78,14 +133,18 @@ export function ChatScreen({
                 letter={mineMsg ? mine : "N"}
                 neo={!mineMsg}
               />
-              <View style={[styles.bubble, mineMsg ? styles.user : styles.agent]}>
-                {transcriptGroups(message).map((group, index) =>
+              <View style={styles.col}>
+                {groups.map((group, index) =>
                   group.type === "text" ? (
-                    <Text key={`${message.id}-t${index}`} style={styles.body}>{group.text}</Text>
+                    <View key={`${message.id}-t${index}`} style={[styles.bubble, mineMsg ? styles.user : styles.agent]}>
+                      <Text style={styles.body} selectable>
+                        {group.text}
+                      </Text>
+                    </View>
                   ) : (
-                    <View key={`${message.id}-g${index}`}>
+                    <View key={`${message.id}-g${index}`} style={styles.toolStack}>
                       {group.tools.map((tool) => (
-                        <ToolBlock key={tool.id ?? tool.name} tool={tool} />
+                        <ToolCard key={tool.id ?? tool.name} tool={tool} />
                       ))}
                     </View>
                   ),
@@ -94,6 +153,7 @@ export function ChatScreen({
             </View>
           );
         })}
+        {thinking ? <ThinkingRow hint={thinking} neoAvatar={neoAvatar} /> : null}
       </ScrollView>
     </View>
   );
@@ -109,20 +169,49 @@ const styles = StyleSheet.create({
   place: { width: 56, color: colors.muted, fontSize: 12, textAlign: "right" },
   list: { padding: 14, gap: 12, paddingBottom: 24 },
   empty: { color: colors.muted, textAlign: "center", marginTop: 24 },
+  whisper: { color: colors.muted, fontSize: 12, textAlign: "center", paddingHorizontal: 24, lineHeight: 18 },
+  thinkBox: { flexShrink: 1, maxWidth: "78%", gap: 8, paddingTop: 6 },
+  thinkDots: { flexDirection: "row", alignItems: "center", gap: 5 },
+  thinkDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#c5ddd9" },
+  thinkDotOn: { backgroundColor: colors.accent },
+  thinkText: { color: colors.muted, fontSize: 13, lineHeight: 18 },
   row: { flexDirection: "row", alignItems: "flex-start", gap: 8, maxWidth: "100%" },
   rowUser: { alignSelf: "flex-end", flexDirection: "row-reverse" },
   rowAgent: { alignSelf: "flex-start" },
+  col: { flexShrink: 1, maxWidth: "78%", gap: 8 },
   avatar: { width: 32, height: 32, borderRadius: 16, overflow: "hidden", alignItems: "center", justifyContent: "center" },
   avatarImage: { width: 32, height: 32 },
   avatarUser: { backgroundColor: colors.ink },
   avatarNeo: { backgroundColor: colors.accent },
   avatarText: { color: colors.cream, fontWeight: "800", fontSize: 13 },
-  bubble: { borderRadius: 16, padding: 12, maxWidth: "78%", borderWidth: 1, borderColor: colors.line },
+  bubble: { borderRadius: 16, padding: 12, borderWidth: 1, borderColor: colors.line },
   user: { backgroundColor: colors.bubbleUser },
   agent: { backgroundColor: colors.bubbleAgent },
   body: { color: colors.ink, fontSize: 15, lineHeight: 22 },
-  tool: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.line },
-  toolTitle: { color: colors.ink, fontWeight: "600", fontSize: 13 },
-  cmd: { color: colors.muted, fontSize: 12, marginTop: 2 },
-  toolOut: { color: colors.ink, fontSize: 12, lineHeight: 18, marginTop: 8 },
+  toolStack: { gap: 8 },
+  toolCard: {
+    padding: 10,
+    backgroundColor: colors.card,
+    borderWidth: 2,
+    borderColor: colors.line,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
+    borderRadius: 16,
+  },
+  toolRun: { backgroundColor: "#e6f9f6", borderColor: "#9ad9d2" },
+  toolErr: { backgroundColor: "#fdecec", borderColor: "#e8b4b4", borderLeftColor: colors.error },
+  toolHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  toolMark: { color: "#2b8a4e", fontWeight: "800", fontSize: 13 },
+  toolMarkRun: { color: colors.accent },
+  toolMarkErr: { color: colors.error },
+  toolName: { flex: 1, color: colors.ink, fontWeight: "700", fontSize: 13 },
+  toolChevron: { color: colors.muted, fontSize: 12 },
+  cmd: { color: colors.muted, fontSize: 12, marginTop: 4 },
+  toolPanel: { marginTop: 8, maxHeight: 220, backgroundColor: colors.paper, borderRadius: 12, padding: 10 },
+  toolOut: {
+    color: colors.ink,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
 });

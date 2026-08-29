@@ -17,7 +17,23 @@ import { schedulePreset, type ScheduleKind } from "../automations";
 import { cloudRunRequest } from "../create-run";
 import { avatarLetter, chatModelShort, resolveChatModel, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { chatStatusText, composerGate } from "../session";
-import { pendingUserMessage, sendFailureMessage, shouldRefreshTranscript, withQueuedNotice } from "../turn";
+import {
+  appendPendingUser,
+  generationStarted,
+  hasVisibleTranscript,
+  isActiveRunStatus,
+  isStartupWhisper,
+  mergeUnresolvedPending,
+  pendingUserArrived,
+  pendingUserMessage,
+  sendFailureMessage,
+  shouldRefreshTranscript,
+  shouldReplaceLiveTranscript,
+  shouldShowThinking,
+  thinkingHint,
+  withPendingUser,
+  withQueuedNotice,
+} from "../turn";
 import { attachRunStream } from "../transcript-live";
 import { AutomationsPage } from "./AutomationsPage";
 import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
@@ -41,9 +57,13 @@ function ToolRow({ tool }: { tool: TranscriptTool }) {
     <button
       type="button"
       className={`tool${tool.isError ? " err" : running ? " run" : ""}${open ? " is-open" : ""}`}
+      aria-expanded={open}
       onClick={() => setOpen((value) => !value)}
     >
-      <b>{running ? "…" : tool.isError ? "✗" : "✓"} {toolDisplayName(tool)} {open ? "▾" : "▸"}</b>
+      <span className="tool-head">
+        <b>{running ? "…" : tool.isError ? "✗" : "✓"} {toolDisplayName(tool)}</b>
+        <small>{open ? "收起" : "展开"}</small>
+      </span>
       {preview ? <span className="cmd">{preview}</span> : null}
       {open ? <pre className="tool-out">{body || "没有输出"}</pre> : null}
     </button>
@@ -74,6 +94,7 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [inviteInfo, setInviteInfo] = useState<{ projectName: string; status: string }>({ projectName: "", status: "" });
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [pendingTurn, setPendingTurn] = useState<TranscriptMessage | null>(null);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -83,6 +104,8 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   const lastSseAt = useRef(0);
   const statusRef = useRef<string | null | undefined>(null);
   const stopStream = useRef<(() => void) | null>(null);
+  const liveSse = useRef(false);
+  const openRunId = useRef<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   statusRef.current = current?.status;
   const source = useMemo(() => detectMobileSource(navigator.userAgent), []);
@@ -175,12 +198,17 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
       try {
         const [run, transcript] = await Promise.all([client.getRun(id), client.transcript(id)]);
         setCurrent(run);
-        if (transcript.snapshot.lastEventId && transcript.snapshot.lastEventId === lastEventId.current) {
+        if (
+          (transcript.snapshot.lastEventId && transcript.snapshot.lastEventId === lastEventId.current) ||
+          !shouldReplaceLiveTranscript({ liveSse: liveSse.current, lastSseAt: lastSseAt.current })
+        ) {
           setMessages((prev) => withQueuedNotice(prev, run.status));
           return;
         }
         lastEventId.current = transcript.snapshot.lastEventId;
-        setMessages(withQueuedNotice(transcript.snapshot.messages, run.status));
+        setMessages((prev) =>
+          mergeUnresolvedPending(withQueuedNotice(transcript.snapshot.messages, run.status), prev),
+        );
       } catch {
         // keep the last painted transcript
       }
@@ -193,11 +221,13 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   const closeStream = useCallback(() => {
     stopStream.current?.();
     stopStream.current = null;
+    liveSse.current = false;
   }, []);
 
   const listen = useCallback(
     (id: string, after?: string | null) => {
       closeStream();
+      liveSse.current = true;
       stopStream.current = attachRunStream(client, id, after ?? lastEventId.current, {
         onMessages: setMessages,
         onEventId: (eventId) => {
@@ -213,11 +243,18 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   );
 
   const openRun = useCallback(
-    async (id: string) => {
+    async (id: string, opts?: { keepPending?: boolean }) => {
+      const previousId = openRunId.current;
       const [run, transcript] = await Promise.all([client.getRun(id), client.transcript(id)]);
       setCurrent(run);
-      setMessages(withQueuedNotice(transcript.snapshot.messages, run.status));
+      openRunId.current = run.id;
+      if (previousId !== id && !opts?.keepPending) setPendingTurn(null);
+      const loaded = withQueuedNotice(transcript.snapshot.messages, run.status);
+      setMessages((prev) =>
+        previousId === id || opts?.keepPending ? mergeUnresolvedPending(loaded, prev) : loaded,
+      );
       lastEventId.current = transcript.snapshot.lastEventId;
+      lastSseAt.current = Date.now();
       listen(id, transcript.snapshot.lastEventId);
       setSidebarOpen(false);
       go(`/runs/${id}`);
@@ -235,7 +272,13 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   useEffect(() => {
     const node = transcriptRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [messages]);
+  }, [messages, pendingTurn]);
+
+  useEffect(() => {
+    if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {
+      setPendingTurn(null);
+    }
+  }, [messages, pendingTurn]);
 
   useEffect(() => {
     const onVis = () => {
@@ -262,6 +305,8 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
 
   const resetHome = () => {
     setCurrent(null);
+    openRunId.current = null;
+    setPendingTurn(null);
     setMessages([]);
     setPrompt("");
     go("/");
@@ -274,7 +319,8 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
     const pending = pendingUserMessage(text);
     setSending(true);
     setPrompt("");
-    setMessages((prev) => (current ? prev : [pending]));
+    setPendingTurn(pending);
+    setMessages((prev) => appendPendingUser(prev, pending));
     try {
       if (!current) {
         const created = await client.createRun(
@@ -288,12 +334,13 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
           }),
         );
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
-        await openRun(created.id);
+        await openRun(created.id, { keepPending: true });
         return;
       }
       await client.followUp(current.id, { text });
     } catch (error) {
       setPrompt(text);
+      setPendingTurn(null);
       setMessages((prev) => [
         ...prev.filter((item) => item.id !== pending.id),
         sendFailureMessage(error instanceof Error ? error.message : "发送失败"),
@@ -412,6 +459,7 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
         onOpenRun={(id) => void openRun(id)}
         onNewInProject={() => {
           setCurrent(null);
+          setPendingTurn(null);
           setMessages([]);
           go("/");
         }}
@@ -479,17 +527,36 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
     />
   );
 
-  if (route.screen === "chat" || sending || messages.length > 0) {
+  const visible = withPendingUser(messages, pendingTurn);
+  const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
+  const thinking = shouldShowThinking(turnBusy, visible)
+    ? thinkingHint({
+        status: current?.status,
+        loop: current?.executionTarget?.loop,
+        remoteControl: current?.executionTarget?.remoteControl,
+      })
+    : null;
+  if (route.screen === "chat" || sending || pendingTurn || visible.length > 0) {
     return (
       <div className="app">
         <header className="topbar">
           <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
-          <span className={gate.running ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
+          <span className={turnBusy ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
           {current ? <IslandTag>{current.executionTarget?.remoteControl ? "remote" : "cloud"}</IslandTag> : null}
         </header>
         <div className="transcript" ref={transcriptRef}>
-          {messages.length === 0 ? <p className="empty">还没有消息。</p> : null}
-          {messages.map((message) => (
+          {visible.length === 0 ? <p className="empty">还没有消息。</p> : null}
+          {visible.map((message) => {
+            if (isStartupWhisper(message)) {
+              if (generationStarted(visible) || thinking) return null;
+              return (
+                <p key={message.id} className="whisper">
+                  {message.text}
+                </p>
+              );
+            }
+            if (!hasVisibleTranscript(message)) return null;
+            return (
             <div key={message.id} className={`msg-row ${message.role}`}>
               {message.role === "user" && userAvatar ? (
                 <img className="avatar user" src={userAvatar} alt="" />
@@ -500,21 +567,41 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
                   {message.role === "user" ? avatarLetter(email) : "N"}
                 </span>
               )}
-              <article className={`bubble ${message.role}`}>
+              <div className="msg-col">
                 {transcriptGroups(message).map((group, index) =>
                   group.type === "text" ? (
-                    <p key={`${message.id}-t${index}`}>{group.text}</p>
+                    <article key={`${message.id}-t${index}`} className={`bubble ${message.role}`}>
+                      <p>{group.text}</p>
+                    </article>
                   ) : (
-                    <div key={`${message.id}-g${index}`}>
+                    <div key={`${message.id}-g${index}`} className="tool-stack">
                       {group.tools.map((tool) => (
                         <ToolRow key={tool.id ?? tool.name} tool={tool} />
                       ))}
                     </div>
                   ),
                 )}
-              </article>
+              </div>
             </div>
-          ))}
+            );
+          })}
+          {thinking ? (
+            <div className="msg-row agent">
+              {neoAvatar ? (
+                <img className="avatar neo" src={neoAvatar} alt="" />
+              ) : (
+                <span className="avatar neo" aria-hidden="true">N</span>
+              )}
+              <div className="think-line">
+                <span className="think-dots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span>{thinking}</span>
+              </div>
+            </div>
+          ) : null}
         </div>
         {composer}
         {drawer}

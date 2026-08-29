@@ -5,7 +5,7 @@ import {
 import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { MobileClient } from "./api/client.js";
 import { applyLiveEvents } from "./stream.js";
-import { isTerminalTurnEvent, statusFromEventKind } from "./turn.js";
+import { dropResolvedPendingUsers, isTerminalTurnEvent, statusFromEventKind } from "./turn.js";
 
 export function attachRunStream(
   client: MobileClient,
@@ -19,7 +19,8 @@ export function attachRunStream(
 ): () => void {
   const controller = new AbortController();
   const pending: RunEvent[] = [];
-  let timer: ReturnType<typeof setTimeout> | 0 = 0;
+  let timer: number | ReturnType<typeof setTimeout> | 0 = 0;
+  let usedRaf = false;
   let lastId = after ?? null;
 
   const flush = () => {
@@ -27,7 +28,7 @@ export function attachRunStream(
     const batch = applyLiveEvents([], pending.splice(0));
     if (batch.length === 0) return;
     handlers.onMessages((prev) => {
-      const next = applyRunEventsToMessages(prev, batch);
+      const next = dropResolvedPendingUsers(applyRunEventsToMessages(prev, batch));
       return batch.some((event) => isTerminalTurnEvent(event.kind)) ? settleTranscriptMessages(next) : next;
     });
     for (const event of batch) {
@@ -38,13 +39,34 @@ export function attachRunStream(
     }
   };
 
+  const schedule = () => {
+    if (timer) return;
+    if (typeof requestAnimationFrame === "function") {
+      usedRaf = true;
+      timer = requestAnimationFrame(flush);
+      return;
+    }
+    usedRaf = false;
+    timer = setTimeout(flush, 16);
+  };
+
+  const cancelTimer = () => {
+    if (!timer) return;
+    if (usedRaf && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(Number(timer));
+    } else {
+      clearTimeout(timer);
+    }
+    timer = 0;
+  };
+
   const listen = (resumeAfter?: string | null) => {
     void client
       .streamEvents(
         runId,
         (event) => {
           pending.push(event);
-          if (!timer) timer = setTimeout(flush, 16);
+          schedule();
         },
         { after: resumeAfter ?? lastId, signal: controller.signal },
       )
@@ -59,6 +81,6 @@ export function attachRunStream(
 
   return () => {
     controller.abort();
-    if (timer) clearTimeout(timer);
+    cancelTimer();
   };
 }

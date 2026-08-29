@@ -16,7 +16,20 @@ import { listenNeoDeepLinks } from "../native/linking";
 import { attachForegroundPushPolicy, listenNotificationOpen, registerExpoPushDevice } from "../native/push";
 import { DEFAULT_API_URL } from "../place";
 import { chatStatusText, composerGate } from "../session";
-import { pendingUserMessage, sendFailureMessage, shouldRefreshTranscript, withQueuedNotice } from "../turn";
+import {
+  appendPendingUser,
+  mergeUnresolvedPending,
+  pendingUserArrived,
+  isActiveRunStatus,
+  pendingUserMessage,
+  sendFailureMessage,
+  shouldRefreshTranscript,
+  shouldReplaceLiveTranscript,
+  shouldShowThinking,
+  thinkingHint,
+  withPendingUser,
+  withQueuedNotice,
+} from "../turn";
 import { attachRunStream } from "../transcript-live";
 import { ChatScreen } from "./ChatScreen";
 import { Composer } from "./Composer";
@@ -55,6 +68,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [inviteInfo, setInviteInfo] = useState({ projectName: "", status: "" });
   const [pageError, setPageError] = useState("");
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [pendingTurn, setPendingTurn] = useState<TranscriptMessage | null>(null);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -149,12 +163,18 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   );
 
   const openRun = useCallback(
-    async (id: string) => {
+    async (id: string, opts?: { keepPending?: boolean }) => {
+      const previousId = openRunId.current;
       const [run, transcript] = await Promise.all([client.getRun(id), client.transcript(id)]);
       setCurrent(run);
       openRunId.current = run.id;
-      setMessages(withQueuedNotice(transcript.snapshot.messages, run.status));
+      if (previousId !== id && !opts?.keepPending) setPendingTurn(null);
+      const loaded = withQueuedNotice(transcript.snapshot.messages, run.status);
+      setMessages((prev) =>
+        previousId === id || opts?.keepPending ? mergeUnresolvedPending(loaded, prev) : loaded,
+      );
       lastEventId.current = transcript.snapshot.lastEventId;
+      lastSseAt.current = Date.now();
       listen(id, transcript.snapshot.lastEventId);
       setDrawerOpen(false);
       setScreen("chat");
@@ -174,12 +194,17 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       try {
         const [run, transcript] = await Promise.all([client.getRun(id), client.transcript(id)]);
         setCurrent(run);
-        if (transcript.snapshot.lastEventId && transcript.snapshot.lastEventId === lastEventId.current) {
+        if (
+          (transcript.snapshot.lastEventId && transcript.snapshot.lastEventId === lastEventId.current) ||
+          !shouldReplaceLiveTranscript({ liveSse: liveSse.current, lastSseAt: lastSseAt.current })
+        ) {
           setMessages((prev) => withQueuedNotice(prev, run.status));
           return;
         }
         lastEventId.current = transcript.snapshot.lastEventId;
-        setMessages(withQueuedNotice(transcript.snapshot.messages, run.status));
+        setMessages((prev) =>
+          mergeUnresolvedPending(withQueuedNotice(transcript.snapshot.messages, run.status), prev),
+        );
       } catch {
         // keep the last painted transcript
       }
@@ -262,10 +287,17 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     }
   };
 
+  useEffect(() => {
+    if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {
+      setPendingTurn(null);
+    }
+  }, [messages, pendingTurn]);
+
   const resetHome = () => {
     closeStream();
     setCurrent(null);
     openRunId.current = null;
+    setPendingTurn(null);
     setMessages([]);
     setPrompt("");
     setExpertId("");
@@ -281,7 +313,8 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     const pending = pendingUserMessage(text);
     setSending(true);
     setPrompt("");
-    setMessages((prev) => (current ? prev : [pending]));
+    setPendingTurn(pending);
+    setMessages((prev) => appendPendingUser(prev, pending));
     setScreen("chat");
     try {
       if (!current) {
@@ -296,12 +329,13 @@ export function NativeApp({ store }: { store: CredentialStore }) {
           }),
         );
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
-        await openRun(created.id);
+        await openRun(created.id, { keepPending: true });
         return;
       }
       await client.followUp(current.id, { text });
     } catch (error) {
       setPrompt(text);
+      setPendingTurn(null);
       setMessages((prev) => [
         ...prev.filter((item) => item.id !== pending.id),
         sendFailureMessage(error instanceof Error ? error.message : "发送失败"),
@@ -404,6 +438,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         onOpenRun={(id) => void openRun(id)}
         onNewInProject={() => {
           setCurrent(null);
+          setPendingTurn(null);
           setMessages([]);
           setScreen("home");
         }}
@@ -435,6 +470,15 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   }
 
   const gate = composerGate(current, desks);
+  const visible = withPendingUser(messages, pendingTurn);
+  const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
+  const thinking = shouldShowThinking(turnBusy, visible)
+    ? thinkingHint({
+        status: current?.status,
+        loop: current?.executionTarget?.loop,
+        remoteControl: current?.executionTarget?.remoteControl,
+      })
+    : null;
   const composer = (
     <Composer
       prompt={prompt}
@@ -456,8 +500,9 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         <ChatScreen
           run={current}
           status={chatStatusText(current, desks)}
-          running={gate.running}
-          messages={messages}
+          running={turnBusy}
+          messages={visible}
+          thinking={thinking}
           userEmail={email}
           userAvatar={userAvatar}
           neoAvatar={neoAvatar}

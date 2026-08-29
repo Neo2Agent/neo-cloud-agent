@@ -8,7 +8,7 @@ import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { CreateProjectRequest, Project } from "@neo-cloud-agent/contracts/project";
 import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, Run } from "@neo-cloud-agent/contracts/run";
 
-import { readSseEvents } from "./sse.js";
+import { readSseEvents, shouldUseXhrSse, streamSseWithXhr } from "./sse.js";
 
 export type PublicLlmSettings = {
   configured: boolean;
@@ -40,12 +40,14 @@ export interface TranscriptResponse {
 
 export class MobileClient {
   private readonly fetchImpl: typeof fetch;
+  private readonly injectedFetch: boolean;
 
   constructor(
     readonly url: string,
     readonly token: string,
     fetchImpl?: typeof fetch,
   ) {
+    this.injectedFetch = Boolean(fetchImpl);
     this.fetchImpl = fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
   }
 
@@ -225,12 +227,20 @@ export class MobileClient {
     options?: { after?: string | null; signal?: AbortSignal },
   ): Promise<void> {
     const query = options?.after ? `?after=${encodeURIComponent(options.after)}` : "";
-    const response = await this.fetchImpl(this.resolve(`/v1/runs/${id}/events${query}`), {
+    const path = `/v1/runs/${id}/events${query}`;
+    const headers = this.headers(false, {
+      accept: "text/event-stream",
+      ...(options?.after ? { "Last-Event-ID": options.after } : {}),
+    });
+    // Expo fetch often buffers the whole SSE body. XHR onprogress paints tokens
+    // as they arrive, the way Desk's EventSource does.
+    if (!this.injectedFetch && shouldUseXhrSse()) {
+      await streamSseWithXhr<RunEvent>(this.resolve(path), headers, onEvent, options?.signal);
+      return;
+    }
+    const response = await this.fetchImpl(this.resolve(path), {
       method: "GET",
-      headers: this.headers(false, {
-        accept: "text/event-stream",
-        ...(options?.after ? { "Last-Event-ID": options.after } : {}),
-      }),
+      headers,
       signal: options?.signal,
     });
     if (!response.ok) {
