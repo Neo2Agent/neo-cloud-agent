@@ -259,7 +259,6 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "CREATE INDEX events_run_seq ON events (run_id, seq)",
         "CREATE INDEX builds_fingerprint ON builds (fingerprint)",
         "CREATE INDEX runs_updated_at ON runs (updated_at)",
-        "CREATE INDEX runs_deleted_at ON runs (deleted_at)",
         "ALTER TABLE users ADD COLUMN avatar_json MEDIUMTEXT NULL",
         "ALTER TABLE users ADD COLUMN neo_avatar_json MEDIUMTEXT NULL",
         "ALTER TABLE users ADD COLUMN phone VARCHAR(32) NULL",
@@ -267,12 +266,13 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "ALTER TABLE users ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'",
         "ALTER TABLE users ADD COLUMN credit_fen INT NOT NULL DEFAULT 0",
         "ALTER TABLE runs ADD COLUMN deleted_at DATETIME(3) NULL",
+        "CREATE INDEX runs_deleted_at ON runs (deleted_at)",
       ]) {
         try {
           await query(statement);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (!/duplicate key name|already exists|duplicate column/i.test(message)) {
+          if (!/duplicate key name|already exists|duplicate column|key column .*does(?:n.t| not) exist/i.test(message)) {
             throw error;
           }
         }

@@ -187,3 +187,17 @@ test("mysql store upserts run JSON, events, and users", async () => {
   });
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO experts/);
 });
+
+test("mysql migrate adds deleted_at before indexing it", async () => {
+  const calls: string[] = [];
+  const store = createMysqlMetadataStore(async (text) => {
+    calls.push(text);
+    return { rows: [] };
+  });
+  await store.migrate();
+  const addColumn = calls.findIndex((text) => /ALTER TABLE runs ADD COLUMN deleted_at/i.test(text));
+  const addIndex = calls.findIndex((text) => /CREATE INDEX runs_deleted_at/i.test(text));
+  assert.ok(addColumn >= 0);
+  assert.ok(addIndex >= 0);
+  assert.ok(addColumn < addIndex);
+});
