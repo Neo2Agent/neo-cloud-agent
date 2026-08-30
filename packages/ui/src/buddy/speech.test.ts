@@ -25,9 +25,10 @@ test("modelShortLabel maps DeepSeek ids", () => {
   assert.equal(modelShortLabel("deepseek-v4-pro"), "Pro");
 });
 
-test("holdPadLabel is voice-first when the engine exists", () => {
-  assert.equal(holdPadLabel({ supported: true, holding: false }), "按住 说话");
-  assert.equal(holdPadLabel({ supported: true, holding: true }), "正在听…");
+test("holdPadLabel is click-to-talk when the engine exists", () => {
+  assert.equal(holdPadLabel({ supported: true, holding: false }), "点一下开始说话");
+  assert.equal(holdPadLabel({ supported: true, holding: true }), "正在听…再点一下完成");
+  assert.equal(holdPadLabel({ supported: true, holding: false, finishing: true }), "正在转文字…");
   assert.equal(holdPadLabel({ supported: false, holding: false, followUp: true }), "继续说一句…");
 });
 
