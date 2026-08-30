@@ -34,6 +34,12 @@ expect web "$OUT" "build_web=1"
 expect web "$OUT" "restart_control_plane=0"
 pass "web-only rebuilds chat UI without restarting control-plane"
 
+OUT="$(printf '%s\n' "packages/ui/src/speech/pcm.ts" | bash "$PLAN")"
+expect ui "$OUT" "build_web=1"
+expect ui "$OUT" "build_admin=1"
+expect ui "$OUT" "restart_control_plane=0"
+pass "ui source rebuilds chat and admin UIs without restarting APIs"
+
 OUT="$(printf '%s\n' "packages/control-plane/src/index.ts" | bash "$PLAN")"
 expect cp "$OUT" "restart_control_plane=1"
 expect cp "$OUT" "restart_admin_api=1"
