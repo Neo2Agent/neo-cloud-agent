@@ -9,13 +9,15 @@
     "icon": "./assets/linabell-face.png",
     "ios": {
       "bundleIdentifier": "agent.neo.mobile",
+      "buildNumber": "5",
       "supportsTablet": false,
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
           "NSAllowsLocalNetworking": true
         },
-        "NSMicrophoneUsageDescription": "Neo 用麦克风把你说的话写进发送框。"
+        "NSMicrophoneUsageDescription": "Neo 用麦克风把你说的话写进发送框。",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -45,9 +47,9 @@
     "extra": {
       "apiUrl": "http://62.234.211.200",
       "eas": {
-        "projectId": "904b90b0-8796-4c87-80b5-2eb1d7b4f024"
+        "projectId": "c2e24fe1-c980-4ba8-9333-a79cc28903a6"
       }
     },
-    "owner": "kaibairen"
+    "owner": "kaibairen_yi"
   }
 }

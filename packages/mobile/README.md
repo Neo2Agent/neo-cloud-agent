@@ -27,3 +27,16 @@ pnpm start
 连本机控制面时，登录页把地址改成电脑的局域网 IP，例如 `http://192.168.1.8:8080`。手机和电脑要在同一 Wi-Fi；`app.json` 已允许本机明文 HTTP。不要用 `127.0.0.1`（那是手机自己）。
 
 登录后会 `POST /v1/devices` 登记推送。点通知或打开 `neo://runs/<id>` 会回到该对话。前台已经在订 SSE 时不重复弹本地横幅。
+
+## 打包
+
+Android APK 和 iOS 真机 IPA 都走 EAS（本机 Linux / Cloud Agent 没有 Xcode，打不了本地 iOS）：
+
+```bash
+cd packages/mobile
+# 需要 EXPO_TOKEN（expo.dev → Access Tokens）
+pnpm pack:android
+pnpm pack:ios
+```
+
+`pack:ios` 用 `preview`：internal / ad hoc，装到已登记 UDID 的 iPhone。第一次还要在 EAS 里绑好 Apple Developer 证书。TestFlight 走 `production`，不是这条 preview。
