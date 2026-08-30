@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import { isDeskPackaged } from "./ports.js";
-import { deskWorkerLaunch } from "./spawn.js";
+import { deskRepoRoot, deskWorkerLaunch } from "./spawn.js";
 
 test("packaged Desk launches the bundled worker, not the repo tsx entry", () => {
   assert.equal(isDeskPackaged({}), false);
@@ -19,4 +21,5 @@ test("dev Desk still starts the worker through tsx in the repo", () => {
   const launch = deskWorkerLaunch({ execPath: "/usr/bin/node", env: {} });
   assert.match(launch.args[0] ?? "", /tsx\/dist\/cli\.mjs$/);
   assert.match(launch.args[1] ?? "", /packages\/worker\/src\/index\.ts$/);
+  assert.equal(existsSync(path.join(deskRepoRoot(), "packages/desk/package.json")), true);
 });

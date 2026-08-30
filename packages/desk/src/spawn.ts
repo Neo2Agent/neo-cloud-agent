@@ -8,7 +8,11 @@ import { isDeskPackaged } from "./ports.js";
 const DEFAULT_WORKER_POLL_MS = "200";
 
 export function deskRepoRoot(): string {
-  return fileURLToPath(new URL("../../..", import.meta.url));
+  const metaUrl: unknown = import.meta.url;
+  if (typeof metaUrl === "string" && metaUrl.length > 0) {
+    return fileURLToPath(new URL("../../..", metaUrl));
+  }
+  return process.cwd();
 }
 
 /** Where the packaged app keeps `worker.cjs`, or the repo when running from source. */
