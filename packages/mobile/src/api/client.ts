@@ -105,7 +105,12 @@ export class MobileClient {
     username: string;
     phone: string;
     password: string;
-  }): Promise<{ token: string; user: { id?: string; email: string; phone?: string | null } }> {
+  }): Promise<{
+    token?: string;
+    pending?: boolean;
+    message?: string;
+    user: { id?: string; email: string; phone?: string | null };
+  }> {
     return this.request("POST", "/v1/auth/register", input);
   }
 
@@ -160,7 +165,6 @@ export class MobileClient {
 
   deleteRun(id: string): Promise<{ ok: boolean; id: string; deletedAt: string }> {
     return this.request("DELETE", `/v1/runs/${id}`);
-  }
   }
 
   transcript(id: string): Promise<TranscriptResponse> {

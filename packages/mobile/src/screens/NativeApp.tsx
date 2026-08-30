@@ -292,6 +292,11 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         phone: phone.trim(),
         password,
       });
+      if (session.pending || !session.token) {
+        setEmail(username.trim());
+        setAuthError(session.message || "注册成功，请等待管理员审核后再登录");
+        return;
+      }
       await persistToken(session.token);
       setEmail(session.user.email ?? username);
     } catch (error) {

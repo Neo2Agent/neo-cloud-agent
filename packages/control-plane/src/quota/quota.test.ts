@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Run } from "@neo-cloud-agent/contracts";
-import { assertCreateRunAllowed, concurrentRunsForOrg, QuotaError, usedTokensThisMonth } from "./quota.js";
+import {
+  assertCreateRunAllowed,
+  assertUserCreditAllowed,
+  concurrentRunsForOrg,
+  formatYuan,
+  QuotaError,
+  tokensToFen,
+  usedTokensThisMonth,
+} from "./quota.js";
 
 function run(partial: Partial<Run>): Run {
   return {
     id: partial.id ?? "r1",
     orgId: partial.orgId ?? "org",
-    userId: "u",
+    userId: partial.userId ?? "u",
     envId: null,
     envVersionId: null,
     buildId: null,
@@ -69,4 +77,18 @@ test("assertCreateRunAllowed throws 429 when over concurrent or tokens", () => {
     if (previousConcurrent === undefined) delete process.env.QUOTA_MAX_CONCURRENT_RUNS;
     else process.env.QUOTA_MAX_CONCURRENT_RUNS = previousConcurrent;
   }
+});
+
+test("personal starter credit of 5 yuan is spent from tokens", () => {
+  assert.equal(formatYuan(500), "¥5.00");
+  assert.equal(tokensToFen(1_000_000), 100);
+  assert.doesNotThrow(() => assertUserCreditAllowed([], { id: "u", creditFen: 500 }));
+  assert.throws(
+    () =>
+      assertUserCreditAllowed(
+        [run({ userId: "u", usage: { promptTokens: 5_000_000, completionTokens: 0, totalTokens: 5_000_000 } })],
+        { id: "u", creditFen: 500 },
+      ),
+    /额度已用完/,
+  );
 });

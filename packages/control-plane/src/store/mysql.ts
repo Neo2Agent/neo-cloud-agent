@@ -14,9 +14,11 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
 import {
+  applyAccountPatch,
   applyAvatarPatch,
   parseStoredAvatar,
   serializeStoredAvatar,
+  type AccountStatus,
   type SessionRecord,
   type UserRecord,
 } from "../accounts/types.js";
@@ -33,6 +35,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   org_id VARCHAR(191) NOT NULL,
   created_at DATETIME(3) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'active',
+  credit_fen INT NOT NULL DEFAULT 0,
   avatar_json MEDIUMTEXT NULL,
   neo_avatar_json MEDIUMTEXT NULL,
   UNIQUE KEY users_phone (phone)
@@ -260,6 +264,8 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "ALTER TABLE users ADD COLUMN neo_avatar_json MEDIUMTEXT NULL",
         "ALTER TABLE users ADD COLUMN phone VARCHAR(32) NULL",
         "CREATE UNIQUE INDEX users_phone ON users (phone)",
+        "ALTER TABLE users ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'",
+        "ALTER TABLE users ADD COLUMN credit_fen INT NOT NULL DEFAULT 0",
         "ALTER TABLE runs ADD COLUMN deleted_at DATETIME(3) NULL",
       ]) {
         try {
@@ -302,7 +308,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       const result = await query(`SELECT record FROM runs WHERE deleted_at IS NULL`);
       return result.rows
         .map((row) => parseJson(row.record, asRecord))
-        .filter((item): item is PersistedRun => Boolean(item) && !item.run.deletedAt)
+        .filter((item): item is PersistedRun => item != null && !item.run.deletedAt)
         .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
     },
     async loadRunSummaries() {
@@ -311,7 +317,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       const result = await query(`SELECT JSON_EXTRACT(record, '$.run') AS run FROM runs WHERE deleted_at IS NULL`);
       return result.rows
         .map((row) => parseJson(row.run, asRun))
-        .filter((item): item is Run => Boolean(item) && !item.deletedAt)
+        .filter((item): item is Run => item != null && !item.deletedAt)
         .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
     },
     async saveEvent(event) {
@@ -491,8 +497,17 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     async createUser(user) {
       try {
         await query(
-          `INSERT INTO users (id, email, phone, password_hash, org_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-          [user.id, user.email, user.phone ?? null, user.passwordHash, user.orgId, mysqlDateTime(user.createdAt)],
+          `INSERT INTO users (id, email, phone, password_hash, org_id, created_at, status, credit_fen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            user.id,
+            user.email,
+            user.phone ?? null,
+            user.passwordHash,
+            user.orgId,
+            mysqlDateTime(user.createdAt),
+            user.status ?? "active",
+            user.creditFen ?? 0,
+          ],
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -505,7 +520,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async findUserByEmail(email) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE email = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE email = ?`,
         [email],
       );
       return mapUser(result.rows[0]);
@@ -515,30 +530,43 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         return null;
       }
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE phone = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE phone = ?`,
         [phone],
       );
       return mapUser(result.rows[0]);
     },
     async findUserById(id) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
         [id],
       );
       return mapUser(result.rows[0]);
     },
     async listUsers() {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
       );
       return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
+    },
+    async updateUserAccount(userId, patch) {
+      const result = await query(
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
+        [userId],
+      );
+      const user = mapUser(result.rows[0]);
+      if (!user) {
+        throw new Error("user not found");
+      }
+      const next = applyAccountPatch(user, patch);
+      await query(`UPDATE users SET status = ?, credit_fen = ? WHERE id = ?`, [next.status ?? "active", next.creditFen ?? 0, userId]);
+      return next;
     },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = ? WHERE id = ?`, [passwordHash, userId]);
     },
     async updateUserAvatars(userId, patch) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
         [userId],
       );
       const user = mapUser(result.rows[0]);
@@ -589,6 +617,8 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
     return null;
   }
   const phone = row.phone == null || row.phone === "" ? undefined : String(row.phone);
+  const status = row.status === "pending" || row.status === "disabled" ? (row.status as AccountStatus) : "active";
+  const creditFen = Number(row.credit_fen ?? 0);
   return {
     id: String(row.id),
     email: String(row.email),
@@ -596,6 +626,8 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
     passwordHash: String(row.password_hash),
     orgId: String(row.org_id),
     createdAt: toIso(row.created_at),
+    status,
+    creditFen: Number.isFinite(creditFen) ? Math.max(0, Math.floor(creditFen)) : 0,
     avatar: parseStoredAvatar(row.avatar_json),
     neoAvatar: parseStoredAvatar(row.neo_avatar_json),
   };

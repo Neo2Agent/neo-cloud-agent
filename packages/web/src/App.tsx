@@ -2483,8 +2483,17 @@ export function App() {
                   password: authPassword,
                 }),
               });
-              const body = await readJson<{ token?: string; user?: { email?: string }; error?: string }>(response);
+              const body = await readJson<{ token?: string; user?: { email?: string }; error?: string; pending?: boolean; message?: string }>(
+                response,
+              );
               if (!response.ok) throw new Error(body.error || "注册失败");
+              if (body.pending || !body.token) {
+                setAuthMode("login");
+                setAuthEmail(authUsername.trim());
+                setAuthPassword("");
+                setAuthError(body.message || "注册成功，请等待管理员审核后再登录");
+                return;
+              }
               await applySession(body.token ?? "", body.user);
             } else {
               const email = authEmail.trim();

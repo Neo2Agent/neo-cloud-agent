@@ -18,6 +18,7 @@ const {
   ensureDefaultAdmin,
   loginAccount,
   registerAccount,
+  approveAccount,
 } = await import("./accounts.js");
 const { getAccountStore } = await import("./store.js");
 const { hashPassword } = await import("./password.js");
@@ -34,6 +35,11 @@ test("admin still logs in and phone registration is unique", async () => {
   const created = await registerAccount({ username: "ada", phone: "13900139000", password: "password1" });
   assert.equal(created.user.email, "ada");
   assert.equal(created.user.phone, "13900139000");
+  assert.equal(created.pending, true);
+  assert.equal(created.user.status, "pending");
+  assert.equal(created.user.creditFen, 500);
+  await assert.rejects(() => loginAccount({ email: "13900139000", password: "password1" }), /账号待管理员审核/);
+  await approveAccount(created.user.id);
   const byPhone = await loginAccount({ email: "13900139000", password: "password1" });
   assert.equal(byPhone.user.email, "ada");
   await assert.rejects(

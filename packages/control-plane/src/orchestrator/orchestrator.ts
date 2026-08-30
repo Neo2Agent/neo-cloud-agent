@@ -50,7 +50,8 @@ import {
 } from "@neo-cloud-agent/contracts";
 import { listRunArtifacts } from "../artifacts/artifacts.js";
 import { formatPrArtifactMarkdown } from "../artifacts/signed.js";
-import { assertCreateRunAllowed } from "../quota/quota.js";
+import { assertCreateRunAllowed, assertUserCreditAllowed } from "../quota/quota.js";
+import { getAccountStore } from "../accounts/store.js";
 import { decideSubscriptionWake } from "../subscriptions/autofix.js";
 import { defaultWorkerResources, getConfig } from "../config.js";
 import {
@@ -1002,7 +1003,12 @@ function requestedRepoKey(repoUrls: string[]): string {
 
 export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string; email?: string }): Promise<Run> {
   const config = getConfig();
-  assertCreateRunAllowed([...runs.values()], owner?.orgId ?? config.orgId);
+  const listed = [...runs.values()];
+  assertCreateRunAllowed(listed, owner?.orgId ?? config.orgId);
+  if (owner?.userId) {
+    const account = await getAccountStore().findUserById(owner.userId);
+    assertUserCreditAllowed(listed, account);
+  }
   const createdAt = now();
   let repoUrls = Array.isArray(input.repoUrls) ? [...input.repoUrls] : [];
   let projectId: string | null = null;
@@ -1838,6 +1844,11 @@ export async function enqueueFollowUp(
   }
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
+  }
+  const creditUserId = actor?.userId ?? run.userId;
+  if (creditUserId) {
+    const account = await getAccountStore().findUserById(creditUserId);
+    assertUserCreditAllowed([...runs.values()], account);
   }
   const deskBlock = deskFollowUpBlockReason(run, hasInbox);
   if (deskBlock) {

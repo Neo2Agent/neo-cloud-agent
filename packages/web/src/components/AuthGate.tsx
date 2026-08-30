@@ -50,7 +50,7 @@ export function AuthGate({
     effectiveMode === "token"
       ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
       : registering
-        ? "用手机号注册。用户名或手机号都能登录，不需要验证码。"
+        ? "用手机号注册，无需验证码。提交后等管理员审核，通过后才能登录；起步额度 ¥5。"
         : isDeskApp()
           ? "Desk 与 Web 共用账号。登录后可以选本机执行。"
           : "用户名或手机号加密码，进入云端 Agent。";
@@ -67,7 +67,7 @@ export function AuthGate({
     : effectiveMode === "token"
       ? "使用令牌"
       : registering
-        ? "注册并登录"
+        ? "提交注册"
         : "登录";
 
   return (
@@ -103,7 +103,7 @@ export function AuthGate({
           )}
         </div>
         {narrow ? null : <h2 id="auth-title">{title}</h2>}
-        <p id="auth-copy">{narrow ? (registering ? "手机号注册，马上开始" : "先登录，再下任务") : copy}</p>
+        <p id="auth-copy">{narrow ? (registering ? "手机号注册，审核通过后可用" : "先登录，再下任务") : copy}</p>
         {narrow ? (
           <div className="auth-tabs" id="auth-tabs">
             {(["login", "register"] as const).map((item) => (
@@ -212,7 +212,7 @@ export function AuthGate({
             onChange={(event) => onToken(event.target.value)}
           />
         </label>
-        <p className="auth-error" id="auth-error" hidden={!error}>
+        <p className={error.includes("注册成功") ? "auth-error is-ok" : "auth-error"} id="auth-error" hidden={!error}>
           {error}
         </p>
         <button type="submit" id="auth-submit" className="auth-submit" disabled={busy || !canSubmit}>

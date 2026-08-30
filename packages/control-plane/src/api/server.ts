@@ -510,7 +510,13 @@ export function createApiServer() {
         }
         try {
           const created = await registerAccount(body);
-          sendAuthSession(res, 201, created);
+          send(res, 201, {
+            ok: true,
+            pending: true,
+            user: created.user,
+            authRequired: true,
+            message: "注册成功，请等待管理员审核",
+          });
         } catch (error) {
           sendAccountError(res, error);
         }
@@ -716,6 +722,8 @@ export function createApiServer() {
                   phone: null,
                   orgId: actor.orgId,
                   createdAt: "",
+                  status: "active",
+                  creditFen: 0,
                   avatar: null,
                   neoAvatar: null,
                 })

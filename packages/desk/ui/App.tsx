@@ -627,7 +627,15 @@ export function App() {
         ),
       });
       const body = await readJson<{ token?: string; user?: { email?: string }; error?: string }>(response);
+      const pending = (body as { pending?: boolean; message?: string }).pending;
       if (!response.ok) throw new Error(body.error || (registering ? "注册失败" : "登录失败"));
+      if (registering && (pending || !body.token)) {
+        setAuthMode("login");
+        setEmail(username.trim());
+        setPassword("");
+        setAuthError((body as { message?: string }).message || "注册成功，请等待管理员审核后再登录");
+        return;
+      }
       persist(body.token ?? "");
       await finishLogin();
     } catch (error) {

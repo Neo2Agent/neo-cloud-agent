@@ -18,7 +18,7 @@ delete process.env.BOOTSTRAP_EMAIL;
 delete process.env.BOOTSTRAP_PASSWORD;
 
 const { createApiServer } = await import("./server.js");
-const { ensureDefaultAdmin } = await import("../accounts/accounts.js");
+const { approveAccount, ensureDefaultAdmin } = await import("../accounts/accounts.js");
 const { listen, close } = await import("../e2e/helpers.js");
 
 test("phone registration and username/phone login", async (t) => {
@@ -47,10 +47,17 @@ test("phone registration and username/phone login", async (t) => {
     body: JSON.stringify({ username: "ada", phone: "13800138000", password: "password1" }),
   });
   assert.equal(registered.status, 201);
-  const createdAccount = (await registered.json()) as { token: string; user: { email: string; phone: string | null } };
+  const createdAccount = (await registered.json()) as {
+    token?: string;
+    pending?: boolean;
+    user: { id: string; email: string; phone: string | null; status: string; creditFen: number };
+  };
+  assert.equal(createdAccount.pending, true);
+  assert.equal(createdAccount.token, undefined);
   assert.equal(createdAccount.user.email, "ada");
   assert.equal(createdAccount.user.phone, "13800138000");
-  assert.match(createdAccount.token, /^neo_sess_/);
+  assert.equal(createdAccount.user.status, "pending");
+  assert.equal(createdAccount.user.creditFen, 500);
 
   const duplicatePhone = await fetch(`${base}/v1/auth/register`, {
     method: "POST",
@@ -59,6 +66,16 @@ test("phone registration and username/phone login", async (t) => {
   });
   assert.equal(duplicatePhone.status, 409);
   assert.equal(((await duplicatePhone.json()) as { error?: string }).error, "手机号已注册");
+
+  const pendingLogin = await fetch(`${base}/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "13800138000", password: "password1" }),
+  });
+  assert.equal(pendingLogin.status, 403);
+  assert.equal(((await pendingLogin.json()) as { error?: string }).error, "账号待管理员审核");
+
+  await approveAccount(createdAccount.user.id);
 
   const phoneLogin = await fetch(`${base}/v1/auth/login`, {
     method: "POST",

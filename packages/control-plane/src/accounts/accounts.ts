@@ -4,6 +4,8 @@ import { hashPassword, verifyPassword } from "./password.js";
 import { accountStoreKind, getAccountStore } from "./store.js";
 import { AvatarError, parseAvatarInput } from "./avatars.js";
 import {
+  accountStatus,
+  isActiveAccount,
   isValidLogin,
   isValidPhone,
   isValidUsername,
@@ -13,6 +15,7 @@ import {
   type PublicUser,
   type SessionRecord,
 } from "./types.js";
+import { signupCreditFen } from "../quota/quota.js";
 
 export const DEFAULT_ADMIN_LOGIN = "admin";
 export const DEFAULT_ADMIN_PASSWORD = "123456";
@@ -96,6 +99,8 @@ export async function ensureDefaultAdmin(): Promise<PublicUser | null> {
       passwordHash: hashPassword(DEFAULT_ADMIN_PASSWORD),
       orgId: getConfig().orgId,
       createdAt: new Date().toISOString(),
+      status: "active",
+      creditFen: 0,
     });
     console.log("default admin account ready: admin");
     return toPublicUser(user);
@@ -116,7 +121,7 @@ export async function registerAccount(input: {
   username?: string;
   phone?: string;
   password?: string;
-}): Promise<{ user: PublicUser; token: string }> {
+}): Promise<{ user: PublicUser; pending: true }> {
   requireAccountDatabase();
   const username = normalizeEmail(input.username ?? input.email ?? "");
   const phone = normalizePhone(input.phone ?? "");
@@ -146,6 +151,8 @@ export async function registerAccount(input: {
       passwordHash: hashPassword(password),
       orgId: getConfig().orgId,
       createdAt: new Date().toISOString(),
+      status: "pending",
+      creditFen: signupCreditFen(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -157,8 +164,7 @@ export async function registerAccount(input: {
     }
     throw error;
   }
-  const token = await issueSession(user.id);
-  return { user: toPublicUser(user), token };
+  return { user: toPublicUser(user), pending: true };
 }
 
 export async function loginAccount(input: {
@@ -181,8 +187,26 @@ export async function loginAccount(input: {
   if (!user || !verifyPassword(password, user.passwordHash)) {
     throw new AccountError("invalid account or password", 401);
   }
+  if (accountStatus(user) === "pending") {
+    throw new AccountError("账号待管理员审核", 403);
+  }
+  if (!isActiveAccount(user)) {
+    throw new AccountError("账号已停用", 403);
+  }
   const token = await issueSession(user.id);
   return { user: toPublicUser(user), token };
+}
+
+export async function approveAccount(userId: string): Promise<PublicUser> {
+  requireAccountDatabase();
+  const store = getAccountStore();
+  const existing = await store.findUserById(userId);
+  if (!existing) {
+    throw new AccountError("用户不存在", 404);
+  }
+  const creditFen = existing.creditFen && existing.creditFen > 0 ? existing.creditFen : signupCreditFen();
+  const user = await store.updateUserAccount(userId, { status: "active", creditFen });
+  return toPublicUser(user);
 }
 
 export async function createTeammateAccount(input: { email: string; password: string; orgId: string }): Promise<PublicUser> {
@@ -204,6 +228,8 @@ export async function createTeammateAccount(input: { email: string; password: st
     passwordHash: hashPassword(input.password),
     orgId: input.orgId,
     createdAt: new Date().toISOString(),
+    status: "active",
+    creditFen: 0,
   });
   return toPublicUser(user);
 }
@@ -257,7 +283,7 @@ export async function lookupSession(token: string): Promise<{ user: PublicUser; 
     return null;
   }
   const user = await getAccountStore().findUserById(session.userId);
-  if (!user) {
+  if (!user || !isActiveAccount(user)) {
     return null;
   }
   return { user: toPublicUser(user), session };

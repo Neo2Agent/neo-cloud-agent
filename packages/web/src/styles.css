@@ -2680,6 +2680,10 @@ textarea {
   color: var(--err);
 }
 
+.auth-error.is-ok {
+  color: var(--accent);
+}
+
 .auth-tabs {
   display: flex;
   gap: 6px;

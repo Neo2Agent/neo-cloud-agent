@@ -313,6 +313,10 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
         phone: nextPhone.trim(),
         password: nextPassword,
       });
+      if (session.pending || !session.token) {
+        setAuthError(session.message || "注册成功，请等待管理员审核后再登录");
+        return;
+      }
       await persistToken(session.token);
       setEmail(session.user.email ?? nextUsername);
     } catch (error) {
