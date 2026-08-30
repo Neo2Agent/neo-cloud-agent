@@ -2,6 +2,10 @@ export type VoiceSession = {
   stop: () => Promise<string>;
 };
 
+export type StartVoiceResult =
+  | { kind: "session"; session: VoiceSession }
+  | { kind: "error"; message: string };
+
 export function mergeSpokenText(current: string, spoken: string): string {
   const next = spoken.replace(/\s+/g, " ").trim();
   if (!next) return current;

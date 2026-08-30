@@ -32,6 +32,7 @@ import {
 } from "../turn";
 import { attachRunStream } from "../transcript-live";
 import { ChatScreen } from "./ChatScreen";
+import { startNativeVoice } from "../native/speech";
 import { Composer } from "./Composer";
 import { Drawer } from "./Drawer";
 import { AutomationsScreen, ExpertsScreen, InviteScreen, ProjectsScreen } from "./FeatureScreens";
@@ -266,18 +267,9 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     setBusy(true);
     setAuthError("");
     try {
-      const url = apiUrl.replace(/\/$/, "") || DEFAULT_API_URL;
-      await store.setApiUrl(url);
-      setApiUrl(url);
-      const probe = await fetch(`${url}/health`, {
-        headers: { accept: "application/json", "user-agent": "Mozilla/5.0 NeoMobile/0.1" },
-      }).catch((error) => error);
-      if (probe instanceof Error) {
-        throw new Error(
-          `连不上 ${url}（${probe.message}）。浏览器能开现网页，App 仍失败时，把地址改成 http://192.168.1.6:8080，电脑先跑 pnpm dev。`,
-        );
-      }
-      const session = await new MobileClient(url, "").login(email.trim(), password);
+      await store.setApiUrl(DEFAULT_API_URL);
+      setApiUrl(DEFAULT_API_URL);
+      const session = await new MobileClient(DEFAULT_API_URL, "").login(email.trim(), password);
       await persistToken(session.token);
       setEmail(session.user.email ?? email);
     } catch (error) {
@@ -356,10 +348,8 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         error={authError}
         email={email}
         password={password}
-        apiUrl={apiUrl}
         onEmail={setEmail}
         onPassword={setPassword}
-        onApiUrl={setApiUrl}
         onSubmit={() => void login()}
       />
     );
@@ -368,9 +358,6 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   if (screen === "settings") {
     return (
       <SettingsScreen
-        apiUrl={apiUrl}
-        onApiUrl={setApiUrl}
-        onSaveUrl={() => void store.setApiUrl(apiUrl.replace(/\/$/, "") || DEFAULT_API_URL)}
         onBack={() => setScreen("home")}
         onLogout={() => {
           void client.logout().catch(() => undefined);
@@ -491,6 +478,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       onPrompt={setPrompt}
       onSend={() => void send()}
       onStop={current ? () => void client.abort(current.id) : undefined}
+      startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
     />
   );
 

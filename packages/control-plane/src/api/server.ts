@@ -118,6 +118,7 @@ import {
 import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBuildLogs } from "../env/builds.js";
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
+import { proxySpeechIat, speechIatConfigured } from "../speech/iat-proxy.js";
 import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
 import { verifyArtifactAccess } from "../artifacts/signed.js";
 import { beginMcpOAuth, finishMcpOAuth } from "../mcp/oauth.js";
@@ -668,6 +669,23 @@ export function createApiServer() {
         }
         if (method === "GET" && path === "/v1/rate-limits") {
           send(res, 200, await rateLimitSnapshot(actor, clientIp(req)));
+          return;
+        }
+        if (method === "GET" && path === "/v1/speech/iat") {
+          send(res, 200, { configured: await speechIatConfigured() });
+          return;
+        }
+        if (method === "POST" && path === "/v1/speech/iat") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const forwarded = await proxySpeechIat(actor, (await readJson(req)) as { sessionId?: string; audio?: string; status?: number });
+            send(res, forwarded.status, forwarded.payload);
+          } catch (error) {
+            send(res, 502, { error: error instanceof Error ? error.message : "听写服务不可用" });
+          }
           return;
         }
         if (method === "GET" && path === "/v1/me") {

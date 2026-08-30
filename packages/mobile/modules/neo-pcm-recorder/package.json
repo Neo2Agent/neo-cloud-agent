@@ -1,0 +1,6 @@
+{
+  "name": "neo-pcm-recorder",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "private": true
+}

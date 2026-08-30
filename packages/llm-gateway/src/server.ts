@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { verifyRunToken } from "./auth.js";
 import { getConfig } from "./config.js";
+import { handleIatRequest, iatConfigured, type SpeechIatRequest } from "./iat.js";
 import { proxyChatCompletions, type ChatCompletionBody } from "./proxy.js";
 import {
   acquireGatewayConcurrency,
@@ -89,8 +90,27 @@ export function createGatewayServer() {
           upstream: config.upstream,
           upstreamModel: config.upstreamModel,
           configured: config.configured,
+          iatConfigured: iatConfigured(),
           rateLimit: { enabled: gatewayRateLimitEnabled() },
         });
+        return;
+      }
+
+      if (method === "POST" && path === "/v1/speech/iat") {
+        const token = bearer(req);
+        if (!token) {
+          send(res, 401, { error: "missing_run_jwt" });
+          return;
+        }
+        const claims = verifyRunToken(token);
+        const runRate = consumeGatewayRateLimit("llm_run", claims.runId);
+        if (!runRate.ok) {
+          sendRateLimited(res, runRate);
+          return;
+        }
+        const body = (await readJson(req)) as SpeechIatRequest;
+        const result = await handleIatRequest(body);
+        send(res, result.status, result.body);
         return;
       }
 

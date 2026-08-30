@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "expo start",
     "ios": "expo start --ios",
-    "android": "expo start --android"
+    "android": "expo start --android",
+    "pack:android": "eas-cli build --platform android --profile preview --non-interactive"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.10",
@@ -18,10 +19,10 @@
     "@neo-cloud-agent/ui": "workspace:*",
     "babel-preset-expo": "~54.0.12",
     "expo": "~54.0.0",
+    "expo-build-properties": "^57.0.15",
     "expo-linking": "~8.0.8",
     "expo-notifications": "~0.32.11",
     "expo-secure-store": "~15.0.7",
-    "expo-speech-recognition": "^2.1.5",
     "expo-status-bar": "~3.0.8",
     "react": "19.1.0",
     "react-dom": "19.1.0",

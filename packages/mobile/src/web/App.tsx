@@ -36,6 +36,7 @@ import {
 } from "../turn";
 import { attachRunStream } from "../transcript-live";
 import { AutomationsPage } from "./AutomationsPage";
+import { startAppVoice } from "../start-voice";
 import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
@@ -365,11 +366,6 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
         </header>
         <div className="page-body">
           <div className="island-card settings-card">
-            <label>
-              控制面地址
-              <input className="island-input" value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} onBlur={() => void store.setApiUrl(apiUrl)} placeholder="空则走本机 Vite 代理 :8080" />
-            </label>
-            <p className="hint">真机默认 http://62.234.211.200。局域网填电脑 http://IP:8080。</p>
             <button
               className="island-btn island-btn-primary"
               type="button"
@@ -509,6 +505,7 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
       onPrompt={setPrompt}
       onSend={() => void send()}
       onStop={current ? () => void client.abort(current.id) : undefined}
+      startVoice={(onPreview, onError, onEnded) => startAppVoice(client, onPreview, onError, onEnded)}
     />
   );
   const drawer = (

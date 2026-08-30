@@ -1,0 +1,15 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'agent.neo.pcm'
+version = '0.1.0'
+
+android {
+  namespace "agent.neo.pcm"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}

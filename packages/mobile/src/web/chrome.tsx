@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, preview, resolveChatModel } from "../format";
 import { dayGreeting } from "../island-theme";
+import type { StartVoiceResult } from "../speech-cloud";
 import { mergeSpokenText } from "../voice";
 import { runRowMeta } from "../session";
 import { isActiveRunStatus } from "../turn";
 import { IslandButton, IslandCard, IslandInput, IslandTitle } from "./island";
-import { browserVoiceSupported, startBrowserVoice } from "./voice";
 
 export function Page({ title, onBack, action, children }: { title: string; onBack: () => void; action?: ReactNode; children: ReactNode }) {
   return (
@@ -181,6 +181,11 @@ export function IslandComposer(props: {
   onPrompt: (value: string) => void;
   onSend: () => void;
   onStop?: () => void;
+  startVoice: (
+    onPreview: (text: string) => void,
+    onError?: (message: string) => void,
+    onEnded?: () => void,
+  ) => Promise<StartVoiceResult>;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [listening, setListening] = useState(false);
@@ -189,7 +194,6 @@ export function IslandComposer(props: {
   const basePrompt = useRef(props.prompt);
   const promptRef = useRef(props.prompt);
   promptRef.current = props.prompt;
-  const canVoice = browserVoiceSupported();
   const selected = resolveChatModel(props.model);
 
   useEffect(() => () => {
@@ -223,19 +227,26 @@ export function IslandComposer(props: {
       await stopVoice();
       return;
     }
-    if (!canVoice) {
-      setVoiceHint("当前浏览器不支持语音输入");
-      return;
-    }
     setVoiceHint("");
     setMenuOpen(false);
     basePrompt.current = props.prompt;
-    const session = startBrowserVoice((text) => props.onPrompt(mergeSpokenText(basePrompt.current, text)));
-    if (!session) {
-      setVoiceHint("无法开始语音输入");
+    const started = await props.startVoice(
+      (text) => props.onPrompt(mergeSpokenText(basePrompt.current, text)),
+      (message) => {
+        setListening(false);
+        voiceRef.current = null;
+        setVoiceHint(message);
+      },
+      () => {
+        setListening(false);
+        voiceRef.current = null;
+      },
+    );
+    if (started.kind !== "session") {
+      setVoiceHint(started.message);
       return;
     }
-    voiceRef.current = session;
+    voiceRef.current = started.session;
     setListening(true);
   };
 
@@ -290,7 +301,7 @@ export function IslandComposer(props: {
               aria-label={listening ? "停止语音输入" : "语音输入"}
               aria-pressed={listening}
               disabled={props.locked || props.sending}
-              title={canVoice ? (listening ? "点一下结束" : "语音输入") : "当前浏览器不支持语音输入"}
+              title={listening ? "点一下结束" : "语音输入"}
               onClick={() => void toggleVoice()}
             >
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">

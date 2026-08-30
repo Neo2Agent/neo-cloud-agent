@@ -30,7 +30,7 @@ export function describeNetworkError(error: unknown, url: string): string {
   const raw = error instanceof Error ? error.message : "network_error";
   if (!/network request failed|failed to fetch|network_error/i.test(raw)) return raw;
   const host = url.replace(/\/v1\/.*$/, "") || url;
-  return `连不上 ${host}。手机浏览器能开页面，但 App 请求到不了接口。可改填电脑局域网 http://IP:8080（不要 127.0.0.1）。`;
+  return `连不上 ${host}。浏览器能开、App 不能时，多半是安卓拦了 HTTP。请装带明文网络的新包，或改填 https://neorun.cloud。`;
 }
 
 export interface TranscriptResponse {
@@ -111,6 +111,19 @@ export class MobileClient {
 
   llmSettings(): Promise<PublicLlmSettings> {
     return this.request("GET", "/v1/settings/llm");
+  }
+
+  speechStatus(): Promise<{ configured: boolean }> {
+    return this.request("GET", "/v1/speech/iat");
+  }
+
+  speechIat(body: { sessionId?: string; audio?: string; status: 0 | 1 | 2 }): Promise<{
+    sessionId: string;
+    text: string;
+    done?: boolean;
+    error?: string;
+  }> {
+    return this.request("POST", "/v1/speech/iat", body);
   }
 
   listRuns(): Promise<{ runs: Run[] }> {

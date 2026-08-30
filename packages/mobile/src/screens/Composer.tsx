@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { CHAT_MODELS, chatModelLabel, resolveChatModel } from "../format";
-import { startNativeVoice } from "../native/speech";
+import type { StartVoiceResult } from "../speech-cloud";
 import { mergeSpokenText } from "../voice";
 import { MicIcon, SendIcon } from "./composer-icons";
 import { colors } from "./theme";
@@ -17,6 +17,11 @@ type Props = {
   onPrompt: (value: string) => void;
   onSend: () => void;
   onStop?: () => void;
+  startVoice: (
+    onPreview: (text: string) => void,
+    onError?: (message: string) => void,
+    onEnded?: () => void,
+  ) => Promise<StartVoiceResult>;
 };
 
 export function Composer(props: Props) {
@@ -51,12 +56,23 @@ export function Composer(props: Props) {
     }
     setMenuOpen(false);
     basePrompt.current = props.prompt;
-    const session = await startNativeVoice((text) => props.onPrompt(mergeSpokenText(basePrompt.current, text)));
-    if (!session) {
-      Alert.alert("无法开始语音输入", "请允许麦克风。安卓还要装好 Google 语音服务（常见是 Google 应用）。");
+    const started = await props.startVoice(
+      (text) => props.onPrompt(mergeSpokenText(basePrompt.current, text)),
+      (message) => {
+        setListening(false);
+        voiceRef.current = null;
+        Alert.alert("语音没出字", message);
+      },
+      () => {
+        setListening(false);
+        voiceRef.current = null;
+      },
+    );
+    if (started.kind !== "session") {
+      Alert.alert("无法开始语音输入", started.message);
       return;
     }
-    voiceRef.current = session;
+    voiceRef.current = started.session;
     setListening(true);
   };
 
