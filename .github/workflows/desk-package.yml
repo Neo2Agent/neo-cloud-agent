@@ -3,7 +3,7 @@ name: Desk package
 on:
   workflow_dispatch:
   push:
-    branches: [cursor/desk-downloads-643d, cursor/desk-local-remote-643d]
+    branches: [cursor/desk-mac-pack-9490, cursor/desk-downloads-643d, cursor/desk-local-remote-643d]
     paths:
       - "packages/desk/**"
       - ".github/workflows/desk-package.yml"
