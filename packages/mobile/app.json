@@ -16,7 +16,8 @@
           "NSAllowsArbitraryLoads": true,
           "NSAllowsLocalNetworking": true
         },
-        "NSMicrophoneUsageDescription": "Neo 用麦克风把你说的话写进发送框。"
+        "NSMicrophoneUsageDescription": "Neo 用麦克风把你说的话写进发送框。",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
