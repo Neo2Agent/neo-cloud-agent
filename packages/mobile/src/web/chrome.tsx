@@ -3,7 +3,7 @@ import type { Run } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, preview, resolveChatModel } from "../format";
 import { dayGreeting } from "../island-theme";
 import type { StartVoiceResult } from "../speech-cloud";
-import { mergeSpokenText } from "../voice";
+import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
 import { runRowMeta } from "../session";
 import { isActiveRunStatus } from "../turn";
 import { IslandButton, IslandCard, IslandInput, IslandTitle } from "./island";
@@ -215,9 +215,12 @@ export function IslandComposer(props: {
   const [menuOpen, setMenuOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceHint, setVoiceHint] = useState("");
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
   const voiceRef = useRef<{ stop: () => Promise<string> } | null>(null);
   const basePrompt = useRef(props.prompt);
   const promptRef = useRef(props.prompt);
+  const holdStarted = useRef(0);
+  const holdArmed = useRef(false);
   promptRef.current = props.prompt;
   const selected = resolveChatModel(props.model);
 
@@ -236,25 +239,27 @@ export function IslandComposer(props: {
     return () => window.removeEventListener("pointerdown", close);
   }, [menuOpen]);
 
-  const stopVoice = async () => {
-    const session = voiceRef.current;
-    voiceRef.current = null;
-    setListening(false);
-    if (!session) return;
-    const spoken = await session.stop();
-    const next = mergeSpokenText(basePrompt.current, spoken);
-    if (next !== promptRef.current) props.onPrompt(next);
-  };
-
-  const toggleVoice = async () => {
-    if (props.locked || props.sending) return;
-    if (listening) {
-      await stopVoice();
+  const applyHoldResult = (heldMs: number, spoken: string) => {
+    const kept = finishHoldVoice({ heldMs, spoken });
+    if (kept) {
+      const next = mergeSpokenText(basePrompt.current, kept);
+      if (next !== promptRef.current) props.onPrompt(next);
       return;
     }
+    if (isVoiceHoldTap(heldMs)) {
+      props.onPrompt(basePrompt.current);
+      fieldRef.current?.focus();
+    }
+  };
+
+  const beginHold = async () => {
+    if (props.locked || props.sending || holdArmed.current) return;
+    holdArmed.current = true;
+    holdStarted.current = Date.now();
+    const startedAt = holdStarted.current;
     setVoiceHint("");
     setMenuOpen(false);
-    basePrompt.current = props.prompt;
+    basePrompt.current = promptRef.current;
     const started = await props.startVoice(
       (text) => props.onPrompt(mergeSpokenText(basePrompt.current, text)),
       (message) => {
@@ -268,21 +273,41 @@ export function IslandComposer(props: {
       },
     );
     if (started.kind !== "session") {
+      holdArmed.current = false;
+      holdStarted.current = 0;
       setVoiceHint(started.message);
+      return;
+    }
+    if (!holdStarted.current) {
+      const spoken = await started.session.stop();
+      applyHoldResult(Date.now() - startedAt, spoken);
       return;
     }
     voiceRef.current = started.session;
     setListening(true);
   };
 
+  const endHold = async () => {
+    if (!holdArmed.current && !voiceRef.current) return;
+    holdArmed.current = false;
+    const heldMs = holdStarted.current ? Date.now() - holdStarted.current : 0;
+    holdStarted.current = 0;
+    const session = voiceRef.current;
+    voiceRef.current = null;
+    setListening(false);
+    const spoken = session ? await session.stop() : "";
+    applyHoldResult(heldMs, spoken);
+  };
+
   return (
     <div className="composer-dock">
       <div className="composer-bar">
         <textarea
+          ref={fieldRef}
           className="composer-field"
           value={props.prompt}
           disabled={props.locked}
-          placeholder={listening ? "正在听…" : props.placeholder}
+          placeholder={listening ? "松手出字" : props.placeholder}
           rows={2}
           onChange={(event) => props.onPrompt(event.target.value)}
         />
@@ -323,11 +348,18 @@ export function IslandComposer(props: {
             <button
               type="button"
               className={listening ? "composer-mic is-on" : "composer-mic"}
-              aria-label={listening ? "停止语音输入" : "语音输入"}
+              aria-label={listening ? "松手出字" : "按住说话"}
               aria-pressed={listening}
               disabled={props.locked || props.sending}
-              title={listening ? "点一下结束" : "语音输入"}
-              onClick={() => void toggleVoice()}
+              title={listening ? "松手出字" : "按住说话"}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                void beginHold();
+              }}
+              onPointerUp={() => void endHold()}
+              onPointerCancel={() => void endHold()}
+              onContextMenu={(event) => event.preventDefault()}
             >
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                 <path
