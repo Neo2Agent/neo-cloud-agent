@@ -179,6 +179,7 @@ export async function rateLimitSnapshot(actor: Actor | null, ip: string) {
     create_run: orgKey,
     follow_up: userKey,
     expensive: userKey,
+    speech: userKey,
     sse: userKey,
     llm_run: orgKey,
     llm_org: orgKey,

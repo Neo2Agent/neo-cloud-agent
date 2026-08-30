@@ -111,4 +111,7 @@ test("route classifiers skip health/internal/static and stack write policies", (
   assert.deepEqual(actorRateLimitPolicies("POST", "/v1/builds"), ["api", "write", "expensive"]);
   assert.deepEqual(actorRateLimitPolicies("GET", "/v1/runs"), ["api"]);
   assert.deepEqual(actorRateLimitPolicies("POST", "/v1/auth/login"), []);
+  assert.deepEqual(publicRateLimitPolicies("POST", "/v1/speech/iat"), []);
+  assert.deepEqual(actorRateLimitPolicies("POST", "/v1/speech/iat"), ["speech"]);
+  assert.deepEqual(actorRateLimitPolicies("GET", "/v1/speech/iat"), ["api"]);
 });

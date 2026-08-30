@@ -675,7 +675,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 - 默认管理员 `admin` / `123456`；可再 `BOOTSTRAP_EMAIL`。公开注册：用户名 + 手机号 + 密码（无验证码，手机号唯一），待管理员审核后才能登录，起步额度 ¥5。
 - Worker 只带 run JWT 打 `/internal`。
 - `/health`、静态页、公开 webhook 不需要用户令牌。
-- 限流：IP / 登录 / 建 Run / 用户写操作 / SSE 并发 / Gateway QPS。`GET /v1/rate-limits` 看桶。`RATE_LIMIT=0` 关闭。
+- 限流：IP / 登录 / 建 Run / 用户写操作 / SSE 并发 / Gateway QPS。听写 `POST /v1/speech/iat` 走单独的 `speech` 桶，不占 write / llm_run。`GET /v1/rate-limits` 看桶。`RATE_LIMIT=0` 关闭。
 - 配额：`GET /v1/quota` 同时跑的对话和本月 token。完整账务未做。
 
 ---

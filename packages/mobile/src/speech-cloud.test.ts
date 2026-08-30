@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pcmToBase64, startCloudVoice } from "./speech-cloud.js";
+import { describeSpeechError, pcmToBase64, startCloudVoice } from "./speech-cloud.js";
 
 test("pcmToBase64 encodes raw bytes", () => {
   assert.equal(pcmToBase64(Uint8Array.from([0, 1, 2])), btoa("\u0000\u0001\u0002"));
@@ -31,4 +31,42 @@ test("startCloudVoice streams frames then finalizes on stop", async () => {
   assert.equal(spoken, "你好世界");
   assert.equal(calls[0]?.status, 0);
   assert.equal(calls.at(-1)?.status, 2);
+});
+
+test("describeSpeechError maps rate_limited to a single Chinese hint", () => {
+  assert.equal(describeSpeechError("rate_limited"), "听写请求太密，请稍后再试。");
+  assert.equal(describeSpeechError("听写服务不可用"), "听写服务不可用");
+});
+
+test("startCloudVoice reports the first push error once and stops the mic", async () => {
+  let pushes = 0;
+  let stops = 0;
+  const errors: string[] = [];
+  const push = async () => {
+    pushes += 1;
+    throw new Error("rate_limited");
+  };
+  let emit: ((pcm: Uint8Array) => void) | null = null;
+  const started = await startCloudVoice(
+    push,
+    {
+      start: async (onFrame) => {
+        emit = onFrame;
+      },
+      stop: async () => {
+        stops += 1;
+      },
+    },
+    () => undefined,
+    (message) => errors.push(message),
+  );
+  assert.equal(started.kind, "session");
+  emit?.(Uint8Array.from([1, 0]));
+  emit?.(Uint8Array.from([2, 0]));
+  emit?.(Uint8Array.from([3, 0]));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0], "听写请求太密，请稍后再试。");
+  assert.equal(stops, 1);
+  assert.ok(pushes >= 1);
 });

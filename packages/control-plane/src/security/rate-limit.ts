@@ -10,6 +10,7 @@ export type RateLimitPolicyName =
   | "create_run"
   | "follow_up"
   | "expensive"
+  | "speech"
   | "sse"
   | "llm_run"
   | "llm_org"
@@ -55,6 +56,7 @@ const DEFAULTS: Record<RateLimitPolicyName, RateLimitSpec> = {
   create_run: { limit: 12, windowMs: 60_000, burst: 4, kind: "token" },
   follow_up: { limit: 30, windowMs: 60_000, burst: 10, kind: "token" },
   expensive: { limit: 10, windowMs: 60_000, burst: 3, kind: "token" },
+  speech: { limit: 3600, windowMs: 60_000, burst: 80, kind: "token" },
   sse: { limit: 6, windowMs: 0, burst: 6, kind: "concurrency" },
   llm_run: { limit: 90, windowMs: 60_000, burst: 20, kind: "token" },
   llm_org: { limit: 180, windowMs: 60_000, burst: 40, kind: "token" },
@@ -72,6 +74,7 @@ const ENV_LIMIT: Record<RateLimitPolicyName, string> = {
   create_run: "RATE_LIMIT_CREATE_RUN",
   follow_up: "RATE_LIMIT_FOLLOW_UP",
   expensive: "RATE_LIMIT_EXPENSIVE",
+  speech: "RATE_LIMIT_SPEECH",
   sse: "RATE_LIMIT_SSE",
   llm_run: "RATE_LIMIT_LLM_RUN",
   llm_org: "RATE_LIMIT_LLM_ORG",
@@ -383,6 +386,9 @@ export function publicRateLimitPolicies(method: string, path: string): RateLimit
   if (isRateLimitExempt(method, path)) {
     return [];
   }
+  if (method === "POST" && path === "/v1/speech/iat") {
+    return [];
+  }
   const out: RateLimitPolicyName[] = ["ip"];
   if (path.startsWith("/webhooks/")) {
     out.push("webhook");
@@ -427,6 +433,9 @@ export function isExpensiveWrite(method: string, path: string): boolean {
 export function actorRateLimitPolicies(method: string, path: string): RateLimitPolicyName[] {
   if (!path.startsWith("/v1/") || path.startsWith("/v1/auth")) {
     return [];
+  }
+  if (method === "POST" && path === "/v1/speech/iat") {
+    return ["speech"];
   }
   const out: RateLimitPolicyName[] = ["api"];
   if (method === "POST" || method === "DELETE" || method === "PUT" || method === "PATCH") {

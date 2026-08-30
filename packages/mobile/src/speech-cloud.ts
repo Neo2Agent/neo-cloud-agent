@@ -1,6 +1,10 @@
-export type { StartVoiceResult } from "./voice";
 import type { StartVoiceResult, VoiceSession } from "./voice";
 export type { StartVoiceResult, VoiceSession };
+
+export function describeSpeechError(message: string): string {
+  if (/rate_limited/i.test(message)) return "听写请求太密，请稍后再试。";
+  return message || "听写服务不可用";
+}
 
 export type SpeechIatPush = (body: {
   sessionId?: string;
@@ -33,10 +37,19 @@ export async function startCloudVoice(
   let lastText = "";
   let chain = Promise.resolve();
   let stopped = false;
+  let failed = false;
 
   const enqueue = (job: () => Promise<void>) => {
     chain = chain.then(job, job);
     return chain;
+  };
+
+  const fail = (message: string) => {
+    if (failed) return;
+    failed = true;
+    stopped = true;
+    void capture.stop().catch(() => undefined);
+    onError?.(describeSpeechError(message));
   };
 
   const send = (status: 0 | 1 | 2, audio?: string) =>
@@ -56,13 +69,12 @@ export async function startCloudVoice(
     await capture.start((pcm) => {
       if (!pcm.length || stopped) return;
       void send(nextStatus, pcmToBase64(pcm)).catch((error) => {
-        const message = error instanceof Error ? error.message : "听写服务不可用";
-        onError?.(message);
+        fail(error instanceof Error ? error.message : "听写服务不可用");
       });
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "请允许麦克风后再试。";
-    return { kind: "error", message: /permission|麦克风|denied/i.test(message) ? "请允许麦克风后再试。" : message };
+    return { kind: "error", message: /permission|麦克风|denied/i.test(message) ? "请允许麦克风后再试。" : describeSpeechError(message) };
   }
 
   const session: VoiceSession = {

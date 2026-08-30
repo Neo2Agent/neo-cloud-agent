@@ -102,12 +102,7 @@ export function createGatewayServer() {
           send(res, 401, { error: "missing_run_jwt" });
           return;
         }
-        const claims = verifyRunToken(token);
-        const runRate = consumeGatewayRateLimit("llm_run", claims.runId);
-        if (!runRate.ok) {
-          sendRateLimited(res, runRate);
-          return;
-        }
+        verifyRunToken(token);
         const body = (await readJson(req)) as SpeechIatRequest;
         const result = await handleIatRequest(body);
         send(res, result.status, result.body);
