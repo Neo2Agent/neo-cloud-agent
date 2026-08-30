@@ -77,6 +77,11 @@ classify() {
       mark restart_admin_api
       return 0
       ;;
+    packages/ui/*|packages/ui)
+      mark build_web
+      mark build_admin
+      return 0
+      ;;
     packages/web/*|packages/web)
       mark build_web
       return 0
