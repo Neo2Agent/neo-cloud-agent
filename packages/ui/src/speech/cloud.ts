@@ -6,8 +6,17 @@ export type StartVoiceResult =
   | { kind: "session"; session: VoiceSession }
   | { kind: "error"; message: string };
 
+export const INSECURE_MIC_HINT = "当前页面不是 HTTPS，浏览器不给麦克风。请打开 https://neorun.cloud 再试。";
+export const UNSUPPORTED_MIC_HINT = "这个浏览器不支持麦克风。请换 Chrome / Safari，或打开 https://neorun.cloud。";
+
 export function describeSpeechError(message: string): string {
   if (/rate_limited/i.test(message)) return "听写请求太密，请稍后再试。";
+  if (/NotAllowedError|NotReadableError|permission|denied|请允许麦克风/i.test(message)) {
+    return "请允许麦克风后再试。";
+  }
+  if (/getUserMedia|mediaDevices|secure context|NotSupportedError|不是 HTTPS/i.test(message)) {
+    return INSECURE_MIC_HINT;
+  }
   return message || "听写服务不可用";
 }
 
@@ -114,7 +123,7 @@ export async function startCloudVoice(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "请允许麦克风后再试。";
-    return { kind: "error", message: /permission|麦克风|denied/i.test(message) ? "请允许麦克风后再试。" : describeSpeechError(message) };
+    return { kind: "error", message: describeSpeechError(message) };
   }
 
   const session: VoiceSession = {
