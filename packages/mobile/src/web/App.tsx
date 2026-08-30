@@ -11,7 +11,8 @@ import type { Expert, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { MobileApiError, MobileClient } from "../api/client";
-import { webCredentials, type CredentialStore } from "../api/credentials";
+import { sharedWebCredentials, type CredentialStore } from "../api/credentials";
+import { nextEnvId } from "../api/shell";
 import { detectMobileSource, parseMobileScreen } from "../api/source";
 import { schedulePreset, type ScheduleKind } from "../automations";
 import { cloudRunRequest } from "../create-run";
@@ -71,7 +72,7 @@ function ToolRow({ tool }: { tool: TranscriptTool }) {
   );
 }
 
-export function App({ store = webCredentials() }: { store?: CredentialStore }) {
+export function App({ store = sharedWebCredentials() }: { store?: CredentialStore }) {
   const [ready, setReady] = useState(false);
   const [token, setToken] = useState("");
   const [apiUrl, setApiUrl] = useState("");
@@ -165,15 +166,18 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
       setNeoAvatar(me.user.neoAvatar ?? null);
     }
     if (settings?.model) setModel(resolveChatModel(settings.model));
-    if (!envId && environments.environments[0]) setEnvId(environments.environments[0].id);
-  }, [client, envId, token]);
+    setEnvId((current) => nextEnvId(current, environments.environments));
+  }, [client, token]);
+
+  const persistTokenRef = useRef(persistToken);
+  persistTokenRef.current = persistToken;
 
   useEffect(() => {
     if (!ready || !token) return;
     void refreshList().catch((error) => {
-      if (error instanceof MobileApiError && error.status === 401) void persistToken("");
+      if (error instanceof MobileApiError && error.status === 401) void persistTokenRef.current("");
     });
-  }, [ready, token, refreshList, persistToken]);
+  }, [ready, token, refreshList]);
 
   useEffect(() => {
     if (!token || route.screen !== "invite" || !route.inviteToken) return;

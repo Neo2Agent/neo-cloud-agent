@@ -31,6 +31,18 @@ export function memoryCredentials(seed?: { token?: string; apiUrl?: string }): C
   };
 }
 
+let sharedWebStore: CredentialStore | undefined;
+
+/** Same instance every call. Safe as a React default argument; `webCredentials()` is not. */
+export function sharedWebCredentials(): CredentialStore {
+  sharedWebStore ??= webCredentials();
+  return sharedWebStore;
+}
+
+export function resetSharedWebCredentials(): void {
+  sharedWebStore = undefined;
+}
+
 export function webCredentials(): CredentialStore {
   return {
     async getToken() {
