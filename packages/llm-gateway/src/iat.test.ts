@@ -122,6 +122,17 @@ test("gateway speech route requires a run JWT and reports iatConfigured", async 
       body: JSON.stringify({ status: 0 }),
     });
     assert.equal(missing.status, 503);
+    process.env.RATE_LIMIT = "1";
+    process.env.RATE_LIMIT_LLM_RUN = "1";
+    process.env.RATE_LIMIT_LLM_RUN_BURST = "1";
+    const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+    const first = await fetch(`${base}/v1/speech/iat`, { method: "POST", headers, body: JSON.stringify({ status: 0 }) });
+    const second = await fetch(`${base}/v1/speech/iat`, { method: "POST", headers, body: JSON.stringify({ status: 0 }) });
+    assert.equal(first.status, 503);
+    assert.equal(second.status, 503);
+    delete process.env.RATE_LIMIT;
+    delete process.env.RATE_LIMIT_LLM_RUN;
+    delete process.env.RATE_LIMIT_LLM_RUN_BURST;
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
