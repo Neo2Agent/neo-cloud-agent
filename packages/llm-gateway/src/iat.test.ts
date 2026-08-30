@@ -7,7 +7,9 @@ import {
   decodeIatResult,
   encodeIatFrame,
   handleIatRequest,
+  isIatPunctuation,
   resetIatSessions,
+  splitIatAudio,
   type IatSocket,
 } from "./iat.js";
 import { createGatewayServer } from "./server.js";
@@ -48,6 +50,26 @@ test("applyIatTranscript replaces the last segment on wpgs rpl", () => {
   assert.equal(replaced.text, "请打开设置");
 });
 
+test("applyIatTranscript keeps the sentence when the next packet is only a question mark", () => {
+  assert.equal(isIatPunctuation("？"), true);
+  const spoken = applyIatTranscript({ committed: "", last: "你好你可以做什么" }, { text: "？", status: 1 });
+  assert.equal(spoken.text, "你好你可以做什么？");
+  const replaced = applyIatTranscript({ committed: "", last: "你好你可以做什么" }, { text: "？", status: 1, pgs: "rpl" });
+  assert.equal(replaced.text, "你好你可以做什么？");
+  const ended = applyIatTranscript({ committed: "", last: "你好你可以做什么" }, { text: "？", status: 2 });
+  assert.equal(ended.text, "你好你可以做什么？");
+  const appended = applyIatTranscript({ committed: "", last: "你好" }, { text: "你可以做什么", status: 1, pgs: "apd" });
+  assert.equal(appended.text, "你好你可以做什么");
+});
+
+test("splitIatAudio cuts large HTTP bodies into 40ms websocket frames", () => {
+  const pcm = Buffer.alloc(1280 * 2 + 10, 1);
+  const parts = splitIatAudio(pcm.toString("base64"));
+  assert.equal(parts.length, 3);
+  assert.equal(Buffer.from(parts[0] ?? "", "base64").length, 1280);
+  assert.equal(Buffer.from(parts[2] ?? "", "base64").length, 10);
+});
+
 test("handleIatRequest refuses missing keys", async () => {
   delete process.env.IFLYTEK_APP_ID;
   delete process.env.IFLYTEK_API_KEY;
@@ -65,7 +87,21 @@ test("handleIatRequest opens a session and returns streamed text", async () => {
   const listeners = new Map<string, Array<(event: { data?: string }) => void>>();
   const sent: string[] = [];
   const connect = (): IatSocket => ({
-    send: (data) => sent.push(data),
+    send: (data) => {
+      sent.push(data);
+      const frame = JSON.parse(data) as { data?: { status?: number } };
+      if (frame.data?.status === 2) {
+        queueMicrotask(() => {
+          for (const listener of listeners.get("message") ?? []) {
+            listener({
+              data: JSON.stringify({
+                data: { status: 2, result: { ws: [{ cw: [{ w: "？" }] }] } },
+              }),
+            });
+          }
+        });
+      }
+    },
     close: () => undefined,
     addEventListener: (type, listener) => {
       const list = listeners.get(type) ?? [];
@@ -85,12 +121,15 @@ test("handleIatRequest opens a session and returns streamed text", async () => {
       }),
     });
   }
+  const midStarted = Date.now();
   const mid = await handleIatRequest({ sessionId, status: 1, audio: "BBBB" }, connect);
+  assert.equal(Date.now() - midStarted < 50, true);
   assert.equal(mid.status, 200);
   assert.equal("text" in mid.body && mid.body.text, "你好");
   const end = await handleIatRequest({ sessionId, status: 2 }, connect);
   assert.equal(end.status, 200);
   assert.equal("done" in end.body && end.body.done, true);
+  assert.equal("text" in end.body && end.body.text, "你好？");
   assert.equal(sent.length >= 2, true);
   resetIatSessions();
 });

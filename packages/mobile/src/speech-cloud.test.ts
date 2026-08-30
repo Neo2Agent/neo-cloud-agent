@@ -109,6 +109,37 @@ test("startCloudVoice batches mic frames into fewer HTTP posts", async () => {
   assert.equal(calls.at(-2)?.status, 1);
   assert.equal(calls.at(-2)?.bytes, 2);
   assert.equal(calls.at(-1)?.status, 2);
-  assert.equal(IAT_HTTP_MIN_BYTES, 6400);
+  assert.equal(IAT_HTTP_MIN_BYTES, 12_800);
   assert.equal(concatPcm([Uint8Array.from([1]), Uint8Array.from([2, 3])]).length, 3);
+});
+
+test("startCloudVoice keeps the sentence when a later packet is only a question mark", async () => {
+  const previews: string[] = [];
+  let pushes = 0;
+  const push = async (body: { status: 0 | 1 | 2 }) => {
+    pushes += 1;
+    return { sessionId: "s1", text: body.status === 2 ? "？" : "你好你可以做什么" };
+  };
+  let emit: ((pcm: Uint8Array) => void) | null = null;
+  const started = await startCloudVoice(
+    push,
+    {
+      start: async (onFrame) => {
+        emit = onFrame;
+      },
+      stop: async () => undefined,
+    },
+    (text) => previews.push(text),
+    undefined,
+    undefined,
+    { minHttpBytes: 1 },
+  );
+  assert.equal(started.kind, "session");
+  emit?.(Uint8Array.from([1, 0]));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  if (started.kind !== "session") throw new Error("expected session");
+  const spoken = await started.session.stop();
+  assert.equal(previews[0], "你好你可以做什么");
+  assert.equal(spoken, "你好你可以做什么？");
+  assert.ok(pushes >= 2);
 });

@@ -4,6 +4,25 @@ export function classifyPointer(durationMs: number, threshold = HOLD_MS): "tap" 
   return durationMs >= threshold ? "hold" : "tap";
 }
 
+const SPOKEN_PUNCT = /^[\s\p{P}\p{S}]+$/u;
+
+export function isSpokenPunctuation(text: string): boolean {
+  return Boolean(text) && SPOKEN_PUNCT.test(text);
+}
+
+/** Keep the sentence when a later packet is only 「？」. */
+export function preferSpokenText(current: string, incoming: string): string {
+  const next = incoming.replace(/\s+/g, " ").trim();
+  const prev = current.replace(/\s+/g, " ").trim();
+  if (!next) return prev;
+  if (!prev) return next;
+  if (isSpokenPunctuation(next)) return prev.endsWith(next) ? prev : `${prev}${next}`;
+  if (next.length + 2 < prev.length && !next.includes(prev.slice(0, Math.min(2, prev.length)))) {
+    return prev;
+  }
+  return next;
+}
+
 export function mergeSpokenText(current: string, spoken: string): string {
   const next = spoken.replace(/\s+/g, " ").trim();
   if (!next) return current;
@@ -54,19 +73,21 @@ export function collectSpeechTranscript(results: SpeechResultEvent["results"]): 
 
 export function startSpeechRecognition(engine: SpeechEngine, onPreview?: (text: string) => void): SpeechSession {
   let finalText = "";
+  let preview = "";
   engine.lang = "zh-CN";
   engine.interimResults = true;
   engine.continuous = true;
   engine.onresult = (event) => {
     const next = collectSpeechTranscript(event.results);
-    if (next.finalText) finalText = next.finalText;
-    onPreview?.(next.preview || finalText);
+    if (next.finalText) finalText = preferSpokenText(finalText, next.finalText);
+    preview = preferSpokenText(preview, next.preview || next.finalText);
+    onPreview?.(preview || finalText);
   };
   engine.start();
   return {
     stop: () =>
       new Promise((resolve) => {
-        const finish = () => resolve(finalText.replace(/\s+/g, " ").trim());
+        const finish = () => resolve(preferSpokenText(finalText, preview).replace(/\s+/g, " ").trim());
         engine.onend = finish;
         try {
           engine.stop();
