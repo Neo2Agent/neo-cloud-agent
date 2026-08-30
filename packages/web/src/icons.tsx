@@ -33,6 +33,7 @@ import {
   Star,
   TerminalSquare,
   Timer,
+  Trash2,
   Users,
   Wrench,
   X,
@@ -165,6 +166,10 @@ export function IconSearch(props: IconProps) {
 
 export function IconArchive(props: IconProps) {
   return icon(Archive, props);
+}
+
+export function IconTrash(props: IconProps) {
+  return icon(Trash2, props);
 }
 
 export function IconInbox(props: IconProps) {

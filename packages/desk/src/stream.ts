@@ -8,7 +8,7 @@ export const ACTIVE_RUN_STATUSES = [
   "WAITING_FOR_BACKGROUND_WORK",
 ] as const;
 
-const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived"]);
+const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived", "run.deleted"]);
 
 export function isActiveRunStatus(status?: string | null): boolean {
   return Boolean(status && (ACTIVE_RUN_STATUSES as readonly string[]).includes(status));
@@ -33,7 +33,7 @@ const TURN_WORK_KINDS = new Set([
 export function batchTurnSignal(events: Array<{ kind: string }>): "work" | "idle" | "fail" | null {
   let signal: "work" | "idle" | "fail" | null = null;
   for (const event of events) {
-    if (event.kind === "run.error" || event.kind === "run.archived") {
+    if (event.kind === "run.error" || event.kind === "run.archived" || event.kind === "run.deleted") {
       signal = "fail";
     } else if (event.kind === "run.idle") {
       signal = "idle";
@@ -58,6 +58,8 @@ export function statusFromEventKind(kind: string, current?: string | null): stri
     case "run.error":
       return "ERROR";
     case "run.archived":
+      return "ARCHIVED";
+    case "run.deleted":
       return "ARCHIVED";
     case "agent.start":
     case "user.message":

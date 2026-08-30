@@ -37,36 +37,61 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 export function IslandLogin(props: {
   busy: boolean;
   error: string;
-  onSubmit: (email: string, password: string) => void;
+  onLogin: (email: string, password: string) => void;
+  onRegister: (username: string, phone: string, password: string) => void;
 }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const registering = mode === "register";
   return (
     <div className="login-shell">
       <IslandCard className="login-card">
         <IslandTitle size="large">Neo</IslandTitle>
-        <p>欢迎回来</p>
+        <p>{registering ? "手机号注册，无需验证码" : "用户名或手机号登录"}</p>
         <form
           onSubmit={(event: FormEvent<HTMLFormElement>) => {
             event.preventDefault();
             const form = event.currentTarget;
-            props.onSubmit(
-              (form.elements.namedItem("account") as HTMLInputElement).value,
-              (form.elements.namedItem("secret") as HTMLInputElement).value,
-            );
+            const password = (form.elements.namedItem("secret") as HTMLInputElement).value;
+            if (registering) {
+              props.onRegister(
+                (form.elements.namedItem("username") as HTMLInputElement).value,
+                (form.elements.namedItem("phone") as HTMLInputElement).value,
+                password,
+              );
+              return;
+            }
+            props.onLogin((form.elements.namedItem("account") as HTMLInputElement).value, password);
           }}
         >
-          <label>
-            账号
-            <IslandInput name="account" autoComplete="username" placeholder="admin" />
-          </label>
+          {registering ? (
+            <>
+              <label>
+                用户名
+                <IslandInput name="username" autoComplete="username" placeholder="字母开头" />
+              </label>
+              <label>
+                手机号
+                <IslandInput name="phone" autoComplete="tel" inputMode="numeric" placeholder="11 位手机号" />
+              </label>
+            </>
+          ) : (
+            <label>
+              用户名或手机号
+              <IslandInput name="account" autoComplete="username" placeholder="用户名或手机号" />
+            </label>
+          )}
           <label>
             密码
-            <IslandInput name="secret" type="password" autoComplete="current-password" />
+            <IslandInput name="secret" type="password" autoComplete={registering ? "new-password" : "current-password"} />
           </label>
           {props.error ? <p className="error">{props.error}</p> : null}
           <IslandButton type="primary" submit disabled={props.busy} style={{ width: "100%", marginTop: 8 }}>
-            {props.busy ? "登录中…" : "Continue"}
+            {props.busy ? (registering ? "注册中…" : "登录中…") : registering ? "注册并登录" : "Continue"}
           </IslandButton>
         </form>
+        <button type="button" className="text-link" onClick={() => setMode(registering ? "login" : "register")}>
+          {registering ? "已有账号？去登录" : "没有账号？手机号注册"}
+        </button>
         <p className="hint">手机只订云端 /v1。新开对话不会发到本机 Desk。</p>
       </IslandCard>
     </div>

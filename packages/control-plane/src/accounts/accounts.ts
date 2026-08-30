@@ -3,7 +3,16 @@ import { getConfig } from "../config.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { accountStoreKind, getAccountStore } from "./store.js";
 import { AvatarError, parseAvatarInput } from "./avatars.js";
-import { isValidLogin, normalizeEmail, toPublicUser, type PublicUser, type SessionRecord } from "./types.js";
+import {
+  isValidLogin,
+  isValidPhone,
+  isValidUsername,
+  normalizeEmail,
+  normalizePhone,
+  toPublicUser,
+  type PublicUser,
+  type SessionRecord,
+} from "./types.js";
 
 export const DEFAULT_ADMIN_LOGIN = "admin";
 export const DEFAULT_ADMIN_PASSWORD = "123456";
@@ -102,19 +111,73 @@ export async function ensureBootstrapAccount(): Promise<PublicUser | null> {
   return ensureDefaultAdmin();
 }
 
-export async function registerAccount(_input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {
-  throw new AccountError("不支持注册", 403);
+export async function registerAccount(input: {
+  email?: string;
+  username?: string;
+  phone?: string;
+  password?: string;
+}): Promise<{ user: PublicUser; token: string }> {
+  requireAccountDatabase();
+  const username = normalizeEmail(input.username ?? input.email ?? "");
+  const phone = normalizePhone(input.phone ?? "");
+  const password = input.password ?? "";
+  if (!isValidUsername(username) || username === DEFAULT_ADMIN_LOGIN) {
+    throw new AccountError("用户名不合法", 400);
+  }
+  if (!isValidPhone(phone)) {
+    throw new AccountError("请填写有效的手机号", 400);
+  }
+  if (password.length < 6) {
+    throw new AccountError("密码至少 6 位", 400);
+  }
+  const store = getAccountStore();
+  if (await store.findUserByEmail(username)) {
+    throw new AccountError("用户名已存在", 409);
+  }
+  if (await store.findUserByPhone(phone)) {
+    throw new AccountError("手机号已注册", 409);
+  }
+  let user;
+  try {
+    user = await store.createUser({
+      id: crypto.randomUUID(),
+      email: username,
+      phone,
+      passwordHash: hashPassword(password),
+      orgId: getConfig().orgId,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("phone already registered")) {
+      throw new AccountError("手机号已注册", 409);
+    }
+    if (message.includes("already registered")) {
+      throw new AccountError("用户名已存在", 409);
+    }
+    throw error;
+  }
+  const token = await issueSession(user.id);
+  return { user: toPublicUser(user), token };
 }
 
-export async function loginAccount(input: { email?: string; password?: string }): Promise<{ user: PublicUser; token: string }> {
+export async function loginAccount(input: {
+  email?: string;
+  login?: string;
+  phone?: string;
+  password?: string;
+}): Promise<{ user: PublicUser; token: string }> {
   requireAccountDatabase();
-  const login = normalizeEmail(input.email ?? "");
+  const raw = (input.login ?? input.phone ?? input.email ?? "").trim();
   const password = input.password ?? "";
-  if (!isValidLogin(login) || !password) {
+  const phone = normalizePhone(raw);
+  const login = normalizeEmail(raw);
+  if ((!isValidPhone(phone) && !isValidLogin(login)) || !password) {
     throw new AccountError("invalid account or password", 401);
   }
   await ensureDefaultAdmin();
-  const user = await getAccountStore().findUserByEmail(login);
+  const store = getAccountStore();
+  const user = isValidPhone(phone) ? await store.findUserByPhone(phone) : await store.findUserByEmail(login);
   if (!user || !verifyPassword(password, user.passwordHash)) {
     throw new AccountError("invalid account or password", 401);
   }

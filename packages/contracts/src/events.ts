@@ -18,6 +18,7 @@ export type RunEventKind =
   | "run.queued"
   | "run.error"
   | "run.archived"
+  | "run.deleted"
   | "llm.usage"
   | "llm.error"
   | "context.usage"

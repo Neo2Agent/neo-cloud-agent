@@ -49,6 +49,8 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [token, setToken] = useState("");
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [phone, setPhone] = useState("");
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [neoAvatar, setNeoAvatar] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -279,6 +281,26 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     }
   };
 
+  const register = async () => {
+    setBusy(true);
+    setAuthError("");
+    try {
+      await store.setApiUrl(DEFAULT_API_URL);
+      setApiUrl(DEFAULT_API_URL);
+      const session = await new MobileClient(DEFAULT_API_URL, "").register({
+        username: username.trim(),
+        phone: phone.trim(),
+        password,
+      });
+      await persistToken(session.token);
+      setEmail(session.user.email ?? username);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "注册失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {
       setPendingTurn(null);
@@ -347,10 +369,15 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         busy={busy}
         error={authError}
         email={email}
+        username={username}
+        phone={phone}
         password={password}
         onEmail={setEmail}
+        onUsername={setUsername}
+        onPhone={setPhone}
         onPassword={setPassword}
-        onSubmit={() => void login()}
+        onLogin={() => void login()}
+        onRegister={() => void register()}
       />
     );
   }

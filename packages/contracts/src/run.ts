@@ -155,6 +155,8 @@ export interface Run {
   updatedAt: string;
   idleAt: string | null;
   expiresAt: string | null;
+  /** MySQL/file soft-delete. Hidden from lists once set. */
+  deletedAt?: string | null;
   errorMessage: string | null;
   usage?: {
     promptTokens: number;

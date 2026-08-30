@@ -304,6 +304,24 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
     }
   };
 
+  const registerWith = async (nextUsername: string, nextPhone: string, nextPassword: string) => {
+    setBusy(true);
+    setAuthError("");
+    try {
+      const session = await new MobileClient(apiUrl, "").register({
+        username: nextUsername.trim(),
+        phone: nextPhone.trim(),
+        password: nextPassword,
+      });
+      await persistToken(session.token);
+      setEmail(session.user.email ?? nextUsername);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "注册失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const resetHome = () => {
     setCurrent(null);
     openRunId.current = null;
@@ -354,7 +372,14 @@ export function App({ store = webCredentials() }: { store?: CredentialStore }) {
   if (!ready) return <div className="login-shell"><p>正在进入…</p></div>;
 
   if (!token) {
-    return <IslandLogin busy={busy} error={authError} onSubmit={(nextEmail, nextPassword) => void loginWith(nextEmail, nextPassword)} />;
+    return (
+      <IslandLogin
+        busy={busy}
+        error={authError}
+        onLogin={(nextEmail, nextPassword) => void loginWith(nextEmail, nextPassword)}
+        onRegister={(nextUsername, nextPhone, nextPassword) => void registerWith(nextUsername, nextPhone, nextPassword)}
+      />
+    );
   }
 
   if (route.screen === "settings") {

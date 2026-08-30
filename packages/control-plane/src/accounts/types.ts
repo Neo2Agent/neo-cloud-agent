@@ -6,6 +6,7 @@ export type UserAvatar = {
 export type UserRecord = {
   id: string;
   email: string;
+  phone?: string;
   passwordHash: string;
   orgId: string;
   createdAt: string;
@@ -24,6 +25,7 @@ export type SessionRecord = {
 export type PublicUser = {
   id: string;
   email: string;
+  phone: string | null;
   orgId: string;
   createdAt: string;
   avatar: string | null;
@@ -38,6 +40,7 @@ export type UserAvatarPatch = {
 export interface AccountStore {
   createUser(user: UserRecord): Promise<UserRecord>;
   findUserByEmail(email: string): Promise<UserRecord | null>;
+  findUserByPhone(phone: string): Promise<UserRecord | null>;
   findUserById(id: string): Promise<UserRecord | null>;
   listUsers(): Promise<UserRecord[]>;
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
@@ -100,6 +103,7 @@ export function toPublicUser(user: UserRecord): PublicUser {
   return {
     id: user.id,
     email: user.email,
+    phone: user.phone ?? null,
     orgId: user.orgId,
     createdAt: user.createdAt,
     avatar: avatarDataUrl(user.avatar),
@@ -115,7 +119,27 @@ export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+const USERNAME_RE = /^[a-z][a-z0-9._-]{1,31}$/;
+const CN_MOBILE_RE = /^1[3-9]\d{9}$/;
+
+/** Local usernames like `admin` / `mate`. */
+export function isValidUsername(login: string): boolean {
+  return USERNAME_RE.test(login);
+}
+
 /** Local admin usernames like `admin`, or a normal email. */
 export function isValidLogin(login: string): boolean {
-  return isValidEmail(login) || /^[a-z][a-z0-9._-]{1,31}$/.test(login);
+  return isValidEmail(login) || isValidUsername(login);
+}
+
+export function normalizePhone(phone: string): string {
+  let digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("86") && digits.length === 13) {
+    digits = digits.slice(2);
+  }
+  return digits;
+}
+
+export function isValidPhone(phone: string): boolean {
+  return CN_MOBILE_RE.test(phone);
 }

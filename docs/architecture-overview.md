@@ -700,7 +700,7 @@ GET    /v1/runs/:id/artifacts/:name?token=   签名下载
 
 ```
 POST   /v1/auth/login|logout|bootstrap
-POST   /v1/auth/register                 固定 403「不支持注册」
+POST   /v1/auth/register                 用户名 + 手机号 + 密码，无验证码；手机号唯一
 GET    /v1/me
 GET    /v1/vms
 GET    /v1/rate-limits
@@ -717,6 +717,7 @@ GET    /v1/runs/:id
 POST   /v1/runs/:id/follow-ups
 POST   /v1/runs/:id/abort
 POST   /v1/runs/:id/archive
+DELETE /v1/runs/:id                    仅已归档；MySQL 写 deleted_at，列表不再返回
 GET    /v1/runs/:id/events          SSE
 GET    /v1/runs/:id/transcript
 GET    /v1/runs/:id/fs

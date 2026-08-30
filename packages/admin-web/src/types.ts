@@ -19,6 +19,7 @@ export type AdminOverview = {
 export type AdminUser = {
   id: string;
   email: string;
+  phone?: string | null;
   orgId: string;
   admin: boolean;
   runCount: number;

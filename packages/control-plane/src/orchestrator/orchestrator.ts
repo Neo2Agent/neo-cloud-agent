@@ -185,6 +185,9 @@ function hydrateRecord(record: {
   activeTurn?: ActiveTurn | null;
 }): void {
   const run = record.run;
+  if (run.deletedAt) {
+    return;
+  }
   run.pullRequests = Array.isArray(run.pullRequests) ? run.pullRequests : [];
   run.baseBranch = run.baseBranch ?? null;
   run.executionTarget = run.executionTarget ?? null;
@@ -1400,11 +1403,18 @@ async function ensureEventsLoaded(runId: string): Promise<void> {
 export async function loadRunIntoMemory(runId: string): Promise<Run | undefined> {
   const existing = runs.get(runId);
   if (existing) {
+    if (existing.deletedAt) {
+      forgetDeletedRun(runId);
+      return undefined;
+    }
     await ensureEventsLoaded(runId);
     return existing;
   }
   const local = loadPersistedRun(runId);
   if (local?.run?.id) {
+    if (local.run.deletedAt) {
+      return undefined;
+    }
     hydrateRecord(local);
     await ensureEventsLoaded(runId);
     return local.run;
@@ -1414,6 +1424,9 @@ export async function loadRunIntoMemory(runId: string): Promise<Run | undefined>
     const store = getPostgresStore();
     const remote = await store?.loadRun(runId);
     if (remote?.run?.id) {
+      if (remote.run.deletedAt) {
+        return undefined;
+      }
       persistRunRecord(remote, undefined, { mirror: false });
       await ensureEventsLoaded(runId);
       hydrateRecord(remote);
@@ -1482,7 +1495,7 @@ export async function transferRun(
 }
 
 export function listRuns(): Run[] {
-  return [...runs.values()];
+  return [...runs.values()].filter((run) => !run.deletedAt);
 }
 
 function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
@@ -2141,6 +2154,47 @@ export async function archiveRun(runId: string): Promise<Run> {
   return run;
 }
 
+export class RunDeleteError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+function forgetDeletedRun(runId: string): void {
+  runs.delete(runId);
+  followUps.delete(runId);
+  inbound.delete(runId);
+  subscriptions.delete(runId);
+  activeTurns.delete(runId);
+  heartbeats.delete(runId);
+  handles.delete(runId);
+  runJwts.delete(runId);
+  runEgress.delete(runId);
+  deskWorkspaces.delete(runId);
+  releasingIdle.delete(runId);
+}
+
+export async function deleteRun(runId: string): Promise<{ ok: true; id: string; deletedAt: string }> {
+  const run = runs.get(runId);
+  if (!run || run.deletedAt) {
+    throw new RunDeleteError("run not found", 404);
+  }
+  if (run.status !== "ARCHIVED" && run.status !== "EXPIRED") {
+    throw new RunDeleteError("只能删除已归档的任务", 409);
+  }
+  const deletedAt = now();
+  run.deletedAt = deletedAt;
+  run.updatedAt = deletedAt;
+  publish(event(runId, "run.deleted", "Run deleted"));
+  flushRun(runId);
+  dropHistory(runId);
+  forgetDeletedRun(runId);
+  return { ok: true, id: runId, deletedAt };
+}
+
 export function abortRun(runId: string): Run {
   const run = runs.get(runId);
   if (!run) {
@@ -2295,7 +2349,7 @@ export async function restoreArchivedRun(runId: string) {
     return runs.get(runId);
   }
   const restored = await restoreArchivedArtifacts(runId);
-  if (!restored?.record?.run?.id) {
+  if (!restored?.record?.run?.id || restored.record.run.deletedAt) {
     return undefined;
   }
   const run = restored.record.run;

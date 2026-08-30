@@ -11,7 +11,7 @@ export const ACTIVE_RUN_STATUSES = [
 ] as const;
 
 const SETUP_STATUSES = new Set(["NOT_YET_STARTED", "PROVISIONING", "INSTALLING"]);
-const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived"]);
+const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived", "run.deleted"]);
 
 export type PendingUser = {
   id: string;
@@ -134,6 +134,8 @@ export function statusFromEventKind(kind: string, current?: string | null): stri
     case "run.queued":
       return "NOT_YET_STARTED";
     case "run.archived":
+      return "ARCHIVED";
+    case "run.deleted":
       return "ARCHIVED";
     case "run.error":
       return "ERROR";

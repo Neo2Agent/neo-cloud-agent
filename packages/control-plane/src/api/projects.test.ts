@@ -41,7 +41,7 @@ function auth(token: string): { "content-type": string; authorization: string } 
   return { "content-type": "application/json", authorization: `Bearer ${token}` };
 }
 
-test("projects share runs, inject instruction, and keep registration closed", async (t) => {
+test("projects share runs, inject instruction, and reject email-only signup", async (t) => {
   const server = createApiServer();
   const port = await listen(server);
   t.after(async () => {
@@ -55,7 +55,7 @@ test("projects share runs, inject instruction, and keep registration closed", as
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: "ada@example.com", password: "password1" }),
   });
-  assert.equal(registered.status, 403);
+  assert.equal(registered.status, 400);
 
   const admin = await login(base, "admin", "123456");
   assert.equal(admin.user.email, "admin");

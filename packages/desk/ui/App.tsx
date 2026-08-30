@@ -194,6 +194,9 @@ function diffStats(text: string): { added: number; removed: number } {
 export function App() {
   const [token, setToken] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [phone, setPhone] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
@@ -601,25 +604,35 @@ export function App() {
   }, [finishLogin, persist]);
 
   const login = async () => {
-    if (!email.trim() || !password) {
-      setAuthError("请输入账号和密码");
+    const registering = authMode === "register";
+    if (registering) {
+      if (!username.trim() || !phone.trim() || !password) {
+        setAuthError("请填写用户名、手机号和密码");
+        return;
+      }
+    } else if (!email.trim() || !password) {
+      setAuthError("请输入用户名或手机号，以及密码");
       return;
     }
     setAuthBusy(true);
     setAuthError("");
     try {
-      const response = await fetch(withApiBase("/v1/auth/login"), {
+      const response = await fetch(withApiBase(registering ? "/v1/auth/register" : "/v1/auth/login"), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify(
+          registering
+            ? { username: username.trim(), phone: phone.trim(), password }
+            : { email: email.trim(), password },
+        ),
       });
       const body = await readJson<{ token?: string; user?: { email?: string }; error?: string }>(response);
-      if (!response.ok) throw new Error(body.error || "登录失败");
+      if (!response.ok) throw new Error(body.error || (registering ? "注册失败" : "登录失败"));
       persist(body.token ?? "");
       await finishLogin();
     } catch (error) {
       persist("");
-      const message = error instanceof Error ? error.message : "登录失败";
+      const message = error instanceof Error ? error.message : registering ? "注册失败" : "登录失败";
       setAuthError(message === "Failed to fetch" ? "连不上现网控制面。检查网络后重试，或换一份新的安装包。" : message);
     } finally {
       setAuthBusy(false);
@@ -1417,19 +1430,34 @@ export function App() {
                 void login();
               }}
             >
-              <h1>欢迎回来</h1>
-              <p className="login-hint">默认账号 admin / 123456</p>
+              <h1>{authMode === "register" ? "注册 Desk" : "欢迎回来"}</h1>
+              <p className="login-hint">
+                {authMode === "register" ? "手机号注册，用户名或手机号都能登录，无需验证码" : "用户名或手机号登录"}
+              </p>
+              {authMode === "register" ? (
+                <>
+                  <label>
+                    用户名
+                    <IslandInput value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+                  </label>
+                  <label>
+                    手机号
+                    <IslandInput value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" />
+                  </label>
+                </>
+              ) : (
+                <label>
+                  用户名或手机号
+                  <IslandInput value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
+                </label>
+              )}
               <label>
-                Username
-                <IslandInput value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
-              </label>
-              <label>
-                Password
+                密码
                 <IslandInput
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="current-password"
+                  autoComplete={authMode === "register" ? "new-password" : "current-password"}
                 />
               </label>
               {authError ? <p className="error">{authError}</p> : null}
@@ -1441,8 +1469,11 @@ export function App() {
                 loading={authBusy}
                 disabled={authBusy}
               >
-                {authBusy ? "Signing in…" : "Continue"}
+                {authBusy ? (authMode === "register" ? "注册中…" : "登录中…") : authMode === "register" ? "注册并登录" : "Continue"}
               </IslandButton>
+              <button type="button" className="text-link" onClick={() => setAuthMode(authMode === "register" ? "login" : "register")}>
+                {authMode === "register" ? "已有账号？去登录" : "没有账号？手机号注册"}
+              </button>
             </form>
           </IslandCard>
         </div>

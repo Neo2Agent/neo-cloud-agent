@@ -21,7 +21,7 @@ const { createApiServer } = await import("./server.js");
 const { ensureDefaultAdmin } = await import("../accounts/accounts.js");
 const { listen, close } = await import("../e2e/helpers.js");
 
-test("registration is disabled and only admin/123456 can log in", async (t) => {
+test("phone registration and username/phone login", async (t) => {
   const server = createApiServer();
   const port = await listen(server);
   t.after(async () => {
@@ -34,13 +34,46 @@ test("registration is disabled and only admin/123456 can log in", async (t) => {
   const denied = await fetch(`${base}/v1/runs`);
   assert.equal(denied.status, 401);
 
-  const registered = await fetch(`${base}/v1/auth/register`, {
+  const missingPhone = await fetch(`${base}/v1/auth/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: "ada@example.com", password: "password1" }),
   });
-  assert.equal(registered.status, 403);
-  assert.equal(((await registered.json()) as { error?: string }).error, "不支持注册");
+  assert.equal(missingPhone.status, 400);
+
+  const registered = await fetch(`${base}/v1/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "ada", phone: "13800138000", password: "password1" }),
+  });
+  assert.equal(registered.status, 201);
+  const createdAccount = (await registered.json()) as { token: string; user: { email: string; phone: string | null } };
+  assert.equal(createdAccount.user.email, "ada");
+  assert.equal(createdAccount.user.phone, "13800138000");
+  assert.match(createdAccount.token, /^neo_sess_/);
+
+  const duplicatePhone = await fetch(`${base}/v1/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "ada2", phone: "13800138000", password: "password1" }),
+  });
+  assert.equal(duplicatePhone.status, 409);
+  assert.equal(((await duplicatePhone.json()) as { error?: string }).error, "手机号已注册");
+
+  const phoneLogin = await fetch(`${base}/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "13800138000", password: "password1" }),
+  });
+  assert.equal(phoneLogin.status, 200);
+  assert.equal(((await phoneLogin.json()) as { user: { email: string } }).user.email, "ada");
+
+  const usernameLogin = await fetch(`${base}/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "Ada", password: "password1" }),
+  });
+  assert.equal(usernameLogin.status, 200);
 
   const bootstrap = await fetch(`${base}/v1/auth/bootstrap`, { method: "POST" });
   assert.equal(bootstrap.status, 403);

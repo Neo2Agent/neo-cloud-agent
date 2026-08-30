@@ -12,7 +12,7 @@ export function UsersScreen({ users }: Props) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const filtered = useMemo(
-    () => filterByQuery(users, query, (user) => [user.email, user.orgId, user.admin ? "管理员" : "成员"]),
+    () => filterByQuery(users, query, (user) => [user.email, user.phone ?? "", user.orgId, user.admin ? "管理员" : "成员"]),
     [query, users],
   );
   const listPage = clampPage(page, filtered.length);
@@ -48,7 +48,7 @@ export function UsersScreen({ users }: Props) {
                 key={user.id}
                 title={user.email}
                 badge={user.admin ? "管理员" : "成员"}
-                description={snippet(user.orgId, 48)}
+                description={snippet(user.phone ? `${user.phone} · ${user.orgId}` : user.orgId, 48)}
                 meta={`${formatCount(user.runCount)} 对话 · 本月 ${formatTokens(user.usedTokensMonth)} · 进行中 ${formatCount(user.concurrentRuns)} · ${formatWhen(user.lastActiveAt)}`}
               />
             ))}

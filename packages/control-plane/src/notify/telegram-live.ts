@@ -37,7 +37,7 @@ async function onLiveEvent(
     off();
     return;
   }
-  if (event.kind === "run.idle" || event.kind === "run.error" || event.kind === "run.archived") {
+  if (event.kind === "run.idle" || event.kind === "run.error" || event.kind === "run.archived" || event.kind === "run.deleted") {
     off();
     live.delete(runId);
     return;

@@ -28,6 +28,7 @@ export const POSTGRES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
+  phone TEXT UNIQUE,
   password_hash TEXT NOT NULL,
   org_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
@@ -46,7 +47,8 @@ CREATE TABLE IF NOT EXISTS runs (
   user_id TEXT NOT NULL,
   org_id TEXT NOT NULL,
   record JSONB NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL
+  updated_at TIMESTAMPTZ NOT NULL,
+  deleted_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS events (
   run_id TEXT NOT NULL,
@@ -275,20 +277,32 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       for (const statement of [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_json TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS neo_avatar_json TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT",
+        "CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users (phone)",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
+        "CREATE INDEX IF NOT EXISTS runs_deleted_at ON runs (deleted_at)",
       ]) {
         await query(statement);
       }
     },
     async saveRun(record) {
       await query(
-        `INSERT INTO runs (id, user_id, org_id, record, updated_at)
-         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
+        `INSERT INTO runs (id, user_id, org_id, record, updated_at, deleted_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::timestamptz)
          ON CONFLICT (id) DO UPDATE SET
            user_id = EXCLUDED.user_id,
            org_id = EXCLUDED.org_id,
            record = EXCLUDED.record,
-           updated_at = EXCLUDED.updated_at`,
-        [record.run.id, record.run.userId, record.run.orgId, JSON.stringify(record), record.run.updatedAt],
+           updated_at = EXCLUDED.updated_at,
+           deleted_at = EXCLUDED.deleted_at`,
+        [
+          record.run.id,
+          record.run.userId,
+          record.run.orgId,
+          JSON.stringify(record),
+          record.run.updatedAt,
+          record.run.deletedAt ?? null,
+        ],
       );
     },
     async loadRun(runId) {
@@ -296,17 +310,17 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       return parseJson(result.rows[0]?.record, asRecord);
     },
     async loadRuns() {
-      const result = await query(`SELECT record FROM runs`);
+      const result = await query(`SELECT record FROM runs WHERE deleted_at IS NULL`);
       return result.rows
         .map((row) => parseJson(row.record, asRecord))
-        .filter((item): item is PersistedRun => Boolean(item))
+        .filter((item): item is PersistedRun => Boolean(item) && !item.run.deletedAt)
         .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
     },
     async loadRunSummaries() {
-      const result = await query(`SELECT record->'run' AS run FROM runs`);
+      const result = await query(`SELECT record->'run' AS run FROM runs WHERE deleted_at IS NULL`);
       return result.rows
         .map((row) => parseJson(row.run, asRun))
-        .filter((item): item is Run => Boolean(item))
+        .filter((item): item is Run => Boolean(item) && !item.deletedAt)
         .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
     },
     async saveEvent(event) {
@@ -488,14 +502,14 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     async createUser(user) {
       try {
         await query(
-          `INSERT INTO users (id, email, password_hash, org_id, created_at)
-           VALUES ($1, $2, $3, $4, $5::timestamptz)`,
-          [user.id, user.email, user.passwordHash, user.orgId, user.createdAt],
+          `INSERT INTO users (id, email, phone, password_hash, org_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::timestamptz)`,
+          [user.id, user.email, user.phone ?? null, user.passwordHash, user.orgId, user.createdAt],
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (/unique|duplicate/i.test(message)) {
-          throw new Error("email already registered");
+          throw new Error(/phone/i.test(message) ? "phone already registered" : "email already registered");
         }
         throw error;
       }
@@ -503,21 +517,31 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async findUserByEmail(email) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE email = $1`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE email = $1`,
         [email],
+      );
+      return mapUser(result.rows[0]);
+    },
+    async findUserByPhone(phone) {
+      if (!phone) {
+        return null;
+      }
+      const result = await query(
+        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE phone = $1`,
+        [phone],
       );
       return mapUser(result.rows[0]);
     },
     async findUserById(id) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
         [id],
       );
       return mapUser(result.rows[0]);
     },
     async listUsers() {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
       );
       return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
     },
@@ -526,7 +550,7 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async updateUserAvatars(userId, patch) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
         [userId],
       );
       const user = mapUser(result.rows[0]);
@@ -576,9 +600,11 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
   if (!row) {
     return null;
   }
+  const phone = row.phone == null || row.phone === "" ? undefined : String(row.phone);
   return {
     id: String(row.id),
     email: String(row.email),
+    ...(phone ? { phone } : {}),
     passwordHash: String(row.password_hash),
     orgId: String(row.org_id),
     createdAt: toIso(row.created_at),
