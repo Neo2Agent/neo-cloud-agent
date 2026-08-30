@@ -1,4 +1,4 @@
-import type { StartVoiceResult, VoiceSession } from "./voice";
+import { preferSpokenText, type StartVoiceResult, type VoiceSession } from "./voice";
 export type { StartVoiceResult, VoiceSession };
 
 export function describeSpeechError(message: string): string {
@@ -17,8 +17,8 @@ export type PcmCapture = {
   stop: () => Promise<void>;
 };
 
-/** ~200ms of 16 kHz s16le. Native still captures 40ms; we POST this often, not every mic read. */
-export const IAT_HTTP_MIN_BYTES = 6400;
+/** ~400ms of 16 kHz s16le. Native still captures 40ms; HTTP this often, not every mic read. */
+export const IAT_HTTP_MIN_BYTES = 12_800;
 
 export type CloudVoiceOptions = {
   minHttpBytes?: number;
@@ -56,14 +56,22 @@ export async function startCloudVoice(
   let nextStatus: 0 | 1 | 2 = 0;
   let lastText = "";
   let chain = Promise.resolve();
+  let opening: Promise<void> | null = null;
   let stopped = false;
   let failed = false;
+  let ended = false;
   let pending: Uint8Array[] = [];
   let pendingBytes = 0;
 
   const enqueue = (job: () => Promise<void>) => {
     chain = chain.then(job, job);
     return chain;
+  };
+
+  const finish = () => {
+    if (ended) return;
+    ended = true;
+    onEnded?.();
   };
 
   const fail = (message: string) => {
@@ -74,18 +82,28 @@ export async function startCloudVoice(
     onError?.(describeSpeechError(message));
   };
 
-  const send = (status: 0 | 1 | 2, audio?: string) =>
-    enqueue(async () => {
-      if ((failed || (stopped && !audio)) && status !== 2) return;
-      const reply = await push({ sessionId: sessionId || undefined, audio, status });
-      if (reply.error) throw new Error(reply.error);
-      sessionId = reply.sessionId || sessionId;
-      if (reply.text) {
-        lastText = reply.text;
-        onPreview(reply.text);
-      }
-      if (status !== 2) nextStatus = 1;
-    });
+  const runPush = async (status: 0 | 1 | 2, audio?: string) => {
+    if ((failed || (stopped && !audio)) && status !== 2) return;
+    const reply = await push({ sessionId: sessionId || undefined, audio, status });
+    if (reply.error) throw new Error(reply.error);
+    sessionId = reply.sessionId || sessionId;
+    if (reply.text) {
+      lastText = preferSpokenText(lastText, reply.text);
+      onPreview(lastText);
+    }
+    if (reply.done && status !== 2) {
+      stopped = true;
+      void capture.stop().catch(() => undefined);
+      finish();
+    }
+    if (status !== 2) nextStatus = 1;
+  };
+
+  const send = (status: 0 | 1 | 2, audio?: string) => {
+    const job = () => runPush(status, audio);
+    if (status === 0 || status === 2 || !sessionId) return enqueue(job);
+    return job();
+  };
 
   const takePending = (): string => {
     if (!pendingBytes) return "";
@@ -105,7 +123,13 @@ export async function startCloudVoice(
       if (!pcm.length || stopped) return;
       pending.push(pcm);
       pendingBytes += pcm.length;
-      if (pendingBytes >= minHttpBytes) void flush(nextStatus);
+      if (pendingBytes < minHttpBytes) return;
+      if (!sessionId && opening) return;
+      const pendingOpen = !sessionId;
+      const task = flush(nextStatus);
+      if (pendingOpen) opening = task.finally(() => {
+        opening = null;
+      });
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "请允许麦克风后再试。";
@@ -133,7 +157,7 @@ export async function startCloudVoice(
       } catch {
         /* ignore */
       }
-      onEnded?.();
+      finish();
       return lastText.replace(/\s+/g, " ").trim();
     },
   };

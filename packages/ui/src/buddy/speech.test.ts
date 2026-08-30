@@ -5,6 +5,7 @@ import {
   collectSpeechTranscript,
   holdPadLabel,
   mergeSpokenText,
+  preferSpokenText,
   modelShortLabel,
   startSpeechRecognition,
   type SpeechEngine,
@@ -18,6 +19,10 @@ test("classifyPointer treats a short press as tap", () => {
 test("mergeSpokenText appends without doubling spaces", () => {
   assert.equal(mergeSpokenText("", "  加 README  "), "加 README");
   assert.equal(mergeSpokenText("先看 CI", "再开 PR"), "先看 CI 再开 PR");
+});
+
+test("preferSpokenText does not replace a sentence with a lone question mark", () => {
+  assert.equal(preferSpokenText("你好你可以做什么", "？"), "你好你可以做什么？");
 });
 
 test("modelShortLabel maps DeepSeek ids", () => {
@@ -54,8 +59,12 @@ test("startSpeechRecognition joins interim then final text", async () => {
     ],
   });
   assert.equal(previews.at(-1), "给仓库 加 README");
+  engine.onresult?.({
+    results: [{ isFinal: true, 0: { transcript: "？" } }],
+  });
+  assert.equal(previews.at(-1), "给仓库 加 README？");
   const spoken = await session.stop();
-  assert.equal(spoken, "给仓库");
+  assert.equal(spoken, "给仓库 加 README？");
 });
 
 test("collectSpeechTranscript keeps finals and preview", () => {

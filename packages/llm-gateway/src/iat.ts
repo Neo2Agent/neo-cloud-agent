@@ -78,7 +78,17 @@ export type IatParse = {
   text: string;
   status: number;
   pgs?: string;
+  ls?: boolean;
 };
+
+/** 16 kHz s16le × 40ms. Gateway splits larger HTTP bodies into these for 讯飞. */
+export const IAT_WS_FRAME_BYTES = 1280;
+
+const IAT_PUNCT = /^[\s\p{P}\p{S}]+$/u;
+
+export function isIatPunctuation(text: string): boolean {
+  return Boolean(text) && IAT_PUNCT.test(text);
+}
 
 export function decodeIatResult(payload: unknown): IatParse {
   const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
@@ -93,25 +103,63 @@ export function decodeIatResult(payload: unknown): IatParse {
     .join("");
   const status = typeof data.status === "number" ? data.status : 0;
   const pgs = typeof result.pgs === "string" ? result.pgs : undefined;
-  return { text, status, pgs };
+  const ls = typeof result.ls === "boolean" ? result.ls : undefined;
+  return { text, status, pgs, ls };
+}
+
+function joinIat(committed: string, last: string): string {
+  return `${committed}${last}`;
+}
+
+function appendPunctuation(current: { committed: string; last: string }, mark: string): {
+  committed: string;
+  last: string;
+  text: string;
+} {
+  if (current.last) {
+    const last = current.last.endsWith(mark) ? current.last : `${current.last}${mark}`;
+    return { committed: current.committed, last, text: joinIat(current.committed, last) };
+  }
+  const committed = current.committed.endsWith(mark) ? current.committed : `${current.committed}${mark}`;
+  return { committed, last: "", text: committed };
 }
 
 export function applyIatTranscript(
   current: { committed: string; last: string },
   parsed: IatParse,
 ): { committed: string; last: string; text: string } {
+  // 讯飞常把句号/问号单独成一包。rpl/默认路径若整段替换 last，预览会闪成「？」。
+  if (parsed.text && isIatPunctuation(parsed.text) && (current.last || current.committed)) {
+    const next = appendPunctuation(current, parsed.text);
+    if (parsed.status === 2) {
+      return { committed: next.text, last: "", text: next.text };
+    }
+    return next;
+  }
   if (parsed.pgs === "rpl") {
-    return { committed: current.committed, last: parsed.text, text: `${current.committed}${parsed.text}` };
+    return { committed: current.committed, last: parsed.text, text: joinIat(current.committed, parsed.text) };
   }
   if (parsed.status === 2) {
-    const committed = `${current.committed}${parsed.text || current.last}`;
+    const piece = parsed.text || current.last;
+    const committed = `${current.committed}${piece}`;
     return { committed, last: "", text: committed };
   }
-  if (parsed.pgs === "apd") {
+  if (parsed.pgs === "apd" || parsed.ls) {
     const committed = `${current.committed}${current.last}`;
-    return { committed, last: parsed.text, text: `${committed}${parsed.text}` };
+    return { committed, last: parsed.text, text: joinIat(committed, parsed.text) };
   }
-  return { committed: current.committed, last: parsed.text, text: `${current.committed}${parsed.text}` };
+  return { committed: current.committed, last: parsed.text, text: joinIat(current.committed, parsed.text) };
+}
+
+export function splitIatAudio(audioB64: string): string[] {
+  if (!audioB64) return [""];
+  const buf = Buffer.from(audioB64, "base64");
+  if (buf.length <= IAT_WS_FRAME_BYTES) return [audioB64];
+  const out: string[] = [];
+  for (let offset = 0; offset < buf.length; offset += IAT_WS_FRAME_BYTES) {
+    out.push(buf.subarray(offset, offset + IAT_WS_FRAME_BYTES).toString("base64"));
+  }
+  return out;
 }
 
 export type IatSocket = {
@@ -143,6 +191,7 @@ type Session = {
   last: string;
   pending: string[];
   done: boolean;
+  write: Promise<void>;
   timer: ReturnType<typeof setTimeout>;
 };
 
@@ -227,6 +276,7 @@ async function openSession(credentials: IatCredentials, connect: IatConnect): Pr
     last: "",
     pending: [],
     done: false,
+    write: Promise.resolve(),
     timer: setTimeout(() => undefined, SESSION_MS),
   };
   attachSocket(session);
@@ -236,15 +286,39 @@ async function openSession(credentials: IatCredentials, connect: IatConnect): Pr
   return session;
 }
 
-function flushText(session: Session): string {
-  const last = session.pending.at(-1);
-  session.pending = [];
-  return last ?? `${session.committed}${session.last}`;
+function currentText(session: Session): string {
+  return `${session.committed}${session.last}` || (session.pending.at(-1) ?? "");
 }
 
-async function waitBriefly(session: Session): Promise<void> {
-  if (session.pending.length || session.done) return;
-  await new Promise((resolve) => setTimeout(resolve, 80));
+function frameStatus(requestStatus: IatStatus, index: number, last: boolean): IatStatus {
+  if (requestStatus === 2 && last) return 2;
+  if (requestStatus === 0 && index === 0) return 0;
+  return 1;
+}
+
+async function sendAudio(session: Session, appId: string, status: IatStatus, audioB64: string): Promise<void> {
+  const chunks = splitIatAudio(audioB64);
+  const previous = session.write;
+  let release: () => void = () => undefined;
+  session.write = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    for (let index = 0; index < chunks.length; index += 1) {
+      const last = index === chunks.length - 1;
+      session.socket.send(JSON.stringify(encodeIatFrame(appId, frameStatus(status, index, last), chunks[index] ?? "")));
+    }
+  } finally {
+    release();
+  }
+}
+
+async function waitForFinal(session: Session, timeoutMs = 1_500): Promise<void> {
+  const started = Date.now();
+  while (!session.done && Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
 }
 
 export async function handleIatRequest(
@@ -268,10 +342,10 @@ export async function handleIatRequest(
       return { status: 404, body: { error: "听写会话不存在" } };
     }
     touch(session);
-    session.socket.send(JSON.stringify(encodeIatFrame(credentials.appId, status, body.audio ?? "")));
+    await sendAudio(session, credentials.appId, status, body.audio ?? "");
     if (status === 2) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      const text = flushText(session);
+      await waitForFinal(session);
+      const text = currentText(session);
       sessions.delete(session.id);
       clearTimeout(session.timer);
       try {
@@ -281,8 +355,7 @@ export async function handleIatRequest(
       }
       return { status: 200, body: { sessionId: session.id, text, done: true } };
     }
-    await waitBriefly(session);
-    return { status: 200, body: { sessionId: session.id, text: flushText(session), done: session.done } };
+    return { status: 200, body: { sessionId: session.id, text: currentText(session), done: session.done } };
   } catch (error) {
     return { status: 502, body: { error: error instanceof Error ? error.message : "听写服务不可用" } };
   }

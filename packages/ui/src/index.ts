@@ -16,6 +16,7 @@ export {
   classifyPointer,
   holdPadLabel,
   mergeSpokenText,
+  preferSpokenText,
   modelShortLabel,
   startSpeechRecognition,
   type SpeechSession,
