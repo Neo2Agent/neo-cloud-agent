@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./speech": "./src/speech/index.ts",
     "./styles.css": "./src/styles.css",
     "./buddy.css": "./src/buddy/styles.css"
   },
