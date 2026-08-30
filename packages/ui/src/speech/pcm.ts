@@ -1,6 +1,15 @@
-import type { PcmCapture } from "./cloud";
+import { INSECURE_MIC_HINT, UNSUPPORTED_MIC_HINT, type PcmCapture } from "./cloud";
 
 const TARGET_RATE = 16_000;
+
+export function browserMicReady(
+  win: Pick<Window, "isSecureContext" | "navigator"> = globalThis as unknown as Window,
+): string | null {
+  const getUserMedia = win.navigator?.mediaDevices?.getUserMedia;
+  if (typeof getUserMedia === "function") return null;
+  if (win.isSecureContext === false) return INSECURE_MIC_HINT;
+  return UNSUPPORTED_MIC_HINT;
+}
 
 function floatTo16Bit(input: Float32Array, fromRate: number): Uint8Array {
   const ratio = fromRate / TARGET_RATE;
@@ -16,8 +25,11 @@ function floatTo16Bit(input: Float32Array, fromRate: number): Uint8Array {
 }
 
 export async function startBrowserPcm(onFrame: (pcm: Uint8Array) => void): Promise<() => Promise<void>> {
+  const blocked = browserMicReady();
+  if (blocked) throw new Error(blocked);
+  const media = navigator.mediaDevices;
   const context = new AudioContext({ sampleRate: TARGET_RATE });
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
+  const stream = await media.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
   const source = context.createMediaStreamSource(stream);
   const processor = context.createScriptProcessor(2048, 1, 1);
   processor.onaudioprocess = (event) => {

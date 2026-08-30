@@ -41,6 +41,14 @@ test("describeSpeechError maps rate_limited to a single Chinese hint", () => {
   assert.equal(describeSpeechError("听写服务不可用"), "听写服务不可用");
 });
 
+test("describeSpeechError maps missing getUserMedia to an HTTPS hint", () => {
+  assert.match(
+    describeSpeechError("Cannot read properties of undefined (reading 'getUserMedia')"),
+    /HTTPS/,
+  );
+  assert.equal(describeSpeechError("NotAllowedError"), "请允许麦克风后再试。");
+});
+
 test("startCloudVoice reports the first push error once and stops the mic", async () => {
   let pushes = 0;
   let stops = 0;
