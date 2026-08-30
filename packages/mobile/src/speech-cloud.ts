@@ -1,3 +1,4 @@
+export type { StartVoiceResult } from "./voice";
 import type { StartVoiceResult, VoiceSession } from "./voice";
 
 export type SpeechIatPush = (body: {
