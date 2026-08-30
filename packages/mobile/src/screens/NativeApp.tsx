@@ -8,6 +8,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { MobileApiError, MobileClient } from "../api/client";
 import type { CredentialStore } from "../api/credentials";
+import { nextEnvId } from "../api/shell";
 import { detectMobileSource } from "../api/source";
 import { schedulePreset } from "../automations";
 import { cloudRunRequest } from "../create-run";
@@ -128,16 +129,19 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       setNeoAvatar(me.user.neoAvatar ?? null);
     }
     if (settings?.model) setModel(resolveChatModel(settings.model));
-    if (!envId && environments.environments[0]) setEnvId(environments.environments[0].id);
-  }, [client, envId, token]);
+    setEnvId((current) => nextEnvId(current, environments.environments));
+  }, [client, token]);
+
+  const persistTokenRef = useRef(persistToken);
+  persistTokenRef.current = persistToken;
 
   useEffect(() => {
     if (!ready || !token) return;
     void refreshList().catch((error) => {
-      if (error instanceof MobileApiError && error.status === 401) void persistToken("");
+      if (error instanceof MobileApiError && error.status === 401) void persistTokenRef.current("");
     });
     void registerExpoPushDevice((input) => client.registerDevice(input), Platform.OS === "ios" ? "iPhone" : "Android");
-  }, [ready, token, refreshList, persistToken, client]);
+  }, [ready, token, refreshList, client]);
 
   const closeStream = useCallback(() => {
     stopStream.current?.();
