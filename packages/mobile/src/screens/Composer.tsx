@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { CHAT_MODELS, chatModelLabel, resolveChatModel } from "../format";
 import type { StartVoiceResult } from "../speech-cloud";
-import { mergeSpokenText } from "../voice";
+import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
 import { MicIcon, SendIcon } from "./composer-icons";
 import { colors } from "./theme";
 
@@ -27,9 +27,12 @@ type Props = {
 export function Composer(props: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [listening, setListening] = useState(false);
+  const fieldRef = useRef<TextInput>(null);
   const voiceRef = useRef<{ stop: () => Promise<string> } | null>(null);
   const basePrompt = useRef(props.prompt);
   const promptRef = useRef(props.prompt);
+  const holdStarted = useRef(0);
+  const holdArmed = useRef(false);
   promptRef.current = props.prompt;
   const canSend = !props.locked && !props.sending && Boolean(props.prompt.trim());
   const selected = resolveChatModel(props.model);
@@ -38,24 +41,26 @@ export function Composer(props: Props) {
     void voiceRef.current?.stop();
   }, []);
 
-  const stopVoice = async () => {
-    const session = voiceRef.current;
-    voiceRef.current = null;
-    setListening(false);
-    if (!session) return;
-    const spoken = await session.stop();
-    const next = mergeSpokenText(basePrompt.current, spoken);
-    if (next !== promptRef.current) props.onPrompt(next);
-  };
-
-  const toggleVoice = async () => {
-    if (props.locked || props.sending) return;
-    if (listening) {
-      await stopVoice();
+  const applyHoldResult = (heldMs: number, spoken: string) => {
+    const kept = finishHoldVoice({ heldMs, spoken });
+    if (kept) {
+      const next = mergeSpokenText(basePrompt.current, kept);
+      if (next !== promptRef.current) props.onPrompt(next);
       return;
     }
+    if (isVoiceHoldTap(heldMs)) {
+      props.onPrompt(basePrompt.current);
+      fieldRef.current?.focus();
+    }
+  };
+
+  const beginHold = async () => {
+    if (props.locked || props.sending || holdArmed.current) return;
+    holdArmed.current = true;
+    holdStarted.current = Date.now();
+    const startedAt = holdStarted.current;
     setMenuOpen(false);
-    basePrompt.current = props.prompt;
+    basePrompt.current = promptRef.current;
     const started = await props.startVoice(
       (text) => props.onPrompt(mergeSpokenText(basePrompt.current, text)),
       (message) => {
@@ -69,22 +74,42 @@ export function Composer(props: Props) {
       },
     );
     if (started.kind !== "session") {
+      holdArmed.current = false;
+      holdStarted.current = 0;
       Alert.alert("无法开始语音输入", started.message);
+      return;
+    }
+    if (!holdStarted.current) {
+      const spoken = await started.session.stop();
+      applyHoldResult(Date.now() - startedAt, spoken);
       return;
     }
     voiceRef.current = started.session;
     setListening(true);
   };
 
+  const endHold = async () => {
+    if (!holdArmed.current && !voiceRef.current) return;
+    holdArmed.current = false;
+    const heldMs = holdStarted.current ? Date.now() - holdStarted.current : 0;
+    holdStarted.current = 0;
+    const session = voiceRef.current;
+    voiceRef.current = null;
+    setListening(false);
+    const spoken = session ? await session.stop() : "";
+    applyHoldResult(heldMs, spoken);
+  };
+
   return (
     <View style={styles.dock}>
       <View style={styles.bar}>
         <TextInput
+          ref={fieldRef}
           value={props.prompt}
           onChangeText={props.onPrompt}
           onFocus={() => setMenuOpen(false)}
           editable={!props.locked}
-          placeholder={listening ? "正在听…" : props.placeholder}
+          placeholder={listening ? "松手出字" : props.placeholder}
           placeholderTextColor={colors.muted}
           multiline
           style={styles.field}
@@ -115,9 +140,10 @@ export function Composer(props: Props) {
           <View style={styles.sendGroup}>
             <Pressable
               disabled={props.locked || props.sending}
-              onPress={() => void toggleVoice()}
+              onPressIn={() => void beginHold()}
+              onPressOut={() => void endHold()}
               style={[styles.mic, listening ? styles.micOn : null]}
-              accessibilityLabel={listening ? "停止语音输入" : "语音输入"}
+              accessibilityLabel={listening ? "松手出字" : "按住说话"}
             >
               <MicIcon color={listening ? colors.cream : props.locked || props.sending ? colors.muted : colors.ink} />
             </Pressable>
