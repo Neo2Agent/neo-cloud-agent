@@ -15,10 +15,16 @@ export function modelShortLabel(model: string): string {
   return /pro/i.test(model) && !/vision/i.test(model) ? "Pro" : "Flash";
 }
 
-export function holdPadLabel(input: { supported: boolean; holding: boolean; followUp?: boolean }): string {
-  if (input.holding) return "正在听…";
+export function holdPadLabel(input: {
+  supported: boolean;
+  holding: boolean;
+  followUp?: boolean;
+  finishing?: boolean;
+}): string {
+  if (input.finishing) return "正在转文字…";
+  if (input.holding) return "正在听…再点一下完成";
   if (!input.supported) return input.followUp ? "继续说一句…" : "说说你要做什么";
-  return "按住 说话";
+  return "点一下开始说话";
 }
 
 export type SpeechResultEvent = {

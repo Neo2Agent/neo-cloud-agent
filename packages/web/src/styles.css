@@ -2459,6 +2459,36 @@ textarea {
   margin-left: 0;
 }
 
+button.composer-mic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--muted);
+}
+
+button.composer-mic:hover:not(:disabled) {
+  color: var(--ink);
+  background: #fff;
+}
+
+button.composer-mic.is-listening,
+.buddy-icon-btn.composer-mic.is-listening {
+  color: #2f8f86;
+  border-color: #2f8f86;
+}
+
+.hint.voice-error {
+  margin: 0 4px 8px;
+  color: #b42318;
+}
+
 .context-usage {
   position: relative;
   flex: 0 0 auto;

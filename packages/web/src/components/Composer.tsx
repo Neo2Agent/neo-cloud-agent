@@ -1,24 +1,18 @@
-import { useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
+import type { VoiceSession } from "@neo-cloud-agent/ui/speech";
+import { Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
+import { readToken } from "../api";
 import type { DeskTarget } from "../desk";
-import { IconArrowUp, IconGear, IconPlus, IconStop } from "../icons";
+import { IconArrowUp, IconGear, IconMic, IconPlus, IconStop } from "../icons";
 import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
+import { applyClickVoice, startWebVoice } from "../speech";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
-import {
-  Select,
-  browserSpeechCtor,
-  classifyPointer,
-  holdPadLabel,
-  mergeSpokenText,
-  modelShortLabel,
-  startSpeechRecognition,
-  type SpeechSession,
-} from "@neo-cloud-agent/ui";
 import { ContextUsageControl } from "./ContextUsage";
 import { TargetPicker } from "./TargetPicker";
 
@@ -119,13 +113,17 @@ export function Composer({
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
   const [typing, setTyping] = useState(false);
-  const [holding, setHolding] = useState(false);
-  const holdStarted = useRef(0);
-  const speechRef = useRef<SpeechSession | null>(null);
+  const [listening, setListening] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const voiceRef = useRef<VoiceSession | null>(null);
+  const startingRef = useRef(false);
   const promptRef = useRef(prompt);
   promptRef.current = prompt;
   const buddy = layout === "buddy";
-  const speechCtor = typeof window === "undefined" ? null : browserSpeechCtor(window);
+  useEffect(() => () => {
+    void voiceRef.current?.stop();
+  }, []);
   const trigger = mentionTrigger(prompt);
   const mentionHits = useMemo(
     () => (trigger ? filterMentions(mentions, trigger.query) : []),
@@ -138,13 +136,15 @@ export function Composer({
     onPrompt(applyMention(prompt, item));
     onMention?.(item);
   };
-  const hint = archived
-    ? "对话已归档，无法继续发送。"
-    : blocked
-      ? (blockedHint || "发起这条对话的 Desk 离线。打开 Desk 后才能继续。")
-      : busy
-        ? (activity ?? "正在进行…")
-        : vmHint;
+  const hint = voiceError
+    ? voiceError
+    : archived
+      ? "对话已归档，无法继续发送。"
+      : blocked
+        ? (blockedHint || "发起这条对话的 Desk 离线。打开 Desk 后才能继续。")
+        : busy
+          ? (activity ?? "正在进行…")
+          : vmHint;
   const placeholder = archived
     ? "对话已归档。"
     : blocked
@@ -160,36 +160,52 @@ export function Composer({
           : isNarrowViewport()
             ? "描述任务，点发送。可粘贴图片。"
             : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
-  const showHold = buddy && !typing && empty && !archived && !blocked;
-  const beginHold = (event: PointerEvent<HTMLButtonElement>) => {
-    if (sendLocked || busy) return;
-    holdStarted.current = Date.now();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    if (!speechCtor) return;
-    setHolding(true);
-    try {
-      speechRef.current = startSpeechRecognition(new speechCtor(), (text) => onPrompt(mergeSpokenText("", text)));
-    } catch {
-      setHolding(false);
-      speechRef.current = null;
-    }
-  };
-  const endHold = async () => {
-    const kind = classifyPointer(Date.now() - holdStarted.current);
-    holdStarted.current = 0;
-    const session = speechRef.current;
-    speechRef.current = null;
-    setHolding(false);
-    if (kind === "tap" || !session) {
-      setTyping(true);
-      document.getElementById("prompt")?.focus();
+  const showHold = buddy && !archived && !blocked && (listening || finishing || (!typing && empty));
+  const canStartVoice = !sendLocked && !busy && !finishing;
+  const voiceLabel = holdPadLabel({ supported: true, holding: listening, finishing, followUp });
+  const toggleVoice = async () => {
+    if (sendLocked) return;
+    if (voiceRef.current) {
+      const session = voiceRef.current;
+      voiceRef.current = null;
+      setListening(false);
+      setFinishing(true);
+      try {
+        const spoken = await session.stop();
+        const next = applyClickVoice(promptRef.current, spoken);
+        if (next !== promptRef.current) onPrompt(next);
+      } finally {
+        setFinishing(false);
+      }
       return;
     }
-    const spoken = await session.stop();
-    const next = mergeSpokenText(promptRef.current, spoken);
-    if (next !== promptRef.current) onPrompt(next);
-    if (spoken && !sendLocked && !busy) onSend();
+    if (!canStartVoice || startingRef.current) return;
+    startingRef.current = true;
+    setVoiceError("");
+    try {
+      const result = await startWebVoice(readToken(), () => undefined, (message) => setVoiceError(message));
+      if (result.kind === "error") {
+        setVoiceError(result.message);
+        return;
+      }
+      voiceRef.current = result.session;
+      setListening(true);
+    } finally {
+      startingRef.current = false;
+    }
   };
+  const voiceButton = (className: string) => (
+    <button
+      type="button"
+      className={`${className}${listening || finishing ? " is-listening" : ""}`}
+      aria-label={voiceLabel}
+      aria-pressed={listening}
+      disabled={!canStartVoice && !listening}
+      onClick={() => void toggleVoice()}
+    >
+      <IconMic size={18} />
+    </button>
+  );
   return (
     <form
       className={`${busy ? "composer is-busy" : sendLocked ? "composer is-locked" : "composer"}${buddy ? " buddy-composer" : ""}`}
@@ -218,19 +234,16 @@ export function Composer({
       {showHold ? (
         <button
           type="button"
-          className={holding ? "buddy-hold is-holding" : "buddy-hold"}
-          aria-label={holdPadLabel({ supported: Boolean(speechCtor), holding, followUp })}
-          onPointerDown={beginHold}
-          onPointerUp={() => void endHold()}
-          onPointerCancel={() => {
-            setHolding(false);
-            void speechRef.current?.stop();
-            speechRef.current = null;
-          }}
+          className={listening || finishing ? "buddy-hold is-holding" : "buddy-hold"}
+          aria-label={voiceLabel}
+          aria-pressed={listening}
+          disabled={!canStartVoice && !listening}
+          onClick={() => void toggleVoice()}
         >
-          {holdPadLabel({ supported: Boolean(speechCtor), holding, followUp })}
+          {voiceLabel}
         </button>
       ) : null}
+      {buddy && voiceError ? <p className="hint voice-error">{voiceError}</p> : null}
       <textarea
         id="prompt"
         name="prompt"
@@ -325,6 +338,7 @@ export function Composer({
               <IconArrowUp size={16} />
             </button>
           )}
+          {!showHold && !sendLocked ? voiceButton("buddy-icon-btn composer-mic") : null}
           <button type="button" className="buddy-plus" aria-label="添加" onClick={onOpenPlus}>
             <IconPlus size={20} />
           </button>
@@ -383,10 +397,11 @@ export function Composer({
             {contextUsage ? (
               <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
             ) : null}
-            <p className="hint" id="vm-status" data-busy={busy ? "true" : "false"}>
-              {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
-              {hint}
+            <p className="hint" id="vm-status" data-busy={busy || listening || finishing ? "true" : "false"}>
+              {busy || listening || finishing ? <span className="pulse-dot" aria-hidden="true" /> : null}
+              {listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : hint}
             </p>
+            {!sendLocked ? voiceButton("composer-mic") : null}
             {busy && canStop ? (
               <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
                 <span className="stop-icon" aria-hidden="true">

@@ -17,6 +17,7 @@ import {
   LayoutGrid,
   LoaderCircle,
   Menu,
+  Mic,
   MessageSquare,
   MoreHorizontal,
   Monitor,
@@ -90,6 +91,10 @@ export function IconGear(props: IconProps) {
 
 export function IconArrowUp(props: IconProps) {
   return icon(ArrowUp, props);
+}
+
+export function IconMic(props: IconProps) {
+  return icon(Mic, props);
 }
 
 export function IconStop(props: IconProps) {

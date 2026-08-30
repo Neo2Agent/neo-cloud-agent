@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { concatPcm, describeSpeechError, IAT_HTTP_MIN_BYTES, pcmToBase64, startCloudVoice } from "./speech-cloud.js";
+import { concatPcm, describeSpeechError, IAT_HTTP_MIN_BYTES, pcmToBase64, startCloudVoice } from "./cloud.js";
 
 test("pcmToBase64 encodes raw bytes", () => {
   assert.equal(pcmToBase64(Uint8Array.from([0, 1, 2])), btoa("\u0000\u0001\u0002"));
