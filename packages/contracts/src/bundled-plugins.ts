@@ -2,12 +2,22 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { BUNDLED_SKILL_RAW } from "./bundled-skill-raw.js";
 import { parseSkillMd, publicPlugin, type BundledPlugin, type BundledSkill, type Plugin } from "./plugin.js";
 
 const BUNDLED_AT = "2026-08-28T00:00:00.000Z";
 
-function skillsRoot(): string {
-  return path.join(path.dirname(fileURLToPath(import.meta.url)), "../skills");
+/** Directory of SKILL.md files when the repo is on disk. Undefined in a CJS pack. */
+function skillsRoot(): string | undefined {
+  const metaUrl: unknown = import.meta.url;
+  if (typeof metaUrl !== "string" || metaUrl.length === 0) {
+    return undefined;
+  }
+  try {
+    return path.join(path.dirname(fileURLToPath(metaUrl)), "../skills");
+  } catch {
+    return undefined;
+  }
 }
 
 export function pluginDigest(parts: Array<{ name: string; raw: string }>): string {
@@ -21,9 +31,24 @@ export function pluginDigest(parts: Array<{ name: string; raw: string }>): strin
   return hash.digest("hex");
 }
 
+function readBundledSkillRaw(name: string): string {
+  const root = skillsRoot();
+  if (root) {
+    try {
+      return readFileSync(path.join(root, name, "SKILL.md"), "utf8");
+    } catch {
+      // Packaged CJS has no skills/ next to the bundle.
+    }
+  }
+  const embedded = BUNDLED_SKILL_RAW[name];
+  if (!embedded) {
+    throw new Error(`bundled skill missing: ${name}`);
+  }
+  return embedded;
+}
+
 function loadBundledSkill(name: string): BundledSkill {
-  const file = path.join(skillsRoot(), name, "SKILL.md");
-  const raw = readFileSync(file, "utf8");
+  const raw = readBundledSkillRaw(name);
   const parsed = parseSkillMd(raw);
   if ("error" in parsed) {
     throw new Error(`${name}: ${parsed.error}`);
