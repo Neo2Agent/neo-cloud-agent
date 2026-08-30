@@ -9,6 +9,7 @@
     "icon": "./assets/linabell-face.png",
     "ios": {
       "bundleIdentifier": "agent.neo.mobile",
+      "buildNumber": "5",
       "supportsTablet": false,
       "infoPlist": {
         "NSAppTransportSecurity": {

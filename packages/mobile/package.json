@@ -11,7 +11,8 @@
     "start": "expo start",
     "ios": "expo start --ios",
     "android": "expo start --android",
-    "pack:android": "eas-cli build --platform android --profile preview --non-interactive"
+    "pack:android": "eas-cli build --platform android --profile preview --non-interactive",
+    "pack:ios": "eas-cli build --platform ios --profile preview --non-interactive"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.10",
