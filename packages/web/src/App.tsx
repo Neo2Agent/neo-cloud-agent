@@ -18,7 +18,7 @@ import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "
 import { cloudSafeRepoUrls, isLocalFolderRef } from "./repo";
 import { cycle, shortcutAction } from "./shortcuts";
 import { applyLiveEvents, parseSseData } from "./stream-apply";
-import { AuthGate } from "./components/AuthGate";
+import { AuthGate, type AuthMode } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { ArtifactsPanel } from "./components/ArtifactsPanel";
 import { DiffPanel } from "./components/DiffPanel";
@@ -38,6 +38,7 @@ import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, Tooltip, type BuddyP
 import { Composer, readImageRef } from "./components/Composer";
 import {
   IconArchive,
+  IconTrash,
   IconArtifacts,
   IconAutomations,
   IconChat,
@@ -217,10 +218,12 @@ export function App() {
   const [userEmail, setUserEmail] = useState("");
   const [userId, setUserId] = useState("");
   const [authOpen, setAuthOpen] = useState(() => !hasSavedSession(readToken()));
-  const [authMode, setAuthMode] = useState<"login" | "token">("login");
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authEmail, setAuthEmail] = useState("");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPhone, setAuthPhone] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authToken, setAuthToken] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -1638,6 +1641,21 @@ export function App() {
     }
   };
 
+  const deleteArchivedRun = async (id: string) => {
+    if (!token || !id) return;
+    if (!window.confirm("删除后任务会从列表消失，确定？")) return;
+    const response = await api(token, `/v1/runs/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const body = await readJson<{ ok?: boolean; error?: string }>(response);
+    if (!response.ok) {
+      throw new Error(body.error || "删除失败");
+    }
+    setRuns((prev) => prev.filter((item) => item.id !== id));
+    if (runId === id) {
+      resetComposer();
+    }
+    await refreshRuns();
+  };
+
   const openDiagnostics = () => {
     if (!runId) return;
     openInspector("terminal");
@@ -1701,6 +1719,11 @@ export function App() {
           }}
           onPin={(id) => setPinnedIds(togglePinnedRun(id))}
           onArchiveMany={(ids) => void archiveMany(ids)}
+          onDeleteRun={(id) => {
+            void deleteArchivedRun(id).catch((error) => {
+              setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "删除失败")]);
+            });
+          }}
           onClose={narrow ? toggleSidebar : undefined}
           onNewChat={() => {
             setActiveProject(null);
@@ -1932,6 +1955,22 @@ export function App() {
               >
                 <IconArchive size={16} />
                 <span className="tab-label">归档</span>
+              </button>
+              <button
+                className="icon-btn"
+                id="delete-run"
+                type="button"
+                aria-label="删除"
+                hidden={!runId || currentRun?.status !== "ARCHIVED"}
+                onClick={() => {
+                  if (!runId) return;
+                  void deleteArchivedRun(runId).catch((error) => {
+                    setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "删除失败")]);
+                  });
+                }}
+              >
+                <IconTrash size={16} />
+                <span className="tab-label">删除</span>
               </button>
               <button
                 className="icon-btn"
@@ -2391,10 +2430,14 @@ export function App() {
         busy={authBusy}
         error={authError}
         email={authEmail}
+        username={authUsername}
+        phone={authPhone}
         password={authPassword}
         token={authToken}
         onMode={setAuthMode}
         onEmail={setAuthEmail}
+        onUsername={setAuthUsername}
+        onPhone={setAuthPhone}
         onPassword={setAuthPassword}
         onToken={setAuthToken}
         onSubmit={() => {
@@ -2404,8 +2447,13 @@ export function App() {
               setAuthError("请输入服务令牌");
               return;
             }
+          } else if (authMode === "register") {
+            if (!authUsername.trim() || !authPhone.trim() || !authPassword) {
+              setAuthError("请填写用户名、手机号和密码");
+              return;
+            }
           } else if (!authEmail.trim() || !authPassword) {
-            setAuthError("请输入账号和密码");
+            setAuthError("请输入用户名或手机号，以及密码");
             return;
           }
           setAuthBusy(true);
@@ -2424,6 +2472,29 @@ export function App() {
               }
               setUserEmail("");
               setAuthOpen(false);
+            } else if (authMode === "register") {
+              const response = await fetch(withApiBase("/v1/auth/register"), {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  username: authUsername.trim(),
+                  phone: authPhone.trim(),
+                  password: authPassword,
+                }),
+              });
+              const body = await readJson<{ token?: string; user?: { email?: string }; error?: string; pending?: boolean; message?: string }>(
+                response,
+              );
+              if (!response.ok) throw new Error(body.error || "注册失败");
+              if (body.pending || !body.token) {
+                setAuthMode("login");
+                setAuthEmail(authUsername.trim());
+                setAuthPassword("");
+                setAuthError(body.message || "注册成功，请等待管理员审核后再登录");
+                return;
+              }
+              await applySession(body.token ?? "", body.user);
             } else {
               const email = authEmail.trim();
               const password = authPassword;
@@ -2441,7 +2512,7 @@ export function App() {
           })()
             .catch((error) => {
               persistToken("");
-              setAuthError(error instanceof Error ? error.message : "登录失败");
+              setAuthError(error instanceof Error ? error.message : authMode === "register" ? "注册失败" : "登录失败");
               setAuthOpen(true);
             })
             .finally(() => setAuthBusy(false));

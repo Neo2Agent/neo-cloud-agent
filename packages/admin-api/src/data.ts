@@ -66,9 +66,11 @@ async function doStart(): Promise<void> {
 
 export async function loadAdminRuns(): Promise<Run[]> {
   if (metadata) {
-    return metadata.loadRunSummaries();
+    return (await metadata.loadRunSummaries()).filter((run) => !run.deletedAt);
   }
-  return loadPersistedRuns().map((record) => record.run);
+  return loadPersistedRuns()
+    .map((record) => record.run)
+    .filter((run) => !run.deletedAt);
 }
 
 export async function loadAdminCounts() {

@@ -19,7 +19,10 @@ export type AdminOverview = {
 export type AdminUser = {
   id: string;
   email: string;
+  phone?: string | null;
   orgId: string;
+  status?: "pending" | "active" | "disabled";
+  creditFen?: number;
   admin: boolean;
   runCount: number;
   usedTokensMonth: number;

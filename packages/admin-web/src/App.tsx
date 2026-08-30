@@ -46,6 +46,7 @@ export function App() {
   const [limits, setLimits] = useState<RateLimitSnapshot | null>(null);
   const [experts, setExperts] = useState<AdminExpertsCatalog | null>(null);
   const [error, setError] = useState("");
+  const [approvingId, setApprovingId] = useState("");
   const narrow = useNarrow();
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -267,7 +268,25 @@ export function App() {
           </section>
         ) : null}
         {overview && page === "overview" ? <OverviewScreen overview={overview} runs={runs} /> : null}
-        {overview && page === "users" ? <UsersScreen users={users} /> : null}
+        {overview && page === "users" ? (
+          <UsersScreen
+            users={users}
+            approvingId={approvingId}
+            onApprove={(id) => {
+              setApprovingId(id);
+              void (async () => {
+                const response = await api(token, `/v1/admin/users/${encodeURIComponent(id)}/approve`, { method: "POST" });
+                if (!response.ok) {
+                  const body = await readJson<{ error?: string }>(response);
+                  throw new Error(body.error || "审核失败");
+                }
+                await refresh(token);
+              })()
+                .catch((err) => setError(err instanceof Error ? err.message : "审核失败"))
+                .finally(() => setApprovingId(""));
+            }}
+          />
+        ) : null}
         {overview && page === "runs" ? <RunsScreen runs={runs} /> : null}
         {overview && page === "experts" ? <ExpertsScreen token={token} catalog={experts} onChanged={() => refresh(token)} /> : null}
         {overview && page === "system" ? <SystemScreen overview={overview} limits={limits} /> : null}

@@ -2680,6 +2680,10 @@ textarea {
   color: var(--err);
 }
 
+.auth-error.is-ok {
+  color: var(--accent);
+}
+
 .auth-tabs {
   display: flex;
   gap: 6px;
@@ -2700,6 +2704,21 @@ textarea {
   background: #eff6ff;
   border-color: #bfdbfe;
   color: var(--accent);
+}
+
+.auth-switch {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.auth-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0 4px;
+  cursor: pointer;
 }
 
 .account {
@@ -3255,6 +3274,10 @@ textarea {
 
 .run-item .pin.is-on {
   color: #c9a227;
+}
+
+.run-item .run-delete:hover {
+  color: var(--err);
 }
 
 .terminal-panel,

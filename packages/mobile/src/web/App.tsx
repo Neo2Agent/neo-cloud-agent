@@ -308,6 +308,28 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     }
   };
 
+  const registerWith = async (nextUsername: string, nextPhone: string, nextPassword: string) => {
+    setBusy(true);
+    setAuthError("");
+    try {
+      const session = await new MobileClient(apiUrl, "").register({
+        username: nextUsername.trim(),
+        phone: nextPhone.trim(),
+        password: nextPassword,
+      });
+      if (session.pending || !session.token) {
+        setAuthError(session.message || "注册成功，请等待管理员审核后再登录");
+        return;
+      }
+      await persistToken(session.token);
+      setEmail(session.user.email ?? nextUsername);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "注册失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const resetHome = () => {
     setCurrent(null);
     openRunId.current = null;
@@ -358,7 +380,14 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   if (!ready) return <div className="login-shell"><p>正在进入…</p></div>;
 
   if (!token) {
-    return <IslandLogin busy={busy} error={authError} onSubmit={(nextEmail, nextPassword) => void loginWith(nextEmail, nextPassword)} />;
+    return (
+      <IslandLogin
+        busy={busy}
+        error={authError}
+        onLogin={(nextEmail, nextPassword) => void loginWith(nextEmail, nextPassword)}
+        onRegister={(nextUsername, nextPhone, nextPassword) => void registerWith(nextUsername, nextPhone, nextPassword)}
+      />
+    );
   }
 
   if (route.screen === "settings") {

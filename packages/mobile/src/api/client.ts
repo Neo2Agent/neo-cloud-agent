@@ -97,8 +97,21 @@ export class MobileClient {
     return parsed as T;
   }
 
-  login(email: string, password: string): Promise<{ token: string; user: { id?: string; email: string } }> {
+  login(email: string, password: string): Promise<{ token: string; user: { id?: string; email: string; phone?: string | null } }> {
     return this.request("POST", "/v1/auth/login", { email, password });
+  }
+
+  register(input: {
+    username: string;
+    phone: string;
+    password: string;
+  }): Promise<{
+    token?: string;
+    pending?: boolean;
+    message?: string;
+    user: { id?: string; email: string; phone?: string | null };
+  }> {
+    return this.request("POST", "/v1/auth/register", input);
   }
 
   logout(): Promise<{ ok: boolean }> {
@@ -148,6 +161,10 @@ export class MobileClient {
 
   archive(id: string): Promise<Run> {
     return this.request("POST", `/v1/runs/${id}/archive`, {});
+  }
+
+  deleteRun(id: string): Promise<{ ok: boolean; id: string; deletedAt: string }> {
+    return this.request("DELETE", `/v1/runs/${id}`);
   }
 
   transcript(id: string): Promise<TranscriptResponse> {

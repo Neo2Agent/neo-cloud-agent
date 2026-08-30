@@ -14,6 +14,7 @@ delete process.env.WORKER_WORKSPACE_MOUNT;
 const {
   abortRun,
   archiveRun,
+  deleteRun,
   claimDeskRun,
   commitRun,
   createRun,
@@ -475,6 +476,28 @@ test("archiving drops the hot event log but transcript can still reload from per
   assert.equal(getRun(run.id)?.status, "ARCHIVED");
   assert.equal(listEvents(run.id).length, 0);
   assert.ok(eventsForRun(run.id).some((item) => item.kind === "run.archived"));
+});
+
+test("deleteRun soft-deletes archived runs and hides them from the list", async () => {
+  const run = await createRun({
+    prompt: "delete after archive",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  await assert.rejects(() => deleteRun(run.id), /只能删除已归档的任务/);
+  await archiveRun(run.id);
+  const deleted = await deleteRun(run.id);
+  assert.equal(deleted.ok, true);
+  assert.equal(deleted.id, run.id);
+  assert.ok(deleted.deletedAt);
+  assert.equal(getRun(run.id), undefined);
+  assert.equal(listRuns().some((item) => item.id === run.id), false);
+  const persisted = JSON.parse(readFileSync(path.join(process.env.RUNS_DIR!, ".control", `${run.id}.json`), "utf8")) as {
+    run: { deletedAt?: string | null };
+  };
+  assert.ok(persisted.run.deletedAt);
+  reloadPersistedState();
+  assert.equal(getRun(run.id), undefined);
+  assert.equal(listRuns().some((item) => item.id === run.id), false);
 });
 
 test("context.usage stores the model's window and does not invent one", async () => {

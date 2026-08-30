@@ -42,7 +42,7 @@ test("mysql store upserts run JSON, events, and users", async () => {
   const rowsByQuery: Record<string, Array<Record<string, unknown>>> = {};
   const store = createMysqlMetadataStore(async (text, values) => {
     calls.push({ text, values: values ?? [] });
-    const key = text.includes("FROM runs WHERE")
+    const key = text.includes("FROM runs WHERE id")
       ? "run"
       : text.includes("FROM runs")
         ? "runs"
@@ -85,8 +85,8 @@ test("mysql store upserts run JSON, events, and users", async () => {
   rowsByQuery.runs = [{ record: older }, { record }];
   const listedRuns = await store.loadRuns();
   assert.equal(listedRuns[0]?.run.id, "run-mysql-1");
-  const loadRunsSql = calls.find((item) => item.text.includes("FROM runs") && !item.text.includes("WHERE") && item.text.includes("SELECT record"))?.text ?? "";
-  assert.match(loadRunsSql, /SELECT record FROM runs/);
+  const loadRunsSql = calls.find((item) => item.text.includes("SELECT record FROM runs") && item.text.includes("deleted_at"))?.text ?? "";
+  assert.match(loadRunsSql, /SELECT record FROM runs WHERE deleted_at IS NULL/);
   assert.doesNotMatch(loadRunsSql, /ORDER BY/);
 
   rowsByQuery.runs = [{ run: record.run }];

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
-import { IconAutomations, IconClose, IconExperts, IconNewChat, IconProjects, IconSkills, IconStar } from "../icons";
+import { IconAutomations, IconClose, IconExperts, IconNewChat, IconProjects, IconSkills, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "../turn";
@@ -26,6 +26,7 @@ type Props = {
   onOpenRun: (id: string) => void;
   onPin?: (id: string) => void;
   onArchiveMany?: (ids: string[]) => void;
+  onDeleteRun?: (id: string) => void;
   onLogin: () => void;
   onLogout: () => void;
   onClose?: () => void;
@@ -49,6 +50,7 @@ export function Sidebar({
   onOpenRun,
   onPin,
   onArchiveMany,
+  onDeleteRun,
   onLogin,
   onLogout,
   onClose,
@@ -119,7 +121,7 @@ export function Sidebar({
             {formatRunTime(run.createdAt, run.updatedAt)}
           </time>
         </div>
-        {onPin ? (
+        {onPin && !isShelvedRun(run.status) ? (
           <button
             type="button"
             className={pinned ? "pin is-on" : "pin"}
@@ -130,6 +132,19 @@ export function Sidebar({
             }}
           >
             <IconStar size={14} />
+          </button>
+        ) : null}
+        {onDeleteRun && isShelvedRun(run.status) ? (
+          <button
+            type="button"
+            className="pin run-delete"
+            aria-label="删除归档任务"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDeleteRun(run.id);
+            }}
+          >
+            <IconTrash size={14} />
           </button>
         ) : null}
       </div>

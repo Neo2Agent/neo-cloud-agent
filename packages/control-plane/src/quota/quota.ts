@@ -122,3 +122,39 @@ export function assertCreateRunAllowed(runs: Run[], orgId: string): QuotaSnapsho
   }
   return snapshot;
 }
+
+/** Starter model credit for public signups. 500 fen = ¥5.00 */
+export function signupCreditFen(): number {
+  const n = Number(process.env.SIGNUP_CREDIT_FEN ?? 500);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 500;
+}
+
+/** How many fen 1M tokens cost. Default 100 = ¥1 / 1M tokens. */
+export function creditFenPerMillionTokens(): number {
+  const n = Number(process.env.CREDIT_FEN_PER_MILLION_TOKENS ?? 100);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
+}
+
+export function tokensToFen(tokens: number): number {
+  return Math.ceil((Math.max(0, tokens) * creditFenPerMillionTokens()) / 1_000_000);
+}
+
+export function formatYuan(fen: number): string {
+  return `¥${(Math.max(0, fen) / 100).toFixed(2)}`;
+}
+
+export function usedCreditFen(runs: Run[], userId: string): number {
+  const tokens = runs.filter((run) => run.userId === userId).reduce((sum, run) => sum + (run.usage?.totalTokens ?? 0), 0);
+  return tokensToFen(tokens);
+}
+
+export function assertUserCreditAllowed(runs: Run[], user?: { id: string; creditFen?: number } | null): void {
+  const cap = user?.creditFen ?? 0;
+  if (!user?.id || cap <= 0) {
+    return;
+  }
+  const used = usedCreditFen(runs, user.id);
+  if (used >= cap) {
+    throw new QuotaError(`额度已用完（${formatYuan(cap)}）`);
+  }
+}

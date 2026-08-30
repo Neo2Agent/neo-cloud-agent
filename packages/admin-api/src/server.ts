@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { publicLlmSettings, readLlmSettings } from "@neo-cloud-agent/contracts";
 import {
   AccountError,
+  approveAccount,
   loginAccount,
   logoutSession,
   sessionCookieHeader,
@@ -141,6 +142,19 @@ export function createAdminApiServer() {
       }
       if (method === "GET" && path === "/v1/admin/users") {
         send(res, 200, await adminUsersPayload(await loadAdminRuns()));
+        return;
+      }
+      const userApprove = /^\/v1\/admin\/users\/([^/]+)\/approve$/.exec(path);
+      if (userApprove && method === "POST") {
+        try {
+          send(res, 200, { ok: true, user: await approveAccount(userApprove[1] ?? "") });
+        } catch (error) {
+          if (error instanceof AccountError) {
+            send(res, error.status, { error: error.message });
+            return;
+          }
+          send(res, 400, { error: error instanceof Error ? error.message : "approve_failed" });
+        }
         return;
       }
       if (method === "GET" && path === "/v1/admin/runs") {

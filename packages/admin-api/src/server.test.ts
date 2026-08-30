@@ -18,7 +18,9 @@ delete process.env.REDIS_URL;
 delete process.env.ADMIN_EMAILS;
 
 const { createAdminApiServer } = await import("./server.js");
-const { createTeammateAccount, ensureDefaultAdmin } = await import("../../control-plane/src/accounts/accounts.js");
+const { createTeammateAccount, ensureDefaultAdmin, loginAccount, registerAccount } = await import(
+  "../../control-plane/src/accounts/accounts.js"
+);
 const { listen, close } = await import("../../control-plane/src/e2e/helpers.js");
 
 const SERVICE = { authorization: "Bearer admin-api-token" };
@@ -119,6 +121,22 @@ test("admin-api is a separate app and only platform admins can use it", async (t
   const usersBody = (await users.json()) as { users: Array<{ email: string; runCount: number; admin: boolean }> };
   assert.equal(JSON.stringify(usersBody).includes("passwordHash"), false);
   assert.equal(usersBody.users.some((row) => row.email === "mate" && row.runCount >= 1 && !row.admin), true);
+
+  const pending = await registerAccount({ username: "newbie", phone: "13700137000", password: "password1" });
+  assert.equal(pending.user.status, "pending");
+  const afterRegister = await fetch(`${base}/v1/admin/users`, { headers: auth(admin.body.token!) });
+  const afterRegisterBody = (await afterRegister.json()) as {
+    users: Array<{ id: string; email: string; status?: string; creditFen?: number }>;
+  };
+  assert.equal(afterRegisterBody.users.some((row) => row.email === "newbie" && row.status === "pending" && row.creditFen === 500), true);
+  const approved = await fetch(`${base}/v1/admin/users/${pending.user.id}/approve`, {
+    method: "POST",
+    headers: auth(admin.body.token!),
+  });
+  assert.equal(approved.status, 200);
+  const session = await loginAccount({ email: "13700137000", password: "password1" });
+  assert.equal(session.user.status, "active");
+  assert.equal(session.user.creditFen, 500);
 
   const runs = await fetch(`${base}/v1/admin/runs`, { headers: auth(admin.body.token!) });
   const runsBody = (await runs.json()) as { runs: Array<{ prompt: string }> };

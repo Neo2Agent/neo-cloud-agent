@@ -672,7 +672,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 鉴权：
 
 - 默认必须登录（`ACCOUNTS_REQUIRED=0` 才允许匿名）。对话页不预填、不跳过。
-- 默认管理员 `admin` / `123456`；可再 `BOOTSTRAP_EMAIL`。不支持开放注册。
+- 默认管理员 `admin` / `123456`；可再 `BOOTSTRAP_EMAIL`。公开注册：用户名 + 手机号 + 密码（无验证码，手机号唯一），待管理员审核后才能登录，起步额度 ¥5。
 - Worker 只带 run JWT 打 `/internal`。
 - `/health`、静态页、公开 webhook 不需要用户令牌。
 - 限流：IP / 登录 / 建 Run / 用户写操作 / SSE 并发 / Gateway QPS。`GET /v1/rate-limits` 看桶。`RATE_LIMIT=0` 关闭。
@@ -700,7 +700,7 @@ GET    /v1/runs/:id/artifacts/:name?token=   签名下载
 
 ```
 POST   /v1/auth/login|logout|bootstrap
-POST   /v1/auth/register                 固定 403「不支持注册」
+POST   /v1/auth/register                 用户名 + 手机号 + 密码，无验证码；手机号唯一；待管理员审核后才能登录，起步额度 ¥5
 GET    /v1/me
 GET    /v1/vms
 GET    /v1/rate-limits
@@ -717,6 +717,7 @@ GET    /v1/runs/:id
 POST   /v1/runs/:id/follow-ups
 POST   /v1/runs/:id/abort
 POST   /v1/runs/:id/archive
+DELETE /v1/runs/:id                    仅已归档；MySQL 写 deleted_at，列表不再返回
 GET    /v1/runs/:id/events          SSE
 GET    /v1/runs/:id/transcript
 GET    /v1/runs/:id/fs
@@ -838,7 +839,7 @@ pnpm typecheck && pnpm test
 - 跨 Run 的用户 / 项目语义记忆（选型见 [agent-memory-research.md](./agent-memory-research.md)）
 - 完整多租户账务（只有配额打点）；专家团积分倍率
 - Slack 宿主
-- 开放注册、第二套用户表；New API 不是 Neo 进程，也不接管用户表
+- 免审即用的开放注册、第二套用户表；New API 不是 Neo 进程，也不接管用户表
 
 ---
 

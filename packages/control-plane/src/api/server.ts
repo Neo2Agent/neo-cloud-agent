@@ -45,6 +45,8 @@ import { SSE_HEADERS, attachEventStream } from "../events/stream.js";
 import {
   abortRun,
   archiveRun,
+  deleteRun,
+  RunDeleteError,
   claimDeskRun,
   commitRun,
   createRun,
@@ -89,6 +91,7 @@ import {
   findPublicUserByEmail,
   findPublicUserById,
   loginAccount,
+  registerAccount,
   patchUserAvatars,
   logoutSession,
   sessionCookieHeader,
@@ -497,15 +500,37 @@ export function createApiServer() {
       }
 
       if (method === "POST" && path === "/v1/auth/register") {
-        send(res, 403, { error: "不支持注册" });
+        const body = (await readJson(req)) as { email?: string; username?: string; phone?: string; password?: string };
+        if (
+          await rejectRateLimits(res, [
+            { policy: "login_account", key: loginAccountKey(body.phone ?? body.username ?? body.email, clientIp(req)) },
+          ])
+        ) {
+          return;
+        }
+        try {
+          const created = await registerAccount(body);
+          send(res, 201, {
+            ok: true,
+            pending: true,
+            user: created.user,
+            authRequired: true,
+            message: "注册成功，请等待管理员审核",
+          });
+        } catch (error) {
+          sendAccountError(res, error);
+        }
         return;
       }
 
       if (method === "POST" && path === "/v1/auth/login") {
-        const body = (await readJson(req)) as { email?: string; password?: string };
+        const body = (await readJson(req)) as { email?: string; login?: string; phone?: string; password?: string };
         if (
           await rejectRateLimits(res, [
-            { policy: "login_account", key: loginAccountKey(body.email, clientIp(req)) },
+            {
+              policy: "login_account",
+              key: loginAccountKey(body.login ?? body.phone ?? body.email, clientIp(req)),
+            },
           ])
         ) {
           return;
@@ -694,8 +719,11 @@ export function createApiServer() {
               ? ((await findPublicUserById(actor.userId)) ?? {
                   id: actor.userId,
                   email: actor.email,
+                  phone: null,
                   orgId: actor.orgId,
                   createdAt: "",
+                  status: "active",
+                  creditFen: 0,
                   avatar: null,
                   neoAvatar: null,
                 })
@@ -1607,6 +1635,22 @@ export function createApiServer() {
           return;
         }
         send(res, 200, run);
+        return;
+      }
+      if (runMatch && method === "DELETE") {
+        const run = await requireRun(runMatch[1] ?? "");
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        try {
+          send(res, 200, await deleteRun(runMatch[1] ?? ""));
+        } catch (error) {
+          if (error instanceof RunDeleteError) {
+            send(res, error.status, { error: error.message });
+            return;
+          }
+          send(res, 400, { error: error instanceof Error ? error.message : "delete_failed" });
+        }
         return;
       }
 

@@ -18,11 +18,12 @@ const {
   ensureDefaultAdmin,
   loginAccount,
   registerAccount,
+  approveAccount,
 } = await import("./accounts.js");
 const { getAccountStore } = await import("./store.js");
 const { hashPassword } = await import("./password.js");
 
-test("only the hardcoded admin account can log in", async () => {
+test("admin still logs in and phone registration is unique", async () => {
   const admin = await ensureDefaultAdmin();
   assert.equal(admin?.email, DEFAULT_ADMIN_LOGIN);
   assert.equal(bootstrapEmail(), "admin");
@@ -30,7 +31,21 @@ test("only the hardcoded admin account can log in", async () => {
   assert.equal(session.user.email, "admin");
   assert.match(session.token, /^neo_sess_/);
   await assert.rejects(() => loginAccount({ email: "neo@example.com", password: "password1" }), /invalid account/);
-  await assert.rejects(() => registerAccount({ email: "ada@example.com", password: "password1" }), /不支持注册/);
+  await assert.rejects(() => registerAccount({ email: "ada@example.com", password: "password1" }), /请填写有效的手机号|用户名不合法/);
+  const created = await registerAccount({ username: "ada", phone: "13900139000", password: "password1" });
+  assert.equal(created.user.email, "ada");
+  assert.equal(created.user.phone, "13900139000");
+  assert.equal(created.pending, true);
+  assert.equal(created.user.status, "pending");
+  assert.equal(created.user.creditFen, 500);
+  await assert.rejects(() => loginAccount({ email: "13900139000", password: "password1" }), /账号待管理员审核/);
+  await approveAccount(created.user.id);
+  const byPhone = await loginAccount({ email: "13900139000", password: "password1" });
+  assert.equal(byPhone.user.email, "ada");
+  await assert.rejects(
+    () => registerAccount({ username: "ada2", phone: "13900139000", password: "password1" }),
+    /手机号已注册/,
+  );
 });
 
 test("ensureBootstrapAccount now seeds admin instead of a second email", async () => {

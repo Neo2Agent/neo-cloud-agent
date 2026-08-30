@@ -143,6 +143,17 @@ button:disabled {
   text-align: center;
 }
 
+.login-form .text-link {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+}
+
 .login-form .login-continue[class*="animal-btn-primary"] {
   background: var(--accent);
   color: #fff9e3;

@@ -13,9 +13,11 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
 import {
+  applyAccountPatch,
   applyAvatarPatch,
   parseStoredAvatar,
   serializeStoredAvatar,
+  type AccountStatus,
   type AccountStore,
   type SessionRecord,
   type UserRecord,
@@ -28,9 +30,12 @@ export const POSTGRES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
+  phone TEXT UNIQUE,
   password_hash TEXT NOT NULL,
   org_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  credit_fen INTEGER NOT NULL DEFAULT 0,
   avatar_json TEXT,
   neo_avatar_json TEXT
 );
@@ -46,7 +51,8 @@ CREATE TABLE IF NOT EXISTS runs (
   user_id TEXT NOT NULL,
   org_id TEXT NOT NULL,
   record JSONB NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL
+  updated_at TIMESTAMPTZ NOT NULL,
+  deleted_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS events (
   run_id TEXT NOT NULL,
@@ -275,20 +281,34 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       for (const statement of [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_json TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS neo_avatar_json TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT",
+        "CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users (phone)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_fen INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
+        "CREATE INDEX IF NOT EXISTS runs_deleted_at ON runs (deleted_at)",
       ]) {
         await query(statement);
       }
     },
     async saveRun(record) {
       await query(
-        `INSERT INTO runs (id, user_id, org_id, record, updated_at)
-         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
+        `INSERT INTO runs (id, user_id, org_id, record, updated_at, deleted_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::timestamptz)
          ON CONFLICT (id) DO UPDATE SET
            user_id = EXCLUDED.user_id,
            org_id = EXCLUDED.org_id,
            record = EXCLUDED.record,
-           updated_at = EXCLUDED.updated_at`,
-        [record.run.id, record.run.userId, record.run.orgId, JSON.stringify(record), record.run.updatedAt],
+           updated_at = EXCLUDED.updated_at,
+           deleted_at = EXCLUDED.deleted_at`,
+        [
+          record.run.id,
+          record.run.userId,
+          record.run.orgId,
+          JSON.stringify(record),
+          record.run.updatedAt,
+          record.run.deletedAt ?? null,
+        ],
       );
     },
     async loadRun(runId) {
@@ -296,17 +316,17 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       return parseJson(result.rows[0]?.record, asRecord);
     },
     async loadRuns() {
-      const result = await query(`SELECT record FROM runs`);
+      const result = await query(`SELECT record FROM runs WHERE deleted_at IS NULL`);
       return result.rows
         .map((row) => parseJson(row.record, asRecord))
-        .filter((item): item is PersistedRun => Boolean(item))
+        .filter((item): item is PersistedRun => item != null && !item.run.deletedAt)
         .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
     },
     async loadRunSummaries() {
-      const result = await query(`SELECT record->'run' AS run FROM runs`);
+      const result = await query(`SELECT record->'run' AS run FROM runs WHERE deleted_at IS NULL`);
       return result.rows
         .map((row) => parseJson(row.run, asRun))
-        .filter((item): item is Run => Boolean(item))
+        .filter((item): item is Run => item != null && !item.deletedAt)
         .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
     },
     async saveEvent(event) {
@@ -488,14 +508,23 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     async createUser(user) {
       try {
         await query(
-          `INSERT INTO users (id, email, password_hash, org_id, created_at)
-           VALUES ($1, $2, $3, $4, $5::timestamptz)`,
-          [user.id, user.email, user.passwordHash, user.orgId, user.createdAt],
+          `INSERT INTO users (id, email, phone, password_hash, org_id, created_at, status, credit_fen)
+           VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7, $8)`,
+          [
+            user.id,
+            user.email,
+            user.phone ?? null,
+            user.passwordHash,
+            user.orgId,
+            user.createdAt,
+            user.status ?? "active",
+            user.creditFen ?? 0,
+          ],
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (/unique|duplicate/i.test(message)) {
-          throw new Error("email already registered");
+          throw new Error(/phone/i.test(message) ? "phone already registered" : "email already registered");
         }
         throw error;
       }
@@ -503,30 +532,53 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async findUserByEmail(email) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE email = $1`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE email = $1`,
         [email],
+      );
+      return mapUser(result.rows[0]);
+    },
+    async findUserByPhone(phone) {
+      if (!phone) {
+        return null;
+      }
+      const result = await query(
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE phone = $1`,
+        [phone],
       );
       return mapUser(result.rows[0]);
     },
     async findUserById(id) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
         [id],
       );
       return mapUser(result.rows[0]);
     },
     async listUsers() {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
       );
       return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
+    },
+    async updateUserAccount(userId, patch) {
+      const result = await query(
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
+        [userId],
+      );
+      const user = mapUser(result.rows[0]);
+      if (!user) {
+        throw new Error("user not found");
+      }
+      const next = applyAccountPatch(user, patch);
+      await query(`UPDATE users SET status = $1, credit_fen = $2 WHERE id = $3`, [next.status ?? "active", next.creditFen ?? 0, userId]);
+      return next;
     },
     async updateUserPassword(userId, passwordHash) {
       await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);
     },
     async updateUserAvatars(userId, patch) {
       const result = await query(
-        `SELECT id, email, password_hash, org_id, created_at, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = $1`,
         [userId],
       );
       const user = mapUser(result.rows[0]);
@@ -576,12 +628,18 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
   if (!row) {
     return null;
   }
+  const phone = row.phone == null || row.phone === "" ? undefined : String(row.phone);
+  const status = row.status === "pending" || row.status === "disabled" ? (row.status as AccountStatus) : "active";
+  const creditFen = Number(row.credit_fen ?? 0);
   return {
     id: String(row.id),
     email: String(row.email),
+    ...(phone ? { phone } : {}),
     passwordHash: String(row.password_hash),
     orgId: String(row.org_id),
     createdAt: toIso(row.created_at),
+    status,
+    creditFen: Number.isFinite(creditFen) ? Math.max(0, Math.floor(creditFen)) : 0,
     avatar: parseStoredAvatar(row.avatar_json),
     neoAvatar: parseStoredAvatar(row.neo_avatar_json),
   };

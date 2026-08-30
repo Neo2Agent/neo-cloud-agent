@@ -817,7 +817,7 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 - `start` 失败默认不阻断 Agent（和 Cursor 一样，只记 `START_FAILED`）。`environment.json` 里 `startMustSucceed: true` 或 `START_MUST_SUCCEED=1` 才会让 worker 退出、Run 变 ERROR。
 - 控制面用 GitHub App 安装令牌做 push / 开 PR；没配 App 时回退 PAT。Worker 只拿 `neo.git.*`。
 - 控制面重启后会认领还在的 local pid / docker 容器；认领不到就等 worker 心跳。已经挂上的 handle 以进程/容器退出为准，不会因为一次长工具调用没心跳就被标 ERROR。超时才标 ERROR，之后 follow-up 仍可从 session 恢复。
-- 对外 `/v1` 用用户 session（`POST /v1/auth/login`）或 `CONTROL_PLANE_TOKEN`。不支持注册。默认必须登录（`ACCOUNTS_REQUIRED=0` 才允许匿名）。账号写死为 `admin` / `123456`，登录时查账号库（接了 MySQL 就查 `users` 表）。对话页不预填、不跳过，必须手输账号和密码。Worker 走 `/internal`，只带 run JWT。`/health`、静态页和公开 webhook 不需要令牌。
+- 对外 `/v1` 用用户 session（`POST /v1/auth/login`，用户名或手机号）或 `CONTROL_PLANE_TOKEN`。`POST /v1/auth/register` 用手机号注册（另需用户名和密码，无验证码，手机号唯一）；注册后 `pending`，管理员在 `/admin/` 通过后才能登录，起步额度 ¥5（`users.credit_fen`）。默认必须登录（`ACCOUNTS_REQUIRED=0` 才允许匿名）。默认管理员仍是 `admin` / `123456`，登录时查账号库（接了 MySQL 就查 `users` 表）。对话页不预填、不跳过。Worker 走 `/internal`，只带 run JWT。`/health`、静态页和公开 webhook 不需要令牌。
 - 平台管理台是独立应用，不嵌进对话页：`packages/admin-api`（默认 `:8090`）+ `packages/admin-web`（默认 `:5176`，`pnpm dev:admin`）。现网同一域名路径：`https://neorun.cloud/` 对话、`https://neorun.cloud/admin/` 管理台。只认 `admin` / `ADMIN_EMAILS` / 服务令牌。读同一套账号库和持久化 Run，不改控制面 `/v1` 登录。New API 只做控制台链接。
 - 设了 `DATABASE_URL` 后，Run / 事件 / 用户 / Environment / Build 写入 MySQL 或 Postgres（看 URL scheme）；没配则继续用 `.control` JSON。
 - 设了 `REDIS_URL` 后，直播事件走 Redis Pub/Sub + Stream；没配则仍是进程内 EventEmitter。多个控制面进程订同一条 Run 流。限流计数也复用这条 Redis（`INCR` 固定窗口）；没配则进程内 token bucket。

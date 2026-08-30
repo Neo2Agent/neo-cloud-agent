@@ -502,6 +502,16 @@ button:disabled { opacity: 0.4; cursor: default; }
 .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
 .error { color: var(--red); margin: 0; }
 .hint { color: var(--muted); font-size: 13px; }
+.text-link {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+}
 .settings-card { display: flex; flex-direction: column; gap: 10px; }
 .settings-card label { display: flex; flex-direction: column; gap: 6px; }
 .group-title { margin: 8px 0 0; font-size: 14px; color: var(--muted); }

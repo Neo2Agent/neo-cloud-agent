@@ -9,7 +9,7 @@ export const ACTIVE_RUN_STATUSES = [
   "WAITING_FOR_BACKGROUND_WORK",
 ] as const;
 
-const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived"]);
+const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived", "run.deleted"]);
 
 export function isActiveRunStatus(status?: string | null): boolean {
   return Boolean(status && (ACTIVE_RUN_STATUSES as readonly string[]).includes(status));
@@ -31,6 +31,7 @@ export function statusFromEventKind(kind: string, fallback?: string): string | u
   if (kind === "run.idle") return "IDLE";
   if (kind === "run.error") return "ERROR";
   if (kind === "run.archived") return "ARCHIVED";
+  if (kind === "run.deleted") return "ARCHIVED";
   return fallback;
 }
 

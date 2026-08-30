@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { controlStateDir } from "../store/persist.js";
-import { applyAvatarPatch, type AccountStore, type SessionRecord, type UserRecord } from "./types.js";
+import { applyAccountPatch, applyAvatarPatch, type AccountStore, type SessionRecord, type UserRecord } from "./types.js";
 
 type Snapshot = {
   users: UserRecord[];
@@ -40,6 +40,9 @@ export function createFileAccountStore(runsDir?: string): AccountStore {
       if (snapshot.users.some((item) => item.email === user.email)) {
         throw new Error("email already registered");
       }
+      if (user.phone && snapshot.users.some((item) => item.phone === user.phone)) {
+        throw new Error("phone already registered");
+      }
       snapshot.users.push(user);
       write(snapshot);
       return user;
@@ -47,11 +50,28 @@ export function createFileAccountStore(runsDir?: string): AccountStore {
     async findUserByEmail(email) {
       return read().users.find((item) => item.email === email) ?? null;
     },
+    async findUserByPhone(phone) {
+      if (!phone) {
+        return null;
+      }
+      return read().users.find((item) => item.phone === phone) ?? null;
+    },
     async findUserById(id) {
       return read().users.find((item) => item.id === id) ?? null;
     },
     async listUsers() {
       return [...read().users].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    },
+    async updateUserAccount(userId, patch) {
+      const snapshot = read();
+      const index = snapshot.users.findIndex((item) => item.id === userId);
+      const user = snapshot.users[index];
+      if (index < 0 || !user) {
+        throw new Error("user not found");
+      }
+      snapshot.users[index] = applyAccountPatch(user, patch);
+      write(snapshot);
+      return snapshot.users[index]!;
     },
     async updateUserPassword(userId, passwordHash) {
       const snapshot = read();
