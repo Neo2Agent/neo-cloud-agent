@@ -37,29 +37,36 @@ else:
   docker compose up -d --no-deps mem0
 '
 
-if [[ -n "${TENCENTCLOUD_LNS_SECRET_ID:-}" && -n "${TENCENTCLOUD_LNS_SECRET_KEY:-}" ]] && command -v tccli >/dev/null 2>&1; then
+if [[ -n "${TENCENTCLOUD_LNS_SECRET_ID:-}" && -n "${TENCENTCLOUD_LNS_SECRET_KEY:-}" ]]; then
   echo "wire-mem0: request firewall 8888 for $APP_CIDR"
-  TENCENTCLOUD_SECRET_ID="$TENCENTCLOUD_LNS_SECRET_ID" \
-  TENCENTCLOUD_SECRET_KEY="$TENCENTCLOUD_LNS_SECRET_KEY" \
-  TENCENTCLOUD_REGION="$REGION" \
-  tccli lighthouse CreateFirewallRules --region "$REGION" --cli-unfold-argument \
-    --InstanceId "$INSTANCE_ID" \
-    --FirewallRules.0.Protocol TCP \
-    --FirewallRules.0.Port 8888 \
-    --FirewallRules.0.CidrBlock "$APP_CIDR" \
-    --FirewallRules.0.Action ACCEPT \
-    --FirewallRules.0.FirewallRuleDescription "mem0 from app host" \
-    >/dev/null 2>/tmp/wire-mem0-fw.err || true
-  if grep -qiE "already|exist|Duplicate|已存在" /tmp/wire-mem0-fw.err 2>/dev/null; then
-    echo "wire-mem0: firewall 8888 already present"
-  elif [[ -s /tmp/wire-mem0-fw.err ]]; then
-    echo "wire-mem0: firewall API returned an error (value not printed)"
-  else
-    echo "wire-mem0: firewall 8888 created"
-  fi
-  rm -f /tmp/wire-mem0-fw.err
+  MEM0_DB_INSTANCE_ID="$INSTANCE_ID" MEM0_APP_CIDR="$APP_CIDR" TENCENTCLOUD_REGION="$REGION" python3 - <<'PY' || echo "wire-mem0: firewall API failed (value not printed)"
+import os
+from tencentcloud.common import credential
+from tencentcloud.lighthouse.v20200324 import lighthouse_client, models
+
+cred = credential.Credential(os.environ["TENCENTCLOUD_LNS_SECRET_ID"], os.environ["TENCENTCLOUD_LNS_SECRET_KEY"])
+client = lighthouse_client.LighthouseClient(cred, os.environ.get("TENCENTCLOUD_REGION", "ap-beijing"))
+listed = models.DescribeFirewallRulesRequest()
+listed.InstanceId = os.environ["MEM0_DB_INSTANCE_ID"]
+current = client.DescribeFirewallRules(listed)
+for item in current.FirewallRuleSet or []:
+    if str(getattr(item, "Port", "")) == "8888" and getattr(item, "CidrBlock", "") == os.environ["MEM0_APP_CIDR"]:
+        print("wire-mem0: firewall 8888 already present")
+        raise SystemExit(0)
+req = models.CreateFirewallRulesRequest()
+req.InstanceId = os.environ["MEM0_DB_INSTANCE_ID"]
+rule = models.FirewallRule()
+rule.Protocol = "TCP"
+rule.Port = "8888"
+rule.CidrBlock = os.environ["MEM0_APP_CIDR"]
+rule.Action = "ACCEPT"
+rule.FirewallRuleDescription = "mem0 from app host"
+req.FirewallRules = [rule]
+client.CreateFirewallRules(req)
+print("wire-mem0: firewall 8888 created")
+PY
 else
-  echo "wire-mem0: skip firewall API (LNS tccli missing)"
+  echo "wire-mem0: skip firewall API (LNS secrets missing)"
 fi
 
 tmp="$(mktemp)"
