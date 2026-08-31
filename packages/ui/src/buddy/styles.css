@@ -44,6 +44,30 @@
   color: var(--text, #1a1a1a);
 }
 
+@media (max-height: 760px) {
+  .buddy-home-hero {
+    min-height: 0;
+    gap: 8px;
+  }
+
+  .buddy-mascot:not(.is-compact) {
+    width: 96px;
+    height: 96px;
+  }
+
+  .buddy-hello {
+    font-size: 18px;
+  }
+
+  .buddy-shortcuts button,
+  .buddy-skill-grid button,
+  .buddy-sheet-grid button {
+    min-height: 52px;
+    padding: 4px 2px;
+    gap: 4px;
+  }
+}
+
 .buddy-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;

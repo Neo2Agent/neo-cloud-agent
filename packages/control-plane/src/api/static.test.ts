@@ -69,6 +69,11 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.app\{[^}]*overflow:\s*hidden/);
   assert.match(cssText, /\.transcript\{[^}]*min-height:\s*0/);
   assert.match(cssText, /\.transcript\{[^}]*overflow-y:\s*auto/);
+  assert.match(cssText, /\.transcript\{[^}]*container-name:\s*transcript/);
+  assert.match(cssText, /@media \(min-width:\s*861px\) and \(max-height:\s*920px\)/);
+  assert.match(cssText, /repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(cssText, /@container transcript \(max-height:\s*560px\)/);
+
   assert.match(cssText, /\.composer\{[^}]*flex-shrink:\s*0/);
   assert.match(cssText, /\.context-usage-pop/);
   assert.match(cssText, /\.context-usage-bar/);
