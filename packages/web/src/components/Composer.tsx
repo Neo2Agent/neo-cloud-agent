@@ -112,7 +112,6 @@ export function Composer({
   onOpenPlus,
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
-  const [typing, setTyping] = useState(false);
   const [listening, setListening] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -160,7 +159,6 @@ export function Composer({
           : isNarrowViewport()
             ? "描述任务，点发送。可粘贴图片。"
             : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
-  const showHold = buddy && !archived && !blocked && (listening || finishing || (!typing && empty));
   const canStartVoice = !sendLocked && !busy && !finishing;
   const voiceLabel = holdPadLabel({
     supported: true,
@@ -246,34 +244,17 @@ export function Composer({
           ))}
         </div>
       ) : null}
-      {showHold ? (
-        <button
-          type="button"
-          className={listening || finishing ? "buddy-hold is-holding" : "buddy-hold"}
-          aria-label={voiceLabel}
-          aria-pressed={listening}
-          disabled={!canStartVoice && !listening}
-          onClick={() => void toggleVoice()}
-        >
-          {voiceLabel}
-        </button>
+      {buddy && (voiceError || listening || finishing) ? (
+        <p className={voiceError ? "hint voice-error" : "hint"}>{listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : voiceError}</p>
       ) : null}
-      {buddy && voiceError ? <p className="hint voice-error">{voiceError}</p> : null}
       <textarea
         id="prompt"
         name="prompt"
-        className={showHold ? "buddy-prompt-sr" : undefined}
         rows={buddy ? 2 : isNarrowViewport() ? 2 : 3}
         placeholder={placeholder}
-        required={!busy && !sendLocked && images.length === 0 && !showHold}
+        required={!busy && !sendLocked && images.length === 0}
         disabled={archived}
         value={prompt}
-        onFocus={() => {
-          if (buddy) setTyping(true);
-        }}
-        onBlur={() => {
-          if (buddy && empty) setTyping(false);
-        }}
         onChange={(event) => onPrompt(event.target.value)}
         onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
           const files = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
@@ -353,7 +334,7 @@ export function Composer({
               <IconArrowUp size={16} />
             </button>
           )}
-          {!showHold && !sendLocked ? voiceButton("buddy-icon-btn composer-mic") : null}
+          {!sendLocked ? voiceButton("buddy-icon-btn composer-mic") : null}
           <button type="button" className="buddy-plus" aria-label="添加" onClick={onOpenPlus}>
             <IconPlus size={20} />
           </button>
