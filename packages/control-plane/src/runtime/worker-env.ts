@@ -37,6 +37,7 @@ export function buildWorkerEnv(input: WorkerEnvInput): Record<string, string> {
     NEO_MODEL: input.model,
     NEO_EGRESS_MODE: input.egressMode ?? "allow_all",
     NEO_EGRESS_DOMAINS: (input.egressDomains ?? []).join(","),
+    ...(process.env.WORKER_POLL_MS ? { WORKER_POLL_MS: process.env.WORKER_POLL_MS } : {}),
   };
 }
 
