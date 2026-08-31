@@ -28,7 +28,7 @@ import { AutomationsPage } from "./components/AutomationsPage";
 import { ExpertsPage } from "./components/ExpertsPage";
 import { SkillsPage } from "./components/SkillsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
-import { MemoryPanel } from "./components/MemoryPanel";
+import { MemoriesPage } from "./components/MemoriesPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
@@ -184,11 +184,16 @@ function hashSkills(): boolean {
   return location.hash === "#/skills" || Boolean(hashSkillId());
 }
 
-function initialMainTab(): "chat" | "automations" | "projects" | "experts" | "skills" {
+function hashMemories(): boolean {
+  return location.hash === "#/memories";
+}
+
+function initialMainTab(): "chat" | "automations" | "projects" | "experts" | "skills" | "memories" {
   if (hashAutomations()) return "automations";
   if (hashProjects()) return "projects";
   if (hashExperts()) return "experts";
   if (hashSkills()) return "skills";
+  if (hashMemories()) return "memories";
   return "chat";
 }
 
@@ -255,7 +260,7 @@ export function App() {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
-  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts" | "skills">(initialMainTab);
+  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts" | "skills" | "memories">(initialMainTab);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(hashSkillId);
   const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
   const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
@@ -757,6 +762,12 @@ export function App() {
     history.replaceState(null, "", id ? `/#/skills/${id}` : "/#/skills");
   }, []);
 
+  const openMemories = useCallback(() => {
+    setMainTab("memories");
+    setSettingsOpen(false);
+    history.replaceState(null, "", "/#/memories");
+  }, []);
+
   const useSkill = useCallback(
     async (plugin: PluginCatalogItem) => {
       try {
@@ -810,7 +821,7 @@ export function App() {
 
   const openChat = useCallback(() => {
     setMainTab("chat");
-    if (hashAutomations() || hashProjects() || hashExperts() || hashSkills()) {
+    if (hashAutomations() || hashProjects() || hashExperts() || hashSkills() || hashMemories()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
   }, [runId]);
@@ -851,6 +862,11 @@ export function App() {
       await Promise.all(refreshShell);
       return;
     }
+    if (hashMemories()) {
+      setMainTab("memories");
+      await Promise.all(refreshShell);
+      return;
+    }
     const invite = hashInviteToken();
     const projectId = hashProjectId();
     if (invite || projectId || location.hash === "#/projects") {
@@ -870,7 +886,7 @@ export function App() {
       refreshVms(),
       refreshDesks(),
     ]);
-    if (!match && !hashRunId() && !hashProjects() && !hashExperts() && !hashSkills()) resetComposer();
+    if (!match && !hashRunId() && !hashProjects() && !hashExperts() && !hashSkills() && !hashMemories()) resetComposer();
   }, [openRun, refreshDesks, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
@@ -1284,6 +1300,12 @@ export function App() {
         setSettingsOpen(false);
         return;
       }
+      if (hashMemories()) {
+        setMainTab("memories");
+        setInviteToken(null);
+        setSettingsOpen(false);
+        return;
+      }
       if (invite || projectId || location.hash === "#/projects") {
         setMainTab("projects");
         setInviteToken(invite);
@@ -1597,14 +1619,6 @@ export function App() {
     }
   };
 
-  const openMemorySettings = () => {
-    setMainTab("chat");
-    setSettingsOpen(true);
-    window.setTimeout(() => {
-      document.getElementById("memory-panel")?.scrollIntoView({ block: "nearest" });
-    }, 0);
-  };
-
   const applyBuddyPlus = (action: BuddyPlusAction) => {
     setPlusOpen(false);
     if (action === "image" || action === "file") {
@@ -1620,7 +1634,7 @@ export function App() {
       return;
     }
     if (action === "memory") {
-      openMemorySettings();
+      openMemories();
       return;
     }
     if (action === "expert") {
@@ -1733,7 +1747,6 @@ export function App() {
             if (id === "experts") openExperts();
             if (id === "projects") openProjects();
             if (id === "skills") openSkills();
-            if (id === "memory") openMemorySettings();
           }}
           onPin={(id) => setPinnedIds(togglePinnedRun(id))}
           onArchiveMany={(ids) => void archiveMany(ids)}
@@ -1805,6 +1818,7 @@ export function App() {
                     ["projects", "项目", IconProjects, () => openProjects()],
                     ["experts", "专家", IconExperts, () => openExperts()],
                     ["skills", "技能", IconSkills, () => openSkills()],
+                    ["memories", "记忆", IconMemory, openMemories],
                     ["automations", "定时任务", IconAutomations, openAutomations],
                   ] as const
                 ).map(([id, label, Icon, onClick]) => (
@@ -1830,6 +1844,8 @@ export function App() {
                       ? "专家"
                       : mainTab === "skills"
                       ? "技能"
+                      : mainTab === "memories"
+                      ? "记忆"
                       : mainTab === "automations"
                       ? "定时任务"
                       : currentRun
@@ -1853,6 +1869,8 @@ export function App() {
                       ? "换角色干活"
                       : mainTab === "skills"
                       ? "给 Agent 装工作手册"
+                      : mainTab === "memories"
+                      ? "跨对话记住的事"
                       : mainTab === "automations"
                       ? "到点自动开对话"
                       : currentRun
@@ -1885,7 +1903,7 @@ export function App() {
                   className="icon-btn"
                   aria-label="记忆"
                   title="记忆"
-                  onClick={openMemorySettings}
+                  onClick={openMemories}
                 >
                   <IconMemory size={16} />
                 </button>
@@ -2067,7 +2085,6 @@ export function App() {
                   void openRun(id);
                 }}
               />
-              {token ? <MemoryPanel token={token} /> : null}
                 <SettingsPanel
                   repo={repo}
                   envId={envId}
@@ -2213,6 +2230,8 @@ export function App() {
                 onOpenPlugin={(id) => openSkills(id)}
                 onUse={(plugin) => void useSkill(plugin)}
               />
+            ) : mainTab === "memories" ? (
+              <MemoriesPage token={token} onBack={openChat} />
             ) : mainTab === "automations" ? (
               <AutomationsPage
                 token={token}

@@ -137,7 +137,7 @@ Neo 已经有运行时（pi）和文件规则（`PROJECT.md`）。缺的是第�
 2. 控制面加薄封装：`searchMemories({ userId, projectId, query })` / `addMemories(...)`。Run JWT 不能直打 Mem0。
 3. `createRun` / worker boot：按 prompt 检索，拼进系统提示，和 `appendProjectInstruction` 并列。
 4. Run 进 IDLE 或 `agent_end`：异步丢一段打码后的 transcript 去抽取。不要在用户打字的热路径上抽。
-5. `neo_memory_search` / `neo_memory_add` 和设置抽屉里的记忆列表已落地。用户必须能删。
+5. `neo_memory_search` / `neo_memory_add` 和独立记忆页已落地。用户必须能删。
 
 ### 4.2 质量备选：Hindsight
 
@@ -298,7 +298,7 @@ Agent 记忆是另一件事：
 
 ### 第 2 期：工具 + 管理面
 
-`neo_memory_search` / `neo_memory_add` 已走 `POST /internal/runs/:id/memories`，和 `neo_mcp_*` 一样密钥不上 VM。对话页设置抽屉可以看/记/删。管理台按用户审计抽取失败仍未做。不要做「专家市场」。
+`neo_memory_search` / `neo_memory_add` 已走 `POST /internal/runs/:id/memories`，和 `neo_mcp_*` 一样密钥不上 VM。对话页独立记忆页可以看/记/删。管理台按用户审计抽取失败仍未做。不要做「专家市场」。
 
 ### 刻意后置
 

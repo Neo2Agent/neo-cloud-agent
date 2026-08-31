@@ -16,7 +16,7 @@ test("filterMemories matches text and skips empty queries", () => {
 
 test("memoryHint covers unconfigured empty and error", () => {
   assert.match(memoryHint({ configured: false, count: 0 }), /还没接上/);
-  assert.match(memoryHint({ configured: true, count: 0 }), /还没有记忆/);
+  assert.match(memoryHint({ configured: true, count: 0 }), /记一条/);
   assert.match(memoryHint({ configured: true, count: 3 }), /已记住 3 条/);
   assert.equal(memoryHint({ configured: true, count: 1, error: "记忆服务不可用" }), "记忆服务不可用");
 });
