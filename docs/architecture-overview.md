@@ -2,7 +2,14 @@
 
 本文是**现在仓库里实际长什么样**的完整地图：包怎么拆、进程怎么跑、一次 Run 怎么走、现网怎么叠。设计原则、分阶段蓝图、以及「为什么这样拆」仍以 [architecture.md](./architecture.md) 为准。本文不重复那份蓝图的每一条落地笔记，只把**核心架构**和**当前实现边界**摊开。
 
-对照 `origin/main` `c2fda3c`（2026-08-28）。锁死的分层没变；相对 2026-08-26 那版总览，main 上多了共享 UI 包、控制面 `experts/` / `plugins/`、库机 New API 上游、Desk inline/dispatch、空闲槽工作区写回，以及 Web 上的专家 / 技能 / 配方面。[workbuddy-experts.md](./workbuddy-experts.md) §4.4 缺口表写于 Expert 实体落地前，已经过时。
+对照 `origin/main` `484d663`（2026-08-31）。锁死的分层没变。相对 2026-08-28 那版总览（`c2fda3c`），main 上多了：
+
+- 讯飞听写：客户端 → 控制面 `POST /v1/speech/iat` → Gateway 持 `IFLYTEK_*` 打讯飞；密钥不进控制面也不进 worker
+- 现网备案未过：Caddy 对域名和 IP 都走 HTTP，**不** 308 到 HTTPS；手机继续用 `http://62.234.211.200/`
+- 公开注册：用户名 + 手机号 + 密码，待管理员审核，起步额度 ¥5；归档 Run 可软删（`deleted_at`）
+- 现网 systemd 三个业务 unit：`neo-llm-gateway` / `neo-control-plane` / `neo-admin-api`，外加 Caddy
+
+[workbuddy-experts.md](./workbuddy-experts.md) §4.4 缺口表写于 Expert 实体落地前，已经过时。
 
 对标对象：[Cursor Cloud Agent](https://cursor.com/docs/cloud-agent)。Agent 内核是 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent`），不自研 tool loop。
 
@@ -22,8 +29,8 @@
 
 一张图把客户端、入口、控制面、执行面、推理、存储和外部依赖摊开。现网不用登录：
 
-- http://62.234.211.200/architecture
-- https://neorun.cloud/architecture
+- http://62.234.211.200/architecture（现网主入口）
+- http://neorun.cloud/architecture（备案未过时可能被 DNSPod 拦到 webblock）
 
 源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）。
 
@@ -32,9 +39,16 @@
 另外四条红线（和 [README](../README.md) 一致）：
 
 1. 不要 fork pi 加云功能——用 worker + `packages/extensions`。
-2. 不要把 Provider Key 写进 VM。
+2. 不要把 Provider Key 或讯飞 IAT 密钥写进 VM。
 3. 不要在 `install` 里起长驻服务。
 4. 不要让 bash 拿着长期 git token 去 push。
+
+### 怎么读
+
+1. 先看 §2 三层和 §3 包 / 进程（不要按模块数进程）。
+2. 再看 §4 现网两台机和 §5 一次 Run。
+3. 听写是旁路：客户端 → 控制面 → Gateway → 讯飞，不进 worker，也不占 write / llm_run 桶。
+4. 「为什么这样拆」和分阶段仍看 [architecture.md](./architecture.md)。现网域名 / HTTP 看 [production-domain.md](./production-domain.md)。
 
 ---
 
@@ -44,8 +58,8 @@
 
 | 层 | 信任级 | 现在落在哪 | 干什么 |
 | --- | --- | --- | --- |
-| 控制面 | 高（账号体系） | `packages/control-plane` 一个进程 `:8080` | 鉴权、Run 状态机、环境 / Build、SCM、事件扇出、项目协作、专家 / 插件物化、配额、限流 |
-| LLM Gateway | 高（唯一持钥） | `packages/llm-gateway` 一个进程 `:8081` | 验 run JWT、模型别名、`max_tokens` 封顶 16384、限流、打上游（New API / DeepSeek / OpenAI / mock） |
+| 控制面 | 高（账号体系） | `packages/control-plane` 一个进程 `:8080` | 鉴权、Run 状态机、环境 / Build、SCM、事件扇出、项目协作、专家 / 插件物化、配额、限流、听写代理 |
+| LLM Gateway | 高（唯一持钥） | `packages/llm-gateway` 一个进程 `:8081` | 验 run JWT、模型别名、`max_tokens` 封顶 16384、限流、打上游（New API / DeepSeek / OpenAI / mock）；持讯飞 IAT 密钥 |
 | 执行面 | 低（按 Run 隔离） | `packages/worker` + `packages/extensions`，**镜像不是长驻服务** | 嵌入 pi、操作磁盘和进程、遵守 egress、只拿短寿命 JWT |
 
 客户端（Web / Desk / CLI / Mobile / IM）**都不是第四个控制面**。它们只打 `/v1`，不跑 loop，不持有 Provider Key。
@@ -61,7 +75,7 @@ flowchart TB
     AdminWeb["Admin Web :5176"]
   end
 
-  Caddy["Caddy 现网入口\nneorun.cloud"]
+  Caddy["Caddy 现网入口\nneorun.cloud :80 HTTP"]
 
   subgraph control [Control Plane :8080]
     API["api"]
@@ -73,11 +87,13 @@ flowchart TB
     DeskReg["desks / devices"]
     Auto["automations"]
     Experts["experts / plugins"]
+    Speech["speech IAT 代理"]
   end
 
   AdminAPI["admin-api :8090\n读同一套账号和 Run"]
-  GW["llm-gateway :8081"]
+  GW["llm-gateway :8081\n推理 + 讯飞 IAT"]
   NewAPI["New API :3000\n库机上游，不是 Neo 进程"]
+  IFlytek["讯飞 IAT\n不是 Neo 进程"]
 
   subgraph exec [Execution — 每 Run 一份]
     Runtime["Runtime: local / vm / docker / firecracker / desk"]
@@ -96,6 +112,8 @@ flowchart TB
   Caddy --> AdminAPI
   AdminAPI --> control
   API --> Orch
+  API --> Speech
+  Speech -->|"speech JWT"| GW
   Orch --> Env
   Orch --> SCM
   Orch --> Events
@@ -107,6 +125,7 @@ flowchart TB
   Pi -->|"run JWT"| GW
   GW --> NewAPI
   NewAPI --> Provider["DeepSeek / OpenAI / mock"]
+  GW -->|"IAT WebSocket"| IFlytek
 ```
 
 ---
@@ -129,8 +148,8 @@ flowchart TB
 neo-cloud-agent/
   packages/
     contracts        共享协议（库，不是服务）。所有进程 import
-    control-plane    进程 1：api + 编排 + 环境 + SCM + 事件 + 项目
-    llm-gateway      进程 2：唯一持有模型密钥
+    control-plane    进程 1：api + 编排 + 环境 + SCM + 事件 + 项目 + 听写代理
+    llm-gateway      进程 2：唯一持有模型密钥和讯飞 IAT 密钥
     worker           打进 VM / 任务容器 / Desk 本机 fork，不是集群 Deployment
     extensions       云工具，打进同一张 worker 镜像
     ui               共享 Radix 控件（库，不是服务）。web / desk / admin-web / mobile 引用
@@ -148,8 +167,8 @@ neo-cloud-agent/
 | Package | 角色 | 本地端口 / 产物 |
 | --- | --- | --- |
 | `contracts` | 类型与协议 | 无进程 |
-| `control-plane` | 对外 `/v1` + 内部 `/internal` + 托管 Web | `:8080` |
-| `llm-gateway` | OpenAI-compatible 代理 | `:8081` |
+| `control-plane` | 对外 `/v1` + 内部 `/internal` + 托管 Web + 听写代理 | `:8080` |
+| `llm-gateway` | OpenAI-compatible 代理 + 讯飞 IAT | `:8081` |
 | `worker` | 嵌入 pi 的执行进程 | 每 Run 一份 |
 | `extensions` | `neo_*` 云工具 | 打进 worker |
 | `ui` | 共享 Radix 控件 | 无进程；只被四个前端 import |
@@ -163,7 +182,7 @@ neo-cloud-agent/
 
 ### 3.2 为什么 Gateway 单独成进程
 
-P0 唯一值得拆进程的边界是**密钥隔离**：Provider Key 不能和编排、工作区、SCM 私钥住在同一个进程里。Gateway 按 token 扩缩、单独审计。env / scm / event 此时是函数调用，不是网络 hop。
+P0 唯一值得拆进程的边界是**密钥隔离**：Provider Key 和讯飞 `IFLYTEK_*` 都不能和编排、工作区、SCM 私钥住在同一个进程里。Gateway 按 token 扩缩、单独审计。env / scm / event 此时是函数调用，不是网络 hop。
 
 `admin-api` 是后来加上的第三个进程：只给平台管理员看总览 / 用户 / Run / 内置专家配置与下发，读同一套账号库和持久化，**不改**控制面 `/v1` 登录语义。New API（开源模型网关）如果接入，只能当 Gateway 的上游，不能替换 `llm-gateway`，也不能接管 Agent 用户表。见 [admin-platform-research.md](./admin-platform-research.md)。
 
@@ -175,13 +194,13 @@ P0 唯一值得拆进程的边界是**密钥隔离**：Provider Key 不能和编
 
 ```mermaid
 flowchart LR
-  User["浏览器 / Desk / CLI"] -->|"HTTPS 443"| Caddy
+  User["浏览器 / Desk / CLI"] -->|"HTTP 80\n不强制 HTTPS"| Caddy
 
   subgraph app [应用机 62.234.211.200]
-    Caddy["Caddy"]
+    Caddy["Caddy :80 / :443"]
     CP["neo-control-plane :8080"]
     GW["neo-llm-gateway :8081"]
-    Admin["admin-api :8090"]
+    Admin["neo-admin-api :8090"]
     Slots["2 × loop ext4 槽\nWORKER_RUNTIME=vm"]
     Caddy -->|"/"| CP
     Caddy -->|"/admin/"| Admin
@@ -198,20 +217,23 @@ flowchart LR
   CP -->|"DATABASE_URL"| MySQL
   CP -->|"REDIS_URL"| Redis
   GW -->|"LLM_UPSTREAM_BASE_URL"| NewAPI
+  GW -->|"IAT WSS"| IFlytek["讯飞 iat-api.xfyun.cn"]
 ```
 
 | 项 | 值 |
 | --- | --- |
-| 对话页 | `https://neorun.cloud/` → Caddy → `:8080` |
-| 管理台 | `https://neorun.cloud/admin/` → Caddy `handle_path` → `:8090` |
-| IP 入口 | `http://62.234.211.200/` 仍可用（HTTP） |
+| 对话页 | `http://neorun.cloud/` → Caddy → `:8080`。备案未过时域名可能被 DNSPod 拦到 webblock，手机用 `http://62.234.211.200/` |
+| 管理台 | `http://neorun.cloud/admin/` → Caddy `handle_path` → `:8090` |
+| HTTPS | 证书继续续（Let's Encrypt）。**不** 308、不下 HSTS。备案过了再改回跳转。见 [production-domain.md](./production-domain.md) |
+| IP 入口 | `http://62.234.211.200/`（HTTP，现网主入口之一） |
 | 应用机 | 4C / 4G Ubuntu 24.04；**无 Docker、无 KVM** |
 | 执行面 | `WORKER_RUNTIME=vm`：2 个 loop 挂 ext4 槽，不是真 VM |
-| 元数据 | 库机 MySQL |
+| 元数据 | 库机 MySQL（`users.phone` / `users.status` / `users.credit_fen` / `runs.deleted_at`） |
 | 直播事件 | 库机 Redis Pub/Sub + Stream |
 | 模型渠道 | 库机 New API `:3000`；Gateway 打 `http://101.42.105.230:3000/v1` |
+| 听写 | Gateway 持 `IFLYTEK_APP_ID` / `IFLYTEK_API_KEY` / `IFLYTEK_API_SECRET`，打讯飞 IAT WebSocket |
 | 对象存储 | 应用机 `RUNS_DIR/.objects`，现网不切 S3 |
-| systemd | `neo-control-plane`、`neo-llm-gateway`、Caddy |
+| systemd | `neo-llm-gateway`、`neo-control-plane`、`neo-admin-api`、Caddy |
 
 操作手册：[.cursor/skills/tencent-lighthouse-deploy/SKILL.md](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)、[.cursor/skills/tencent-lighthouse-db/SKILL.md](../.cursor/skills/tencent-lighthouse-db/SKILL.md)、[production-domain.md](./production-domain.md)。
 
@@ -322,6 +344,7 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 | `accounts/` | 账号与默认 admin |
 | `experts/` | 专家 / 专家团目录、bundled 覆盖、创建 Run 时写 `.neo/EXPERT.md` |
 | `plugins/` | 插件安装记录、创建 Run 时物化 `.neo/skills/<slug>/SKILL.md` |
+| `speech/` | 听写代理：登录用户 `POST /v1/speech/iat` → 签发 120s speech JWT → Gateway |
 | `projects/` | 项目、成员、邀请、看板 todo、资产、消息、inbox、HANDOFF.md |
 | `desks/` | Desk 登记、lease、claim、inbox SSE、工作区绑定（name + repoKey） |
 | `devices/` | 手机推送 token |
@@ -441,6 +464,12 @@ pi-ai streamSimple
   → Authorization: Bearer <run JWT>
   → 验 JWT、按 run/org 限流、别名改写、打点
   → DeepSeek / OpenAI / mock
+
+Web / Mobile 听写
+  → POST /v1/speech/iat（控制面，登录 session）
+  → 控制面签发 120s speech JWT（runId=speech:<userId>，model=iflytek-iat）
+  → POST llm-gateway /v1/speech/iat
+  → wss://iat-api.xfyun.cn/v2/iat
 ```
 
 | 能力 | 现状 |
@@ -450,7 +479,8 @@ pi-ai streamSimple
 | 用量 | input / output 按 Run 聚合；对话页另有 context window 填充 |
 | 上游 | `.env` / `.neo/llm-upstream.env`；现网 `LLM_UPSTREAM_BASE_URL` 指向库机 New API；没 key 且没上游则 `upstream=mock` |
 | 输出封顶 | `MAX_REQUEST_OUTPUT_TOKENS = 16384`（`packages/contracts/src/models.ts`）；`capUpstreamMaxTokens()` 在打上游前截断，避免 New API 钱包预扣爆掉 |
-| 不做 | 不执行工具、不看见磁盘、不持有 SCM 私钥。New API **不是**第四个 Neo 进程 |
+| 听写 | Gateway 持讯飞三件套。`GET /health` 带 `iatConfigured`。没配则听写 503，推理不受影响 |
+| 不做 | 不执行工具、不看见磁盘、不持有 SCM 私钥。New API **不是**第四个 Neo 进程。讯飞也不是 |
 
 对话页 `POST /v1/settings/llm` 在未接 New API 时写 key 到本机文件；**响应永不回传明文**。现网 Gateway 上游是库机 New API `http://101.42.105.230:3000/v1`，对话页 / Desk 只选型号，渠道和 Provider Key 在 New API 控制台。New API 只能接在 Gateway **后面**，worker 不拿 `sk-`。
 
@@ -529,11 +559,11 @@ GitHub PR 评论和 Actions 经 `POST /webhooks/github`（HMAC）进跟进队列
 
 | 宿主 | Package | 执行面 | 现状 |
 | --- | --- | --- | --- |
-| 对话页 | `packages/web` | 云端 | 登录、流式、Markdown、Diff、文件树、粘贴图片、产物预览、项目、专家 / 技能目录、自动化、Flash/Pro |
-| 管理台 | `admin-web` + `admin-api` | 无 | 总览 / 用户 / Run / 内置专家配置与下发 / 限流；仅平台管理员 |
+| 对话页 | `packages/web` | 云端 | 登录、流式、Markdown、Diff、文件树、粘贴图片、产物预览、项目、专家 / 技能目录、自动化、Flash/Pro、点击听写（HTTP 页改选录音文件） |
+| 管理台 | `admin-web` + `admin-api` | 无 | 总览 / 用户审核 / Run / 内置专家配置与下发 / 限流；仅平台管理员 |
 | Desk | `packages/desk` | 云或本机 | Electron + 独立 UI；This Computer（默认）vs Remote control；inline 直接带 assignment，dispatch 走 inbox SSE |
 | CLI | `packages/cli` | 云端 | `pnpm neo`：创建、SSE、跟进、归档、diff、PR；headless |
-| Mobile | `packages/mobile` | 云端 + Desk Remote | Expo 壳：新开只 cloud；列表 / 跟进含 Desk Remote；`source` ios/android；推送 `/v1/devices` |
+| Mobile | `packages/mobile` | 云端 + Desk Remote | Expo 壳：新开只 cloud；列表 / 跟进含 Desk Remote；`source` ios/android；推送 `/v1/devices`；按住听写。现网明文 HTTP 过不了 iOS ATS |
 | Telegram / 微信 | `ingress/` | 云端 | 发一句开新对话；做完 / 开 PR 可推回来 |
 | Slack | — | — | `source` 预留，未做 |
 
@@ -574,7 +604,7 @@ Desk 本机路径（已落地）。`start` 分开「谁起这个 worker」：
 | Collaborator / Transfer | 单条 Run 可邀请 editor，或 reassign / fork 给别人 |
 | Handoff pack | `projects/handoff.ts` 写 `HANDOFF.md` |
 
-Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Terminal 右侧栏，项目工作台默认停在任务（任务 / 对话 / 资产 / 动态 / 设置）。Web 另有 `#/projects`、`#/experts`、`#/skills`。
+Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Terminal 右侧栏，项目工作台默认停在任务（任务 / 对话 / 资产 / 动态 / 设置）。Web 另有 `#/projects`、`#/experts`、`#/skills`、`#/automations`、`#/runs/:id`、`#/invite/:token`。听写控件在共享包 `packages/ui/src/speech`（PCM / 云端 IAT 客户端）；HTTP 页没有 `getUserMedia`，点麦克风后选录音文件。
 
 ### 14.2 专家 / 专家团（控制面对象）
 
@@ -626,11 +656,11 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 
 | | 本地 | 现网 |
 | --- | --- | --- |
-| API | `admin-api` `:8090` | 同一域名 `/admin/` → `:8090` |
+| API | `admin-api` `:8090` | 同一域名 `/admin/` → `:8090`（systemd `neo-admin-api`） |
 | UI | `admin-web` `:5176` | 由 admin-api 托管 dist |
 | 登录 | 仍是 `admin` / `123456` 或 `ADMIN_EMAILS` | 只认平台管理员 / 服务令牌 |
 
-接口：`/v1/auth/login|logout`、`/v1/me`、`/v1/admin/overview`、`/v1/admin/users`、`/v1/admin/runs`、`/v1/admin/experts`（配置 / 下发 / 恢复默认）、`/v1/rate-limits`。复用 control-plane 的账号与聚合函数，**不**另建用户表。内置专家覆盖写在 `expert_policies`。
+接口：`/v1/auth/login|logout`、`/v1/me`、`/v1/admin/overview`、`/v1/admin/users`、`POST /v1/admin/users/:id/approve`（pending → active）、`/v1/admin/runs`、`/v1/admin/experts`（配置 / 下发 / 恢复默认）、`/v1/rate-limits`。复用 control-plane 的账号与聚合函数，**不**另建用户表。内置专家覆盖写在 `expert_policies`。
 
 ---
 
@@ -644,7 +674,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 | Redis | 直播事件 Pub/Sub + Stream、限流固定窗口、lease | 进程内 EventEmitter + token bucket |
 | 对象存储（默认 fs） | transcript 归档、artifacts、session JSONL 备份 | `RUNS_DIR/.objects` |
 | 块存储 | Build 快照、warm slot、loop 盘 | `RUNS_DIR/.builds` |
-| 密钥文件 | LLM / SCM / notify（gitignore） | `.env`、`.neo/*.env` |
+| 密钥文件 | LLM / SCM / notify / 讯飞 IAT（gitignore） | `.env`、`.neo/*.env` |
 
 `platform.ts` 在启动时：**先接 Redis，再 hydrate MySQL**，避免登录 / 限流卡在库同步上。有 `DATABASE_URL` 就 `connectDatabase` 并挂 persist hook（含 experts / plugins / expert_policies）；有 `REDIS_URL` 就接热总线和限流。刷新页面或重启控制面：先从 persist 把 Run 拉回内存，再 `recoverLiveWorkers`——认领得到的 handle 以进程/容器退出为准，认领不到就等心跳，超时才标 ERROR。
 
@@ -656,7 +686,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 
 | 威胁 | 对策 |
 | --- | --- |
-| 偷 Provider Key | Key 只在 Gateway；VM 只有 JWT |
+| 偷 Provider Key / 讯飞密钥 | Key 只在 Gateway；VM 只有 run JWT；听写走 120s speech JWT |
 | 外带源代码 | Egress allowlist；禁止宽泛 S3 wildcard |
 | 密钥进 transcript / commit | Runtime secret 打成 `[REDACTED]` |
 | 逃逸到宿主机 | 现网是 loop 槽（弱隔离）；真隔离走 Firecracker + jailer |
@@ -672,10 +702,11 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 鉴权：
 
 - 默认必须登录（`ACCOUNTS_REQUIRED=0` 才允许匿名）。对话页不预填、不跳过。
-- 默认管理员 `admin` / `123456`；可再 `BOOTSTRAP_EMAIL`。公开注册：用户名 + 手机号 + 密码（无验证码，手机号唯一），待管理员审核后才能登录，起步额度 ¥5。
+- 默认管理员 `admin` / `123456`。公开注册：用户名 + 手机号 + 密码（无验证码，手机号唯一），`status=pending`，管理员 `POST /v1/admin/users/:id/approve` 后才能登录，起步额度 ¥5（`users.credit_fen`，`SIGNUP_CREDIT_FEN` 默认 500）。额度用完拒绝新 Run。
+- `PATCH /v1/me` 改头像（`avatar` / `neoAvatar`）。
 - Worker 只带 run JWT 打 `/internal`。
 - `/health`、静态页、公开 webhook 不需要用户令牌。
-- 限流：IP / 登录 / 建 Run / 用户写操作 / SSE 并发 / Gateway QPS。听写 `POST /v1/speech/iat` 走单独的 `speech` 桶，不占 write / llm_run。`GET /v1/rate-limits` 看桶。`RATE_LIMIT=0` 关闭。
+- 限流：IP / 登录 / 建 Run / 用户写操作 / SSE 并发 / Gateway QPS。听写 `POST /v1/speech/iat` 走单独的 `speech` 桶（默认 3600/分钟），不占 write / llm_run。`GET /v1/rate-limits` 看桶。`RATE_LIMIT=0` 关闭。
 - 配额：`GET /v1/quota` 同时跑的对话和本月 token。完整账务未做。
 
 ---
@@ -702,9 +733,11 @@ GET    /v1/runs/:id/artifacts/:name?token=   签名下载
 POST   /v1/auth/login|logout|bootstrap
 POST   /v1/auth/register                 用户名 + 手机号 + 密码，无验证码；手机号唯一；待管理员审核后才能登录，起步额度 ¥5
 GET    /v1/me
+PATCH  /v1/me                            头像 avatar / neoAvatar
 GET    /v1/vms
 GET    /v1/rate-limits
 GET    /v1/quota
+GET|POST /v1/speech/iat                  GET 看是否配置；POST 转写，走 speech 桶
 GET|POST /v1/settings/llm|scm|notify|quota|mcp
 ```
 
@@ -780,6 +813,11 @@ Org 1──* User 1──* Run
                  └── FollowUp / RunEvent / Artifact / PullRequestRef / Subscription
                  └── Collaborator / Transfer
 
+User
+  phone?  status: pending|active|disabled  creditFen  avatar / neoAvatar
+Run
+  deletedAt?   软删；列表不再返回；仅 ARCHIVED 可 DELETE
+
 User 1──* Project 1──* Member / Invite / Event
                     └── Todo / Asset / Message
                     └── Run (projectId)
@@ -826,7 +864,7 @@ pnpm typecheck && pnpm test
 
 ## 21. 现在有、明确没有
 
-**已经落地、文档必须对得上的：** P0 主路径（创建 Run → worker + pi → Gateway → SSE → IDLE → 跟进）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游。
+**已经落地、文档必须对得上的：** P0 主路径（创建 Run → worker + pi → Gateway → SSE → IDLE → 跟进）；账号（手机号注册 + 管理员审核 + ¥5 起步额度）；归档 Run 软删；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台（含用户审核，systemd `neo-admin-api`）；CLI；Mobile P0；共享 `packages/ui`（含听写 / buddy composer）；讯飞 IAT（Gateway 持钥，HTTP 页改选录音文件）；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；现网 HTTP 优先（备案未过不跳 HTTPS）。
 
 **还没有、不要假装有的：**
 
@@ -840,6 +878,7 @@ pnpm typecheck && pnpm test
 - 完整多租户账务（只有配额打点）；专家团积分倍率
 - Slack 宿主
 - 免审即用的开放注册、第二套用户表；New API 不是 Neo 进程，也不接管用户表
+- 备案过了之前的强制 HTTPS / HSTS；现网明文 HTTP 上 iOS ATS 过不了
 
 ---
 
@@ -848,7 +887,7 @@ pnpm typecheck && pnpm test
 | 文档 | 读什么 |
 | --- | --- |
 | [architecture.md](./architecture.md) | 设计蓝图、原则、分阶段、与 Cursor 对照 |
-| 本文 | 现状总览：包、进程、现网、数据流 |
+| 本文 | 现状总览：包、进程、现网、听写、数据流 |
 | [cli.md](./cli.md) | `neo` 命令面；明确不做本机 Agent |
 | [desk.md](./desk.md) / [desk-this-computer.md](./desk-this-computer.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为、This Computer 工作区一期、项目工作台 |
 | [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) | 云 loop + 本机工具，尚未做 |

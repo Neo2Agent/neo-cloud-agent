@@ -15,6 +15,7 @@ delete process.env.REDIS_URL;
 
 const { createApiServer } = await import("./server.js");
 const { ensureDefaultAdmin } = await import("../accounts/accounts.js");
+const { archiveRunArtifacts } = await import("../objects/archive.js");
 const { listen, close } = await import("../e2e/helpers.js");
 
 test("DELETE /v1/runs/:id only soft-deletes archived runs", async (t) => {
@@ -46,6 +47,8 @@ test("DELETE /v1/runs/:id only soft-deletes archived runs", async (t) => {
 
   const archived = await fetch(`${base}/v1/runs/${run.id}/archive`, { method: "POST", headers });
   assert.equal(archived.status, 200);
+  // Object-store snapshot is what used to resurrect the run on GET.
+  await archiveRunArtifacts(run.id);
 
   const deleted = await fetch(`${base}/v1/runs/${run.id}`, { method: "DELETE", headers });
   assert.equal(deleted.status, 200);

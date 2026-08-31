@@ -33,7 +33,7 @@ flowchart TB
   %% ── 入口 ──
   subgraph edge["② 现网入口 · neorun.cloud · 应用机 62.234.211.200"]
     direction LR
-    Caddy["Caddy :443<br/>/ → :8080<br/>/admin/ → :8090"]
+    Caddy["Caddy :80 HTTP<br/>/ → :8080<br/>/admin/ → :8090"]
     CP["control-plane :8080<br/>/v1 · /internal · SSE · webhooks"]
     AdminAPI["admin-api :8090<br/>只给平台管理员"]
   end
@@ -48,6 +48,7 @@ flowchart TB
     Events["events<br/>总线 / transcript"]
     Collab["projects · desks<br/>automations · notify"]
     Catalog["experts · plugins<br/>物化进工作区"]
+    Speech["speech IAT 代理"]
   end
 
   %% ── 执行面 ──
@@ -63,9 +64,10 @@ flowchart TB
   %% ── 推理 ──
   subgraph llm["⑤ 推理 · 唯一持钥"]
     direction LR
-    GW["llm-gateway :8081<br/>验 run JWT · 别名 · 限流 · max_tokens≤16k"]
+    GW["llm-gateway :8081<br/>验 JWT · 别名 · 限流 · IAT · max_tokens≤16k"]
     NewAPI["New API :3000<br/>库机上游 · 不是 Neo 进程"]
     Provider["DeepSeek / OpenAI / mock"]
+    IFlytek["讯飞 IAT<br/>iat-api.xfyun.cn"]
   end
 
   %% ── 存储 ──
@@ -99,6 +101,8 @@ flowchart TB
   %% 控制面内部
   CP --> API
   API --> Orch
+  API --> Speech
+  Speech -->|"speech JWT"| GW
   Orch --> Env
   Orch --> SCM
   Orch --> Events
@@ -117,6 +121,7 @@ flowchart TB
   Pi -->|"chat/completions<br/>run JWT"| GW
   GW --> NewAPI
   NewAPI --> Provider
+  GW -->|"IAT WSS"| IFlytek
 
   %% 存储
   CP --> MySQL

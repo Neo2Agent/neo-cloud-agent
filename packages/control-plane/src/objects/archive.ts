@@ -13,14 +13,19 @@ import { artifactKey, getObjectStore } from "./store.js";
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
+export function cancelArchive(runId: string): void {
+  const previous = timers.get(runId);
+  if (previous) {
+    clearTimeout(previous);
+    timers.delete(runId);
+  }
+}
+
 export function scheduleArchive(runId: string): void {
   if (getObjectStore().kind === "none") {
     return;
   }
-  const previous = timers.get(runId);
-  if (previous) {
-    clearTimeout(previous);
-  }
+  cancelArchive(runId);
   const timer = setTimeout(() => {
     timers.delete(runId);
     void archiveRunArtifacts(runId).catch((error: unknown) => {
@@ -83,9 +88,17 @@ export async function restoreArchivedArtifacts(runId: string): Promise<{
   record: PersistedRun | null;
   events: RunEvent[];
 } | null> {
+  const current = loadPersistedRun(runId);
+  if (current?.run?.deletedAt) {
+    return { record: current, events: loadPersistedEvents(runId) };
+  }
   const loaded = await loadArchivedArtifacts(runId);
   if (!loaded) {
     return null;
+  }
+  if (loaded.record?.run?.deletedAt) {
+    persistRunRecord(loaded.record);
+    return { record: loaded.record, events: loaded.events };
   }
   if (loaded.record) {
     persistRunRecord(loaded.record);

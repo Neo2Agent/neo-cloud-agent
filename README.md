@@ -11,8 +11,8 @@
 ```
 neo-cloud-agent/
   packages/contracts        共享协议（库，不是服务）
-  packages/control-plane    进程 1：api + 编排 + 环境 + SCM + 事件 + 专家 / 插件
-  packages/llm-gateway      进程 2：唯一持有模型密钥
+  packages/control-plane    进程 1：api + 编排 + 环境 + SCM + 事件 + 专家 / 插件 + 听写代理
+  packages/llm-gateway      进程 2：唯一持有模型密钥和讯飞 IAT 密钥
   packages/worker           打进 VM / 任务容器，不是集群 Deployment
   packages/extensions       打进同一张 worker 镜像
   packages/ui               共享 Radix 控件（库）。web / desk / admin-web / mobile 引用
@@ -32,8 +32,8 @@ neo-cloud-agent/
 
 | 面 | 行为 |
 | --- | --- |
-| 对话页 | React。工具调研和模型答复按时间拆行（工具在最终答复上面）。Markdown、Diff、文件树、粘贴图片、token 用量、归档。`#/experts` / `#/skills` / `#/projects` 目录。配方和 `@` 只预填 `POST /v1/runs` |
-| 管理台 | 独立应用：本地 `pnpm dev:admin`（API `:8090` + UI `:5176`）。现网 `https://neorun.cloud/admin/`，对话页仍是 `https://neorun.cloud/`。不和对话页共用。仅平台管理员。可配置 / 下发内置专家 |
+| 对话页 | React。工具调研和模型答复按时间拆行（工具在最终答复上面）。Markdown、Diff、文件树、粘贴图片、token 用量、归档、点击听写。`#/experts` / `#/skills` / `#/projects` / `#/automations` 目录。配方和 `@` 只预填 `POST /v1/runs` |
+| 管理台 | 独立应用：本地 `pnpm dev:admin`（API `:8090` + UI `:5176`）。现网 `http://neorun.cloud/admin/`（备案未过不跳 HTTPS），对话页仍是 `/`。不和对话页共用。仅平台管理员。可审核注册用户、配置 / 下发内置专家 |
 | 模型 | 默认 DeepSeek **v4-flash**；设置里可切 Pro。退役的 `deepseek-chat` / `deepseek-reasoner` 会改写成 flash。Gateway 把 `max_tokens` 封在 16384。现网上游是库机 New API，不是第四个进程 |
 | 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错 |
 | 专家 / 技能 | `POST /v1/runs` 可带 `expertId` 或 `expertTeamId`。已安装插件物化进 `.neo/skills`。没有 `/v1/search`、没有插件 git 市场 |
@@ -41,7 +41,8 @@ neo-cloud-agent/
 | 云工具 | `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` |
 | 桌面端 | Electron 壳 + This Computer / Remote。inline 响应带 assignment；dispatch 走 inbox SSE。见 [docs/desk.md](docs/desk.md) |
 | 手机端 | Expo 壳只订 `/v1`：新开只 cloud，列表含 Desk Remote。`pnpm start` 于 `packages/mobile`；`pnpm dev:mobile` 是 :5175 实验室。见 [docs/mobile.md](docs/mobile.md) |
-| 架构图 | 现网不用登录：`https://neorun.cloud/architecture` 或 `http://62.234.211.200/architecture` |
+| 听写 | 讯飞 IAT。客户端打 `POST /v1/speech/iat`，Gateway 持 `IFLYTEK_*`。HTTP 页没有实时麦克风，点麦克风后选录音文件 |
+| 架构图 | 现网不用登录：`http://62.234.211.200/architecture`（域名可能被 DNSPod webblock） |
 
 ```mermaid
 flowchart LR

@@ -76,7 +76,6 @@ import {
   mintRunGitToken,
   openRunDraftPr,
   recoverLiveWorkers,
-  restoreArchivedRun,
   saveRunSession,
   startWorkerLeaseWatch,
   takeInbound,
@@ -218,7 +217,10 @@ const CORS = {
 } as const;
 
 async function requireRun(runId: string) {
-  return (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
+  // loadRunIntoMemory already falls back to the object-store archive.
+  // Do not call restoreArchivedRun again: a pre-delete snapshot would
+  // resurrect a soft-deleted run and overwrite deletedAt.
+  return loadRunIntoMemory(runId);
 }
 
 function denyUnless(
