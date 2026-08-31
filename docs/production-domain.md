@@ -10,7 +10,7 @@
 | 账号 | 周栋 / UIN `100046045274` |
 | 解析 | `@`、`www` → A `62.234.211.200`（DNSPod，TTL 600） |
 | 应用机 | `Halo建站-AFjg` / `lhins-b0l0d8b2`，北京六区 |
-| HTTP | **主入口（备案期间）**。`http://neorun.cloud` / `http://www.neorun.cloud` / `http://62.234.211.200/` 都直接反代，**不** 308 到 HTTPS |
+| HTTP | Caddy 对域名和 IP 都直接反代，**不** 308 到 HTTPS。备案未过时公网访问域名仍可能被 DNSPod 拦到 webblock，手机继续用 `http://62.234.211.200/` |
 | HTTPS | 证书继续续（Let's Encrypt）。备案未过时国内 443 常被重置，所以不跳 HTTPS、不下 HSTS。备案过了再改回跳转 |
 
 Caddy 用 [Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https)：`auto_https disable_redirects`，域名和 IP 的 HTTP 都听 `:80`。`/` 反代 `127.0.0.1:8080`（对话），`/admin/` 反代 `127.0.0.1:8090`（管理台，`handle_path` 去掉 `/admin`）。`flush_interval -1`。不要用 `https://neorun.cloud/a` 这种无意义路径，也不要再买第二个域名。DNS 里如果已经有 `admin` A 记录，Caddy 把 `admin.neorun.cloud` 308 到 `http://neorun.cloud/admin/`。入口层要不要换成 Nginx：不要。理由和以后真换时的对齐清单见 [nginx-research.md](./nginx-research.md)。
