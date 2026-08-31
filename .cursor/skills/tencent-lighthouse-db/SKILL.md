@@ -19,7 +19,7 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
 | 制品 | **系统镜像 Ubuntu 24.04 LTS**（已从爱马仕/Halo 应用镜像重装） | **系统镜像 Ubuntu 24.04 LTS**（`lhbp-1l4ptuvm`，`PURE_OS`）。2026-08-22 已从 OpenClaw 应用镜像重装 |
-| 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`）、`new-api`（`:3000`） |
+| 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`）、`new-api`（`:3000`）；可选阉割 Mem0（`mem0` + `mem0-pg`，`:8888` 只给应用机） |
 | 同机还有 | Ubuntu 24.04 + systemd + Caddy + Node。不要再装爱马仕 | 无。不要再装 OpenClaw |
 
 控制台列表：[北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。  
@@ -202,6 +202,36 @@ ORDER BY seq;
 ```bash
 ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql redis new-api'
 ```
+
+## 阉割 Mem0（试验，不是官方全家桶）
+
+4C/4G 库机已经有 MySQL / Redis / New API，**不要** `make up` 官方 Mem0（Dashboard 抢 `:3000`，自带 PG 无上限）。试验栈在 [mem0/](mem0/)：
+
+| 项 | 值 |
+| --- | --- |
+| 目录 | `/home/ubuntu/mem0`（和 `/home/ubuntu/db` 分开，不要写进现有 compose） |
+| 容器 | `mem0`（512Mi）+ `mem0-pg`（384Mi，`shared_buffers=128MB`） |
+| 端口 | 听 `0.0.0.0:8888`，轻量防火墙只放行应用机 `62.234.211.200/32`。Postgres **不**映射公网 |
+| Dashboard | 无 |
+| 向量 | 镜像内 `fastembed` + `BAAI/bge-small-zh-v1.5`（512 维）。New API 现网没有 embedding 渠道 |
+| 抽取 LLM | `http://new-api:3000/v1` + `deepseek-v4-flash`（同机 `dbnet`） |
+| 密钥 | `/home/ubuntu/mem0/.env`（`chmod 600`）。`OPENAI_API_KEY` 从 `/home/ubuntu/db/.new-api-token` 拷，不要打印 |
+
+默认在库机 `docker build`（腾讯 Debian / PyPI 镜像）。Cloud Agent 往库机 `docker save` 只有十几 KB/s，传不动。`MEM0_REMOTE_BUILD=0` 才改本机构建再 load：
+
+```bash
+bash .cursor/skills/tencent-lighthouse-db/mem0/deploy-mem0.sh
+```
+
+健康只报 `health_ok` / `search_ok hits=N` / `docker stats` 的 MiB，不要 `cat .env`。卸掉：`ssh lighthouse-db 'cd /home/ubuntu/mem0 && docker compose down'`（默认保留卷）。
+
+接到应用机控制面（写 `MEM0_URL` / `MEM0_API_KEY`，只重启 `neo-control-plane`）：
+
+```bash
+bash .cursor/skills/tencent-lighthouse-db/wire-mem0.sh
+```
+
+之后 `/health` 有 `mem0.configured: true`。对话页走 `GET/POST /v1/memories`；新 Run 会把检索结果写成工作区 `.neo/MEMORY.md`。密钥不上 VM。
 
 ## 给 Cloud Agent 的注意点
 

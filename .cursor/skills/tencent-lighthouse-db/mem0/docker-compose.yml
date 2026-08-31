@@ -1,0 +1,94 @@
+name: mem0-slim
+
+services:
+  mem0-pg:
+    image: pgvector/pgvector:pg17
+    container_name: mem0-pg
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.50
+    shm_size: 64mb
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=20
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - wal_buffers=8MB
+      - -c
+      - huge_pages=off
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mem0}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mem0}
+    volumes:
+      - mem0_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - mem0net
+
+  mem0:
+    image: neo-mem0-slim:1
+    container_name: mem0
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.75
+    depends_on:
+      mem0-pg:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: mem0-pg
+      POSTGRES_PORT: "5432"
+      MEM0_TELEMETRY: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://new-api:3000/v1}
+      HF_ENDPOINT: https://hf-mirror.com
+      HF_HOME: /opt/hf
+      FASTEMBED_CACHE_PATH: /opt/fastembed
+      HF_HUB_DISABLE_XET: "1"
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
+    volumes:
+      - mem0_models:/opt/fastembed
+      - mem0_hf:/opt/hf
+    ports:
+      # App host (62.234.211.200) calls this. Lighthouse firewall must stay
+      # 8888/tcp from that IP only — do not open 0.0.0.0/0.
+      - "0.0.0.0:8888:8888"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:8888/health | grep -q '\"ok\":true'",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+    networks:
+      - mem0net
+      - dbnet
+
+volumes:
+  mem0_pg_data:
+  mem0_models:
+  mem0_hf:
+
+networks:
+  mem0net:
+    driver: bridge
+  dbnet:
+    external: true
+    name: dbnet
