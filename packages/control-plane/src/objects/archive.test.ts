@@ -63,3 +63,29 @@ test("archives transcript and session then restores them from the object store",
   assert.equal(loadSessionFiles(run.id)[0]?.name, "agent/turn.jsonl");
   setObjectStoreForTests(null);
 });
+
+test("restore does not overwrite a soft-deleted run record", async () => {
+  process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-archive-del-"));
+  setObjectStoreForTests(createMemoryObjectStore());
+  const run = sampleRun("run-archive-deleted");
+  persistRunRecord({ version: 1, run, followUps: [], inbound: [] });
+  persistEvent({
+    id: "evt-1",
+    runId: run.id,
+    createdAt: run.createdAt,
+    category: "agent_run",
+    level: "info",
+    kind: "user.message",
+    title: "User message",
+    data: { text: "hello" },
+  } satisfies RunEvent);
+  await archiveRunArtifacts(run.id);
+
+  const deleted = { ...run, deletedAt: "2026-08-31T00:00:00.000Z", status: "ARCHIVED" as const };
+  persistRunRecord({ version: 1, run: deleted, followUps: [], inbound: [] });
+
+  const restored = await restoreArchivedArtifacts(run.id);
+  assert.equal(restored?.record?.run.deletedAt, "2026-08-31T00:00:00.000Z");
+  assert.equal(loadPersistedRun(run.id)?.run.deletedAt, "2026-08-31T00:00:00.000Z");
+  setObjectStoreForTests(null);
+});

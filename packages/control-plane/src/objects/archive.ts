@@ -88,6 +88,10 @@ export async function restoreArchivedArtifacts(runId: string): Promise<{
     return null;
   }
   if (loaded.record) {
+    const current = loadPersistedRun(runId);
+    if (current?.run?.deletedAt) {
+      return { record: current, events: loaded.events };
+    }
     persistRunRecord(loaded.record);
   }
   if (loaded.events.length > 0) {

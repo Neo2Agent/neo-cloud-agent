@@ -81,6 +81,7 @@ import {
   startWorkerLeaseWatch,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
+import { loadPersistedRun } from "../store/persist.js";
 import { listWorkspacePath } from "../workspace-fs.js";
 import { loadWorkspaceMeta, summarizeWorkspaceStore } from "../runtime/workspace-store.js";
 import { workspaceFor } from "../worker-spawn.js";
@@ -218,7 +219,14 @@ const CORS = {
 } as const;
 
 async function requireRun(runId: string) {
-  return (await loadRunIntoMemory(runId)) ?? (await restoreArchivedRun(runId));
+  const loaded = await loadRunIntoMemory(runId);
+  if (loaded) {
+    return loaded;
+  }
+  if (loadPersistedRun(runId)?.run?.deletedAt) {
+    return undefined;
+  }
+  return restoreArchivedRun(runId);
 }
 
 function denyUnless(

@@ -30,11 +30,13 @@ const {
   listFollowUps,
   listRuns,
   listRunSubscriptions,
+  loadRunIntoMemory,
   mintRunGitToken,
   subscribeRun,
   openRunDraftPr,
   recoverLiveWorkers,
   reloadPersistedState,
+  restoreArchivedRun,
   expireStaleWorkers,
   saveRunSession,
   takeInbound,
@@ -498,6 +500,8 @@ test("deleteRun soft-deletes archived runs and hides them from the list", async 
   reloadPersistedState();
   assert.equal(getRun(run.id), undefined);
   assert.equal(listRuns().some((item) => item.id === run.id), false);
+  assert.equal(await restoreArchivedRun(run.id), undefined);
+  assert.equal(await loadRunIntoMemory(run.id), undefined);
 });
 
 test("context.usage stores the model's window and does not invent one", async () => {

@@ -2357,7 +2357,15 @@ export function saveRunSession(runId: string, files: Array<{ name: string; conte
 
 export async function restoreArchivedRun(runId: string) {
   if (runs.has(runId)) {
-    return runs.get(runId);
+    const existing = runs.get(runId);
+    if (existing?.deletedAt) {
+      forgetDeletedRun(runId);
+      return undefined;
+    }
+    return existing;
+  }
+  if (loadPersistedRun(runId)?.run?.deletedAt) {
+    return undefined;
   }
   const restored = await restoreArchivedArtifacts(runId);
   if (!restored?.record?.run?.id || restored.record.run.deletedAt) {
