@@ -35,7 +35,7 @@ export async function runInboxLoop(loop: InboxLoop): Promise<void> {
   const sleep = loop.sleep ?? defaultSleep;
   let running = true;
   let servedTurn = false;
-  let inFlight: Promise<InboxDispatchResult> | null = null;
+  const pending: { task: Promise<InboxDispatchResult> | null } = { task: null };
   let consecutiveFailures = 0;
 
   const alive = () => running && !loop.shouldStop?.();
@@ -53,7 +53,7 @@ export async function runInboxLoop(loop: InboxLoop): Promise<void> {
 
   async function startTurn(message: WorkerInbound): Promise<void> {
     const task = handle(message);
-    inFlight = task;
+    pending.task = task;
     void task
       .then((next) => {
         if (next === "stop") {
@@ -62,20 +62,20 @@ export async function runInboxLoop(loop: InboxLoop): Promise<void> {
       })
       .catch(() => undefined)
       .finally(() => {
-        if (inFlight === task) {
-          inFlight = null;
+        if (pending.task === task) {
+          pending.task = null;
         }
       });
   }
 
   async function waitUntilStreamingOrSettled(): Promise<void> {
-    while (inFlight && !loop.isStreaming() && alive()) {
-      await Promise.race([inFlight, sleep(10)]);
+    while (pending.task && !loop.isStreaming() && alive()) {
+      await Promise.race([pending.task, sleep(10)]);
     }
   }
 
   async function applyInterrupt(message: WorkerInbound): Promise<InboxDispatchResult> {
-    if (inFlight && !loop.isStreaming()) {
+    if (pending.task && !loop.isStreaming()) {
       await waitUntilStreamingOrSettled();
     }
     return handle(message);
@@ -89,7 +89,7 @@ export async function runInboxLoop(loop: InboxLoop): Promise<void> {
         return;
       }
       if (isInterrupt(message)) {
-        const hadTurn = Boolean(inFlight);
+        const hadTurn = Boolean(pending.task);
         const next = await applyInterrupt(message);
         if (!hadTurn) {
           skipRemainingTurns = true;
@@ -106,7 +106,7 @@ export async function runInboxLoop(loop: InboxLoop): Promise<void> {
         if (skipRemainingTurns) {
           continue;
         }
-        if (!inFlight) {
+        if (!pending.task) {
           await startTurn(message);
           continue;
         }
@@ -149,22 +149,20 @@ export async function runInboxLoop(loop: InboxLoop): Promise<void> {
         servedTurn &&
         messages.length === 0 &&
         !loop.isStreaming() &&
-        !inFlight
+        !pending.task
       ) {
         break;
       }
       if (!alive()) {
         break;
       }
-      if (inFlight) {
-        await Promise.race([inFlight, sleep(loop.pollMs)]);
+      if (pending.task) {
+        await Promise.race([pending.task, sleep(loop.pollMs)]);
       } else {
         await sleep(loop.pollMs);
       }
     }
   } finally {
-    if (inFlight) {
-      await inFlight.catch(() => undefined);
-    }
+    await pending.task?.catch(() => undefined);
   }
 }
