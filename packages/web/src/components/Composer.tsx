@@ -343,7 +343,16 @@ export function Composer({
           </div>
           <div className="buddy-composer-bar-end">
             {busy && canStop ? (
-              <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
+              <button
+                type="button"
+                id="abort"
+                className="stop"
+                aria-label={stopping ? "停止中" : "停止生成"}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onStop?.();
+                }}
+              >
                 <span className="stop-icon" aria-hidden="true">
                   <IconStop size={10} />
                 </span>
@@ -415,7 +424,16 @@ export function Composer({
             </p>
             {!sendLocked ? voiceButton("composer-mic") : null}
             {busy && canStop ? (
-              <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
+              <button
+                type="button"
+                id="abort"
+                className="stop"
+                aria-label={stopping ? "停止中" : "停止生成"}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onStop?.();
+                }}
+              >
                 <span className="stop-icon" aria-hidden="true">
                   <IconStop size={10} />
                 </span>

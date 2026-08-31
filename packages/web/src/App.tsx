@@ -1067,8 +1067,9 @@ export function App() {
           setStopping(false);
           setSending(false);
         }
-      } catch {
+      } catch (error) {
         setStopping(false);
+        setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "停止失败")]);
       }
     })();
   }, [patchRun, runId]);
