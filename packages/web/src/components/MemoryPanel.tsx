@@ -68,7 +68,7 @@ export function MemoryPanel({ token }: Props) {
   };
 
   return (
-    <section className="memory-block" aria-label="记忆">
+    <section className="memory-block" id="memory-panel" aria-label="记忆">
       <p className="eyebrow">记忆</p>
       {configured ? (
         <div className="env-row memory-add">

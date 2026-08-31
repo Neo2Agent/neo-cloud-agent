@@ -3181,6 +3181,10 @@ button.composer-mic.is-listening,
     max-height: min(48vh, 420px);
   }
 
+  .app.is-buddy .workspace-drawer {
+    max-height: min(70vh, 560px);
+  }
+
   .env-row,
   .llm-row,
   .repo-row {

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
-import { IconAutomations, IconClose, IconExperts, IconNewChat, IconProjects, IconSkills, IconStar, IconTrash } from "../icons";
+import { IconAutomations, IconClose, IconExperts, IconMemory, IconNewChat, IconProjects, IconSkills, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "../turn";
@@ -34,7 +34,7 @@ type Props = {
   target?: "cloud" | "desk";
   deskDisabled?: boolean;
   onTarget?: (value: "cloud" | "desk") => void;
-  onOpenNav?: (id: "automations" | "experts" | "projects" | "skills") => void;
+  onOpenNav?: (id: "automations" | "experts" | "projects" | "skills" | "memory") => void;
 };
 
 export function Sidebar({
@@ -179,6 +179,7 @@ export function Sidebar({
                 ["experts", "专家", IconExperts],
                 ["projects", "项目", IconProjects],
                 ["skills", "技能", IconSkills],
+                ["memory", "记忆", IconMemory],
               ] as const
             ).map(([id, label, Icon]) => (
               <button key={id} type="button" onClick={() => onOpenNav?.(id)}>

@@ -48,6 +48,7 @@ import {
   IconExperts,
   IconFiles,
   IconGear,
+  IconMemory,
   IconMenu,
   IconMore,
   IconPr,
@@ -1596,6 +1597,14 @@ export function App() {
     }
   };
 
+  const openMemorySettings = () => {
+    setMainTab("chat");
+    setSettingsOpen(true);
+    window.setTimeout(() => {
+      document.getElementById("memory-panel")?.scrollIntoView({ block: "nearest" });
+    }, 0);
+  };
+
   const applyBuddyPlus = (action: BuddyPlusAction) => {
     setPlusOpen(false);
     if (action === "image" || action === "file") {
@@ -1608,6 +1617,10 @@ export function App() {
     }
     if (action === "settings" || action === "repo") {
       setSettingsOpen(true);
+      return;
+    }
+    if (action === "memory") {
+      openMemorySettings();
       return;
     }
     if (action === "expert") {
@@ -1720,6 +1733,7 @@ export function App() {
             if (id === "experts") openExperts();
             if (id === "projects") openProjects();
             if (id === "skills") openSkills();
+            if (id === "memory") openMemorySettings();
           }}
           onPin={(id) => setPinnedIds(togglePinnedRun(id))}
           onArchiveMany={(ids) => void archiveMany(ids)}
@@ -1865,6 +1879,17 @@ export function App() {
                 }}
                 onOpenProject={(id) => openProjects(id)}
               />
+              {narrow ? (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="记忆"
+                  title="记忆"
+                  onClick={openMemorySettings}
+                >
+                  <IconMemory size={16} />
+                </button>
+              ) : null}
               {narrow ? <TranscriptSearch messages={displayMessages} onJump={setHighlightId} /> : null}
               {isDeskApp() ? (
                 <span className="desk-badge" title="Desk 预览，本机执行可用">

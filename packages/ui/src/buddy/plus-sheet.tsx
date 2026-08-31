@@ -9,7 +9,8 @@ export type BuddyPlusAction =
   | "camera"
   | "new"
   | "pr"
-  | "settings";
+  | "settings"
+  | "memory";
 
 const GRID: Array<{ id: BuddyPlusAction; label: string; icon: BuddyIconName }> = [
   { id: "image", label: "图片", icon: "image" },
@@ -21,6 +22,7 @@ const GRID: Array<{ id: BuddyPlusAction; label: string; icon: BuddyIconName }> =
 ];
 
 export const BUDDY_PLUS_ROWS: Array<{ id: BuddyPlusAction; label: string; icon: BuddyIconName }> = [
+  { id: "memory", label: "记忆", icon: "doc" },
   { id: "settings", label: "设置", icon: "gear" },
   { id: "new", label: "新对话", icon: "chat" },
   { id: "pr", label: "导出 / 开 PR", icon: "pr" },
