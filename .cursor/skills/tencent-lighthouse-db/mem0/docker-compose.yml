@@ -64,7 +64,9 @@ services:
       - mem0_models:/opt/fastembed
       - mem0_hf:/opt/hf
     ports:
-      - "127.0.0.1:8888:8888"
+      # App host (62.234.211.200) calls this. Lighthouse firewall must stay
+      # 8888/tcp from that IP only — do not open 0.0.0.0/0.
+      - "0.0.0.0:8888:8888"
     healthcheck:
       test:
         [
