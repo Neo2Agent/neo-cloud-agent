@@ -330,16 +330,16 @@ export function Composer({
               <IconPlus size={20} />
             </button>
             {!sendLocked ? voiceButton("buddy-icon-btn") : null}
-          </div>
-          <div className="buddy-model">
-            <Select
-              id="agent-model"
-              size="pill"
-              aria-label="模型"
-              value={model}
-              onValueChange={onModel}
-              options={models.map((item) => ({ value: item.id, label: modelShortLabel(item.id) }))}
-            />
+            <div className="buddy-model">
+              <Select
+                id="agent-model"
+                size="pill"
+                aria-label="模型"
+                value={model}
+                onValueChange={onModel}
+                options={models.map((item) => ({ value: item.id, label: modelShortLabel(item.id) }))}
+              />
+            </div>
           </div>
           <div className="buddy-composer-bar-end">
             {busy && canStop ? (
