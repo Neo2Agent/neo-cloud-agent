@@ -19,8 +19,8 @@ HTTPS 要不要花钱、怎么开，见 [docs/production-domain.md](../../../doc
 | NS | `scallop.dnspod.net` / `mooncake.dnspod.net` |
 | 应用机 | `Halo建站-AFjg` / `lhins-b0l0d8b2` / `62.234.211.200` / 北京 `rid=8` |
 | 解析 | `@`、`www` 的 A 记录 → `62.234.211.200`，TTL 600。若有 `admin` A 记录，只 308 到 `/admin/`，不要当第三个站点 |
-| 入口 | https://neorun.cloud/ 对话（`:8080`）；https://neorun.cloud/admin/ 管理台（`:8090`）。同一域名路径，不要 `/a` `/b`，也不要再买子域 |
-| HTTPS | 已开。Let's Encrypt，Caddy 自动续。轻量控制台「设置 HTTPS」不要点 |
+| 入口 | 备案未过时公网域名可能被 DNSPod 拦到 webblock，手机用 `http://62.234.211.200/`。Caddy 对 `http://neorun.cloud/` 不再 308。管理台 `/admin/`。同一域名路径，不要 `/a` `/b`，也不要再买子域 |
+| HTTPS | 证书在续，但**不要**把 HTTP 308 到 HTTPS（国内 443 会被重置）。轻量控制台「设置 HTTPS」不要点 |
 | 库机 | **不要**绑到 `101.42.105.230` |
 
 还有一个库机账号（UIN `100047610252`）。Chrome 若登着那个号，**看不到**这台应用机，也看不到 `neorun.cloud`。扫码前确认是买域名的号。
@@ -75,7 +75,7 @@ HTTPS 要不要花钱、怎么开，见 [docs/production-domain.md](../../../doc
 
 ### 4. 主机侧
 
-现网 Caddy 用 [units/Caddyfile.https](units/Caddyfile.https)：`neorun.cloud` / `www.neorun.cloud` 走 443（Let's Encrypt），HTTP 308 到 HTTPS；`http://62.234.211.200` 仍听 `:80`。`/` → `:8080`，`/admin/` → `:8090`（`handle_path` 去掉前缀）。`flush_interval -1`。不要点控制台一键 HTTPS。不要开 8090 公网。
+现网 Caddy 用 [units/Caddyfile.https](units/Caddyfile.https)：`auto_https disable_redirects`。`http://neorun.cloud` / `www` / IP 都听 `:80` 反代，不 308 到 HTTPS，也不下 HSTS。证书仍续。`/` → `:8080`，`/admin/` → `:8090`（`handle_path` 去掉前缀）。`flush_interval -1`。不要点控制台一键 HTTPS。不要开 8090 公网。
 
 改证书配置：备份 `/etc/caddy/Caddyfile`，覆盖模板，`sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`，再 `sudo systemctl reload caddy`。看 `journalctl -u caddy` 里是否有 `certificate obtained successfully`。只听 `:80` 的旧模板在 [../tencent-lighthouse-deploy/units/Caddyfile](../tencent-lighthouse-deploy/units/Caddyfile)。
 
@@ -88,13 +88,13 @@ dig +short A neorun.cloud @1.1.1.1
 dig +short A www.neorun.cloud @1.1.1.1
 # 期望两行都是 62.234.211.200
 
-curl -sS -o /dev/null -w "%{http_code}\n" --resolve neorun.cloud:443:62.234.211.200 https://neorun.cloud/
-curl -sS --resolve neorun.cloud:443:62.234.211.200 https://neorun.cloud/ | grep -E "<title>|Neo Cloud Agent"
-curl -sS --resolve neorun.cloud:443:62.234.211.200 https://neorun.cloud/admin/ | grep -E "<title>|Neo 管理台"
-# 机上：HTTP 主机名应 308 到 https://neorun.cloud/
+curl -sS -o /dev/null -w "%{http_code}\n" --resolve neorun.cloud:80:62.234.211.200 http://neorun.cloud/
+curl -sS --resolve neorun.cloud:80:62.234.211.200 http://neorun.cloud/ | grep -E "<title>|Neo Cloud Agent"
+curl -sS --resolve neorun.cloud:80:62.234.211.200 http://neorun.cloud/admin/ | grep -E "<title>|Neo 管理台"
+# 备案期间：HTTP 主机名应 200，不能 308 到 https://
 ```
 
-期望：对话 HTTPS `200`，标题 `Neo Cloud Agent`；管理台 `/admin/` 标题 `Neo 管理台`。证书 CN `neorun.cloud`。登录仍是手输 `admin` / `123456`，不要把密码写进新文档以外的聊天。
+期望：对话 HTTP `200`，标题 `Neo Cloud Agent`；管理台 `/admin/` 标题 `Neo 管理台`。登录仍是手输 `admin` / `123456`，不要把密码写进新文档以外的聊天。
 
 ## 排障
 

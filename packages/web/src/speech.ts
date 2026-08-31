@@ -1,4 +1,10 @@
-import { createBrowserPcmCapture, startCloudVoice, type StartVoiceResult } from "@neo-cloud-agent/ui/speech";
+import {
+  pageAllowsLiveMic,
+  pickAudioFile,
+  startPageVoice,
+  type PcmCapture,
+  type StartVoiceResult,
+} from "@neo-cloud-agent/ui/speech";
 import { speechIat, speechStatus } from "./api";
 
 /** Second click returns spoken text for the composer. Never sends. */
@@ -13,12 +19,24 @@ export function applyClickVoice(current: string, spoken: string): string {
   return base ? `${base} ${next}` : next;
 }
 
+export type StartWebVoiceDeps = {
+  allowLiveMic?: boolean;
+  pickFile?: () => Promise<File | null>;
+  decodeFile?: (file: Blob) => Promise<Uint8Array>;
+  liveCapture?: PcmCapture;
+};
+
 export async function startWebVoice(
   token: string,
   onPreview: (text: string) => void,
   onError?: (message: string) => void,
   onEnded?: () => void,
+  deps: StartWebVoiceDeps = {},
 ): Promise<StartVoiceResult> {
+  const allowLiveMic = deps.allowLiveMic ?? pageAllowsLiveMic();
+  const picking = allowLiveMic
+    ? undefined
+    : (deps.pickFile ?? (typeof document === "undefined" ? async () => null : pickAudioFile))();
   try {
     const status = await speechStatus(token);
     if (!status.configured) {
@@ -27,5 +45,10 @@ export async function startWebVoice(
   } catch (error) {
     return { kind: "error", message: error instanceof Error ? error.message : "听写服务不可用" };
   }
-  return startCloudVoice((body) => speechIat(token, body), createBrowserPcmCapture(), onPreview, onError, onEnded);
+  return startPageVoice((body) => speechIat(token, body), onPreview, onError, onEnded, {
+    allowLiveMic,
+    pickFile: picking ? async () => picking : deps.pickFile,
+    decodeFile: deps.decodeFile,
+    liveCapture: deps.liveCapture,
+  });
 }

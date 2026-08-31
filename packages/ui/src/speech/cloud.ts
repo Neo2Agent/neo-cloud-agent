@@ -4,10 +4,14 @@ export type VoiceSession = {
 
 export type StartVoiceResult =
   | { kind: "session"; session: VoiceSession }
+  | { kind: "transcript"; text: string }
+  | { kind: "cancelled" }
   | { kind: "error"; message: string };
 
-export const INSECURE_MIC_HINT = "当前页面不是 HTTPS，浏览器不给麦克风。请打开 https://neorun.cloud 再试。";
-export const UNSUPPORTED_MIC_HINT = "这个浏览器不支持麦克风。请换 Chrome / Safari，或打开 https://neorun.cloud。";
+export const INSECURE_MIC_HINT = "当前是 HTTP，浏览器不给实时麦克风。请点麦克风选一段录音，或直接打字。";
+export const UNSUPPORTED_MIC_HINT = "这个浏览器不支持麦克风。请换 Chrome / Safari，或直接打字。";
+export const EMPTY_RECORDING_HINT = "没听清，请再录一次，或直接打字。";
+export const BAD_RECORDING_HINT = "读不了这段录音。请换 wav / m4a / mp3，或直接打字。";
 
 export function describeSpeechError(message: string): string {
   if (/rate_limited/i.test(message)) return "听写请求太密，请稍后再试。";

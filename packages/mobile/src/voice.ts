@@ -4,6 +4,8 @@ export type VoiceSession = {
 
 export type StartVoiceResult =
   | { kind: "session"; session: VoiceSession }
+  | { kind: "transcript"; text: string }
+  | { kind: "cancelled" }
   | { kind: "error"; message: string };
 
 /** Same threshold as ui `HOLD_MS`. Kept here so tests do not load the ui barrel. */

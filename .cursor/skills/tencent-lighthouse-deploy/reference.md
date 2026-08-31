@@ -125,7 +125,7 @@ sudo cp units/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，对外用 `https://neorun.cloud/` 对话、`https://neorun.cloud/admin/` 管理台，不要让用户去记 `:8080` / `:8090`。8090 只听本机。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
+必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，备案期间对外用 `http://neorun.cloud/` 对话、`http://neorun.cloud/admin/` 管理台（不 308 到 HTTPS），不要让用户去记 `:8080` / `:8090`。8090 只听本机。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
 
 ## 系统镜像
 

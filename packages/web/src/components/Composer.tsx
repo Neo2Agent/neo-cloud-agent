@@ -5,7 +5,7 @@ import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
-import type { VoiceSession } from "@neo-cloud-agent/ui/speech";
+import { pageAllowsLiveMic, type VoiceSession } from "@neo-cloud-agent/ui/speech";
 import { Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
 import { readToken } from "../api";
 import type { DeskTarget } from "../desk";
@@ -181,17 +181,26 @@ export function Composer({
     }
     if (!canStartVoice || startingRef.current) return;
     startingRef.current = true;
+    const oneShot = !pageAllowsLiveMic();
     setVoiceError("");
+    if (oneShot) setFinishing(true);
     try {
       const result = await startWebVoice(readToken(), () => undefined, (message) => setVoiceError(message));
+      if (result.kind === "cancelled") return;
       if (result.kind === "error") {
         setVoiceError(result.message);
+        return;
+      }
+      if (result.kind === "transcript") {
+        const next = applyClickVoice(promptRef.current, result.text);
+        if (next !== promptRef.current) onPrompt(next);
         return;
       }
       voiceRef.current = result.session;
       setListening(true);
     } finally {
       startingRef.current = false;
+      if (oneShot) setFinishing(false);
     }
   };
   const voiceButton = (className: string) => (
