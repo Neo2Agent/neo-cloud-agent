@@ -7,12 +7,9 @@ import { inspectSessionContext } from "./context-usage.js";
 import { contextUsageEvent, emptyAgentTurnEvent, stampWorkerSeq, toRunEvents, turnFinishedEvent, type LooseAgentEvent } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { readSessionBackupPolicy, shouldBackupSession } from "./session-backup-schedule.js";
+import { runInboxLoop } from "./inbox-loop.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
 import { abortNestedSubagents } from "./subagent.js";
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function backupSession(runId: string, sessionDir: string): Promise<void> {
   try {
@@ -207,53 +204,36 @@ async function main(): Promise<void> {
     void stop();
   });
 
-  let consecutiveFailures = 0;
   const maxFailures = Number(process.env.WORKER_INBOX_MAX_FAILURES ?? 75);
-  let servedTurn = false;
 
   try {
-    while (running) {
-      let messages;
-      try {
-        messages = await pullInbox(config.runId);
-        consecutiveFailures = 0;
-      } catch (error: unknown) {
-        consecutiveFailures += 1;
+    await runInboxLoop({
+      pull: () => pullInbox(config.runId),
+      dispatch: async (message) => {
+        console.log(`[worker ${config.runId}] ${describeDispatch(message)}`);
+        return dispatchInbound(session, message);
+      },
+      afterUserTurn: async () => {
+        try {
+          await enqueueEvents(config.runId, stampWorkerSeq([turnFinishedEvent(config.runId)], workerSeq));
+        } catch (error: unknown) {
+          console.error("failed to push turn end", error);
+        }
+      },
+      isStreaming: () => session.isStreaming,
+      pollMs: config.pollMs,
+      exitAfterTurn: config.exitAfterTurn,
+      shouldStop: () => !running,
+      onPullError: async (error, consecutiveFailures) => {
         console.error(`inbox unavailable (${consecutiveFailures}/${maxFailures}), retrying`, error);
         if (consecutiveFailures >= maxFailures) {
           throw new Error(`control plane unreachable after ${maxFailures} inbox attempts`);
         }
-        await sleep(config.pollMs);
-        continue;
-      }
-      for (const message of messages) {
-        console.log(`[worker ${config.runId}] ${describeDispatch(message)}`);
-        if (message.type === "prompt" || message.type === "steer" || message.type === "follow_up") {
-          servedTurn = true;
-        }
-        const next = await dispatchInbound(session, message);
-        if (message.type === "prompt" || message.type === "steer" || message.type === "follow_up") {
-          try {
-            await enqueueEvents(config.runId, stampWorkerSeq([turnFinishedEvent(config.runId)], workerSeq));
-          } catch (error: unknown) {
-            console.error("failed to push turn end", error);
-          }
-        }
-        if (next === "stop") {
-          running = false;
-          break;
-        }
-      }
-      // `session.prompt` is awaited, so an empty inbox here means the turn is
-      // finished and nothing else was queued behind it.
-      if (running && config.exitAfterTurn && servedTurn && messages.length === 0 && !session.isStreaming) {
-        console.log(`[worker ${config.runId}] turn finished, exiting`);
-        running = false;
-        break;
-      }
-      if (running) {
-        await sleep(config.pollMs);
-      }
+        return "retry";
+      },
+    });
+    if (config.exitAfterTurn) {
+      console.log(`[worker ${config.runId}] turn finished, exiting`);
     }
   } finally {
     clearInterval(incrementalBackup);

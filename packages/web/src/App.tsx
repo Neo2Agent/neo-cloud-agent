@@ -301,11 +301,15 @@ export function App() {
   const keepPendingRef = useRef(false);
   const currentStatusRef = useRef<string | null | undefined>(null);
   const projectNamesRef = useRef(projectNames);
+  const runIdRef = useRef(runId);
+  const stoppingRef = useRef(false);
   tokenRef.current = token;
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
   currentStatusRef.current = currentRun?.status;
   projectNamesRef.current = projectNames;
+  runIdRef.current = runId;
+  stoppingRef.current = stopping;
 
   const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
   const contextUsage = useMemo(() => {
@@ -1055,23 +1059,28 @@ export function App() {
   }, [agentMode, currentRun, desks, deskTarget.deskId, images, prompt, runId]);
 
   const stopTurn = useCallback(() => {
-    if (!runId) return;
+    const id = runIdRef.current;
+    if (!id || stoppingRef.current) return;
+    stoppingRef.current = true;
     setStopping(true);
     void (async () => {
       try {
-        const response = await api(tokenRef.current, `/v1/runs/${runId}/abort`, { method: "POST" });
+        const response = await api(tokenRef.current, `/v1/runs/${id}/abort`, { method: "POST" });
         const body = await readJson<Run & { error?: string }>(response);
         if (!response.ok) throw new Error(body.error || "停止失败");
-        patchRun(runId, (run) => ({ ...run, ...body }));
+        patchRun(id, (run) => ({ ...run, ...body }));
         if (!isActiveRunStatus(body.status)) {
+          stoppingRef.current = false;
           setStopping(false);
           setSending(false);
         }
-      } catch {
+      } catch (error) {
+        stoppingRef.current = false;
         setStopping(false);
+        setMessages((prev) => [...prev, localErrorMessage(id, error instanceof Error ? error.message : "停止失败")]);
       }
     })();
-  }, [patchRun, runId]);
+  }, [patchRun]);
 
   const commitWorkspace = useCallback(
     async (message: string) => {

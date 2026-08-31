@@ -1169,6 +1169,8 @@ button.send {
   min-height: 36px;
   padding: 0;
   cursor: pointer;
+  position: relative;
+  z-index: 2;
 }
 
 button.send {

@@ -242,6 +242,8 @@
 .buddy-composer-bar-end {
   justify-content: flex-end;
   margin-left: auto;
+  position: relative;
+  z-index: 2;
 }
 
 .buddy-composer-bar .buddy-icon-btn,
