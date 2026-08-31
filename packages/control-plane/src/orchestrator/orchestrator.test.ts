@@ -257,6 +257,20 @@ test("abort with a live worker queues abort and leaves the run running", async (
   assert.equal(inbox[0]?.type, "abort");
 });
 
+test("abort after a lost handle still queues abort for a running turn", async () => {
+  const run = await createRun({
+    prompt: "handle lost mid-turn",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  reloadPersistedState();
+  assert.equal(getRun(run.id)?.status, "RUNNING");
+  const aborted = abortRun(run.id);
+  assert.equal(aborted.status, "RUNNING");
+  const inbox = takeInbound(run.id);
+  assert.ok(inbox.some((item) => item.type === "abort"));
+});
+
 test("abort without a worker leaves the chat idle so it can continue", async () => {
   const run = await createRun({
     prompt: "lost then abort",

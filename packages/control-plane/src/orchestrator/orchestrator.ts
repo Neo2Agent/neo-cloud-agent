@@ -2206,6 +2206,8 @@ export async function deleteRun(runId: string): Promise<{ ok: true; id: string; 
   return { ok: true, id: runId, deletedAt };
 }
 
+const LIVE_ABORT_STATUSES = new Set(["RUNNING", "WAITING_FOR_BACKGROUND_WORK", "INSTALLING", "PROVISIONING"]);
+
 export function abortRun(runId: string): Run {
   const run = runs.get(runId);
   if (!run) {
@@ -2215,7 +2217,9 @@ export function abortRun(runId: string): Run {
     return run;
   }
   clearActiveTurn(runId);
-  inbound.get(runId)?.push({ type: "abort" });
+  const queued = inbound.get(runId) ?? [];
+  inbound.set(runId, queued);
+  queued.push({ type: "abort" });
   if (isDeskTarget(run.executionTarget)) {
     pushDeskInbox(run.executionTarget.deskId ?? "", { kind: "cancel", runId, reason: "用户停止" });
     run.status = "IDLE";
@@ -2227,6 +2231,18 @@ export function abortRun(runId: string): Run {
     return run;
   }
   if (isWorkerAttached(runId)) {
+    run.updatedAt = now();
+    flushRun(runId);
+    return run;
+  }
+  if (LIVE_ABORT_STATUSES.has(run.status)) {
+    // Handle/heartbeat may have been dropped while the worker is still inside
+    // session.prompt(). Keep abort and drop unstarted user turns so Stop can
+    // still interrupt instead of looking dead.
+    inbound.set(
+      runId,
+      queued.filter((item) => item.type === "abort" || item.type === "shutdown"),
+    );
     run.updatedAt = now();
     flushRun(runId);
     return run;

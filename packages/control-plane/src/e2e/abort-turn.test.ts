@@ -89,4 +89,12 @@ test("abort during a slow mock stream idles the run before the stream would fini
     Date.now() - abortStarted < 5_000,
     `stop should interrupt the slow mock stream, took ${Date.now() - abortStarted}ms`,
   );
+  const transcript = (await (await fetch(`${apiBase}/v1/runs/${run.id}/transcript`)).json()) as {
+    snapshot?: { messages?: Array<{ role?: string; text?: string }> };
+  };
+  const assistant = (transcript.snapshot?.messages ?? [])
+    .filter((item) => item.role === "assistant")
+    .map((item) => item.text ?? "")
+    .join("");
+  assert.equal(assistant.includes("不会再开第二个 worker"), false, assistant);
 });
