@@ -28,6 +28,7 @@ import { AutomationsPage } from "./components/AutomationsPage";
 import { ExpertsPage } from "./components/ExpertsPage";
 import { SkillsPage } from "./components/SkillsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
+import { MemoryPanel } from "./components/MemoryPanel";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
@@ -1864,6 +1865,7 @@ export function App() {
                 }}
                 onOpenProject={(id) => openProjects(id)}
               />
+              {narrow ? <TranscriptSearch messages={displayMessages} onJump={setHighlightId} /> : null}
               {isDeskApp() ? (
                 <span className="desk-badge" title="Desk 预览，本机执行可用">
                   Desk
@@ -2040,6 +2042,7 @@ export function App() {
                   void openRun(id);
                 }}
               />
+              {token ? <MemoryPanel token={token} /> : null}
                 <SettingsPanel
                   repo={repo}
                   envId={envId}

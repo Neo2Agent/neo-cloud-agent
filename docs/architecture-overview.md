@@ -707,6 +707,7 @@ GET    /v1/vms
 GET    /v1/rate-limits
 GET    /v1/quota
 GET|POST /v1/settings/llm|scm|notify|quota|mcp
+GET|POST /v1/memories                    设置抽屉看/记；DELETE /v1/memories/:id
 ```
 
 ### Run

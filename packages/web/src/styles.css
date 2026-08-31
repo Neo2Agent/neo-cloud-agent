@@ -302,8 +302,53 @@ button[type="submit"]:disabled {
   font-size: 12px;
 }
 
-.vm-block .eyebrow {
+.vm-block .eyebrow,
+.memory-block .eyebrow {
   margin-bottom: 8px;
+}
+
+.memory-block {
+  margin: 0 0 14px;
+}
+
+.memory-add {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.memory-block .run-search {
+  margin-bottom: 8px;
+}
+
+.memory-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+
+.memory-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-2);
+}
+
+.memory-row span {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.memory-row .pin {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 4px;
 }
 
 .vm-rail {
@@ -1460,7 +1505,8 @@ button.send:disabled {
 #scm-status,
 #quota-status,
 #mcp-status,
-#notify-status {
+#notify-status,
+#memory-status {
   margin: 2px 0 8px;
 }
 
@@ -3155,6 +3201,7 @@ button.composer-mic.is-listening,
   .auth-card input,
   .settings-panel input,
   .settings-panel select,
+  .memory-block input,
   .auto-page input,
   .auto-page select,
   .proj-page input,
@@ -4161,5 +4208,14 @@ html.is-narrow,
   .top-actions .inbox-btn {
     min-width: 44px;
     min-height: 44px;
+  }
+
+  .app.is-buddy .transcript-search .tab-label {
+    display: none;
+  }
+
+  .app.is-buddy .run-search,
+  .app.is-buddy .transcript-search-row input {
+    font-size: 16px;
   }
 }

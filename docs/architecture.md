@@ -777,7 +777,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Cloud MCP | `neo-diag` extension | 动态工具，不必改 pi |
 | MCP / Hooks | 工作区 skills / `AGENTS.md` + `.cursor/hooks.json` command hooks | 不加载宿主机 `~/.pi` extensions |
 | GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 开 PR 自动订阅；CI 失败 autofix 到绿 |
-| 用户记忆 | `neo_memory_add` / `neo_memory_search` + `/v1/memories` | 控制面代理 Mem0；密钥不上 VM |
+| 用户记忆 | `neo_memory_add` / `neo_memory_search` + `/v1/memories` | 控制面代理 Mem0；设置抽屉看/记/删；密钥不上 VM |
 | Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置；分期见 [browser-computer-use.md](./browser-computer-use.md) |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
