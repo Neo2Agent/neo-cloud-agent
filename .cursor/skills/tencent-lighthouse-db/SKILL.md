@@ -19,7 +19,7 @@ description: Operate Docker MySQL 8.4 and Redis 7 on the new Beijing Lighthouse 
 | 公网 | `62.234.211.200` | `101.42.105.230` |
 | 规格 | 4C / 4G / 40G Ubuntu | 4C / 4G / 40G Ubuntu 24.04，北京 `rid=8` |
 | 制品 | **系统镜像 Ubuntu 24.04 LTS**（已从爱马仕/Halo 应用镜像重装） | **系统镜像 Ubuntu 24.04 LTS**（`lhbp-1l4ptuvm`，`PURE_OS`）。2026-08-22 已从 OpenClaw 应用镜像重装 |
-| 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`）、`new-api`（`:3000`） |
+| 跑什么 | control-plane / llm-gateway / Caddy / loop 槽 | `db-mysql`（`mysql:8.4`）、`db-redis`（`redis:7-alpine`）、`new-api`（`:3000`）；可选阉割 Mem0（`mem0` + `mem0-pg`，只听 `127.0.0.1:8888`） |
 | 同机还有 | Ubuntu 24.04 + systemd + Caddy + Node。不要再装爱马仕 | 无。不要再装 OpenClaw |
 
 控制台列表：[北京六区](https://console.cloud.tencent.com/lighthouse/instance/index?rid=8)。  
@@ -202,6 +202,32 @@ ORDER BY seq;
 ```bash
 ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql redis new-api'
 ```
+
+## 阉割 Mem0（试验，不是官方全家桶）
+
+4C/4G 库机已经有 MySQL / Redis / New API，**不要** `make up` 官方 Mem0（Dashboard 抢 `:3000`，自带 PG 无上限）。试验栈在 [mem0/](mem0/)：
+
+| 项 | 值 |
+| --- | --- |
+| 目录 | `/home/ubuntu/mem0`（和 `/home/ubuntu/db` 分开，不要写进现有 compose） |
+| 容器 | `mem0`（512Mi）+ `mem0-pg`（384Mi，`shared_buffers=128MB`） |
+| 端口 | 只绑 `127.0.0.1:8888`。Postgres **不**映射公网 |
+| Dashboard | 无 |
+| 向量 | 镜像内 `fastembed` + `BAAI/bge-small-zh-v1.5`（512 维）。New API 现网没有 embedding 渠道 |
+| 抽取 LLM | `http://new-api:3000/v1` + `deepseek-v4-flash`（同机 `dbnet`） |
+| 密钥 | `/home/ubuntu/mem0/.env`（`chmod 600`）。`OPENAI_API_KEY` 从 `/home/ubuntu/db/.new-api-token` 拷，不要打印 |
+
+本机构建镜像再 `docker load` 到库机（库机 4G 上现场 `docker build` 容易和 MySQL 抢内存）：
+
+```bash
+docker build -t neo-mem0-slim:1 .cursor/skills/tencent-lighthouse-db/mem0
+docker save neo-mem0-slim:1 | gzip | ssh lighthouse-db 'gzip -dc | docker load'
+rsync -a --exclude '.env' .cursor/skills/tencent-lighthouse-db/mem0/ lighthouse-db:/home/ubuntu/mem0/
+ssh lighthouse-db 'bash /home/ubuntu/mem0/provision-mem0.sh && cd /home/ubuntu/mem0 && docker compose up -d'
+ssh lighthouse-db 'bash /home/ubuntu/mem0/smoke-mem0.sh'
+```
+
+健康只报 `health_ok` / `search_ok hits=N` / `docker stats` 的 MiB，不要 `cat .env`。卸掉：`ssh lighthouse-db 'cd /home/ubuntu/mem0 && docker compose down'`（默认保留卷）。控制面还没有 `MEM0_*`，对话页不会自动用这套。
 
 ## 给 Cloud Agent 的注意点
 
