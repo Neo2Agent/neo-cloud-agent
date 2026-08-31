@@ -16,4 +16,6 @@ test("appendUserMemory skips empty blocks", () => {
   assert.equal(appendUserMemory("base", "  \n"), "base");
   assert.match(appendUserMemory("base", "- 用 pnpm"), /Recalled user memory/);
   assert.match(appendUserMemory("base", "- 用 pnpm"), /用 pnpm/);
+  assert.match(appendUserMemory("base", "- 用 pnpm"), /neo_memory_add/);
+  assert.match(appendUserMemory("base", "- 用 pnpm"), /neo_memory_search/);
 });

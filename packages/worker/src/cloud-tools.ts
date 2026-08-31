@@ -40,6 +40,8 @@ export function createPiCloudTools(ctx: CloudToolContext) {
   const mcpCall = byName.get("neo_mcp_call")!;
   const subagent = byName.get("neo_subagent")!;
   const subscribe = byName.get("neo_subscribe")!;
+  const memorySearch = byName.get("neo_memory_search")!;
+  const memoryAdd = byName.get("neo_memory_add")!;
 
   return [
     defineTool({
@@ -155,6 +157,25 @@ export function createPiCloudTools(ctx: CloudToolContext) {
         ),
       }),
       execute: async (_id, params) => toPiResult(await subscribe.execute((params ?? {}) as Record<string, unknown>)),
+    }),
+    defineTool({
+      name: memorySearch.name,
+      label: memorySearch.label,
+      description: memorySearch.description,
+      parameters: Type.Object({
+        query: Type.String({ description: "What to look up" }),
+        limit: Type.Optional(Type.Number({ description: "Max hits. Default 8." })),
+      }),
+      execute: async (_id, params) => toPiResult(await memorySearch.execute((params ?? {}) as Record<string, unknown>)),
+    }),
+    defineTool({
+      name: memoryAdd.name,
+      label: memoryAdd.label,
+      description: memoryAdd.description,
+      parameters: Type.Object({
+        text: Type.String({ description: "One short fact to store" }),
+      }),
+      execute: async (_id, params) => toPiResult(await memoryAdd.execute((params ?? {}) as Record<string, unknown>)),
     }),
   ];
 }

@@ -27,9 +27,13 @@ test("session tools include filesystem tools plus neo-git, neo-pr, and neo-diag"
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_mcp_list/);
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_subagent/);
   assert.match(CLOUD_SYSTEM_PROMPT, /neo_subscribe/);
+  assert.match(CLOUD_SYSTEM_PROMPT, /neo_memory_add/);
+  assert.match(CLOUD_SYSTEM_PROMPT, /neo_memory_search/);
   assert.match(CLOUD_SYSTEM_PROMPT, /Do not `git commit`/);
   assert.deepEqual(sessionToolNames({ includeSubagent: false }).includes("neo_subagent"), false);
   assert.deepEqual(sessionToolNames({ includeSubagent: false }).includes("neo_subscribe"), false);
+  assert.equal(sessionToolNames({ includeSubagent: false }).includes("neo_memory_add"), true);
+  assert.equal(sessionToolNames({ includeSubagent: false }).includes("neo_memory_search"), true);
 });
 
 test("createPiCloudTools wraps extension execute into pi tool results", async () => {

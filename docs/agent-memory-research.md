@@ -298,7 +298,7 @@ Agent 记忆是另一件事：
 
 ### 第 2 期：工具 + 管理面
 
-`neo_memory_search` / `neo_memory_add` 走 `/internal`，和 `neo_mcp_*` 一样密钥不上 VM。管理台能按用户 / 项目看记忆、审计抽取失败。不要做「专家市场」。
+`neo_memory_search` / `neo_memory_add` 已走 `POST /internal/runs/:id/memories`，和 `neo_mcp_*` 一样密钥不上 VM。管理台按用户看记忆、审计抽取失败仍未做。不要做「专家市场」。
 
 ### 刻意后置
 

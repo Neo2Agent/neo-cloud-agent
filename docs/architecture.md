@@ -355,6 +355,7 @@ pi-ai                        ← 多 Provider 流式、用量、自定义 baseUr
 | `neo-diag` | `neo_diag` 读 `GET /internal/runs/:id/diagnostics` 和工作区 `.neo/logs` |
 | `neo-subagent` | `neo_subagent`：worker 内嵌套 session，不占第二槽，也不把 loop 打回控制面 |
 | `neo-subscribe` | `neo_subscribe` → `POST /internal/runs/:id/subscriptions`；GitHub 评论 / Actions 经 `POST /webhooks/github` 进跟进队列 |
+| `neo-memory` | `neo_memory_add` / `neo_memory_search` → `POST /internal/runs/:id/memories`；按 run.userId 写/搜 Mem0，密钥不进 worker |
 
 策略类拦截（禁止 `curl` 外带、禁止读 `/opt/neo/worker` 证书）用 extension 的 tool hook，而不是改 `bash` 实现。工作区 `.cursor/hooks.json` / `.neo/hooks.json` 的 command hooks（`preToolUse`、`beforeShellExecution`、`afterFileEdit`、`stop`）走 pi 的 inline `tool_call` 钩子；**不**加载宿主机 `~/.cursor/hooks.json` 或 pi host extensions。
 
@@ -776,6 +777,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Cloud MCP | `neo-diag` extension | 动态工具，不必改 pi |
 | MCP / Hooks | 工作区 skills / `AGENTS.md` + `.cursor/hooks.json` command hooks | 不加载宿主机 `~/.pi` extensions |
 | GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 开 PR 自动订阅；CI 失败 autofix 到绿 |
+| 用户记忆 | `neo_memory_add` / `neo_memory_search` + `/v1/memories` | 控制面代理 Mem0；密钥不上 VM |
 | Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置；分期见 [browser-computer-use.md](./browser-computer-use.md) |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |
