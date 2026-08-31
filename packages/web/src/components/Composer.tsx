@@ -348,6 +348,11 @@ export function Composer({
                 id="abort"
                 className="stop"
                 aria-label={stopping ? "停止中" : "停止生成"}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onStop?.();
+                }}
                 onClick={(event) => {
                   event.preventDefault();
                   onStop?.();
@@ -429,6 +434,11 @@ export function Composer({
                 id="abort"
                 className="stop"
                 aria-label={stopping ? "停止中" : "停止生成"}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onStop?.();
+                }}
                 onClick={(event) => {
                   event.preventDefault();
                   onStop?.();
