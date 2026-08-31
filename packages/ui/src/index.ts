@@ -7,7 +7,7 @@ export { Tooltip, TooltipProvider } from "./tooltip";
 export { BuddyHome } from "./buddy/home";
 export { BuddyIcon, type BuddyIconName } from "./buddy/icons";
 export { BuddyMascot } from "./buddy/mascot";
-export { BuddyPlusSheet, type BuddyPlusAction } from "./buddy/plus-sheet";
+export { BuddyPlusSheet, BUDDY_PLUS_ROWS, type BuddyPlusAction } from "./buddy/plus-sheet";
 export { BuddyTargetToggle } from "./buddy/target-toggle";
 export { BUDDY_SHORTCUTS, buddySkillsFromRecipes, padBuddyGrid, type BuddySkill } from "./buddy/catalog";
 export {

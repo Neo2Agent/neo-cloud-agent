@@ -8,7 +8,8 @@ export type BuddyPlusAction =
   | "skill"
   | "camera"
   | "new"
-  | "pr";
+  | "pr"
+  | "settings";
 
 const GRID: Array<{ id: BuddyPlusAction; label: string; icon: BuddyIconName }> = [
   { id: "image", label: "图片", icon: "image" },
@@ -19,7 +20,8 @@ const GRID: Array<{ id: BuddyPlusAction; label: string; icon: BuddyIconName }> =
   { id: "camera", label: "拍照", icon: "camera" },
 ];
 
-const ROWS: Array<{ id: BuddyPlusAction; label: string; icon: BuddyIconName }> = [
+export const BUDDY_PLUS_ROWS: Array<{ id: BuddyPlusAction; label: string; icon: BuddyIconName }> = [
+  { id: "settings", label: "设置", icon: "gear" },
   { id: "new", label: "新对话", icon: "chat" },
   { id: "pr", label: "导出 / 开 PR", icon: "pr" },
 ];
@@ -50,7 +52,7 @@ export function BuddyPlusSheet({ open, canOpenPr = false, onClose, onAction }: P
           ))}
         </div>
         <ul className="buddy-sheet-rows">
-          {ROWS.map((item) => (
+          {BUDDY_PLUS_ROWS.map((item) => (
             <li key={item.id}>
               <button type="button" disabled={item.id === "pr" && !canOpenPr} onClick={() => onAction(item.id)}>
                 <BuddyIcon name={item.icon} size={18} />

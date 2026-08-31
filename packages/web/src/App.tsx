@@ -1602,7 +1602,7 @@ export function App() {
       cameraPickRef.current?.click();
       return;
     }
-    if (action === "repo") {
+    if (action === "settings" || action === "repo") {
       setSettingsOpen(true);
       return;
     }
@@ -2394,7 +2394,6 @@ export function App() {
               onStop={stopTurn}
               layout={narrow ? "buddy" : "default"}
               followUp={Boolean(runId)}
-              onOpenSettings={() => setSettingsOpen(true)}
               onOpenPlus={() => setPlusOpen(true)}
             />
           ) : null}

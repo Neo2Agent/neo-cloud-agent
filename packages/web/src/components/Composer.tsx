@@ -9,7 +9,7 @@ import { pageAllowsLiveMic, type VoiceSession } from "@neo-cloud-agent/ui/speech
 import { Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
 import { readToken } from "../api";
 import type { DeskTarget } from "../desk";
-import { IconArrowUp, IconGear, IconMic, IconPlus, IconStop } from "../icons";
+import { IconArrowUp, IconMic, IconPlus, IconStop } from "../icons";
 import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
 import { applyClickVoice, startWebVoice } from "../speech";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
@@ -60,7 +60,6 @@ type Props = {
   onStop?: () => void;
   layout?: "default" | "buddy";
   followUp?: boolean;
-  onOpenSettings?: () => void;
   onOpenPlus?: () => void;
 };
 
@@ -108,7 +107,6 @@ export function Composer({
   onStop,
   layout = "default",
   followUp = false,
-  onOpenSettings,
   onOpenPlus,
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
@@ -310,9 +308,12 @@ export function Composer({
       ) : null}
       {buddy ? (
         <div className="buddy-composer-bar">
-          <button type="button" className="buddy-icon-btn" aria-label="设置" onClick={onOpenSettings}>
-            <IconGear size={18} />
-          </button>
+          <div className="buddy-composer-bar-start">
+            <button type="button" className="buddy-plus" aria-label="添加" onClick={onOpenPlus}>
+              <IconPlus size={20} />
+            </button>
+            {!sendLocked ? voiceButton("buddy-icon-btn") : null}
+          </div>
           <div className="buddy-model">
             <Select
               id="agent-model"
@@ -323,21 +324,19 @@ export function Composer({
               options={models.map((item) => ({ value: item.id, label: modelShortLabel(item.id) }))}
             />
           </div>
-          {busy && canStop ? (
-            <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
-              <span className="stop-icon" aria-hidden="true">
-                <IconStop size={10} />
-              </span>
-            </button>
-          ) : empty ? null : (
-            <button type="submit" id="send" className="send" disabled={sendLocked || busy} aria-label="发送">
-              <IconArrowUp size={16} />
-            </button>
-          )}
-          {!sendLocked ? voiceButton("buddy-icon-btn composer-mic") : null}
-          <button type="button" className="buddy-plus" aria-label="添加" onClick={onOpenPlus}>
-            <IconPlus size={20} />
-          </button>
+          <div className="buddy-composer-bar-end">
+            {busy && canStop ? (
+              <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
+                <span className="stop-icon" aria-hidden="true">
+                  <IconStop size={10} />
+                </span>
+              </button>
+            ) : (
+              <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label="发送">
+                <IconArrowUp size={16} />
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="composer-bar">
