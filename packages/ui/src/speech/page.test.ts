@@ -33,8 +33,12 @@ test("startPageVoice uses live capture when the mic exists", async () => {
 test("startPageVoice transcribes a picked file on HTTP pages", async () => {
   const file = new File([Uint8Array.from([1])], "a.wav", { type: "audio/wav" });
   const pcm = Uint8Array.from([1, 0, 2, 0, 3, 0]);
+  const calls: Array<{ status: number; hasAudio: boolean }> = [];
   const started = await startPageVoice(
-    async (body) => ({ sessionId: "s1", text: body.status === 2 ? "打开仓库" : "打开" }),
+    async (body) => {
+      calls.push({ status: body.status, hasAudio: Boolean(body.audio) });
+      return { sessionId: "s1", text: body.status === 2 ? "打开仓库" : "打开" };
+    },
     () => undefined,
     undefined,
     undefined,
@@ -47,6 +51,10 @@ test("startPageVoice transcribes a picked file on HTTP pages", async () => {
   assert.equal(started.kind, "transcript");
   if (started.kind !== "transcript") throw new Error("expected transcript");
   assert.equal(started.text, "打开仓库");
+  assert.deepEqual(calls, [
+    { status: 0, hasAudio: true },
+    { status: 2, hasAudio: false },
+  ]);
 });
 
 test("startPageVoice treats a dismissed picker as cancelled", async () => {
@@ -61,6 +69,26 @@ test("startPageVoice treats a dismissed picker as cancelled", async () => {
     },
   );
   assert.equal(started.kind, "cancelled");
+});
+
+test("transcribePcm posts the whole clip then finalizes", async () => {
+  const { transcribePcm } = await import("./page.js");
+  const calls: Array<{ status: number; bytes: number }> = [];
+  const result = await transcribePcm(
+    async (body) => {
+      calls.push({ status: body.status, bytes: body.audio ? atob(body.audio).length : 0 });
+      return { sessionId: "s1", text: body.status === 2 ? "你好" : "" };
+    },
+    Uint8Array.from([1, 0, 2, 0, 3, 0, 4, 0]),
+    () => undefined,
+  );
+  assert.equal(result.kind, "transcript");
+  if (result.kind !== "transcript") throw new Error("expected transcript");
+  assert.equal(result.text, "你好");
+  assert.deepEqual(calls, [
+    { status: 0, bytes: 8 },
+    { status: 2, bytes: 0 },
+  ]);
 });
 
 test("startPageVoice maps an empty recording", async () => {

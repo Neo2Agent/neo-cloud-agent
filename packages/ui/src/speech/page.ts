@@ -1,7 +1,8 @@
 import {
   BAD_RECORDING_HINT,
   EMPTY_RECORDING_HINT,
-  IAT_HTTP_MIN_BYTES,
+  describeSpeechError,
+  pcmToBase64,
   startCloudVoice,
   type PcmCapture,
   type SpeechIatPush,
@@ -23,28 +24,21 @@ export async function transcribePcm(
   onPreview: (text: string) => void,
   onError?: (message: string) => void,
 ): Promise<StartVoiceResult> {
-  let emit: (frame: Uint8Array) => void = () => undefined;
-  const started = await startCloudVoice(
-    push,
-    {
-      start: async (onFrame) => {
-        emit = onFrame;
-      },
-      stop: async () => undefined,
-    },
-    onPreview,
-    onError,
-    undefined,
-    { minHttpBytes: IAT_HTTP_MIN_BYTES },
-  );
-  if (started.kind !== "session") return started;
-  const chunk = IAT_HTTP_MIN_BYTES;
-  for (let offset = 0; offset < pcm.length; offset += chunk) {
-    emit(pcm.subarray(offset, Math.min(pcm.length, offset + chunk)));
+  try {
+    const opened = await push({ status: 0, audio: pcmToBase64(pcm) });
+    if (opened.error) throw new Error(opened.error);
+    if (opened.text) onPreview(opened.text);
+    const done = await push({ status: 2, sessionId: opened.sessionId });
+    if (done.error) throw new Error(done.error);
+    const text = (done.text || opened.text || "").replace(/\s+/g, " ").trim();
+    if (!text) return { kind: "error", message: EMPTY_RECORDING_HINT };
+    onPreview(text);
+    return { kind: "transcript", text };
+  } catch (error) {
+    const message = describeSpeechError(error instanceof Error ? error.message : EMPTY_RECORDING_HINT);
+    onError?.(message);
+    return { kind: "error", message };
   }
-  const text = (await started.session.stop()).replace(/\s+/g, " ").trim();
-  if (!text) return { kind: "error", message: EMPTY_RECORDING_HINT };
-  return { kind: "transcript", text };
 }
 
 export async function startPageVoice(
