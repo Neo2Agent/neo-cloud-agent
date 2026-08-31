@@ -52,7 +52,19 @@ def test_search_accepts_x_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert response.status_code == 200
     assert response.json()["results"][0]["memory"] == "用 pnpm"
-    fake.search.assert_called()
+    fake.search.assert_called_once()
+    _args, kwargs = fake.search.call_args
+    assert kwargs["filters"] == {"user_id": "u1"}
+    assert kwargs["top_k"] == 8
+
+
+def test_entity_filters_includes_optional_ids() -> None:
+    assert slim._entity_filters("u1") == {"user_id": "u1"}
+    assert slim._entity_filters("u1", agent_id="a1", run_id="r1") == {
+        "user_id": "u1",
+        "agent_id": "a1",
+        "run_id": "r1",
+    }
 
 
 def test_require_key_uses_constant_time_compare(monkeypatch: pytest.MonkeyPatch) -> None:

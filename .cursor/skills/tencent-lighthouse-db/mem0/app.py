@@ -105,6 +105,15 @@ class SearchBody(BaseModel):
     run_id: str | None = None
 
 
+def _entity_filters(user_id: str, agent_id: str | None = None, run_id: str | None = None) -> dict[str, Any]:
+    filters: dict[str, Any] = {"user_id": user_id}
+    if agent_id:
+        filters["agent_id"] = agent_id
+    if run_id:
+        filters["run_id"] = run_id
+    return filters
+
+
 def _jsonable(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump()
@@ -163,20 +172,11 @@ def search_memory(
 ) -> Any:
     require_key(x_api_key, authorization)
     memory = get_memory()
-    kwargs: dict[str, Any] = {"user_id": body.user_id, "limit": body.limit}
-    if body.agent_id:
-        kwargs["agent_id"] = body.agent_id
-    if body.run_id:
-        kwargs["run_id"] = body.run_id
+    filters = _entity_filters(body.user_id, body.agent_id, body.run_id)
     try:
-        return _jsonable(memory.search(body.query, **kwargs))
+        return _jsonable(memory.search(body.query, filters=filters, top_k=body.limit))
     except TypeError:
-        filters: dict[str, Any] = {"user_id": body.user_id}
-        if body.agent_id:
-            filters["agent_id"] = body.agent_id
-        if body.run_id:
-            filters["run_id"] = body.run_id
-        return _jsonable(memory.search(body.query, filters=filters, limit=body.limit))
+        return _jsonable(memory.search(body.query, user_id=body.user_id, limit=body.limit))
 
 
 @app.get("/memories")
@@ -189,9 +189,9 @@ def list_memories(
     require_key(x_api_key, authorization)
     memory = get_memory()
     try:
-        return _jsonable(memory.get_all(user_id=user_id, limit=limit))
+        return _jsonable(memory.get_all(filters=_entity_filters(user_id), top_k=limit))
     except TypeError:
-        return _jsonable(memory.get_all(filters={"user_id": user_id}))
+        return _jsonable(memory.get_all(user_id=user_id, limit=limit))
 
 
 @app.delete("/memories/{memory_id}")
