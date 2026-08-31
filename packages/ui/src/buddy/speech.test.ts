@@ -30,6 +30,7 @@ test("holdPadLabel is click-to-talk when the engine exists", () => {
   assert.equal(holdPadLabel({ supported: true, holding: true }), "正在听…再点一下完成");
   assert.equal(holdPadLabel({ supported: true, holding: false, finishing: true }), "正在转文字…");
   assert.equal(holdPadLabel({ supported: false, holding: false, followUp: true }), "继续说一句…");
+  assert.equal(holdPadLabel({ supported: true, holding: false, fileFallback: true }), "点一下选一段录音");
 });
 
 test("startSpeechRecognition joins interim then final text", async () => {

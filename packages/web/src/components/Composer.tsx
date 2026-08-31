@@ -162,7 +162,13 @@ export function Composer({
             : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
   const showHold = buddy && !archived && !blocked && (listening || finishing || (!typing && empty));
   const canStartVoice = !sendLocked && !busy && !finishing;
-  const voiceLabel = holdPadLabel({ supported: true, holding: listening, finishing, followUp });
+  const voiceLabel = holdPadLabel({
+    supported: true,
+    holding: listening,
+    finishing,
+    followUp,
+    fileFallback: !pageAllowsLiveMic(),
+  });
   const toggleVoice = async () => {
     if (sendLocked) return;
     if (voiceRef.current) {

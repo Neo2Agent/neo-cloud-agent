@@ -41,12 +41,15 @@ export async function decodeAudioFileToPcm(
   }
 }
 
+/** Audio-only. Do not set `capture` — on phone browsers that opens the camera. */
+export const AUDIO_FILE_ACCEPT =
+  "audio/*,audio/mpeg,audio/mp4,audio/wav,audio/webm,audio/aac,audio/x-m4a,.mp3,.m4a,.wav,.aac,.ogg";
+
 export function pickAudioFile(doc: FilePickerDoc = document): Promise<File | null> {
   return new Promise((resolve) => {
     const input = doc.createElement("input");
     input.type = "file";
-    input.accept = "audio/*";
-    input.setAttribute("capture", "microphone");
+    input.accept = AUDIO_FILE_ACCEPT;
     let settled = false;
     const finish = (file: File | null) => {
       if (settled) return;

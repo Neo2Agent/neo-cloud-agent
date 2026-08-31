@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BAD_RECORDING_HINT } from "./cloud.js";
-import { decodeAudioFileToPcm, pickAudioFile } from "./file.js";
+import { AUDIO_FILE_ACCEPT, decodeAudioFileToPcm, pickAudioFile } from "./file.js";
 
 test("decodeAudioFileToPcm uses the injected decoder", async () => {
   const file = new File([Uint8Array.from([1, 2, 3])], "a.wav", { type: "audio/wav" });
@@ -28,12 +28,15 @@ test("decodeAudioFileToPcm maps decoder failures to a file hint", async () => {
 
 test("pickAudioFile resolves the chosen file", async () => {
   let change: (() => void) | undefined;
+  const attrs: Record<string, string> = {};
   const chosen = new File([Uint8Array.from([9])], "voice.m4a", { type: "audio/mp4" });
   const input = {
     type: "",
     accept: "",
     files: [chosen] as unknown as FileList,
-    setAttribute() {},
+    setAttribute(name: string, value: string) {
+      attrs[name] = value;
+    },
     addEventListener(name: string, fn: () => void) {
       if (name === "change") change = fn;
     },
@@ -45,5 +48,6 @@ test("pickAudioFile resolves the chosen file", async () => {
     createElement: () => input as unknown as HTMLInputElement,
   });
   assert.equal(file?.name, "voice.m4a");
-  assert.equal(input.accept, "audio/*");
+  assert.equal(input.accept, AUDIO_FILE_ACCEPT);
+  assert.equal(attrs.capture, undefined);
 });
