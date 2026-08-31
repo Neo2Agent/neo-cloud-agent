@@ -8,6 +8,7 @@ import {
   claimVmSlot,
   ensureVmSlots,
   listVmSlots,
+  reconcileOrphanVmSlots,
   releaseVmSlot,
   resetVmSlotsForTests,
   summarizeVmSlots,
@@ -72,6 +73,11 @@ test("vm slots cap concurrent mounts and reuse after release", async () => {
     assert.equal(third.id, "slot-0");
     assert.equal(third.runId, "run-c");
     assert.equal(summarizeVmSlots("vm").busy, 2);
+    const orphans = await reconcileOrphanVmSlots((runId) => runId === "run-c");
+    assert.ok(orphans.includes("slot-1"));
+    assert.equal(summarizeVmSlots("vm").busy, 1);
+    assert.equal(listVmSlots().find((item) => item.id === "slot-1")?.status, "idle");
+    assert.equal(listVmSlots().find((item) => item.id === "slot-0")?.runId, "run-c");
   } finally {
     resetVmSlotsForTests();
     for (const [key, value] of Object.entries(previous)) {

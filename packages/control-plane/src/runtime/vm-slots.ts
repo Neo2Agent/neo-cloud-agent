@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -171,6 +171,9 @@ export async function ensureVmSlots(): Promise<VmSlot[]> {
     slot.imagePath = imagePath;
     slot.mountPath = mountPath;
     slot.sizeGiB = sizeGiB;
+    if (!existing && pathIsMounted(mountPath)) {
+      slot.mounted = true;
+    }
     slots.set(id, slot);
     ensured.push(slot);
   }
@@ -225,21 +228,68 @@ export async function claimVmSlot(runId: string): Promise<VmSlot> {
   return idle;
 }
 
+function pathIsMounted(dir: string): boolean {
+  try {
+    const resolved = path.resolve(dir);
+    return readFileSync("/proc/mounts", "utf8")
+      .split("\n")
+      .some((line) => line.split(/\s+/)[1] === resolved);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Drop leftover mounts / busy marks whose run is gone or no longer live.
+ * Control-plane restart used to keep both loop slots "busy" after every chat
+ * went IDLE, so a new hello queued behind computers nobody was using.
+ */
+export async function reconcileOrphanVmSlots(isLive: (runId: string) => boolean): Promise<string[]> {
+  if (slots.size === 0) {
+    const runtime = process.env.WORKER_RUNTIME ?? "local";
+    if (runtime !== "vm" && runtime !== "firecracker") {
+      return [];
+    }
+    await ensureVmSlots();
+  }
+  const released: string[] = [];
+  for (const slot of listVmSlots()) {
+    if (slot.runId && !isLive(slot.runId)) {
+      await releaseVmSlot(slot.runId).catch(() => undefined);
+      released.push(slot.id);
+      continue;
+    }
+    if (!slot.runId && (slot.mounted || pathIsMounted(slot.mountPath))) {
+      if (!skipMount()) {
+        await unmountVmSlot(slot).catch(() => undefined);
+      }
+      slot.status = "idle";
+      slot.runId = null;
+      slot.mounted = false;
+      released.push(slot.id);
+    }
+  }
+  return released;
+}
+
 export async function releaseVmSlot(runId: string): Promise<void> {
   const slot = listVmSlots().find((item) => item.runId === runId);
   if (!slot) {
     return;
   }
-  if (slot.mounted && !skipMount()) {
-    await unmountVmSlot(slot);
+  try {
+    if (slot.mounted && !skipMount()) {
+      await unmountVmSlot(slot);
+    }
+    if (skipMount()) {
+      rmSync(slot.mountPath, { recursive: true, force: true });
+      mkdirSync(slot.mountPath, { recursive: true });
+    }
+  } finally {
+    slot.status = "idle";
+    slot.runId = null;
+    slot.mounted = false;
   }
-  if (skipMount()) {
-    rmSync(slot.mountPath, { recursive: true, force: true });
-    mkdirSync(slot.mountPath, { recursive: true });
-  }
-  slot.status = "idle";
-  slot.runId = null;
-  slot.mounted = false;
 }
 
 async function mountVmSlot(slot: VmSlot): Promise<void> {

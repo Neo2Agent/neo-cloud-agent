@@ -1436,7 +1436,10 @@ export function App() {
   });
   const statusView = turnStatusLabel({ sending, stopping, status: currentRun?.status });
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
-  const currentSlot = currentRun?.vmSlotId || vms.slots.find((slot) => slot.runId === runId)?.id || null;
+  const currentSlot =
+    vms.slots.find((slot) => slot.runId === runId && slot.status === "busy")?.id ||
+    (isActiveRunStatus(currentRun?.status) ? currentRun?.vmSlotId : null) ||
+    null;
   const vmHint = !vms.total && vms.slots.length === 0
     ? "未启用 VM 槽。"
     : currentSlot
