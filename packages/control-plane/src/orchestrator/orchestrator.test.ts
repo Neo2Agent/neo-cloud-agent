@@ -35,6 +35,7 @@ const {
   openRunDraftPr,
   recoverLiveWorkers,
   reloadPersistedState,
+  restoreArchivedRun,
   expireStaleWorkers,
   saveRunSession,
   takeInbound,
@@ -46,6 +47,7 @@ const { bindDeskWorkspace, createDesk, openDeskInbox, takeDeskAssignment, update
   "../desks/store.js"
 );
 const { eventsForRun, listEvents } = await import("../events/bus.js");
+const { archiveRunArtifacts } = await import("../objects/archive.js");
 
 test("createRun mints a bootstrap JWT, copies the local repo, and queues the first prompt", async () => {
   const run = await createRun({
@@ -485,12 +487,14 @@ test("deleteRun soft-deletes archived runs and hides them from the list", async 
   });
   await assert.rejects(() => deleteRun(run.id), /只能删除已归档的任务/);
   await archiveRun(run.id);
+  await archiveRunArtifacts(run.id);
   const deleted = await deleteRun(run.id);
   assert.equal(deleted.ok, true);
   assert.equal(deleted.id, run.id);
   assert.ok(deleted.deletedAt);
   assert.equal(getRun(run.id), undefined);
   assert.equal(listRuns().some((item) => item.id === run.id), false);
+  assert.equal(await restoreArchivedRun(run.id), undefined);
   const persisted = JSON.parse(readFileSync(path.join(process.env.RUNS_DIR!, ".control", `${run.id}.json`), "utf8")) as {
     run: { deletedAt?: string | null };
   };

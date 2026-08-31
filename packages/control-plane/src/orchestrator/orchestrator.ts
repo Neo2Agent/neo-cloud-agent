@@ -69,7 +69,7 @@ import { claimWarmSlot, refillWarmPool } from "../env/warm-pool.js";
 import { resolveEgressPolicy } from "../egress/resolve.js";
 import { dropHistory, eventsForRun, publish, resetHistory, seedEvents } from "../events/bus.js";
 import { keepHotHistory } from "../events/history.js";
-import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
+import { cancelArchive, restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
 import { persistRunWorkspace } from "../runtime/persist-workspace.js";
 import { vmWorkspaceFor } from "../runtime/vm-slots.js";
@@ -2201,6 +2201,7 @@ export async function deleteRun(runId: string): Promise<{ ok: true; id: string; 
   run.updatedAt = deletedAt;
   publish(event(runId, "run.deleted", "Run deleted"));
   flushRun(runId);
+  cancelArchive(runId);
   dropHistory(runId);
   forgetDeletedRun(runId);
   return { ok: true, id: runId, deletedAt };
@@ -2357,7 +2358,16 @@ export function saveRunSession(runId: string, files: Array<{ name: string; conte
 
 export async function restoreArchivedRun(runId: string) {
   if (runs.has(runId)) {
-    return runs.get(runId);
+    const live = runs.get(runId);
+    if (live?.deletedAt) {
+      forgetDeletedRun(runId);
+      return undefined;
+    }
+    return live;
+  }
+  const persisted = loadPersistedRun(runId);
+  if (persisted?.run?.deletedAt) {
+    return undefined;
   }
   const restored = await restoreArchivedArtifacts(runId);
   if (!restored?.record?.run?.id || restored.record.run.deletedAt) {
