@@ -4,10 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     MEM0_TELEMETRY=false \
     HF_HOME=/opt/hf \
-    FASTEMBED_CACHE_PATH=/opt/fastembed \
-    HF_ENDPOINT=https://hf-mirror.com \
-    HF_HUB_DISABLE_XET=1 \
-    HF_HUB_ENABLE_HF_TRANSFER=0
+    FASTEMBED_CACHE_PATH=/opt/fastembed
 
 WORKDIR /app
 
@@ -26,6 +23,9 @@ RUN pip install --no-cache-dir \
 
 COPY app.py .
 
-ENV HOME=/tmp
+ENV HOME=/tmp \
+    HF_ENDPOINT=https://hf-mirror.com \
+    HF_HUB_DISABLE_XET=1 \
+    HF_HUB_ENABLE_HF_TRANSFER=0
 EXPOSE 8888
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8888", "--workers", "1"]
