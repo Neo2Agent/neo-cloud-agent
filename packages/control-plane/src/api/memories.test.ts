@@ -9,7 +9,7 @@ process.env.SPAWN_LOCAL_WORKER = "0";
 process.env.LLM_GATEWAY_JWT_SECRET = "memories-secret";
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-memories-"));
 process.env.ACCOUNTS_REQUIRED = "1";
-delete process.env.CONTROL_PLANE_TOKEN;
+process.env.CONTROL_PLANE_TOKEN = "memories-api-token";
 delete process.env.DATABASE_URL;
 delete process.env.REDIS_URL;
 delete process.env.MEM0_URL;
