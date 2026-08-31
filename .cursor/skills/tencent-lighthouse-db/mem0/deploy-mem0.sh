@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build neo-mem0-slim on a machine with RAM, load it onto lighthouse-db, start the slim stack.
+# Copy the slim stack to lighthouse-db. Default: docker build on the db host
+# (Tencent mirrors). MEM0_REMOTE_BUILD=0 builds locally and docker-loads.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -7,16 +8,19 @@ HOST="${MEM0_SSH_HOST:-lighthouse-db}"
 REMOTE="${MEM0_REMOTE_DIR:-/home/ubuntu/mem0}"
 IMAGE="${MEM0_IMAGE:-neo-mem0-slim:1}"
 
-echo "deploy-mem0: build $IMAGE"
-docker build -t "$IMAGE" "$ROOT"
-
 echo "deploy-mem0: copy files to $HOST:$REMOTE"
 ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" "mkdir -p '$REMOTE' && chmod 700 '$REMOTE'"
-rsync -a --delete --exclude '.env' --exclude '__pycache__' --exclude '.pytest_cache' \
-  "$ROOT/" "$HOST:$REMOTE/"
+tar -C "$ROOT" --exclude '.env' --exclude '__pycache__' --exclude '.pytest_cache' -cf - . \
+  | ssh -o BatchMode=yes "$HOST" "tar -C '$REMOTE' -xf -"
 
-echo "deploy-mem0: load image"
-docker save "$IMAGE" | gzip | ssh -o BatchMode=yes "$HOST" "gzip -dc | docker load"
+if [[ "${MEM0_REMOTE_BUILD:-1}" == "1" ]]; then
+  echo "deploy-mem0: build $IMAGE on $HOST"
+  ssh -o BatchMode=yes "$HOST" "cd '$REMOTE' && docker build -t '$IMAGE' ."
+else
+  echo "deploy-mem0: build $IMAGE locally and load"
+  docker build -t "$IMAGE" "$ROOT"
+  docker save "$IMAGE" | gzip -1 | ssh -o BatchMode=yes "$HOST" "gzip -dc | docker load"
+fi
 
 echo "deploy-mem0: provision + up"
 ssh -o BatchMode=yes "$HOST" "bash '$REMOTE/provision-mem0.sh' && cd '$REMOTE' && docker compose up -d"

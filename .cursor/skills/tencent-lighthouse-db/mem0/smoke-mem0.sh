@@ -30,7 +30,8 @@ def call(method, path, body=None, auth=True):
         headers["X-API-Key"] = key
     req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        timeout = 180 if path == "/ready" else 60
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode()
             return resp.status, json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:

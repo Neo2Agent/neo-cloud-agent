@@ -55,6 +55,14 @@ services:
       MEM0_TELEMETRY: "false"
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://new-api:3000/v1}
+      HF_ENDPOINT: https://hf-mirror.com
+      HF_HOME: /opt/hf
+      FASTEMBED_CACHE_PATH: /opt/fastembed
+      HF_HUB_DISABLE_XET: "1"
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
+    volumes:
+      - mem0_models:/opt/fastembed
+      - mem0_hf:/opt/hf
     ports:
       - "127.0.0.1:8888:8888"
     healthcheck:
@@ -73,6 +81,8 @@ services:
 
 volumes:
   mem0_pg_data:
+  mem0_models:
+  mem0_hf:
 
 networks:
   mem0net:

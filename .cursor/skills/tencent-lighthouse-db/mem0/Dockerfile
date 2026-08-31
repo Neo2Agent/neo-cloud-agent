@@ -4,23 +4,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     MEM0_TELEMETRY=false \
     HF_HOME=/opt/hf \
-    FASTEMBED_CACHE_PATH=/opt/fastembed
+    FASTEMBED_CACHE_PATH=/opt/fastembed \
+    HF_ENDPOINT=https://hf-mirror.com \
+    HF_HUB_DISABLE_XET=1 \
+    HF_HUB_ENABLE_HF_TRANSFER=0
 
 WORKDIR /app
 
-RUN apt-get update \
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i 's|http://deb.debian.org|https://mirrors.cloud.tencent.com|g; s|https://deb.debian.org|https://mirrors.cloud.tencent.com|g' /etc/apt/sources.list.d/debian.sources; \
+    fi \
+    && apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Bake the tiny ONNX embedder so the db host does not download at boot.
-RUN python - <<'PY'
-from fastembed import TextEmbedding
-TextEmbedding(model_name="BAAI/bge-small-zh-v1.5")
-print("embedder_cached")
-PY
+RUN pip install --no-cache-dir \
+      -i https://mirrors.cloud.tencent.com/pypi/simple \
+      --trusted-host mirrors.cloud.tencent.com \
+      -r requirements.txt
 
 COPY app.py .
 

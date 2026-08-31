@@ -217,14 +217,10 @@ ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql red
 | 抽取 LLM | `http://new-api:3000/v1` + `deepseek-v4-flash`（同机 `dbnet`） |
 | 密钥 | `/home/ubuntu/mem0/.env`（`chmod 600`）。`OPENAI_API_KEY` 从 `/home/ubuntu/db/.new-api-token` 拷，不要打印 |
 
-本机构建镜像再 `docker load` 到库机（库机 4G 上现场 `docker build` 容易和 MySQL 抢内存）：
+默认在库机 `docker build`（腾讯 Debian / PyPI 镜像）。Cloud Agent 往库机 `docker save` 只有十几 KB/s，传不动。`MEM0_REMOTE_BUILD=0` 才改本机构建再 load：
 
 ```bash
-docker build -t neo-mem0-slim:1 .cursor/skills/tencent-lighthouse-db/mem0
-docker save neo-mem0-slim:1 | gzip | ssh lighthouse-db 'gzip -dc | docker load'
-rsync -a --exclude '.env' .cursor/skills/tencent-lighthouse-db/mem0/ lighthouse-db:/home/ubuntu/mem0/
-ssh lighthouse-db 'bash /home/ubuntu/mem0/provision-mem0.sh && cd /home/ubuntu/mem0 && docker compose up -d'
-ssh lighthouse-db 'bash /home/ubuntu/mem0/smoke-mem0.sh'
+bash .cursor/skills/tencent-lighthouse-db/mem0/deploy-mem0.sh
 ```
 
 健康只报 `health_ok` / `search_ok hits=N` / `docker stats` 的 MiB，不要 `cat .env`。卸掉：`ssh lighthouse-db 'cd /home/ubuntu/mem0 && docker compose down'`（默认保留卷）。控制面还没有 `MEM0_*`，对话页不会自动用这套。
