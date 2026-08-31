@@ -1,7 +1,6 @@
-# 现网 HTTPS：Caddy 向 Let's Encrypt 自动申请并续期（0 元）。
-# 覆盖到 /etc/caddy/Caddyfile 后 `sudo caddy validate` 再 `sudo systemctl reload caddy`。
-# 不要用轻量控制台一键 HTTPS（会按应用镜像改 Nginx）。
-# 域名走 443；IP http://62.234.211.200 仍听 :80，避免旧书签断掉。
+# 备案未过：国内访问 https://neorun.cloud 的 443 会被重置。
+# HTTP 必须能单独用，不能 308 到 HTTPS，也不能下 HSTS。
+# 证书继续续着，备案过了再改回跳转。不要用轻量控制台一键 HTTPS。
 #
 # 同一域名两条路径，不要 /a /b，也不要再买第二个域名：
 #   /            → 对话页  127.0.0.1:8080
@@ -10,7 +9,11 @@
 # 若 DNS 里已有 admin A 记录，下面单独站点只做 308，不把管理台挂到子域。
 # 8090 不要开公网防火墙。
 
-neorun.cloud, www.neorun.cloud {
+{
+	auto_https disable_redirects
+}
+
+(neo_site) {
 	encode gzip zstd {
 		match {
 			header Content-Type text/html*
@@ -36,36 +39,24 @@ neorun.cloud, www.neorun.cloud {
 			flush_interval -1
 		}
 	}
+}
+
+http://neorun.cloud, http://www.neorun.cloud, http://62.234.211.200 {
+	import neo_site
+}
+
+neorun.cloud, www.neorun.cloud {
+	header -Strict-Transport-Security
+	header Strict-Transport-Security "max-age=0"
+	import neo_site
+}
+
+http://admin.neorun.cloud {
+	redir http://neorun.cloud/admin/ 308
 }
 
 admin.neorun.cloud {
-	redir https://neorun.cloud/admin/ 308
-}
-
-http://62.234.211.200 {
-	encode gzip zstd {
-		match {
-			header Content-Type text/html*
-			header Content-Type text/css*
-			header Content-Type text/javascript*
-			header Content-Type application/javascript*
-			header Content-Type application/json*
-			header Content-Type image/svg+xml*
-		}
-	}
-	redir /admin /admin/ 308
-	handle_path /admin/* {
-		reverse_proxy 127.0.0.1:8090 {
-			flush_interval -1
-		}
-	}
-	handle /downloads* {
-		root * /opt/neo
-		file_server browse
-	}
-	handle {
-		reverse_proxy 127.0.0.1:8080 {
-			flush_interval -1
-		}
-	}
+	header -Strict-Transport-Security
+	header Strict-Transport-Security "max-age=0"
+	redir http://neorun.cloud/admin/ 308
 }
