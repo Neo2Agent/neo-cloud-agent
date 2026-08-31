@@ -3,6 +3,7 @@ import { neoBrowser } from "./neo-browser.js";
 import { neoDiag } from "./neo-diag.js";
 import { neoGit } from "./neo-git.js";
 import { neoMcp } from "./neo-mcp.js";
+import { neoMemory } from "./neo-memory.js";
 import { neoPr } from "./neo-pr.js";
 import { neoSubagent } from "./neo-subagent.js";
 import { neoSubscribe } from "./neo-subscribe.js";
@@ -33,9 +34,15 @@ export {
   expertDocRoots,
 } from "./expert-roots.js";
 export { createSubscribeTool, executeSubscribe } from "./neo-subscribe.js";
+export {
+  createMemoryAddTool,
+  createMemorySearchTool,
+  executeMemoryAdd,
+  executeMemorySearch,
+} from "./neo-memory.js";
 export { extractPageText } from "./html-text.js";
-export { neoArtifact, neoBrowser, neoDiag, neoGit, neoMcp, neoPr, neoSubagent, neoSubscribe };
+export { neoArtifact, neoBrowser, neoDiag, neoGit, neoMcp, neoMemory, neoPr, neoSubagent, neoSubscribe };
 
 export function loadCloudExtensions(): CloudExtension[] {
-  return [neoGit, neoPr, neoMcp, neoDiag, neoArtifact, neoBrowser, neoSubagent, neoSubscribe];
+  return [neoGit, neoPr, neoMcp, neoDiag, neoArtifact, neoBrowser, neoSubagent, neoSubscribe, neoMemory];
 }

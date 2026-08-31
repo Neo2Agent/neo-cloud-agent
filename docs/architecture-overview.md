@@ -426,6 +426,7 @@ pi-ai                       多 Provider 流式；baseUrl 指到 Gateway
 | `neo_artifact_upload` | 工作区文件上传，对话页用签名 URL 下载 |
 | `neo_subagent` | worker **内**嵌套 `createAgentSession`，不占第二槽，不把 loop 打回控制面 |
 | `neo_subscribe` | GitHub 评论 / Actions → 跟进队列；开 PR 自动订阅；CI 失败默认 autofix（最多 3 次） |
+| `neo_memory_add` / `neo_memory_search` | `POST /internal/runs/:id/memories`；按 run.userId 写/搜 Mem0。密钥不进 worker |
 
 文件系统工具仍是 pi 自带的 `read` / `write` / `edit` / `bash` / `grep` / `find` / `ls`。
 
@@ -706,6 +707,7 @@ GET    /v1/vms
 GET    /v1/rate-limits
 GET    /v1/quota
 GET|POST /v1/settings/llm|scm|notify|quota|mcp
+GET|POST /v1/memories                    记忆页看/记；DELETE /v1/memories/:id
 ```
 
 ### Run

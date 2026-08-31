@@ -210,6 +210,35 @@ test("detached live runs requeue the unfinished prompt", async () => {
   assert.ok(listEvents(run.id).some((item) => item.kind === "run.queued"));
 });
 
+test("recoverLiveWorkers drops a stale VM slot on an idle chat", async () => {
+  const run = await createRun({
+    prompt: "slot leftover",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  ingestEvents(run.id, [
+    {
+      id: "agent-end-slot",
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "agent.end",
+      title: "done",
+    },
+  ]);
+  const idle = getRun(run.id);
+  assert.ok(idle);
+  idle.vmSlotId = "slot-0";
+  reloadPersistedState();
+  const reloaded = getRun(run.id);
+  assert.ok(reloaded);
+  reloaded.vmSlotId = "slot-0";
+  await recoverLiveWorkers();
+  assert.equal(getRun(run.id)?.status, "IDLE");
+  assert.equal(getRun(run.id)?.vmSlotId, null);
+});
+
 test("detached runs stay idle when the last turn already finished", async () => {
   const run = await createRun({
     prompt: "already done",

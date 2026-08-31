@@ -209,16 +209,14 @@ export function Sidebar({
         {buddy ? "新建任务" : "新对话"}
       </button>
       <div className="run-tools">
-        {buddy ? null : (
-          <input
-            type="search"
-            className="run-search"
-            placeholder="搜索对话"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            aria-label="搜索对话"
-          />
-        )}
+        <input
+          type="search"
+          className="run-search"
+          placeholder={buddy ? "搜索任务" : "搜索对话"}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label={buddy ? "搜索任务" : "搜索对话"}
+        />
         {onArchiveMany && (!buddy || selecting) ? (
           <div className="run-tools-actions">
             {selecting && selected.length > 0 ? (

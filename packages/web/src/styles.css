@@ -3135,6 +3135,10 @@ button.composer-mic.is-listening,
     max-height: min(48vh, 420px);
   }
 
+  .app.is-buddy .workspace-drawer {
+    max-height: min(70vh, 560px);
+  }
+
   .env-row,
   .llm-row,
   .repo-row {
@@ -4161,5 +4165,14 @@ html.is-narrow,
   .top-actions .inbox-btn {
     min-width: 44px;
     min-height: 44px;
+  }
+
+  .app.is-buddy .transcript-search .tab-label {
+    display: none;
+  }
+
+  .app.is-buddy .run-search,
+  .app.is-buddy .transcript-search-row input {
+    font-size: 16px;
   }
 }

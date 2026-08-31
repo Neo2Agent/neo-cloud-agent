@@ -231,7 +231,7 @@ bash .cursor/skills/tencent-lighthouse-db/mem0/deploy-mem0.sh
 bash .cursor/skills/tencent-lighthouse-db/wire-mem0.sh
 ```
 
-之后 `/health` 有 `mem0.configured: true`。对话页走 `GET/POST /v1/memories`；新 Run 会把检索结果写成工作区 `.neo/MEMORY.md`。密钥不上 VM。
+之后 `/health` 有 `mem0.configured: true`。对话页走 `GET/POST /v1/memories`；agent 用 `neo_memory_add` / `neo_memory_search` 打 `POST /internal/runs/:id/memories`（按 run.userId）；新 Run 会把检索结果写成工作区 `.neo/MEMORY.md`。密钥不上 VM。
 
 ## 给 Cloud Agent 的注意点
 

@@ -9,14 +9,18 @@ process.env.SPAWN_LOCAL_WORKER = "0";
 process.env.LLM_GATEWAY_JWT_SECRET = "memories-secret";
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-memories-"));
 process.env.ACCOUNTS_REQUIRED = "1";
-delete process.env.CONTROL_PLANE_TOKEN;
+process.env.CONTROL_PLANE_TOKEN = "memories-api-token";
 delete process.env.DATABASE_URL;
 delete process.env.REDIS_URL;
+delete process.env.MEM0_URL;
+delete process.env.MEM0_API_KEY;
 
 const { createApiServer } = await import("./server.js");
 const { setMem0FetchForTests } = await import("../memory/client.js");
 const { ensureDefaultAdmin } = await import("../accounts/accounts.js");
 const { listen, close } = await import("../e2e/helpers.js");
+const { mintRunToken } = await import("@neo-cloud-agent/contracts");
+const { createRun } = await import("../orchestrator/orchestrator.js");
 
 async function login(base: string): Promise<string> {
   await ensureDefaultAdmin();
@@ -103,6 +107,91 @@ test("/v1/memories add search list and delete go through Mem0", async (t) => {
   const deleted = await fetch(`${base}/v1/memories/m1`, { method: "DELETE", headers });
   assert.equal(deleted.status, 200);
   assert.ok(calls.some((call) => call.method === "DELETE" && call.url.endsWith("/memories/m1")));
+});
+
+test("worker JWT can add and search memories for the run user", async (t) => {
+  withMem0Env(t);
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    setMem0FetchForTests(null);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const mem0Calls: Array<{ method?: string; url: string; body?: unknown }> = [];
+  setMem0FetchForTests(async (url, init) => {
+    let body: unknown;
+    if (typeof init?.body === "string") {
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
+    }
+    mem0Calls.push({ method: init?.method, url, body });
+    return new Response(JSON.stringify({ results: [{ id: "m1", memory: "用 pnpm" }] }), { status: 200 });
+  });
+  const run = await createRun({ prompt: "记住包管理器", repoUrls: ["fixtures/toy-repo"] });
+  const jwt = mintRunToken("memories-secret", {
+    sub: "worker",
+    runId: run.id,
+    orgId: "org_local",
+    model: "neo/deepseek",
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    jti: "memories-internal",
+  });
+
+  const denied = await fetch(`${base}/internal/runs/${run.id}/memories`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "add", text: "用 pnpm" }),
+  });
+  assert.equal(denied.status, 401);
+
+  const added = await fetch(`${base}/internal/runs/${run.id}/memories`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+    body: JSON.stringify({ action: "add", text: "用 pnpm", userId: "someone-else" }),
+  });
+  assert.equal(added.status, 201);
+  assert.equal(((await added.json()) as { memories: Array<{ text: string }> }).memories[0]?.text, "用 pnpm");
+  const addCall = mem0Calls.find((call) => call.method === "POST" && call.url.endsWith("/memories"));
+  assert.equal((addCall?.body as { user_id?: string })?.user_id, run.userId);
+  assert.equal((addCall?.body as { infer?: boolean })?.infer, false);
+  assert.equal((addCall?.body as { metadata?: { source?: string } })?.metadata?.source, "agent");
+
+  const found = await fetch(`${base}/internal/runs/${run.id}/memories`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+    body: JSON.stringify({ action: "search", query: "包管理器" }),
+  });
+  assert.equal(found.status, 200);
+  assert.equal(((await found.json()) as { memories: Array<{ id: string }> }).memories[0]?.id, "m1");
+  const searchCall = mem0Calls.find((call) => call.url.endsWith("/search"));
+  assert.equal((searchCall?.body as { user_id?: string })?.user_id, run.userId);
+});
+
+test("internal memories require Mem0", async (t) => {
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+  });
+  const run = await createRun({ prompt: "no mem0", repoUrls: ["fixtures/toy-repo"] });
+  const jwt = mintRunToken("memories-secret", {
+    sub: "worker",
+    runId: run.id,
+    orgId: "org_local",
+    model: "neo/deepseek",
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    jti: "memories-unconfigured",
+  });
+  const response = await fetch(`http://127.0.0.1:${port}/internal/runs/${run.id}/memories`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+    body: JSON.stringify({ action: "add", text: "用 pnpm" }),
+  });
+  assert.equal(response.status, 503);
 });
 
 test("POST /v1/memories requires a session", async (t) => {

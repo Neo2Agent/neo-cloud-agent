@@ -73,7 +73,7 @@ import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js
 import { getRuntime } from "../runtime/factory.js";
 import { writeRecalledMemory } from "../memory/inject.js";
 import { persistRunWorkspace } from "../runtime/persist-workspace.js";
-import { vmWorkspaceFor } from "../runtime/vm-slots.js";
+import { reconcileOrphanVmSlots, vmWorkspaceFor } from "../runtime/vm-slots.js";
 import {
   loadWorkspaceMeta,
   markWorkspacePresent,
@@ -400,8 +400,32 @@ export async function recoverLiveWorkers(): Promise<void> {
     }
     detachOrQueue(run, "控制面重启后正在排队等待空闲电脑", "控制面已恢复，发送即可继续");
   }
+  await reconcileDetachedVmSlots();
   startWorkerLeaseWatch();
   void tryStartQueued();
+}
+
+function slotOwnerIsLive(runId: string): boolean {
+  const run = runs.get(runId);
+  if (!run) {
+    return false;
+  }
+  if (LIVE_STATUSES.has(run.status) && run.status !== "NOT_YET_STARTED") {
+    return true;
+  }
+  return run.status === "IDLE" && handles.has(runId);
+}
+
+async function reconcileDetachedVmSlots(): Promise<void> {
+  await reconcileOrphanVmSlots(slotOwnerIsLive);
+  for (const run of runs.values()) {
+    if (slotOwnerIsLive(run.id) || !run.vmSlotId) {
+      continue;
+    }
+    run.vmSlotId = null;
+    run.updatedAt = now();
+    flushRun(run.id);
+  }
 }
 
 export function expireStaleWorkers(at = Date.now()): string[] {
@@ -590,21 +614,25 @@ export async function releaseIdleWorker(runId: string): Promise<boolean> {
 export async function expireIdleWorkers(at = Date.now()): Promise<string[]> {
   const ttl = workerIdleReleaseMs();
   if (ttl === 0) {
+    await reconcileDetachedVmSlots();
     return [];
   }
+  const queuedWaiting = [...runs.values()].some((run) => run.status === "NOT_YET_STARTED");
   const released: string[] = [];
   for (const run of runs.values()) {
     if (run.status !== "IDLE" || !handles.has(run.id) || !run.idleAt) {
       continue;
     }
     const idleAt = Date.parse(run.idleAt);
-    if (!Number.isFinite(idleAt) || at - idleAt < ttl) {
+    const aged = Number.isFinite(idleAt) && at - idleAt >= ttl;
+    if (!aged && !queuedWaiting) {
       continue;
     }
     if (await releaseIdleWorker(run.id)) {
       released.push(run.id);
     }
   }
+  await reconcileDetachedVmSlots();
   return released;
 }
 
@@ -2228,18 +2256,36 @@ export function abortRun(runId: string): Run {
     flushRun(runId);
     return run;
   }
-  if (isWorkerAttached(runId)) {
-    run.updatedAt = now();
-    flushRun(runId);
-    return run;
-  }
+  const handle = handles.get(runId);
   inbound.set(runId, []);
   run.status = "IDLE";
   run.errorMessage = null;
-  run.workerHandle = null;
-  run.vmSlotId = null;
   run.idleAt = now();
   run.updatedAt = now();
+  if (handle) {
+    publish(event(runId, "run.idle", "Stopped"));
+    flushRun(runId);
+    void stopWorker(runId, handle, "用户停止")
+      .catch((error) => {
+        console.error(`abort stopWorker failed for ${runId}`, error);
+      })
+      .finally(() => {
+        handles.delete(runId);
+        deleteWorkerLease(runId);
+        heartbeats.delete(runId);
+        const current = runs.get(runId);
+        if (current) {
+          current.workerHandle = null;
+          current.vmSlotId = null;
+          current.updatedAt = now();
+          flushRun(runId);
+        }
+        void tryStartQueued();
+      });
+    return run;
+  }
+  run.workerHandle = null;
+  run.vmSlotId = null;
   publish(event(runId, "run.idle", "Stopped; worker was not attached"));
   flushRun(runId);
   return run;

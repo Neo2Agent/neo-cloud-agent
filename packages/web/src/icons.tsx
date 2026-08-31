@@ -181,6 +181,10 @@ export function IconInbox(props: IconProps) {
   return icon(Bell, props);
 }
 
+export function IconMemory(props: IconProps) {
+  return icon(BookOpen, props);
+}
+
 export function IconMore(props: IconProps) {
   return icon(MoreHorizontal, props);
 }

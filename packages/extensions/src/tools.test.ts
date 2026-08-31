@@ -347,6 +347,56 @@ Scratch team member.
   assert.match(withScratch?.systemPrompt ?? "", /Scratch team member/);
 });
 
+test("neo_memory_add and neo_memory_search post to the control plane", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const tools = createCloudTools(
+    ctx(async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.includes("/internal/runs/run_1/memories") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { action?: string; text?: string; query?: string };
+        if (body.action === "add") {
+          return new Response(JSON.stringify({ memories: [{ id: "m1", text: body.text }] }), {
+            status: 201,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ memories: [{ id: "m1", text: "用 pnpm" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 });
+    }),
+  );
+  const add = tools.find((item) => item.name === "neo_memory_add");
+  const search = tools.find((item) => item.name === "neo_memory_search");
+  assert.ok(add);
+  assert.ok(search);
+
+  const saved = await add.execute({ text: "用 pnpm，不要 force push" });
+  assert.equal(saved.isError, undefined);
+  assert.match(saved.content, /Saved to user memory/);
+  assert.match(saved.content, /用 pnpm/);
+  const addBody = JSON.parse(String(calls[0]?.init?.body ?? "{}")) as { action?: string; text?: string };
+  assert.equal(addBody.action, "add");
+  assert.equal(addBody.text, "用 pnpm，不要 force push");
+
+  const found = await search.execute({ query: "包管理器" });
+  assert.equal(found.isError, undefined);
+  assert.match(found.content, /用 pnpm/);
+  const searchBody = JSON.parse(String(calls[1]?.init?.body ?? "{}")) as { action?: string; query?: string };
+  assert.equal(searchBody.action, "search");
+  assert.equal(searchBody.query, "包管理器");
+});
+
+test("neo_memory_add requires text", async () => {
+  const tool = createCloudTools(ctx(mockFetch({}))).find((item) => item.name === "neo_memory_add");
+  const result = await tool!.execute({ text: "  " });
+  assert.equal(result.isError, true);
+  assert.match(result.content, /required/i);
+});
+
 test("neo_subscribe posts events to the control plane", async () => {
   const tool = createCloudTools(
     ctx(

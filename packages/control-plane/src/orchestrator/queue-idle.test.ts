@@ -96,6 +96,42 @@ test("idle workers are released without marking ERROR", async () => {
   }
 });
 
+test("a queued chat frees an idle VM instead of waiting out the hold", async () => {
+  const runtime = fakeRuntime();
+  setRuntimeForTests(runtime);
+  try {
+    const idle = await createRun({
+      prompt: "done talking",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    takeInbound(idle.id);
+    ingestEvents(idle.id, [
+      {
+        id: "agent-end-yield",
+        runId: idle.id,
+        createdAt: new Date().toISOString(),
+        category: "agent_run",
+        level: "info",
+        kind: "agent.end",
+        title: "done",
+      },
+    ]);
+    assert.equal(getRun(idle.id)?.status, "IDLE");
+    runtime.busy = true;
+    const waiting = await createRun({
+      prompt: "hello after restart",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    assert.equal(waiting.status, "NOT_YET_STARTED");
+    runtime.busy = false;
+    const released = await expireIdleWorkers(Date.now());
+    assert.ok(released.includes(idle.id));
+    assert.equal(getRun(waiting.id)?.status, "RUNNING");
+  } finally {
+    setRuntimeForTests();
+  }
+});
+
 test("idle release keeps the worker when workspace persist fails", async () => {
   const runtime = fakeRuntime();
   setRuntimeForTests(runtime);

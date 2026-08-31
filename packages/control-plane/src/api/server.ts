@@ -1788,6 +1788,66 @@ export function createApiServer() {
         return;
       }
 
+      const memoriesInternalMatch = /^\/internal\/runs\/([^/]+)\/memories$/.exec(path);
+      if (memoriesInternalMatch && method === "POST") {
+        const runId = memoriesInternalMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        if (!run.userId) {
+          send(res, 400, { error: "run has no userId" });
+          return;
+        }
+        if (!readMem0Info().configured) {
+          send(res, 503, { error: "mem0_not_configured" });
+          return;
+        }
+        try {
+          const body = (await readJson(req)) as {
+            action?: string;
+            text?: string;
+            query?: string;
+            limit?: number;
+          };
+          const action = (body.action ?? "").trim();
+          if (action === "add") {
+            const text = (body.text ?? "").trim();
+            if (!text) {
+              send(res, 400, { error: "text is required" });
+              return;
+            }
+            send(res, 201, {
+              memories: await addMemory({
+                userId: run.userId,
+                text,
+                infer: false,
+                metadata: { source: "agent", runId },
+              }),
+            });
+            return;
+          }
+          if (action === "search") {
+            const query = (body.query ?? "").trim();
+            if (!query) {
+              send(res, 400, { error: "query is required" });
+              return;
+            }
+            send(res, 200, { memories: await searchMemories({ userId: run.userId, query, limit: body.limit }) });
+            return;
+          }
+          if (action === "list") {
+            send(res, 200, { memories: await listMemories(run.userId, body.limit ?? 50) });
+            return;
+          }
+          send(res, 400, { error: "action must be add, search, or list" });
+        } catch (error) {
+          sendMem0Error(res, error);
+        }
+        return;
+      }
+
       const subscriptionMatch = /^\/(?:v1|internal)\/runs\/([^/]+)\/subscriptions$/.exec(path);
       if (subscriptionMatch && (method === "GET" || method === "POST")) {
         const runId = subscriptionMatch[1] ?? "";
