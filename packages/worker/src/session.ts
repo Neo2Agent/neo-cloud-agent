@@ -9,6 +9,7 @@ import {
 import {
   appendExpertRole,
   appendProjectInstruction,
+  appendUserMemory,
   deliveryForPi,
   intersectSessionTools,
   wrapPromptWithConversationReplay,
@@ -110,12 +111,15 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
   const resourceLoader = await createWorkspaceLoader({
     cwd: input.cwd,
     agentDir,
-    systemPrompt: appendProjectInstruction(
-      appendExpertRole(
-        appendWorkspaceBoundary(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, config.sandboxRoot),
-        expert.role,
+    systemPrompt: appendUserMemory(
+      appendProjectInstruction(
+        appendExpertRole(
+          appendWorkspaceBoundary(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, config.sandboxRoot),
+          expert.role,
+        ),
+        readProjectInstruction(input.cwd),
       ),
-      readProjectInstruction(input.cwd),
+      readUserMemory(input.cwd),
     ),
     settingsManager,
     sandboxRoot: config.sandboxRoot,
@@ -169,6 +173,14 @@ function readProjectInstruction(cwd: string): string {
     return readFileSync(path.join(cwd, ".neo", "PROJECT.md"), "utf8");
   } catch {
     return process.env.NEO_PROJECT_INSTRUCTION ?? "";
+  }
+}
+
+export function readUserMemory(cwd: string): string {
+  try {
+    return readFileSync(path.join(cwd, ".neo", "MEMORY.md"), "utf8");
+  } catch {
+    return "";
   }
 }
 

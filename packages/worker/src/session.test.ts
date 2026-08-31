@@ -6,7 +6,7 @@ import test from "node:test";
 import { CLOUD_SYSTEM_PROMPT, CLOUD_TOOL_NAMES, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { gatewayModelSpec, supportsVision } from "./model-spec.js";
 import { readExpertWorkspace } from "./expert-workspace.js";
-import { applyConversationReplay } from "./session.js";
+import { applyConversationReplay, readUserMemory } from "./session.js";
 
 test("session tools include filesystem tools plus neo-git, neo-pr, and neo-diag", () => {
   assert.deepEqual(sessionToolNames(), [
@@ -106,6 +106,14 @@ test("a run with no scratch files still reads the workspace expert", () => {
   writeFileSync(path.join(cwd, ".neo", "EXPERT.md"), "Role Override: cloud expert.\n");
   const expert = readExpertWorkspace(cwd, path.join(cwd, ".neo", "runs", "missing"));
   assert.match(expert.role, /cloud expert/);
+});
+
+test("readUserMemory loads .neo/MEMORY.md and ignores a missing file", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-user-memory-"));
+  assert.equal(readUserMemory(cwd), "");
+  mkdirSync(path.join(cwd, ".neo"), { recursive: true });
+  writeFileSync(path.join(cwd, ".neo", "MEMORY.md"), "# User memory\n\n- 用 pnpm\n");
+  assert.match(readUserMemory(cwd), /用 pnpm/);
 });
 
 test("conversation replay is injected only when the live session is empty", () => {

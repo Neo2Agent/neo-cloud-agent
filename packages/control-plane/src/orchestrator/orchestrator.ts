@@ -71,6 +71,7 @@ import { dropHistory, eventsForRun, publish, resetHistory, seedEvents } from "..
 import { keepHotHistory } from "../events/history.js";
 import { restoreArchivedArtifacts, scheduleArchive } from "../objects/archive.js";
 import { getRuntime } from "../runtime/factory.js";
+import { writeRecalledMemory } from "../memory/inject.js";
 import { persistRunWorkspace } from "../runtime/persist-workspace.js";
 import { vmWorkspaceFor } from "../runtime/vm-slots.js";
 import {
@@ -1278,6 +1279,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
 
   try {
     writeProjectMemory(run);
+    await writeRecalledMemory(run);
     writeExpertRole(run);
     writeRunPlugins(run, input.pluginIds);
     flushRun(run.id);

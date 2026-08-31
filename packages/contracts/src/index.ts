@@ -225,6 +225,8 @@ export type {
   UpdateProjectRequest,
 } from "./project.js";
 export { appendProjectInstruction, canManageProject, formatProjectMemory } from "./project.js";
+export type { MemoryItem, MemoryListResponse } from "./memory.js";
+export { appendUserMemory, formatUserMemory } from "./memory.js";
 export type {
   BundledExpertAudience,
   BundledExpertOverrideFields,

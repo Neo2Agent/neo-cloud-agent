@@ -207,6 +207,14 @@ import {
 } from "../notify/settings.js";
 import { registerTelegramWebhook } from "../notify/telegram.js";
 import { serveWebFile } from "./static.js";
+import {
+  addMemory,
+  deleteMemory,
+  listMemories,
+  Mem0Error,
+  readMem0Info,
+  searchMemories,
+} from "../memory/client.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
 import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
 
@@ -260,6 +268,14 @@ function sendAccountError(res: ServerResponse, error: unknown): void {
   }
   const message = error instanceof Error ? error.message : "account_error";
   send(res, message.includes("already registered") ? 409 : 500, { error: message });
+}
+
+function sendMem0Error(res: ServerResponse, error: unknown): void {
+  if (error instanceof Mem0Error) {
+    send(res, error.status, { error: error.message });
+    return;
+  }
+  send(res, 502, { error: error instanceof Error ? error.message : "mem0_failed" });
 }
 
 async function readRawBody(req: IncomingMessage): Promise<Buffer> {
@@ -403,6 +419,7 @@ export function createApiServer() {
           llmContextWindow: resolveModelLimits(llm.model)?.contextWindow ?? null,
           llmConfigured: llm.configured,
           newApi: readNewApiInfo(),
+          mem0: readMem0Info(),
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           vmSlots: summarizeVmSlots(config.workerRuntime),
@@ -1135,6 +1152,74 @@ export function createApiServer() {
           } catch (error) {
             const message = error instanceof Error ? error.message : "delete_failed";
             send(res, message.includes("不存在") ? 404 : 400, { error: message });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/memories") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          const configured = readMem0Info().configured;
+          if (!configured) {
+            send(res, 200, { configured: false, memories: [] });
+            return;
+          }
+          try {
+            const limit = Number(url.searchParams.get("limit") ?? 50);
+            send(res, 200, { configured: true, memories: await listMemories(actor.userId, limit) });
+          } catch (error) {
+            sendMem0Error(res, error);
+          }
+          return;
+        }
+        if (method === "POST" && path === "/v1/memories") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { text?: string; infer?: boolean };
+            const text = (body.text ?? "").trim();
+            if (!text) {
+              send(res, 400, { error: "text is required" });
+              return;
+            }
+            send(res, 201, { memories: await addMemory({ userId: actor.userId, text, infer: body.infer === true }) });
+          } catch (error) {
+            sendMem0Error(res, error);
+          }
+          return;
+        }
+        if (method === "POST" && path === "/v1/memories/search") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { query?: string; limit?: number };
+            const query = (body.query ?? "").trim();
+            if (!query) {
+              send(res, 400, { error: "query is required" });
+              return;
+            }
+            send(res, 200, { memories: await searchMemories({ userId: actor.userId, query, limit: body.limit }) });
+          } catch (error) {
+            sendMem0Error(res, error);
+          }
+          return;
+        }
+        const memoryDelete = /^\/v1\/memories\/([^/]+)$/.exec(path);
+        if (memoryDelete && method === "DELETE") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          try {
+            await deleteMemory(memoryDelete[1] ?? "");
+            send(res, 200, { ok: true });
+          } catch (error) {
+            sendMem0Error(res, error);
           }
           return;
         }
