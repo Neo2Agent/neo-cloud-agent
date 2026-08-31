@@ -6,6 +6,11 @@ import test from "node:test";
 
 const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "styles.css"), "utf8");
 
+test("voice file sheet has a primary action so HTTP pages explain before the picker", () => {
+  assert.match(css, /\.buddy-sheet-primary\s*\{/);
+  assert.match(css, /\.buddy-sheet-copy\s*\{/);
+});
+
 test("buddy composer bar keeps Flash centered between plus/mic and send", () => {
   assert.match(css, /\.buddy-composer-bar\s*\{[^}]*grid-template-columns:\s*1fr auto 1fr/);
   assert.match(css, /\.buddy-composer-bar-start\s*\{/);

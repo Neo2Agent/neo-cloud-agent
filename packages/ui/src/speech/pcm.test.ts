@@ -27,6 +27,15 @@ test("browserMicReady explains a secure page with no mic API", () => {
   assert.equal(browserMicReady(win), UNSUPPORTED_MIC_HINT);
 });
 
+test("pageAllowsLiveMic refuses modern getUserMedia on insecure HTTP", () => {
+  const win = {
+    isSecureContext: false,
+    navigator: { mediaDevices: { getUserMedia: async () => ({}) } },
+  } as unknown as Window;
+  assert.equal(pageAllowsLiveMic(win), false);
+  assert.equal(browserMicReady(win), INSECURE_MIC_HINT);
+});
+
 test("pageAllowsLiveMic accepts prefixed getUserMedia on HTTP pages", () => {
   const nav = {
     webkitGetUserMedia: (_c: unknown, success: (stream: unknown) => void) => success({}),

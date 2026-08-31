@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BAD_RECORDING_HINT } from "./cloud.js";
-import { AUDIO_FILE_ACCEPT, decodeAudioFileToPcm, pickAudioFile } from "./file.js";
+import { AUDIO_FILE_ACCEPT, decodeAudioFileToPcm, isLikelyAudioFile, pickAudioFile } from "./file.js";
 
 test("decodeAudioFileToPcm uses the injected decoder", async () => {
   const file = new File([Uint8Array.from([1, 2, 3])], "a.wav", { type: "audio/wav" });
@@ -50,4 +50,17 @@ test("pickAudioFile resolves the chosen file", async () => {
   assert.equal(file?.name, "voice.m4a");
   assert.equal(input.accept, AUDIO_FILE_ACCEPT);
   assert.equal(attrs.capture, undefined);
+});
+
+test("AUDIO_FILE_ACCEPT is extensions only so iOS does not offer 录像", () => {
+  assert.equal(AUDIO_FILE_ACCEPT, ".mp3,.wav,.aac,.m4a");
+  assert.doesNotMatch(AUDIO_FILE_ACCEPT, /audio\/|\*|webm|mp4/);
+});
+
+test("isLikelyAudioFile keeps voice memos and rejects photos or video", () => {
+  assert.equal(isLikelyAudioFile({ name: "voice.m4a", type: "audio/mp4" }), true);
+  assert.equal(isLikelyAudioFile({ name: "clip.mp3", type: "" }), true);
+  assert.equal(isLikelyAudioFile({ name: "clip.mp4", type: "video/mp4" }), false);
+  assert.equal(isLikelyAudioFile({ name: "clip.mov", type: "" }), false);
+  assert.equal(isLikelyAudioFile({ name: "img.jpg", type: "image/jpeg" }), false);
 });

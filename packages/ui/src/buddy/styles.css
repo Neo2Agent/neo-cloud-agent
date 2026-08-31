@@ -315,6 +315,28 @@
   font-weight: 650;
 }
 
+.buddy-sheet-copy {
+  margin: 0 0 16px;
+  color: #6f6f72;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.buddy-sheet-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  margin: 0 0 8px;
+  border: 0;
+  border-radius: 14px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
 .buddy-sheet-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 4px 0 12px;

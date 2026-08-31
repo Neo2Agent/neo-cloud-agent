@@ -32,9 +32,18 @@ export function resolveGetUserMedia(
 }
 
 export function pageAllowsLiveMic(
-  win: Pick<Window, "navigator"> = globalThis as unknown as Window,
+  win: Pick<Window, "navigator" | "isSecureContext"> = globalThis as unknown as Window,
 ): boolean {
-  return resolveGetUserMedia(win.navigator as MicNavigator) !== null;
+  const nav = win.navigator as MicNavigator;
+  if (resolveGetUserMedia(nav) === null) return false;
+  // Chrome still exposes mediaDevices.getUserMedia on HTTP, but calling it
+  // throws. Only keep a live session for legacy prefixed APIs some WebViews honor.
+  if (win.isSecureContext === false) {
+    const hasModern = typeof nav.mediaDevices?.getUserMedia === "function";
+    const hasLegacy = typeof (nav.getUserMedia ?? nav.webkitGetUserMedia ?? nav.mozGetUserMedia) === "function";
+    return !hasModern && hasLegacy;
+  }
+  return true;
 }
 
 export function browserMicReady(

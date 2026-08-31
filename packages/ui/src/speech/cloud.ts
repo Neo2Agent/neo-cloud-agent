@@ -8,7 +8,7 @@ export type StartVoiceResult =
   | { kind: "cancelled" }
   | { kind: "error"; message: string };
 
-export const INSECURE_MIC_HINT = "当前是 HTTP，浏览器不给实时麦克风。请点麦克风选一段录音，或直接打字。";
+export const INSECURE_MIC_HINT = "当前是 HTTP，浏览器不给实时麦克风。点麦克风后选录音文件（不要选录像或相册），或直接打字。";
 export const UNSUPPORTED_MIC_HINT = "这个浏览器不支持麦克风。请换 Chrome / Safari，或直接打字。";
 export const EMPTY_RECORDING_HINT = "没听清，请再录一次，或直接打字。";
 export const BAD_RECORDING_HINT = "读不了这段录音。请换 wav / m4a / mp3，或直接打字。";

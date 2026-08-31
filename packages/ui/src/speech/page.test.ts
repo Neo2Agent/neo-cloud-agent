@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BAD_RECORDING_HINT, EMPTY_RECORDING_HINT } from "./cloud.js";
+import { NOT_AUDIO_FILE_HINT } from "./file.js";
 import { startPageVoice } from "./page.js";
 
 test("startPageVoice uses live capture when the mic exists", async () => {
@@ -106,6 +107,20 @@ test("startPageVoice maps an empty recording", async () => {
   assert.deepEqual(started, { kind: "error", message: EMPTY_RECORDING_HINT });
 });
 
+test("startPageVoice rejects a video from the iOS media sheet", async () => {
+  const started = await startPageVoice(
+    async () => ({ sessionId: "s1", text: "" }),
+    () => undefined,
+    undefined,
+    undefined,
+    {
+      allowLiveMic: false,
+      pickFile: async () => new File([Uint8Array.from([1])], "clip.mov", { type: "video/quicktime" }),
+    },
+  );
+  assert.deepEqual(started, { kind: "error", message: NOT_AUDIO_FILE_HINT });
+});
+
 test("startPageVoice maps a broken file to a recording hint", async () => {
   const started = await startPageVoice(
     async () => ({ sessionId: "s1", text: "" }),
@@ -114,7 +129,7 @@ test("startPageVoice maps a broken file to a recording hint", async () => {
     undefined,
     {
       allowLiveMic: false,
-      pickFile: async () => new File([Uint8Array.from([1])], "a.amr"),
+      pickFile: async () => new File([Uint8Array.from([1])], "a.wav", { type: "audio/wav" }),
       decodeFile: async () => {
         throw new Error("Unable to decode");
       },

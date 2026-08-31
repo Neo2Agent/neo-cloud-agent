@@ -25,7 +25,7 @@ export function holdPadLabel(input: {
   if (input.finishing) return "正在转文字…";
   if (input.holding) return "正在听…再点一下完成";
   if (!input.supported) return input.followUp ? "继续说一句…" : "说说你要做什么";
-  if (input.fileFallback) return "点一下选一段录音";
+  if (input.fileFallback) return "选录音文件";
   return "点一下开始说话";
 }
 

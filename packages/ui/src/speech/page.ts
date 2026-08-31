@@ -8,7 +8,7 @@ import {
   type SpeechIatPush,
   type StartVoiceResult,
 } from "./cloud";
-import { decodeAudioFileToPcm, pickAudioFile } from "./file";
+import { decodeAudioFileToPcm, isLikelyAudioFile, NOT_AUDIO_FILE_HINT, pickAudioFile } from "./file";
 import { createBrowserPcmCapture, pageAllowsLiveMic } from "./pcm";
 
 export type StartPageVoiceDeps = {
@@ -54,6 +54,7 @@ export async function startPageVoice(
   }
   const file = await (deps.pickFile ?? pickAudioFile)();
   if (!file) return { kind: "cancelled" };
+  if (!isLikelyAudioFile(file)) return { kind: "error", message: NOT_AUDIO_FILE_HINT };
   try {
     const pcm = await (deps.decodeFile ?? decodeAudioFileToPcm)(file);
     if (!pcm.length) return { kind: "error", message: EMPTY_RECORDING_HINT };

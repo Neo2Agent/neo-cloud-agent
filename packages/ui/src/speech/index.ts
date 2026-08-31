@@ -14,7 +14,13 @@ export {
   type StartVoiceResult,
   type VoiceSession,
 } from "./cloud";
-export { AUDIO_FILE_ACCEPT, decodeAudioFileToPcm, pickAudioFile } from "./file";
+export {
+  AUDIO_FILE_ACCEPT,
+  NOT_AUDIO_FILE_HINT,
+  decodeAudioFileToPcm,
+  isLikelyAudioFile,
+  pickAudioFile,
+} from "./file";
 export { startPageVoice, transcribePcm, type StartPageVoiceDeps } from "./page";
 export {
   browserMicReady,

@@ -6,7 +6,7 @@ import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
 import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import { pageAllowsLiveMic, type VoiceSession } from "@neo-cloud-agent/ui/speech";
-import { Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
+import { BuddyVoiceFileSheet, Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
 import { readToken } from "../api";
 import type { DeskTarget } from "../desk";
 import { IconArrowUp, IconMic, IconPlus, IconStop } from "../icons";
@@ -113,6 +113,7 @@ export function Composer({
   const [listening, setListening] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [voiceError, setVoiceError] = useState("");
+  const [voicePickOpen, setVoicePickOpen] = useState(false);
   const voiceRef = useRef<VoiceSession | null>(null);
   const startingRef = useRef(false);
   const promptRef = useRef(prompt);
@@ -165,23 +166,8 @@ export function Composer({
     followUp,
     fileFallback: !pageAllowsLiveMic(),
   });
-  const toggleVoice = async () => {
-    if (sendLocked) return;
-    if (voiceRef.current) {
-      const session = voiceRef.current;
-      voiceRef.current = null;
-      setListening(false);
-      setFinishing(true);
-      try {
-        const spoken = await session.stop();
-        const next = applyClickVoice(promptRef.current, spoken);
-        if (next !== promptRef.current) onPrompt(next);
-      } finally {
-        setFinishing(false);
-      }
-      return;
-    }
-    if (!canStartVoice || startingRef.current) return;
+  const runVoice = async () => {
+    if (startingRef.current) return;
     startingRef.current = true;
     const oneShot = !pageAllowsLiveMic();
     setVoiceError("");
@@ -204,6 +190,29 @@ export function Composer({
       startingRef.current = false;
       if (oneShot) setFinishing(false);
     }
+  };
+  const toggleVoice = async () => {
+    if (sendLocked) return;
+    if (voiceRef.current) {
+      const session = voiceRef.current;
+      voiceRef.current = null;
+      setListening(false);
+      setFinishing(true);
+      try {
+        const spoken = await session.stop();
+        const next = applyClickVoice(promptRef.current, spoken);
+        if (next !== promptRef.current) onPrompt(next);
+      } finally {
+        setFinishing(false);
+      }
+      return;
+    }
+    if (!canStartVoice) return;
+    if (!pageAllowsLiveMic()) {
+      setVoicePickOpen(true);
+      return;
+    }
+    await runVoice();
   };
   const voiceButton = (className: string) => (
     <button
@@ -245,6 +254,14 @@ export function Composer({
       {buddy && (voiceError || listening || finishing) ? (
         <p className={voiceError ? "hint voice-error" : "hint"}>{listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : voiceError}</p>
       ) : null}
+      <BuddyVoiceFileSheet
+        open={voicePickOpen}
+        onClose={() => setVoicePickOpen(false)}
+        onPick={() => {
+          setVoicePickOpen(false);
+          void runVoice();
+        }}
+      />
       <textarea
         id="prompt"
         name="prompt"

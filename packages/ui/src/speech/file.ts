@@ -41,9 +41,24 @@ export async function decodeAudioFileToPcm(
   }
 }
 
-/** Audio-only. Do not set `capture` — on phone browsers that opens the camera. */
-export const AUDIO_FILE_ACCEPT =
-  "audio/*,audio/mpeg,audio/mp4,audio/wav,audio/webm,audio/aac,audio/x-m4a,.mp3,.m4a,.wav,.aac,.ogg";
+/**
+ * Extensions only. Do not set `capture`, and do not use `audio/*` / `audio/mp4` /
+ * `audio/webm` — iOS Safari treats those as video and offers 录像 / 照片图库.
+ */
+export const AUDIO_FILE_ACCEPT = ".mp3,.wav,.aac,.m4a";
+
+export const NOT_AUDIO_FILE_HINT = "这是照片或视频。请选录音文件（m4a / mp3 / wav），不要点「录像」或相册。";
+
+const AUDIO_NAME = /\.(mp3|wav|aac|m4a|ogg|flac)$/i;
+
+export function isLikelyAudioFile(file: { name?: string; type?: string }): boolean {
+  const type = (file.type || "").toLowerCase();
+  if (type.startsWith("video/") || type.startsWith("image/")) return false;
+  if (type.startsWith("audio/")) return true;
+  const name = file.name || "";
+  if (/\.(mp4|mov|m4v|avi|mkv|webm|jpg|jpeg|png|gif|heic|heif|webp)$/i.test(name)) return false;
+  return AUDIO_NAME.test(name);
+}
 
 export function pickAudioFile(doc: FilePickerDoc = document): Promise<File | null> {
   return new Promise((resolve) => {
