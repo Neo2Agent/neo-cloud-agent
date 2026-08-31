@@ -23,7 +23,7 @@ export async function transcribePcm(
   onPreview: (text: string) => void,
   onError?: (message: string) => void,
 ): Promise<StartVoiceResult> {
-  let emit: ((frame: Uint8Array) => void) | null = null;
+  let emit: (frame: Uint8Array) => void = () => undefined;
   const started = await startCloudVoice(
     push,
     {
@@ -40,7 +40,7 @@ export async function transcribePcm(
   if (started.kind !== "session") return started;
   const chunk = IAT_HTTP_MIN_BYTES;
   for (let offset = 0; offset < pcm.length; offset += chunk) {
-    emit?.(pcm.subarray(offset, Math.min(pcm.length, offset + chunk)));
+    emit(pcm.subarray(offset, Math.min(pcm.length, offset + chunk)));
   }
   const text = (await started.session.stop()).replace(/\s+/g, " ").trim();
   if (!text) return { kind: "error", message: EMPTY_RECORDING_HINT };
