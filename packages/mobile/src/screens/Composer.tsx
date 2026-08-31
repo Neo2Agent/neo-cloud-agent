@@ -73,6 +73,17 @@ export function Composer(props: Props) {
         voiceRef.current = null;
       },
     );
+    if (started.kind === "cancelled") {
+      holdArmed.current = false;
+      holdStarted.current = 0;
+      return;
+    }
+    if (started.kind === "transcript") {
+      holdArmed.current = false;
+      holdStarted.current = 0;
+      applyHoldResult(Math.max(Date.now() - startedAt, 1_000), started.text);
+      return;
+    }
     if (started.kind !== "session") {
       holdArmed.current = false;
       holdStarted.current = 0;

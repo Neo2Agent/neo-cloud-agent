@@ -41,10 +41,10 @@ test("describeSpeechError maps rate_limited to a single Chinese hint", () => {
   assert.equal(describeSpeechError("听写服务不可用"), "听写服务不可用");
 });
 
-test("describeSpeechError maps missing getUserMedia to an HTTPS hint", () => {
+test("describeSpeechError maps missing getUserMedia to an HTTP hint", () => {
   assert.match(
     describeSpeechError("Cannot read properties of undefined (reading 'getUserMedia')"),
-    /HTTPS/,
+    /HTTP/,
   );
   assert.equal(describeSpeechError("NotAllowedError"), "请允许麦克风后再试。");
 });

@@ -1,6 +1,8 @@
 export {
+  BAD_RECORDING_HINT,
   concatPcm,
   describeSpeechError,
+  EMPTY_RECORDING_HINT,
   IAT_HTTP_MIN_BYTES,
   INSECURE_MIC_HINT,
   UNSUPPORTED_MIC_HINT,
@@ -12,4 +14,13 @@ export {
   type StartVoiceResult,
   type VoiceSession,
 } from "./cloud";
-export { browserMicReady, createBrowserPcmCapture, startBrowserPcm } from "./pcm";
+export { decodeAudioFileToPcm, pickAudioFile } from "./file";
+export { startPageVoice, transcribePcm, type StartPageVoiceDeps } from "./page";
+export {
+  browserMicReady,
+  createBrowserPcmCapture,
+  floatTo16Bit,
+  pageAllowsLiveMic,
+  resolveGetUserMedia,
+  startBrowserPcm,
+} from "./pcm";
