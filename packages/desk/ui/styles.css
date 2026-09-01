@@ -376,6 +376,42 @@ button:disabled {
   color: var(--text);
 }
 
+.rail-more-wrap {
+  position: relative;
+}
+
+.rail-more-pop {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: calc(100% + 4px);
+  z-index: 12;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: var(--ink-line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow-stack);
+}
+
+.rail-more-pop button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rail-more-pop button:hover,
+.rail-more-pop button.on {
+  background: var(--hover);
+}
+
 .rail-icon {
   width: 18px;
   display: grid;

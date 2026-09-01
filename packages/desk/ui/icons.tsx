@@ -24,6 +24,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Shapes,
   Square,
   SquarePlus,
   SquareTerminal,
@@ -65,6 +66,10 @@ export function IconAutomations(props: IconProps) {
 
 export function IconProjects(props: IconProps) {
   return icon(LayoutGrid, props);
+}
+
+export function IconMore(props: IconProps) {
+  return icon(Shapes, props);
 }
 
 export function IconExperts(props: IconProps) {
