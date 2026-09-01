@@ -72,14 +72,29 @@ test("/v1/memories add search list and delete go through Mem0", async (t) => {
   const base = `http://127.0.0.1:${port}`;
   const token = await login(base);
   const headers = { "content-type": "application/json", authorization: `Bearer ${token}` };
-  const calls: Array<{ method?: string; url: string }> = [];
+  const calls: Array<{ method?: string; url: string; body?: unknown }> = [];
+  let stored = "用 pnpm";
   setMem0FetchForTests(async (url, init) => {
-    calls.push({ method: init?.method, url });
+    let body: unknown;
+    if (typeof init?.body === "string") {
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
+    }
+    calls.push({ method: init?.method, url, body });
     if (url.endsWith("/search") || url.includes("/memories?")) {
-      return new Response(JSON.stringify({ results: [{ id: "m1", memory: "用 pnpm" }] }), { status: 200 });
+      return new Response(JSON.stringify({ results: [{ id: "m1", memory: stored, user_id: "admin" }] }), {
+        status: 200,
+      });
+    }
+    if (init?.method === "PUT" && url.endsWith("/memories/m1")) {
+      stored = typeof (body as { text?: string })?.text === "string" ? (body as { text: string }).text : stored;
+      return new Response(JSON.stringify({ id: "m1", memory: stored }), { status: 200 });
     }
     if (init?.method === "POST") {
-      return new Response(JSON.stringify({ results: [{ id: "m1", memory: "用 pnpm" }] }), { status: 200 });
+      return new Response(JSON.stringify({ results: [{ id: "m1", memory: stored }] }), { status: 200 });
     }
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   });
@@ -103,6 +118,24 @@ test("/v1/memories add search list and delete go through Mem0", async (t) => {
   });
   assert.equal(found.status, 200);
   assert.equal(((await found.json()) as { memories: Array<{ id: string }> }).memories[0]?.id, "m1");
+
+  const patched = await fetch(`${base}/v1/memories/m1`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ text: "用 yarn" }),
+  });
+  assert.equal(patched.status, 200);
+  assert.equal(((await patched.json()) as { memories: Array<{ text: string }> }).memories[0]?.text, "用 yarn");
+  const put = calls.find((call) => call.method === "PUT" && call.url.endsWith("/memories/m1"));
+  assert.ok(put);
+  assert.equal((put?.body as { text?: string; user_id?: string })?.text, "用 yarn");
+
+  const emptyPatch = await fetch(`${base}/v1/memories/m1`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ text: "  " }),
+  });
+  assert.equal(emptyPatch.status, 400);
 
   const deleted = await fetch(`${base}/v1/memories/m1`, { method: "DELETE", headers });
   assert.equal(deleted.status, 200);
@@ -129,7 +162,13 @@ test("worker JWT can add and search memories for the run user", async (t) => {
       }
     }
     mem0Calls.push({ method: init?.method, url, body });
-    return new Response(JSON.stringify({ results: [{ id: "m1", memory: "用 pnpm" }] }), { status: 200 });
+    const text =
+      init?.method === "PUT" && typeof (body as { text?: string })?.text === "string"
+        ? (body as { text: string }).text
+        : "用 pnpm";
+    return new Response(JSON.stringify({ results: [{ id: "m1", memory: text, user_id: "run-user" }] }), {
+      status: 200,
+    });
   });
   const run = await createRun({ prompt: "记住包管理器", repoUrls: ["fixtures/toy-repo"] });
   const jwt = mintRunToken("memories-secret", {
@@ -169,6 +208,25 @@ test("worker JWT can add and search memories for the run user", async (t) => {
   assert.equal(((await found.json()) as { memories: Array<{ id: string }> }).memories[0]?.id, "m1");
   const searchCall = mem0Calls.find((call) => call.url.endsWith("/search"));
   assert.equal((searchCall?.body as { user_id?: string })?.user_id, run.userId);
+
+  const updated = await fetch(`${base}/internal/runs/${run.id}/memories`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+    body: JSON.stringify({ action: "update", id: "m1", text: "用 yarn", userId: "someone-else" }),
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(((await updated.json()) as { memories: Array<{ text: string }> }).memories[0]?.text, "用 yarn");
+  const putCall = mem0Calls.find((call) => call.method === "PUT" && call.url.endsWith("/memories/m1"));
+  assert.equal((putCall?.body as { user_id?: string; text?: string })?.user_id, run.userId);
+  assert.equal((putCall?.body as { text?: string })?.text, "用 yarn");
+
+  const forgot = await fetch(`${base}/internal/runs/${run.id}/memories`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+    body: JSON.stringify({ action: "delete", id: "m1" }),
+  });
+  assert.equal(forgot.status, 200);
+  assert.ok(mem0Calls.some((call) => call.method === "DELETE" && call.url.endsWith("/memories/m1")));
 });
 
 test("internal memories require Mem0", async (t) => {
@@ -192,6 +250,47 @@ test("internal memories require Mem0", async (t) => {
     body: JSON.stringify({ action: "add", text: "用 pnpm" }),
   });
   assert.equal(response.status, 503);
+});
+
+test("PATCH and DELETE /v1/memories hide other users' items", async (t) => {
+  withMem0Env(t);
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    setMem0FetchForTests(null);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const token = await login(base);
+  const headers = { "content-type": "application/json", authorization: `Bearer ${token}` };
+  const calls: Array<{ method?: string; url: string }> = [];
+  setMem0FetchForTests(async (url, init) => {
+    calls.push({ method: init?.method, url });
+    if (url.includes("/memories?")) {
+      return new Response(JSON.stringify({ results: [] }), { status: 200 });
+    }
+    if (url.endsWith("/memories/foreign")) {
+      if (init?.method === "GET") {
+        return new Response(JSON.stringify({ id: "foreign", memory: "别人的", user_id: "other-user" }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ detail: "memory_not_found" }), { status: 404 });
+  });
+
+  const patched = await fetch(`${base}/v1/memories/foreign`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ text: "改别人的" }),
+  });
+  assert.equal(patched.status, 404);
+  assert.equal(calls.some((call) => call.method === "PUT"), false);
+
+  const deleted = await fetch(`${base}/v1/memories/foreign`, { method: "DELETE", headers });
+  assert.equal(deleted.status, 404);
+  assert.equal(calls.some((call) => call.method === "DELETE"), false);
 });
 
 test("POST /v1/memories requires a session", async (t) => {

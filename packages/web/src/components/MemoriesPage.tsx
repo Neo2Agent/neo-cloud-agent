@@ -16,12 +16,14 @@ export function MemoriesPage({ token, onBack }: Props) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const filtered = useMemo(() => filterMemories(items, query), [items, query]);
   const listPage = clampPage(page, filtered.length);
   const visible = paginate(filtered, listPage);
+  const editing = Boolean(editingId);
 
   const refresh = async () => {
     if (!token) return;
@@ -44,21 +46,40 @@ export function MemoriesPage({ token, onBack }: Props) {
     setPage(1);
   }, [query]);
 
-  const add = () => {
+  const openCreate = () => {
+    setEditingId(null);
+    setDraft("");
+    setFormOpen(true);
+  };
+
+  const openEdit = (item: MemoryRow) => {
+    setEditingId(item.id);
+    setDraft(item.text);
+    setFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setFormOpen(false);
+    setEditingId(null);
+  };
+
+  const save = () => {
     const text = draft.trim();
     if (!text || busy || !token) return;
     setBusy(true);
     void (async () => {
+      const path = editingId ? `/v1/memories/${encodeURIComponent(editingId)}` : "/v1/memories";
+      const method = editingId ? "PATCH" : "POST";
       const body = await readJson<{ memories?: MemoryRow[]; error?: string }>(
-        await api(token, "/v1/memories", { method: "POST", body: JSON.stringify({ text }) }),
+        await api(token, path, { method, body: JSON.stringify({ text }) }),
       );
       if (body.error) throw new Error(body.error);
       setDraft("");
-      setCreateOpen(false);
+      closeForm();
       await refresh();
     })()
       .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "记下失败");
+        setError(caught instanceof Error ? caught.message : editing ? "改失败" : "记下失败");
       })
       .finally(() => setBusy(false));
   };
@@ -104,14 +125,7 @@ export function MemoriesPage({ token, onBack }: Props) {
         onSearch={setQuery}
         placeholder="搜索记忆"
         actionLabel={configured ? "记一条" : undefined}
-        onAction={
-          configured
-            ? () => {
-                setDraft("");
-                setCreateOpen(true);
-              }
-            : undefined
-        }
+        onAction={configured ? openCreate : undefined}
       />
 
       {filtered.length === 0 ? (
@@ -120,14 +134,7 @@ export function MemoriesPage({ token, onBack }: Props) {
           hint={items.length === 0 && configured && !error ? "对话里说「帮我记住」，或点右上角记一条。" : hint}
           action={
             configured && items.length === 0 && !error ? (
-              <button
-                className="proj-add"
-                type="button"
-                onClick={() => {
-                  setDraft("");
-                  setCreateOpen(true);
-                }}
-              >
+              <button className="proj-add" type="button" onClick={openCreate}>
                 记一条
               </button>
             ) : null
@@ -142,10 +149,16 @@ export function MemoriesPage({ token, onBack }: Props) {
                 title={snippet(item.text, 72)}
                 description={item.text.length > 72 ? item.text : undefined}
                 initial="记"
+                onOpen={() => openEdit(item)}
                 actions={
-                  <button type="button" className="ghost" disabled={busy} onClick={() => remove(item.id)}>
-                    删除
-                  </button>
+                  <>
+                    <button type="button" className="ghost" disabled={busy} onClick={() => openEdit(item)}>
+                      编辑
+                    </button>
+                    <button type="button" className="ghost" disabled={busy} onClick={() => remove(item.id)}>
+                      删除
+                    </button>
+                  </>
                 }
               />
             ))}
@@ -155,15 +168,15 @@ export function MemoriesPage({ token, onBack }: Props) {
       )}
 
       <CatalogModal
-        title="记一条"
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        title={editing ? "改这条" : "记一条"}
+        open={formOpen}
+        onClose={closeForm}
         footer={
           <>
-            <button type="button" className="ghost" onClick={() => setCreateOpen(false)}>
+            <button type="button" className="ghost" onClick={closeForm}>
               取消
             </button>
-            <button type="button" className="proj-add" disabled={busy || !draft.trim()} onClick={add}>
+            <button type="button" className="proj-add" disabled={busy || !draft.trim()} onClick={save}>
               保存
             </button>
           </>
@@ -172,7 +185,7 @@ export function MemoriesPage({ token, onBack }: Props) {
         <CatalogForm
           onSubmit={(event) => {
             event.preventDefault();
-            add();
+            save();
           }}
         >
           <label>

@@ -209,11 +209,12 @@ import { registerTelegramWebhook } from "../notify/telegram.js";
 import { serveWebFile } from "./static.js";
 import {
   addMemory,
-  deleteMemory,
+  deleteOwnedMemory,
   listMemories,
   Mem0Error,
   readMem0Info,
   searchMemories,
+  updateMemory,
 } from "../memory/client.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
 import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
@@ -221,7 +222,7 @@ import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slo
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "Last-Event-ID, Content-Type, Authorization, X-Neo-Client",
-  "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
   "access-control-expose-headers":
     "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Policy",
 } as const;
@@ -1209,15 +1210,26 @@ export function createApiServer() {
           }
           return;
         }
-        const memoryDelete = /^\/v1\/memories\/([^/]+)$/.exec(path);
-        if (memoryDelete && method === "DELETE") {
+        const memoryItem = /^\/v1\/memories\/([^/]+)$/.exec(path);
+        if (memoryItem && (method === "PATCH" || method === "PUT" || method === "DELETE")) {
           if (actor.kind !== "user") {
             send(res, 401, { error: "login_required" });
             return;
           }
+          const memoryId = memoryItem[1] ?? "";
           try {
-            await deleteMemory(memoryDelete[1] ?? "");
-            send(res, 200, { ok: true });
+            if (method === "DELETE") {
+              await deleteOwnedMemory(actor.userId, memoryId);
+              send(res, 200, { ok: true });
+              return;
+            }
+            const body = (await readJson(req)) as { text?: string };
+            const text = (body.text ?? "").trim();
+            if (!text) {
+              send(res, 400, { error: "text is required" });
+              return;
+            }
+            send(res, 200, { memories: [await updateMemory({ id: memoryId, userId: actor.userId, text })] });
           } catch (error) {
             sendMem0Error(res, error);
           }
@@ -1807,6 +1819,7 @@ export function createApiServer() {
         try {
           const body = (await readJson(req)) as {
             action?: string;
+            id?: string;
             text?: string;
             query?: string;
             limit?: number;
@@ -1828,6 +1841,30 @@ export function createApiServer() {
             });
             return;
           }
+          if (action === "update") {
+            const id = (body.id ?? "").trim();
+            const text = (body.text ?? "").trim();
+            if (!id) {
+              send(res, 400, { error: "id is required" });
+              return;
+            }
+            if (!text) {
+              send(res, 400, { error: "text is required" });
+              return;
+            }
+            send(res, 200, { memories: [await updateMemory({ id, userId: run.userId, text })] });
+            return;
+          }
+          if (action === "delete") {
+            const id = (body.id ?? "").trim();
+            if (!id) {
+              send(res, 400, { error: "id is required" });
+              return;
+            }
+            await deleteOwnedMemory(run.userId, id);
+            send(res, 200, { ok: true });
+            return;
+          }
           if (action === "search") {
             const query = (body.query ?? "").trim();
             if (!query) {
@@ -1841,7 +1878,7 @@ export function createApiServer() {
             send(res, 200, { memories: await listMemories(run.userId, body.limit ?? 50) });
             return;
           }
-          send(res, 400, { error: "action must be add, search, or list" });
+          send(res, 400, { error: "action must be add, search, list, update, or delete" });
         } catch (error) {
           sendMem0Error(res, error);
         }

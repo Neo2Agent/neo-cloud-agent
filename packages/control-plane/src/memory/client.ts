@@ -53,6 +53,25 @@ function itemText(raw: Record<string, unknown>): string {
   return "";
 }
 
+function normalizeMemoryItem(raw: Record<string, unknown>): MemoryItem | null {
+  const id = typeof raw.id === "string" ? raw.id : typeof raw.memory_id === "string" ? raw.memory_id : "";
+  const text = itemText(raw);
+  if (!id || !text) {
+    return null;
+  }
+  const item: MemoryItem = { id, text };
+  if (typeof raw.score === "number") {
+    item.score = raw.score;
+  }
+  if (typeof raw.user_id === "string") {
+    item.userId = raw.user_id;
+  }
+  if (asRecord(raw.metadata)) {
+    item.metadata = asRecord(raw.metadata) ?? undefined;
+  }
+  return item;
+}
+
 export function normalizeMemoryResults(body: unknown): MemoryItem[] {
   if (!body) {
     return [];
@@ -73,22 +92,16 @@ export function normalizeMemoryResults(body: unknown): MemoryItem[] {
     if (!raw) {
       continue;
     }
-    const id = typeof raw.id === "string" ? raw.id : typeof raw.memory_id === "string" ? raw.memory_id : "";
-    const text = itemText(raw);
-    if (!id || !text) {
-      continue;
+    const item = normalizeMemoryItem(raw);
+    if (item) {
+      items.push(item);
     }
-    const item: MemoryItem = { id, text };
-    if (typeof raw.score === "number") {
-      item.score = raw.score;
+  }
+  if (items.length === 0 && record) {
+    const single = normalizeMemoryItem(record);
+    if (single) {
+      return [single];
     }
-    if (typeof raw.user_id === "string") {
-      item.userId = raw.user_id;
-    }
-    if (asRecord(raw.metadata)) {
-      item.metadata = asRecord(raw.metadata) ?? undefined;
-    }
-    items.push(item);
   }
   return items;
 }
@@ -167,6 +180,47 @@ export async function searchMemories(input: {
   return normalizeMemoryResults(parsed);
 }
 
+export async function getMemory(id: string): Promise<MemoryItem | null> {
+  const parsed = await mem0Request("GET", `/memories/${encodeURIComponent(id)}`);
+  return normalizeMemoryResults(parsed)[0] ?? null;
+}
+
+export async function requireOwnedMemory(userId: string, id: string): Promise<MemoryItem> {
+  const owned = (await listMemories(userId, 100)).find((item) => item.id === id);
+  if (owned) {
+    return owned;
+  }
+  try {
+    const one = await getMemory(id);
+    if (one && (!one.userId || one.userId === userId)) {
+      return one;
+    }
+  } catch (error) {
+    if (!(error instanceof Mem0Error) || error.status !== 404) {
+      throw error;
+    }
+  }
+  throw new Mem0Error("memory_not_found", 404);
+}
+
+export async function updateMemory(input: { id: string; userId: string; text: string }): Promise<MemoryItem> {
+  const text = input.text.trim();
+  if (!text) {
+    throw new Mem0Error("text is required", 400);
+  }
+  await requireOwnedMemory(input.userId, input.id);
+  const parsed = await mem0Request("PUT", `/memories/${encodeURIComponent(input.id)}`, {
+    text,
+    user_id: input.userId,
+  });
+  return normalizeMemoryResults(parsed)[0] ?? { id: input.id, text, userId: input.userId };
+}
+
 export async function deleteMemory(id: string): Promise<void> {
   await mem0Request("DELETE", `/memories/${encodeURIComponent(id)}`);
+}
+
+export async function deleteOwnedMemory(userId: string, id: string): Promise<void> {
+  await requireOwnedMemory(userId, id);
+  await deleteMemory(id);
 }

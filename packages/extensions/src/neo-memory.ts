@@ -1,6 +1,8 @@
 import {
   MEMORY_ADD_TOOL_NAME,
+  MEMORY_DELETE_TOOL_NAME,
   MEMORY_SEARCH_TOOL_NAME,
+  MEMORY_UPDATE_TOOL_NAME,
   type MemoryItem,
 } from "@neo-cloud-agent/contracts";
 import { asString, callControlPlane } from "./client.js";
@@ -104,6 +106,110 @@ export function createMemoryAddTool(ctx: CloudToolContext): CloudToolDefinition 
       },
     },
     execute: (params) => executeMemoryAdd(ctx, params ?? {}),
+  };
+}
+
+export async function executeMemoryUpdate(
+  ctx: CloudToolContext,
+  params: Record<string, unknown>,
+): Promise<CloudToolResult> {
+  const id = asString(params.id).trim();
+  const text = asString(params.text).trim();
+  if (!id) {
+    return { content: "id is required", isError: true };
+  }
+  if (!text) {
+    return { content: "text is required", isError: true };
+  }
+  try {
+    const result = await callControlPlane<MemoryToolResponse>(
+      ctx,
+      `/internal/runs/${encodeURIComponent(ctx.runId)}/memories`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action: "update", id, text }),
+      },
+    );
+    const memories = result.memories ?? [];
+    return {
+      content: ["Updated user memory.", memories.length > 0 ? formatMemories(memories) : `- ${text}`]
+        .filter(Boolean)
+        .join("\n"),
+      details: { id, text, memories },
+    };
+  } catch (error) {
+    return {
+      content: error instanceof Error ? error.message : "memory update failed",
+      isError: true,
+    };
+  }
+}
+
+export async function executeMemoryDelete(
+  ctx: CloudToolContext,
+  params: Record<string, unknown>,
+): Promise<CloudToolResult> {
+  const id = asString(params.id).trim();
+  if (!id) {
+    return { content: "id is required", isError: true };
+  }
+  try {
+    await callControlPlane<{ ok?: boolean }>(ctx, `/internal/runs/${encodeURIComponent(ctx.runId)}/memories`, {
+      method: "POST",
+      body: JSON.stringify({ action: "delete", id }),
+    });
+    return { content: "Forgot that memory.", details: { id } };
+  } catch (error) {
+    return {
+      content: error instanceof Error ? error.message : "memory delete failed",
+      isError: true,
+    };
+  }
+}
+
+export function createMemoryUpdateTool(ctx: CloudToolContext): CloudToolDefinition {
+  return {
+    name: MEMORY_UPDATE_TOOL_NAME,
+    label: "Neo Memory Update",
+    description:
+      "Replace one existing user fact. Search first to get the id. Call this only when the user asks to change a remembered fact. Do not invent an id.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["id", "text"],
+      properties: {
+        id: {
+          type: "string",
+          description: "Memory id from neo_memory_search.",
+        },
+        text: {
+          type: "string",
+          description: "The corrected fact, in the user's language.",
+        },
+      },
+    },
+    execute: (params) => executeMemoryUpdate(ctx, params ?? {}),
+  };
+}
+
+export function createMemoryDeleteTool(ctx: CloudToolContext): CloudToolDefinition {
+  return {
+    name: MEMORY_DELETE_TOOL_NAME,
+    label: "Neo Memory Delete",
+    description:
+      "Forget one existing user fact. Search first to get the id. Call this only when the user asks to drop a remembered fact. Do not invent an id.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["id"],
+      properties: {
+        id: {
+          type: "string",
+          description: "Memory id from neo_memory_search.",
+        },
+      },
+    },
+    execute: (params) => executeMemoryDelete(ctx, params ?? {}),
   };
 }
 

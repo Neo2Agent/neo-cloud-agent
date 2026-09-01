@@ -12,7 +12,7 @@ When .neo/environment.json defines mcp servers, use neo_mcp_list then neo_mcp_ca
 Use neo_subagent to delegate isolated work with the same contract as pi's subagent tool: scout, planner, reviewer, worker, or a .pi/agents / .cursor/agents / .neo/agents markdown file. Modes are { agent, task }, { tasks: [...] } for parallel, and { chain: [...] } with {previous}. Put everything the child needs in the task text; it does not see this conversation. Do not nest neo_subagent. Skip it for a single file read. Scouts use neo_browse for public pages and do not have bash; do not tell them to curl.
 Project AGENTS.md / CLAUDE.md and skills under .pi/skills, .cursor/skills, .claude/skills, .codex/skills, .neo/skills, and .agents/skills are loaded into this session. Follow them. Workspace .cursor/hooks.json and .neo/hooks.json may deny a tool; do not bypass a denial with bash.
 When waiting on GitHub review comments or Actions, call neo_subscribe then end the turn. Opening a PR also auto-subscribes. CI failures arrive as autofix follow-ups (up to 3): read the log, fix, run tests, neo_git_commit. Do not open a new PR. Stop when CI is green. Do not poll with bash, gh, or curl. A human follow-up or a human push on the branch stops autofix.
-When the user asks you to remember a fact, call neo_memory_add with one concise fact. When they ask what you remember, call neo_memory_search. Recalled facts may also appear under "Recalled user memory". You cannot write the store yourself. There is no automatic extraction when a conversation ends. Do not claim you saved a fact unless neo_memory_add succeeded.
+When the user asks you to remember a fact, call neo_memory_add with one concise fact. When they ask what you remember, call neo_memory_search. When they ask to change a remembered fact, search then neo_memory_update. When they ask to forget one, search then neo_memory_delete. Recalled facts may also appear under "Recalled user memory". You cannot write the store yourself. There is no automatic extraction when a conversation ends. Do not claim you saved, changed, or deleted a fact unless the matching tool succeeded.
 Be concise and verify your work.`;
 
 export const BASELINE_TOOL_TEXT = [
@@ -34,4 +34,6 @@ export const BASELINE_TOOL_TEXT = [
   "neo_subscribe: Watch this run's GitHub PR comments or Actions. CI subscriptions autofix failed checks until green.",
   "neo_memory_add: Persist one user fact through the control plane. Keys stay off the VM.",
   "neo_memory_search: Search this user's persisted facts through the control plane.",
+  "neo_memory_update: Replace one existing fact after the user asks to change it.",
+  "neo_memory_delete: Forget one existing fact after the user asks to drop it.",
 ].join("\n");

@@ -13,6 +13,8 @@ export type MemoryListResponse = {
 
 export const MEMORY_ADD_TOOL_NAME = "neo_memory_add";
 export const MEMORY_SEARCH_TOOL_NAME = "neo_memory_search";
+export const MEMORY_UPDATE_TOOL_NAME = "neo_memory_update";
+export const MEMORY_DELETE_TOOL_NAME = "neo_memory_delete";
 
 export function formatUserMemory(items: Array<{ text: string }>): string {
   const lines = items.map((item) => item.text.trim()).filter(Boolean);
@@ -34,5 +36,5 @@ export function appendUserMemory(systemPrompt: string, memory: string): string {
   if (!text) {
     return systemPrompt;
   }
-  return `${systemPrompt}\n\n# Recalled user memory\nFacts from the user's memory store. Prefer them over guessing. The current user message wins if they conflict. There is no automatic extraction at the end of a conversation; persist new facts with ${MEMORY_ADD_TOOL_NAME} and look them up with ${MEMORY_SEARCH_TOOL_NAME}.\n\n${text}`;
+  return `${systemPrompt}\n\n# Recalled user memory\nFacts from the user's memory store. Prefer them over guessing. The current user message wins if they conflict. There is no automatic extraction at the end of a conversation. Persist new facts with ${MEMORY_ADD_TOOL_NAME}, correct one with ${MEMORY_UPDATE_TOOL_NAME}, forget one with ${MEMORY_DELETE_TOOL_NAME}, and look them up with ${MEMORY_SEARCH_TOOL_NAME}.\n\n${text}`;
 }

@@ -7,6 +7,7 @@ import {
   readMem0Info,
   searchMemories,
   setMem0FetchForTests,
+  updateMemory,
 } from "./client.js";
 
 test("readMem0Info needs both url and key", () => {
@@ -43,6 +44,74 @@ test("searchMemories uses filters-shaped body and X-API-Key", async () => {
     const headers = calls[0]?.init?.headers as Record<string, string>;
     assert.equal(headers["X-API-Key"], "m0sk_test");
     assert.equal(JSON.parse(String(calls[0]?.init?.body)).user_id, "user_1");
+  } finally {
+    setMem0FetchForTests(null);
+    if (previousUrl === undefined) delete process.env.MEM0_URL;
+    else process.env.MEM0_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.MEM0_API_KEY;
+    else process.env.MEM0_API_KEY = previousKey;
+  }
+});
+
+test("normalizeMemoryResults accepts a single Mem0 item", () => {
+  assert.deepEqual(normalizeMemoryResults({ id: "m1", memory: "用 yarn", user_id: "u1" }), [
+    { id: "m1", text: "用 yarn", userId: "u1" },
+  ]);
+});
+
+test("updateMemory owns then PUTs the new text", async () => {
+  const previousUrl = process.env.MEM0_URL;
+  const previousKey = process.env.MEM0_API_KEY;
+  process.env.MEM0_URL = "http://mem0.test";
+  process.env.MEM0_API_KEY = "m0sk_test";
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  setMem0FetchForTests(async (url, init) => {
+    calls.push({ url, init });
+    if (url.includes("/memories?")) {
+      return new Response(JSON.stringify({ results: [{ id: "m1", memory: "用 pnpm", user_id: "u1" }] }), {
+        status: 200,
+      });
+    }
+    if (init?.method === "PUT") {
+      return new Response(JSON.stringify({ id: "m1", memory: "用 yarn", user_id: "u1" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ detail: "unexpected" }), { status: 500 });
+  });
+  try {
+    const item = await updateMemory({ id: "m1", userId: "u1", text: "用 yarn" });
+    assert.deepEqual(item, { id: "m1", text: "用 yarn", userId: "u1" });
+    assert.equal(calls[1]?.init?.method, "PUT");
+    assert.equal(calls[1]?.url, "http://mem0.test/memories/m1");
+    assert.deepEqual(JSON.parse(String(calls[1]?.init?.body)), { text: "用 yarn", user_id: "u1" });
+  } finally {
+    setMem0FetchForTests(null);
+    if (previousUrl === undefined) delete process.env.MEM0_URL;
+    else process.env.MEM0_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.MEM0_API_KEY;
+    else process.env.MEM0_API_KEY = previousKey;
+  }
+});
+
+test("updateMemory is 404 when the id is not owned", async () => {
+  const previousUrl = process.env.MEM0_URL;
+  const previousKey = process.env.MEM0_API_KEY;
+  process.env.MEM0_URL = "http://mem0.test";
+  process.env.MEM0_API_KEY = "m0sk_test";
+  setMem0FetchForTests(async (url) => {
+    if (url.includes("/memories?")) {
+      return new Response(JSON.stringify({ results: [] }), { status: 200 });
+    }
+    if (url.endsWith("/memories/m1")) {
+      return new Response(JSON.stringify({ id: "m1", memory: "别人的", user_id: "other" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ detail: "unexpected" }), { status: 500 });
+  });
+  try {
+    await assert.rejects(() => updateMemory({ id: "m1", userId: "u1", text: "用 yarn" }), (error: unknown) => {
+      assert.ok(error instanceof Mem0Error);
+      assert.equal(error.status, 404);
+      return true;
+    });
   } finally {
     setMem0FetchForTests(null);
     if (previousUrl === undefined) delete process.env.MEM0_URL;

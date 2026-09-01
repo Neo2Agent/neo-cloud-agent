@@ -42,6 +42,8 @@ export function createPiCloudTools(ctx: CloudToolContext) {
   const subscribe = byName.get("neo_subscribe")!;
   const memorySearch = byName.get("neo_memory_search")!;
   const memoryAdd = byName.get("neo_memory_add")!;
+  const memoryUpdate = byName.get("neo_memory_update")!;
+  const memoryDelete = byName.get("neo_memory_delete")!;
 
   return [
     defineTool({
@@ -176,6 +178,25 @@ export function createPiCloudTools(ctx: CloudToolContext) {
         text: Type.String({ description: "One short fact to store" }),
       }),
       execute: async (_id, params) => toPiResult(await memoryAdd.execute((params ?? {}) as Record<string, unknown>)),
+    }),
+    defineTool({
+      name: memoryUpdate.name,
+      label: memoryUpdate.label,
+      description: memoryUpdate.description,
+      parameters: Type.Object({
+        id: Type.String({ description: "Memory id from search" }),
+        text: Type.String({ description: "Corrected fact" }),
+      }),
+      execute: async (_id, params) => toPiResult(await memoryUpdate.execute((params ?? {}) as Record<string, unknown>)),
+    }),
+    defineTool({
+      name: memoryDelete.name,
+      label: memoryDelete.label,
+      description: memoryDelete.description,
+      parameters: Type.Object({
+        id: Type.String({ description: "Memory id from search" }),
+      }),
+      execute: async (_id, params) => toPiResult(await memoryDelete.execute((params ?? {}) as Record<string, unknown>)),
     }),
   ];
 }

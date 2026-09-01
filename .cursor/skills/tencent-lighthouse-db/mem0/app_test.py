@@ -67,6 +67,49 @@ def test_entity_filters_includes_optional_ids() -> None:
     }
 
 
+def test_update_memory_calls_mem0_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MEM0_API_KEY", "secret-key")
+    fake = mock.Mock()
+    fake.get.return_value = {"id": "m1", "memory": "用 pnpm", "user_id": "u1"}
+    fake.update.return_value = {"id": "m1", "memory": "用 yarn"}
+    monkeypatch.setattr(slim, "get_memory", lambda: fake)
+    client = TestClient(slim.app)
+    response = client.put(
+        "/memories/m1",
+        json={"text": "用 yarn", "user_id": "u1"},
+        headers={"X-API-Key": "secret-key"},
+    )
+    assert response.status_code == 200
+    assert response.json()["memory"] == "用 yarn"
+    fake.update.assert_called_once()
+
+
+def test_update_memory_hides_other_users(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MEM0_API_KEY", "secret-key")
+    fake = mock.Mock()
+    fake.get.return_value = {"id": "m1", "memory": "用 pnpm", "user_id": "u1"}
+    monkeypatch.setattr(slim, "get_memory", lambda: fake)
+    client = TestClient(slim.app)
+    response = client.put(
+        "/memories/m1",
+        json={"text": "用 yarn", "user_id": "u2"},
+        headers={"X-API-Key": "secret-key"},
+    )
+    assert response.status_code == 404
+    fake.update.assert_not_called()
+
+
+def test_get_memory_item(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MEM0_API_KEY", "secret-key")
+    fake = mock.Mock()
+    fake.get.return_value = {"id": "m1", "memory": "用 pnpm", "user_id": "u1"}
+    monkeypatch.setattr(slim, "get_memory", lambda: fake)
+    client = TestClient(slim.app)
+    response = client.get("/memories/m1", headers={"X-API-Key": "secret-key"})
+    assert response.status_code == 200
+    assert response.json()["id"] == "m1"
+
+
 def test_require_key_uses_constant_time_compare(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MEM0_API_KEY", "secret-key")
     with mock.patch("app.hmac.compare_digest", wraps=hmac.compare_digest) as compare:
