@@ -10,7 +10,7 @@ import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
 import { prettyBytes } from "../artifact.js";
 import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
-import { IconBack } from "../icons.js";
+import { IconBack, IconDownload, IconPlus, IconTrash } from "../icons.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
 
 type Props = {
@@ -388,7 +388,8 @@ export function ProjectsPage({
           <div className="catalog-panel">
             <div className="proj-asset-toolbar">
               <p className="hint">对话里的文件要手动保存过来，不会自动进项目。</p>
-              <label className="ghost file-upload">
+              <label className="catalog-create file-upload">
+                <IconPlus />
                 上传文件
                 <input
                   type="file"
@@ -430,7 +431,7 @@ export function ProjectsPage({
               <CatalogEmpty title="还没有项目资产" hint="上传文件，或从对话产物里点「保存到项目」。" />
             ) : (
               <>
-                <ul className="proj-members">
+                <ul className="proj-assets">
                   {visibleAssets.map((item) => (
                     <li
                       key={item.id}
@@ -438,10 +439,12 @@ export function ProjectsPage({
                       data-highlight={highlightAssetId === item.id ? "true" : undefined}
                     >
                       <span className="proj-asset-copy">
-                        <strong>{item.path}</strong>
+                        <span className="proj-asset-title">
+                          <strong>{item.path}</strong>
+                          <em className="catalog-badge">{item.source === "run" ? "来自对话" : "上传"}</em>
+                        </span>
                         <small>
                           {prettyBytes(item.size)}
-                          {item.source === "run" ? " · 来自对话" : " · 上传"}
                           {item.updatedEmail || item.createdEmail
                             ? ` · ${item.updatedEmail || item.createdEmail}`
                             : ""}
@@ -450,7 +453,7 @@ export function ProjectsPage({
                       </span>
                       <span className="proj-asset-actions">
                         <button
-                          className="ghost"
+                          className="quiet-btn"
                           type="button"
                           onClick={() => {
                             void api(token, `/v1/projects/${selected.id}/assets/${item.id}`)
@@ -467,11 +470,12 @@ export function ProjectsPage({
                               .catch((err) => setError(err instanceof Error ? err.message : "下载失败"));
                           }}
                         >
+                          <IconDownload size={14} />
                           下载
                         </button>
                         {canManage ? (
                           <button
-                            className="ghost"
+                            className="quiet-btn danger"
                             type="button"
                             onClick={() => {
                               setBusy(true);
@@ -487,6 +491,7 @@ export function ProjectsPage({
                                 .finally(() => setBusy(false));
                             }}
                           >
+                            <IconTrash size={14} />
                             删除
                           </button>
                         ) : null}

@@ -137,6 +137,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.main\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/);
   assert.match(cssText, /\.main\{[^}]*grid-template-areas/);
   assert.match(cssText, /#root\{[^}]*overflow:\s*hidden/);
+  assert.match(cssText, /\.quiet-btn/);
+  assert.match(cssText, /\.proj-assets/);
   assert.match(cssText, /\.workspace-col\{[^}]*grid-area:\s*workspace/);
   assert.match(cssText, /\.composer\{[^}]*grid-area:\s*composer/);
   assert.doesNotMatch(html, /Fraunces/);

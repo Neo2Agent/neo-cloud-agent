@@ -9,6 +9,7 @@ import {
   ChevronRight,
   CircleAlert,
   Cloud,
+  Download,
   FileCode,
   FilePen,
   FolderGit2,
@@ -175,6 +176,10 @@ export function IconArchive(props: IconProps) {
 
 export function IconTrash(props: IconProps) {
   return icon(Trash2, props);
+}
+
+export function IconDownload(props: IconProps) {
+  return icon(Download, props);
 }
 
 export function IconInbox(props: IconProps) {

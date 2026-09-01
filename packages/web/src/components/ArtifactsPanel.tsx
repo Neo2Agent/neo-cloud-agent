@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { api, readJson } from "../api";
-import { previewKind } from "../artifact.js";
+import { artifactKindLabel, previewKind } from "../artifact.js";
+import { IconClose } from "../icons.js";
 
 type Artifact = { name: string; url?: string; contentType?: string };
 
@@ -64,28 +65,38 @@ export function ArtifactsPanel({
       {!loading && !error && artifacts.length === 0 ? <p className="hint">还没有产物。</p> : null}
       <ul className="artifact-list">
         {artifacts.map((item) => (
-          <li key={item.name}>
-            <a
-              href={item.url || "#"}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(event) => {
-                if (previewKind(item) && item.url) {
-                  event.preventDefault();
-                  setPreview(item);
-                  return;
-                }
-                if (onOpen) {
-                  event.preventDefault();
-                  onOpen(item);
-                }
-              }}
-            >
-              {item.name}
-            </a>
-            {item.contentType ? <small>{item.contentType}</small> : null}
+          <li key={item.name} className={preview?.name === item.name ? "is-on" : undefined}>
+            <div className="artifact-copy">
+              <a
+                href={item.url || "#"}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => {
+                  if (previewKind(item) && item.url) {
+                    event.preventDefault();
+                    setPreview(item);
+                    return;
+                  }
+                  if (onOpen) {
+                    event.preventDefault();
+                    onOpen(item);
+                  }
+                }}
+              >
+                {item.name}
+              </a>
+              <small>
+                <em className="catalog-badge">{artifactKindLabel(item)}</em>
+                {previewKind(item) ? "点开预览" : "打开文件"}
+              </small>
+            </div>
             {canSave ? (
-              <button type="button" className="ghost" disabled={busyName === item.name} onClick={() => void save(item)}>
+              <button
+                type="button"
+                className="quiet-btn primary"
+                disabled={busyName === item.name}
+                onClick={() => void save(item)}
+              >
                 {busyName === item.name ? "保存中…" : "保存到项目"}
               </button>
             ) : null}
@@ -96,8 +107,8 @@ export function ArtifactsPanel({
         <div className="artifact-preview">
           <div className="artifact-preview-bar">
             <strong>{preview.name}</strong>
-            <button type="button" className="ghost" onClick={() => setPreview(null)}>
-              关闭预览
+            <button type="button" className="icon-btn" aria-label="关闭预览" onClick={() => setPreview(null)}>
+              <IconClose size={16} />
             </button>
           </div>
           {kind === "image" ? (

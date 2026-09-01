@@ -2378,16 +2378,52 @@ button.send:disabled {
   margin: 0;
 }
 
+.catalog-create.file-upload,
 .ghost.file-upload {
   display: inline-flex;
   align-items: center;
   cursor: pointer;
 }
 
+.proj-assets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.proj-assets li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
 .proj-asset-copy {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 6px;
+}
+
+.proj-asset-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.proj-asset-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
 }
 
 .proj-asset-copy small {
@@ -3049,6 +3085,21 @@ button.composer-mic.is-listening,
     min-height: 44px;
   }
 
+  .artifact-list li,
+  .proj-assets li,
+  .proj-asset-toolbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .proj-asset-toolbar .catalog-create {
+    width: auto;
+  }
+
+  .quiet-btn {
+    min-height: 36px;
+  }
+
   .proj-chip-bar {
     width: auto;
     max-width: none;
@@ -3399,14 +3450,97 @@ button.composer-mic.is-listening,
   list-style: none;
   padding: 0;
   margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .artifact-list li {
   display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding: 6px 0;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.artifact-list li.is-on {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow);
+}
+
+.artifact-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.artifact-copy a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.artifact-copy a:hover {
+  color: var(--accent);
+}
+
+.artifact-copy small {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quiet-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.quiet-btn:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.quiet-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.quiet-btn.primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.quiet-btn.primary:hover:not(:disabled) {
+  background: #111110;
+}
+
+.quiet-btn.danger {
+  color: var(--err);
+}
+
+.quiet-btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 8%, #ffffff);
 }
 
 .inbox-bell {
@@ -3759,7 +3893,8 @@ button.composer-mic.is-listening,
   border-radius: 12px;
 }
 
-.proj-members li[data-highlight="true"] {
+.proj-members li[data-highlight="true"],
+.proj-assets li[data-highlight="true"] {
   outline: none;
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   background: color-mix(in srgb, var(--accent) 8%, #ffffff);
@@ -3842,7 +3977,8 @@ button.composer-mic.is-listening,
   border: 1px solid var(--line);
   border-radius: 14px;
   overflow: hidden;
-  background: var(--bg-2);
+  background: #ffffff;
+  box-shadow: var(--shadow);
 }
 
 .artifact-preview-bar {
@@ -3850,9 +3986,16 @@ button.composer-mic.is-listening,
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 10px 8px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
+}
+
+.artifact-preview-bar strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
 }
 
 .artifact-preview img,
@@ -3862,6 +4005,14 @@ button.composer-mic.is-listening,
   min-height: 240px;
   border: 0;
   background: #fff;
+}
+
+.artifact-preview img {
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+  margin: 16px auto;
+  border-radius: 8px;
 }
 
 @media (max-width: 860px) {
