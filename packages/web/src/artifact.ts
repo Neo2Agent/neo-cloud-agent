@@ -38,3 +38,12 @@ export function artifactKind(item: { name: string; contentType?: string }): Arti
 export function artifactKindLabel(item: { name: string; contentType?: string }): string {
   return KIND_LABEL[artifactKind(item)];
 }
+
+export function artifactUploadName(message: { name?: string; href?: string; text?: string }): string {
+  if (message.name?.trim()) return message.name.trim();
+  const href = (message.href ?? "").split("?")[0] ?? "";
+  const fromHref = decodeURIComponent(href.split("/").pop() ?? "");
+  if (fromHref && fromHref !== "artifacts") return fromHref;
+  const match = /已上传\s+(.+)$/.exec(message.text ?? "");
+  return match?.[1]?.trim() ?? "";
+}

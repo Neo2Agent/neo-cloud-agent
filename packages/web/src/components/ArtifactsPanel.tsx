@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { api, readJson } from "../api";
 import { artifactKind, artifactKindLabel, previewKind } from "../artifact.js";
@@ -14,6 +14,7 @@ type Props = {
   projectId?: string | null;
   token?: string;
   runId?: string | null;
+  focusName?: string | null;
   onOpen?: (item: Artifact) => void;
   onSaved?: (asset: ProjectAsset) => void;
 };
@@ -26,12 +27,18 @@ export function ArtifactsPanel({
   projectId,
   token,
   runId,
+  focusName,
   onOpen,
   onSaved,
 }: Props) {
   const [preview, setPreview] = useState<Artifact | null>(null);
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState("");
+  useEffect(() => {
+    if (!focusName) return;
+    const found = artifacts.find((item) => item.name === focusName);
+    if (found) setPreview(found);
+  }, [focusName, artifacts]);
   if (!open) return null;
   const kind = preview ? previewKind(preview) : null;
   const canSave = Boolean(projectId && token && runId);

@@ -984,8 +984,23 @@ h1 {
   font-size: 13px;
 }
 
-.artifact a {
+.artifact a,
+.artifact-open {
   color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.artifact-thumb {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
 
 .artifact img {
@@ -2423,6 +2438,20 @@ button.send:disabled {
   background: var(--bg-2);
 }
 
+.proj-asset-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .proj-asset-glyph,
 .artifact-glyph {
   flex: 0 0 28px;
@@ -2524,6 +2553,32 @@ button.send:disabled {
   font-size: 13px;
   font-weight: 600;
   color: var(--accent-2);
+}
+
+.proj-chip-bar {
+  flex-wrap: wrap;
+}
+
+.asset-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.asset-pick .hint {
+  margin: 0;
+}
+
+.ghost.on {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent) 8%, #ffffff);
+}
+
+.proj-asset-preview {
+  margin-top: 12px;
 }
 
 .auto-item-actions {

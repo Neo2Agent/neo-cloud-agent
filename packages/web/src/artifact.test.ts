@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { artifactKind, artifactKindLabel, previewKind, prettyBytes } from "./artifact.js";
+import { artifactKind, artifactKindLabel, artifactUploadName, previewKind, prettyBytes } from "./artifact.js";
 import { parseProjectHash, projectHashHref } from "./project-route.js";
 
 test("previewKind maps html and images, ignores text", () => {
@@ -23,6 +23,12 @@ test("artifactKindLabel prefers a short badge over the raw type", () => {
   assert.equal(artifactKindLabel({ name: "shot.png" }), "图片");
   assert.equal(artifactKindLabel({ name: "notes.txt", contentType: "text/plain" }), "文本");
   assert.equal(artifactKindLabel({ name: "data.bin" }), "文件");
+});
+
+test("artifactUploadName prefers name then href then title", () => {
+  assert.equal(artifactUploadName({ name: "board.html" }), "board.html");
+  assert.equal(artifactUploadName({ href: "/v1/runs/r/artifacts/shot.png?token=x" }), "shot.png");
+  assert.equal(artifactUploadName({ text: "已上传 notes.txt" }), "notes.txt");
 });
 
 test("prettyBytes uses the next unit past 1024", () => {

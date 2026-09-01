@@ -105,6 +105,7 @@ export interface TranscriptMessage {
   /** Chronological text/tool segments so tools can sit between model replies. */
   blocks?: TranscriptBlock[];
   href?: string;
+  name?: string;
   mediaType?: string;
   images?: Array<{ mediaType: string; data: string }>;
   followUpId?: string;
