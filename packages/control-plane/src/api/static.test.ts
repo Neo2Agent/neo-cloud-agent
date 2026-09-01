@@ -109,7 +109,9 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /session-tabs/);
   assert.match(appText, /产物/);
   assert.match(appText, /保存到项目/);
+  assert.match(appText, /存入项目/);
   assert.match(appText, /关闭预览/);
+  assert.match(appText, /artifact-row/);
   assert.match(appText, /项目资产/);
   assert.match(appText, /#\/projects\//);
   assert.match(appText, /归档/);
@@ -139,6 +141,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /#root\{[^}]*overflow:\s*hidden/);
   assert.match(cssText, /\.quiet-btn/);
   assert.match(cssText, /\.proj-assets/);
+  assert.match(cssText, /\.artifact-row/);
+  assert.match(cssText, /\.artifact-preview-empty/);
   assert.match(cssText, /\.workspace-col\{[^}]*grid-area:\s*workspace/);
   assert.match(cssText, /\.composer\{[^}]*grid-area:\s*composer/);
   assert.doesNotMatch(html, /Fraunces/);

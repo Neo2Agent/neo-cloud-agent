@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { artifactKindLabel, previewKind, prettyBytes } from "./artifact.js";
+import { artifactKind, artifactKindLabel, previewKind, prettyBytes } from "./artifact.js";
 import { parseProjectHash, projectHashHref } from "./project-route.js";
 
 test("previewKind maps html and images, ignores text", () => {
@@ -9,6 +9,13 @@ test("previewKind maps html and images, ignores text", () => {
   assert.equal(previewKind({ name: "shot.PNG" }), "image");
   assert.equal(previewKind({ name: "cover", contentType: "image/webp" }), "image");
   assert.equal(previewKind({ name: "notes.txt", contentType: "text/plain" }), null);
+});
+
+test("artifactKind maps names and types to a short kind", () => {
+  assert.equal(artifactKind({ name: "board.html" }), "html");
+  assert.equal(artifactKind({ name: "shot.png" }), "image");
+  assert.equal(artifactKind({ name: "notes.txt", contentType: "text/plain" }), "text");
+  assert.equal(artifactKind({ name: "data.bin" }), "file");
 });
 
 test("artifactKindLabel prefers a short badge over the raw type", () => {

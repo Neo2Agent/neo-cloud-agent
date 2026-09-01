@@ -1,4 +1,14 @@
 export type ArtifactPreviewKind = "html" | "image";
+export type ArtifactKind = ArtifactPreviewKind | "json" | "markdown" | "text" | "file";
+
+const KIND_LABEL: Record<ArtifactKind, string> = {
+  html: "HTML",
+  image: "图片",
+  json: "JSON",
+  markdown: "Markdown",
+  text: "文本",
+  file: "文件",
+};
 
 export function previewKind(item: { name: string; contentType?: string }): ArtifactPreviewKind | null {
   const type = item.contentType ?? "";
@@ -14,14 +24,17 @@ export function prettyBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function artifactKindLabel(item: { name: string; contentType?: string }): string {
-  const kind = previewKind(item);
-  if (kind === "html") return "HTML";
-  if (kind === "image") return "图片";
+export function artifactKind(item: { name: string; contentType?: string }): ArtifactKind {
+  const preview = previewKind(item);
+  if (preview) return preview;
   const type = item.contentType ?? "";
   const name = item.name.toLowerCase();
-  if (type.includes("json") || name.endsWith(".json")) return "JSON";
-  if (type.includes("markdown") || name.endsWith(".md")) return "Markdown";
-  if (type.startsWith("text/") || /\.(txt|log)$/.test(name)) return "文本";
-  return "文件";
+  if (type.includes("json") || name.endsWith(".json")) return "json";
+  if (type.includes("markdown") || name.endsWith(".md")) return "markdown";
+  if (type.startsWith("text/") || /\.(txt|log)$/.test(name)) return "text";
+  return "file";
+}
+
+export function artifactKindLabel(item: { name: string; contentType?: string }): string {
+  return KIND_LABEL[artifactKind(item)];
 }

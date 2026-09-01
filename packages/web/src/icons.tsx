@@ -10,8 +10,12 @@ import {
   CircleAlert,
   Cloud,
   Download,
+  File,
+  FileBraces,
   FileCode,
+  FileImage,
   FilePen,
+  FileText,
   FolderGit2,
   GitPullRequest,
   Globe,
@@ -41,6 +45,7 @@ import {
   X,
   type LucideProps,
 } from "lucide-react";
+import type { ArtifactKind } from "./artifact.js";
 
 type IconProps = { size?: number; className?: string };
 
@@ -180,6 +185,14 @@ export function IconTrash(props: IconProps) {
 
 export function IconDownload(props: IconProps) {
   return icon(Download, props);
+}
+
+export function IconFileKind({ kind, ...props }: IconProps & { kind: ArtifactKind }) {
+  if (kind === "html") return icon(FileCode, props);
+  if (kind === "image") return icon(FileImage, props);
+  if (kind === "json") return icon(FileBraces, props);
+  if (kind === "markdown" || kind === "text") return icon(FileText, props);
+  return icon(File, props);
 }
 
 export function IconInbox(props: IconProps) {
