@@ -4,7 +4,7 @@ import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import { BUNDLED_RECIPES, type IntentCapsule, type Recipe } from "@neo-cloud-agent/contracts/recipe";
+import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import type { ExecutionTarget, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
@@ -1411,11 +1411,6 @@ export function App() {
     applyRole(capsule);
   };
 
-  const applyRecipe = (recipe: Recipe) => {
-    setPrompt(recipe.prompt);
-    applyRole(recipe);
-  };
-
   const applyMention = (item: ComposerMention) => {
     if (item.kind === "expert") setExpertPick({ expertId: item.id });
     if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
@@ -2240,19 +2235,6 @@ export function App() {
                     }}
                     locked={false}
                   />
-                  <div className="recipe-chips" role="list">
-                    {BUNDLED_RECIPES.slice(0, 8).map((recipe) => (
-                      <button
-                        key={recipe.id}
-                        type="button"
-                        className="recipe-chip"
-                        role="listitem"
-                        onClick={() => applyRecipe(recipe)}
-                      >
-                        {recipe.title}
-                      </button>
-                    ))}
-                  </div>
                   <ChatComposer
                     prompt={prompt}
                     setPrompt={setPrompt}

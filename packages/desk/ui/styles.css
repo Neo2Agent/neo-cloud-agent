@@ -2378,27 +2378,6 @@ img.avatar {
   border-bottom: var(--ink-line);
 }
 
-.recipe-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 16px 0;
-}
-
-.recipe-chip {
-  border: var(--ink-line);
-  background: var(--rail);
-  color: var(--text);
-  border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.recipe-chip:hover {
-  background: var(--hover);
-}
-
 .home-composer .context-item-wrap:first-child .context-menu {
   left: 0;
   transform: none;
