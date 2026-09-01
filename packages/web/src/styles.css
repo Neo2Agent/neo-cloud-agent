@@ -3526,13 +3526,13 @@ button.composer-mic.is-listening,
 }
 
 .quiet-btn.primary {
-  border-color: var(--ink);
-  background: var(--ink);
+  border-color: var(--accent);
+  background: var(--accent);
   color: #ffffff;
 }
 
 .quiet-btn.primary:hover:not(:disabled) {
-  background: #111110;
+  background: var(--accent-2);
 }
 
 .quiet-btn.danger {

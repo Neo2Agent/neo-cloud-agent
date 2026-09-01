@@ -87,7 +87,6 @@ export function ArtifactsPanel({
               </a>
               <small>
                 <em className="catalog-badge">{artifactKindLabel(item)}</em>
-                {previewKind(item) ? "点开预览" : "打开文件"}
               </small>
             </div>
             {canSave ? (
