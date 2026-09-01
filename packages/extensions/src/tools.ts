@@ -3,7 +3,12 @@ import { createBrowserTool } from "./neo-browser.js";
 import { createDiagnosticsTool } from "./neo-diag.js";
 import { createGitCommitTool } from "./neo-git.js";
 import { createMcpCallTool, createMcpListTool } from "./neo-mcp.js";
-import { createMemoryAddTool, createMemorySearchTool } from "./neo-memory.js";
+import {
+  createMemoryAddTool,
+  createMemoryDeleteTool,
+  createMemorySearchTool,
+  createMemoryUpdateTool,
+} from "./neo-memory.js";
 import { createPullRequestTool } from "./neo-pr.js";
 import { createSubagentTool } from "./neo-subagent.js";
 import { createSubscribeTool } from "./neo-subscribe.js";
@@ -21,6 +26,8 @@ export const CLOUD_TOOL_NAMES = [
   "neo_subscribe",
   "neo_memory_search",
   "neo_memory_add",
+  "neo_memory_update",
+  "neo_memory_delete",
 ] as const;
 
 export function createCloudTools(ctx: CloudToolContext): CloudToolDefinition[] {
@@ -36,5 +43,7 @@ export function createCloudTools(ctx: CloudToolContext): CloudToolDefinition[] {
     createSubscribeTool(ctx),
     createMemorySearchTool(ctx),
     createMemoryAddTool(ctx),
+    createMemoryUpdateTool(ctx),
+    createMemoryDeleteTool(ctx),
   ];
 }

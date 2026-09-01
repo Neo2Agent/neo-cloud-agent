@@ -390,6 +390,62 @@ test("neo_memory_add and neo_memory_search post to the control plane", async () 
   assert.equal(searchBody.query, "包管理器");
 });
 
+test("neo_memory_update and neo_memory_delete post to the control plane", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const tools = createCloudTools(
+    ctx(async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.includes("/internal/runs/run_1/memories") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { action?: string; id?: string; text?: string };
+        if (body.action === "update") {
+          return new Response(JSON.stringify({ memories: [{ id: body.id, text: body.text }] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (body.action === "delete") {
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+      }
+      return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 });
+    }),
+  );
+  const update = tools.find((item) => item.name === "neo_memory_update");
+  const forget = tools.find((item) => item.name === "neo_memory_delete");
+  assert.ok(update);
+  assert.ok(forget);
+
+  const changed = await update.execute({ id: "m1", text: "用 yarn" });
+  assert.equal(changed.isError, undefined);
+  assert.match(changed.content, /Updated user memory/);
+  assert.match(changed.content, /用 yarn/);
+  const updateBody = JSON.parse(String(calls[0]?.init?.body ?? "{}")) as { action?: string; id?: string; text?: string };
+  assert.equal(updateBody.action, "update");
+  assert.equal(updateBody.id, "m1");
+  assert.equal(updateBody.text, "用 yarn");
+
+  const dropped = await forget.execute({ id: "m1" });
+  assert.equal(dropped.isError, undefined);
+  assert.match(dropped.content, /Forgot that memory/);
+  const deleteBody = JSON.parse(String(calls[1]?.init?.body ?? "{}")) as { action?: string; id?: string };
+  assert.equal(deleteBody.action, "delete");
+  assert.equal(deleteBody.id, "m1");
+});
+
+test("neo_memory_update requires id and text", async () => {
+  const tool = createCloudTools(ctx(mockFetch({}))).find((item) => item.name === "neo_memory_update");
+  const missingId = await tool!.execute({ text: "用 yarn" });
+  assert.equal(missingId.isError, true);
+  assert.match(missingId.content, /id is required/);
+  const missingText = await tool!.execute({ id: "m1", text: "  " });
+  assert.equal(missingText.isError, true);
+  assert.match(missingText.content, /text is required/);
+});
+
 test("neo_memory_add requires text", async () => {
   const tool = createCloudTools(ctx(mockFetch({}))).find((item) => item.name === "neo_memory_add");
   const result = await tool!.execute({ text: "  " });

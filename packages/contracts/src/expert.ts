@@ -111,6 +111,8 @@ export const ADMIN_EXPERT_TOOL_CHOICES = [
   "neo_subagent",
   "neo_memory_add",
   "neo_memory_search",
+  "neo_memory_update",
+  "neo_memory_delete",
 ] as const;
 
 export type BundledExpertAudience = "all" | "allowlist";

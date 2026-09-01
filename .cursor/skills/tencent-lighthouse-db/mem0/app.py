@@ -1,4 +1,4 @@
-"""Slim Mem0 HTTP API: add / search / list / delete. No dashboard."""
+"""Slim Mem0 HTTP API: add / search / list / get / update / delete. No dashboard."""
 
 from __future__ import annotations
 
@@ -105,6 +105,11 @@ class SearchBody(BaseModel):
     run_id: str | None = None
 
 
+class UpdateBody(BaseModel):
+    text: str = Field(min_length=1)
+    user_id: str | None = None
+
+
 def _entity_filters(user_id: str, agent_id: str | None = None, run_id: str | None = None) -> dict[str, Any]:
     filters: dict[str, Any] = {"user_id": user_id}
     if agent_id:
@@ -192,6 +197,51 @@ def list_memories(
         return _jsonable(memory.get_all(filters=_entity_filters(user_id), top_k=limit))
     except TypeError:
         return _jsonable(memory.get_all(user_id=user_id, limit=limit))
+
+
+@app.get("/memories/{memory_id}")
+def get_memory_item(
+    memory_id: str,
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> Any:
+    require_key(x_api_key, authorization)
+    memory = get_memory()
+    try:
+        item = memory.get(memory_id)
+    except Exception as error:  # noqa: BLE001 — mem0 raises generic errors for missing ids
+        raise HTTPException(status_code=404, detail="memory_not_found") from error
+    if item is None:
+        raise HTTPException(status_code=404, detail="memory_not_found")
+    return _jsonable(item)
+
+
+@app.put("/memories/{memory_id}")
+def update_memory(
+    memory_id: str,
+    body: UpdateBody,
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> Any:
+    require_key(x_api_key, authorization)
+    memory = get_memory()
+    if body.user_id:
+        try:
+            existing = memory.get(memory_id)
+        except Exception as error:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail="memory_not_found") from error
+        raw = existing.model_dump() if hasattr(existing, "model_dump") else existing
+        owner = raw.get("user_id") if isinstance(raw, dict) else None
+        if owner and owner != body.user_id:
+            raise HTTPException(status_code=404, detail="memory_not_found")
+    try:
+        try:
+            updated = memory.update(memory_id, data=body.text)
+        except TypeError:
+            updated = memory.update(memory_id=memory_id, data=body.text)
+    except Exception as error:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="memory_not_found") from error
+    return _jsonable(updated)
 
 
 @app.delete("/memories/{memory_id}")

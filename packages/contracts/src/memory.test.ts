@@ -18,4 +18,6 @@ test("appendUserMemory skips empty blocks", () => {
   assert.match(appendUserMemory("base", "- 用 pnpm"), /用 pnpm/);
   assert.match(appendUserMemory("base", "- 用 pnpm"), /neo_memory_add/);
   assert.match(appendUserMemory("base", "- 用 pnpm"), /neo_memory_search/);
+  assert.match(appendUserMemory("base", "- 用 pnpm"), /neo_memory_update/);
+  assert.match(appendUserMemory("base", "- 用 pnpm"), /neo_memory_delete/);
 });

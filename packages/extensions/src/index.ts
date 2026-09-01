@@ -36,9 +36,13 @@ export {
 export { createSubscribeTool, executeSubscribe } from "./neo-subscribe.js";
 export {
   createMemoryAddTool,
+  createMemoryDeleteTool,
   createMemorySearchTool,
+  createMemoryUpdateTool,
   executeMemoryAdd,
+  executeMemoryDelete,
   executeMemorySearch,
+  executeMemoryUpdate,
 } from "./neo-memory.js";
 export { extractPageText } from "./html-text.js";
 export { neoArtifact, neoBrowser, neoDiag, neoGit, neoMcp, neoMemory, neoPr, neoSubagent, neoSubscribe };

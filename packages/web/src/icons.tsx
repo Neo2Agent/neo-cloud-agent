@@ -222,6 +222,7 @@ function toolGlyph(name: string) {
   if (name.startsWith("neo_browse") || name.includes("browse")) return Globe;
   if (name.startsWith("neo_mcp") || name.includes("mcp")) return Puzzle;
   if (name.startsWith("neo_artifact") || name.includes("artifact")) return Package;
+  if (name.startsWith("neo_memory") || name.includes("memory")) return BookOpen;
   if (name === "bash" || name === "shell" || name.startsWith("neo_diag")) return TerminalSquare;
   if (name === "edit" || name === "write" || name === "apply_patch") return FilePen;
   if (name === "read" || name === "cat") return FileCode;
