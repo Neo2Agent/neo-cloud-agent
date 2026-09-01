@@ -3759,6 +3759,13 @@ button.composer-mic.is-listening,
   border-radius: 12px;
 }
 
+.proj-members li[data-highlight="true"] {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, #ffffff);
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow);
+}
+
 .diag-link {
   margin-left: 8px;
 }
