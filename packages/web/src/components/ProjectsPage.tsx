@@ -8,9 +8,9 @@ import { PROJECT_TEMPLATES, projectTemplateById } from "@neo-cloud-agent/contrac
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
-import { prettyBytes } from "../artifact.js";
+import { artifactKind, prettyBytes } from "../artifact.js";
 import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
-import { IconBack } from "../icons.js";
+import { IconBack, IconDownload, IconFileKind, IconPlus, IconTrash } from "../icons.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
 
 type Props = {
@@ -389,7 +389,8 @@ export function ProjectsPage({
             <div className="proj-asset-toolbar">
               <p className="hint">对话里的文件要手动保存过来，不会自动进项目。</p>
               <label className="ghost file-upload">
-                上传文件
+                <IconPlus size={14} />
+                上传
                 <input
                   type="file"
                   hidden
@@ -427,21 +428,26 @@ export function ProjectsPage({
               </label>
             </div>
             {assets.length === 0 ? (
-              <CatalogEmpty title="还没有项目资产" hint="上传文件，或从对话产物里点「保存到项目」。" />
+              <CatalogEmpty title="还没有项目资产" hint="上传文件，或从对话产物里点「存入项目」。" />
             ) : (
               <>
-                <ul className="proj-members">
+                <ul className="proj-assets">
                   {visibleAssets.map((item) => (
                     <li
                       key={item.id}
                       id={`asset-${item.id}`}
                       data-highlight={highlightAssetId === item.id ? "true" : undefined}
                     >
+                      <span className="proj-asset-glyph">
+                        <IconFileKind kind={artifactKind({ name: item.path, contentType: item.contentType })} size={16} />
+                      </span>
                       <span className="proj-asset-copy">
-                        <strong>{item.path}</strong>
+                        <span className="proj-asset-title">
+                          <strong>{item.path}</strong>
+                        </span>
                         <small>
                           {prettyBytes(item.size)}
-                          {item.source === "run" ? " · 来自对话" : " · 上传"}
+                          {` · ${item.source === "run" ? "来自对话" : "上传"}`}
                           {item.updatedEmail || item.createdEmail
                             ? ` · ${item.updatedEmail || item.createdEmail}`
                             : ""}
@@ -450,8 +456,9 @@ export function ProjectsPage({
                       </span>
                       <span className="proj-asset-actions">
                         <button
-                          className="ghost"
+                          className="icon-btn"
                           type="button"
+                          aria-label="下载"
                           onClick={() => {
                             void api(token, `/v1/projects/${selected.id}/assets/${item.id}`)
                               .then(async (response) => {
@@ -467,12 +474,13 @@ export function ProjectsPage({
                               .catch((err) => setError(err instanceof Error ? err.message : "下载失败"));
                           }}
                         >
-                          下载
+                          <IconDownload size={16} />
                         </button>
                         {canManage ? (
                           <button
-                            className="ghost"
+                            className="icon-btn danger"
                             type="button"
+                            aria-label="删除"
                             onClick={() => {
                               setBusy(true);
                               void api(token, `/v1/projects/${selected.id}/assets/${item.id}`, { method: "DELETE" })
@@ -487,7 +495,7 @@ export function ProjectsPage({
                                 .finally(() => setBusy(false));
                             }}
                           >
-                            删除
+                            <IconTrash size={16} />
                           </button>
                         ) : null}
                       </span>
