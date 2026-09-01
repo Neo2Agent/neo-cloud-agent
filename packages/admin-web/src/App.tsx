@@ -2,9 +2,10 @@ import { Tooltip } from "@neo-cloud-agent/ui";
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson, readToken, writeToken } from "./api";
 import { Sidebar } from "./components/Sidebar";
-import { IconExperts, IconLogout, IconMenu, IconOverview, IconRefresh, IconRuns, IconSidebarClose, IconSystem, IconUsers } from "./icons";
+import { IconExperts, IconLogout, IconMemories, IconMenu, IconOverview, IconRefresh, IconRuns, IconSidebarClose, IconSystem, IconUsers } from "./icons";
 import { PAGE_META, pageHref, readPage } from "./nav";
 import { ExpertsScreen } from "./screens/ExpertsScreen";
+import { MemoriesScreen } from "./screens/MemoriesScreen";
 import { LoginScreen } from "./screens/LoginScreen";
 import { OverviewScreen } from "./screens/OverviewScreen";
 import { RunsScreen } from "./screens/RunsScreen";
@@ -17,6 +18,7 @@ const NAV: Array<{ id: AdminPage; icon: typeof IconOverview }> = [
   { id: "users", icon: IconUsers },
   { id: "runs", icon: IconRuns },
   { id: "experts", icon: IconExperts },
+  { id: "memories", icon: IconMemories },
   { id: "system", icon: IconSystem },
 ];
 
@@ -289,6 +291,7 @@ export function App() {
         ) : null}
         {overview && page === "runs" ? <RunsScreen runs={runs} /> : null}
         {overview && page === "experts" ? <ExpertsScreen token={token} catalog={experts} onChanged={() => refresh(token)} /> : null}
+        {overview && page === "memories" ? <MemoriesScreen token={token} users={users} /> : null}
         {overview && page === "system" ? <SystemScreen overview={overview} limits={limits} /> : null}
       </div>
     </div>

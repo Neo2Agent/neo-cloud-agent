@@ -26,12 +26,13 @@ import { actorIsPlatformAdmin, isAdminLogin } from "../../control-plane/src/secu
 import { readApiCredential, readBearer, resolveActor } from "../../control-plane/src/security/auth.js";
 import { clientIp, rateLimitSnapshot } from "../../control-plane/src/security/rate-limit-http.js";
 import { adminPlatformInfo, loadAdminCounts, loadAdminRuns, startAdminData } from "./data.js";
+import { deleteMemory, listMemories, readMem0Info, searchMemories } from "../../control-plane/src/memory/client.js";
 import { serveAdminWeb } from "./static.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "Content-Type, Authorization",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
 } as const;
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -207,6 +208,51 @@ export function createAdminApiServer() {
         } catch (error) {
           const message = error instanceof Error ? error.message : "invalid_expert";
           send(res, message.includes("不存在") ? 404 : 400, { error: message });
+        }
+        return;
+      }
+      if (method === "GET" && path === "/v1/admin/memories") {
+        const info = readMem0Info();
+        if (!info.configured) {
+          send(res, 200, { configured: false, memories: [], userId: url.searchParams.get("userId") || "" });
+          return;
+        }
+        const userId = (url.searchParams.get("userId") ?? "").trim();
+        if (!userId) {
+          send(res, 200, { configured: true, memories: [], userId: "" });
+          return;
+        }
+        try {
+          const query = (url.searchParams.get("query") ?? "").trim();
+          const memories = query
+            ? await searchMemories({ userId, query, limit: 32 })
+            : await listMemories(userId, 100);
+          send(res, 200, { configured: true, userId, memories });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "mem0_failed";
+          send(res, 502, { error: message });
+        }
+        return;
+      }
+      const adminMemory = /^\/v1\/admin\/memories\/([^/]+)$/.exec(path);
+      if (adminMemory && method === "DELETE") {
+        const id = adminMemory[1] ?? "";
+        const userId = (url.searchParams.get("userId") ?? "").trim();
+        if (!userId) {
+          send(res, 400, { error: "userId is required" });
+          return;
+        }
+        try {
+          const owned = (await listMemories(userId, 100)).some((item) => item.id === id);
+          if (!owned) {
+            send(res, 404, { error: "memory_not_found" });
+            return;
+          }
+          await deleteMemory(id);
+          send(res, 200, { ok: true });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "mem0_failed";
+          send(res, 502, { error: message });
         }
         return;
       }

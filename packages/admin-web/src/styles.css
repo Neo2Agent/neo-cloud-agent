@@ -508,6 +508,13 @@ h1 {
   white-space: nowrap;
 }
 
+.count-pill select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
 .hint {
   margin: 0;
   font-size: 13px;
