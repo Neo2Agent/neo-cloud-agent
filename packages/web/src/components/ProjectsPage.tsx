@@ -5,8 +5,10 @@ import { expertPickerLabel } from "@neo-cloud-agent/contracts/expert";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { canManageProject, type Project, type ProjectInvite, type ProjectMember } from "@neo-cloud-agent/contracts/project";
 import { PROJECT_TEMPLATES, projectTemplateById } from "@neo-cloud-agent/contracts/recipe";
+import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
+import { prettyBytes } from "../artifact.js";
 import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
 import { IconBack } from "../icons.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
@@ -16,15 +18,27 @@ type Props = {
   userId?: string;
   inviteToken?: string | null;
   selectedId?: string | null;
-  onOpenProject: (id: string | null) => void;
+  assetsTab?: boolean;
+  highlightAssetId?: string | null;
+  onOpenProject: (id: string | null, opts?: { assets?: boolean; assetId?: string | null }) => void;
   onStartChat: (project: Project) => void;
   onOpenRun: (id: string) => void;
 };
 
-type DetailTab = "chats" | "config" | "members" | "activity";
+type DetailTab = "chats" | "assets" | "config" | "members" | "activity";
 type ConfigTab = "instruction" | "experts" | "skills";
 
-export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenProject, onStartChat, onOpenRun }: Props) {
+export function ProjectsPage({
+  token,
+  userId,
+  inviteToken,
+  selectedId,
+  assetsTab,
+  highlightAssetId,
+  onOpenProject,
+  onStartChat,
+  onOpenRun,
+}: Props) {
   const [items, setItems] = useState<Project[]>([]);
   const [detail, setDetail] = useState<Project | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -48,10 +62,12 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
   const [pinnedPluginIds, setPinnedPluginIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [tab, setTab] = useState<DetailTab>("chats");
+  const [tab, setTab] = useState<DetailTab>(assetsTab ? "assets" : "chats");
   const [configTab, setConfigTab] = useState<ConfigTab>("instruction");
   const [runPage, setRunPage] = useState(1);
   const [eventPage, setEventPage] = useState(1);
+  const [assets, setAssets] = useState<ProjectAsset[]>([]);
+  const [assetPage, setAssetPage] = useState(1);
 
   const selected = detail ?? items.find((item) => item.id === selectedId) ?? null;
   const members = selected?.members ?? [];
@@ -77,6 +93,8 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
   const visibleRuns = paginate(runs, runListPage, 10);
   const eventListPage = clampPage(eventPage, events.length);
   const visibleEvents = paginate(events, eventListPage);
+  const assetListPage = clampPage(assetPage, assets.length, 10);
+  const visibleAssets = paginate(assets, assetListPage, 10);
 
   const refresh = async () => {
     const res = await api(token, "/v1/projects");
@@ -109,6 +127,12 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
       const body = await readJson<{ runs?: Run[] }>(runsRes);
       setRuns((body.runs ?? []).filter((item) => item.projectId === id));
     }
+    const assetsRes = await api(token, `/v1/projects/${encodeURIComponent(id)}/assets`);
+    if (assetsRes.ok) {
+      setAssets((await readJson<{ assets?: ProjectAsset[] }>(assetsRes)).assets ?? []);
+    } else {
+      setAssets([]);
+    }
   };
 
   useEffect(() => {
@@ -117,15 +141,29 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
 
   useEffect(() => {
     if (selectedId) {
-      setTab("chats");
-      setConfigTab("instruction");
-      setRunPage(1);
-      setEventPage(1);
       void loadDetail(selectedId).catch(() => undefined);
     } else {
       setDetail(null);
+      setAssets([]);
     }
   }, [selectedId, token]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setTab((current) => (assetsTab ? "assets" : current === "assets" ? "chats" : current));
+    if (assetsTab) setAssetPage(1);
+  }, [selectedId, assetsTab, highlightAssetId]);
+
+  useEffect(() => {
+    if (selectedId && highlightAssetId) {
+      void loadDetail(selectedId).catch(() => undefined);
+    }
+  }, [highlightAssetId]);
+
+  useEffect(() => {
+    if (!highlightAssetId) return;
+    document.getElementById(`asset-${highlightAssetId}`)?.scrollIntoView({ block: "center" });
+  }, [highlightAssetId, assets]);
 
   useEffect(() => {
     setPage(1);
@@ -237,7 +275,7 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
             </button>
             <h2>{selected.name}</h2>
             <p className="hint">
-              {selected.members.length} 位成员 · {runs.length} 条对话
+              {selected.members.length} 位成员 · {runs.length} 条对话 · {assets.length} 个资产
             </p>
           </div>
           <button className="proj-add" type="button" onClick={() => onStartChat(selected)}>
@@ -248,12 +286,16 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
         <CatalogTabs
           tabs={[
             { id: "chats", label: "对话", count: runs.length },
+            { id: "assets", label: "资产", count: assets.length },
             { id: "config", label: "配置" },
             { id: "members", label: "成员", count: members.length },
             { id: "activity", label: "动态", count: events.length },
           ]}
           active={tab}
-          onChange={setTab}
+          onChange={(id) => {
+            setTab(id);
+            onOpenProject(selected.id, id === "assets" ? { assets: true, assetId: highlightAssetId } : undefined);
+          }}
         />
 
         {tab === "chats" ? (
@@ -339,6 +381,122 @@ export function ProjectsPage({ token, userId, inviteToken, selectedId, onOpenPro
                 </button>
               </form>
             ) : null}
+          </div>
+        ) : null}
+
+        {tab === "assets" ? (
+          <div className="catalog-panel">
+            <div className="proj-asset-toolbar">
+              <p className="hint">对话里的文件要手动保存过来，不会自动进项目。</p>
+              <label className="ghost file-upload">
+                上传文件
+                <input
+                  type="file"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const result = String(reader.result ?? "");
+                      const content = result.includes(",") ? result.slice(result.indexOf(",") + 1) : result;
+                      setBusy(true);
+                      setError("");
+                      void api(token, `/v1/projects/${selected.id}/assets`, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          path: file.name,
+                          content,
+                          encoding: "base64",
+                          contentType: file.type || undefined,
+                        }),
+                      })
+                        .then(async (res) => {
+                          const body = await readJson<ProjectAsset & { error?: string }>(res);
+                          if (!res.ok) throw new Error(body.error || "上传失败");
+                          await loadDetail(selected.id);
+                          onOpenProject(selected.id, { assets: true, assetId: body.id });
+                        })
+                        .catch((item) => setError(item instanceof Error ? item.message : "上传失败"))
+                        .finally(() => setBusy(false));
+                    };
+                    reader.readAsDataURL(file);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            {assets.length === 0 ? (
+              <CatalogEmpty title="还没有项目资产" hint="上传文件，或从对话产物里点「保存到项目」。" />
+            ) : (
+              <>
+                <ul className="proj-members">
+                  {visibleAssets.map((item) => (
+                    <li
+                      key={item.id}
+                      id={`asset-${item.id}`}
+                      data-highlight={highlightAssetId === item.id ? "true" : undefined}
+                    >
+                      <span className="proj-asset-copy">
+                        <strong>{item.path}</strong>
+                        <small>
+                          {prettyBytes(item.size)}
+                          {item.source === "run" ? " · 来自对话" : " · 上传"}
+                          {item.updatedEmail || item.createdEmail
+                            ? ` · ${item.updatedEmail || item.createdEmail}`
+                            : ""}
+                          {item.updatedAt ? ` · ${formatShortDate(item.updatedAt)}` : ""}
+                        </small>
+                      </span>
+                      <span className="proj-asset-actions">
+                        <button
+                          className="ghost"
+                          type="button"
+                          onClick={() => {
+                            void api(token, `/v1/projects/${selected.id}/assets/${item.id}`)
+                              .then(async (response) => {
+                                if (!response.ok) throw new Error("下载失败");
+                                const blob = await response.blob();
+                                const url = URL.createObjectURL(blob);
+                                const link = document.createElement("a");
+                                link.href = url;
+                                link.download = item.path.split("/").pop() ?? item.path;
+                                link.click();
+                                URL.revokeObjectURL(url);
+                              })
+                              .catch((err) => setError(err instanceof Error ? err.message : "下载失败"));
+                          }}
+                        >
+                          下载
+                        </button>
+                        {canManage ? (
+                          <button
+                            className="ghost"
+                            type="button"
+                            onClick={() => {
+                              setBusy(true);
+                              void api(token, `/v1/projects/${selected.id}/assets/${item.id}`, { method: "DELETE" })
+                                .then(async (res) => {
+                                  if (!res.ok) {
+                                    throw new Error((await readJson<{ error?: string }>(res)).error || "删除失败");
+                                  }
+                                  await loadDetail(selected.id);
+                                  if (highlightAssetId === item.id) onOpenProject(selected.id, { assets: true });
+                                })
+                                .catch((err) => setError(err instanceof Error ? err.message : "删除失败"))
+                                .finally(() => setBusy(false));
+                            }}
+                          >
+                            删除
+                          </button>
+                        ) : null}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <CatalogPager page={assetListPage} total={assets.length} pageSize={10} onPage={setAssetPage} />
+              </>
+            )}
           </div>
         ) : null}
 

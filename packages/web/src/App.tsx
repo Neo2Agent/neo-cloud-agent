@@ -34,6 +34,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { BUNDLED_RECIPES, recipeById, type IntentCapsule, type Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import { parseProjectHash, projectHashHref } from "./project-route.js";
 import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, Tooltip, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
@@ -161,7 +162,15 @@ function hashInviteToken(): string | null {
 }
 
 function hashProjectId(): string | null {
-  return /^#\/projects\/([^/]+)$/.exec(location.hash)?.[1] ?? null;
+  return parseProjectHash(location.hash).projectId;
+}
+
+function hashProjectAssets(): boolean {
+  return parseProjectHash(location.hash).assets;
+}
+
+function hashProjectAssetId(): string | null {
+  return parseProjectHash(location.hash).assetId;
 }
 
 function hashProjects(): boolean {
@@ -273,6 +282,8 @@ export function App() {
   const [expertPick, setExpertPick] = useState<ExpertPick>({});
   const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
+  const [projectAssetsTab, setProjectAssetsTab] = useState(hashProjectAssets);
+  const [highlightAssetId, setHighlightAssetId] = useState<string | null>(hashProjectAssetId);
   const [inviteToken, setInviteToken] = useState<string | null>(hashInviteToken);
   const [llm, setLlm] = useState<LlmSettings>({ configured: false, upstream: "deepseek", model: null });
   const [llmKey, setLlmKey] = useState("");
@@ -797,17 +808,25 @@ export function App() {
     [resetComposer],
   );
 
-  const openProjects = useCallback((id?: string | null, invite?: string | null) => {
-    setMainTab("projects");
-    setSettingsOpen(false);
-    setSelectedProjectId(id ?? null);
-    setInviteToken(invite ?? null);
-    if (invite) {
-      history.replaceState(null, "", `/#/invite/${invite}`);
-      return;
-    }
-    history.replaceState(null, "", id ? `/#/projects/${id}` : "/#/projects");
-  }, []);
+  const openProjects = useCallback(
+    (id?: string | null, opts?: { invite?: string | null; assets?: boolean; assetId?: string | null }) => {
+      const invite = opts?.invite ?? null;
+      const assetId = opts?.assetId ?? null;
+      const assets = Boolean(opts?.assets || assetId);
+      setMainTab("projects");
+      setSettingsOpen(false);
+      setSelectedProjectId(id ?? null);
+      setInviteToken(invite);
+      setProjectAssetsTab(assets);
+      setHighlightAssetId(assetId);
+      if (invite) {
+        history.replaceState(null, "", `/#/invite/${invite}`);
+        return;
+      }
+      history.replaceState(null, "", projectHashHref(id, { assets, assetId }));
+    },
+    [],
+  );
 
   const startProjectChat = useCallback(
     (project: Project) => {
@@ -873,6 +892,8 @@ export function App() {
       setMainTab("projects");
       setInviteToken(invite);
       setSelectedProjectId(projectId);
+      setProjectAssetsTab(hashProjectAssets());
+      setHighlightAssetId(hashProjectAssetId());
       await Promise.all(refreshShell);
       return;
     }
@@ -1310,6 +1331,8 @@ export function App() {
         setMainTab("projects");
         setInviteToken(invite);
         setSelectedProjectId(projectId);
+        setProjectAssetsTab(hashProjectAssets());
+        setHighlightAssetId(hashProjectAssetId());
         setSettingsOpen(false);
         return;
       }
@@ -2202,7 +2225,9 @@ export function App() {
                 userId={userId}
                 inviteToken={inviteToken}
                 selectedId={selectedProjectId}
-                onOpenProject={(id) => openProjects(id)}
+                assetsTab={projectAssetsTab}
+                highlightAssetId={highlightAssetId}
+                onOpenProject={(id, opts) => openProjects(id, opts)}
                 onStartChat={startProjectChat}
                 onOpenRun={(id) => {
                   setMainTab("chat");
@@ -2323,14 +2348,18 @@ export function App() {
                   projectId={currentRun?.projectId ?? activeProject?.id}
                   token={token}
                   runId={runId}
-                  onSaved={() => {
-                    const projectId = currentRun?.projectId ?? activeProject?.id;
-                    if (!projectId || !token) return;
-                    void api(token, `/v1/projects/${encodeURIComponent(projectId)}/assets`).then(async (response) => {
-                      if (!response.ok) return;
-                      const body = await readJson<{ assets?: ProjectAsset[] }>(response);
-                      setProjectAssets(body.assets ?? []);
-                    });
+                  onSaved={(asset) => {
+                    const projectId = asset.projectId || currentRun?.projectId || activeProject?.id;
+                    if (projectId && token) {
+                      void api(token, `/v1/projects/${encodeURIComponent(projectId)}/assets`).then(async (response) => {
+                        if (!response.ok) return;
+                        const body = await readJson<{ assets?: ProjectAsset[] }>(response);
+                        setProjectAssets(body.assets ?? []);
+                      });
+                    }
+                    if (projectId && asset.id) {
+                      openProjects(projectId, { assets: true, assetId: asset.id });
+                    }
                   }}
                   onOpen={
                     deskBridge()?.openPath

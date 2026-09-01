@@ -70,15 +70,17 @@ export async function putProjectAsset(
   const rel = input.path.trim().replaceAll("\\", "/").replace(/^\/+/, "");
   if (!rel || rel.includes("..")) throw new Error("路径不合法");
   if (input.body.length === 0) throw new Error("文件是空的");
-  if (projectAssetBytes(projectId) + input.body.length > PROJECT_ASSET_QUOTA) {
+  const items = readAll();
+  const existing = items.find((item) => item.projectId === projectId && item.path === rel);
+  const used = projectAssetBytes(projectId) - (existing?.size ?? 0);
+  if (used + input.body.length > PROJECT_ASSET_QUOTA) {
     recordProjectEvent(projectId, actor, "asset_quota", "上传被配额拦住了");
     throw new Error("项目资产超过 1 GB");
   }
   const now = new Date().toISOString();
-  const id = `asset_${randomUUID().slice(0, 8)}`;
-  const objectKey = `project/${projectId}/assets/${id}`;
+  const id = existing?.id ?? `asset_${randomUUID().slice(0, 8)}`;
+  const objectKey = existing?.objectKey ?? `project/${projectId}/assets/${id}`;
   await getObjectStore().put(objectKey, input.body.toString("base64"), input.contentType || "application/octet-stream");
-  const items = readAll().filter((item) => !(item.projectId === projectId && item.path === rel));
   const asset: ProjectAsset = {
     id,
     projectId,
@@ -86,15 +88,17 @@ export async function putProjectAsset(
     objectKey,
     size: input.body.length,
     contentType: input.contentType || "application/octet-stream",
-    createdBy: actor.userId,
-    createdEmail: actor.email,
+    createdBy: existing?.createdBy ?? actor.userId,
+    createdEmail: existing?.createdEmail ?? actor.email,
     source: input.source,
     runId: input.runId ?? null,
-    createdAt: now,
+    createdAt: existing?.createdAt ?? now,
     updatedAt: now,
+    updatedBy: actor.userId,
+    updatedEmail: actor.email,
   };
-  writeAll([...items, asset]);
-  recordProjectEvent(projectId, actor, "asset_saved", `保存了 ${rel}`);
+  writeAll([...items.filter((item) => item.id !== id), asset]);
+  recordProjectEvent(projectId, actor, existing ? "asset_updated" : "asset_saved", existing ? `更新了 ${rel}` : `保存了 ${rel}`);
   return asset;
 }
 
