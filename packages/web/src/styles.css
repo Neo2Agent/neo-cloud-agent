@@ -1777,6 +1777,7 @@ button.send:disabled {
   display: flex;
   gap: 4px;
   border-bottom: 1px solid var(--line);
+  overflow-x: auto;
 }
 
 .catalog-tabs button {
@@ -2364,6 +2365,41 @@ button.send:disabled {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
   align-items: center;
+}
+
+.proj-asset-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.proj-asset-toolbar .hint {
+  margin: 0;
+}
+
+.ghost.file-upload {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.proj-asset-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.proj-asset-copy small {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.proj-asset-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .proj-events li {
@@ -3721,6 +3757,13 @@ button.composer-mic.is-listening,
   outline: 2px solid #bfdbfe;
   box-shadow: 0 0 0 4px #eff6ff;
   border-radius: 12px;
+}
+
+.proj-members li[data-highlight="true"] {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, #ffffff);
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow);
 }
 
 .diag-link {

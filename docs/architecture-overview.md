@@ -616,8 +616,8 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 | Inbox | `GET /v1/inbox` + 已读 |
 | `@` 提及 | Composer 客户端拼专家 / 团 / 插件 / 资产，不是服务端解析 |
 | 搜索 | 已加载 transcript / 目录上的 `?q=`，**没有** `GET /v1/search` |
-| 产物 | 预览 + `POST /v1/runs/:id/artifacts/:name/save-to-project` |
-| 目录页 | `#/experts`、`#/skills`、`#/projects` |
+| 产物 | 检查器 iframe/img 预览（签名 `?token=`）+ `POST /v1/runs/:id/artifacts/:name/save-to-project`；存完跳 `#/projects/:id/assets/:assetId` |
+| 目录页 | `#/experts`、`#/skills`、`#/projects`、`#/projects/:id/assets` |
 
 ---
 

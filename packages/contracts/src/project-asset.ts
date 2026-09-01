@@ -13,6 +13,8 @@ export type ProjectAsset = {
   runId?: string | null;
   createdAt: string;
   updatedAt: string;
+  updatedBy?: string;
+  updatedEmail?: string;
 };
 
 export type CreateProjectAssetRequest = {

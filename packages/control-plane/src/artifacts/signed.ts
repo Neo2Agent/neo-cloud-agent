@@ -40,8 +40,12 @@ export function verifyArtifactAccess(token: string, runId: string, name: string)
   }
 }
 
+export function signedArtifactUrl(runId: string, name: string): string {
+  return `${artifactUrl(runId, name)}?token=${signArtifactAccess(runId, name)}`;
+}
+
 export function publicArtifactHref(runId: string, name: string): string {
-  const relative = `${artifactUrl(runId, name)}?token=${signArtifactAccess(runId, name)}`;
+  const relative = signedArtifactUrl(runId, name);
   const base = publicAppUrl();
   return base ? `${base}${relative}` : relative;
 }

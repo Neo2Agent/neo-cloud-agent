@@ -124,7 +124,7 @@ import { createEnvironment, getEnvironment, listEnvironments } from "../env/stor
 import { readyWarmCount } from "../env/warm-pool.js";
 import { proxySpeechIat, speechIatConfigured } from "../speech/iat-proxy.js";
 import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
-import { verifyArtifactAccess } from "../artifacts/signed.js";
+import { signedArtifactUrl, verifyArtifactAccess } from "../artifacts/signed.js";
 import { beginMcpOAuth, finishMcpOAuth } from "../mcp/oauth.js";
 import { proxyMcpCall, proxyMcpList } from "../mcp/proxy.js";
 import { deleteMcpSecret, publicMcpServers, upsertMcpSecret } from "../mcp/secrets.js";
@@ -2217,7 +2217,11 @@ export function createApiServer() {
           notFound(res);
           return;
         }
-        send(res, 200, { artifacts: await listRunArtifacts(runId) });
+        const artifacts = (await listRunArtifacts(runId)).map((item) => ({
+          ...item,
+          url: signedArtifactUrl(runId, item.name),
+        }));
+        send(res, 200, { artifacts });
         return;
       }
       if (artifactsMatch && method === "POST") {

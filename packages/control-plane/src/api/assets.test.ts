@@ -83,12 +83,48 @@ test("project assets persist after a new run and can copy artifacts", async (t) 
     body: JSON.stringify({ name: "notes.txt", content: "from the run" }),
   });
   assert.equal(artifact.status, 201);
+  const listedArtifacts = await fetch(`${base}/v1/runs/${run.id}/artifacts`, { headers: auth(reader.token) });
+  assert.equal(listedArtifacts.status, 200);
+  const listedBody = (await listedArtifacts.json()) as { artifacts: Array<{ name: string; url: string }> };
+  const notesUrl = listedBody.artifacts.find((item) => item.name === "notes.txt")?.url ?? "";
+  assert.match(notesUrl, /token=/);
+  const preview = await fetch(`${base}${notesUrl}`);
+  assert.equal(preview.status, 200);
+  assert.equal(await preview.text(), "from the run");
+
   const saved = await fetch(`${base}/v1/runs/${run.id}/artifacts/notes.txt/save-to-project`, {
     method: "POST",
     headers: auth(reader.token),
     body: JSON.stringify({}),
   });
   assert.equal(saved.status, 201);
+  const first = (await saved.json()) as ProjectAsset;
+  assert.equal(first.path, "notes.txt");
+  assert.equal(first.createdBy, reader.user.id);
+  assert.equal(first.updatedBy, reader.user.id);
+
+  const overwritten = await fetch(`${base}/v1/runs/${run.id}/artifacts`, {
+    method: "POST",
+    headers: auth(reader.token),
+    body: JSON.stringify({ name: "notes.txt", content: "from the run v2" }),
+  });
+  assert.equal(overwritten.status, 201);
+  const savedAgain = await fetch(`${base}/v1/runs/${run.id}/artifacts/notes.txt/save-to-project`, {
+    method: "POST",
+    headers: auth(reader.token),
+    body: JSON.stringify({}),
+  });
+  assert.equal(savedAgain.status, 201);
+  const second = (await savedAgain.json()) as ProjectAsset;
+  assert.equal(second.id, first.id);
+  assert.equal(second.createdBy, first.createdBy);
+  assert.equal(second.updatedBy, reader.user.id);
+  const afterOverwrite = await fetch(`${base}/v1/projects/${project.id}/assets`, { headers: auth(reader.token) });
+  const afterBody = (await afterOverwrite.json()) as { assets: ProjectAsset[] };
+  assert.equal(afterBody.assets.filter((item) => item.path === "notes.txt").length, 1);
+  const reread = await fetch(`${base}/v1/projects/${project.id}/assets/${second.id}`, { headers: auth(reader.token) });
+  assert.equal(reread.status, 200);
+  assert.equal(await reread.text(), "from the run v2");
 
   const handoff = await fetch(`${base}/v1/projects/${project.id}/todos`, {
     method: "POST",

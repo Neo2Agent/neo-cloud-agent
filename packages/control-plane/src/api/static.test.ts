@@ -108,6 +108,10 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /置顶/);
   assert.match(appText, /session-tabs/);
   assert.match(appText, /产物/);
+  assert.match(appText, /保存到项目/);
+  assert.match(appText, /关闭预览/);
+  assert.match(appText, /项目资产/);
+  assert.match(appText, /#\/projects\//);
   assert.match(appText, /归档/);
   assert.match(appText, /settings-panel/);
   assert.match(appText, /workspace-drawer/);
