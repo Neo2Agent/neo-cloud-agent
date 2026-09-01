@@ -1477,11 +1477,13 @@ export function createApiServer() {
               notFound(res);
               return;
             }
+            const type = found.asset.contentType || "application/octet-stream";
+            const html = type.includes("html") || found.asset.path.toLowerCase().endsWith(".html");
             res.writeHead(200, {
               ...CORS,
-              "content-type": found.asset.contentType,
+              "content-type": html && !/charset=/i.test(type) ? `${type.includes("html") ? type : "text/html"}; charset=utf-8` : type,
               "content-length": String(found.body.length),
-              "content-disposition": `attachment; filename="${found.asset.path.split("/").pop() ?? "file"}"`,
+              "content-disposition": `inline; filename="${found.asset.path.split("/").pop() ?? "file"}"`,
             });
             res.end(found.body);
           } catch (error) {

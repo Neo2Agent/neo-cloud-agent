@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { artifactKind, artifactKindLabel, previewKind, prettyBytes } from "./artifact.js";
+import { artifactKind, artifactKindLabel, artifactUploadName, blobForPreview, previewKind, prettyBytes } from "./artifact.js";
 import { parseProjectHash, projectHashHref } from "./project-route.js";
 
 test("previewKind maps html and images, ignores text", () => {
   assert.equal(previewKind({ name: "board.html" }), "html");
+  assert.equal(previewKind({ path: "docs/board.html" }), "html");
   assert.equal(previewKind({ name: "notes.txt", contentType: "text/html" }), "html");
   assert.equal(previewKind({ name: "shot.PNG" }), "image");
   assert.equal(previewKind({ name: "cover", contentType: "image/webp" }), "image");
@@ -23,6 +24,20 @@ test("artifactKindLabel prefers a short badge over the raw type", () => {
   assert.equal(artifactKindLabel({ name: "shot.png" }), "图片");
   assert.equal(artifactKindLabel({ name: "notes.txt", contentType: "text/plain" }), "文本");
   assert.equal(artifactKindLabel({ name: "data.bin" }), "文件");
+});
+
+test("artifactUploadName prefers name then href then title", () => {
+  assert.equal(artifactUploadName({ name: "board.html" }), "board.html");
+  assert.equal(artifactUploadName({ href: "/v1/runs/r/artifacts/shot.png?token=x" }), "shot.png");
+  assert.equal(artifactUploadName({ text: "已上传 notes.txt" }), "notes.txt");
+});
+
+test("blobForPreview stamps utf-8 on html without a charset", () => {
+  const raw = new Blob(["<h1>预览</h1>"], { type: "text/html" });
+  assert.equal(blobForPreview(raw, { name: "board.html" }).type, "text/html; charset=utf-8");
+  assert.equal(blobForPreview(raw, { path: "board.html" }).type, "text/html; charset=utf-8");
+  const image = new Blob([new Uint8Array([1])], { type: "image/png" });
+  assert.equal(blobForPreview(image, { name: "dot.png" }).type, "image/png");
 });
 
 test("prettyBytes uses the next unit past 1024", () => {

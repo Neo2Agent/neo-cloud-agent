@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Bot,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +40,10 @@ export function IconRuns(props: IconProps) {
 
 export function IconExperts(props: IconProps) {
   return icon(Bot, props);
+}
+
+export function IconMemories(props: IconProps) {
+  return icon(BookOpen, props);
 }
 
 export function IconSystem(props: IconProps) {

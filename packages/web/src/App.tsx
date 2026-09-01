@@ -34,6 +34,7 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { BUNDLED_RECIPES, recipeById, type IntentCapsule, type Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import { artifactUploadName } from "./artifact.js";
 import { parseProjectHash, projectHashHref } from "./project-route.js";
 import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, Tooltip, type BuddyPlusAction } from "@neo-cloud-agent/ui";
@@ -266,6 +267,9 @@ export function App() {
   const [artifacts, setArtifacts] = useState<Array<{ name: string; url?: string; contentType?: string }>>([]);
   const [artifactsError, setArtifactsError] = useState("");
   const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [artifactFocus, setArtifactFocus] = useState<string | null>(null);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const lastAutoArtifactRef = useRef<string | null>(null);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
@@ -671,6 +675,9 @@ export function App() {
     setHighlightId(null);
     setMoreOpen(false);
     setPlusOpen(false);
+    setArtifactFocus(null);
+    setSelectedAssetIds([]);
+    lastAutoArtifactRef.current = null;
     history.replaceState(null, "", "/");
   }, [closeStream]);
 
@@ -1009,6 +1016,7 @@ export function App() {
               expertId: expertPick.expertId,
               expertTeamId: expertPick.expertTeamId,
               pluginIds: pluginPick ? [pluginPick.id] : undefined,
+              assetIds: activeProject && selectedAssetIds.length ? selectedAssetIds : undefined,
               mode: agentMode,
               deskWorkspaceId: deskTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
               target:
@@ -1056,7 +1064,7 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, agentMode, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, agentMode, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, selectedAssetIds, stopping]);
 
   const queueMessage = useCallback(async () => {
     const text = prompt.trim();
@@ -1497,7 +1505,8 @@ export function App() {
 
   const inspectorOpen = mainTab === "chat" && sessionTab !== "chat";
 
-  const openInspector = (id: "files" | "diff" | "terminal" | "artifacts" | "chat") => {
+  const openInspector = (id: "files" | "diff" | "terminal" | "artifacts" | "chat", opts?: { artifact?: string }) => {
+    if (opts?.artifact) setArtifactFocus(opts.artifact);
     setSessionTab(id);
     setSettingsOpen(false);
     if (id === "chat" || !runId) return;
@@ -1539,6 +1548,17 @@ export function App() {
         .finally(() => setArtifactsLoading(false));
     }
   };
+
+  useEffect(() => {
+    const latest = [...messages].reverse().find((item) => item.kind === "artifact.uploaded");
+    if (!latest || !runId) return;
+    const age = Date.now() - Date.parse(latest.createdAt);
+    if (!Number.isFinite(age) || age > 20_000) return;
+    const name = artifactUploadName(latest);
+    if (!name || lastAutoArtifactRef.current === latest.id) return;
+    lastAutoArtifactRef.current = latest.id;
+    openInspector("artifacts", { artifact: name });
+  }, [messages, runId, token]);
 
   const localTargetHint = deskBridge()?.canRunLocal
     ? deskFolder
@@ -1599,6 +1619,12 @@ export function App() {
     if (item.kind === "plugin") {
       const plugin = pluginCatalog.find((entry) => entry.id === item.id);
       if (plugin) setPluginPick(plugin);
+      return;
+    }
+    if (item.kind === "asset") {
+      const asset = projectAssets.find((entry) => entry.path === item.id || entry.id === item.id);
+      if (!asset) return;
+      setSelectedAssetIds((prev) => (prev.includes(asset.id) ? prev : [...prev, asset.id]));
     }
   };
 
@@ -2304,6 +2330,7 @@ export function App() {
                     onLoadOlder={loadOlder}
                     onOpenDiagnostics={openDiagnostics}
                     onPickRecipe={applyRecipe}
+                    onOpenArtifact={(name) => openInspector("artifacts", { artifact: name })}
                   />
                 )}
               </ChatErrorBoundary>
@@ -2345,6 +2372,7 @@ export function App() {
                   loading={artifactsLoading}
                   error={artifactsError}
                   artifacts={artifacts}
+                  focusName={artifactFocus}
                   projectId={currentRun?.projectId ?? activeProject?.id}
                   token={token}
                   runId={runId}
@@ -2408,6 +2436,29 @@ export function App() {
                 <button type="button" className="ghost" onClick={() => setPluginPick(null)}>
                   不用技能
                 </button>
+              ) : null}
+              {!runId && projectAssets.length > 0 ? (
+                <span className="asset-pick" aria-label="带上这些文件">
+                  <span className="hint">带上</span>
+                  {projectAssets.slice(0, 12).map((asset) => {
+                    const on = selectedAssetIds.includes(asset.id);
+                    return (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        className={on ? "ghost on" : "ghost"}
+                        aria-pressed={on}
+                        onClick={() =>
+                          setSelectedAssetIds((prev) =>
+                            prev.includes(asset.id) ? prev.filter((id) => id !== asset.id) : [...prev, asset.id],
+                          )
+                        }
+                      >
+                        {asset.path.split("/").pop() ?? asset.path}
+                      </button>
+                    );
+                  })}
+                </span>
               ) : null}
             </div>
           ) : null}

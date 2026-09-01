@@ -8,9 +8,9 @@ import { PROJECT_TEMPLATES, projectTemplateById } from "@neo-cloud-agent/contrac
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
-import { artifactKind, prettyBytes } from "../artifact.js";
+import { artifactKind, artifactKindLabel, blobForPreview, previewKind, prettyBytes } from "../artifact.js";
 import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
-import { IconBack, IconDownload, IconFileKind, IconPlus, IconTrash } from "../icons.js";
+import { IconBack, IconClose, IconDownload, IconFileKind, IconPlus, IconTrash } from "../icons.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
 
 type Props = {
@@ -53,6 +53,8 @@ export function ProjectsPage({
   const [memberPassword, setMemberPassword] = useState("");
   const [transferRunId, setTransferRunId] = useState("");
   const [transferUserId, setTransferUserId] = useState("");
+  const [transferMode, setTransferMode] = useState<"reassign" | "fork">("reassign");
+  const [previewAsset, setPreviewAsset] = useState<{ asset: ProjectAsset; url: string } | null>(null);
   const [inviteInfo, setInviteInfo] = useState<{ projectName: string; status: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -337,7 +339,11 @@ export function ProjectsPage({
                   setBusy(true);
                   void api(token, `/v1/runs/${transferRunId}/transfer`, {
                     method: "POST",
-                    body: JSON.stringify({ toUserId: transferUserId, note: transferNote.trim() || undefined }),
+                    body: JSON.stringify({
+                      toUserId: transferUserId,
+                      note: transferNote.trim() || undefined,
+                      mode: transferMode,
+                    }),
                   })
                     .then(async (res) => {
                       if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "转交失败");
@@ -375,7 +381,22 @@ export function ProjectsPage({
                   <span>交接说明</span>
                   <input value={transferNote} onChange={(event) => setTransferNote(event.target.value)} placeholder="可选，会写进 HANDOFF.md" />
                 </label>
-                <p className="hint">对话记录会交给对方。不会拷 .env、密钥或 SCM 凭证。</p>
+                <label>
+                  <span>方式</span>
+                  <Select
+                    value={transferMode}
+                    onValueChange={(value) => setTransferMode(value === "fork" ? "fork" : "reassign")}
+                    options={[
+                      { value: "reassign", label: "换房主" },
+                      { value: "fork", label: "开新对话" },
+                    ]}
+                  />
+                </label>
+                <p className="hint">
+                  {transferMode === "fork"
+                    ? "对方拿到一条新对话和 HANDOFF.md，原来的还在你这边。"
+                    : "对话记录会交给对方。不会拷 .env、密钥或 SCM 凭证。"}
+                </p>
                 <button className="ghost" type="submit" disabled={busy || !transferRunId || !transferUserId}>
                   转交
                 </button>
@@ -438,6 +459,23 @@ export function ProjectsPage({
                       id={`asset-${item.id}`}
                       data-highlight={highlightAssetId === item.id ? "true" : undefined}
                     >
+                      <button
+                        type="button"
+                        className="proj-asset-main"
+                        onClick={() => {
+                          void api(token, `/v1/projects/${selected.id}/assets/${item.id}`)
+                            .then(async (response) => {
+                              if (!response.ok) throw new Error("打开失败");
+                              const blob = blobForPreview(await response.blob(), item);
+                              const url = URL.createObjectURL(blob);
+                              setPreviewAsset((prev) => {
+                                if (prev?.url) URL.revokeObjectURL(prev.url);
+                                return { asset: item, url };
+                              });
+                            })
+                            .catch((err) => setError(err instanceof Error ? err.message : "打开失败"));
+                        }}
+                      >
                       <span className="proj-asset-glyph">
                         <IconFileKind kind={artifactKind({ name: item.path, contentType: item.contentType })} size={16} />
                       </span>
@@ -454,6 +492,7 @@ export function ProjectsPage({
                           {item.updatedAt ? ` · ${formatShortDate(item.updatedAt)}` : ""}
                         </small>
                       </span>
+                      </button>
                       <span className="proj-asset-actions">
                         <button
                           className="icon-btn"
@@ -503,6 +542,44 @@ export function ProjectsPage({
                   ))}
                 </ul>
                 <CatalogPager page={assetListPage} total={assets.length} pageSize={10} onPage={setAssetPage} />
+                {previewAsset ? (
+                  <div className="artifact-preview proj-asset-preview">
+                    <div className="artifact-preview-bar">
+                      <strong>{previewAsset.asset.path}</strong>
+                      <span className="artifact-preview-actions">
+                        <small>{artifactKindLabel({ name: previewAsset.asset.path, contentType: previewAsset.asset.contentType })}</small>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label="关闭预览"
+                          onClick={() => {
+                            URL.revokeObjectURL(previewAsset.url);
+                            setPreviewAsset(null);
+                          }}
+                        >
+                          <IconClose size={16} />
+                        </button>
+                      </span>
+                    </div>
+                    {previewKind({ name: previewAsset.asset.path, contentType: previewAsset.asset.contentType }) === "image" ? (
+                      <div className="artifact-preview-frame">
+                        <img src={previewAsset.url} alt={previewAsset.asset.path} />
+                      </div>
+                    ) : previewKind({ name: previewAsset.asset.path, contentType: previewAsset.asset.contentType }) === "html" ? (
+                      <iframe
+                        className="artifact-preview-frame"
+                        title={previewAsset.asset.path}
+                        src={previewAsset.url}
+                        sandbox="allow-scripts"
+                      />
+                    ) : (
+                      <div className="artifact-preview-empty">
+                        <IconFileKind kind={artifactKind({ name: previewAsset.asset.path, contentType: previewAsset.asset.contentType })} size={28} />
+                        <p>这种文件在这里只能下载。</p>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </>
             )}
           </div>

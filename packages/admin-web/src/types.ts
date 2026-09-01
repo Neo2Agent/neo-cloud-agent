@@ -95,4 +95,10 @@ export type AdminExpertsCatalog = {
   users: Array<{ id: string; email: string }>;
 };
 
-export type AdminPage = "overview" | "users" | "runs" | "system" | "experts";
+export type AdminMemory = {
+  id: string;
+  text: string;
+  userId?: string;
+};
+
+export type AdminPage = "overview" | "users" | "runs" | "system" | "experts" | "memories";

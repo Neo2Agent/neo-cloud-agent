@@ -662,6 +662,7 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
       kind: event.kind,
       level: event.level,
       href: typeof event.data?.url === "string" ? event.data.url : undefined,
+      name: typeof event.data?.name === "string" ? event.data.name : undefined,
       mediaType: typeof event.data?.contentType === "string" ? event.data.contentType : undefined,
     });
   }

@@ -107,7 +107,11 @@ import { resolveEnabledPlugins } from "../plugins/store.js";
 import { requireUsableExpert } from "../experts/store.js";
 import { getProject, memberRole, projectHasMember, recordProjectEvent } from "../projects/store.js";
 import { bindTodoRun } from "../projects/todos.js";
-import { listProjectAssetsUnchecked } from "../projects/assets.js";
+import {
+  attachProjectAssetsToWorkspace,
+  listProjectAssetsUnchecked,
+  normalizeAssetIds,
+} from "../projects/assets.js";
 import { attachHandoffPack, buildHandoffMarkdown } from "../projects/handoff.js";
 import { pushInbox } from "../projects/inbox.js";
 import {
@@ -799,13 +803,16 @@ function runningTitle(): string {
   return "Worker handle reserved";
 }
 
-function writeProjectMemory(run: Run): void {
+function writeProjectMemory(run: Run, extras?: { attached?: string[]; skipped?: string[] }): void {
   if (!run.projectId) return;
   const project = getProject(run.projectId);
   if (!project) return;
   const dest = path.join(workspaceFor(run.id), ".neo");
   mkdirSync(dest, { recursive: true });
-  writeFileSync(path.join(dest, "PROJECT.md"), formatProjectMemory(project, listProjectAssetsUnchecked(project.id)));
+  writeFileSync(
+    path.join(dest, "PROJECT.md"),
+    formatProjectMemory(project, listProjectAssetsUnchecked(project.id), extras),
+  );
 }
 
 function expertFilesForRun(run: Run) {
@@ -1122,6 +1129,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     usage: null,
     notifyChatId: input.notifyChatId?.trim() || null,
     todoId: input.todoId ?? null,
+    attachedAssetIds: projectId ? normalizeAssetIds(input.assetIds) : null,
   };
   seedHostCollaborator(run, owner);
   if (input.todoId && projectId) {
@@ -1306,7 +1314,16 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   }
 
   try {
-    writeProjectMemory(run);
+    let attached: { attached: string[]; skipped: string[] } | undefined;
+    if (run.projectId && run.userId && (run.attachedAssetIds?.length ?? 0) > 0) {
+      attached = await attachProjectAssetsToWorkspace({
+        projectId: run.projectId,
+        userId: run.userId,
+        workspaceDir: workspaceFor(run.id),
+        assetIds: run.attachedAssetIds ?? [],
+      });
+    }
+    writeProjectMemory(run, attached);
     await writeRecalledMemory(run);
     writeExpertRole(run);
     writeRunPlugins(run, input.pluginIds);

@@ -182,6 +182,10 @@ test("admin-api is a separate app and only platform admins can use it", async (t
   });
   assert.equal(published.status, 200);
 
+  const memoriesOff = await fetch(`${base}/v1/admin/memories`, { headers: auth(admin.body.token!) });
+  assert.equal(memoriesOff.status, 200);
+  assert.equal(((await memoriesOff.json()) as { configured?: boolean }).configured, false);
+
   const { listExpertsForActor } = await import("../../control-plane/src/experts/store.js");
   const { resetBundledExpertPolicyForTests } = await import("../../control-plane/src/experts/policy.js");
   try {
@@ -190,4 +194,50 @@ test("admin-api is a separate app and only platform admins can use it", async (t
   } finally {
     resetBundledExpertPolicyForTests();
   }
+});
+
+test("admin memories list and delete go through Mem0", async (t) => {
+  const previousUrl = process.env.MEM0_URL;
+  const previousKey = process.env.MEM0_API_KEY;
+  process.env.MEM0_URL = "http://mem0.test";
+  process.env.MEM0_API_KEY = "m0sk_admin";
+  t.after(() => {
+    if (previousUrl === undefined) delete process.env.MEM0_URL;
+    else process.env.MEM0_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.MEM0_API_KEY;
+    else process.env.MEM0_API_KEY = previousKey;
+  });
+  const { setMem0FetchForTests } = await import("../../control-plane/src/memory/client.js");
+  const calls: Array<{ method?: string; url: string }> = [];
+  setMem0FetchForTests(async (url, init) => {
+    calls.push({ method: init?.method, url });
+    if (url.includes("/memories?")) {
+      return new Response(JSON.stringify({ results: [{ id: "m1", memory: "用 pnpm", user_id: "u1" }] }), {
+        status: 200,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  });
+  t.after(() => setMem0FetchForTests(null));
+  const server = createAdminApiServer();
+  const port = await listen(server);
+  t.after(async () => close(server));
+  await ensureDefaultAdmin();
+  const admin = await login(`http://127.0.0.1:${port}`, "admin", "123456");
+  const listed = await fetch(`http://127.0.0.1:${port}/v1/admin/memories?userId=u1`, {
+    headers: auth(admin.body.token!),
+  });
+  assert.equal(listed.status, 200);
+  assert.equal(((await listed.json()) as { memories: Array<{ text: string }> }).memories[0]?.text, "用 pnpm");
+  const hidden = await fetch(`http://127.0.0.1:${port}/v1/admin/memories/foreign`, {
+    method: "DELETE",
+    headers: auth(admin.body.token!),
+  });
+  assert.equal(hidden.status, 400);
+  const deleted = await fetch(`http://127.0.0.1:${port}/v1/admin/memories/m1?userId=u1`, {
+    method: "DELETE",
+    headers: auth(admin.body.token!),
+  });
+  assert.equal(deleted.status, 200);
+  assert.ok(calls.some((call) => call.method === "DELETE" && call.url.endsWith("/memories/m1")));
 });

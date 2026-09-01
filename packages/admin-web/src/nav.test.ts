@@ -8,5 +8,6 @@ test("parsePage reads hash routes and falls back to overview", () => {
   assert.equal(parsePage("#/runs?q=1"), "runs");
   assert.equal(parsePage("#/system"), "system");
   assert.equal(parsePage("#/experts"), "experts");
+  assert.equal(parsePage("#/memories"), "memories");
   assert.equal(parsePage("#/nope"), "overview");
 });

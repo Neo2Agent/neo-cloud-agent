@@ -111,11 +111,12 @@ test("artifact uploads become setup cards with a download href", () => {
       id: "a1",
       kind: "artifact.uploaded",
       title: "已上传 notes.txt",
-      data: { url: "/v1/runs/run-1/artifacts/notes.txt", contentType: "text/plain" },
+      data: { name: "notes.txt", url: "/v1/runs/run-1/artifacts/notes.txt", contentType: "text/plain" },
     }),
   ]);
   assert.equal(snapshot.messages[0]?.kind, "artifact.uploaded");
   assert.equal(snapshot.messages[0]?.href, "/v1/runs/run-1/artifacts/notes.txt");
+  assert.equal(snapshot.messages[0]?.name, "notes.txt");
   assert.equal(snapshot.messages[0]?.mediaType, "text/plain");
 });
 

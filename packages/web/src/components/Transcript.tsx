@@ -4,6 +4,7 @@ import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { BUNDLED_RECIPES } from "@neo-cloud-agent/contracts/recipe";
+import { artifactUploadName } from "../artifact.js";
 import { fileToolDiff, formatDuration, formatMessageTime, formatWhen, toolArgPreview } from "../format";
 import { IconCheck, IconError, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "../markdown";
@@ -21,6 +22,7 @@ type Props = {
   onLoadOlder: () => void;
   onOpenDiagnostics?: () => void;
   onPickRecipe?: (recipe: Recipe) => void;
+  onOpenArtifact?: (name: string) => void;
 };
 
 function ToolStatus({ tool }: { tool: TranscriptTool }) {
@@ -139,19 +141,39 @@ function MessageTime({ message, className = "" }: { message: TranscriptMessage; 
   );
 }
 
-function ArtifactCard({ message }: { message: TranscriptMessage }) {
+function ArtifactCard({
+  message,
+  onOpen,
+}: {
+  message: TranscriptMessage;
+  onOpen?: (name: string) => void;
+}) {
   const href = message.href;
+  const name = artifactUploadName(message);
   const image = Boolean(href && message.mediaType?.startsWith("image/"));
+  const open = onOpen && name ? () => onOpen(name) : undefined;
   return (
     <article className="artifact">
-      {href ? (
+      {open ? (
+        <button type="button" className="artifact-open" onClick={open}>
+          {message.text}
+        </button>
+      ) : href ? (
         <a href={href} target="_blank" rel="noreferrer">
           {message.text}
         </a>
       ) : (
         <span>{message.text}</span>
       )}
-      {image && href ? <img src={href} alt="" /> : null}
+      {image && href ? (
+        open ? (
+          <button type="button" className="artifact-thumb" onClick={open}>
+            <img src={href} alt="" />
+          </button>
+        ) : (
+          <img src={href} alt="" />
+        )
+      ) : null}
     </article>
   );
 }
@@ -168,6 +190,7 @@ export function Transcript({
   onLoadOlder,
   onOpenDiagnostics,
   onPickRecipe,
+  onOpenArtifact,
 }: Props) {
   const scroller = useRef<HTMLElement>(null);
   const stick = useRef(true);
@@ -248,7 +271,7 @@ export function Transcript({
         ) : (
           messages.map((message) => {
             if (message.kind === "artifact.uploaded") {
-              return <ArtifactCard key={message.id} message={message} />;
+              return <ArtifactCard key={message.id} message={message} onOpen={onOpenArtifact} />;
             }
             if (message.role === "setup") {
               const failed = message.level === "error" || String(message.kind).endsWith("_failed") || message.kind === "run.error";

@@ -135,6 +135,7 @@ export interface Run {
   setupStatus: SetupStatus;
   source: RunSource;
   projectId?: string | null;
+  attachedAssetIds?: string[] | null;
   assigneeUserId?: string | null;
   collaborators?: RunCollaborator[];
   todoId?: string | null;
@@ -253,6 +254,8 @@ export interface CreateRunRequest {
   model?: string;
   source?: RunSource;
   projectId?: string;
+  /** Project asset ids to copy into the workspace on create. */
+  assetIds?: string[];
   todoId?: string;
   expertId?: string;
   expertTeamId?: string;
