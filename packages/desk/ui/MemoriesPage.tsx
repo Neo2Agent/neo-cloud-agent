@@ -1,4 +1,4 @@
-import { filterMemories, memoryHint, type MemoryItem } from "@neo-cloud-agent/contracts";
+import { filterMemories, memoryHint, type MemoryItem } from "@neo-cloud-agent/contracts/memory";
 import { useEffect, useMemo, useState } from "react";
 import { api, readJson } from "./api";
 import { IconPlus } from "./icons";
