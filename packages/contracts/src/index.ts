@@ -230,8 +230,13 @@ export {
   MEMORY_ADD_TOOL_NAME,
   MEMORY_SEARCH_TOOL_NAME,
   appendUserMemory,
+  filterMemories,
   formatUserMemory,
+  memoryHint,
 } from "./memory.js";
+export type { ArtifactKind, ArtifactPreviewKind } from "./artifact.js";
+export { artifactKind, artifactKindLabel, previewKind, prettyBytes } from "./artifact.js";
+export { searchTranscript, userQuestions } from "./transcript-search.js";
 export type {
   BundledExpertAudience,
   BundledExpertOverrideFields,

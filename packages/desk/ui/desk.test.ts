@@ -59,6 +59,21 @@ test("withDeskClient marks Desk traffic without a custom header", () => {
   assert.equal(withDeskClient("/v1/runs?client=desk"), "/v1/runs?client=desk");
 });
 
+test("withApiBase keeps a signed artifact query when joining the control-plane origin", () => {
+  const previous = (globalThis as { window?: Window & { neoDesk?: { apiBase: string; proxyApi?: boolean } } }).window;
+  (globalThis as { window: { neoDesk: { apiBase: string } } }).window = {
+    neoDesk: { apiBase: "https://neorun.cloud" },
+  };
+  try {
+    assert.equal(
+      withApiBase("/v1/runs/r1/artifacts/board.html?token=sig"),
+      "https://neorun.cloud/v1/runs/r1/artifacts/board.html?token=sig",
+    );
+  } finally {
+    (globalThis as { window?: unknown }).window = previous;
+  }
+});
+
 test("withApiBase stays on neo-desk:// when the packaged preload proxies API", () => {
   const previous = (globalThis as { window?: Window & { neoDesk?: { apiBase: string; proxyApi?: boolean } } }).window;
   (globalThis as { window: { neoDesk: { apiBase: string; proxyApi: boolean } } }).window = {

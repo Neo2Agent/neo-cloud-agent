@@ -1,15 +1,20 @@
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
+import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 import { Select } from "@neo-cloud-agent/ui";
 import { Avatar } from "./Avatar";
 import { IslandButton, IslandInput, IslandSwitch } from "./island";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useLayoutEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import type { VoiceSession } from "@neo-cloud-agent/ui/speech";
 import { useDismissOnOutside } from "./dismiss";
 import { composerTextareaHeight } from "../src/composer-size";
 import { isLocalDeskKind, localRunLabel, TARGET_CLOUD, TARGET_DESK, TARGET_REMOTE, type DeskTargetKind } from "./desk";
-import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconPlus, IconProjects, IconSearch, IconStop, IconUnbindFolder } from "./icons";
+import { readImageRef } from "./image-ref";
+import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconMic, IconPlus, IconProjects, IconSearch, IconStop, IconUnbindFolder } from "./icons";
+import { applyClickVoice, startDeskVoice } from "./speech";
 
 export type ContextMenuId = "repo" | "target" | null;
 
@@ -337,6 +342,7 @@ export function SettingsPage({
   error,
   onSave,
   newApi,
+  onOpenMemories,
 }: {
   section: SettingsSection;
   onSection: (section: SettingsSection) => void;
@@ -360,6 +366,7 @@ export function SettingsPage({
   error?: string;
   onSave: () => void;
   newApi?: { url: string | null; consoleUrl: string | null } | null;
+  onOpenMemories?: () => void;
 }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -433,6 +440,11 @@ export function SettingsPage({
               <p className="hint">
                 不同文件夹可以同时跑。每条都是一个独立进程，开太多会吃满内存和 CPU。
               </p>
+              {onOpenMemories ? (
+                <IslandButton type="default" onClick={onOpenMemories}>
+                  打开记忆
+                </IslandButton>
+              ) : null}
             </div>
           ) : (
             <form className="settings-card" onSubmit={submit}>
@@ -802,7 +814,7 @@ function lastSegment(value: string): string {
 }
 
 export type ComposerMention = {
-  kind: "asset" | "todo" | "file" | "command" | "expert" | "team";
+  kind: "asset" | "todo" | "file" | "command" | "expert" | "team" | "plugin";
   id: string;
   label: string;
   insert: string;
@@ -825,6 +837,7 @@ function mentionKindLabel(kind: ComposerMention["kind"]): string {
   if (kind === "file") return "文件";
   if (kind === "expert") return "专家";
   if (kind === "team") return "专家团";
+  if (kind === "plugin") return "技能";
   return "自动化";
 }
 
@@ -853,6 +866,10 @@ export function ChatComposer({
   expertLocked,
   onExpert,
   onMention,
+  token,
+  images,
+  onImages,
+  onCapsule,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -878,11 +895,21 @@ export function ChatComposer({
   expertLocked?: boolean;
   onExpert?: (value: string) => void;
   onMention?: (item: ComposerMention) => void;
+  token?: string;
+  images?: ImageRef[];
+  onImages?: (images: ImageRef[]) => void;
+  onCapsule?: (capsule: IntentCapsule) => void;
 }) {
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
+  const [listening, setListening] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const voiceRef = useRef<VoiceSession | null>(null);
   useDismissOnOutside(menuOpen, () => setMenuOpen(false), modelRef);
+  const capsules = onCapsule ? matchIntentCapsules(prompt) : [];
+  const attached = images ?? [];
   const typed = mentionTrigger(prompt);
   const mentionHits = (mentions ?? []).filter((item) => {
     if (typed === null) return false;
@@ -910,14 +937,91 @@ export function ChatComposer({
   }, [home, prompt, taRef]);
 
   const waitingNow = Boolean(waiting);
+  const empty = !prompt.trim() && attached.length === 0;
+
+  const runVoice = async () => {
+    if (!token || locked || listening || finishing) return;
+    setVoiceError("");
+    const result = await startDeskVoice(token, () => undefined, (message) => setVoiceError(message));
+    if (result.kind === "cancelled") return;
+    if (result.kind === "error") {
+      setVoiceError(result.message);
+      return;
+    }
+    if (result.kind === "transcript") {
+      setPrompt(applyClickVoice(prompt, result.text));
+      return;
+    }
+    voiceRef.current = result.session;
+    setListening(true);
+  };
+
+  const toggleVoice = () => {
+    void (async () => {
+      if (voiceRef.current) {
+        const session = voiceRef.current;
+        voiceRef.current = null;
+        setListening(false);
+        setFinishing(true);
+        try {
+          const spoken = await session.stop();
+          setPrompt(applyClickVoice(prompt, spoken));
+        } finally {
+          setFinishing(false);
+        }
+        return;
+      }
+      await runVoice();
+    })();
+  };
+
   const inner = (
     <>
+      {attached.length > 0 ? (
+        <div className="image-row">
+          {attached.map((image, index) => (
+            <button
+              key={`${image.mediaType}-${index}`}
+              type="button"
+              className="image-chip"
+              onClick={() => onImages?.(attached.filter((_, item) => item !== index))}
+            >
+              <img src={`data:${image.mediaType};base64,${image.data}`} alt="" />
+              去掉
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {voiceError || listening || finishing ? (
+        <p className={voiceError ? "hint voice-error" : "hint"}>{listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : voiceError}</p>
+      ) : null}
+      {capsules.length > 0 && mentionHits.length === 0 ? (
+        <div className="intent-capsules" role="list">
+          {capsules.map((item) => (
+            <button key={item.id} type="button" className="intent-capsule" onClick={() => onCapsule?.(item)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <textarea
         ref={taRef}
         value={prompt}
         placeholder={placeholder}
         disabled={locked}
         onChange={(event) => setPrompt(event.target.value)}
+        onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
+          const files = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
+          if (files.length === 0) return;
+          event.preventDefault();
+          void Promise.all(files.slice(0, 4).map(readImageRef)).then((next) => {
+            const merged = [...attached, ...next].slice(0, 4);
+            onImages?.(merged);
+            if (attached.length + files.length > 4) {
+              setVoiceError("一次最多 4 张图");
+            }
+          });
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape" && mentionHits.length > 0) {
             event.preventDefault();
@@ -944,6 +1048,17 @@ export function ChatComposer({
         </div>
       ) : null}
       <div className="composer-tools">
+        {token ? (
+          <button
+            type="button"
+            className={`icon-btn${listening ? " is-on" : ""}`}
+            aria-label={listening ? "停止听写" : "语音输入"}
+            disabled={locked || finishing}
+            onClick={toggleVoice}
+          >
+            <IconMic size={15} />
+          </button>
+        ) : null}
         {onExpert ? (
           <label className="expert-pick">
             <span>专家</span>
@@ -994,7 +1109,7 @@ export function ChatComposer({
               <IconStop size={14} />
             </button>
           ) : (
-            <button type="button" className="send-btn" aria-label="Send" disabled={locked || sending || !prompt.trim()} onClick={onSubmit}>
+            <button type="button" className="send-btn" aria-label="Send" disabled={locked || sending || empty || listening} onClick={onSubmit}>
               <IconArrowUp size={16} />
             </button>
           )}

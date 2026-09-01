@@ -19,6 +19,8 @@ export function ProjectWorkbench({
   token,
   userId,
   initialTab = "board",
+  highlightAssetId,
+  onHighlightClear,
   composing = false,
   targetKind = "cloud",
   onBack,
@@ -32,6 +34,8 @@ export function ProjectWorkbench({
   token: string;
   userId: string;
   initialTab?: WorkbenchTab;
+  highlightAssetId?: string | null;
+  onHighlightClear?: () => void;
   composing?: boolean;
   targetKind?: DeskTargetKind;
   onBack: () => void;
@@ -127,7 +131,15 @@ export function ProjectWorkbench({
               <BoardTab token={token} project={project} onStartChat={(id, title) => onStartChat({ id, title })} />
             ) : null}
             {tab === "chats" ? <ChatsTab runs={mine} onOpenRun={onOpenRun} onStartChat={() => onStartChat()} /> : null}
-            {tab === "assets" ? <AssetsTab token={token} project={project} userId={userId} /> : null}
+            {tab === "assets" ? (
+              <AssetsTab
+                token={token}
+                project={project}
+                userId={userId}
+                highlightAssetId={highlightAssetId}
+                onHighlightClear={onHighlightClear}
+              />
+            ) : null}
             {tab === "activity" ? <ActivityTab project={project} token={token} userId={userId} /> : null}
             {tab === "settings" ? (
               <SettingsTab token={token} project={project} userId={userId} onChanged={onProjectChange} />

@@ -2,8 +2,10 @@ import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
 import { decodeExpertPick, encodeExpertPick, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
+import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import type { ExecutionTarget, Run } from "@neo-cloud-agent/contracts/run";
+import { BUNDLED_RECIPES, type IntentCapsule, type Recipe } from "@neo-cloud-agent/contracts/recipe";
+import type { ExecutionTarget, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Tooltip } from "@neo-cloud-agent/ui";
@@ -30,19 +32,28 @@ import {
 } from "./desk";
 import { remoteControlSendLock, type DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
+import { resolveChatModel } from "../src/format";
 import { isLoopbackOrigin } from "../src/ports";
 import { groupRailSessions } from "../src/rail";
 import {
+  hashForMemories,
   hashForProject,
+  hashForSkills,
   inviteTokenFromDeepLink,
   inviteTokenFromHash,
-  projectIdFromHash,
+  memoriesFromHash,
+  parseProjectHash,
   runIdFromDeepLink,
   runIdFromHash,
+  skillIdFromHash,
+  skillsFromHash,
 } from "../src/protocol";
 import { Avatar } from "./Avatar";
 import { compressAvatarFile } from "./avatar-file";
 import { ExpertsPage } from "./ExpertsPage";
+import { MemoriesPage } from "./MemoriesPage";
+import { SkillsPage } from "./SkillsPage";
+import { jumpToTranscriptMessage, TranscriptSearch } from "./chat/TranscriptSearch";
 import { IslandButton, IslandCard, IslandInput, IslandTag, IslandTitle } from "./island";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import {
@@ -105,7 +116,10 @@ import {
   IconAutomations,
   IconBack,
   IconBell,
+  IconArtifacts,
   IconExperts,
+  IconMemory,
+  IconSkills,
   IconForward,
   IconGear,
   IconLogOut,
@@ -116,7 +130,7 @@ import {
   IconSort,
 } from "./icons";
 
-type NavId = "chats" | "automations" | "projects" | "experts" | "settings";
+type NavId = "chats" | "automations" | "projects" | "experts" | "skills" | "memories" | "settings";
 
 type InboxRow = {
   id: string;
@@ -222,6 +236,11 @@ export function App() {
   const [experts, setExperts] = useState<Expert[]>([]);
   const [teams, setTeams] = useState<ExpertTeam[]>([]);
   const [expertPick, setExpertPick] = useState<ExpertPick>({});
+  const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
+  const [skillId, setSkillId] = useState<string | null>(null);
+  const [highlightAssetId, setHighlightAssetId] = useState<string | null>(null);
+  const [images, setImages] = useState<ImageRef[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [projectName, setProjectName] = useState("");
   const [projectInstruction, setProjectInstruction] = useState("");
@@ -343,19 +362,28 @@ export function App() {
     if (teamRes.ok) setTeams((await readJson<{ teams?: ExpertTeam[] }>(teamRes)).teams ?? []);
   }, []);
 
-  const openProject = useCallback(async (id: string, tab: WorkbenchTab = "board") => {
+  const refreshPlugins = useCallback(async (projectId?: string | null) => {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const response = await api(tokenRef.current, `/v1/plugins${query}`);
+    if (!response.ok) return;
+    setPluginCatalog((await readJson<{ plugins?: PluginCatalogItem[] }>(response)).plugins ?? []);
+  }, []);
+
+  const openProject = useCallback(async (id: string, tab: WorkbenchTab = "board", assetId?: string | null) => {
     const response = await api(tokenRef.current, `/v1/projects/${id}`);
     if (!response.ok) return;
     const detail = await readJson<Project>(response);
     setActiveProject(detail);
-    setWorkbenchTab(tab);
+    setWorkbenchTab(assetId || tab === "assets" ? "assets" : tab);
+    setHighlightAssetId(assetId ?? null);
     setInviteToken(null);
     runIdRef.current = null;
     setRunId(null);
     setCurrent(null);
     setNav("projects");
-    if (location.hash !== hashForProject(detail.id)) {
-      location.hash = hashForProject(detail.id);
+    const nextHash = hashForProject(detail.id, assetId ? { assetId } : tab === "assets" ? { assets: true } : undefined);
+    if (location.hash !== nextHash) {
+      location.hash = nextHash;
     }
   }, []);
 
@@ -554,8 +582,16 @@ export function App() {
         if (next.folder) setFolder(next.folder);
       }
     }
-    await Promise.all([refreshRuns(), refreshAutomations(), refreshProjects(), refreshExperts(), refreshLlm(), refreshInbox()]);
-  }, [refreshAutomations, refreshExperts, refreshInbox, refreshLlm, refreshProjects, refreshRuns]);
+    await Promise.all([
+      refreshRuns(),
+      refreshAutomations(),
+      refreshProjects(),
+      refreshExperts(),
+      refreshPlugins(),
+      refreshLlm(),
+      refreshInbox(),
+    ]);
+  }, [refreshAutomations, refreshExperts, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     if (!authed) return;
@@ -567,9 +603,22 @@ export function App() {
         setNav("projects");
         return;
       }
-      const projectId = projectIdFromHash(hash);
-      if (projectId) {
-        void openProject(projectId);
+      if (memoriesFromHash(hash)) {
+        setNav("memories");
+        return;
+      }
+      if (skillsFromHash(hash)) {
+        setSkillId(skillIdFromHash(hash));
+        setNav("skills");
+        return;
+      }
+      const projectLoc = parseProjectHash(hash);
+      if (projectLoc.projectId) {
+        void openProject(
+          projectLoc.projectId,
+          projectLoc.assets || projectLoc.assetId ? "assets" : "board",
+          projectLoc.assetId,
+        );
         return;
       }
       const hashedRun = runIdFromHash(hash) ?? runIdFromDeepLink(hash);
@@ -721,8 +770,9 @@ export function App() {
   };
 
   const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
+    const attached = images;
     const text = (draft ?? prompt).trim();
-    if (!text || sending) return;
+    if ((!text && attached.length === 0) || sending) return;
     if (
       current &&
       remoteControlSendLock(current, [], { thisDeskId: target.deskId || deskIdRef.current }).locked
@@ -759,11 +809,15 @@ export function App() {
     const composed = `${askPrefix}${startNew && boundTodo ? `待办：${boundTodo.title}\n\n` : ""}${text}`;
     const pending: PendingUser = {
       id: `pending-${Date.now()}`,
-      text: composed,
+      text: composed || "（图片）",
+      images: attached.length ? attached : undefined,
       createdAt: new Date().toISOString(),
     };
     setSending(true);
-    if (!draft) setPrompt("");
+    if (!draft) {
+      setPrompt("");
+      setImages([]);
+    }
     setPendingTurn(pending);
     if (!startNew) {
       setMessages((prev) => appendPendingUser(prev, pending));
@@ -777,13 +831,15 @@ export function App() {
           await api(token, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
-              prompt: composed,
-              model: selectedModel || undefined,
+              prompt: composed || "（图片）",
+              model: resolveChatModel(llm.upstream, selectedModel, attached.length > 0),
               source: "desk",
               projectId: activeProject?.id,
               todoId: boundTodo?.id,
               expertId: expertPick.expertId,
               expertTeamId: expertPick.expertTeamId,
+              pluginIds: pluginPick ? [pluginPick.id] : undefined,
+              images: attached.length ? attached : undefined,
               // This window is the desk, so it starts the worker itself instead
               // of waiting to be handed its own run back.
               start: local ? "inline" : undefined,
@@ -813,12 +869,13 @@ export function App() {
           // an inline assignment. Pull it off the lease instead of waiting.
           await deskBridge()?.takeAssignment?.(created.id, folder);
         }
+        setPluginPick(null);
         await openRun(created.id, { keepPending: true });
         return;
       }
       const follow = await api(token, `/v1/runs/${runId}/follow-ups`, {
         method: "POST",
-        body: JSON.stringify({ text: pending.text }),
+        body: JSON.stringify({ text: pending.text, images: attached.length ? attached : undefined }),
       });
       const followBody = await readJson<{ error?: string }>(follow);
       if (!follow.ok) {
@@ -832,6 +889,7 @@ export function App() {
       setPendingTurn(null);
       setMessages((prev) => prev.filter((message) => message.id !== pending.id));
       setPrompt(text);
+      setImages(attached);
       setAuthError(error instanceof Error ? error.message : "发送失败");
     } finally {
       setSending(false);
@@ -1060,6 +1118,14 @@ export function App() {
             label: item.name,
             insert: `@专家团 ${item.name}`,
           })),
+          ...pluginCatalog
+            .filter((item) => item.installed && item.enabled)
+            .map((item) => ({
+              kind: "plugin" as const,
+              id: item.id,
+              label: item.name,
+              insert: `@技能 ${item.name}`,
+            })),
         ]);
         return;
       }
@@ -1083,6 +1149,14 @@ export function App() {
             label: item.name,
             insert: `@专家团 ${item.name}`,
           })),
+          ...pluginCatalog
+            .filter((item) => item.installed && item.enabled)
+            .map((item) => ({
+              kind: "plugin" as const,
+              id: item.id,
+              label: item.name,
+              insert: `@技能 ${item.name}`,
+            })),
         ]);
         return;
       }
@@ -1116,18 +1190,26 @@ export function App() {
           label: item.name,
           insert: `@专家 ${item.name}`,
         })),
-        ...teams.map((item) => ({
-          kind: "team" as const,
-          id: item.id,
-          label: item.name,
-          insert: `@专家团 ${item.name}`,
-        })),
-      ]);
+          ...teams.map((item) => ({
+            kind: "team" as const,
+            id: item.id,
+            label: item.name,
+            insert: `@专家团 ${item.name}`,
+          })),
+          ...pluginCatalog
+            .filter((item) => item.installed && item.enabled)
+            .map((item) => ({
+              kind: "plugin" as const,
+              id: item.id,
+              label: item.name,
+              insert: `@技能 ${item.name}`,
+            })),
+        ]);
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeProject, authed, automations, current, experts, teams]);
+  }, [activeProject, authed, automations, current, experts, pluginCatalog, teams]);
 
   useEffect(() => {
     if (!searchOpen || !authed) return;
@@ -1159,12 +1241,20 @@ export function App() {
     });
   }, [rail]);
 
+  const clearPageHash = () => {
+    if (memoriesFromHash(location.hash) || skillsFromHash(location.hash)) {
+      history.replaceState(null, "", `${location.pathname}${location.search}`);
+    }
+  };
+
   const newChat = () => {
     runIdRef.current = null;
     setRunId(null);
     setCurrent(null);
     setMessages([]);
     setDiff(null);
+    setImages([]);
+    setPluginPick(null);
     setSearchOpen(false);
     setModelMenu(false);
     setContextOpen(null);
@@ -1173,6 +1263,7 @@ export function App() {
     setNav("chats");
     lastEventIdRef.current = null;
     closeStream();
+    clearPageHash();
     requestAnimationFrame(() => taRef.current?.focus());
   };
 
@@ -1304,6 +1395,51 @@ export function App() {
       });
   };
 
+  const applyRole = (item: { expertId?: string; expertTeamId?: string; pluginIds?: string[] }) => {
+    if (item.expertTeamId) {
+      setExpertPick({ expertTeamId: item.expertTeamId });
+    } else if (item.expertId) {
+      setExpertPick({ expertId: item.expertId });
+    }
+    const pluginId = item.pluginIds?.[0];
+    if (!pluginId) return;
+    const plugin = pluginCatalog.find((entry) => entry.id === pluginId || entry.slug === pluginId);
+    if (plugin) setPluginPick(plugin);
+  };
+
+  const applyCapsule = (capsule: IntentCapsule) => {
+    applyRole(capsule);
+  };
+
+  const applyRecipe = (recipe: Recipe) => {
+    setPrompt(recipe.prompt);
+    applyRole(recipe);
+  };
+
+  const applyMention = (item: ComposerMention) => {
+    if (item.kind === "expert") setExpertPick({ expertId: item.id });
+    if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
+    if (item.kind === "plugin") {
+      const plugin = pluginCatalog.find((entry) => entry.id === item.id || entry.slug === item.id);
+      if (plugin) setPluginPick(plugin);
+    }
+  };
+
+  const openMemories = () => {
+    setSearchOpen(false);
+    setNav("memories");
+    if (location.hash !== hashForMemories()) location.hash = hashForMemories();
+  };
+
+  const openSkills = (id?: string | null) => {
+    setSearchOpen(false);
+    setSkillId(id ?? null);
+    setNav("skills");
+    const next = hashForSkills(id ?? undefined);
+    if (location.hash !== next) location.hash = next;
+    void refreshPlugins(activeProject?.id);
+  };
+
   const openSettings = (section: SettingsSection = "basics") => {
     setSearchOpen(false);
     setModelMenu(false);
@@ -1312,6 +1448,7 @@ export function App() {
     setAccountOpen(false);
     setSettingsSection(section);
     setNav("settings");
+    clearPageHash();
   };
 
   const logout = () => {
@@ -1380,6 +1517,20 @@ export function App() {
 
   const headerPanelSlot = (
     <span className="panel-toggle-slot">
+      {current ? <TranscriptSearch messages={visible} onJump={jumpToTranscriptMessage} /> : null}
+      <Tooltip content="产物" side="left">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="打开产物"
+          onClick={() => {
+            setPanelOpen(true);
+            setPanelTab("artifacts");
+          }}
+        >
+          <IconArtifacts size={15} />
+        </button>
+      </Tooltip>
       {!panelOpen ? (
         <Tooltip content="Files / Terminal" side="left">
           <button
@@ -1568,6 +1719,7 @@ export function App() {
             onClick={() => {
               setSearchOpen(false);
               setNav("automations");
+              clearPageHash();
             }}
           >
             <span className="rail-icon">
@@ -1582,6 +1734,7 @@ export function App() {
               setSearchOpen(false);
               setInviteToken(null);
               setNav("projects");
+              clearPageHash();
             }}
           >
             <span className="rail-icon">
@@ -1595,6 +1748,7 @@ export function App() {
             onClick={() => {
               setSearchOpen(false);
               setNav("experts");
+              clearPageHash();
               void refreshExperts(activeProject?.id);
             }}
           >
@@ -1602,6 +1756,26 @@ export function App() {
               <IconExperts />
             </span>
             Experts
+          </button>
+          <button
+            type="button"
+            className={`rail-item${nav === "skills" ? " on" : ""}`}
+            onClick={() => openSkills()}
+          >
+            <span className="rail-icon">
+              <IconSkills />
+            </span>
+            Skills
+          </button>
+          <button
+            type="button"
+            className={`rail-item${nav === "memories" ? " on" : ""}`}
+            onClick={() => openMemories()}
+          >
+            <span className="rail-icon">
+              <IconMemory />
+            </span>
+            Memories
           </button>
         </nav>
 
@@ -1767,6 +1941,27 @@ export function App() {
               setNav("chats");
             }}
           />
+        ) : nav === "skills" ? (
+          <SkillsPage
+            token={token}
+            selectedId={skillId}
+            projectId={activeProject?.id}
+            onOpenPlugin={(id) => openSkills(id)}
+            onChanged={() => void refreshPlugins(activeProject?.id)}
+            onUse={(plugin) => {
+              setPluginPick(plugin);
+              runIdRef.current = null;
+              setRunId(null);
+              setCurrent(null);
+              setMessages([]);
+              closeStream();
+              setNav("chats");
+              location.hash = "";
+              void refreshPlugins();
+            }}
+          />
+        ) : nav === "memories" ? (
+          <MemoriesPage token={token} />
         ) : nav === "projects" ? (
           inviteToken ? (
             <InviteAcceptPage
@@ -1784,9 +1979,15 @@ export function App() {
               token={token}
               userId={userId}
               initialTab={workbenchTab}
+              highlightAssetId={highlightAssetId}
+              onHighlightClear={() => {
+                setHighlightAssetId(null);
+                if (activeProject) location.hash = hashForProject(activeProject.id);
+              }}
               onBack={() => {
                 setActiveProject(null);
                 setWorkbenchTab("board");
+                setHighlightAssetId(null);
                 location.hash = "";
               }}
               composing={sending}
@@ -1848,6 +2049,7 @@ export function App() {
             error={modelError || undefined}
             newApi={llm.newApi}
             onSave={() => void saveModel()}
+            onOpenMemories={openMemories}
           />
         ) : (
           <section
@@ -1892,6 +2094,10 @@ export function App() {
                   }
                 }}
                 onCopy={(text) => void copyText(text)}
+                onOpenDiagnostics={() => {
+                  setPanelOpen(true);
+                  setPanelTab("terminal");
+                }}
                 queueEpoch={queueEpoch}
                 thinkingHint={
                   localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
@@ -1918,6 +2124,10 @@ export function App() {
                 neoAvatar={neoAvatar}
                 feedRef={feedRef}
                 onCopy={(text) => void copyText(text)}
+                onOpenDiagnostics={() => {
+                  setPanelOpen(true);
+                  setPanelTab("terminal");
+                }}
                 thinkingHint={
                   localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
                 }
@@ -1982,10 +2192,11 @@ export function App() {
                   })}
                   expertLocked
                   onExpert={(value) => setExpertPick(decodeExpertPick(value))}
-                  onMention={(item) => {
-                    if (item.kind === "expert") setExpertPick({ expertId: item.id });
-                    if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
-                  }}
+                  onMention={applyMention}
+                  token={token}
+                  images={images}
+                  onImages={setImages}
+                  onCapsule={applyCapsule}
                   waiting={turnLive}
                   onStop={stopCurrentTurn}
                 />
@@ -2029,10 +2240,29 @@ export function App() {
                     }}
                     locked={false}
                   />
+                  <div className="recipe-chips" role="list">
+                    {BUNDLED_RECIPES.slice(0, 8).map((recipe) => (
+                      <button
+                        key={recipe.id}
+                        type="button"
+                        className="recipe-chip"
+                        role="listitem"
+                        onClick={() => applyRecipe(recipe)}
+                      >
+                        {recipe.title}
+                      </button>
+                    ))}
+                  </div>
                   <ChatComposer
                     prompt={prompt}
                     setPrompt={setPrompt}
-                    placeholder={hostLock.locked ? hostLock.hint : greetLine}
+                    placeholder={
+                      hostLock.locked
+                        ? hostLock.hint
+                        : pluginPick
+                          ? `${greetLine}  将使用技能：${pluginPick.name}`
+                          : greetLine
+                    }
                     sending={sending}
                     locked={hostLock.locked}
                     models={modelNames}
@@ -2059,11 +2289,13 @@ export function App() {
                     teams={teams}
                     expertValue={encodeExpertPick(expertPick)}
                     onExpert={(value) => setExpertPick(decodeExpertPick(value))}
-                    onMention={(item) => {
-                      if (item.kind === "expert") setExpertPick({ expertId: item.id });
-                      if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
-                    }}
+                    onMention={applyMention}
+                    token={token}
+                    images={images}
+                    onImages={setImages}
+                    onCapsule={applyCapsule}
                     waiting={turnLive}
+                    onStop={stopCurrentTurn}
                   />
                 </div>
               )}
@@ -2095,8 +2327,10 @@ export function App() {
                 folder={localFolder}
                 token={token}
                 runId={runId}
+                projectId={current?.projectId}
                 local={panelIsLocal}
                 refreshKey={panelEpoch}
+                onSaved={(asset) => void openProject(asset.projectId, "assets", asset.id)}
               />
             </div>
           </section>

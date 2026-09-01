@@ -2,6 +2,7 @@ import type { Run } from "@neo-cloud-agent/contracts/run";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { Ref } from "react";
+import { formatDuration } from "../../src/format";
 import { messageIsLive, shouldShowAssistantActions, shouldShowThinking } from "../../src/stream";
 import { Avatar } from "../Avatar";
 import { IconCopy } from "../icons";
@@ -47,6 +48,7 @@ export function ChatTranscript({
   feedRef,
   onCopy,
   thinkingHint,
+  onOpenDiagnostics,
 }: {
   current: Run;
   visible: TranscriptMessage[];
@@ -58,6 +60,7 @@ export function ChatTranscript({
   feedRef: Ref<HTMLDivElement>;
   onCopy: (text: string) => void;
   thinkingHint?: string;
+  onOpenDiagnostics?: () => void;
 }) {
   let currentTurnStart = 0;
   for (let index = 0; index < visible.length; index += 1) {
@@ -77,7 +80,7 @@ export function ChatTranscript({
         if (message.role === "user") {
           const sender = message.actorEmail || user;
           return (
-            <article key={message.id} className="msg-row user">
+            <article id={`msg-${message.id}`} key={message.id} className="msg-row user">
               <div className="chat-col">
                 {message.actorEmail && message.actorEmail.toLowerCase() !== user.toLowerCase() ? (
                   <span className="chat-actor">{message.actorEmail}</span>
@@ -117,12 +120,22 @@ export function ChatTranscript({
         const showActions = shouldShowAssistantActions(visible, messageIndex, !busy);
         const live = Boolean(busy) && messageIndex >= currentTurnStart;
         const ago = formatAgo(message.createdAt);
-        const actions = showActions ? (
+        const duration = formatDuration(message.createdAt, message.updatedAt);
+        const showDiag = Boolean(onOpenDiagnostics) && (current.status === "ERROR" || /\berror\b|失败|出错/i.test(message.text));
+        const actions = showActions || showDiag || duration || ago ? (
           <div className="assistant-actions">
-            <button type="button" className="icon-btn" aria-label="复制" onClick={() => void onCopy(message.text)}>
-              <IconCopy />
-            </button>
+            {showActions ? (
+              <button type="button" className="icon-btn" aria-label="复制" onClick={() => void onCopy(message.text)}>
+                <IconCopy />
+              </button>
+            ) : null}
+            {duration ? <span className="ago">{duration}</span> : null}
             {ago ? <span className="ago">{ago}</span> : null}
+            {showDiag ? (
+              <button type="button" className="crumb-link" onClick={onOpenDiagnostics}>
+                查看诊断
+              </button>
+            ) : null}
           </div>
         ) : null;
         const brand = (
@@ -136,7 +149,7 @@ export function ChatTranscript({
         );
         if (groups.length === 0) {
           return message.text ? (
-            <article key={message.id} className="msg-row assistant">
+            <article id={`msg-${message.id}`} key={message.id} className="msg-row assistant">
               {brand}
               <div className="chat-bubble assistant">
                 <div className="assistant-text">{message.text}</div>
@@ -146,7 +159,7 @@ export function ChatTranscript({
           ) : null;
         }
         return (
-          <div key={message.id} className="msg-row assistant">
+          <div id={`msg-${message.id}`} key={message.id} className="msg-row assistant">
             {brand}
             {groups.map((group, index) => {
               if (group.type === "tools") {

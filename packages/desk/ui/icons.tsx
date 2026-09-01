@@ -8,9 +8,13 @@ import {
   CirclePlus,
   Cloud,
   Copy,
+  BookOpen,
+  Brain,
   File,
   FilePlus,
   FolderMinus,
+  Images,
+  Mic,
   LayoutGrid,
   LogOut,
   Maximize2,
@@ -65,6 +69,22 @@ export function IconProjects(props: IconProps) {
 
 export function IconExperts(props: IconProps) {
   return icon(Users, props);
+}
+
+export function IconSkills(props: IconProps) {
+  return icon(BookOpen, props);
+}
+
+export function IconMemory(props: IconProps) {
+  return icon(Brain, props);
+}
+
+export function IconArtifacts(props: IconProps) {
+  return icon(Images, props);
+}
+
+export function IconMic(props: IconProps) {
+  return icon(Mic, props);
 }
 
 export function IconCloud(props: IconProps) {
