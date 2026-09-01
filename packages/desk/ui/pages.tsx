@@ -1048,17 +1048,6 @@ export function ChatComposer({
         </div>
       ) : null}
       <div className="composer-tools">
-        {token ? (
-          <button
-            type="button"
-            className={`icon-btn${listening ? " is-on" : ""}`}
-            aria-label={listening ? "停止听写" : "语音输入"}
-            disabled={locked || finishing}
-            onClick={toggleVoice}
-          >
-            <IconMic size={15} />
-          </button>
-        ) : null}
         {onExpert ? (
           <label className="expert-pick">
             <span>专家</span>
@@ -1104,6 +1093,17 @@ export function ChatComposer({
               </div>
             ) : null}
           </div>
+          {token ? (
+            <button
+              type="button"
+              className={`icon-btn${listening ? " is-on" : ""}`}
+              aria-label={listening ? "停止听写" : "语音输入"}
+              disabled={locked || finishing}
+              onClick={toggleVoice}
+            >
+              <IconMic size={15} />
+            </button>
+          ) : null}
           {onStop && waitingNow ? (
             <button type="button" className="send-btn stop" aria-label="停止" onClick={onStop}>
               <IconStop size={14} />
