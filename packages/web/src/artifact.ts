@@ -47,3 +47,10 @@ export function artifactUploadName(message: { name?: string; href?: string; text
   const match = /已上传\s+(.+)$/.exec(message.text ?? "");
   return match?.[1]?.trim() ?? "";
 }
+
+/** Object URLs inherit the blob type. HTML without charset renders as Latin-1. */
+export function blobForPreview(blob: Blob, item: { name: string; contentType?: string }): Blob {
+  if (previewKind(item) !== "html") return blob;
+  if (/charset=/i.test(blob.type)) return blob;
+  return new Blob([blob], { type: "text/html; charset=utf-8" });
+}

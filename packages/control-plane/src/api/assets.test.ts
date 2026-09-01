@@ -57,6 +57,18 @@ test("project assets persist after a new run and can copy artifacts", async (t) 
   const asset = (await uploaded.json()) as ProjectAsset;
   assert.equal(asset.path, "MEMORY.md");
 
+  const htmlUp = await fetch(`${base}/v1/projects/${project.id}/assets`, {
+    method: "POST",
+    headers: auth(admin.token),
+    body: JSON.stringify({ path: "board.html", content: "<h1>预览</h1>", contentType: "text/html" }),
+  });
+  assert.equal(htmlUp.status, 201);
+  const htmlAsset = (await htmlUp.json()) as ProjectAsset;
+  const htmlGet = await fetch(`${base}/v1/projects/${project.id}/assets/${htmlAsset.id}`, { headers: auth(admin.token) });
+  assert.equal(htmlGet.status, 200);
+  assert.match(htmlGet.headers.get("content-type") ?? "", /charset=utf-8/i);
+  assert.equal(await htmlGet.text(), "<h1>预览</h1>");
+
   await fetch(`${base}/v1/projects/${project.id}/members`, {
     method: "POST",
     headers: auth(admin.token),

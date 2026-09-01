@@ -8,7 +8,7 @@ import { PROJECT_TEMPLATES, projectTemplateById } from "@neo-cloud-agent/contrac
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
-import { artifactKind, artifactKindLabel, previewKind, prettyBytes } from "../artifact.js";
+import { artifactKind, artifactKindLabel, blobForPreview, previewKind, prettyBytes } from "../artifact.js";
 import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
 import { IconBack, IconClose, IconDownload, IconFileKind, IconPlus, IconTrash } from "../icons.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
@@ -466,7 +466,7 @@ export function ProjectsPage({
                           void api(token, `/v1/projects/${selected.id}/assets/${item.id}`)
                             .then(async (response) => {
                               if (!response.ok) throw new Error("打开失败");
-                              const blob = await response.blob();
+                              const blob = blobForPreview(await response.blob(), item);
                               const url = URL.createObjectURL(blob);
                               setPreviewAsset((prev) => {
                                 if (prev?.url) URL.revokeObjectURL(prev.url);
