@@ -111,6 +111,54 @@ export async function readProjectAsset(projectId: string, assetId: string, actor
   return { asset, body: Buffer.from(raw, "base64") };
 }
 
+const MAX_ATTACHED_ASSETS = 16;
+const MAX_ATTACHED_BYTES = 8 * 1024 * 1024;
+
+export function normalizeAssetIds(raw?: string[]): string[] {
+  return [...new Set((raw ?? []).map((item) => item.trim()).filter(Boolean))].slice(0, MAX_ATTACHED_ASSETS);
+}
+
+function attachedFileName(assetPath: string, id: string, used: Set<string>): string {
+  const base = path.basename(assetPath.replaceAll("\\", "/")).replace(/[^\w.\u4e00-\u9fff-]+/g, "_") || id;
+  let name = base;
+  let n = 1;
+  while (used.has(name)) {
+    const ext = path.extname(base);
+    name = `${path.basename(base, ext)}-${n}${ext}`;
+    n += 1;
+  }
+  used.add(name);
+  return name;
+}
+
+export async function attachProjectAssetsToWorkspace(input: {
+  projectId: string;
+  userId: string;
+  workspaceDir: string;
+  assetIds: string[];
+}): Promise<{ attached: string[]; skipped: string[] }> {
+  const attached: string[] = [];
+  const skipped: string[] = [];
+  const used = new Set<string>();
+  const destDir = path.join(input.workspaceDir, ".neo", "attached");
+  for (const assetId of normalizeAssetIds(input.assetIds)) {
+    const found = await readProjectAsset(input.projectId, assetId, input.userId).catch(() => null);
+    if (!found) {
+      skipped.push(assetId);
+      continue;
+    }
+    if (found.body.length > MAX_ATTACHED_BYTES) {
+      skipped.push(found.asset.path);
+      continue;
+    }
+    const name = attachedFileName(found.asset.path, found.asset.id, used);
+    mkdirSync(destDir, { recursive: true });
+    writeFileSync(path.join(destDir, name), found.body);
+    attached.push(name);
+  }
+  return { attached, skipped };
+}
+
 export function deleteProjectAsset(projectId: string, assetId: string, actor: { userId: string; email: string }): void {
   requireMember(projectId, actor.userId);
   if (!canManageProject(memberRole(projectId, actor.userId))) {

@@ -70,6 +70,7 @@ export function canManageProject(role: ProjectRole | undefined | null): boolean 
 export function formatProjectMemory(
   project: Pick<Project, "name" | "instruction">,
   assets?: Array<{ path: string; size: number; createdEmail?: string; createdBy?: string }>,
+  extras?: { attached?: string[]; skipped?: string[] },
 ): string {
   const instruction = project.instruction.trim();
   let text = `# ${project.name.trim() || "项目"}\n\n${instruction || "（项目还没有写指令）"}\n`;
@@ -78,6 +79,18 @@ export function formatProjectMemory(
     for (const asset of assets) {
       const who = asset.createdEmail || asset.createdBy || "";
       text += `- ${asset.path} (${asset.size} bytes${who ? `, ${who}` : ""})\n`;
+    }
+  }
+  if (extras?.attached && extras.attached.length > 0) {
+    text += "\n## 这次带上的文件\n\n已经拷进 `.neo/attached/`，直接读即可。\n\n";
+    for (const name of extras.attached) {
+      text += `- .neo/attached/${name}\n`;
+    }
+  }
+  if (extras?.skipped && extras.skipped.length > 0) {
+    text += "\n太大或读不到，没有拷进工作区：\n\n";
+    for (const name of extras.skipped) {
+      text += `- ${name}\n`;
     }
   }
   return text;
