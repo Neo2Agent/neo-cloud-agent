@@ -5,6 +5,7 @@ import { parseProjectHash, projectHashHref } from "./project-route.js";
 
 test("previewKind maps html and images, ignores text", () => {
   assert.equal(previewKind({ name: "board.html" }), "html");
+  assert.equal(previewKind({ path: "docs/board.html" }), "html");
   assert.equal(previewKind({ name: "notes.txt", contentType: "text/html" }), "html");
   assert.equal(previewKind({ name: "shot.PNG" }), "image");
   assert.equal(previewKind({ name: "cover", contentType: "image/webp" }), "image");
@@ -34,6 +35,7 @@ test("artifactUploadName prefers name then href then title", () => {
 test("blobForPreview stamps utf-8 on html without a charset", () => {
   const raw = new Blob(["<h1>预览</h1>"], { type: "text/html" });
   assert.equal(blobForPreview(raw, { name: "board.html" }).type, "text/html; charset=utf-8");
+  assert.equal(blobForPreview(raw, { path: "board.html" }).type, "text/html; charset=utf-8");
   const image = new Blob([new Uint8Array([1])], { type: "image/png" });
   assert.equal(blobForPreview(image, { name: "dot.png" }).type, "image/png");
 });
