@@ -840,6 +840,7 @@ export function App() {
 
   const openChat = useCallback(() => {
     setMainTab("chat");
+    setSessionTab("chat");
     if (hashAutomations() || hashProjects() || hashExperts() || hashSkills() || hashMemories()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
@@ -1968,10 +1969,9 @@ export function App() {
                   {formatUsage(currentRun?.usage)}
                 </span>
               ) : null}
-              <nav className="session-tabs" hidden={!runId} aria-label="会话标签">
+              <nav className="session-tabs" hidden={!runId} aria-label="工作区工具">
                 {(
                   [
-                    ["chat", "对话", IconChat],
                     ["files", "工作区", IconFiles],
                     ["diff", "Diff", IconDiff],
                     ["terminal", "终端", IconTerminal],
