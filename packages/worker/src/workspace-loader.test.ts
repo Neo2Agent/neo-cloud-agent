@@ -84,3 +84,42 @@ Review.
     ["demo-skill", "pr-review"],
   );
 });
+
+test("a workspace skill of the same name wins over the host catalog", async () => {
+  const parent = mkdtempSync(path.join(tmpdir(), "neo-loader-override-"));
+  const cwd = path.join(parent, "workspace");
+  const agentDir = path.join(parent, "agent");
+  const host = path.join(parent, "skills-neo");
+  mkdirSync(path.join(cwd, ".cursor", "skills", "pr-review"), { recursive: true });
+  mkdirSync(path.join(host, "pr-review"), { recursive: true });
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(
+    path.join(cwd, ".cursor/skills/pr-review/SKILL.md"),
+    `---
+name: pr-review
+description: Workspace copy
+---
+
+Repo review wins.
+`,
+  );
+  writeFileSync(
+    path.join(host, "pr-review", "SKILL.md"),
+    `---
+name: pr-review
+description: System copy
+---
+
+Bundled review.
+`,
+  );
+  const loader = await createWorkspaceLoader({
+    cwd,
+    agentDir,
+    systemPrompt: "desk",
+    settingsManager: SettingsManager.inMemory({}),
+    hostSkillDirs: [host],
+  });
+  const skill = loader.getSkills().skills.find((item) => item.name === "pr-review");
+  assert.equal(skill?.description, "Workspace copy");
+});
