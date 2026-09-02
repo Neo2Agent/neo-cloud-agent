@@ -8,9 +8,13 @@ import {
   CirclePlus,
   Cloud,
   Copy,
+  BookOpen,
+  Brain,
   File,
   FilePlus,
   FolderMinus,
+  Images,
+  Mic,
   LayoutGrid,
   LogOut,
   Maximize2,
@@ -20,6 +24,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Shapes,
   Square,
   SquarePlus,
   SquareTerminal,
@@ -63,8 +68,28 @@ export function IconProjects(props: IconProps) {
   return icon(LayoutGrid, props);
 }
 
+export function IconMore(props: IconProps) {
+  return icon(Shapes, props);
+}
+
 export function IconExperts(props: IconProps) {
   return icon(Users, props);
+}
+
+export function IconSkills(props: IconProps) {
+  return icon(BookOpen, props);
+}
+
+export function IconMemory(props: IconProps) {
+  return icon(Brain, props);
+}
+
+export function IconArtifacts(props: IconProps) {
+  return icon(Images, props);
+}
+
+export function IconMic(props: IconProps) {
+  return icon(Mic, props);
 }
 
 export function IconCloud(props: IconProps) {

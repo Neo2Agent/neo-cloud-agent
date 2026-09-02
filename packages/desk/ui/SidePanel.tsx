@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fileKind, nextUntitledName, sortFsEntries } from "../src/file-kind";
 import { nextHistoryIndex, termKeyAction } from "../src/term-keys";
+import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { api, readJson } from "./api";
+import { ArtifactsPane } from "./ArtifactsPane";
 import { deskBridge, STALE_DESK_HINT, type LocalFsListing } from "./desk";
 import { FileGlyph } from "./FileGlyph";
-import { IconClose, IconExpand, IconFile, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";
+import { IconArtifacts, IconClose, IconExpand, IconFile, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";
 import { IslandButton, IslandCard, IslandInput } from "./island";
 
-export type SidePanelTab = "home" | "files" | "terminal";
+export type SidePanelTab = "home" | "files" | "terminal" | "artifacts";
 
 type FsEntry = { name: string; path: string; type: "file" | "dir" };
 
@@ -18,17 +20,41 @@ type Props = {
   folder: string;
   token: string;
   runId: string | null;
+  projectId?: string | null;
   local: boolean;
   refreshKey?: number;
+  onSaved?: (asset: ProjectAsset) => void;
 };
 
-export function SidePanel({ tab, onTab, onClose, folder, token, runId, local, refreshKey = 0 }: Props) {
+export function SidePanel({
+  tab,
+  onTab,
+  onClose,
+  folder,
+  token,
+  runId,
+  projectId,
+  local,
+  refreshKey = 0,
+  onSaved,
+}: Props) {
   const [maxed, setMaxed] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [filesTab, setFilesTab] = useState(tab === "files");
+  const [artifactsTab, setArtifactsTab] = useState(tab === "artifacts");
   const term = useTerminalSessions(folder);
   const page =
-    tab === "files" && filesTab ? "files" : tab === "terminal" && term.sessions.length > 0 ? "terminal" : filesTab ? "files" : "home";
+    tab === "artifacts"
+      ? "artifacts"
+      : tab === "files" && filesTab
+        ? "files"
+        : tab === "terminal" && term.sessions.length > 0
+          ? "terminal"
+          : filesTab
+            ? "files"
+            : artifactsTab
+              ? "artifacts"
+              : "home";
   const showRail = page !== "home" && railOpen;
 
   const openTerminal = () => {
@@ -38,11 +64,36 @@ export function SidePanel({ tab, onTab, onClose, folder, token, runId, local, re
 
   const openFiles = () => {
     setFilesTab(true);
+    setArtifactsTab(false);
     onTab("files");
+  };
+
+  const openArtifacts = () => {
+    setArtifactsTab(true);
+    setFilesTab(false);
+    onTab("artifacts");
   };
 
   const closeFiles = () => {
     setFilesTab(false);
+    if (artifactsTab) {
+      onTab("artifacts");
+      return;
+    }
+    if (term.activeId || term.sessions[0]) {
+      if (!term.activeId && term.sessions[0]) term.setActiveId(term.sessions[0].id);
+      onTab("terminal");
+      return;
+    }
+    onTab("home");
+  };
+
+  const closeArtifacts = () => {
+    setArtifactsTab(false);
+    if (filesTab) {
+      onTab("files");
+      return;
+    }
     if (term.activeId || term.sessions[0]) {
       if (!term.activeId && term.sessions[0]) term.setActiveId(term.sessions[0].id);
       onTab("terminal");
@@ -65,6 +116,8 @@ export function SidePanel({ tab, onTab, onClose, folder, token, runId, local, re
           activeId={page === "terminal" ? term.activeId : ""}
           filesOn={page === "files"}
           filesTab={filesTab}
+          artifactsOn={page === "artifacts"}
+          artifactsTab={artifactsTab}
           onSelectSession={(id) => {
             term.setActiveId(id);
             onTab("terminal");
@@ -72,6 +125,8 @@ export function SidePanel({ tab, onTab, onClose, folder, token, runId, local, re
           onCloseSession={closeSession}
           onFiles={openFiles}
           onCloseFiles={closeFiles}
+          onArtifacts={openArtifacts}
+          onCloseArtifacts={closeArtifacts}
           onNew={openTerminal}
         />
         <ChromeTools onMax={() => setMaxed((cur) => !cur)} onStow={onClose} />
@@ -112,7 +167,26 @@ export function SidePanel({ tab, onTab, onClose, folder, token, runId, local, re
             <IconFile size={22} />
             <span>File</span>
           </IslandCard>
+          <IslandCard
+            hoverable
+            color="brown"
+            className="wb-tile"
+            role="button"
+            tabIndex={0}
+            onClick={openArtifacts}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openArtifacts();
+              }
+            }}
+          >
+            <IconArtifacts size={22} />
+            <span>产物</span>
+          </IslandCard>
         </div>
+      ) : page === "artifacts" ? (
+        <ArtifactsPane token={token} runId={runId} projectId={projectId} refreshKey={refreshKey} onSaved={onSaved} />
       ) : page === "files" ? (
         <FilesView
           folder={folder}
@@ -235,24 +309,52 @@ function WorkbenchTabs({
   activeId,
   filesOn,
   filesTab,
+  artifactsOn,
+  artifactsTab,
   onSelectSession,
   onCloseSession,
   onFiles,
   onCloseFiles,
+  onArtifacts,
+  onCloseArtifacts,
   onNew,
 }: {
   sessions: Array<{ id: string; label: string }>;
   activeId: string;
   filesOn: boolean;
   filesTab: boolean;
+  artifactsOn: boolean;
+  artifactsTab: boolean;
   onSelectSession: (id: string) => void;
   onCloseSession: (id: string) => void;
   onFiles: () => void;
   onCloseFiles: () => void;
+  onArtifacts: () => void;
+  onCloseArtifacts: () => void;
   onNew: () => void;
 }) {
   return (
     <div className="wb-tabs">
+      {artifactsTab ? (
+        <div className={`wb-tab${artifactsOn ? " on" : ""}`}>
+          <button type="button" className="wb-tab-main" onClick={onArtifacts}>
+            <IconArtifacts size={13} />
+            <span className="wb-tab-label">产物</span>
+          </button>
+          <button
+            type="button"
+            className="wb-tab-close is-shown"
+            aria-label="关闭产物"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onCloseArtifacts();
+            }}
+          >
+            <IconClose size={10} />
+          </button>
+        </div>
+      ) : null}
       {filesTab ? (
         <div className={`wb-tab${filesOn ? " on" : ""}`}>
           <button type="button" className="wb-tab-main" onClick={onFiles}>
@@ -274,7 +376,7 @@ function WorkbenchTabs({
         </div>
       ) : null}
       {sessions.map((item) => (
-        <div key={item.id} className={`wb-tab${item.id === activeId && !filesOn ? " on" : ""}`}>
+        <div key={item.id} className={`wb-tab${item.id === activeId && !filesOn && !artifactsOn ? " on" : ""}`}>
           <button type="button" className="wb-tab-main" onClick={() => onSelectSession(item.id)}>
             <IconTerminal size={13} />
             <span className="wb-tab-label">{item.label}</span>

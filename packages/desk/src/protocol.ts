@@ -1,3 +1,9 @@
+export type ProjectLocation = {
+  projectId: string | null;
+  assets: boolean;
+  assetId: string | null;
+};
+
 function neoParts(url: string): { host: string; parts: string[] } | null {
   const trimmed = url.trim();
   try {
@@ -40,8 +46,21 @@ export function hashForInvite(token: string): string {
   return `#/invite/${token}`;
 }
 
-export function hashForProject(projectId: string): string {
+export function hashForProject(
+  projectId: string,
+  opts?: { assets?: boolean; assetId?: string | null },
+): string {
+  if (opts?.assetId) return `#/projects/${projectId}/assets/${opts.assetId}`;
+  if (opts?.assets) return `#/projects/${projectId}/assets`;
   return `#/projects/${projectId}`;
+}
+
+export function hashForSkills(id?: string): string {
+  return id ? `#/skills/${id}` : "#/skills";
+}
+
+export function hashForMemories(): string {
+  return "#/memories";
 }
 
 export function inviteTokenFromHash(hash: string): string | null {
@@ -49,9 +68,32 @@ export function inviteTokenFromHash(hash: string): string | null {
 }
 
 export function runIdFromHash(hash: string): string | null {
-  return /^#\/runs\/([^\s/#]+)/.exec(hash)?.[1] ?? null;
+  return /^#\/runs\/([^/]+)$/.exec(hash)?.[1] ?? null;
 }
 
 export function projectIdFromHash(hash: string): string | null {
-  return /^#\/projects\/([^\s/#]+)/.exec(hash)?.[1] ?? null;
+  return parseProjectHash(hash).projectId;
+}
+
+export function parseProjectHash(hash: string): ProjectLocation {
+  const raw = (hash.startsWith("#") ? hash.slice(1) : hash).replace(/\/+$/, "") || "/";
+  const match = /^\/projects(?:\/([^/]+)(\/assets(?:\/([^/]+))?)?)?$/.exec(raw);
+  if (!match) return { projectId: null, assets: false, assetId: null };
+  return {
+    projectId: match[1] ?? null,
+    assets: Boolean(match[2]),
+    assetId: match[3] ?? null,
+  };
+}
+
+export function skillIdFromHash(hash: string): string | null {
+  return /^#\/skills\/([^/]+)$/.exec(hash)?.[1] ?? null;
+}
+
+export function skillsFromHash(hash: string): boolean {
+  return hash === "#/skills" || Boolean(skillIdFromHash(hash));
+}
+
+export function memoriesFromHash(hash: string): boolean {
+  return hash === "#/memories";
 }

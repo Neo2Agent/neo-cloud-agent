@@ -12,7 +12,19 @@ function prettySize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function AssetsTab({ token, project, userId }: { token: string; project: Project; userId: string }) {
+export function AssetsTab({
+  token,
+  project,
+  userId,
+  highlightAssetId,
+  onHighlightClear,
+}: {
+  token: string;
+  project: Project;
+  userId: string;
+  highlightAssetId?: string | null;
+  onHighlightClear?: () => void;
+}) {
   const [items, setItems] = useState<ProjectAsset[]>([]);
   const [error, setError] = useState("");
   const manage = canManageProject(project.members.find((item) => item.userId === userId)?.role);
@@ -27,6 +39,14 @@ export function AssetsTab({ token, project, userId }: { token: string; project: 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!highlightAssetId) return;
+    const node = document.getElementById(`asset-${highlightAssetId}`);
+    node?.scrollIntoView({ block: "nearest" });
+    const timer = window.setTimeout(() => onHighlightClear?.(), 8000);
+    return () => window.clearTimeout(timer);
+  }, [highlightAssetId, items, onHighlightClear]);
 
   return (
     <div className="workbench-stack">
@@ -69,7 +89,14 @@ export function AssetsTab({ token, project, userId }: { token: string; project: 
       ) : (
         <ul className="task-list">
           {items.map((item) => (
-            <li key={item.id} className="asset-row">
+            <li
+              id={`asset-${item.id}`}
+              key={item.id}
+              className={`asset-row${highlightAssetId === item.id ? " is-flash" : ""}`}
+              onClick={() => {
+                if (highlightAssetId === item.id) onHighlightClear?.();
+              }}
+            >
               <span className="task-copy">
                 <strong>{item.path}</strong>
                 <span className="task-tags">
