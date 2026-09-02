@@ -1,5 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { describeAutomationSchedule, type Automation } from "@neo-cloud-agent/contracts/automation";
 import { expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -7,22 +7,9 @@ import type { Run } from "@neo-cloud-agent/contracts/run";
 import { SCHEDULE_PRESETS, type ScheduleKind } from "../automations";
 import { preview } from "../format";
 import { runRowMeta } from "../session";
+import { Frame } from "./Frame";
 import { IslandButton, IslandInput, IslandSwitch } from "./island";
-import { Screen } from "./Screen";
 import { colors } from "./theme";
-
-function Frame({ title, onBack, action, children }: { title: string; onBack: () => void; action?: ReactNode; children: ReactNode }) {
-  return (
-    <Screen>
-      <View style={styles.topbar}>
-        <Pressable onPress={onBack}><Text style={styles.back}>返回</Text></Pressable>
-        <Text style={styles.title}>{title}</Text>
-        {action ?? <View style={styles.back} />}
-      </View>
-      <ScrollView contentContainerStyle={styles.body}>{children}</ScrollView>
-    </Screen>
-  );
-}
 
 export function AutomationsScreen(props: {
   items: Automation[];
@@ -201,10 +188,6 @@ export function InviteScreen(props: {
 }
 
 const styles = StyleSheet.create({
-  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16 },
-  back: { width: 56, color: colors.ink },
-  title: { fontSize: 18, fontWeight: "700", color: colors.ink, flex: 1, textAlign: "center" },
-  body: { padding: 16, gap: 10 },
   hint: { color: colors.muted, fontSize: 13 },
   empty: { color: colors.muted, textAlign: "center", marginTop: 16 },
   error: { color: colors.error },

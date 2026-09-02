@@ -10,7 +10,13 @@ import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { MobileApiError, MobileClient } from "../api/client";
+import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
+import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
+import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
+import { MobileApiError, MobileClient, type RunArtifact } from "../api/client";
+import { canLoadOlder, inboxTarget, saveArtifactHint, unreadBadge } from "../cloud";
+import { ArtifactsPage, DiagnosticsPage, InboxPage, MemoriesPage, SkillsPage } from "./CloudPages";
 import { sharedWebCredentials, type CredentialStore } from "../api/credentials";
 import { nextEnvId } from "../api/shell";
 import { detectMobileSource, parseMobileScreen } from "../api/source";
@@ -41,7 +47,7 @@ import { startAppVoice } from "../start-voice";
 import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
-import { IslandTag } from "./island";
+import { IslandButton, IslandTag } from "./island";
 
 function hashScreen() {
   return parseMobileScreen(location.hash || location.href);
@@ -94,6 +100,19 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [projects, setProjects] = useState<Project[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
+  const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [memoryConfigured, setMemoryConfigured] = useState(false);
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{ name: string; content: string }>>([]);
+  // Sub-views of the open chat, so they stay local instead of taking a hash route.
+  const [panel, setPanel] = useState<"artifacts" | "diagnostics" | null>(null);
+  const [history, setHistory] = useState<TranscriptMessage[]>([]);
+  const [older, setOlder] = useState<{ remaining: number; nextBefore: string | null }>({ remaining: 0, nextBefore: null });
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [pluginIds, setPluginIds] = useState<string[]>([]);
   const [inviteInfo, setInviteInfo] = useState<{ projectName: string; status: string }>({ projectName: "", status: "" });
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [pendingTurn, setPendingTurn] = useState<TranscriptMessage | null>(null);
@@ -142,23 +161,33 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
 
   const refreshList = useCallback(async () => {
     if (!token) return;
-    const [listed, environments, settings, deskList, expertList, teamList, projectList, autoList, me] = await Promise.all([
-      client.listRuns(),
-      client.listEnvironments().catch(() => ({ environments: [] as Environment[] })),
-      client.llmSettings().catch(() => null),
-      client.listDesks().catch(() => ({ desks: [] })),
-      client.listExperts().catch(() => ({ experts: [] })),
-      client.listExpertTeams().catch(() => ({ teams: [] })),
-      client.listProjects().catch(() => ({ projects: [] })),
-      client.listAutomations().catch(() => ({ automations: [] })),
-      client.me().catch(() => ({ user: null })),
-    ]);
+    const [listed, environments, settings, deskList, expertList, teamList, projectList, autoList, me, pluginList, inbox, memoryList] =
+      await Promise.all([
+        client.listRuns(),
+        client.listEnvironments().catch(() => ({ environments: [] as Environment[] })),
+        client.llmSettings().catch(() => null),
+        client.listDesks().catch(() => ({ desks: [] })),
+        client.listExperts().catch(() => ({ experts: [] })),
+        client.listExpertTeams().catch(() => ({ teams: [] })),
+        client.listProjects().catch(() => ({ projects: [] })),
+        client.listAutomations().catch(() => ({ automations: [] })),
+        client.me().catch(() => ({ user: null })),
+        client.listPlugins().catch(() => ({ plugins: [] })),
+        client.listInbox().catch(() => ({ items: [], unread: 0 })),
+        // Mem0 is optional; an unconfigured control plane answers `configured: false`.
+        client.listMemories().catch(() => ({ configured: false, memories: [] })),
+      ]);
     setRuns(listed.runs);
     setDesks(deskList.desks);
     setExperts(expertList.experts);
     setTeams(teamList.teams);
     setProjects(projectList.projects);
     setAutomations(autoList.automations);
+    setPlugins(pluginList.plugins);
+    setInboxItems(inbox.items);
+    setUnread(inbox.unread);
+    setMemories(memoryList.memories);
+    setMemoryConfigured(memoryList.configured);
     if (me.user) {
       setUserId(me.user.id);
       setEmail(me.user.email);
@@ -258,6 +287,8 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       setMessages((prev) =>
         previousId === id || opts?.keepPending ? mergeUnresolvedPending(loaded, prev) : loaded,
       );
+      setHistory([]);
+      setOlder({ remaining: transcript.snapshot.remaining ?? 0, nextBefore: transcript.snapshot.nextBefore ?? null });
       lastEventId.current = transcript.snapshot.lastEventId;
       lastSseAt.current = Date.now();
       listen(id, transcript.snapshot.lastEventId);
@@ -335,10 +366,77 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     openRunId.current = null;
     setPendingTurn(null);
     setMessages([]);
+    setHistory([]);
+    setOlder({ remaining: 0, nextBefore: null });
     setPrompt("");
     setExpertPick({});
     setExpertName("");
+    setPluginIds([]);
+    setArtifacts([]);
+    setDiagnosticLogs([]);
+    setPanel(null);
     go("/");
+  };
+
+  /** Older pages live outside `messages` so the live refresh cannot drop them. */
+  const loadOlder = async () => {
+    const before = older.nextBefore;
+    if (!current || !before || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const page = await client.transcript(current.id, { before });
+      setHistory((prev) => [...page.snapshot.messages, ...prev]);
+      setOlder({ remaining: page.snapshot.remaining ?? 0, nextBefore: page.snapshot.nextBefore ?? null });
+    } catch {
+      // keep what is already painted
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  const openArtifacts = () => {
+    if (!current) return;
+    setPageError("");
+    setPanel("artifacts");
+    void client
+      .listArtifacts(current.id)
+      .then((next) => setArtifacts(next.artifacts))
+      .catch((error) => setPageError(error instanceof Error ? error.message : "读不到产物"));
+  };
+
+  const openDiagnostics = () => {
+    if (!current) return;
+    setPageError("");
+    setPanel("diagnostics");
+    void client
+      .diagnostics(current.id)
+      .then((next) => setDiagnosticLogs(next.logs))
+      .catch(() => setDiagnosticLogs([]));
+  };
+
+  /** A recipe only prefills the composer; the user still presses send. */
+  const applyRecipe = (recipe: Recipe) => {
+    setPrompt(recipe.prompt);
+    setExpertPick(recipe.expertTeamId ? { expertTeamId: recipe.expertTeamId } : { expertId: recipe.expertId });
+    setExpertName(recipe.title);
+    setPluginIds(recipe.pluginIds ?? []);
+  };
+
+  const openInbox = async (item: InboxItem) => {
+    if (!item.read) {
+      const next = await client.markInboxRead(item.id).catch(() => null);
+      setInboxItems((prev) => prev.map((row) => (row.id === item.id ? { ...row, read: true } : row)));
+      if (next) setUnread(next.unread);
+    }
+    const target = inboxTarget(item);
+    if (target?.screen === "chat") {
+      await openRun(target.runId).catch(() => setPageError("打开对话失败"));
+      return;
+    }
+    if (target?.screen === "projects") {
+      setProjectId(target.projectId);
+      go("/projects");
+    }
   };
 
   const send = async () => {
@@ -359,6 +457,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             envId,
             model: resolveChatModel(model),
             expert: expertPick,
+            pluginIds,
             projectId: projectId ?? undefined,
           }),
         );
@@ -527,6 +626,95 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     );
   }
 
+  if (route.screen === "memories") {
+    return (
+      <MemoriesPage
+        items={memories}
+        configured={memoryConfigured}
+        error={pageError}
+        onBack={() => go("/")}
+        onAdd={async (text) => {
+          setPageError("");
+          try {
+            await client.addMemory(text);
+            const next = await client.listMemories();
+            setMemories(next.memories);
+            setMemoryConfigured(next.configured);
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "记不下来");
+          }
+        }}
+        onDelete={async (id) => {
+          setPageError("");
+          try {
+            await client.deleteMemory(id);
+            setMemories((prev) => prev.filter((item) => item.id !== id));
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "删不掉");
+          }
+        }}
+      />
+    );
+  }
+
+  if (route.screen === "inbox") {
+    return (
+      <InboxPage items={inboxItems} error={pageError} onBack={() => go("/")} onOpen={(item) => void openInbox(item)} />
+    );
+  }
+
+  if (route.screen === "skills") {
+    return (
+      <SkillsPage
+        items={plugins}
+        error={pageError}
+        onBack={() => go("/")}
+        onToggle={async (item) => {
+          setPageError("");
+          try {
+            const scope = item.installScope ?? "user";
+            if (!item.installed) await client.installPlugin(item.id, { scope: "user" });
+            else await client.enablePlugin(item.id, { enabled: !item.enabled, scope });
+            const next = await client.listPlugins();
+            setPlugins(next.plugins);
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "技能操作失败");
+          }
+        }}
+      />
+    );
+  }
+
+  if (panel === "artifacts") {
+    return (
+      <ArtifactsPage
+        items={artifacts}
+        saveHint={saveArtifactHint(current)}
+        error={pageError}
+        onBack={() => setPanel(null)}
+        onSave={async (item) => {
+          if (!current) return;
+          setPageError("");
+          try {
+            await client.saveArtifactToProject(current.id, item.name);
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "保存失败");
+          }
+        }}
+      />
+    );
+  }
+
+  if (panel === "diagnostics") {
+    return (
+      <DiagnosticsPage
+        logs={diagnosticLogs}
+        errorMessage={current?.errorMessage ?? null}
+        onBack={() => setPanel(null)}
+      />
+    );
+  }
+
   const gate = composerGate(current, desks);
   const composer = (
     <IslandComposer
@@ -549,9 +737,24 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       runs={runs}
       userEmail={email}
       health={`在线 · ${chatModelShort(model)}`}
+      unread={unreadBadge(unread)}
       onClose={() => setSidebarOpen(false)}
       onNew={resetHome}
       onOpenRun={(id) => void openRun(id)}
+      onArchiveMany={async (ids) => {
+        await Promise.allSettled(ids.map((id) => client.archive(id)));
+        await refreshList().catch(() => undefined);
+      }}
+      onDeleteRun={async (id) => {
+        setPageError("");
+        try {
+          await client.deleteRun(id);
+          setRuns((prev) => prev.filter((item) => item.id !== id));
+          if (openRunId.current === id) resetHome();
+        } catch (error) {
+          setPageError(error instanceof Error ? error.message : "删除失败");
+        }
+      }}
       onOpenNav={(id) => {
         setSidebarOpen(false);
         go(id === "home" ? "/" : `/${id}`);
@@ -559,7 +762,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     />
   );
 
-  const visible = withPendingUser(messages, pendingTurn);
+  const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
   const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
   const thinking = shouldShowThinking(turnBusy, visible)
     ? thinkingHint({
@@ -576,7 +779,18 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           <span className={turnBusy ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
           {current ? <IslandTag>{current.executionTarget?.remoteControl ? "remote" : "cloud"}</IslandTag> : null}
         </header>
+        {current ? (
+          <div className="chat-actions">
+            <IslandButton onClick={openArtifacts}>产物</IslandButton>
+            {current.status === "ERROR" ? <IslandButton onClick={openDiagnostics}>查看诊断</IslandButton> : null}
+          </div>
+        ) : null}
         <div className="transcript" ref={transcriptRef}>
+          {canLoadOlder(older) ? (
+            <button type="button" className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
+              {loadingOlder ? "加载中…" : "加载更早"}
+            </button>
+          ) : null}
           {visible.length === 0 ? <p className="empty">还没有消息。</p> : null}
           {visible.map((message) => {
             if (isStartupWhisper(message)) {

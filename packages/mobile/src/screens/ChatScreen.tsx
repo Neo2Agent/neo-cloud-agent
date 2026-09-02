@@ -14,10 +14,15 @@ type Props = {
   running: boolean;
   messages: TranscriptMessage[];
   thinking?: string | null;
+  canLoadOlder?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
   userEmail: string;
   userAvatar?: string | null;
   neoAvatar?: string | null;
   onOpenDrawer: () => void;
+  onOpenArtifacts?: () => void;
+  onOpenDiagnostics?: () => void;
 };
 
 function Avatar({ src, letter, neo }: { src?: string | null; letter: string; neo?: boolean }) {
@@ -87,18 +92,24 @@ export function ChatScreen({
   running,
   messages,
   thinking,
+  canLoadOlder,
+  loadingOlder,
+  onLoadOlder,
   userEmail,
   userAvatar,
   neoAvatar,
   onOpenDrawer,
+  onOpenArtifacts,
+  onOpenDiagnostics,
 }: Props) {
   const mine = avatarLetter(userEmail);
   const started = generationStarted(messages);
   const scrollRef = useRef<ScrollView>(null);
   const tail = messages.at(-1);
+  // Keyed on the tail, not the length, so prepending older history keeps your place.
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: false });
-  }, [messages.length, tail?.id, tail?.text, tail?.streaming, thinking]);
+  }, [tail?.id, tail?.text, tail?.streaming, thinking]);
   return (
     <View style={styles.page}>
       <View style={styles.topbar}>
@@ -110,7 +121,24 @@ export function ChatScreen({
         </View>
         <Text style={styles.place}>{run ? runPlaceLabel(run) : ""}</Text>
       </View>
+      {run && onOpenArtifacts ? (
+        <View style={styles.actions}>
+          <Pressable onPress={onOpenArtifacts} style={styles.action}>
+            <Text style={styles.actionText}>产物</Text>
+          </Pressable>
+          {run.status === "ERROR" && onOpenDiagnostics ? (
+            <Pressable onPress={onOpenDiagnostics} style={[styles.action, styles.actionWarn]}>
+              <Text style={styles.actionText}>查看诊断</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       <ScrollView ref={scrollRef} contentContainerStyle={styles.list}>
+        {canLoadOlder && onLoadOlder ? (
+          <Pressable onPress={onLoadOlder} disabled={loadingOlder} style={styles.older}>
+            <Text style={styles.olderText}>{loadingOlder ? "加载中…" : "加载更早"}</Text>
+          </Pressable>
+        ) : null}
         {messages.length === 0 ? <Text style={styles.empty}>还没有消息。</Text> : null}
         {messages.map((message) => {
           if (isStartupWhisper(message)) {
@@ -167,6 +195,19 @@ const styles = StyleSheet.create({
   pillBusy: { backgroundColor: "#d7f6f2" },
   pillText: { color: colors.ink, fontSize: 13 },
   place: { width: 56, color: colors.muted, fontSize: 12, textAlign: "right" },
+  older: { alignSelf: "center", paddingHorizontal: 14, paddingVertical: 6 },
+  olderText: { color: colors.muted, fontSize: 12 },
+  actions: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  action: {
+    borderRadius: 999,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  actionWarn: { backgroundColor: "#fdecec", borderColor: "#e8b4b4" },
+  actionText: { color: colors.ink, fontSize: 12, fontWeight: "700" },
   list: { padding: 14, gap: 12, paddingBottom: 24 },
   empty: { color: colors.muted, textAlign: "center", marginTop: 24 },
   whisper: { color: colors.muted, fontSize: 12, textAlign: "center", paddingHorizontal: 24, lineHeight: 18 },

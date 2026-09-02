@@ -6,7 +6,13 @@ import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { MobileApiError, MobileClient } from "../api/client";
+import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
+import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
+import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
+import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
+import { MobileApiError, MobileClient, type RunArtifact } from "../api/client";
+import { canLoadOlder, inboxTarget, saveArtifactHint, unreadBadge } from "../cloud";
+import { ArtifactsScreen, DiagnosticsScreen, InboxScreen, MemoriesScreen, SkillsScreen } from "./CloudScreens";
 import type { CredentialStore } from "../api/credentials";
 import { nextEnvId } from "../api/shell";
 import { detectMobileSource } from "../api/source";
@@ -43,7 +49,19 @@ import { Screen } from "./Screen";
 import { SettingsScreen } from "./SettingsScreen";
 import { colors } from "./theme";
 
-type Screen = "home" | "chat" | "settings" | "experts" | "projects" | "automations" | "invite";
+type Screen =
+  | "home"
+  | "chat"
+  | "settings"
+  | "experts"
+  | "projects"
+  | "automations"
+  | "invite"
+  | "memories"
+  | "inbox"
+  | "skills"
+  | "artifacts"
+  | "diagnostics";
 
 export function NativeApp({ store }: { store: CredentialStore }) {
   const [ready, setReady] = useState(false);
@@ -68,6 +86,17 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
+  const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [memoryConfigured, setMemoryConfigured] = useState(false);
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{ name: string; content: string }>>([]);
+  const [pluginIds, setPluginIds] = useState<string[]>([]);
+  const [history, setHistory] = useState<TranscriptMessage[]>([]);
+  const [older, setOlder] = useState<{ remaining: number; nextBefore: string | null }>({ remaining: 0, nextBefore: null });
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [inviteToken, setInviteToken] = useState("");
   const [inviteInfo, setInviteInfo] = useState({ projectName: "", status: "" });
   const [pageError, setPageError] = useState("");
@@ -108,23 +137,33 @@ export function NativeApp({ store }: { store: CredentialStore }) {
 
   const refreshList = useCallback(async () => {
     if (!token) return;
-    const [listed, environments, settings, deskList, expertList, teamList, projectList, autoList, me] = await Promise.all([
-      client.listRuns(),
-      client.listEnvironments().catch(() => ({ environments: [] })),
-      client.llmSettings().catch(() => null),
-      client.listDesks().catch(() => ({ desks: [] })),
-      client.listExperts().catch(() => ({ experts: [] })),
-      client.listExpertTeams().catch(() => ({ teams: [] })),
-      client.listProjects().catch(() => ({ projects: [] })),
-      client.listAutomations().catch(() => ({ automations: [] })),
-      client.me().catch(() => ({ user: null })),
-    ]);
+    const [listed, environments, settings, deskList, expertList, teamList, projectList, autoList, me, pluginList, inbox, memoryList] =
+      await Promise.all([
+        client.listRuns(),
+        client.listEnvironments().catch(() => ({ environments: [] })),
+        client.llmSettings().catch(() => null),
+        client.listDesks().catch(() => ({ desks: [] })),
+        client.listExperts().catch(() => ({ experts: [] })),
+        client.listExpertTeams().catch(() => ({ teams: [] })),
+        client.listProjects().catch(() => ({ projects: [] })),
+        client.listAutomations().catch(() => ({ automations: [] })),
+        client.me().catch(() => ({ user: null })),
+        client.listPlugins().catch(() => ({ plugins: [] })),
+        client.listInbox().catch(() => ({ items: [], unread: 0 })),
+        // Mem0 is optional; an unconfigured control plane answers `configured: false`.
+        client.listMemories().catch(() => ({ configured: false, memories: [] })),
+      ]);
     setRuns(listed.runs);
     setDesks(deskList.desks);
     setExperts(expertList.experts);
     setTeams(teamList.teams);
     setProjects(projectList.projects);
     setAutomations(autoList.automations);
+    setPlugins(pluginList.plugins);
+    setInboxItems(inbox.items);
+    setUnread(inbox.unread);
+    setMemories(memoryList.memories);
+    setMemoryConfigured(memoryList.configured);
     if (me.user) {
       setEmail(me.user.email);
       setUserAvatar(me.user.avatar ?? null);
@@ -180,6 +219,8 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       setMessages((prev) =>
         previousId === id || opts?.keepPending ? mergeUnresolvedPending(loaded, prev) : loaded,
       );
+      setHistory([]);
+      setOlder({ remaining: transcript.snapshot.remaining ?? 0, nextBefore: transcript.snapshot.nextBefore ?? null });
       lastEventId.current = transcript.snapshot.lastEventId;
       lastSseAt.current = Date.now();
       listen(id, transcript.snapshot.lastEventId);
@@ -188,6 +229,25 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     },
     [client, listen],
   );
+
+  /**
+   * Long chats page backwards the same way the web transcript does. Older pages
+   * live outside `messages` so the 2.5s live refresh cannot drop them.
+   */
+  const loadOlder = useCallback(async () => {
+    const before = older.nextBefore;
+    if (!current || !before || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const page = await client.transcript(current.id, { before });
+      setHistory((prev) => [...page.snapshot.messages, ...prev]);
+      setOlder({ remaining: page.snapshot.remaining ?? 0, nextBefore: page.snapshot.nextBefore ?? null });
+    } catch {
+      // keep what is already painted
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [client, current, loadingOlder, older.nextBefore]);
 
   useEffect(() => {
     if (screen !== "chat" || !current?.id) return;
@@ -322,11 +382,41 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     openRunId.current = null;
     setPendingTurn(null);
     setMessages([]);
+    setHistory([]);
+    setOlder({ remaining: 0, nextBefore: null });
     setPrompt("");
     setExpertPick({});
     setExpertName("");
+    setPluginIds([]);
+    setArtifacts([]);
+    setDiagnosticLogs([]);
     setDrawerOpen(false);
     setScreen("home");
+  };
+
+  /** A recipe only prefills the composer; the user still presses send. */
+  const applyRecipe = (recipe: Recipe) => {
+    setPrompt(recipe.prompt);
+    setExpertPick(recipe.expertTeamId ? { expertTeamId: recipe.expertTeamId } : { expertId: recipe.expertId });
+    setExpertName(recipe.title);
+    setPluginIds(recipe.pluginIds ?? []);
+  };
+
+  const openInbox = async (item: InboxItem) => {
+    if (!item.read) {
+      const next = await client.markInboxRead(item.id).catch(() => null);
+      setInboxItems((prev) => prev.map((row) => (row.id === item.id ? { ...row, read: true } : row)));
+      if (next) setUnread(next.unread);
+    }
+    const target = inboxTarget(item);
+    if (target?.screen === "chat") {
+      await openRun(target.runId).catch(() => setPageError("打开对话失败"));
+      return;
+    }
+    if (target?.screen === "projects") {
+      setProjectId(target.projectId);
+      setScreen("projects");
+    }
   };
 
   const send = async () => {
@@ -348,6 +438,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             envId,
             model: resolveChatModel(model),
             expert: expertPick,
+            pluginIds,
             projectId: projectId ?? undefined,
           }),
         );
@@ -492,8 +583,102 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     );
   }
 
+  if (screen === "memories") {
+    return (
+      <MemoriesScreen
+        items={memories}
+        configured={memoryConfigured}
+        error={pageError}
+        onBack={() => setScreen("home")}
+        onAdd={async (text) => {
+          setPageError("");
+          try {
+            await client.addMemory(text);
+            const next = await client.listMemories();
+            setMemories(next.memories);
+            setMemoryConfigured(next.configured);
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "记不下来");
+          }
+        }}
+        onDelete={async (id) => {
+          setPageError("");
+          try {
+            await client.deleteMemory(id);
+            setMemories((prev) => prev.filter((item) => item.id !== id));
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "删不掉");
+          }
+        }}
+      />
+    );
+  }
+
+  if (screen === "inbox") {
+    return (
+      <InboxScreen
+        items={inboxItems}
+        error={pageError}
+        onBack={() => setScreen("home")}
+        onOpen={(item) => void openInbox(item)}
+      />
+    );
+  }
+
+  if (screen === "skills") {
+    return (
+      <SkillsScreen
+        items={plugins}
+        error={pageError}
+        onBack={() => setScreen("home")}
+        onToggle={async (item) => {
+          setPageError("");
+          try {
+            const scope = item.installScope ?? "user";
+            if (!item.installed) await client.installPlugin(item.id, { scope: "user" });
+            else await client.enablePlugin(item.id, { enabled: !item.enabled, scope });
+            const next = await client.listPlugins();
+            setPlugins(next.plugins);
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "技能操作失败");
+          }
+        }}
+      />
+    );
+  }
+
+  if (screen === "artifacts") {
+    return (
+      <ArtifactsScreen
+        items={artifacts}
+        saveHint={saveArtifactHint(current)}
+        error={pageError}
+        onBack={() => setScreen("chat")}
+        onSave={async (item) => {
+          if (!current) return;
+          setPageError("");
+          try {
+            await client.saveArtifactToProject(current.id, item.name);
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "保存失败");
+          }
+        }}
+      />
+    );
+  }
+
+  if (screen === "diagnostics") {
+    return (
+      <DiagnosticsScreen
+        logs={diagnosticLogs}
+        errorMessage={current?.errorMessage ?? null}
+        onBack={() => setScreen("chat")}
+      />
+    );
+  }
+
   const gate = composerGate(current, desks);
-  const visible = withPendingUser(messages, pendingTurn);
+  const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
   const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
   const thinking = shouldShowThinking(turnBusy, visible)
     ? thinkingHint({
@@ -527,10 +712,31 @@ export function NativeApp({ store }: { store: CredentialStore }) {
           running={turnBusy}
           messages={visible}
           thinking={thinking}
+          canLoadOlder={canLoadOlder(older)}
+          loadingOlder={loadingOlder}
+          onLoadOlder={() => void loadOlder()}
           userEmail={email}
           userAvatar={userAvatar}
           neoAvatar={neoAvatar}
           onOpenDrawer={() => setDrawerOpen(true)}
+          onOpenArtifacts={() => {
+            if (!current) return;
+            setPageError("");
+            setScreen("artifacts");
+            void client
+              .listArtifacts(current.id)
+              .then((next) => setArtifacts(next.artifacts))
+              .catch((error) => setPageError(error instanceof Error ? error.message : "读不到产物"));
+          }}
+          onOpenDiagnostics={() => {
+            if (!current) return;
+            setPageError("");
+            setScreen("diagnostics");
+            void client
+              .diagnostics(current.id)
+              .then((next) => setDiagnosticLogs(next.logs))
+              .catch(() => setDiagnosticLogs([]));
+          }}
         />
       ) : (
         <View style={styles.home}>
@@ -539,7 +745,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
               <Text style={styles.menu}>☰</Text>
             </Pressable>
           </View>
-          <HomeScreen expertName={expertName} />
+          <HomeScreen expertName={expertName} onPickRecipe={applyRecipe} />
         </View>
       )}
       {composer}
@@ -548,9 +754,24 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         runs={runs}
         userEmail={email}
         health={`在线 · ${chatModelShort(model)}`}
+        unread={unreadBadge(unread)}
         onClose={() => setDrawerOpen(false)}
         onNew={resetHome}
         onOpenRun={(id) => void openRun(id)}
+        onArchiveMany={async (ids) => {
+          await Promise.allSettled(ids.map((id) => client.archive(id)));
+          await refreshList().catch(() => undefined);
+        }}
+        onDeleteRun={async (id) => {
+          setPageError("");
+          try {
+            await client.deleteRun(id);
+            setRuns((prev) => prev.filter((item) => item.id !== id));
+            if (openRunId.current === id) resetHome();
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "删除失败");
+          }
+        }}
         onOpenNav={(id) => {
           setDrawerOpen(false);
           if (id === "home") setScreen("home");

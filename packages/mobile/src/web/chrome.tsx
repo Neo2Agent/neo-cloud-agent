@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, preview, resolveChatModel } from "../format";
 import { dayGreeting } from "../island-theme";
 import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
 import { runRowMeta } from "../session";
+import { splitShelvedRuns, toggleSelected } from "../cloud";
 import { isActiveRunStatus } from "../turn";
 import { IslandButton, IslandCard, IslandInput, IslandTitle } from "./island";
 
@@ -103,13 +105,24 @@ export function IslandDrawer(props: {
   runs: Run[];
   userEmail: string;
   health: string;
+  /** Unread inbox count, already capped by `unreadBadge`. */
+  unread?: string;
   onClose: () => void;
   onNew: () => void;
   onOpenRun: (id: string) => void;
-  onOpenNav: (id: "home" | "automations" | "experts" | "projects" | "settings") => void;
+  onOpenNav: (
+    id: "home" | "automations" | "experts" | "projects" | "settings" | "memories" | "inbox" | "skills",
+  ) => void;
+  onArchiveMany?: (ids: string[]) => Promise<void>;
+  /** Archived and expired runs only; the control plane rejects the rest. */
+  onDeleteRun?: (id: string) => Promise<void>;
 }) {
   const [mounted, setMounted] = useState(props.open);
   const [entered, setEntered] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const { live, shelved } = splitShelvedRuns(props.runs.slice(0, 20));
 
   useEffect(() => {
     let cancelled = false;
@@ -145,25 +158,81 @@ export function IslandDrawer(props: {
         </IslandButton>
         {(
           [
+            ["inbox", "消息"],
             ["automations", "定时任务"],
             ["projects", "项目"],
             ["experts", "专家"],
+            ["skills", "技能"],
+            ["memories", "记忆"],
           ] as const
         ).map(([id, label]) => (
           <button key={id} type="button" className="nav" onClick={() => props.onOpenNav(id)}>
             {label}
+            {id === "inbox" && props.unread ? <span className="nav-badge">{props.unread}</span> : null}
           </button>
         ))}
-        <div className="section">近期</div>
+        <div className="section-row">
+          <span className="section">近期</span>
+          {props.onArchiveMany && live.length > 0 ? (
+            <button
+              type="button"
+              className="section-action"
+              onClick={() => {
+                if (!selecting) {
+                  setSelecting(true);
+                  return;
+                }
+                setSelecting(false);
+                setSelected([]);
+              }}
+            >
+              {selecting ? "取消" : "多选"}
+            </button>
+          ) : null}
+        </div>
+        {selecting && selected.length > 0 && props.onArchiveMany ? (
+          <IslandButton
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void props.onArchiveMany?.(selected).finally(() => {
+                setBusy(false);
+                setSelecting(false);
+                setSelected([]);
+              });
+            }}
+          >
+            {busy ? "归档中…" : `归档选中 ${selected.length} 条`}
+          </IslandButton>
+        ) : null}
         {props.runs.length === 0 ? <p className="empty">暂无近期任务</p> : null}
-        {props.runs.slice(0, 20).map((run) => (
-          <button key={run.id} className="run-row" type="button" onClick={() => props.onOpenRun(run.id)}>
+        {live.map((run) => (
+          <button
+            key={run.id}
+            className="run-row"
+            type="button"
+            onClick={() => (selecting ? setSelected((prev) => toggleSelected(prev, run.id)) : props.onOpenRun(run.id))}
+          >
             <b>
-              {isActiveRunStatus(run.status) ? "● " : ""}
+              {selecting ? (selected.includes(run.id) ? "☑ " : "☐ ") : isActiveRunStatus(run.status) ? "● " : ""}
               {preview(run.prompt)}
             </b>
             <span>{runRowMeta(run)}</span>
           </button>
+        ))}
+        {shelved.length > 0 ? <div className="section">已归档</div> : null}
+        {shelved.map((run) => (
+          <div key={run.id} className="run-row is-shelved">
+            <button type="button" className="run-open" onClick={() => props.onOpenRun(run.id)}>
+              <b>{preview(run.prompt)}</b>
+              <span>{runRowMeta(run)}</span>
+            </button>
+            {props.onDeleteRun ? (
+              <button type="button" className="run-delete" onClick={() => void props.onDeleteRun?.(run.id)}>
+                删除
+              </button>
+            ) : null}
+          </div>
         ))}
         <footer className="drawer-foot">
           <div className="drawer-account">
@@ -184,13 +253,23 @@ export function IslandDrawer(props: {
   );
 }
 
-export function IslandHome({ expertName }: { expertName?: string }) {
+export function IslandHome({ expertName, onPickRecipe }: { expertName?: string; onPickRecipe?: (recipe: Recipe) => void }) {
   return (
     <div className="home-hero">
       <h2>
         {dayGreeting()}，今天想做点什么
       </h2>
       <p>{expertName ? `已选专家 ${expertName}` : "新开一条云端对话，或从左边打开已有任务。"}</p>
+      {onPickRecipe ? (
+        <div className="recipe-grid">
+          {BUNDLED_RECIPES.map((item) => (
+            <button key={item.id} type="button" className="recipe-card" onClick={() => onPickRecipe(item)}>
+              <b>{item.title}</b>
+              <small>{item.description}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
