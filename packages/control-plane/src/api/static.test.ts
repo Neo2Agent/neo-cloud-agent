@@ -64,6 +64,9 @@ test("serves the chat index and rejects path traversal", () => {
   const cssText = readBuiltAsset(".css");
   assert.match(cssText, /--bg:\s*#ffffff/);
   assert.match(cssText, /--accent:\s*#4d6bfe/);
+  assert.match(cssText, /font-family:\s*Inter/);
+  assert.doesNotMatch(cssText, /Geist Sans/);
+  assert.match(cssText, /\.new-chat-plus/);
   assert.match(cssText, /color-scheme:\s*light/);
   assert.match(cssText, /\[hidden\]\{[^}]*display:\s*none\s*!important/);
   assert.match(cssText, /\.auth-gate:not\(\[hidden\]\)/);

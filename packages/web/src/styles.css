@@ -45,7 +45,7 @@ body,
   overscroll-behavior: none;
   background: var(--bg);
   color: var(--text);
-  font-family: "Geist Sans", "SF Pro Text", "PingFang SC", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
   font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
 }
@@ -176,6 +176,17 @@ button[type="submit"]:not(.send) {
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+
+.new-chat-plus {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .new-chat:hover,
@@ -447,7 +458,7 @@ button[type="submit"]:disabled {
 .app-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex: 0 0 auto;
 }
 
@@ -456,12 +467,11 @@ button[type="submit"]:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   border: 0;
   background: transparent;
   color: var(--muted);
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
   min-height: 36px;
   cursor: pointer;
 }
@@ -1163,16 +1173,16 @@ button.send {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0;
+  gap: 8px;
   border: 0;
   border-radius: 999px;
-  background: var(--ink);
+  background: #111827;
   color: #ffffff;
   font-weight: 600;
-  width: 36px;
-  height: 36px;
+  padding: 8px 16px;
   min-height: 36px;
-  padding: 0;
+  width: auto;
+  height: auto;
   cursor: pointer;
 }
 
@@ -1189,23 +1199,32 @@ button.stop:hover {
 }
 
 button.send:disabled {
-  background: #e5e7eb;
-  color: #9ca3af;
-  opacity: 1;
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--accent);
+  color: #ffffff;
 }
 
 .stop-icon {
-  display: grid;
-  place-items: center;
   width: 10px;
   height: 10px;
   border-radius: 2px;
   background: #ffffff;
-  color: #ffffff;
 }
 
-.stop-icon svg {
-  display: none;
+.buddy-composer button.send,
+.buddy-composer button.stop {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  gap: 0;
+}
+
+.buddy-composer button.send:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  opacity: 1;
 }
 
 .settings-panel {
@@ -3342,8 +3361,8 @@ button.composer-mic.is-listening,
     display: none;
   }
 
-  button.send,
-  button.stop {
+  .buddy-composer button.send,
+  .buddy-composer button.stop {
     width: 44px;
     height: 44px;
     min-width: 44px;

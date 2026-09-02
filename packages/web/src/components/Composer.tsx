@@ -416,13 +416,12 @@ export function Composer({
             {!sendLocked ? voiceButton("composer-mic") : null}
             {busy && canStop ? (
               <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
-                <span className="stop-icon" aria-hidden="true">
-                  <IconStop size={10} />
-                </span>
+                <span className="stop-icon" aria-hidden="true" />
+                {stopping ? "停止中" : "停止"}
               </button>
             ) : (
               <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label={busy ? "发送中" : "发送"}>
-                <IconArrowUp size={16} />
+                {busy ? "发送中" : "发送"}
               </button>
             )}
           </div>

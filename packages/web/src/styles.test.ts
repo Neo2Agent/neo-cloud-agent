@@ -6,6 +6,15 @@ import test from "node:test";
 
 const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "styles.css"), "utf8");
 
+test("web shell keeps the original cool-gray chrome", () => {
+  assert.match(css, /--bg:\s*#ffffff/);
+  assert.match(css, /--accent:\s*#4d6bfe/);
+  assert.match(css, /font-family:\s*Inter/);
+  assert.doesNotMatch(css, /Geist Sans/);
+  assert.match(css, /\.new-chat-plus\s*\{/);
+  assert.match(css, /button\.send\s*\{[^}]*padding:\s*8px 16px/);
+});
+
 test("welcome cluster fits a 14-inch laptop viewport without a page scroll", () => {
   assert.match(css, /\.transcript\s*\{[^}]*container-name:\s*transcript/);
   assert.match(css, /\.empty h2\s*\{[^}]*margin:\s*0 0 8px/);

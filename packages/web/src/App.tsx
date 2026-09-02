@@ -36,32 +36,12 @@ import { BUNDLED_RECIPES, recipeById, type IntentCapsule, type Recipe } from "@n
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { parseProjectHash, projectHashHref } from "./project-route.js";
 import { InboxBell } from "./components/InboxBell";
-import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, Tooltip, type BuddyPlusAction } from "@neo-cloud-agent/ui";
+import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
-import {
-  IconArchive,
-  IconTrash,
-  IconArtifacts,
-  IconAutomations,
-  IconChat,
-  IconClose,
-  IconDiff,
-  IconExperts,
-  IconFiles,
-  IconGear,
-  IconMemory,
-  IconMenu,
-  IconMore,
-  IconPr,
-  IconProjects,
-  IconSidebarClose,
-  IconSkills,
-  IconTerminal,
-} from "./icons";
+import { IconMemory, IconMore } from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
 import { TranscriptSearch } from "./components/TranscriptSearch";
-import { VmSlots } from "./components/VmSlots";
 import type { ComposerMention } from "./mention";
 import {
   baselineContextUsage,
@@ -69,7 +49,7 @@ import {
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
+import { formatRunTime, formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
 import {
   activityLabel,
   isActiveRunStatus,
@@ -254,7 +234,7 @@ export function App() {
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sessionTab, setSessionTab] = useState<"chat" | "files" | "diff" | "terminal" | "artifacts">("chat");
+  const [sessionTab, setSessionTab] = useState<"chat" | "diff" | "terminal" | "artifacts">("chat");
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [deskFolder, setDeskFolder] = useState("");
@@ -1496,9 +1476,7 @@ export function App() {
         ? `${Math.max(0, (vms.total || vms.slots.length) - vms.busy)}/${vms.total || vms.slots.length} 个 VM 空闲，发送后占用其中一个（${vms.backend === "loop" ? "loop 挂载" : vms.backend}）。`
         : `${vms.total || vms.slots.length} 个 VM 都在忙。新对话会排队，有空闲槽再自动开始。`;
 
-  const inspectorOpen = mainTab === "chat" && sessionTab !== "chat";
-
-  const openInspector = (id: "files" | "diff" | "terminal" | "artifacts" | "chat") => {
+  const openSessionTab = (id: "chat" | "diff" | "terminal" | "artifacts") => {
     setSessionTab(id);
     setSettingsOpen(false);
     if (id === "chat" || !runId) return;
@@ -1713,7 +1691,7 @@ export function App() {
 
   const openDiagnostics = () => {
     if (!runId) return;
-    openInspector("terminal");
+    openSessionTab("terminal");
   };
 
   const loadOlder = () => {
@@ -1755,6 +1733,8 @@ export function App() {
         <Sidebar
           runs={runs}
           currentRunId={runId}
+          slots={vms.slots}
+          backend={vms.backend}
           userEmail={userEmail}
           authed={Boolean(userEmail)}
           authBusy={authBusy}
@@ -1823,41 +1803,36 @@ export function App() {
         <main className="main">
           <header className="topbar">
             <div className="topbar-lead">
-              <Tooltip content={sidebarOpen ? "收起侧栏" : "打开对话列表"} side="bottom">
-                <button
-                  className="icon-btn sidebar-toggle"
-                  id="sidebar-toggle"
-                  type="button"
-                  aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
-                  onClick={toggleSidebar}
-                >
-                  {sidebarOpen ? <IconSidebarClose /> : <IconMenu />}
-                  <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
-                </button>
-              </Tooltip>
+              <button
+                className="ghost sidebar-toggle"
+                id="sidebar-toggle"
+                type="button"
+                aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
+                onClick={toggleSidebar}
+              >
+                <span aria-hidden="true">{sidebarOpen ? "‹" : "☰"}</span>
+                <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
+              </button>
               <nav className="app-tabs" id="app-tabs" aria-label="主导航">
                 {(
                   [
-                    ["chat", "对话", IconChat, openChat],
-                    ["projects", "项目", IconProjects, () => openProjects()],
-                    ["experts", "专家", IconExperts, () => openExperts()],
-                    ["skills", "技能", IconSkills, () => openSkills()],
-                    ["memories", "记忆", IconMemory, openMemories],
-                    ["automations", "定时任务", IconAutomations, openAutomations],
+                    ["chat", "对话", openChat],
+                    ["projects", "项目", () => openProjects()],
+                    ["experts", "专家", () => openExperts()],
+                    ["skills", "技能", () => openSkills()],
+                    ["memories", "记忆", openMemories],
+                    ["automations", "定时任务", openAutomations],
                   ] as const
-                ).map(([id, label, Icon, onClick]) => (
-                  <Tooltip key={id} content={label} side="bottom">
-                    <button
-                      type="button"
-                      className={mainTab === id ? "active" : ""}
-                      aria-label={label}
-                      aria-current={mainTab === id ? "page" : undefined}
-                      onClick={onClick}
-                    >
-                      <Icon size={16} />
-                      <span className="tab-label">{label}</span>
-                    </button>
-                  </Tooltip>
+                ).map(([id, label, onClick]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={mainTab === id ? "active" : ""}
+                    aria-current={mainTab === id ? "page" : undefined}
+                    onClick={onClick}
+                  >
+                    {label}
+                  </button>
                 ))}
               </nav>
               <div className="topbar-heading">
@@ -1873,7 +1848,13 @@ export function App() {
                       : mainTab === "automations"
                       ? "定时任务"
                       : currentRun
-                        ? [currentRun.branchName ?? shortId(currentRun.id), runRoleLabel(currentRun, experts, teams)]
+                        ? [
+                            currentRun.buildId
+                              ? `${currentRun.branchName ?? shortId(currentRun.id)} · 快照 ${shortId(currentRun.buildId)}`
+                              : currentRun.branchName ?? shortId(currentRun.id),
+                            runRoleLabel(currentRun, experts, teams),
+                            formatRunTime(currentRun.createdAt, currentRun.updatedAt),
+                          ]
                             .filter(Boolean)
                             .join(" · ")
                         : expertPick.expertTeamId || expertPick.expertId
@@ -1969,32 +1950,29 @@ export function App() {
                   {formatUsage(currentRun?.usage)}
                 </span>
               ) : null}
-              <nav className="session-tabs" hidden={!runId} aria-label="工作区工具">
+              <nav className="session-tabs" hidden={!runId} aria-label="会话标签">
                 {(
                   [
-                    ["files", "工作区", IconFiles],
-                    ["diff", "Diff", IconDiff],
-                    ["terminal", "终端", IconTerminal],
-                    ["artifacts", "产物", IconArtifacts],
+                    ["chat", "对话"],
+                    ["diff", "Diff"],
+                    ["terminal", "终端"],
+                    ["artifacts", "产物"],
                   ] as const
-                ).map(([id, label, Icon]) => (
-                  <Tooltip key={id} content={label} side="bottom">
-                    <button
-                      type="button"
-                      className={sessionTab === id ? "active" : ""}
-                      aria-label={label}
-                      aria-current={sessionTab === id ? "page" : undefined}
-                      onClick={() => openInspector(id)}
-                    >
-                      <Icon size={14} />
-                      <span className="tab-label">{label}</span>
-                    </button>
-                  </Tooltip>
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={sessionTab === id ? "active" : ""}
+                    aria-current={sessionTab === id ? "page" : undefined}
+                    onClick={() => openSessionTab(id)}
+                  >
+                    {label}
+                  </button>
                 ))}
               </nav>
               {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
                 <button
-                  className="icon-btn"
+                  className="ghost"
                   type="button"
                   title="未提交的改动不会带过去，先 commit 或 stash"
                   onClick={() => void handoffCurrent("desk")}
@@ -2005,10 +1983,9 @@ export function App() {
               {handoffError ? <span className="setup err">{handoffError}</span> : null}
               {narrow ? null : <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />}
               <button
-                className="icon-btn"
+                className="ghost"
                 id="archive-run"
                 type="button"
-                aria-label="归档"
                 hidden={!runId || currentRun?.status === "ARCHIVED"}
                 onClick={() => {
                   if (!runId || !window.confirm("归档后会释放 VM。确定？")) return;
@@ -2024,14 +2001,12 @@ export function App() {
                   });
                 }}
               >
-                <IconArchive size={16} />
-                <span className="tab-label">归档</span>
+                归档
               </button>
               <button
-                className="icon-btn"
+                className="ghost"
                 id="delete-run"
                 type="button"
-                aria-label="删除"
                 hidden={!runId || currentRun?.status !== "ARCHIVED"}
                 onClick={() => {
                   if (!runId) return;
@@ -2040,47 +2015,38 @@ export function App() {
                   });
                 }}
               >
-                <IconTrash size={16} />
-                <span className="tab-label">删除</span>
+                删除
               </button>
               <button
-                className="icon-btn"
+                className="ghost"
                 id="toggle-settings"
                 type="button"
-                aria-label={settingsOpen ? "收起设置" : "设置"}
                 aria-expanded={settingsOpen}
                 onClick={() => {
-                  const next = !settingsOpen;
-                  setSettingsOpen(next);
-                  if (next) {
-                  }
+                  setSettingsOpen((next) => !next);
                 }}
               >
-                <IconGear size={16} />
-                <span className="tab-label">{settingsOpen ? "收起设置" : "设置"}</span>
+                {settingsOpen ? "收起设置" : "设置"}
               </button>
               {pr?.url ? (
                 <a className="pr-link" id="pr-link" href={pr.url} target="_blank" rel="noreferrer">
-                  <IconPr size={14} />
                   {pr.draft === false ? "PR" : "草稿 PR"}
                 </a>
               ) : null}
               <button
-                className="icon-btn"
+                className="ghost"
                 id="open-pr"
                 type="button"
-                aria-label="开草稿 PR"
                 hidden={Boolean(pr?.url) || !runId}
                 onClick={() => void openDraftPr()}
               >
-                <IconPr size={14} />
-                <span className="tab-label">开草稿 PR</span>
+                开草稿 PR
               </button>
                 </div>
               </details>
             </div>
           </header>
-          <div className={inspectorOpen ? "workspace-col has-inspector" : "workspace-col"}>
+          <div className="workspace-col">
           <div className="workspace-stage">
           {settingsOpen ? (
             <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label="设置">
@@ -2097,17 +2063,6 @@ export function App() {
                   关闭
                 </button>
               </div>
-              <VmSlots
-                slots={vms.slots}
-                backend={vms.backend}
-                currentRunId={runId}
-                runs={runs}
-                onOpenRun={(id) => {
-                  setSettingsOpen(false);
-                  setMainTab("chat");
-                  void openRun(id);
-                }}
-              />
                 <SettingsPanel
                   repo={repo}
                   envId={envId}
@@ -2217,6 +2172,7 @@ export function App() {
                     });
                   }}
                 />
+              <FileTree token={token} runId={runId} open={Boolean(runId)} />
             </aside>
           ) : null}
             {mainTab === "projects" ? (
@@ -2265,6 +2221,49 @@ export function App() {
                   void openRun(id);
                 }}
               />
+            ) : sessionTab === "diff" ? (
+              <DiffPanel
+                open
+                loading={diffLoading}
+                error={diffError}
+                stat={diffStat}
+                patch={diffPatch}
+                committing={committing}
+                commitError={commitError}
+                onCommit={(message) => void commitWorkspace(message)}
+              />
+            ) : sessionTab === "terminal" ? (
+              <TerminalPanel open loading={diagLoading} error={diagError} logs={diagLogs} />
+            ) : sessionTab === "artifacts" ? (
+              <ArtifactsPanel
+                open
+                loading={artifactsLoading}
+                error={artifactsError}
+                artifacts={artifacts}
+                projectId={currentRun?.projectId ?? activeProject?.id}
+                token={token}
+                runId={runId}
+                onSaved={(asset) => {
+                  const projectId = asset.projectId || currentRun?.projectId || activeProject?.id;
+                  if (projectId && token) {
+                    void api(token, `/v1/projects/${encodeURIComponent(projectId)}/assets`).then(async (response) => {
+                      if (!response.ok) return;
+                      const body = await readJson<{ assets?: ProjectAsset[] }>(response);
+                      setProjectAssets(body.assets ?? []);
+                    });
+                  }
+                  if (projectId && asset.id) {
+                    openProjects(projectId, { assets: true, assetId: asset.id });
+                  }
+                }}
+                onOpen={
+                  deskBridge()?.openPath
+                    ? (item) => {
+                        if (item.url) void deskBridge()?.openPath?.(item.url);
+                      }
+                    : undefined
+                }
+              />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
                 {shouldShowBuddyHome({
@@ -2309,69 +2308,6 @@ export function App() {
               </ChatErrorBoundary>
             )}
           </div>
-          {inspectorOpen ? (
-            <aside className="inspector" id="workspace-inspector" aria-label="工作区">
-              <div className="inspector-bar">
-                <strong>
-                  {sessionTab === "files"
-                    ? "工作区"
-                    : sessionTab === "diff"
-                      ? "Diff"
-                      : sessionTab === "terminal"
-                        ? "终端"
-                        : "产物"}
-                </strong>
-                <button type="button" className="icon-btn" aria-label="关闭检查器" onClick={() => openInspector("chat")}>
-                  <IconClose size={16} />
-                </button>
-              </div>
-              {sessionTab === "files" ? <FileTree token={token} runId={runId} open={Boolean(runId)} /> : null}
-              {sessionTab === "diff" ? (
-                <DiffPanel
-                  open
-                  loading={diffLoading}
-                  error={diffError}
-                  stat={diffStat}
-                  patch={diffPatch}
-                  committing={committing}
-                  commitError={commitError}
-                  onCommit={(message) => void commitWorkspace(message)}
-                />
-              ) : null}
-              {sessionTab === "terminal" ? <TerminalPanel open loading={diagLoading} error={diagError} logs={diagLogs} /> : null}
-              {sessionTab === "artifacts" ? (
-                <ArtifactsPanel
-                  open
-                  loading={artifactsLoading}
-                  error={artifactsError}
-                  artifacts={artifacts}
-                  projectId={currentRun?.projectId ?? activeProject?.id}
-                  token={token}
-                  runId={runId}
-                  onSaved={(asset) => {
-                    const projectId = asset.projectId || currentRun?.projectId || activeProject?.id;
-                    if (projectId && token) {
-                      void api(token, `/v1/projects/${encodeURIComponent(projectId)}/assets`).then(async (response) => {
-                        if (!response.ok) return;
-                        const body = await readJson<{ assets?: ProjectAsset[] }>(response);
-                        setProjectAssets(body.assets ?? []);
-                      });
-                    }
-                    if (projectId && asset.id) {
-                      openProjects(projectId, { assets: true, assetId: asset.id });
-                    }
-                  }}
-                  onOpen={
-                    deskBridge()?.openPath
-                      ? (item) => {
-                          if (item.url) void deskBridge()?.openPath?.(item.url);
-                        }
-                      : undefined
-                  }
-                />
-              ) : null}
-            </aside>
-          ) : null}
           </div>
           {mainTab === "chat" && (activeProject || expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
             <div className="proj-chip-bar" id="project-chip">
