@@ -160,8 +160,18 @@ export function assembleContextUsage(input: {
   };
   const estimatedTotal = CONTEXT_BUCKET_ORDER.reduce((sum, id) => sum + estimates[id], 0);
 
+  // Everything but the live conversation rides along in every request. Until the
+  // first provider usage lands, pi reports a messages-only figure that leaves out
+  // the system prompt and tool schemas entirely; taking that as the whole-context
+  // total would scale every bucket down to nothing. Half the fixed prefix is a
+  // wide enough floor to tell that case apart from ordinary estimation error.
+  const fixedEstimate = estimatedTotal - estimates.conversation;
   const reported = input.reportedTokens;
-  const hasReported = typeof reported === "number" && Number.isFinite(reported) && reported > 0;
+  const hasReported =
+    typeof reported === "number" &&
+    Number.isFinite(reported) &&
+    reported > 0 &&
+    reported >= fixedEstimate * 0.5;
   const tokens = hasReported ? Math.round(reported) : estimatedTotal;
   const resolved = hasReported ? scaleToReported(estimates, estimatedTotal, tokens) : estimates;
 

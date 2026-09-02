@@ -101,18 +101,34 @@ test("the system bucket is what the attributable sections leave behind", () => {
   assert.equal(bucketSum(usage), usage.tokens);
 });
 
-test("an overshooting estimate does not empty the conversation bucket", () => {
-  // The old scheme subtracted the unscaled system and tool buckets first, so a
-  // reported total below that floor left conversation at zero.
+test("a reported total below the fixed prefix is not believed", () => {
+  // pi reports a messages-only figure until the first provider usage arrives.
+  // Treating it as the whole context would crush every bucket to near zero.
   const usage = assembleContextUsage({
     reportedTokens: 100,
     systemText: "s".repeat(40_000),
     toolsText: "t".repeat(40_000),
     conversationText: "v".repeat(20_000),
   });
-  assert.equal(usage.tokens, 100);
-  assert.equal(bucketSum(usage), 100);
+  assert.ok(usage.tokens > 100, "falls back to the estimate");
+  assert.equal(bucketSum(usage), usage.tokens);
+  assert.ok(bucketTokens(usage, "system") > 0);
   assert.ok(bucketTokens(usage, "conversation") > 0);
+});
+
+test("a believable reported total still rescales every bucket", () => {
+  // Reported sits below the raw estimate but well above the fixed prefix, so it
+  // is a real whole-context number and the buckets shrink to match it.
+  const usage = assembleContextUsage({
+    reportedTokens: 12_000,
+    systemText: "s".repeat(20_000),
+    toolsText: "t".repeat(20_000),
+    conversationText: "v".repeat(40_000),
+  });
+  assert.equal(usage.tokens, 12_000);
+  assert.equal(bucketSum(usage), 12_000);
+  assert.ok(bucketTokens(usage, "conversation") > 0);
+  assert.ok(bucketTokens(usage, "system") > 0);
 });
 
 test("reserved buckets stay hidden until something fills them", () => {
