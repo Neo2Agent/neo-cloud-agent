@@ -167,6 +167,14 @@ export function shouldRefreshTranscript(input: {
   return (input.now ?? Date.now()) - input.lastSseAt >= (input.staleMs ?? 3000);
 }
 
+/** Skip the fat transcript body when the run record itself has not moved. */
+export function runCursorChanged(
+  prev: { updatedAt?: string | null; status?: string | null },
+  next: { updatedAt?: string | null; status?: string | null },
+): boolean {
+  return (prev.updatedAt ?? "") !== (next.updatedAt ?? "") || (prev.status ?? "") !== (next.status ?? "");
+}
+
 /** While SSE is painting tokens, a GET snapshot must not replace the live transcript. */
 export function shouldReplaceLiveTranscript(input: {
   liveSse: boolean;

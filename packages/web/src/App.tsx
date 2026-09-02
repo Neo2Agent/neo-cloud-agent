@@ -59,6 +59,7 @@ import {
   isTurnBusy,
   pendingUserArrived,
   runningToolName,
+  runCursorChanged,
   shouldRefreshTranscript,
   shouldShowBuddyHome,
   statusFromEventKind,
@@ -298,11 +299,13 @@ export function App() {
   const pendingRef = useRef<PendingUser | null>(null);
   const keepPendingRef = useRef(false);
   const currentStatusRef = useRef<string | null | undefined>(null);
+  const currentUpdatedAtRef = useRef<string | null | undefined>(null);
   const projectNamesRef = useRef(projectNames);
   tokenRef.current = token;
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
   currentStatusRef.current = currentRun?.status;
+  currentUpdatedAtRef.current = currentRun?.updatedAt;
   projectNamesRef.current = projectNames;
 
   const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
@@ -1237,21 +1240,30 @@ export function App() {
       const status = currentStatusRef.current;
       if (!shouldRefreshTranscript({ lastSseAt: lastSseAtRef.current, status })) return;
       try {
-        const [runRes, transcriptRes] = await Promise.all([
-          api(tokenRef.current, `/v1/runs/${runId}`),
-          api(tokenRef.current, `/v1/runs/${runId}/transcript?limit=${HISTORY_PAGE}`),
-        ]);
+        const runRes = await api(tokenRef.current, `/v1/runs/${runId}`);
         if (cancelled) return;
         const fresh = runRes.ok ? await readJson<Run>(runRes) : null;
-        if (fresh && fresh.id === runId) {
+        const nextStatus = fresh?.status ?? status;
+        const cursorMoved = Boolean(
+          fresh &&
+            runCursorChanged(
+              { updatedAt: currentUpdatedAtRef.current, status },
+              { updatedAt: fresh.updatedAt, status: fresh.status },
+            ),
+        );
+        if (fresh && fresh.id === runId && cursorMoved) {
           setCurrentRun((prev) => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
           setRuns((prev) => prev.map((item) => (item.id === fresh.id ? { ...item, ...fresh } : item)));
         }
+        if (fresh && !cursorMoved) {
+          return;
+        }
+        const transcriptRes = await api(tokenRef.current, `/v1/runs/${runId}/transcript?limit=${HISTORY_PAGE}`);
+        if (cancelled) return;
         if (!transcriptRes.ok) return;
         const body = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
         const snapshot = body.snapshot;
         if (!snapshot) return;
-        const nextStatus = fresh?.status ?? status;
         if (snapshot.lastEventId && snapshot.lastEventId === lastEventIdRef.current) {
           setMessages((prev) => withQueuedNotice(prev, nextStatus));
           return;
