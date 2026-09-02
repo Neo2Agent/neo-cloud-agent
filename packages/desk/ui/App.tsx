@@ -226,7 +226,6 @@ export function App() {
   const [pendingTodo, setPendingTodo] = useState<{ id: string; title: string } | null>(null);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxRow[]>([]);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("board");
   const [chatToolsOpen, setChatToolsOpen] = useState(false);
@@ -308,7 +307,6 @@ export function App() {
   const feedRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const inboxRef = useRef<HTMLDivElement | null>(null);
-  const moreRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const canRunLocal = Boolean(deskBridge()?.canRunLocal);
   const apiBase = deskBridge()?.apiBase || "";
@@ -1263,7 +1261,6 @@ export function App() {
     setContextOpen(null);
     setAccountOpen(false);
     setInboxOpen(false);
-    setMoreOpen(false);
     setNav("chats");
     lastEventIdRef.current = null;
     closeStream();
@@ -1445,7 +1442,6 @@ export function App() {
     setContextOpen(null);
     setInboxOpen(false);
     setAccountOpen(false);
-    setMoreOpen(false);
     setSettingsSection(section);
     setNav("settings");
     clearPageHash();
@@ -1466,7 +1462,6 @@ export function App() {
     setMessages([]);
     setAccountOpen(false);
     setInboxOpen(false);
-    setMoreOpen(false);
     setNav("chats");
   };
 
@@ -1508,7 +1503,6 @@ export function App() {
     setInboxOpen(false);
     setAccountOpen(false);
   }, inboxRef);
-  useDismissOnOutside(moreOpen, () => setMoreOpen(false), moreRef);
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1705,7 +1699,6 @@ export function App() {
                 return;
               }
               setSearchOpen(true);
-              setMoreOpen(false);
               setSearchFilter("all");
               void refreshRuns();
               requestAnimationFrame(() => searchRef.current?.focus());
@@ -1721,7 +1714,6 @@ export function App() {
             className={`rail-item${nav === "automations" ? " on" : ""}`}
             onClick={() => {
               setSearchOpen(false);
-              setMoreOpen(false);
               setNav("automations");
               clearPageHash();
             }}
@@ -1736,7 +1728,6 @@ export function App() {
             className={`rail-item${nav === "projects" ? " on" : ""}`}
             onClick={() => {
               setSearchOpen(false);
-              setMoreOpen(false);
               setInviteToken(null);
               setNav("projects");
               clearPageHash();
@@ -1747,32 +1738,24 @@ export function App() {
             </span>
             Projects
           </button>
-          <div className="rail-more-wrap" ref={moreRef}>
+          <div className="rail-more-wrap">
             <button
               type="button"
-              className={`rail-item${nav === "experts" || nav === "skills" || nav === "memories" || moreOpen ? " on" : ""}`}
-              aria-expanded={moreOpen}
+              className={`rail-item${nav === "experts" || nav === "skills" || nav === "memories" ? " on" : ""}`}
               aria-haspopup="menu"
-              onClick={() => {
-                setSearchOpen(false);
-                setInboxOpen(false);
-                setAccountOpen(false);
-                setMoreOpen((cur) => !cur);
-              }}
             >
               <span className="rail-icon">
                 <IconMore />
               </span>
               更多
             </button>
-            {moreOpen ? (
-              <div className="rail-more-pop" role="menu" aria-label="个性化">
+            <div className="rail-more-pop" role="menu" aria-label="个性化">
+              <div className="rail-more-pop-card">
                 <button
                   type="button"
                   role="menuitem"
                   className={nav === "experts" ? "on" : undefined}
                   onClick={() => {
-                    setMoreOpen(false);
                     setSearchOpen(false);
                     setNav("experts");
                     clearPageHash();
@@ -1786,10 +1769,7 @@ export function App() {
                   type="button"
                   role="menuitem"
                   className={nav === "skills" ? "on" : undefined}
-                  onClick={() => {
-                    setMoreOpen(false);
-                    openSkills();
-                  }}
+                  onClick={() => openSkills()}
                 >
                   <IconSkills size={15} />
                   Skills
@@ -1798,16 +1778,13 @@ export function App() {
                   type="button"
                   role="menuitem"
                   className={nav === "memories" ? "on" : undefined}
-                  onClick={() => {
-                    setMoreOpen(false);
-                    openMemories();
-                  }}
+                  onClick={() => openMemories()}
                 >
                   <IconMemory size={15} />
                   Memories
                 </button>
               </div>
-            ) : null}
+            </div>
           </div>
         </nav>
 
