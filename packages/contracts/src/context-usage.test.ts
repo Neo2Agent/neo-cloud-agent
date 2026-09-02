@@ -5,6 +5,7 @@ import {
   assembleContextUsage,
   baselineContextUsage,
   estimateTokensFromText,
+  formatContextPercent,
   formatTokenCount,
   overlayContextUsage,
   parseContextUsage,
@@ -213,4 +214,13 @@ test("formatTokenCount uses K and M", () => {
   assert.equal(formatTokenCount(1900), "1.9K");
   assert.equal(formatTokenCount(128_000), "128K");
   assert.equal(formatTokenCount(1_000_000), "1M");
+});
+
+test("formatContextPercent keeps a used window off zero", () => {
+  // 3.4K of a 1M window is real usage, so it must not read as 0%.
+  assert.equal(formatContextPercent((3400 / 1_000_000) * 100), "<1%");
+  assert.equal(formatContextPercent(0), "0%");
+  assert.equal(formatContextPercent(11.93), "12%");
+  assert.equal(formatContextPercent(131.4), "131%");
+  assert.equal(formatContextPercent(null), null);
 });

@@ -221,6 +221,7 @@ export {
   baselineContextUsage,
   contextUsageToData,
   estimateTokensFromText,
+  formatContextPercent,
   formatTokenCount,
   hitTestBar,
   layoutContextBar,
