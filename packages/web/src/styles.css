@@ -2796,17 +2796,18 @@ button.composer-mic.is-listening,
   white-space: nowrap;
 }
 
-.context-usage-value {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.context-usage-list i {
+/* Swatch that ties a row to its slice of the bar, in the popover and the page. */
+.context-usage-name i {
   flex: 0 0 auto;
   width: 9px;
   height: 9px;
   border-radius: 2px;
+}
+
+.context-usage-value {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .context-usage-list .context-usage-icon {
@@ -2821,11 +2822,11 @@ button.composer-mic.is-listening,
 .context-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
   width: 100%;
-  max-width: 960px;
+  max-width: 680px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 28px 20px 48px;
   overflow: auto;
 }
 
@@ -2838,143 +2839,111 @@ button.composer-mic.is-listening,
 
 .context-panel-head h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
+  letter-spacing: -0.01em;
 }
 
 .context-panel-head p {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: 12px;
 }
 
 .context-usage-bar.is-wide {
-  height: 10px;
-  margin: 0;
-  border-radius: 6px;
-}
-
-.context-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.context-legend button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--ink);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.context-legend button[aria-pressed="true"] {
-  border-color: #93c5fd;
-  background: #eff6ff;
-}
-
-.context-legend i {
-  width: 8px;
   height: 8px;
-  border-radius: 2px;
-}
-
-.context-legend b {
-  color: var(--muted);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-.context-panel-filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin: 0;
-  color: var(--muted);
-  font-size: 12px;
+  border-radius: 99px;
+  /* A 0.3% fill leaves mostly track, so it needs to read as a bar, not a hairline. */
+  background: #eaecf0;
 }
 
-.context-cards {
-  display: grid;
-  gap: 12px;
-  /* auto-fit so a single focused card fills the row instead of hugging 280px. */
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+.context-sections {
+  display: flex;
+  flex-direction: column;
 }
 
-.context-card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  padding: 12px;
+.context-section {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
 }
 
-.context-card header {
+.context-section:first-child {
+  border-top: 0;
+}
+
+.context-section header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 14px;
 }
 
-.context-card-total {
+.context-section-total {
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  color: var(--ink);
+  gap: 8px;
   font-variant-numeric: tabular-nums;
 }
 
-.context-card-total em {
+.context-section-total b {
+  font-weight: 600;
+}
+
+.context-section-total em {
+  min-width: 34px;
   color: var(--muted);
   font-style: normal;
   font-size: 12px;
+  text-align: right;
 }
 
-.context-card ul {
+.context-section ul {
   list-style: none;
   margin: 10px 0 0;
   padding: 0;
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.context-card li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 64px auto;
+/* The row itself is the bar: a tinted fill sized by share, text riding on top. */
+.context-section li {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  isolation: isolate;
 }
 
-.context-item-name {
+.context-section li i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: -1;
+  border-radius: 7px;
+  opacity: 0.14;
+}
+
+.context-section li span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.context-item-meter {
-  height: 4px;
-  border-radius: 99px;
-  background: #eef0f3;
-  overflow: hidden;
-}
-
-.context-item-meter i {
-  display: block;
-  height: 100%;
-}
-
-.context-card-empty {
-  margin: 10px 0 0;
+.context-section li b {
+  flex: 0 0 auto;
   color: var(--muted);
-  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-section[data-focus="true"] header {
+  color: var(--accent);
 }
 
 .hint {

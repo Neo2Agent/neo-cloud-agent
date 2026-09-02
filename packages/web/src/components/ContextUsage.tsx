@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type {
   ContextUsageBucket,
   ContextUsageBucketId,
@@ -152,18 +153,28 @@ export function ContextUsageControl({ usage, open, onToggle, onOpenDetail }: Pro
   );
 }
 
-function BucketCard({ bucket, total }: { bucket: ContextUsageBucket; total: number }) {
+function BucketSection({
+  bucket,
+  total,
+  focused,
+}: {
+  bucket: ContextUsageBucket;
+  total: number;
+  focused: boolean;
+}) {
   const children = bucket.children ?? [];
   const color = bucketColor(bucket.id);
+  const widest = children.reduce((max, child) => Math.max(max, child.tokens), 0);
+
   return (
-    <section className="context-card" id={`context-bucket-${bucket.id}`}>
+    <section className="context-section" id={`context-bucket-${bucket.id}`} data-focus={focused ? "true" : undefined}>
       <header>
         <span className="context-usage-name">
           <i style={{ background: color }} />
           {bucket.label}
         </span>
-        <span className="context-card-total">
-          {formatTokenCount(bucket.tokens)}
+        <span className="context-section-total">
+          <b>{formatTokenCount(bucket.tokens)}</b>
           <em>{share(bucket.tokens, total)}</em>
         </span>
       </header>
@@ -171,40 +182,39 @@ function BucketCard({ bucket, total }: { bucket: ContextUsageBucket; total: numb
         <ul>
           {children.map((child) => (
             <li key={child.id}>
-              <span className="context-item-name">{child.label}</span>
-              <span className="context-item-meter" aria-hidden="true">
-                <i
-                  style={{
-                    width: `${bucket.tokens > 0 ? Math.min(100, (child.tokens / bucket.tokens) * 100) : 0}%`,
-                    background: color,
-                  }}
-                />
-              </span>
-              <span className="context-usage-value">{formatTokenCount(child.tokens)}</span>
+              <i
+                aria-hidden="true"
+                style={{
+                  width: `${widest > 0 ? Math.max(2, (child.tokens / widest) * 100) : 0}%`,
+                  background: color,
+                }}
+              />
+              <span>{child.label}</span>
+              <b>{formatTokenCount(child.tokens)}</b>
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="context-card-empty">没有更细的条目</p>
-      )}
+      ) : null}
     </section>
   );
 }
 
-/** Stage page for the breakdown, so the composer popover can stay small. */
+/** Stage page for the breakdown, so the composer popover can stay a summary. */
 export function ContextUsagePanel({
   usage,
   focusBucketId,
-  onFocus,
   onBack,
 }: {
   usage: ContextUsageSnapshot;
   focusBucketId?: string;
-  onFocus: (bucketId: string) => void;
   onBack: () => void;
 }) {
-  const focused = usage.buckets.find((bucket) => bucket.id === focusBucketId);
-  const buckets = focused ? [focused] : usage.buckets;
+  useEffect(() => {
+    if (!focusBucketId) {
+      return;
+    }
+    document.getElementById(`context-bucket-${focusBucketId}`)?.scrollIntoView({ block: "center" });
+  }, [focusBucketId]);
 
   return (
     <section className="panel context-panel" aria-label="上下文用量明细">
@@ -221,32 +231,14 @@ export function ContextUsagePanel({
         </button>
       </header>
       <UsageBar usage={usage} className="context-usage-bar is-wide" />
-      <ul className="context-legend">
+      <div className="context-sections">
         {usage.buckets.map((bucket) => (
-          <li key={bucket.id}>
-            <button
-              type="button"
-              aria-pressed={bucket.id === focusBucketId}
-              onClick={() => onFocus(bucket.id === focusBucketId ? "" : bucket.id)}
-            >
-              <i style={{ background: bucketColor(bucket.id) }} />
-              {bucket.label}
-              <b>{formatTokenCount(bucket.tokens)}</b>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {focused ? (
-        <p className="context-panel-filter">
-          只看「{focused.label}」
-          <button type="button" className="ghost" onClick={() => onFocus("")}>
-            显示全部
-          </button>
-        </p>
-      ) : null}
-      <div className="context-cards">
-        {buckets.map((bucket) => (
-          <BucketCard key={bucket.id} bucket={bucket} total={usage.tokens} />
+          <BucketSection
+            key={bucket.id}
+            bucket={bucket}
+            total={usage.tokens}
+            focused={bucket.id === focusBucketId}
+          />
         ))}
       </div>
     </section>

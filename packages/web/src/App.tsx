@@ -2254,7 +2254,6 @@ export function App() {
               <ContextUsagePanel
                 usage={contextUsage}
                 focusBucketId={contextFocusId}
-                onFocus={setContextFocusId}
                 onBack={() => openSessionTab("chat")}
               />
             ) : sessionTab === "diff" ? (
