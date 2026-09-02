@@ -5,7 +5,7 @@ import type {
   ContextUsageSnapshot,
 } from "@neo-cloud-agent/contracts/context-usage";
 import { formatTokenCount, layoutContextBar } from "@neo-cloud-agent/contracts/context-usage";
-import { IconExpand, IconX } from "../icons";
+import { IconBack, IconExpand, IconX } from "../icons";
 
 const COLORS: Record<ContextUsageBucketId, string> = {
   system: "#9ca3af",
@@ -217,29 +217,32 @@ export function ContextUsagePanel({
   }, [focusBucketId]);
 
   return (
-    <section className="panel context-panel" aria-label="上下文用量明细">
-      <header className="context-panel-head">
+    <section className="proj-page context-page" id="context-page">
+      <header className="proj-page-head">
         <div>
+          <button className="catalog-back" type="button" onClick={onBack}>
+            <IconBack />
+            返回对话
+          </button>
           <h2>上下文用量</h2>
-          <p>
+          <p className="hint">
             {percentLabel(usage)} · {totalLabel(usage)}
             {usage.model ? ` · ${usage.model}` : ""}
           </p>
         </div>
-        <button type="button" className="ghost" onClick={onBack}>
-          返回对话
-        </button>
       </header>
-      <UsageBar usage={usage} className="context-usage-bar is-wide" />
-      <div className="context-sections">
-        {usage.buckets.map((bucket) => (
-          <BucketSection
-            key={bucket.id}
-            bucket={bucket}
-            total={usage.tokens}
-            focused={bucket.id === focusBucketId}
-          />
-        ))}
+      <div className="context-page-body">
+        <UsageBar usage={usage} className="context-usage-bar is-wide" />
+        <div className="context-sections">
+          {usage.buckets.map((bucket) => (
+            <BucketSection
+              key={bucket.id}
+              bucket={bucket}
+              total={usage.tokens}
+              focused={bucket.id === focusBucketId}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );

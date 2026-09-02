@@ -73,8 +73,7 @@ import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
 
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
 
-/** Stage pages that replace the transcript. `context` opens from the composer only. */
-type SessionTab = "chat" | "diff" | "terminal" | "artifacts" | "context";
+type SessionTab = "chat" | "diff" | "terminal" | "artifacts";
 
 function transcriptUrl(id: string, extra?: { before?: string }): string {
   const params = new URLSearchParams({ limit: String(HISTORY_PAGE), images: "href" });
@@ -263,7 +262,9 @@ export function App() {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
-  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts" | "skills" | "memories">(initialMainTab);
+  const [mainTab, setMainTab] = useState<
+    "chat" | "automations" | "projects" | "experts" | "skills" | "memories" | "context"
+  >(initialMainTab);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(hashSkillId);
   const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
   const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
@@ -1544,7 +1545,8 @@ export function App() {
 
   const openContextDetail = (bucketId?: string) => {
     setContextFocusId(bucketId ?? "");
-    openSessionTab("context");
+    setSettingsOpen(false);
+    setMainTab("context");
   };
 
   const localTargetHint = deskBridge()?.canRunLocal
@@ -1875,6 +1877,8 @@ export function App() {
                       ? "记忆"
                       : mainTab === "automations"
                       ? "定时任务"
+                      : mainTab === "context"
+                      ? "上下文"
                       : currentRun
                         ? [
                             currentRun.buildId
@@ -1906,6 +1910,8 @@ export function App() {
                       ? "跨对话记住的事"
                       : mainTab === "automations"
                       ? "到点自动开对话"
+                      : mainTab === "context"
+                      ? "这次对话占了什么"
                       : currentRun
                         ? preview(currentRun.prompt)
                         : expertPick.expertTeamId || expertPick.expertId
@@ -1985,7 +1991,6 @@ export function App() {
                     ["diff", "Diff"],
                     ["terminal", "终端"],
                     ["artifacts", "产物"],
-                    ...(sessionTab === "context" ? ([["context", "上下文"]] as const) : []),
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -2250,11 +2255,11 @@ export function App() {
                   void openRun(id);
                 }}
               />
-            ) : sessionTab === "context" ? (
+            ) : mainTab === "context" ? (
               <ContextUsagePanel
                 usage={contextUsage}
                 focusBucketId={contextFocusId}
-                onBack={() => openSessionTab("chat")}
+                onBack={openChat}
               />
             ) : sessionTab === "diff" ? (
               <DiffPanel

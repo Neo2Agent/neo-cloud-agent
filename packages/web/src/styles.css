@@ -2819,34 +2819,17 @@ button.composer-mic.is-listening,
   opacity: 1;
 }
 
-.context-panel {
+/* Reading-width column, centred so a wide stage does not strand it on the left. */
+.context-page > * {
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+.context-page-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 28px 20px 48px;
-  overflow: auto;
-}
-
-.context-panel-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.context-panel-head h2 {
-  margin: 0;
-  font-size: 18px;
-  letter-spacing: -0.01em;
-}
-
-.context-panel-head p {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 12px;
+  gap: 16px;
 }
 
 .context-usage-bar.is-wide {
