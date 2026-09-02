@@ -306,7 +306,10 @@ function LegendRow({
           {bucket.label}
           {expandable ? <em>{bucket.children!.length}</em> : null}
         </span>
-        <span>{formatTokenCount(bucket.tokens)}</span>
+        <span>
+          {formatTokenCount(bucket.tokens)}
+          {expandable ? <b className="context-usage-chevron" aria-hidden="true">{expanded ? "▾" : "▸"}</b> : null}
+        </span>
       </button>
       {expanded && expandable ? (
         <ul className="context-usage-children">

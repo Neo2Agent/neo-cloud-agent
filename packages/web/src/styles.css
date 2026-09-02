@@ -2669,6 +2669,7 @@ button.composer-mic.is-listening,
   width: 36px;
   height: 6px;
   border-radius: 99px;
+  overflow: hidden;
 }
 
 .context-usage-chip[aria-expanded="true"] {
@@ -2804,6 +2805,13 @@ button.composer-mic.is-listening,
   color: var(--muted);
   font-size: 10px;
   font-style: normal;
+}
+
+.context-usage-chevron {
+  margin-left: 4px;
+  color: #9ca3af;
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .context-usage-row.is-child {

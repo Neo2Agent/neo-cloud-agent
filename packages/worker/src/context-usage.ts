@@ -71,7 +71,12 @@ function serializeTools(session: AgentSession): ToolTexts {
   const lines: Record<keyof ToolTexts, string[]> = { tools: [], cloudTools: [], mcp: [] };
   const items: Record<keyof ToolTexts, ContextUsageItemDraft[]> = { tools: [], cloudTools: [], mcp: [] };
   for (const tool of all) {
-    const schema = tool.parameters ? JSON.stringify(tool.parameters) : "";
+    let schema = "";
+    try {
+      schema = tool.parameters ? JSON.stringify(tool.parameters) : "";
+    } catch {
+      schema = String(tool.parameters ?? "");
+    }
     const guide = tool.promptGuidelines ? String(tool.promptGuidelines) : "";
     const text = `${tool.name}\n${tool.description}\n${schema}\n${guide}`;
     const key: keyof ToolTexts = BUILTIN_TOOLS.has(tool.name)
