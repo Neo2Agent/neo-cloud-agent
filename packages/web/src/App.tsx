@@ -72,6 +72,14 @@ import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
 
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
 
+function transcriptUrl(id: string, extra?: { before?: string }): string {
+  const params = new URLSearchParams({ limit: String(HISTORY_PAGE), images: "href" });
+  if (extra?.before) {
+    params.set("before", extra.before);
+  }
+  return `/v1/runs/${id}/transcript?${params}`;
+}
+
 function localErrorMessage(runId: string | null, title: string): TranscriptMessage {
   return {
     id: `err-${Date.now()}`,
@@ -675,7 +683,7 @@ export function App() {
       history.replaceState(null, "", `/#/runs/${id}`);
       const [runRes, transcriptRes] = await Promise.all([
         api(tokenRef.current, `/v1/runs/${id}`),
-        api(tokenRef.current, `/v1/runs/${id}/transcript?limit=${HISTORY_PAGE}`),
+        api(tokenRef.current, transcriptUrl(id)),
       ]);
       if (openGenRef.current !== gen) return false;
       if (!runRes.ok) {
@@ -1258,7 +1266,7 @@ export function App() {
         if (fresh && !cursorMoved) {
           return;
         }
-        const transcriptRes = await api(tokenRef.current, `/v1/runs/${runId}/transcript?limit=${HISTORY_PAGE}`);
+        const transcriptRes = await api(tokenRef.current, transcriptUrl(runId));
         if (cancelled) return;
         if (!transcriptRes.ok) return;
         const body = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
@@ -1715,7 +1723,7 @@ export function App() {
       try {
         const response = await api(
           tokenRef.current,
-          `/v1/runs/${runId}/transcript?limit=${HISTORY_PAGE}&before=${encodeURIComponent(before)}`,
+          transcriptUrl(runId, { before }),
         );
         if (!response.ok) return;
         const body = await readJson<{ snapshot?: TranscriptSnapshot }>(response);
@@ -2304,6 +2312,7 @@ export function App() {
                   />
                 ) : (
                   <Transcript
+                    token={token}
                     messages={displayMessages}
                     remaining={remaining}
                     empty={!loadingTranscript && displayMessages.length === 0}

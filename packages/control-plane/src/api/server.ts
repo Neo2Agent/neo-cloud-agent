@@ -31,6 +31,9 @@ import {
   evaluateEgress,
   isDeskTarget,
   pageTranscriptSnapshot,
+  slimTranscriptSnapshotImages,
+  findTranscriptImage,
+  rawTranscriptImageData,
   parseAutomationSchedule,
   parseLlmSettingsRequest,
   publicLlmSettings,
@@ -331,6 +334,29 @@ function requestOrigin(req: IncomingMessage): string {
   const host = headerValue(req.headers.host);
   const proto = headerValue(req.headers["x-forwarded-proto"]) || "http";
   return host ? `${proto}://${host}` : getConfig().controlPlaneUrl;
+}
+
+function sendBytes(res: ServerResponse, status: number, body: Buffer, contentType: string): void {
+  res.writeHead(status, {
+    ...CORS,
+    "content-type": contentType,
+    "content-length": body.length,
+    "cache-control": "private, max-age=86400, immutable",
+  });
+  res.end(body);
+}
+
+function decodeTranscriptImageData(data: string): Buffer | null {
+  try {
+    const raw = rawTranscriptImageData(data);
+    if (!raw) {
+      return null;
+    }
+    const body = Buffer.from(raw, "base64");
+    return body.length > 0 ? body : null;
+  } catch {
+    return null;
+  }
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -2155,6 +2181,25 @@ export function createApiServer() {
         return;
       }
 
+      const transcriptImageMatch = /^\/v1\/runs\/([^/]+)\/transcript\/images\/([^/]+)\/(\d+)$/.exec(path);
+      if (transcriptImageMatch && method === "GET") {
+        const runId = transcriptImageMatch[1] ?? "";
+        const messageId = decodeURIComponent(transcriptImageMatch[2] ?? "");
+        const index = Number(transcriptImageMatch[3]);
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        const image = findTranscriptImage(snapshotForRun(runId), messageId, index);
+        const body = image ? decodeTranscriptImageData(image.data) : null;
+        if (!image || !body) {
+          notFound(res);
+          return;
+        }
+        sendBytes(res, 200, body, image.mediaType || "application/octet-stream");
+        return;
+      }
+
       const transcriptMatch = /^\/v1\/runs\/([^/]+)\/transcript$/.exec(path);
       if (transcriptMatch && method === "GET") {
         const runId = transcriptMatch[1] ?? "";
@@ -2166,10 +2211,11 @@ export function createApiServer() {
         const before = url.searchParams.get("before");
         const limitParam = url.searchParams.get("limit");
         const full = snapshotForRun(runId);
-        const snapshot = pageTranscriptSnapshot(full, {
+        const paged = pageTranscriptSnapshot(full, {
           before,
           limit: includeEvents && !limitParam ? full.messages.length || 1 : limitParam ? Number(limitParam) : undefined,
         });
+        const snapshot = url.searchParams.get("images") === "href" ? slimTranscriptSnapshotImages(paged) : paged;
         send(res, 200, includeEvents ? { snapshot, events: eventsForRun(runId) } : { snapshot });
         return;
       }

@@ -243,8 +243,10 @@ export interface FollowUp {
 
 export interface ImageRef {
   mediaType: string;
-  /** Base64 payload or object-store key. */
+  /** Base64 payload or object-store key. Empty when the client should use `href`. */
   data: string;
+  /** Authenticated GET that returns the raw bytes. */
+  href?: string;
 }
 
 export interface CreateRunRequest {

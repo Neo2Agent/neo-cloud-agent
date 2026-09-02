@@ -106,7 +106,7 @@ export interface TranscriptMessage {
   blocks?: TranscriptBlock[];
   href?: string;
   mediaType?: string;
-  images?: Array<{ mediaType: string; data: string }>;
+  images?: Array<{ mediaType: string; data: string; href?: string }>;
   followUpId?: string;
   actorUserId?: string;
   actorEmail?: string;

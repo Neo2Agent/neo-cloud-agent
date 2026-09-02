@@ -718,3 +718,47 @@ export function pageTranscriptSnapshot(
     total: snapshot.total ?? snapshot.messages.length,
   };
 }
+
+/** List payload path so the phone does not JSON.parse a JPEG. */
+export function transcriptImagePath(runId: string, messageId: string, index: number): string {
+  return `/v1/runs/${encodeURIComponent(runId)}/transcript/images/${encodeURIComponent(messageId)}/${index}`;
+}
+
+export function slimTranscriptSnapshotImages(snapshot: TranscriptSnapshot): TranscriptSnapshot {
+  let changed = false;
+  const messages = snapshot.messages.map((message) => {
+    if (!message.images?.length) {
+      return message;
+    }
+    changed = true;
+    return {
+      ...message,
+      images: message.images.map((image, index) => ({
+        mediaType: image.mediaType,
+        data: "",
+        href: image.href || transcriptImagePath(snapshot.runId, message.id, index),
+      })),
+    };
+  });
+  return changed ? { ...snapshot, messages } : snapshot;
+}
+
+export function findTranscriptImage(
+  snapshot: TranscriptSnapshot,
+  messageId: string,
+  index: number,
+): { mediaType: string; data: string } | null {
+  if (!Number.isInteger(index) || index < 0) {
+    return null;
+  }
+  const image = snapshot.messages.find((item) => item.id === messageId)?.images?.[index];
+  if (!image || typeof image.data !== "string" || !image.data) {
+    return null;
+  }
+  return { mediaType: image.mediaType, data: image.data };
+}
+
+export function rawTranscriptImageData(data: string): string {
+  const trimmed = data.trim();
+  return trimmed.includes(",") ? trimmed.slice(trimmed.indexOf(",") + 1) : trimmed;
+}

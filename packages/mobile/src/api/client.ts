@@ -168,7 +168,7 @@ export class MobileClient {
   }
 
   transcript(id: string): Promise<TranscriptResponse> {
-    return this.request("GET", `/v1/runs/${id}/transcript`);
+    return this.request("GET", `/v1/runs/${id}/transcript?images=href`);
   }
 
   listEnvironments(): Promise<{ environments: Environment[] }> {
