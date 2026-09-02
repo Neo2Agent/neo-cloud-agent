@@ -1,6 +1,10 @@
-import { useState } from "react";
-import type { ContextUsageBucketId, ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
+import type {
+  ContextUsageBucket,
+  ContextUsageBucketId,
+  ContextUsageSnapshot,
+} from "@neo-cloud-agent/contracts/context-usage";
 import { formatTokenCount, layoutContextBar } from "@neo-cloud-agent/contracts/context-usage";
+import { IconExpand, IconX } from "../icons";
 
 const COLORS: Record<ContextUsageBucketId, string> = {
   system: "#9ca3af",
@@ -15,32 +19,54 @@ const COLORS: Record<ContextUsageBucketId, string> = {
   conversation: "#f97316",
 };
 
+const BAR_UNITS = 1000;
+
 type Props = {
   usage: ContextUsageSnapshot;
   open: boolean;
   onToggle: () => void;
+  /** Hand the breakdown to the stage; the popover stays a summary. */
+  onOpenDetail?: (bucketId?: string) => void;
 };
 
 function bucketColor(id: string): string {
   return COLORS[id as ContextUsageBucketId] ?? "#9ca3af";
 }
 
-/** Same 6px flex bar as before; widths come from the shared layout so a 0.3% fill stays a sliver. */
-function UsageBar({ usage }: { usage: ContextUsageSnapshot }) {
+function percentLabel(usage: ContextUsageSnapshot): string {
+  return usage.percent == null ? "窗口未知" : `${Math.max(0, Math.round(usage.percent))}% 已用`;
+}
+
+function totalLabel(usage: ContextUsageSnapshot): string {
+  return usage.contextWindow
+    ? `~${formatTokenCount(usage.tokens)} / ${formatTokenCount(usage.contextWindow)} Tokens`
+    : `~${formatTokenCount(usage.tokens)} Tokens`;
+}
+
+function share(tokens: number, total: number): string {
+  if (total <= 0) {
+    return "";
+  }
+  const value = (tokens / total) * 100;
+  return value >= 1 ? `${Math.round(value)}%` : "<1%";
+}
+
+/** Widths come from the shared layout so a 0.3% fill still shows a sliver. */
+function UsageBar({ usage, className }: { usage: ContextUsageSnapshot; className?: string }) {
   const layout = layoutContextBar({
-    width: 1000,
+    width: BAR_UNITS,
     tokens: usage.tokens,
     contextWindow: usage.contextWindow,
     buckets: usage.buckets,
   });
   return (
-    <div className="context-usage-bar" aria-hidden="true">
+    <div className={className ?? "context-usage-bar"} aria-hidden="true">
       {layout.slices.map((slice) => (
         <i
           key={slice.id}
           title={`${slice.label}  ${formatTokenCount(slice.tokens)}`}
           style={{
-            width: `${(slice.width / 1000) * 100}%`,
+            width: `${(slice.width / BAR_UNITS) * 100}%`,
             background: bucketColor(slice.id),
           }}
         />
@@ -49,12 +75,8 @@ function UsageBar({ usage }: { usage: ContextUsageSnapshot }) {
   );
 }
 
-export function ContextUsageControl({ usage, open, onToggle }: Props) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const percentLabel = usage.percent == null ? "用量" : `${Math.max(0, Math.round(usage.percent))}%`;
-  const total = usage.contextWindow
-    ? `~${formatTokenCount(usage.tokens)} / ${formatTokenCount(usage.contextWindow)} Tokens`
-    : `~${formatTokenCount(usage.tokens)} Tokens · 窗口未知`;
+export function ContextUsageControl({ usage, open, onToggle, onOpenDetail }: Props) {
+  const chip = usage.percent == null ? "用量" : `${Math.max(0, Math.round(usage.percent))}%`;
 
   return (
     <div className="context-usage">
@@ -66,7 +88,7 @@ export function ContextUsageControl({ usage, open, onToggle }: Props) {
         aria-controls="context-usage-pop"
         onClick={onToggle}
       >
-        {percentLabel}
+        {chip}
       </button>
       {open ? (
         <>
@@ -78,57 +100,155 @@ export function ContextUsageControl({ usage, open, onToggle }: Props) {
           />
           <div className="context-usage-pop" id="context-usage-pop" role="dialog" aria-label="上下文用量">
             <div className="context-usage-head">
-              <strong>上下文用量</strong>
-              <button type="button" className="ghost" aria-label="关闭" onClick={onToggle}>
-                ×
-              </button>
+              <span>上下文用量</span>
+              <span className="context-usage-actions">
+                {onOpenDetail ? (
+                  <button
+                    type="button"
+                    className="context-usage-icon"
+                    aria-label="打开明细"
+                    title="打开明细"
+                    onClick={() => onOpenDetail()}
+                  >
+                    <IconExpand size={14} />
+                  </button>
+                ) : null}
+                <button type="button" className="context-usage-icon" aria-label="关闭" onClick={onToggle}>
+                  <IconX size={14} />
+                </button>
+              </span>
             </div>
             <p className="context-usage-status">
-              <span>{usage.percent == null ? "未登记该模型的窗口" : `${Math.max(0, Math.round(usage.percent))}% 已用`}</span>
-              <span>{total}</span>
+              <span>{percentLabel(usage)}</span>
+              <span>{totalLabel(usage)}</span>
             </p>
             <UsageBar usage={usage} />
             <ul className="context-usage-list">
-              {usage.buckets.flatMap((bucket) => {
-                const kids = bucket.children ?? [];
-                const isOpen = Boolean(expanded[bucket.id]);
-                const parent = (
-                  <li
-                    key={bucket.id}
-                    aria-expanded={kids.length ? isOpen : undefined}
-                    onClick={
-                      kids.length
-                        ? () => setExpanded((current) => ({ ...current, [bucket.id]: !current[bucket.id] }))
-                        : undefined
-                    }
-                  >
-                    <span>
-                      <i style={{ background: bucketColor(bucket.id) }} />
-                      {bucket.label}
-                    </span>
-                    <span>{formatTokenCount(bucket.tokens)}</span>
-                  </li>
-                );
-                if (!isOpen || kids.length === 0) {
-                  return [parent];
-                }
-                return [
-                  parent,
-                  ...kids.map((child) => (
-                    <li key={`${bucket.id}:${child.id}`} className="is-child">
-                      <span>
-                        <i style={{ background: bucketColor(bucket.id) }} />
-                        {child.label}
-                      </span>
-                      <span>{formatTokenCount(child.tokens)}</span>
-                    </li>
-                  )),
-                ];
-              })}
+              {usage.buckets.map((bucket) => (
+                <li key={bucket.id}>
+                  <span className="context-usage-name">
+                    <i style={{ background: bucketColor(bucket.id) }} />
+                    {bucket.label}
+                  </span>
+                  {onOpenDetail && bucket.children?.length ? (
+                    <button
+                      type="button"
+                      className="context-usage-icon"
+                      aria-label={`查看${bucket.label}明细`}
+                      title={`查看${bucket.label}明细`}
+                      onClick={() => onOpenDetail(bucket.id)}
+                    >
+                      <IconExpand size={13} />
+                    </button>
+                  ) : null}
+                  <span className="context-usage-value">{formatTokenCount(bucket.tokens)}</span>
+                </li>
+              ))}
             </ul>
           </div>
         </>
       ) : null}
     </div>
+  );
+}
+
+function BucketCard({ bucket, total }: { bucket: ContextUsageBucket; total: number }) {
+  const children = bucket.children ?? [];
+  const color = bucketColor(bucket.id);
+  return (
+    <section className="context-card" id={`context-bucket-${bucket.id}`}>
+      <header>
+        <span className="context-usage-name">
+          <i style={{ background: color }} />
+          {bucket.label}
+        </span>
+        <span className="context-card-total">
+          {formatTokenCount(bucket.tokens)}
+          <em>{share(bucket.tokens, total)}</em>
+        </span>
+      </header>
+      {children.length > 0 ? (
+        <ul>
+          {children.map((child) => (
+            <li key={child.id}>
+              <span className="context-item-name">{child.label}</span>
+              <span className="context-item-meter" aria-hidden="true">
+                <i
+                  style={{
+                    width: `${bucket.tokens > 0 ? Math.min(100, (child.tokens / bucket.tokens) * 100) : 0}%`,
+                    background: color,
+                  }}
+                />
+              </span>
+              <span className="context-usage-value">{formatTokenCount(child.tokens)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="context-card-empty">没有更细的条目</p>
+      )}
+    </section>
+  );
+}
+
+/** Stage page for the breakdown, so the composer popover can stay small. */
+export function ContextUsagePanel({
+  usage,
+  focusBucketId,
+  onFocus,
+  onBack,
+}: {
+  usage: ContextUsageSnapshot;
+  focusBucketId?: string;
+  onFocus: (bucketId: string) => void;
+  onBack: () => void;
+}) {
+  const focused = usage.buckets.find((bucket) => bucket.id === focusBucketId);
+  const buckets = focused ? [focused] : usage.buckets;
+
+  return (
+    <section className="panel context-panel" aria-label="上下文用量明细">
+      <header className="context-panel-head">
+        <div>
+          <h2>上下文用量</h2>
+          <p>
+            {percentLabel(usage)} · {totalLabel(usage)}
+            {usage.model ? ` · ${usage.model}` : ""}
+          </p>
+        </div>
+        <button type="button" className="ghost" onClick={onBack}>
+          返回对话
+        </button>
+      </header>
+      <UsageBar usage={usage} className="context-usage-bar is-wide" />
+      <ul className="context-legend">
+        {usage.buckets.map((bucket) => (
+          <li key={bucket.id}>
+            <button
+              type="button"
+              aria-pressed={bucket.id === focusBucketId}
+              onClick={() => onFocus(bucket.id === focusBucketId ? "" : bucket.id)}
+            >
+              <i style={{ background: bucketColor(bucket.id) }} />
+              {bucket.label}
+              <b>{formatTokenCount(bucket.tokens)}</b>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {focused ? (
+        <p className="context-panel-filter">
+          只看「{focused.label}」
+          <button type="button" className="ghost" onClick={() => onFocus("")}>
+            显示全部
+          </button>
+        </p>
+      ) : null}
+      <div className="context-cards">
+        {buckets.map((bucket) => (
+          <BucketCard key={bucket.id} bucket={bucket} total={usage.tokens} />
+        ))}
+      </div>
+    </section>
   );
 }

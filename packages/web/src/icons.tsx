@@ -21,6 +21,7 @@ import {
   Globe,
   LayoutGrid,
   LoaderCircle,
+  Maximize2,
   Menu,
   Mic,
   MessageSquare,
@@ -213,6 +214,10 @@ export function IconPr(props: IconProps) {
 
 export function IconBack(props: IconProps) {
   return icon(ChevronLeft, props);
+}
+
+export function IconExpand(props: IconProps) {
+  return icon(Maximize2, props);
 }
 
 function toolGlyph(name: string) {

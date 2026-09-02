@@ -2698,10 +2698,10 @@ button.composer-mic.is-listening,
   right: 0;
   left: auto;
   bottom: calc(100% + 10px);
-  width: min(360px, calc(100vw - 48px));
-  padding: 12px 14px;
+  width: min(380px, calc(100vw - 48px));
+  padding: 10px 10px 8px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--panel);
   box-shadow: var(--shadow);
   z-index: 12;
@@ -2712,24 +2712,50 @@ button.composer-mic.is-listening,
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  padding: 0 4px;
+  color: var(--ink);
+  font-size: 13px;
 }
 
-.context-usage-head strong {
-  font-size: 14px;
+.context-usage-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.context-usage-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.context-usage-icon:hover {
+  background: var(--bg-2);
+  color: var(--ink);
 }
 
 .context-usage-status {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin: 8px 0 10px;
+  margin: 6px 0 6px;
+  padding: 0 4px;
   color: var(--muted);
   font-size: 12px;
 }
 
 .context-usage-bar {
   display: flex;
-  height: 6px;
+  height: 4px;
+  margin: 0 4px;
   border-radius: 99px;
   overflow: hidden;
   background: #eef0f3;
@@ -2742,37 +2768,213 @@ button.composer-mic.is-listening,
 
 .context-usage-list {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 6px 0 0;
   padding: 0;
 }
 
 .context-usage-list li {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 0;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 6px;
   font-size: 13px;
 }
 
-.context-usage-list li[aria-expanded] {
-  cursor: pointer;
+.context-usage-list li:hover {
+  background: var(--bg-2);
 }
 
-.context-usage-list li.is-child {
-  padding-left: 20px;
-  color: var(--muted);
-}
-
-.context-usage-list span {
+.context-usage-name {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-usage-value {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .context-usage-list i {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.context-usage-list .context-usage-icon {
+  opacity: 0;
+}
+
+.context-usage-list li:hover .context-usage-icon,
+.context-usage-list .context-usage-icon:focus-visible {
+  opacity: 1;
+}
+
+.context-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+  overflow: auto;
+}
+
+.context-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.context-panel-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.context-panel-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.context-usage-bar.is-wide {
+  height: 10px;
+  margin: 0;
+  border-radius: 6px;
+}
+
+.context-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.context-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.context-legend button[aria-pressed="true"] {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.context-legend i {
   width: 8px;
   height: 8px;
   border-radius: 2px;
+}
+
+.context-legend b {
+  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-panel-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.context-cards {
+  display: grid;
+  gap: 12px;
+  /* auto-fit so a single focused card fills the row instead of hugging 280px. */
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.context-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 12px;
+}
+
+.context-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.context-card-total {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-card-total em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.context-card ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.context-card li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.context-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-item-meter {
+  height: 4px;
+  border-radius: 99px;
+  background: #eef0f3;
+  overflow: hidden;
+}
+
+.context-item-meter i {
+  display: block;
+  height: 100%;
+}
+
+.context-card-empty {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .hint {
@@ -4369,6 +4571,16 @@ button.composer-mic.is-listening,
 
   .context-usage-status {
     flex-wrap: wrap;
+  }
+
+  /* No hover on touch, so the row's open button has to stay visible. */
+  .context-usage-list .context-usage-icon {
+    opacity: 1;
+  }
+
+  .context-usage-icon {
+    width: 28px;
+    height: 28px;
   }
 }
 

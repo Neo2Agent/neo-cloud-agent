@@ -28,6 +28,7 @@ type Props = {
   canStop?: boolean;
   activity?: string;
   contextUsage?: ContextUsageSnapshot;
+  onOpenContextDetail?: (bucketId?: string) => void;
   target: DeskTarget;
   canRunLocal?: boolean;
   folder?: string;
@@ -73,6 +74,7 @@ export function Composer({
   canStop = false,
   activity,
   contextUsage,
+  onOpenContextDetail,
   target,
   canRunLocal = false,
   folder,
@@ -407,7 +409,19 @@ export function Composer({
           </div>
           <div className="composer-send-group">
             {contextUsage ? (
-              <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
+              <ContextUsageControl
+                usage={contextUsage}
+                open={usageOpen}
+                onToggle={() => setUsageOpen((open) => !open)}
+                onOpenDetail={
+                  onOpenContextDetail
+                    ? (bucketId) => {
+                        setUsageOpen(false);
+                        onOpenContextDetail(bucketId);
+                      }
+                    : undefined
+                }
+              />
             ) : null}
             <p className="hint" id="vm-status" data-busy={busy || listening || finishing ? "true" : "false"}>
               {busy || listening || finishing ? <span className="pulse-dot" aria-hidden="true" /> : null}
