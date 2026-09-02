@@ -1747,10 +1747,16 @@ export function App() {
               <span className="rail-icon">
                 <IconMore />
               </span>
-              更多
+              <span className="rail-more-copy">
+                <span>更多</span>
+                {nav === "experts" ? <em>专家</em> : null}
+                {nav === "skills" ? <em>技能</em> : null}
+                {nav === "memories" ? <em>记忆</em> : null}
+              </span>
             </button>
             <div className="rail-more-pop" role="menu" aria-label="个性化">
               <div className="rail-more-pop-card">
+                <p className="rail-more-pop-title">个性化</p>
                 <button
                   type="button"
                   role="menuitem"
@@ -1762,8 +1768,13 @@ export function App() {
                     void refreshExperts(activeProject?.id);
                   }}
                 >
-                  <IconExperts size={15} />
-                  Experts
+                  <span className="rail-more-ico">
+                    <IconExperts size={15} />
+                  </span>
+                  <span>
+                    <strong>专家</strong>
+                    <small>角色和专家团</small>
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -1771,8 +1782,13 @@ export function App() {
                   className={nav === "skills" ? "on" : undefined}
                   onClick={() => openSkills()}
                 >
-                  <IconSkills size={15} />
-                  Skills
+                  <span className="rail-more-ico">
+                    <IconSkills size={15} />
+                  </span>
+                  <span>
+                    <strong>技能</strong>
+                    <small>安装后写进工作区</small>
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -1780,8 +1796,13 @@ export function App() {
                   className={nav === "memories" ? "on" : undefined}
                   onClick={() => openMemories()}
                 >
-                  <IconMemory size={15} />
-                  Memories
+                  <span className="rail-more-ico">
+                    <IconMemory size={15} />
+                  </span>
+                  <span>
+                    <strong>记忆</strong>
+                    <small>偏好和长期事实</small>
+                  </span>
                 </button>
               </div>
             </div>
