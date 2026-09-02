@@ -133,8 +133,9 @@ iOS / Android / PWA
 - 技能启停：`POST|DELETE /v1/plugins/:id/install`、`POST …/enable`
 - 空态 Recipe 与专家团：`BUNDLED_RECIPES` 预填 `prompt` / `expertId` / `expertTeamId` / `pluginIds`
 - 列表多选归档、删除已归档；长会话「加载更早」（`?limit=&before=`）
+- 图片附件：走现成的 `images[]`，服务端零改动。两个壳都在发之前把图**归一化成 JPEG 并把长边压到 1600**——SDK 54 的 picker 默认 `Passthrough`，iPhone 取出来是几 MB 的 HEIC，而 worker 的扩展名映射只认 png/webp/gif、`mediaType` 又原样当 vision mime 传给模型，不归一化会同时错在格式和体积上。实验室用 canvas，RN 用 `expo-image-manipulator`
 
-**仍后置：** 相册 / 相机图片（`images[]`）、Diff 摘要、环境 / 快照选择、槽位占用提示（`GET /v1/vms` 客户端已封装，未做产品面）。
+**仍后置：** Diff 摘要、环境 / 快照选择、槽位占用提示（`GET /v1/vms` 客户端已封装，未做产品面）。
 
 ### P2 — 和 Web 对齐的管理面
 
