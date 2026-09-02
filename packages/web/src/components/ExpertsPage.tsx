@@ -9,6 +9,7 @@ import {
 import { api, readJson } from "../api";
 import { clampPage, filterByQuery, paginate, snippet } from "../catalog.js";
 import { IconBack } from "../icons.js";
+import { useConfirm } from "../feedback.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
 
 type Props = {
@@ -49,6 +50,7 @@ export function ExpertsPage({ token, userId, selectedId, projectId, onOpenExpert
   const [tab, setTab] = useState<ExpertTab>("center");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const confirm = useConfirm();
 
   const selected = experts.find((item) => item.id === selectedId || item.slug === selectedId) ?? null;
   const mine = useMemo(() => experts.filter((item) => item.visibility === "user"), [experts]);
@@ -154,16 +156,24 @@ export function ExpertsPage({ token, userId, selectedId, projectId, onOpenExpert
 
   const remove = () => {
     if (!selected || busy) return;
-    setBusy(true);
-    setError("");
-    void api(token, `/v1/experts/${selected.id}`, { method: "DELETE" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "删除失败");
-        onOpenExpert(null);
-        await refresh();
-      })
-      .catch((item) => setError(item instanceof Error ? item.message : "删除失败"))
-      .finally(() => setBusy(false));
+    void confirm({
+      title: "删除这个专家？",
+      message: "删除后不能恢复。已开的对话不受影响。",
+      confirmLabel: "删除",
+      danger: true,
+    }).then((ok) => {
+      if (!ok) return;
+      setBusy(true);
+      setError("");
+      void api(token, `/v1/experts/${selected.id}`, { method: "DELETE" })
+        .then(async (res) => {
+          if (!res.ok) throw new Error((await readJson<{ error?: string }>(res)).error || "删除失败");
+          onOpenExpert(null);
+          await refresh();
+        })
+        .catch((item) => setError(item instanceof Error ? item.message : "删除失败"))
+        .finally(() => setBusy(false));
+    });
   };
 
   if (selected) {
@@ -243,7 +253,7 @@ export function ExpertsPage({ token, userId, selectedId, projectId, onOpenExpert
               <button className="proj-add" type="submit" disabled={busy}>
                 保存
               </button>
-              <button className="ghost" type="button" disabled={busy} onClick={remove}>
+              <button className="ghost danger" type="button" disabled={busy} onClick={remove}>
                 删除
               </button>
             </div>
@@ -329,7 +339,7 @@ export function ExpertsPage({ token, userId, selectedId, projectId, onOpenExpert
                 meta={item.memberSlugs.length ? `${item.memberSlugs.length} 位成员` : "团长编排"}
                 example={item.workflows?.[0]?.name}
                 actions={
-                  <button type="button" className="ghost" onClick={() => onSummon({ expertTeamId: item.id, name: item.name })}>
+                  <button type="button" className="quiet-btn primary" onClick={() => onSummon({ expertTeamId: item.id, name: item.name })}>
                     召唤
                   </button>
                 }
@@ -351,7 +361,7 @@ export function ExpertsPage({ token, userId, selectedId, projectId, onOpenExpert
                 example={item.examplePrompts?.[0] ? snippet(item.examplePrompts[0], 36) : undefined}
                 onOpen={() => onOpenExpert(item.id)}
                 actions={
-                  <button type="button" className="ghost" onClick={() => onSummon({ expertId: item.id, name: item.name })}>
+                  <button type="button" className="quiet-btn primary" onClick={() => onSummon({ expertId: item.id, name: item.name })}>
                     召唤
                   </button>
                 }

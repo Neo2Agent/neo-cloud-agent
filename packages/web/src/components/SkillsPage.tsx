@@ -104,7 +104,7 @@ export function SkillsPage({ token, selectedId, projectId, onOpenPlugin, onUse }
             {selected.installed && selected.installScope ? (
               <button
                 type="button"
-                className="ghost"
+                className="ghost danger"
                 disabled={busy}
                 onClick={() => void act(`/v1/plugins/${selected.id}/install`, { scope: selected.installScope }, "DELETE")}
               >
@@ -143,6 +143,13 @@ export function SkillsPage({ token, selectedId, projectId, onOpenPlugin, onUse }
         <CatalogEmpty
           title={pool.length === 0 ? (tab === "installed" ? "还没有安装技能" : "目录是空的") : "没有匹配的技能"}
           hint={pool.length === 0 ? (tab === "installed" ? "到官方目录里挑一个装上。" : "控制面还没放出技能包。") : "换个关键词再试试。"}
+          action={
+            tab === "installed" && pool.length === 0 ? (
+              <button type="button" className="proj-add" onClick={() => setTab("catalog")}>
+                去官方目录
+              </button>
+            ) : null
+          }
         />
       ) : (
         <>
@@ -158,7 +165,7 @@ export function SkillsPage({ token, selectedId, projectId, onOpenPlugin, onUse }
                 actions={
                   <>
                     {!item.installed ? (
-                      <button type="button" className="ghost" disabled={busy} onClick={() => void act(`/v1/plugins/${item.id}/install`, { scope: "user" })}>
+                      <button type="button" className="quiet-btn primary" disabled={busy} onClick={() => void act(`/v1/plugins/${item.id}/install`, { scope: "user" })}>
                         安装
                       </button>
                     ) : (

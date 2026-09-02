@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
-import { IconAutomations, IconClose, IconExperts, IconProjects, IconSkills, IconStar, IconTrash } from "../icons";
+import { IconAutomations, IconClose, IconExperts, IconPlus, IconProjects, IconSkills, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "../turn";
@@ -211,7 +211,7 @@ export function Sidebar({
       ) : null}
       <button className="new-chat" id="new-chat" type="button" onClick={onNewChat}>
         <span className="new-chat-plus" aria-hidden="true">
-          +
+          <IconPlus size={14} />
         </span>
         {buddy ? "新建任务" : "新对话"}
       </button>

@@ -3,6 +3,7 @@ import { api, readJson } from "../api";
 import { clampPage, paginate, snippet } from "../catalog.js";
 import { IconBack } from "../icons.js";
 import { filterMemories, memoryHint, type MemoryRow } from "../memory";
+import { useConfirm } from "../feedback.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogToolbar } from "./Catalog.js";
 
 type Props = {
@@ -19,6 +20,7 @@ export function MemoriesPage({ token, onBack }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const confirm = useConfirm();
   const filtered = useMemo(() => filterMemories(items, query), [items, query]);
   const listPage = clampPage(page, filtered.length);
   const visible = paginate(filtered, listPage);
@@ -63,8 +65,18 @@ export function MemoriesPage({ token, onBack }: Props) {
       .finally(() => setBusy(false));
   };
 
-  const remove = (id: string) => {
-    if (busy || !token || !window.confirm("删除这条记忆？")) return;
+  const remove = async (id: string) => {
+    if (busy || !token) return;
+    if (
+      !(await confirm({
+        title: "删除这条记忆？",
+        message: "删掉后跨对话不会再带上它。",
+        confirmLabel: "删除",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
     setBusy(true);
     void (async () => {
       const body = await readJson<{ error?: string }>(
@@ -143,7 +155,7 @@ export function MemoriesPage({ token, onBack }: Props) {
                 description={item.text.length > 72 ? item.text : undefined}
                 initial="记"
                 actions={
-                  <button type="button" className="ghost" disabled={busy} onClick={() => remove(item.id)}>
+                  <button type="button" className="ghost danger" disabled={busy} onClick={() => void remove(item.id)}>
                     删除
                   </button>
                 }
