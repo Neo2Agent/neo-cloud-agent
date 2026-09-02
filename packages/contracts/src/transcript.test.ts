@@ -11,6 +11,7 @@ import {
   slimTranscriptSnapshotImages,
   findTranscriptImage,
   rawTranscriptImageData,
+  transcriptBodyNeeded,
   transcriptImagePath,
   sortRunEvents,
   transcriptHasUnsettledWork,
@@ -572,6 +573,13 @@ test("user bubbles keep follow-up actor metadata and stay hidden while queued", 
   assert.equal(user?.actorEmail, "ping");
   assert.equal(displayTranscriptMessages(snapshot.messages, { hideFollowUpIds: ["fu-b"] }).length, 0);
   assert.equal(displayTranscriptMessages(snapshot.messages, { hideFollowUpIds: ["other"] }).length, 1);
+});
+
+test("transcriptBodyNeeded skips the body until the run reports a newer event", () => {
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: "e9" }), false);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: "e10" }), true);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: null, runLastEventId: "e1" }), true);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: null }), true);
 });
 
 test("slimTranscriptSnapshotImages drops inline bytes and points at the image GET", () => {

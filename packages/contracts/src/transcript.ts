@@ -719,6 +719,22 @@ export function pageTranscriptSnapshot(
   };
 }
 
+/**
+ * The event stream went quiet, so a client pays for the transcript body only
+ * when the run produced a new event. Comparing ids also covers token deltas,
+ * which never bump `updatedAt`. A server that reports no cursor keeps the old
+ * always-refetch behaviour.
+ */
+export function transcriptBodyNeeded(input: {
+  appliedEventId?: string | null;
+  runLastEventId?: string | null;
+}): boolean {
+  if (!input.runLastEventId) {
+    return true;
+  }
+  return input.runLastEventId !== (input.appliedEventId ?? null);
+}
+
 /** Where a chat photo is served, so the list payload never carries a JPEG. */
 export function transcriptImagePath(runId: string, messageId: string, index: number): string {
   return `/v1/runs/${encodeURIComponent(runId)}/transcript/images/${encodeURIComponent(messageId)}/${index}`;

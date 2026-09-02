@@ -8,17 +8,13 @@ export type PiImageContent = {
   mimeType: string;
 };
 
-export function rawImageData(data: string): string {
-  return rawTranscriptImageData(data);
-}
-
 export function toPiImageContent(images?: ImageRef[]): PiImageContent[] {
   if (!images?.length) {
     return [];
   }
   return images.slice(0, 4).map((image) => ({
     type: "image" as const,
-    data: rawImageData(image.data),
+    data: rawTranscriptImageData(image.data),
     mimeType: image.mediaType || "image/png",
   }));
 }
@@ -56,7 +52,7 @@ export function materializeInboundImages(
             : "jpg";
     const name = `paste-${index + 1}.${ext}`;
     const dest = path.join(dir, name);
-    writeFileSync(dest, Buffer.from(rawImageData(image.data), "base64"));
+    writeFileSync(dest, Buffer.from(rawTranscriptImageData(image.data), "base64"));
     files.push(path.posix.join(relativeDir, name));
   });
   return {

@@ -2,7 +2,7 @@
  * Vite :5175 visual lab. Island chrome + the same /v1 client as Expo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
@@ -29,7 +29,6 @@ import {
   pendingUserMessage,
   sendFailureMessage,
   shouldRefreshTranscript,
-  transcriptBodyNeeded,
   shouldReplaceLiveTranscript,
   shouldShowThinking,
   thinkingHint,

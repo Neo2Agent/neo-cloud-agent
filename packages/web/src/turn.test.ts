@@ -11,7 +11,6 @@ import {
   pendingUserArrived,
   QUEUED_SLOT_NOTICE,
   shouldRefreshTranscript,
-  transcriptBodyNeeded,
   shouldShowBuddyHome,
   shouldShowThinking,
   statusFromEventKind,
@@ -105,13 +104,6 @@ test("shouldRefreshTranscript polls while queued or when SSE is quiet", () => {
   assert.equal(shouldRefreshTranscript({ lastSseAt: Date.now(), status: "NOT_YET_STARTED" }), true);
   assert.equal(shouldRefreshTranscript({ lastSseAt: Date.now(), status: "RUNNING" }), false);
   assert.equal(shouldRefreshTranscript({ lastSseAt: 0, now: 4000, status: "RUNNING" }), true);
-});
-
-test("transcriptBodyNeeded skips the body until the run reports a newer event", () => {
-  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: "e9" }), false);
-  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: "e10" }), true);
-  assert.equal(transcriptBodyNeeded({ appliedEventId: null, runLastEventId: "e1" }), true);
-  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: null }), true);
 });
 
 test("withQueuedNotice inserts the slot-wait line once", () => {

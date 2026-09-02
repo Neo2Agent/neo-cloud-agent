@@ -167,21 +167,6 @@ export function shouldRefreshTranscript(input: {
   return (input.now ?? Date.now()) - input.lastSseAt >= (input.staleMs ?? 3000);
 }
 
-/**
- * SSE went quiet, so this poll pays for the transcript body only when the run
- * produced a new event. Comparing ids also covers token deltas, which never
- * bump `updatedAt`. A server that reports no cursor keeps the old behaviour.
- */
-export function transcriptBodyNeeded(input: {
-  appliedEventId?: string | null;
-  runLastEventId?: string | null;
-}): boolean {
-  if (!input.runLastEventId) {
-    return true;
-  }
-  return input.runLastEventId !== (input.appliedEventId ?? null);
-}
-
 /** While SSE is painting tokens, a GET snapshot must not replace the live transcript. */
 export function shouldReplaceLiveTranscript(input: {
   liveSse: boolean;

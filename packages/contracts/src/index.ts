@@ -115,7 +115,7 @@ export {
   slimTranscriptSnapshotImages,
   findTranscriptImage,
   rawTranscriptImageData,
-  transcriptImagePath,
+  transcriptBodyNeeded,
   settleTranscriptMessages,
   transcriptHasUnsettledWork,
   sortRunEvents,

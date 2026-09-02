@@ -4,6 +4,7 @@ import {
   DEFAULT_TRANSCRIPT_PAGE,
   displayTranscriptMessages,
   settleTranscriptMessages,
+  transcriptBodyNeeded,
 } from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
@@ -60,7 +61,6 @@ import {
   pendingUserArrived,
   runningToolName,
   shouldRefreshTranscript,
-  transcriptBodyNeeded,
   shouldShowBuddyHome,
   statusFromEventKind,
   turnStatusLabel,

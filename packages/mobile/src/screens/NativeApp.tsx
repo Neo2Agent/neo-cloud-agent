@@ -6,6 +6,7 @@ import type { Expert, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
+import { transcriptBodyNeeded } from "@neo-cloud-agent/contracts/transcript";
 import { MobileApiError, MobileClient } from "../api/client";
 import type { CredentialStore } from "../api/credentials";
 import { nextEnvId } from "../api/shell";
@@ -25,7 +26,6 @@ import {
   pendingUserMessage,
   sendFailureMessage,
   shouldRefreshTranscript,
-  transcriptBodyNeeded,
   shouldReplaceLiveTranscript,
   shouldShowThinking,
   thinkingHint,
