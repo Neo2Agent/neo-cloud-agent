@@ -200,7 +200,16 @@ export type {
   SubagentStep,
   SubagentTask,
 } from "./subagent.js";
-export type { ContextUsageBucket, ContextUsageBucketId, ContextUsageSnapshot } from "./context-usage.js";
+export type {
+  ContextBarBucket,
+  ContextBarLayout,
+  ContextBarSlice,
+  ContextUsageBucket,
+  ContextUsageBucketId,
+  ContextUsageItem,
+  ContextUsageItemDraft,
+  ContextUsageSnapshot,
+} from "./context-usage.js";
 export {
   CONTEXT_BUCKET_LABELS,
   CONTEXT_BUCKET_ORDER,
@@ -209,6 +218,8 @@ export {
   contextUsageToData,
   estimateTokensFromText,
   formatTokenCount,
+  hitTestBar,
+  layoutContextBar,
   overlayContextUsage,
   parseContextUsage,
 } from "./context-usage.js";

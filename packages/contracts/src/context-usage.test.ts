@@ -183,6 +183,31 @@ test("an unknown bucket id is dropped without disturbing the total", () => {
   assert.deepEqual(parsed?.buckets.map((bucket) => bucket.id), ["system"]);
 });
 
+test("child items scale to the parent and survive parse", () => {
+  const usage = assembleContextUsage({
+    toolsText: "read\nwrite\nbash",
+    toolItems: [
+      { id: "read", label: "read", text: "read schema ".repeat(20) },
+      { id: "write", label: "write", text: "write schema ".repeat(8) },
+    ],
+  });
+  const tools = usage.buckets.find((bucket) => bucket.id === "tools");
+  assert.ok(tools?.children?.length);
+  assert.equal(
+    tools!.children!.reduce((sum, item) => sum + item.tokens, 0),
+    tools!.tokens,
+  );
+  const parsed = parseContextUsage({
+    tokens: usage.tokens,
+    contextWindow: 1000,
+    buckets: usage.buckets,
+  });
+  assert.deepEqual(
+    parsed?.buckets.find((bucket) => bucket.id === "tools")?.children?.map((item) => item.id),
+    tools!.children!.map((item) => item.id),
+  );
+});
+
 test("formatTokenCount uses K and M", () => {
   assert.equal(formatTokenCount(283), "283");
   assert.equal(formatTokenCount(1900), "1.9K");

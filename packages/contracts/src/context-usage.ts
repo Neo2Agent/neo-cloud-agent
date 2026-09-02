@@ -15,11 +15,29 @@ export type ContextUsageBucketId =
   | "summarized"
   | "conversation";
 
+/** One skill, tool, or rule file inside a parent bucket. */
+export interface ContextUsageItem {
+  id: string;
+  label: string;
+  tokens: number;
+}
+
 export interface ContextUsageBucket {
   id: ContextUsageBucketId;
   label: string;
   tokens: number;
+  children?: ContextUsageItem[];
 }
+
+export type ContextUsageItemDraft = {
+  id: string;
+  label: string;
+  text?: string;
+  tokens?: number;
+};
+
+export { hitTestBar, layoutContextBar } from "./context-bar.js";
+export type { ContextBarBucket, ContextBarLayout, ContextBarSlice } from "./context-bar.js";
 
 export interface ContextUsageSnapshot {
   tokens: number;
@@ -112,6 +130,78 @@ function scaleToReported(
   return scaled;
 }
 
+function draftTokens(draft: ContextUsageItemDraft): number {
+  if (typeof draft.tokens === "number" && Number.isFinite(draft.tokens) && draft.tokens > 0) {
+    return Math.round(draft.tokens);
+  }
+  return estimateTokensFromText(draft.text ?? "");
+}
+
+function scaleItems(items: ContextUsageItem[], parentTokens: number): ContextUsageItem[] {
+  const visible = items.filter((item) => item.tokens > 0);
+  if (visible.length === 0 || parentTokens <= 0) {
+    return [];
+  }
+  const sum = visible.reduce((acc, item) => acc + item.tokens, 0);
+  if (sum <= 0) {
+    return [];
+  }
+  const scaled = visible.map((item) => ({
+    ...item,
+    tokens: Math.round((item.tokens / sum) * parentTokens),
+  }));
+  let drift = scaled.reduce((acc, item) => acc + item.tokens, 0) - parentTokens;
+  let largest = 0;
+  for (let i = 1; i < scaled.length; i += 1) {
+    if (scaled[i].tokens > scaled[largest].tokens) {
+      largest = i;
+    }
+  }
+  scaled[largest] = { ...scaled[largest], tokens: Math.max(0, scaled[largest].tokens - drift) };
+  return scaled.filter((item) => item.tokens > 0);
+}
+
+function itemsFor(
+  drafts: ContextUsageItemDraft[] | undefined,
+  parentTokens: number,
+): ContextUsageItem[] | undefined {
+  if (!drafts?.length) {
+    return undefined;
+  }
+  const estimated = drafts
+    .map((draft) => ({
+      id: draft.id,
+      label: draft.label,
+      tokens: draftTokens(draft),
+    }))
+    .filter((item) => item.tokens > 0);
+  if (estimated.length === 0) {
+    return undefined;
+  }
+  return scaleItems(estimated, parentTokens);
+}
+
+function parseItems(raw: unknown): ContextUsageItem[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const items: ContextUsageItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const rec = entry as Record<string, unknown>;
+    const id = typeof rec.id === "string" ? rec.id : "";
+    const label = typeof rec.label === "string" ? rec.label : id;
+    const tokens = Number(rec.tokens);
+    if (!id || !Number.isFinite(tokens) || tokens <= 0) {
+      continue;
+    }
+    items.push({ id, label, tokens: Math.round(tokens) });
+  }
+  return items.length ? items : undefined;
+}
+
 export function assembleContextUsage(input: {
   model?: string;
   contextWindow?: number | null;
@@ -127,6 +217,11 @@ export function assembleContextUsage(input: {
   mcpText?: string;
   summarizedText?: string;
   conversationText?: string;
+  ruleItems?: ContextUsageItemDraft[];
+  skillItems?: ContextUsageItemDraft[];
+  toolItems?: ContextUsageItemDraft[];
+  cloudToolItems?: ContextUsageItemDraft[];
+  mcpItems?: ContextUsageItemDraft[];
   source?: "session" | "estimate";
 }): ContextUsageSnapshot {
   const catalogWindow = resolveModelLimits(input.model)?.contextWindow ?? null;
@@ -175,10 +270,19 @@ export function assembleContextUsage(input: {
   const tokens = hasReported ? Math.round(reported) : estimatedTotal;
   const resolved = hasReported ? scaleToReported(estimates, estimatedTotal, tokens) : estimates;
 
+  const childrenById: Partial<Record<ContextUsageBucketId, ContextUsageItem[] | undefined>> = {
+    rules: itemsFor(input.ruleItems, resolved.rules),
+    skills: itemsFor(input.skillItems, resolved.skills),
+    tools: itemsFor(input.toolItems, resolved.tools),
+    cloudTools: itemsFor(input.cloudToolItems, resolved.cloudTools),
+    mcp: itemsFor(input.mcpItems, resolved.mcp),
+  };
+
   const buckets: ContextUsageBucket[] = CONTEXT_BUCKET_ORDER.map((id) => ({
     id,
     label: CONTEXT_BUCKET_LABELS[id],
     tokens: resolved[id],
+    children: childrenById[id],
   })).filter((bucket) => bucket.tokens > 0);
 
   return {
@@ -199,12 +303,15 @@ export function overlayContextUsage(
   if (!add) {
     return base;
   }
-  const buckets = base.buckets.map((bucket) => ({ ...bucket }));
+  const buckets = base.buckets.map((bucket) => ({
+    ...bucket,
+    children: bucket.children?.map((item) => ({ ...item })),
+  }));
   const conversation = buckets.find((bucket) => bucket.id === "conversation");
   if (conversation) {
     conversation.tokens += add;
   } else {
-    buckets.push({ id: "conversation", label: CONTEXT_BUCKET_LABELS.conversation, tokens: add });
+    buckets.push({ id: "conversation", label: CONTEXT_BUCKET_LABELS.conversation, tokens: add, children: undefined });
   }
   const tokens = base.tokens + add;
   return {
@@ -215,12 +322,25 @@ export function overlayContextUsage(
   };
 }
 
+function linesToItems(text: string): ContextUsageItemDraft[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const name = line.split(":")[0]?.trim() || line;
+      return { id: name, label: name, text: line };
+    });
+}
+
 export function baselineContextUsage(model?: string | null): ContextUsageSnapshot {
   return assembleContextUsage({
     model: model ?? undefined,
     systemText: CLOUD_SYSTEM_PROMPT,
     toolsText: BASELINE_BUILTIN_TOOL_TEXT,
     cloudToolsText: BASELINE_CLOUD_TOOL_TEXT,
+    toolItems: linesToItems(BASELINE_BUILTIN_TOOL_TEXT),
+    cloudToolItems: linesToItems(BASELINE_CLOUD_TOOL_TEXT),
   });
 }
 
@@ -255,6 +375,7 @@ export function parseContextUsage(data?: Record<string, unknown> | null): Contex
         id: id as ContextUsageBucketId,
         label: typeof rec.label === "string" ? rec.label : CONTEXT_BUCKET_LABELS[id as ContextUsageBucketId],
         tokens: Math.max(0, Math.round(bucketTokens)),
+        children: parseItems(rec.children),
       });
     }
     buckets.sort((a, b) => CONTEXT_BUCKET_ORDER.indexOf(a.id) - CONTEXT_BUCKET_ORDER.indexOf(b.id));

@@ -127,6 +127,44 @@ test("a broken resource loader degrades into system instead of throwing", () => 
   assert.ok((usage.buckets.find((bucket) => bucket.id === "system")?.tokens ?? 0) > 0);
 });
 
+test("each tool and skill is listed under its parent bucket", () => {
+  const session = stubSession({
+    tools: [
+      { name: "read", description: "read a file" },
+      { name: "bash", description: "run a command" },
+      { name: "neo_browse", description: "fetch a page" },
+    ],
+    systemPrompt: "s".repeat(2000),
+  });
+  const usage = inspectSessionContext(session, {
+    modelId: "deepseek-v4-flash",
+    contextSources: emptySources({
+      resourceLoader: {
+        getAgentsFiles: () => ({ agentsFiles: [{ path: "/w/AGENTS.md", content: "x".repeat(600) }] }),
+        getSkills: () => ({
+          skills: [
+            {
+              name: "deploy",
+              description: "Ship the app",
+              filePath: "/w/.cursor/skills/deploy/SKILL.md",
+              baseDir: "/w/.cursor/skills/deploy",
+              disableModelInvocation: false,
+            },
+          ],
+        }),
+      } as unknown as SessionContextSources["resourceLoader"],
+    }),
+  });
+  const tools = usage.buckets.find((bucket) => bucket.id === "tools");
+  const cloud = usage.buckets.find((bucket) => bucket.id === "cloudTools");
+  const skills = usage.buckets.find((bucket) => bucket.id === "skills");
+  const rules = usage.buckets.find((bucket) => bucket.id === "rules");
+  assert.deepEqual(tools?.children?.map((item) => item.id).sort(), ["bash", "read"]);
+  assert.deepEqual(cloud?.children?.map((item) => item.id), ["neo_browse"]);
+  assert.deepEqual(skills?.children?.map((item) => item.id), ["deploy"]);
+  assert.ok(rules?.children?.some((item) => item.label === "AGENTS.md"));
+});
+
 test("context usage still works before any session sources exist", () => {
   const session = stubSession({ tools: [{ name: "read", description: "read a file" }] });
   const usage = inspectSessionContext(session, { modelId: "deepseek-v4-flash" });
