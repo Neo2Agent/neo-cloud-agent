@@ -392,6 +392,9 @@ export async function recoverLiveWorkers(): Promise<void> {
           updatedAt: now(),
         });
         publish(event(run.id, "run.running", "Reattached existing worker"));
+        // Adopt keeps the process but does not replay inbox. A prompt already
+        // taken before the restart sits on activeTurn with an empty inbound.
+        requeueActiveTurn(run);
         flushRun(run.id);
         continue;
       }

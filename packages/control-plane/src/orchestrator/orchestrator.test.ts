@@ -193,6 +193,24 @@ test("live runs are reattached after a control-plane reload", async () => {
   assert.equal(expireStaleWorkers(Date.now() + 60_000).includes(run.id), false);
 });
 
+test("reattaching a live run puts the unfinished prompt back on the inbox", async () => {
+  const run = await createRun({
+    prompt: "see the photo",
+    repoUrls: ["fixtures/toy-repo"],
+    images: [{ mediaType: "image/jpeg", data: "ZmFrZQ" }],
+  });
+  const taken = takeInbound(run.id);
+  assert.equal(taken[0]?.type, "prompt");
+  assert.equal(taken[0] && "images" in taken[0] ? taken[0].images?.[0]?.data : "", "ZmFrZQ");
+  reloadPersistedState();
+  await recoverLiveWorkers();
+  const inbox = takeInbound(run.id);
+  assert.equal(inbox[0]?.type, "prompt");
+  assert.equal("text" in (inbox[0] ?? {}) ? inbox[0]?.text : "", "see the photo");
+  assert.equal(inbox[0] && "images" in inbox[0] ? inbox[0].images?.[0]?.data : "", "ZmFrZQ");
+  assert.ok(listEvents(run.id).some((item) => item.title === "中断的回合已自动排队继续"));
+});
+
 test("detached live runs requeue the unfinished prompt", async () => {
   const run = await createRun({
     prompt: "lost worker",
