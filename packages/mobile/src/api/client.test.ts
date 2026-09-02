@@ -79,3 +79,97 @@ test("MobileClient surfaces API errors", async () => {
   const client = new MobileClient("", "", (async () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })) as typeof fetch);
   await assert.rejects(() => client.me(), (error: unknown) => error instanceof MobileApiError && error.status === 401);
 });
+
+function recorder(payload: unknown = {}) {
+  const calls: Array<{ method: string; url: string; body?: string; headers: Record<string, string> }> = [];
+  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      method: init?.method ?? "GET",
+      url: String(input),
+      body: typeof init?.body === "string" ? init.body : undefined,
+      headers: (init?.headers ?? {}) as Record<string, string>,
+    });
+    return new Response(JSON.stringify(payload), { status: 200 });
+  }) as typeof fetch;
+  return { calls, client: new MobileClient("http://cp.test", "neo_sess_1", fetchImpl) };
+}
+
+test("memory and inbox go to the same cloud routes the web page uses", async () => {
+  const { calls, client } = recorder({ configured: true, memories: [], items: [], unread: 0 });
+  await client.listMemories(20);
+  await client.addMemory("用 pnpm");
+  await client.deleteMemory("m1");
+  await client.listInbox();
+  await client.markInboxRead("inb_1");
+  assert.deepEqual(
+    calls.map((call) => `${call.method} ${call.url.replace("http://cp.test", "")}`),
+    [
+      "GET /v1/memories?limit=20",
+      "POST /v1/memories",
+      "DELETE /v1/memories/m1",
+      "GET /v1/inbox",
+      "POST /v1/inbox/inb_1/read",
+    ],
+  );
+  assert.equal(calls[1]?.body, JSON.stringify({ text: "用 pnpm" }));
+  assert.equal(calls.every((call) => call.headers.authorization === "Bearer neo_sess_1"), true);
+});
+
+test("artifacts, diagnostics and transfer use the run cloud routes", async () => {
+  const { calls, client } = recorder({ artifacts: [], logs: [] });
+  await client.listArtifacts("r1");
+  await client.saveArtifactToProject("r1", "report card.html");
+  await client.diagnostics("r1");
+  await client.transferRun("r1", { toUserId: "u2", note: "接手" });
+  assert.deepEqual(
+    calls.map((call) => `${call.method} ${call.url.replace("http://cp.test", "")}`),
+    [
+      "GET /v1/runs/r1/artifacts",
+      "POST /v1/runs/r1/artifacts/report%20card.html/save-to-project",
+      "GET /v1/runs/r1/diagnostics",
+      "POST /v1/runs/r1/transfer",
+    ],
+  );
+  assert.equal(calls[3]?.body, JSON.stringify({ toUserId: "u2", note: "接手" }));
+});
+
+test("transcript pages with the shared contract default", async () => {
+  const { calls, client } = recorder({ snapshot: { messages: [] } });
+  await client.transcript("r1");
+  await client.transcript("r1", { before: "e9" });
+  assert.match(calls[0]?.url ?? "", /\/v1\/runs\/r1\/transcript\?limit=40$/);
+  assert.match(calls[1]?.url ?? "", /\/v1\/runs\/r1\/transcript\?limit=40&before=e9$/);
+});
+
+test("project collaboration and plugin toggles match the web bodies", async () => {
+  const { calls, client } = recorder({ assets: [], plugins: [] });
+  await client.listProjectAssets("p1");
+  await client.addProjectMember("p1", { email: "ping", password: "654321" });
+  await client.createProjectInvite("p1");
+  await client.approveProjectInvite("p1", "tok_1");
+  await client.installPlugin("plug_pr_review", { scope: "user" });
+  await client.enablePlugin("plug_pr_review", { enabled: false, scope: "user" });
+  assert.deepEqual(
+    calls.map((call) => `${call.method} ${call.url.replace("http://cp.test", "")}`),
+    [
+      "GET /v1/projects/p1/assets",
+      "POST /v1/projects/p1/members",
+      "POST /v1/projects/p1/invites",
+      "POST /v1/projects/p1/invites/tok_1/approve",
+      "POST /v1/plugins/plug_pr_review/install",
+      "POST /v1/plugins/plug_pr_review/enable",
+    ],
+  );
+  // The control plane wants an account plus an optional password, not a userId.
+  assert.equal(calls[1]?.body, JSON.stringify({ email: "ping", password: "654321" }));
+  assert.equal(calls[5]?.body, JSON.stringify({ enabled: false, scope: "user" }));
+});
+
+test("artifact urls resolve against the configured API base", () => {
+  const client = new MobileClient("http://192.168.1.8:8080", "neo_sess_1");
+  assert.equal(
+    client.absoluteUrl("/v1/runs/r1/artifacts/a.html?token=t"),
+    "http://192.168.1.8:8080/v1/runs/r1/artifacts/a.html?token=t",
+  );
+  assert.equal(client.absoluteUrl("https://neorun.cloud/x.png"), "https://neorun.cloud/x.png");
+});

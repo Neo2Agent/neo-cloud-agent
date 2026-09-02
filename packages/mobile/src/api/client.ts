@@ -1,12 +1,22 @@
 import type { Automation, CreateAutomationRequest } from "@neo-cloud-agent/contracts/automation";
 import type { CreateDeviceRequest, Device } from "@neo-cloud-agent/contracts/device";
+import type { RunDiagnostics } from "@neo-cloud-agent/contracts/diagnostics";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { RunEvent, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { CreateExpertRequest, Expert, ExpertTeam, UpdateExpertRequest } from "@neo-cloud-agent/contracts/expert";
-import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
-import type { CreateProjectRequest, Project } from "@neo-cloud-agent/contracts/project";
+import type { MemoryItem, MemoryListResponse } from "@neo-cloud-agent/contracts/memory";
+import type { PluginCatalogItem, PluginInstall, PluginInstallScope } from "@neo-cloud-agent/contracts/plugin";
+import type {
+  CreateProjectRequest,
+  Project,
+  ProjectInvite,
+  UpdateProjectRequest,
+} from "@neo-cloud-agent/contracts/project";
+import type { CreateProjectAssetRequest, ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
+import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, Run } from "@neo-cloud-agent/contracts/run";
+import { DEFAULT_TRANSCRIPT_PAGE } from "@neo-cloud-agent/contracts/transcript";
 
 import { readSseEvents, shouldUseXhrSse, streamSseWithXhr } from "./sse.js";
 
@@ -15,6 +25,33 @@ export type PublicLlmSettings = {
   upstream: string;
   model: string | null;
   baseUrl: string | null;
+};
+
+/** `GET /v1/runs/:id/artifacts`. `url` is already signed, so it needs no Bearer. */
+export type RunArtifact = {
+  name: string;
+  size?: number;
+  contentType?: string;
+  url?: string;
+};
+
+/** `GET /v1/quota`. Read-only on mobile; limits are written from the web settings page. */
+export type QuotaView = {
+  maxTokensMonth: number;
+  maxConcurrentRuns: number;
+  usedTokensMonth: number;
+  concurrentRuns: number;
+  remainingTokens: number | null;
+  remainingConcurrent: number | null;
+};
+
+/** `GET /v1/vms`. Mobile only uses this to explain why a run sits in `queued`. */
+export type VmSlotsView = {
+  runtime: string;
+  backend: string;
+  total: number;
+  busy: number;
+  slots: Array<{ id: string; status: string; runId?: string | null }>;
 };
 
 export class MobileApiError extends Error {
@@ -67,6 +104,11 @@ export class MobileClient {
     // default control-plane visibility: cloud runs plus Desk Remote Control.
     if (!this.url) return path;
     return `${this.url.replace(/\/$/, "")}${path}`;
+  }
+
+  /** Artifact urls come back relative, and the API base is user-configurable on device. */
+  absoluteUrl(path: string): string {
+    return /^https?:\/\//.test(path) ? path : this.resolve(path);
   }
 
   async request<T>(method: string, path: string, body?: unknown, init?: RequestInit): Promise<T> {
@@ -167,8 +209,57 @@ export class MobileClient {
     return this.request("DELETE", `/v1/runs/${id}`);
   }
 
-  transcript(id: string): Promise<TranscriptResponse> {
-    return this.request("GET", `/v1/runs/${id}/transcript`);
+  transcript(id: string, options?: { limit?: number; before?: string }): Promise<TranscriptResponse> {
+    const query = new URLSearchParams({ limit: String(options?.limit ?? DEFAULT_TRANSCRIPT_PAGE) });
+    if (options?.before) query.set("before", options.before);
+    return this.request("GET", `/v1/runs/${id}/transcript?${query.toString()}`);
+  }
+
+  listArtifacts(id: string): Promise<{ artifacts: RunArtifact[] }> {
+    return this.request("GET", `/v1/runs/${id}/artifacts`);
+  }
+
+  /** Only project runs can save; the control plane rejects the rest with 400. */
+  saveArtifactToProject(id: string, name: string, assetPath?: string): Promise<ProjectAsset> {
+    return this.request("POST", `/v1/runs/${id}/artifacts/${encodeURIComponent(name)}/save-to-project`,
+      assetPath ? { path: assetPath } : {});
+  }
+
+  diagnostics(id: string): Promise<RunDiagnostics> {
+    return this.request("GET", `/v1/runs/${id}/diagnostics`);
+  }
+
+  transferRun(id: string, input: { toUserId: string; note?: string }): Promise<Run> {
+    return this.request("POST", `/v1/runs/${id}/transfer`, input);
+  }
+
+  listMemories(limit?: number): Promise<MemoryListResponse> {
+    const query = limit ? `?limit=${limit}` : "";
+    return this.request("GET", `/v1/memories${query}`);
+  }
+
+  addMemory(text: string): Promise<{ memories: MemoryItem[] }> {
+    return this.request("POST", "/v1/memories", { text });
+  }
+
+  deleteMemory(id: string): Promise<{ ok: boolean }> {
+    return this.request("DELETE", `/v1/memories/${encodeURIComponent(id)}`);
+  }
+
+  listInbox(): Promise<{ items: InboxItem[]; unread: number }> {
+    return this.request("GET", "/v1/inbox");
+  }
+
+  markInboxRead(id: string): Promise<{ ok: boolean; unread: number }> {
+    return this.request("POST", `/v1/inbox/${encodeURIComponent(id)}/read`, {});
+  }
+
+  quota(): Promise<QuotaView> {
+    return this.request("GET", "/v1/quota");
+  }
+
+  listVms(): Promise<VmSlotsView> {
+    return this.request("GET", "/v1/vms");
   }
 
   listEnvironments(): Promise<{ environments: Environment[] }> {
@@ -183,8 +274,24 @@ export class MobileClient {
     return this.request("GET", "/v1/experts");
   }
 
-  listPlugins(): Promise<{ plugins: PluginCatalogItem[] }> {
-    return this.request("GET", "/v1/plugins");
+  listPlugins(projectId?: string): Promise<{ plugins: PluginCatalogItem[] }> {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return this.request("GET", `/v1/plugins${query}`);
+  }
+
+  installPlugin(id: string, input: { scope: PluginInstallScope; projectId?: string }): Promise<PluginInstall> {
+    return this.request("POST", `/v1/plugins/${id}/install`, input);
+  }
+
+  uninstallPlugin(id: string, input: { scope: PluginInstallScope; projectId?: string }): Promise<{ ok: boolean }> {
+    return this.request("DELETE", `/v1/plugins/${id}/install`, input);
+  }
+
+  enablePlugin(
+    id: string,
+    input: { enabled: boolean; scope: PluginInstallScope; projectId?: string },
+  ): Promise<PluginInstall> {
+    return this.request("POST", `/v1/plugins/${id}/enable`, input);
   }
 
   listProjects(): Promise<{ projects: Project[] }> {
@@ -197,6 +304,56 @@ export class MobileClient {
 
   createProject(input: CreateProjectRequest): Promise<Project> {
     return this.request("POST", "/v1/projects", input);
+  }
+
+  updateProject(id: string, input: UpdateProjectRequest): Promise<Project> {
+    return this.request("POST", `/v1/projects/${id}`, input);
+  }
+
+  listProjectAssets(id: string): Promise<{ assets: ProjectAsset[] }> {
+    return this.request("GET", `/v1/projects/${id}/assets`);
+  }
+
+  createProjectAsset(id: string, input: CreateProjectAssetRequest): Promise<ProjectAsset> {
+    return this.request("POST", `/v1/projects/${id}/assets`, input);
+  }
+
+  deleteProjectAsset(id: string, assetId: string): Promise<{ ok: boolean }> {
+    return this.request("DELETE", `/v1/projects/${id}/assets/${assetId}`);
+  }
+
+  /** Assets stream bytes rather than JSON, and unlike artifacts they need the Bearer header. */
+  async downloadProjectAsset(id: string, assetId: string): Promise<{ contentType: string; body: ArrayBuffer }> {
+    const path = `/v1/projects/${id}/assets/${assetId}`;
+    let response: Response;
+    try {
+      response = await this.fetchImpl(this.resolve(path), { method: "GET", headers: this.headers() });
+    } catch (error) {
+      throw new MobileApiError(describeNetworkError(error, this.resolve(path)), 0);
+    }
+    if (!response.ok) {
+      throw new MobileApiError(`asset ${response.status}`, response.status);
+    }
+    return {
+      contentType: response.headers.get("content-type") ?? "application/octet-stream",
+      body: await response.arrayBuffer(),
+    };
+  }
+
+  /** Same body as the web project page: an account, plus a password when it is new. */
+  addProjectMember(
+    id: string,
+    input: { email: string; password?: string; role?: "admin" | "member" },
+  ): Promise<Project> {
+    return this.request("POST", `/v1/projects/${id}/members`, input);
+  }
+
+  createProjectInvite(id: string): Promise<ProjectInvite & { url?: string }> {
+    return this.request("POST", `/v1/projects/${id}/invites`, {});
+  }
+
+  approveProjectInvite(id: string, token: string): Promise<Project> {
+    return this.request("POST", `/v1/projects/${id}/invites/${encodeURIComponent(token)}/approve`, {});
   }
 
   listAutomations(): Promise<{ automations: Automation[] }> {

@@ -7,7 +7,7 @@ import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
-import type { Expert, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { MobileApiError, MobileClient } from "../api/client";
@@ -100,7 +100,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expertId, setExpertId] = useState("");
+  const [expertPick, setExpertPick] = useState<ExpertPick>({});
   const [expertName, setExpertName] = useState("");
   const lastEventId = useRef<string | null>(null);
   const lastSseAt = useRef(0);
@@ -336,6 +336,8 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     setPendingTurn(null);
     setMessages([]);
     setPrompt("");
+    setExpertPick({});
+    setExpertName("");
     go("/");
   };
 
@@ -356,7 +358,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             source,
             envId,
             model: resolveChatModel(model),
-            expertId,
+            expert: expertPick,
             projectId: projectId ?? undefined,
           }),
         );
@@ -451,7 +453,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
         error={pageError}
         onBack={() => go("/")}
         onSummon={(pick) => {
-          setExpertId(pick.expertId ?? "");
+          setExpertPick(pick.expertTeamId ? { expertTeamId: pick.expertTeamId } : { expertId: pick.expertId });
           setExpertName(pick.name);
           go("/");
         }}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
-import type { Expert, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
@@ -76,7 +76,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [expertId, setExpertId] = useState("");
+  const [expertPick, setExpertPick] = useState<ExpertPick>({});
   const [expertName, setExpertName] = useState("");
   const lastEventId = useRef<string | null>(null);
   const lastSseAt = useRef(0);
@@ -323,7 +323,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     setPendingTurn(null);
     setMessages([]);
     setPrompt("");
-    setExpertId("");
+    setExpertPick({});
     setExpertName("");
     setDrawerOpen(false);
     setScreen("home");
@@ -347,7 +347,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             source,
             envId,
             model: resolveChatModel(model),
-            expertId,
+            expert: expertPick,
             projectId: projectId ?? undefined,
           }),
         );
@@ -432,7 +432,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         error={pageError}
         onBack={() => setScreen("home")}
         onSummon={(pick) => {
-          setExpertId(pick.expertId ?? "");
+          setExpertPick(pick.expertTeamId ? { expertTeamId: pick.expertTeamId } : { expertId: pick.expertId });
           setExpertName(pick.name);
           setScreen("home");
         }}
