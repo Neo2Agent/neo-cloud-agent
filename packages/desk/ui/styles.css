@@ -385,6 +385,26 @@ button:disabled {
   z-index: 6;
 }
 
+/* Caret is owned by the 更多 row, not the tall card, so it stays on the row midline. */
+.rail-more-wrap::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  z-index: 13;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  margin-left: 5px;
+  border-left: var(--ink-line);
+  border-bottom: var(--ink-line);
+  background: var(--bg-raised);
+  opacity: 0;
+  pointer-events: none;
+  transform: rotate(45deg);
+  transition: opacity 0.14s ease;
+}
+
 .rail-more-copy {
   display: flex;
   align-items: baseline;
@@ -431,18 +451,9 @@ button:disabled {
   box-shadow: var(--shadow-stack), var(--shadow-soft);
 }
 
-.rail-more-pop-card::before {
-  content: "";
-  position: absolute;
-  top: 20px;
-  left: -7px;
-  width: 12px;
-  height: 12px;
-  margin-top: -6px;
-  border-left: var(--ink-line);
-  border-bottom: var(--ink-line);
-  background: var(--bg-raised);
-  transform: rotate(45deg);
+.rail-more-wrap:hover::after,
+.rail-more-wrap:focus-within::after {
+  opacity: 1;
 }
 
 .rail-more-pop-title {
