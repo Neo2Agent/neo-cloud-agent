@@ -2698,10 +2698,10 @@ button.composer-mic.is-listening,
   right: 0;
   left: auto;
   bottom: calc(100% + 10px);
-  width: min(360px, calc(100vw - 48px));
-  padding: 12px 14px;
+  width: min(380px, calc(100vw - 48px));
+  padding: 10px 10px 8px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--panel);
   box-shadow: var(--shadow);
   z-index: 12;
@@ -2712,24 +2712,50 @@ button.composer-mic.is-listening,
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  padding: 0 4px;
+  color: var(--ink);
+  font-size: 13px;
 }
 
-.context-usage-head strong {
-  font-size: 14px;
+.context-usage-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.context-usage-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.context-usage-icon:hover {
+  background: var(--bg-2);
+  color: var(--ink);
 }
 
 .context-usage-status {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin: 8px 0 10px;
+  margin: 6px 0 6px;
+  padding: 0 4px;
   color: var(--muted);
   font-size: 12px;
 }
 
 .context-usage-bar {
   display: flex;
-  height: 6px;
+  height: 4px;
+  margin: 0 4px;
   border-radius: 99px;
   overflow: hidden;
   background: #eef0f3;
@@ -2742,37 +2768,165 @@ button.composer-mic.is-listening,
 
 .context-usage-list {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 6px 0 0;
   padding: 0;
 }
 
 .context-usage-list li {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 0;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 6px;
   font-size: 13px;
 }
 
-.context-usage-list li[aria-expanded] {
-  cursor: pointer;
+.context-usage-list li:hover {
+  background: var(--bg-2);
 }
 
-.context-usage-list li.is-child {
-  padding-left: 20px;
-  color: var(--muted);
-}
-
-.context-usage-list span {
+.context-usage-name {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.context-usage-list i {
-  width: 8px;
-  height: 8px;
+/* Swatch that ties a row to its slice of the bar, in the popover and the page. */
+.context-usage-name i {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
   border-radius: 2px;
+}
+
+.context-usage-value {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-usage-list .context-usage-icon {
+  opacity: 0;
+}
+
+.context-usage-list li:hover .context-usage-icon,
+.context-usage-list .context-usage-icon:focus-visible {
+  opacity: 1;
+}
+
+/* Reading-width column, centred so a wide stage does not strand it on the left. */
+.context-page > * {
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+.context-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.context-usage-bar.is-wide {
+  height: 8px;
+  margin: 0;
+  border-radius: 99px;
+  /* A 0.3% fill leaves mostly track, so it needs to read as a bar, not a hairline. */
+  background: #eaecf0;
+}
+
+.context-sections {
+  display: flex;
+  flex-direction: column;
+}
+
+.context-section {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.context-section:first-child {
+  border-top: 0;
+}
+
+.context-section header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.context-section-total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-section-total b {
+  font-weight: 600;
+}
+
+.context-section-total em {
+  min-width: 34px;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+  text-align: right;
+}
+
+.context-section ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The row itself is the bar: a tinted fill sized by share, text riding on top. */
+.context-section li {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  isolation: isolate;
+}
+
+.context-section li i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: -1;
+  border-radius: 7px;
+  opacity: 0.14;
+}
+
+.context-section li span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-section li b {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-section[data-focus="true"] header {
+  color: var(--accent);
 }
 
 .hint {
@@ -4369,6 +4523,16 @@ button.composer-mic.is-listening,
 
   .context-usage-status {
     flex-wrap: wrap;
+  }
+
+  /* No hover on touch, so the row's open button has to stay visible. */
+  .context-usage-list .context-usage-icon {
+    opacity: 1;
+  }
+
+  .context-usage-icon {
+    width: 28px;
+    height: 28px;
   }
 }
 

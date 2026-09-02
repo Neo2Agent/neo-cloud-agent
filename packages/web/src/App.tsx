@@ -41,6 +41,7 @@ import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction
 import { Composer, readImageRef } from "./components/Composer";
 import { IconMemory, IconMore } from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
+import { ContextUsagePanel } from "./components/ContextUsage";
 import { Transcript } from "./components/Transcript";
 import { TranscriptSearch } from "./components/TranscriptSearch";
 import type { ComposerMention } from "./mention";
@@ -71,6 +72,8 @@ import {
 import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
 
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
+
+type SessionTab = "chat" | "diff" | "terminal" | "artifacts";
 
 function transcriptUrl(id: string, extra?: { before?: string }): string {
   const params = new URLSearchParams({ limit: String(HISTORY_PAGE), images: "href" });
@@ -243,7 +246,8 @@ export function App() {
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sessionTab, setSessionTab] = useState<"chat" | "diff" | "terminal" | "artifacts">("chat");
+  const [sessionTab, setSessionTab] = useState<SessionTab>("chat");
+  const [contextFocusId, setContextFocusId] = useState("");
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [deskFolder, setDeskFolder] = useState("");
@@ -258,7 +262,9 @@ export function App() {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
-  const [mainTab, setMainTab] = useState<"chat" | "automations" | "projects" | "experts" | "skills" | "memories">(initialMainTab);
+  const [mainTab, setMainTab] = useState<
+    "chat" | "automations" | "projects" | "experts" | "skills" | "memories" | "context"
+  >(initialMainTab);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(hashSkillId);
   const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
   const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
@@ -1494,7 +1500,7 @@ export function App() {
         ? `${Math.max(0, (vms.total || vms.slots.length) - vms.busy)}/${vms.total || vms.slots.length} 个 VM 空闲，发送后占用其中一个（${vms.backend === "loop" ? "loop 挂载" : vms.backend}）。`
         : `${vms.total || vms.slots.length} 个 VM 都在忙。新对话会排队，有空闲槽再自动开始。`;
 
-  const openSessionTab = (id: "chat" | "diff" | "terminal" | "artifacts") => {
+  const openSessionTab = (id: SessionTab) => {
     setSessionTab(id);
     setSettingsOpen(false);
     if (id === "chat" || !runId) return;
@@ -1535,6 +1541,12 @@ export function App() {
         .catch((error) => setArtifactsError(error instanceof Error ? error.message : "读取产物失败"))
         .finally(() => setArtifactsLoading(false));
     }
+  };
+
+  const openContextDetail = (bucketId?: string) => {
+    setContextFocusId(bucketId ?? "");
+    setSettingsOpen(false);
+    setMainTab("context");
   };
 
   const localTargetHint = deskBridge()?.canRunLocal
@@ -1865,6 +1877,8 @@ export function App() {
                       ? "记忆"
                       : mainTab === "automations"
                       ? "定时任务"
+                      : mainTab === "context"
+                      ? "上下文"
                       : currentRun
                         ? [
                             currentRun.buildId
@@ -1896,6 +1910,8 @@ export function App() {
                       ? "跨对话记住的事"
                       : mainTab === "automations"
                       ? "到点自动开对话"
+                      : mainTab === "context"
+                      ? "这次对话占了什么"
                       : currentRun
                         ? preview(currentRun.prompt)
                         : expertPick.expertTeamId || expertPick.expertId
@@ -2239,6 +2255,12 @@ export function App() {
                   void openRun(id);
                 }}
               />
+            ) : mainTab === "context" ? (
+              <ContextUsagePanel
+                usage={contextUsage}
+                focusBucketId={contextFocusId}
+                onBack={openChat}
+              />
             ) : sessionTab === "diff" ? (
               <DiffPanel
                 open
@@ -2377,6 +2399,7 @@ export function App() {
               canStop={Boolean(runId)}
               activity={activity}
               contextUsage={contextUsage}
+              onOpenContextDetail={openContextDetail}
               target={deskTarget}
               canRunLocal={Boolean(deskBridge()?.canRunLocal)}
               folder={deskFolder}
