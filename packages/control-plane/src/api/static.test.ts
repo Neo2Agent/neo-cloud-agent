@@ -120,7 +120,7 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /#\/projects\//);
   assert.match(appText, /归档/);
   assert.match(appText, /settings-panel/);
-  assert.match(appText, /workspace-drawer/);
+  assert.match(appText, /settings-page|#\/settings/);
   assert.match(appText, /auth-email/);
   assert.match(appText, /novalidate|noValidate/);
   assert.match(appText, /turn-progress/);
@@ -143,7 +143,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.bubble-time/);
   assert.match(appText, /创建 /);
   assert.match(appText, /完成 /);
-  assert.match(cssText, /\.workspace-drawer\{[^}]*max-height:\s*min\(48vh/);
+  assert.match(cssText, /\.settings-group/);
+  assert.match(cssText, /\.toast-host/);
   assert.match(cssText, /\.main\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/);
   assert.match(cssText, /\.main\{[^}]*grid-template-areas/);
   assert.match(cssText, /#root\{[^}]*overflow:\s*hidden/);

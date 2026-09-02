@@ -13,6 +13,10 @@ test("web shell keeps the original cool-gray chrome", () => {
   assert.doesNotMatch(css, /Geist Sans/);
   assert.match(css, /\.new-chat-plus\s*\{/);
   assert.match(css, /button\.send\s*\{[^}]*padding:\s*8px 16px/);
+  assert.match(css, /--ease:\s*140ms ease/);
+  assert.match(css, /button:focus-visible/);
+  assert.match(css, /\.toast-host/);
+  assert.match(css, /\.settings-group/);
 });
 
 test("welcome cluster fits a 14-inch laptop viewport without a page scroll", () => {

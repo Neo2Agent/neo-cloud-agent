@@ -2,7 +2,9 @@ import { Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState } from "react";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { api, readJson } from "../api";
+import { useConfirm, toast } from "../feedback";
 import { formatWhen } from "../format";
+import { CatalogEmpty } from "./Catalog";
 
 type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
 
@@ -39,6 +41,7 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
   const [defaultRepo, setDefaultRepo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const confirm = useConfirm();
 
   const refresh = async () => {
     const [autoRes, notifyRes] = await Promise.all([
@@ -61,7 +64,7 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
   }, [token]);
 
   return (
-    <section className="auto-page" id="automations-page">
+    <section className="auto-page catalog-page" id="automations-page">
       <header className="auto-page-head">
         <div>
           <p className="eyebrow">定时任务</p>
@@ -114,7 +117,7 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
               options={PRESETS.map((item) => ({ value: item.id, label: item.label }))}
             />
           </label>
-          <button className="auto-add" type="submit" disabled={busy || !prompt.trim()}>
+          <button className="catalog-create" type="submit" disabled={busy || !prompt.trim()}>
             添加任务
           </button>
         </div>
@@ -125,10 +128,7 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
           <p className="auto-card-title">任务列表</p>
         </div>
         {items.length === 0 ? (
-          <div className="auto-empty">
-            <strong>还没有定时任务</strong>
-            <p>上面写一句要做的事，选好频率再添加。任务会保存到数据库。</p>
-          </div>
+          <CatalogEmpty title="还没有定时任务" hint="上面写一句要做的事，选好频率再添加。任务会保存下来，到点自动开对话。" />
         ) : (
           <ul className="auto-list">
             {items.map((item) => (
@@ -175,10 +175,18 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
                     className="ghost danger"
                     type="button"
                     onClick={() => {
-                      void api(token, `/v1/automations/${item.id}`, {
-                        method: "POST",
-                        body: JSON.stringify({ delete: true }),
-                      }).then(() => refresh());
+                      void confirm({
+                        title: "删除这条定时任务？",
+                        message: "以后不会再自动开对话。已经跑过的对话还在。",
+                        confirmLabel: "删除",
+                        danger: true,
+                      }).then((ok) => {
+                        if (!ok) return;
+                        void api(token, `/v1/automations/${item.id}`, {
+                          method: "POST",
+                          body: JSON.stringify({ delete: true }),
+                        }).then(() => refresh());
+                      });
                     }}
                   >
                     删除
@@ -237,8 +245,8 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
             />
           </label>
         </div>
-        <button
-          className="auto-add"
+          <button
+          className="catalog-create"
           type="button"
           disabled={busy}
           onClick={() => {
@@ -261,6 +269,7 @@ export function AutomationsPage({ token, onOpenRun }: Props) {
                 setWechatToken("");
                 setHttpUrl("");
                 await refresh();
+                toast("通知设置已保存");
               })
               .catch((item) => setError(item instanceof Error ? item.message : "保存失败"))
               .finally(() => setBusy(false));

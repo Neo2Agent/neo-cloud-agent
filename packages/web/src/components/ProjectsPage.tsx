@@ -11,6 +11,7 @@ import { api, readJson } from "../api";
 import { artifactKind, prettyBytes } from "../artifact.js";
 import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
 import { IconBack, IconDownload, IconFileKind, IconPlus, IconTrash } from "../icons.js";
+import { useConfirm } from "../feedback.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogTabs, CatalogToolbar } from "./Catalog.js";
 
 type Props = {
@@ -68,6 +69,7 @@ export function ProjectsPage({
   const [eventPage, setEventPage] = useState(1);
   const [assets, setAssets] = useState<ProjectAsset[]>([]);
   const [assetPage, setAssetPage] = useState(1);
+  const confirm = useConfirm();
 
   const selected = detail ?? items.find((item) => item.id === selectedId) ?? null;
   const members = selected?.members ?? [];
@@ -482,17 +484,25 @@ export function ProjectsPage({
                             type="button"
                             aria-label="删除"
                             onClick={() => {
-                              setBusy(true);
-                              void api(token, `/v1/projects/${selected.id}/assets/${item.id}`, { method: "DELETE" })
-                                .then(async (res) => {
-                                  if (!res.ok) {
-                                    throw new Error((await readJson<{ error?: string }>(res)).error || "删除失败");
-                                  }
-                                  await loadDetail(selected.id);
-                                  if (highlightAssetId === item.id) onOpenProject(selected.id, { assets: true });
-                                })
-                                .catch((err) => setError(err instanceof Error ? err.message : "删除失败"))
-                                .finally(() => setBusy(false));
+                              void confirm({
+                                title: "删除这个资产？",
+                                message: "文件会从项目里去掉，对话记录还在。",
+                                confirmLabel: "删除",
+                                danger: true,
+                              }).then((ok) => {
+                                if (!ok) return;
+                                setBusy(true);
+                                void api(token, `/v1/projects/${selected.id}/assets/${item.id}`, { method: "DELETE" })
+                                  .then(async (res) => {
+                                    if (!res.ok) {
+                                      throw new Error((await readJson<{ error?: string }>(res)).error || "删除失败");
+                                    }
+                                    await loadDetail(selected.id);
+                                    if (highlightAssetId === item.id) onOpenProject(selected.id, { assets: true });
+                                  })
+                                  .catch((err) => setError(err instanceof Error ? err.message : "删除失败"))
+                                  .finally(() => setBusy(false));
+                              });
                             }}
                           >
                             <IconTrash size={16} />

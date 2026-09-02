@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyRunEventsToMessages,
   DEFAULT_TRANSCRIPT_PAGE,
@@ -39,7 +39,8 @@ import { parseProjectHash, projectHashHref } from "./project-route.js";
 import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
-import { IconMemory, IconMore } from "./icons";
+import { useConfirm, toast } from "./feedback";
+import { IconBack, IconGear, IconMemory, IconMenu, IconMore, IconSidebarClose } from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { ContextUsagePanel } from "./components/ContextUsage";
 import { Transcript } from "./components/Transcript";
@@ -189,12 +190,21 @@ function hashMemories(): boolean {
   return location.hash === "#/memories";
 }
 
-function initialMainTab(): "chat" | "automations" | "projects" | "experts" | "skills" | "memories" {
+function hashSettings(): boolean {
+  return location.hash === "#/settings";
+}
+
+function hashCatalog(): boolean {
+  return hashAutomations() || hashProjects() || hashExperts() || hashSkills() || hashMemories() || hashSettings();
+}
+
+function initialMainTab(): "chat" | "automations" | "projects" | "experts" | "skills" | "memories" | "settings" {
   if (hashAutomations()) return "automations";
   if (hashProjects()) return "projects";
   if (hashExperts()) return "experts";
   if (hashSkills()) return "skills";
   if (hashMemories()) return "memories";
+  if (hashSettings()) return "settings";
   return "chat";
 }
 
@@ -245,7 +255,6 @@ export function App() {
   const [buildId, setBuildId] = useState("");
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionTab, setSessionTab] = useState<SessionTab>("chat");
   const [contextFocusId, setContextFocusId] = useState("");
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
@@ -263,7 +272,7 @@ export function App() {
   const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
   const [mainTab, setMainTab] = useState<
-    "chat" | "automations" | "projects" | "experts" | "skills" | "memories" | "context"
+    "chat" | "automations" | "projects" | "experts" | "skills" | "memories" | "settings" | "context"
   >(initialMainTab);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(hashSkillId);
   const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
@@ -319,6 +328,7 @@ export function App() {
   pendingRef.current = pendingTurn;
   currentStatusRef.current = currentRun?.status;
   projectNamesRef.current = projectNames;
+  const confirm = useConfirm();
 
   const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
   const contextUsage = useMemo(() => {
@@ -750,28 +760,29 @@ export function App() {
 
   const openAutomations = useCallback(() => {
     setMainTab("automations");
-    setSettingsOpen(false);
     history.replaceState(null, "", "/#/automations");
   }, []);
 
   const openExperts = useCallback((id?: string | null) => {
     setMainTab("experts");
-    setSettingsOpen(false);
     setSelectedExpertId(id ?? null);
     history.replaceState(null, "", id ? `/#/experts/${id}` : "/#/experts");
   }, []);
 
   const openSkills = useCallback((id?: string | null) => {
     setMainTab("skills");
-    setSettingsOpen(false);
     setSelectedSkillId(id ?? null);
     history.replaceState(null, "", id ? `/#/skills/${id}` : "/#/skills");
   }, []);
 
   const openMemories = useCallback(() => {
     setMainTab("memories");
-    setSettingsOpen(false);
     history.replaceState(null, "", "/#/memories");
+  }, []);
+
+  const openSettings = useCallback(() => {
+    setMainTab("settings");
+    history.replaceState(null, "", "/#/settings");
   }, []);
 
   const useSkill = useCallback(
@@ -809,7 +820,6 @@ export function App() {
       const assetId = opts?.assetId ?? null;
       const assets = Boolean(opts?.assets || assetId);
       setMainTab("projects");
-      setSettingsOpen(false);
       setSelectedProjectId(id ?? null);
       setInviteToken(invite);
       setProjectAssetsTab(assets);
@@ -836,7 +846,7 @@ export function App() {
   const openChat = useCallback(() => {
     setMainTab("chat");
     setSessionTab("chat");
-    if (hashAutomations() || hashProjects() || hashExperts() || hashSkills() || hashMemories()) {
+    if (hashCatalog()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
   }, [runId]);
@@ -882,6 +892,11 @@ export function App() {
       await Promise.all(refreshShell);
       return;
     }
+    if (hashSettings()) {
+      setMainTab("settings");
+      await Promise.all(refreshShell);
+      return;
+    }
     const invite = hashInviteToken();
     const projectId = hashProjectId();
     if (invite || projectId || location.hash === "#/projects") {
@@ -903,7 +918,7 @@ export function App() {
       refreshVms(),
       refreshDesks(),
     ]);
-    if (!match && !hashRunId() && !hashProjects() && !hashExperts() && !hashSkills() && !hashMemories()) resetComposer();
+    if (!match && !hashRunId() && !hashCatalog()) resetComposer();
   }, [openRun, refreshDesks, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
@@ -1141,7 +1156,13 @@ export function App() {
   const handoffCurrent = useCallback(
     async (_kind: "desk") => {
       if (!runId) return;
-      if (!window.confirm("切到本机。未提交的改动不会带过去，先 commit 或 stash。确定？")) {
+      if (
+        !(await confirm({
+          title: "切到本机？",
+          message: "未提交的改动不会带过去，先 commit 或 stash。",
+          confirmLabel: "切到本机",
+        }))
+      ) {
         return;
       }
       setHandoffError("");
@@ -1165,7 +1186,7 @@ export function App() {
         setHandoffError(error instanceof Error ? error.message : "移交失败");
       }
     },
-    [deskTarget.deskId, runId],
+    [confirm, deskTarget.deskId, runId],
   );
 
   const applyTarget = useCallback((next: DeskTarget) => {
@@ -1309,27 +1330,28 @@ export function App() {
       if (hashAutomations()) {
         setMainTab("automations");
         setInviteToken(null);
-        setSettingsOpen(false);
         return;
       }
       if (hashExperts()) {
         setMainTab("experts");
         setSelectedExpertId(hashExpertId());
         setInviteToken(null);
-        setSettingsOpen(false);
         return;
       }
       if (hashSkills()) {
         setMainTab("skills");
         setSelectedSkillId(hashSkillId());
         setInviteToken(null);
-        setSettingsOpen(false);
         return;
       }
       if (hashMemories()) {
         setMainTab("memories");
         setInviteToken(null);
-        setSettingsOpen(false);
+        return;
+      }
+      if (hashSettings()) {
+        setMainTab("settings");
+        setInviteToken(null);
         return;
       }
       if (invite || projectId || location.hash === "#/projects") {
@@ -1338,7 +1360,6 @@ export function App() {
         setSelectedProjectId(projectId);
         setProjectAssetsTab(hashProjectAssets());
         setHighlightAssetId(hashProjectAssetId());
-        setSettingsOpen(false);
         return;
       }
       setMainTab("chat");
@@ -1415,9 +1436,15 @@ export function App() {
     return () => media.removeEventListener("change", sync);
   }, []);
 
-  useLayoutEffect(() => {
-    if (topMoreRef.current) topMoreRef.current.open = !narrow;
-  }, [narrow]);
+  useEffect(() => {
+    const onPointer = (event: PointerEvent) => {
+      const el = topMoreRef.current;
+      if (!el?.open) return;
+      if (!el.contains(event.target as Node)) el.removeAttribute("open");
+    };
+    document.addEventListener("pointerdown", onPointer);
+    return () => document.removeEventListener("pointerdown", onPointer);
+  }, []);
 
   useEffect(() => {
     if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {
@@ -1502,7 +1529,6 @@ export function App() {
 
   const openSessionTab = (id: SessionTab) => {
     setSessionTab(id);
-    setSettingsOpen(false);
     if (id === "chat" || !runId) return;
     if (id === "diff") {
       setDiffLoading(true);
@@ -1545,7 +1571,6 @@ export function App() {
 
   const openContextDetail = (bucketId?: string) => {
     setContextFocusId(bucketId ?? "");
-    setSettingsOpen(false);
     setMainTab("context");
   };
 
@@ -1662,7 +1687,7 @@ export function App() {
       return;
     }
     if (action === "settings" || action === "repo") {
-      setSettingsOpen(true);
+      openSettings();
       return;
     }
     if (action === "memory") {
@@ -1706,7 +1731,16 @@ export function App() {
 
   const deleteArchivedRun = async (id: string) => {
     if (!token || !id) return;
-    if (!window.confirm("删除后任务会从列表消失，确定？")) return;
+    if (
+      !(await confirm({
+        title: "删除这条对话？",
+        message: "删除后任务会从列表消失。",
+        confirmLabel: "删除",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
     const response = await api(token, `/v1/runs/${encodeURIComponent(id)}`, { method: "DELETE" });
     const body = await readJson<{ ok?: boolean; error?: string }>(response);
     if (!response.ok) {
@@ -1834,13 +1868,13 @@ export function App() {
           <header className="topbar">
             <div className="topbar-lead">
               <button
-                className="ghost sidebar-toggle"
+                className="icon-btn sidebar-toggle"
                 id="sidebar-toggle"
                 type="button"
                 aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
                 onClick={toggleSidebar}
               >
-                <span aria-hidden="true">{sidebarOpen ? "‹" : "☰"}</span>
+                {sidebarOpen ? <IconSidebarClose /> : <IconMenu />}
                 <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
               </button>
               <nav className="app-tabs" id="app-tabs" aria-label="主导航">
@@ -1877,6 +1911,8 @@ export function App() {
                       ? "记忆"
                       : mainTab === "automations"
                       ? "定时任务"
+                      : mainTab === "settings"
+                      ? "设置"
                       : mainTab === "context"
                       ? "上下文"
                       : currentRun
@@ -1910,6 +1946,8 @@ export function App() {
                       ? "跨对话记住的事"
                       : mainTab === "automations"
                       ? "到点自动开对话"
+                      : mainTab === "settings"
+                      ? "仓库、模型和集成"
                       : mainTab === "context"
                       ? "这次对话占了什么"
                       : currentRun
@@ -1963,6 +2001,28 @@ export function App() {
                   {statusView.label}
                 </span>
               )}
+              {!narrow && runId ? (
+                <nav className="session-tabs" aria-label="会话标签">
+                  {(
+                    [
+                      ["chat", "对话"],
+                      ["diff", "Diff"],
+                      ["terminal", "终端"],
+                      ["artifacts", "产物"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={sessionTab === id ? "active" : ""}
+                      aria-current={sessionTab === id ? "page" : undefined}
+                      onClick={() => openSessionTab(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </nav>
+              ) : null}
               <details className="top-more" ref={topMoreRef}>
                 <summary className="icon-btn top-more-sum" aria-label="更多">
                   <IconMore />
@@ -1970,7 +2030,6 @@ export function App() {
                 <div
                   className="top-more-menu"
                   onClick={(event) => {
-                    if (!narrow) return;
                     const action = (event.target as HTMLElement | null)?.closest("button, a");
                     const details = event.currentTarget.closest("details");
                     if (action && details) details.removeAttribute("open");
@@ -1984,26 +2043,28 @@ export function App() {
                   {formatUsage(currentRun?.usage)}
                 </span>
               ) : null}
-              <nav className="session-tabs" hidden={!runId} aria-label="会话标签">
-                {(
-                  [
-                    ["chat", "对话"],
-                    ["diff", "Diff"],
-                    ["terminal", "终端"],
-                    ["artifacts", "产物"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={sessionTab === id ? "active" : ""}
-                    aria-current={sessionTab === id ? "page" : undefined}
-                    onClick={() => openSessionTab(id)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </nav>
+              {narrow && runId ? (
+                <nav className="session-tabs" aria-label="会话标签">
+                  {(
+                    [
+                      ["chat", "对话"],
+                      ["diff", "Diff"],
+                      ["terminal", "终端"],
+                      ["artifacts", "产物"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={sessionTab === id ? "active" : ""}
+                      aria-current={sessionTab === id ? "page" : undefined}
+                      onClick={() => openSessionTab(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </nav>
+              ) : null}
               {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
                 <button
                   className="ghost"
@@ -2022,23 +2083,31 @@ export function App() {
                 type="button"
                 hidden={!runId || currentRun?.status === "ARCHIVED"}
                 onClick={() => {
-                  if (!runId || !window.confirm("归档后会释放 VM。确定？")) return;
-                  void (async () => {
-                    const archived = await readJson<Run & { error?: string }>(
-                      await api(token, `/v1/runs/${runId}/archive`, { method: "POST" }),
-                    );
-                    if (archived.error) throw new Error(archived.error);
-                    setCurrentRun(archived);
-                    setRuns((prev) => prev.map((item) => (item.id === archived.id ? { ...item, ...archived } : item)));
-                  })().catch((error) => {
-                    setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "归档失败")]);
+                  if (!runId) return;
+                  void confirm({
+                    title: "归档这条对话？",
+                    message: "归档后会释放 VM。",
+                    confirmLabel: "归档",
+                    danger: true,
+                  }).then((ok) => {
+                    if (!ok) return;
+                    void (async () => {
+                      const archived = await readJson<Run & { error?: string }>(
+                        await api(token, `/v1/runs/${runId}/archive`, { method: "POST" }),
+                      );
+                      if (archived.error) throw new Error(archived.error);
+                      setCurrentRun(archived);
+                      setRuns((prev) => prev.map((item) => (item.id === archived.id ? { ...item, ...archived } : item)));
+                    })().catch((error) => {
+                      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "归档失败")]);
+                    });
                   });
                 }}
               >
                 归档
               </button>
               <button
-                className="ghost"
+                className="ghost danger"
                 id="delete-run"
                 type="button"
                 hidden={!runId || currentRun?.status !== "ARCHIVED"}
@@ -2055,12 +2124,11 @@ export function App() {
                 className="ghost"
                 id="toggle-settings"
                 type="button"
-                aria-expanded={settingsOpen}
-                onClick={() => {
-                  setSettingsOpen((next) => !next);
-                }}
+                aria-current={mainTab === "settings" ? "page" : undefined}
+                onClick={openSettings}
               >
-                {settingsOpen ? "收起设置" : "设置"}
+                <IconGear size={14} />
+                设置
               </button>
               {pr?.url ? (
                 <a className="pr-link" id="pr-link" href={pr.url} target="_blank" rel="noreferrer">
@@ -2082,21 +2150,18 @@ export function App() {
           </header>
           <div className="workspace-col">
           <div className="workspace-stage">
-          {settingsOpen ? (
-            <aside className="workspace-drawer" id="workspace-drawer" role="dialog" aria-label="设置">
-              <div className="workspace-drawer-bar">
-                <strong>设置</strong>
-                <button
-                  type="button"
-                  className="ghost"
-                  id="close-drawer"
-                  onClick={() => {
-                    setSettingsOpen(false);
-                  }}
-                >
-                  关闭
-                </button>
-              </div>
+            {mainTab === "settings" ? (
+              <section className="proj-page catalog-page settings-page" id="settings-page">
+                <header className="proj-page-head">
+                  <div>
+                    <button className="catalog-back" type="button" onClick={openChat}>
+                      <IconBack />
+                      返回对话
+                    </button>
+                    <h2>设置</h2>
+                    <p className="hint">仓库、模型、配额和集成。每组各自保存，立刻生效。</p>
+                  </div>
+                </header>
                 <SettingsPanel
                   repo={repo}
                   envId={envId}
@@ -2142,8 +2207,9 @@ export function App() {
                 const nextHealth = await readJson<Health>(await fetch("/health"));
                 setHealth(nextHealth);
                 setHealthText(formatHealth(nextHealth, vms));
+                toast("模型设置已保存");
               })().catch((error) => {
-                setLlm((prev) => ({ ...prev, model: error instanceof Error ? error.message : "保存失败" }));
+                toast(error instanceof Error ? error.message : "保存失败", "err");
               });
             }}
                   onScmToken={setScmToken}
@@ -2165,9 +2231,9 @@ export function App() {
                 const nextHealth = await readJson<Health>(await fetch("/health"));
                 setHealth(nextHealth);
                 setHealthText(formatHealth(nextHealth, vms));
+                toast("GitHub 凭证已保存");
               })().catch((error) => {
-                setScm((prev) => ({ ...prev, method: "none" }));
-                setHealthText(error instanceof Error ? error.message : "保存 GitHub 凭证失败");
+                toast(error instanceof Error ? error.message : "保存 GitHub 凭证失败", "err");
               });
             }}
                   onClearScm={() => {
@@ -2181,15 +2247,16 @@ export function App() {
                 const nextHealth = await readJson<Health>(await fetch("/health"));
                 setHealth(nextHealth);
                 setHealthText(formatHealth(nextHealth, vms));
+                toast("已清除 GitHub 凭证");
               })().catch((error) => {
-                setHealthText(error instanceof Error ? error.message : "清除 GitHub 凭证失败");
+                toast(error instanceof Error ? error.message : "清除 GitHub 凭证失败", "err");
               });
             }}
                   token={token}
                   onWarm={() => {
                     void (async () => {
                       if (!repo.trim()) {
-                        setMessages((prev) => [...prev, localErrorMessage(runId, "预热前先填仓库。")]);
+                        toast("预热前先填仓库。", "err");
                         return;
                       }
                       const created = await readJson<{ id?: string; status?: string; error?: string; failureMessage?: string }>(
@@ -2201,15 +2268,23 @@ export function App() {
                       if (created.error) throw new Error(created.error);
                       await refreshEnvironments();
                       if (created.id && created.status === "SUCCEEDED") setBuildId(created.id);
+                      toast(created.status === "SUCCEEDED" ? "预热完成" : "已开始预热");
                     })().catch((error) => {
-                      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "预热失败")]);
+                      toast(error instanceof Error ? error.message : "预热失败", "err");
                     });
                   }}
                 />
-              <FileTree token={token} runId={runId} open={Boolean(runId)} />
-            </aside>
-          ) : null}
-            {mainTab === "projects" ? (
+                {runId ? (
+                  <section className="settings-group">
+                    <header>
+                      <h3>工作区</h3>
+                      <p className="hint">当前对话占用的云端电脑文件。</p>
+                    </header>
+                    <FileTree token={token} runId={runId} open />
+                  </section>
+                ) : null}
+              </section>
+            ) : mainTab === "projects" ? (
               <ProjectsPage
                 token={token}
                 userId={userId}
