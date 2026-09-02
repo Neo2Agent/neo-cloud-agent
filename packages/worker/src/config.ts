@@ -30,6 +30,11 @@ export function getWorkerConfig() {
   const file = readBootstrapFile(workspaceDir);
   const sandboxRoot = process.env.NEO_SANDBOX_ROOT?.trim();
   const scratchDir = process.env.NEO_RUN_SCRATCH_DIR?.trim();
+  const hostSkillDirs = (process.env.NEO_HOST_SKILL_DIRS ?? "")
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => path.resolve(item));
   return {
     /**
      * Per-run scratch inside the workspace, set only when several runs can share
@@ -37,6 +42,11 @@ export function getWorkerConfig() {
      * `<workspace>/.neo` layout is correct, which is how every cloud run works.
      */
     scratchDir: scratchDir ? path.resolve(scratchDir) : "",
+    /**
+     * Desk-only. System skills live in `~/.neo/skills-neo` (like Cursor's
+     * `~/.cursor/skills-cursor`) and are outside the user's project folder.
+     */
+    hostSkillDirs,
     runId: process.env.RUN_ID || file.runId || "",
     controlPlaneUrl: (process.env.CONTROL_PLANE_URL || file.controlPlaneUrl || "http://127.0.0.1:8080").replace(/\/$/, ""),
     llmGatewayUrl: (process.env.LLM_GATEWAY_URL || file.llmGatewayUrl || "http://127.0.0.1:8081").replace(/\/$/, ""),

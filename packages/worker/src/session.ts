@@ -124,6 +124,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     settingsManager,
     sandboxRoot: config.sandboxRoot,
     scratchDir,
+    hostSkillDirs: config.hostSkillDirs,
   });
   const loaded = summarizeWorkspaceResources(resourceLoader);
   const pluginNames = readPluginSnapshot(input.cwd, scratchDir);

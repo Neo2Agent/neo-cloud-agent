@@ -112,8 +112,9 @@
 
 主进程（host.ts）
   工作区 = 你选的那个文件夹（就地，不再 git worktree add）
-  写 userData/neo-desk/runs/<runId>/run-bootstrap.json
-  fork packages/worker（剥掉 Provider Key，带 NEO_SANDBOX_ROOT）
+  写 ~/.neo/desk/runs/<runId>/run-bootstrap.json
+  系统技能同步到 ~/.neo/skills-neo（形状同 ~/.cursor/skills-cursor）
+  fork packages/worker（剥掉 Provider Key，带 NEO_SANDBOX_ROOT 和 NEO_HOST_SKILL_DIRS）
   POST /v1/desks/:id/claim { workspaceDir, pid }
 ```
 
@@ -173,10 +174,10 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 ## 客户端约束（已经写进代码）
 
 - **工作区 = 授权目录本身。** 有 `.git` 才有 commit / PR；没有 git 的文件夹仍可读写、开终端。
-- **一份 `.neo`。** 仓库认什么、worker 读什么，和云端同一套 `createWorkspaceLoader`。不为 This Computer 另做 Cursor Customize，也不单独加载 `.cursor/rules`、`.cursor/commands`、`.cursorignore`。Cursor 兼容只保留云端已经有的（`environment.json` 回落、skills / agents / hooks 文件名）。
+- **一份工作区 `.neo`，外加用户主目录 `~/.neo`。** 仓库认什么、worker 读什么，和云端同一套 `createWorkspaceLoader`。不为 This Computer 另做 Cursor Customize，也不单独加载 `.cursor/rules`、`.cursor/commands`、`.cursorignore`。Cursor 兼容只保留云端已经有的（`environment.json` 回落、skills / agents / hooks 文件名）。系统技能落在 `~/.neo/skills-neo/`（对标 `~/.cursor/skills-cursor`），Desk 状态落在 `~/.neo/desk/`，不放 Electron Application Support。
 - **本机多的是墙和寻址。** 云端 VM 本身就是盒子；本机才有「用户选的文件夹」和真磁盘出界。`NEO_SANDBOX_ROOT` 只对本机 Run 生效：pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝（展开 `~` / `$HOME`，顺着符号链接看真实落点）；`bash` 的重定向（含 `1>` / `2>` / `&>` / `>|`）和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂，但 `ln` 不准把工作区名字链到 `/tmp` 或家目录。出界默认 `deny`，不问人。`ask` / `allowlist` 若以后做，只进 Desk prefs + `NEO_SANDBOX_*`，云端 worker 不读。
 - **选目录就是授权。** 家目录和磁盘根直接拒；`/tmp`、`/Users` 这类过宽目录要二次确认。确认框文案：只改这个文件夹；`.neo` 和云端同一套，不是另一产品。设置一期分栏是基础配置（并发上限）和模型配置，不加「加载 `.cursor`」开关；composer `/` 不接 Cursor commands。
-- **`.neo/` 禁止 Agent 写**（执行墙，防并行串改）。同一文件夹两条对话的专家文件、贴图、boot 日志按 runId 写在 `<workspace>/.neo/runs/<runId>/`；读序是 scratch 优先，再回落 `<cwd>/.neo`。session / bootstrap / jwt 仍在 `userData/neo-desk/runs/<runId>/`。整个 `.neo/` 在 `.git/info/exclude` 里。`.git/hooks`、`.git/config`、`.git/info/attributes` 以及云端本来就读的 `.cursor/hooks.json` / `.cursor/hooks/` 同样只读——写进去会活过这一轮。不要再扩一份本机专用「Cursor 保护清单」当产品功能。
+- **工作区 `.neo/` 禁止 Agent 写**（执行墙，防并行串改）。同一文件夹两条对话的专家文件、贴图、boot 日志按 runId 写在 `<workspace>/.neo/runs/<runId>/`；读序是 scratch 优先，再回落 `<cwd>/.neo`，再读 `~/.neo/skills-neo`。session / bootstrap / jwt 在 `~/.neo/desk/runs/<runId>/`。整个工作区 `.neo/` 在 `.git/info/exclude` 里。`.git/hooks`、`.git/config`、`.git/info/attributes` 以及云端本来就读的 `.cursor/hooks.json` / `.cursor/hooks/` 同样只读——写进去会活过这一轮。不要再扩一份本机专用「Cursor 保护清单」当产品功能。
 - **一期路径只挂在发起这条 run 的 Desk 侧。** 工作区记在 run 的 `repoUrls[0]`，不报到 desk 工作区清单。清单上报（机器名 + repoKey + 短名、不含绝对路径）是二期 Remote control。也不把本机路径同步成别人的项目默认仓库。
 - **`online` = 正握着 inbox。** 只看时间戳会让一台注册完就退出的电脑看起来还在。
 - **控制面不杀笔记本进程。** `DeskRuntime.destroy` 是空的；停 worker 走 inbox 的 `cancel`，活着靠 worker 心跳。
