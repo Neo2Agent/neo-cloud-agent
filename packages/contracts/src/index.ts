@@ -164,7 +164,12 @@ export {
 } from "./llm-settings.js";
 export type { ModelLimits } from "./models.js";
 export { MAX_REQUEST_OUTPUT_TOKENS, resolveModelLimits, resolveRequestMaxTokens } from "./models.js";
-export { BASELINE_TOOL_TEXT, CLOUD_SYSTEM_PROMPT } from "./system-prompt.js";
+export {
+  BASELINE_BUILTIN_TOOL_TEXT,
+  BASELINE_CLOUD_TOOL_TEXT,
+  BASELINE_TOOL_TEXT,
+  CLOUD_SYSTEM_PROMPT,
+} from "./system-prompt.js";
 export {
   BUNDLED_SUBAGENTS,
   BUNDLED_SUBAGENT_NAMES,
@@ -195,14 +200,26 @@ export type {
   SubagentStep,
   SubagentTask,
 } from "./subagent.js";
-export type { ContextUsageBucket, ContextUsageBucketId, ContextUsageSnapshot } from "./context-usage.js";
+export type {
+  ContextBarBucket,
+  ContextBarLayout,
+  ContextBarSlice,
+  ContextUsageBucket,
+  ContextUsageBucketId,
+  ContextUsageItem,
+  ContextUsageItemDraft,
+  ContextUsageSnapshot,
+} from "./context-usage.js";
 export {
   CONTEXT_BUCKET_LABELS,
+  CONTEXT_BUCKET_ORDER,
   assembleContextUsage,
   baselineContextUsage,
   contextUsageToData,
   estimateTokensFromText,
   formatTokenCount,
+  hitTestBar,
+  layoutContextBar,
   overlayContextUsage,
   parseContextUsage,
 } from "./context-usage.js";

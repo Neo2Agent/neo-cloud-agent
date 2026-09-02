@@ -118,7 +118,7 @@ async function runOne(input: SubagentRunInput, agentName: string, task: string):
     (name) => name !== SUBAGENT_TOOL_NAME && name !== SUBSCRIPTION_TOOL_NAME,
   );
   const started = Date.now();
-  const session = await openPiSession({
+  const { session } = await openPiSession({
     ...input,
     sessionDir: path.join(input.sessionDir, "subagents", nest.id),
     allowSubagent: false,

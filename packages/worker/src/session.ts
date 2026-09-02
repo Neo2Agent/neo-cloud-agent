@@ -5,6 +5,7 @@ import {
   ModelRuntime,
   SettingsManager,
   type AgentSession,
+  type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import {
   appendExpertRole,
@@ -39,7 +40,60 @@ export interface OpenSessionInput {
   onSubagentEvent?: SubagentEventHandler;
 }
 
-export async function openPiSession(input: OpenSessionInput): Promise<AgentSession> {
+/**
+ * The neo-side layers of the system prompt, each holding only the text that
+ * layer added. pi later concatenates AGENTS.md and the skills catalog onto the
+ * same string, so this is the only way to attribute those layers to a bucket.
+ */
+export interface PromptLayers {
+  base: string;
+  boundary: string;
+  expertRole: string;
+  projectInstruction: string;
+  userMemory: string;
+}
+
+/** Everything the context-usage panel needs that the pi session does not expose. */
+export interface SessionContextSources {
+  resourceLoader: ResourceLoader;
+  promptLayers: PromptLayers;
+}
+
+export interface OpenedSession {
+  session: AgentSession;
+  contextSources: SessionContextSources;
+}
+
+/**
+ * Each append helper returns `${prompt}\n\n<section>`, so slicing off the
+ * previous length recovers exactly what that layer contributed without
+ * duplicating the helpers' formatting.
+ */
+function composeSystemPrompt(input: {
+  base: string;
+  sandboxRoot: string;
+  expertRole: string;
+  projectInstruction: string;
+  userMemory: string;
+}): { text: string; layers: PromptLayers } {
+  const { base } = input;
+  const withBoundary = appendWorkspaceBoundary(base, input.sandboxRoot);
+  const withExpert = appendExpertRole(withBoundary, input.expertRole);
+  const withProject = appendProjectInstruction(withExpert, input.projectInstruction);
+  const withMemory = appendUserMemory(withProject, input.userMemory);
+  return {
+    text: withMemory,
+    layers: {
+      base,
+      boundary: withBoundary.slice(base.length),
+      expertRole: withExpert.slice(withBoundary.length),
+      projectInstruction: withProject.slice(withExpert.length),
+      userMemory: withMemory.slice(withProject.length),
+    },
+  };
+}
+
+export async function openPiSession(input: OpenSessionInput): Promise<OpenedSession> {
   mkdirSync(input.cwd, { recursive: true });
   mkdirSync(input.sessionDir, { recursive: true });
   const agentDir = path.join(input.sessionDir, "agent");
@@ -108,19 +162,17 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     compaction: { enabled: spec.compactionEnabled },
     retry: { enabled: true, maxRetries: 2 },
   });
+  const composed = composeSystemPrompt({
+    base: input.systemPrompt ?? CLOUD_SYSTEM_PROMPT,
+    sandboxRoot: config.sandboxRoot,
+    expertRole: expert.role,
+    projectInstruction: readProjectInstruction(input.cwd),
+    userMemory: readUserMemory(input.cwd),
+  });
   const resourceLoader = await createWorkspaceLoader({
     cwd: input.cwd,
     agentDir,
-    systemPrompt: appendUserMemory(
-      appendProjectInstruction(
-        appendExpertRole(
-          appendWorkspaceBoundary(input.systemPrompt ?? CLOUD_SYSTEM_PROMPT, config.sandboxRoot),
-          expert.role,
-        ),
-        readProjectInstruction(input.cwd),
-      ),
-      readUserMemory(input.cwd),
-    ),
+    systemPrompt: composed.text,
     settingsManager,
     sandboxRoot: config.sandboxRoot,
     scratchDir,
@@ -149,7 +201,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<AgentSessi
     sessionManager: opened.manager,
     settingsManager,
   });
-  return session;
+  return { session, contextSources: { resourceLoader, promptLayers: composed.layers } };
 }
 
 /** Desk runs live in the user's own folder, so say so before the agent guesses. */

@@ -174,7 +174,12 @@ export interface Run {
     percent: number | null;
     source: "session" | "estimate";
     model?: string;
-    buckets: Array<{ id: string; label: string; tokens: number }>;
+    buckets: Array<{
+      id: string;
+      label: string;
+      tokens: number;
+      children?: Array<{ id: string; label: string; tokens: number }>;
+    }>;
   } | null;
 }
 

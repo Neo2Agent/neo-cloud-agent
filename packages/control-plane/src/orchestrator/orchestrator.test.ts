@@ -554,12 +554,27 @@ test("context.usage stores the model's window and does not invent one", async ()
         percent: 0.24,
         source: "session",
         model: "deepseek-v4-flash",
-        buckets: [{ id: "conversation", label: "对话", tokens: 2400 }],
+        buckets: [
+          {
+            id: "tools",
+            label: "内置工具",
+            tokens: 1800,
+            children: [
+              { id: "read", label: "read", tokens: 1200 },
+              { id: "bash", label: "bash", tokens: 600 },
+            ],
+          },
+          { id: "conversation", label: "对话", tokens: 600 },
+        ],
       },
     },
   ]);
   assert.equal(getRun(run.id)?.contextUsage?.contextWindow, 1_000_000);
   assert.equal(getRun(run.id)?.contextUsage?.tokens, 2400);
+  assert.deepEqual(
+    getRun(run.id)?.contextUsage?.buckets.find((bucket) => bucket.id === "tools")?.children?.map((item) => item.id),
+    ["read", "bash"],
+  );
 
   const other = await createRun({
     prompt: "unknown model",

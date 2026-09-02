@@ -5,22 +5,22 @@ html {
 
 :root {
   color-scheme: light;
-  --bg: #f4f4f1;
-  --bg-2: #f7f7f4;
-  --rail: #f7f7f4;
-  --stage: #fbfbf8;
+  --bg: #ffffff;
+  --bg-2: #f7f7f8;
+  --rail: #f7f7f8;
+  --stage: #ffffff;
   --panel: #ffffff;
-  --line: #e6e6e1;
-  --text: #171714;
-  --muted: #6f6f6a;
-  --accent: #2f6df6;
-  --accent-2: #1d4ed8;
-  --user: #ecece8;
-  --ok: #16a34a;
-  --err: #dc2626;
-  --run: #2f6df6;
-  --ink: #171714;
-  --shadow: 0 10px 32px rgba(17, 17, 16, 0.07);
+  --line: #ececec;
+  --text: #0d0d0d;
+  --muted: #8b8b8b;
+  --accent: #4d6bfe;
+  --accent-2: #3b5bdb;
+  --user: #ececec;
+  --ok: #067647;
+  --err: #b42318;
+  --run: #4d6bfe;
+  --ink: #111827;
+  --shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
 }
 
 * {
@@ -45,7 +45,7 @@ body,
   overscroll-behavior: none;
   background: var(--bg);
   color: var(--text);
-  font-family: "Geist Sans", "SF Pro Text", "PingFang SC", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
   font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
 }
@@ -117,7 +117,7 @@ button {
   overflow: hidden;
   padding: 16px 12px;
   border-right: 1px solid var(--line);
-  background: var(--rail);
+  background: var(--bg-2);
 }
 
 .brand {
@@ -164,7 +164,7 @@ button {
 button[type="submit"]:not(.send) {
   border: 0;
   border-radius: 12px;
-  background: var(--ink);
+  background: var(--accent);
   color: #ffffff;
   font-weight: 600;
   padding: 10px 14px;
@@ -178,9 +178,20 @@ button[type="submit"]:not(.send) {
   gap: 8px;
 }
 
+.new-chat-plus {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 16px;
+  line-height: 1;
+}
+
 .new-chat:hover,
 button[type="submit"]:not(.send):hover:not(:disabled) {
-  background: #111110;
+  background: var(--accent-2);
 }
 
 button[type="submit"]:disabled {
@@ -221,8 +232,8 @@ button[type="submit"]:disabled {
 
 .run-item.active {
   border-color: transparent;
-  background: var(--panel);
-  box-shadow: 0 0 0 1px var(--line);
+  background: color-mix(in srgb, var(--accent) 8%, #ffffff);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .run-item small,
@@ -447,7 +458,7 @@ button[type="submit"]:disabled {
 .app-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex: 0 0 auto;
 }
 
@@ -456,12 +467,11 @@ button[type="submit"]:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   border: 0;
   background: transparent;
   color: var(--muted);
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
   min-height: 36px;
   cursor: pointer;
 }
@@ -1067,7 +1077,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 26px;
   background: var(--panel);
-  box-shadow: var(--shadow);
+  box-shadow: 0 8px 28px rgba(77, 107, 254, 0.08);
   flex-shrink: 0;
   min-height: 0;
   max-height: 32vh;
@@ -1163,46 +1173,58 @@ button.send {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0;
+  gap: 8px;
   border: 0;
   border-radius: 999px;
-  background: var(--ink);
+  background: #111827;
   color: #ffffff;
   font-weight: 600;
-  width: 36px;
-  height: 36px;
+  padding: 8px 16px;
   min-height: 36px;
-  padding: 0;
+  width: auto;
+  height: auto;
   cursor: pointer;
 }
 
 button.send {
-  background: var(--ink);
+  background: var(--accent);
 }
 
-button.send:hover:not(:disabled),
+button.send:hover:not(:disabled) {
+  background: var(--accent-2);
+}
+
 button.stop:hover {
-  background: #111110;
+  background: #030712;
 }
 
 button.send:disabled {
-  background: #e4e4de;
-  color: #9a9a94;
-  opacity: 1;
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--accent);
+  color: #ffffff;
 }
 
 .stop-icon {
-  display: grid;
-  place-items: center;
   width: 10px;
   height: 10px;
   border-radius: 2px;
   background: #ffffff;
-  color: #ffffff;
 }
 
-.stop-icon svg {
-  display: none;
+.buddy-composer button.send,
+.buddy-composer button.stop {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  gap: 0;
+}
+
+.buddy-composer button.send:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  opacity: 1;
 }
 
 .settings-panel {
@@ -1817,7 +1839,7 @@ button.send:disabled {
   right: 12px;
   bottom: 0;
   height: 2px;
-  background: var(--ink);
+  background: var(--accent);
   border-radius: 2px 2px 0 0;
 }
 
@@ -1885,7 +1907,7 @@ button.send:disabled {
   color: #3f3f38;
 }
 
-.catalog-avatar.tone-0 { background: #e8eefc; color: #2f6df6; }
+.catalog-avatar.tone-0 { background: #e8eefc; color: #4d6bfe; }
 .catalog-avatar.tone-1 { background: #e8f6ee; color: #16a34a; }
 .catalog-avatar.tone-2 { background: #f3eee8; color: #9a6b3f; }
 .catalog-avatar.tone-3 { background: #f3e8f0; color: #a14d86; }
@@ -2732,6 +2754,15 @@ button.composer-mic.is-listening,
   font-size: 13px;
 }
 
+.context-usage-list li[aria-expanded] {
+  cursor: pointer;
+}
+
+.context-usage-list li.is-child {
+  padding-left: 20px;
+  color: var(--muted);
+}
+
 .context-usage-list span {
   display: flex;
   align-items: center;
@@ -3330,8 +3361,8 @@ button.composer-mic.is-listening,
     display: none;
   }
 
-  button.send,
-  button.stop {
+  .buddy-composer button.send,
+  .buddy-composer button.stop {
     width: 44px;
     height: 44px;
     min-width: 44px;
@@ -4031,8 +4062,8 @@ button.composer-mic.is-listening,
 
 .toolbar-btn.is-ready {
   color: #fff;
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .run-check {

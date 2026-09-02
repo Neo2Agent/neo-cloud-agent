@@ -82,7 +82,7 @@ async function main(): Promise<void> {
     console.error("failed to restore session", error);
   }
 
-  const session = await openPiSession({
+  const { session, contextSources } = await openPiSession({
     cwd: workspaceDir,
     sessionDir: config.sessionDir,
     runId: config.runId,
@@ -103,6 +103,7 @@ async function main(): Promise<void> {
       const snapshot = inspectSessionContext(session, {
         modelId: bootstrap.model,
         reportedTokens,
+        contextSources,
       });
       enqueueEvents(config.runId, stampWorkerSeq([contextUsageEvent(config.runId, snapshot)], workerSeq)).catch(
         (error: unknown) => {

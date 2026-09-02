@@ -249,9 +249,6 @@ importers:
 
   packages/web:
     dependencies:
-      '@fontsource/geist-sans':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@neo-cloud-agent/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -3260,13 +3257,6 @@ packages:
   expo-server@1.0.7:
     resolution: {integrity: sha512-mcmyML3oXcqFUXUxtdtCL1O00ztNI2v76d+MdniXRUgHNxIcHZ05zo+DqBaOOT6LQnPk4vA4YHqQl7iGUfRb3g==}
     engines: {node: '>=20.16.0'}
-
-  expo-speech-recognition@2.1.5:
-    resolution: {integrity: sha512-j4eS+bfUNv0r9bhbHmuspJiQYhIUEsTkHJ9ZfVYSQJRC9q8/uqPWojN9q8OpPO5+PQFHCgr54HJuMRhHHQgWkA==}
-    peerDependencies:
-      expo: '*'
-      react: '*'
-      react-native: '*'
 
   expo-status-bar@3.0.9:
     resolution: {integrity: sha512-xyYyVg6V1/SSOZWh4Ni3U129XHCnFHBTcUo0dhWtFDrZbNp/duw5AGsQfb2sVeU0gxWHXSY1+5F0jnKYC7WuOw==}
@@ -8978,12 +8968,6 @@ snapshots:
       expo: 54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@18.3.31)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
 
   expo-server@1.0.7: {}
-
-  expo-speech-recognition@2.1.5(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@18.3.31)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))(react-native@0.81.4(@babel/core@7.29.7)(@types/react@18.3.31)(react@19.1.0))(react@19.1.0):
-    dependencies:
-      expo: 54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@18.3.31)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
-      react: 19.1.0
-      react-native: 0.81.4(@babel/core@7.29.7)(@types/react@18.3.31)(react@19.1.0)
 
   expo-status-bar@3.0.9(react-native@0.81.4(@babel/core@7.29.7)(@types/react@18.3.31)(react@19.1.0))(react@19.1.0):
     dependencies:
