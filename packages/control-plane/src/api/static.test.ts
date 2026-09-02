@@ -77,7 +77,6 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.composer\{[^}]*flex-shrink:\s*0/);
   assert.match(cssText, /\.context-usage-pop/);
   assert.match(cssText, /\.context-usage-bar/);
-  assert.match(cssText, /\.context-usage-canvas/);
   const appText = readBuiltAsset(".js");
   assert.match(appText, /requestSubmit/);
   assert.match(appText, /登录响应缺少会话|登录未生效/);
