@@ -5,22 +5,22 @@ html {
 
 :root {
   color-scheme: light;
-  --bg: #f4f4f1;
-  --bg-2: #f7f7f4;
-  --rail: #f7f7f4;
-  --stage: #fbfbf8;
+  --bg: #ffffff;
+  --bg-2: #f7f7f8;
+  --rail: #f7f7f8;
+  --stage: #ffffff;
   --panel: #ffffff;
-  --line: #e6e6e1;
-  --text: #171714;
-  --muted: #6f6f6a;
-  --accent: #2f6df6;
-  --accent-2: #1d4ed8;
-  --user: #ecece8;
-  --ok: #16a34a;
-  --err: #dc2626;
-  --run: #2f6df6;
-  --ink: #171714;
-  --shadow: 0 10px 32px rgba(17, 17, 16, 0.07);
+  --line: #ececec;
+  --text: #0d0d0d;
+  --muted: #8b8b8b;
+  --accent: #4d6bfe;
+  --accent-2: #3b5bdb;
+  --user: #ececec;
+  --ok: #067647;
+  --err: #b42318;
+  --run: #4d6bfe;
+  --ink: #111827;
+  --shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
 }
 
 * {
@@ -117,7 +117,7 @@ button {
   overflow: hidden;
   padding: 16px 12px;
   border-right: 1px solid var(--line);
-  background: var(--rail);
+  background: var(--bg-2);
 }
 
 .brand {
@@ -164,7 +164,7 @@ button {
 button[type="submit"]:not(.send) {
   border: 0;
   border-radius: 12px;
-  background: var(--ink);
+  background: var(--accent);
   color: #ffffff;
   font-weight: 600;
   padding: 10px 14px;
@@ -180,7 +180,7 @@ button[type="submit"]:not(.send) {
 
 .new-chat:hover,
 button[type="submit"]:not(.send):hover:not(:disabled) {
-  background: #111110;
+  background: var(--accent-2);
 }
 
 button[type="submit"]:disabled {
@@ -221,8 +221,8 @@ button[type="submit"]:disabled {
 
 .run-item.active {
   border-color: transparent;
-  background: var(--panel);
-  box-shadow: 0 0 0 1px var(--line);
+  background: color-mix(in srgb, var(--accent) 8%, #ffffff);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .run-item small,
@@ -1067,7 +1067,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 26px;
   background: var(--panel);
-  box-shadow: var(--shadow);
+  box-shadow: 0 8px 28px rgba(77, 107, 254, 0.08);
   flex-shrink: 0;
   min-height: 0;
   max-height: 32vh;
@@ -1177,17 +1177,20 @@ button.send {
 }
 
 button.send {
-  background: var(--ink);
+  background: var(--accent);
 }
 
-button.send:hover:not(:disabled),
+button.send:hover:not(:disabled) {
+  background: var(--accent-2);
+}
+
 button.stop:hover {
-  background: #111110;
+  background: #030712;
 }
 
 button.send:disabled {
-  background: #e4e4de;
-  color: #9a9a94;
+  background: #e5e7eb;
+  color: #9ca3af;
   opacity: 1;
 }
 
@@ -1817,7 +1820,7 @@ button.send:disabled {
   right: 12px;
   bottom: 0;
   height: 2px;
-  background: var(--ink);
+  background: var(--accent);
   border-radius: 2px 2px 0 0;
 }
 
@@ -1885,7 +1888,7 @@ button.send:disabled {
   color: #3f3f38;
 }
 
-.catalog-avatar.tone-0 { background: #e8eefc; color: #2f6df6; }
+.catalog-avatar.tone-0 { background: #e8eefc; color: #4d6bfe; }
 .catalog-avatar.tone-1 { background: #e8f6ee; color: #16a34a; }
 .catalog-avatar.tone-2 { background: #f3eee8; color: #9a6b3f; }
 .catalog-avatar.tone-3 { background: #f3e8f0; color: #a14d86; }
@@ -4040,8 +4043,8 @@ button.composer-mic.is-listening,
 
 .toolbar-btn.is-ready {
   color: #fff;
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .run-check {
