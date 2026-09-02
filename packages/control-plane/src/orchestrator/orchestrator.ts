@@ -293,6 +293,38 @@ function requeueActiveTurn(run: Run): boolean {
   return true;
 }
 
+/** Worker is mid-flight: an answer or a tool call is open. */
+const TURN_OPEN_KINDS = new Set<RunEvent["kind"]>(["message.start", "message.delta", "tool.start", "tool.update"]);
+
+/** Worker yielded: whatever it had open is closed. */
+const TURN_CLOSED_KINDS = new Set<RunEvent["kind"]>(["message.end", "tool.end", "agent.end", "run.idle"]);
+
+/**
+ * Reattach cannot ask the adopted process what it is doing, so read its log.
+ * A turn counts as abandoned only when the worker both yielded and then went
+ * quiet for longer than a heartbeat; replaying a live turn would answer twice.
+ */
+function adoptedTurnLooksAbandoned(runId: string, at = Date.now()): boolean {
+  const events = eventsForRun(runId);
+  const lastAt = Date.parse(events.at(-1)?.createdAt ?? "");
+  if (!Number.isFinite(lastAt) || at - lastAt < workerHeartbeatTimeoutMs()) {
+    return false;
+  }
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const kind = events[index]?.kind;
+    if (!kind) {
+      continue;
+    }
+    if (TURN_OPEN_KINDS.has(kind)) {
+      return false;
+    }
+    if (TURN_CLOSED_KINDS.has(kind)) {
+      return true;
+    }
+  }
+  return true;
+}
+
 function settleDetachedRun(run: Run, title: string): void {
   run.status = "IDLE";
   run.errorMessage = null;
@@ -376,6 +408,8 @@ export async function recoverLiveWorkers(): Promise<void> {
       const runtime = lease?.runtime === "desk" ? getRuntime("desk") : getRuntime();
       const handle = await runtime.adopt(run.id, lease, { onExit: bindWorkerExit(run.id) });
       if (handle) {
+        // Read the log before publishing, or the reattach event is the newest one.
+        const abandoned = adoptedTurnLooksAbandoned(run.id);
         handles.set(run.id, handle);
         run.workerHandle = handle.id;
         run.errorMessage = null;
@@ -394,7 +428,9 @@ export async function recoverLiveWorkers(): Promise<void> {
         publish(event(run.id, "run.running", "Reattached existing worker"));
         // Adopt keeps the process but does not replay inbox. A prompt already
         // taken before the restart sits on activeTurn with an empty inbound.
-        requeueActiveTurn(run);
+        if (abandoned) {
+          requeueActiveTurn(run);
+        }
         flushRun(run.id);
         continue;
       }

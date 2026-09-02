@@ -59,8 +59,8 @@ import {
   isTurnBusy,
   pendingUserArrived,
   runningToolName,
-  runCursorChanged,
   shouldRefreshTranscript,
+  transcriptBodyNeeded,
   shouldShowBuddyHome,
   statusFromEventKind,
   turnStatusLabel,
@@ -307,13 +307,11 @@ export function App() {
   const pendingRef = useRef<PendingUser | null>(null);
   const keepPendingRef = useRef(false);
   const currentStatusRef = useRef<string | null | undefined>(null);
-  const currentUpdatedAtRef = useRef<string | null | undefined>(null);
   const projectNamesRef = useRef(projectNames);
   tokenRef.current = token;
   sendingRef.current = sending;
   pendingRef.current = pendingTurn;
   currentStatusRef.current = currentRun?.status;
-  currentUpdatedAtRef.current = currentRun?.updatedAt;
   projectNamesRef.current = projectNames;
 
   const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
@@ -1252,18 +1250,18 @@ export function App() {
         if (cancelled) return;
         const fresh = runRes.ok ? await readJson<Run>(runRes) : null;
         const nextStatus = fresh?.status ?? status;
-        const cursorMoved = Boolean(
-          fresh &&
-            runCursorChanged(
-              { updatedAt: currentUpdatedAtRef.current, status },
-              { updatedAt: fresh.updatedAt, status: fresh.status },
-            ),
-        );
-        if (fresh && fresh.id === runId && cursorMoved) {
+        if (fresh && fresh.id === runId) {
           setCurrentRun((prev) => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
           setRuns((prev) => prev.map((item) => (item.id === fresh.id ? { ...item, ...fresh } : item)));
         }
-        if (fresh && !cursorMoved) {
+        if (
+          fresh &&
+          !transcriptBodyNeeded({
+            appliedEventId: lastEventIdRef.current,
+            runLastEventId: fresh.lastEventId,
+          })
+        ) {
+          setMessages((prev) => withQueuedNotice(prev, nextStatus));
           return;
         }
         const transcriptRes = await api(tokenRef.current, transcriptUrl(runId));

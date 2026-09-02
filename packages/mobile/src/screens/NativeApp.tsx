@@ -24,8 +24,8 @@ import {
   isActiveRunStatus,
   pendingUserMessage,
   sendFailureMessage,
-  runCursorChanged,
   shouldRefreshTranscript,
+  transcriptBodyNeeded,
   shouldReplaceLiveTranscript,
   shouldShowThinking,
   thinkingHint,
@@ -86,9 +86,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const liveSse = useRef(false);
   const openRunId = useRef<string | null>(null);
   const foreground = useRef(true);
-  const updatedAtRef = useRef<string | null | undefined>(null);
   statusRef.current = current?.status;
-  updatedAtRef.current = current?.updatedAt;
   const source = useMemo(() => detectMobileSource(Platform.OS === "ios" ? "iPhone" : "Android"), []);
   const client = useMemo(() => new MobileClient(apiUrl, token), [apiUrl, token]);
 
@@ -203,12 +201,13 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       }
       try {
         const run = await client.getRun(id);
-        const cursorMoved = runCursorChanged(
-          { updatedAt: updatedAtRef.current, status: statusRef.current },
-          { updatedAt: run.updatedAt, status: run.status },
-        );
-        if (cursorMoved) setCurrent(run);
-        if (!cursorMoved) return;
+        setCurrent(run);
+        if (
+          !transcriptBodyNeeded({ appliedEventId: lastEventId.current, runLastEventId: run.lastEventId })
+        ) {
+          setMessages((prev) => withQueuedNotice(prev, run.status));
+          return;
+        }
         const transcript = await client.transcript(id);
         if (
           (transcript.snapshot.lastEventId && transcript.snapshot.lastEventId === lastEventId.current) ||

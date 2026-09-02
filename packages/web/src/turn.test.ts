@@ -11,7 +11,7 @@ import {
   pendingUserArrived,
   QUEUED_SLOT_NOTICE,
   shouldRefreshTranscript,
-  runCursorChanged,
+  transcriptBodyNeeded,
   shouldShowBuddyHome,
   shouldShowThinking,
   statusFromEventKind,
@@ -107,25 +107,11 @@ test("shouldRefreshTranscript polls while queued or when SSE is quiet", () => {
   assert.equal(shouldRefreshTranscript({ lastSseAt: 0, now: 4000, status: "RUNNING" }), true);
 });
 
-test("runCursorChanged is false when the run record is unchanged", () => {
-  assert.equal(
-    runCursorChanged(
-      { updatedAt: "2026-09-02T08:18:35.756Z", status: "RUNNING" },
-      { updatedAt: "2026-09-02T08:18:35.756Z", status: "RUNNING" },
-    ),
-    false,
-  );
-  assert.equal(
-    runCursorChanged(
-      { updatedAt: "2026-09-02T08:18:35.756Z", status: "RUNNING" },
-      { updatedAt: "2026-09-02T08:19:00.000Z", status: "RUNNING" },
-    ),
-    true,
-  );
-  assert.equal(
-    runCursorChanged({ updatedAt: "t1", status: "RUNNING" }, { updatedAt: "t1", status: "IDLE" }),
-    true,
-  );
+test("transcriptBodyNeeded skips the body until the run reports a newer event", () => {
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: "e9" }), false);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: "e10" }), true);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: null, runLastEventId: "e1" }), true);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: null }), true);
 });
 
 test("withQueuedNotice inserts the slot-wait line once", () => {

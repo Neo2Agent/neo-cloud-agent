@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { ImageRef, WorkerInbound } from "@neo-cloud-agent/contracts";
+import { rawTranscriptImageData, type ImageRef, type WorkerInbound } from "@neo-cloud-agent/contracts";
 
 export type PiImageContent = {
   type: "image";
@@ -9,7 +9,7 @@ export type PiImageContent = {
 };
 
 export function rawImageData(data: string): string {
-  return data.includes(",") ? data.slice(data.indexOf(",") + 1) : data;
+  return rawTranscriptImageData(data);
 }
 
 export function toPiImageContent(images?: ImageRef[]): PiImageContent[] {

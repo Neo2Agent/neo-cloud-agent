@@ -719,11 +719,16 @@ export function pageTranscriptSnapshot(
   };
 }
 
-/** List payload path so the phone does not JSON.parse a JPEG. */
+/** Where a chat photo is served, so the list payload never carries a JPEG. */
 export function transcriptImagePath(runId: string, messageId: string, index: number): string {
   return `/v1/runs/${encodeURIComponent(runId)}/transcript/images/${encodeURIComponent(messageId)}/${index}`;
 }
 
+/**
+ * Replace inline base64 with a URL. A phone re-fetches this page whenever the
+ * event stream is quiet, and parsing image bytes each time is what makes the
+ * chat hitch. Callers that need the bytes keep asking for the plain snapshot.
+ */
 export function slimTranscriptSnapshotImages(snapshot: TranscriptSnapshot): TranscriptSnapshot {
   let changed = false;
   const messages = snapshot.messages.map((message) => {
@@ -743,6 +748,7 @@ export function slimTranscriptSnapshotImages(snapshot: TranscriptSnapshot): Tran
   return changed ? { ...snapshot, messages } : snapshot;
 }
 
+/** Bytes behind `transcriptImagePath`. Null covers unknown ids and slim pages. */
 export function findTranscriptImage(
   snapshot: TranscriptSnapshot,
   messageId: string,
@@ -758,6 +764,7 @@ export function findTranscriptImage(
   return { mediaType: image.mediaType, data: image.data };
 }
 
+/** Strip a `data:` prefix so the payload is plain base64. */
 export function rawTranscriptImageData(data: string): string {
   const trimmed = data.trim();
   return trimmed.includes(",") ? trimmed.slice(trimmed.indexOf(",") + 1) : trimmed;

@@ -28,8 +28,8 @@ import {
   pendingUserArrived,
   pendingUserMessage,
   sendFailureMessage,
-  runCursorChanged,
   shouldRefreshTranscript,
+  transcriptBodyNeeded,
   shouldReplaceLiveTranscript,
   shouldShowThinking,
   thinkingHint,
@@ -110,9 +110,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const liveSse = useRef(false);
   const openRunId = useRef<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
-  const updatedAtRef = useRef<string | null | undefined>(null);
   statusRef.current = current?.status;
-  updatedAtRef.current = current?.updatedAt;
   const source = useMemo(() => detectMobileSource(navigator.userAgent), []);
   const client = useMemo(() => new MobileClient(apiUrl, token), [apiUrl, token]);
 
@@ -205,12 +203,13 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       if (!shouldRefreshTranscript({ lastSseAt: lastSseAt.current, status: statusRef.current })) return;
       try {
         const run = await client.getRun(id);
-        const cursorMoved = runCursorChanged(
-          { updatedAt: updatedAtRef.current, status: statusRef.current },
-          { updatedAt: run.updatedAt, status: run.status },
-        );
-        if (cursorMoved) setCurrent(run);
-        if (!cursorMoved) return;
+        setCurrent(run);
+        if (
+          !transcriptBodyNeeded({ appliedEventId: lastEventId.current, runLastEventId: run.lastEventId })
+        ) {
+          setMessages((prev) => withQueuedNotice(prev, run.status));
+          return;
+        }
         const transcript = await client.transcript(id);
         if (
           (transcript.snapshot.lastEventId && transcript.snapshot.lastEventId === lastEventId.current) ||

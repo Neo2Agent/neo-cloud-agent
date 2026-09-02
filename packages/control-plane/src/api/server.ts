@@ -42,7 +42,7 @@ import {
   resolveModelLimits,
   writeLlmSettings,
 } from "@neo-cloud-agent/contracts";
-import { eventsForRun } from "../events/bus.js";
+import { eventsForRun, lastEventIdForRun } from "../events/bus.js";
 import { snapshotForRun } from "../events/snapshot.js";
 import { SSE_HEADERS, attachEventStream } from "../events/stream.js";
 import {
@@ -336,27 +336,34 @@ function requestOrigin(req: IncomingMessage): string {
   return host ? `${proto}://${host}` : getConfig().controlPlaneUrl;
 }
 
+/** A transcript image is keyed by event id, so its bytes never change. */
+const IMMUTABLE_PRIVATE_CACHE = "private, max-age=86400, immutable";
+
 function sendBytes(res: ServerResponse, status: number, body: Buffer, contentType: string): void {
   res.writeHead(status, {
     ...CORS,
     "content-type": contentType,
     "content-length": body.length,
-    "cache-control": "private, max-age=86400, immutable",
+    "cache-control": IMMUTABLE_PRIVATE_CACHE,
   });
   res.end(body);
 }
 
-function decodeTranscriptImageData(data: string): Buffer | null {
+function decodePathSegment(segment: string): string | null {
   try {
-    const raw = rawTranscriptImageData(data);
-    if (!raw) {
-      return null;
-    }
-    const body = Buffer.from(raw, "base64");
-    return body.length > 0 ? body : null;
+    return decodeURIComponent(segment);
   } catch {
     return null;
   }
+}
+
+function decodeTranscriptImageData(data: string): Buffer | null {
+  const raw = rawTranscriptImageData(data);
+  if (!raw) {
+    return null;
+  }
+  const body = Buffer.from(raw, "base64");
+  return body.length > 0 ? body : null;
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -1749,11 +1756,12 @@ export function createApiServer() {
 
       const runMatch = /^\/v1\/runs\/([^/]+)$/.exec(path);
       if (runMatch && method === "GET") {
-        const run = await requireRun(runMatch[1] ?? "");
+        const runId = runMatch[1] ?? "";
+        const run = await requireRun(runId);
         if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
-        send(res, 200, run);
+        send(res, 200, run ? { ...run, lastEventId: lastEventIdForRun(runId) } : run);
         return;
       }
       if (runMatch && method === "DELETE") {
@@ -2184,10 +2192,14 @@ export function createApiServer() {
       const transcriptImageMatch = /^\/v1\/runs\/([^/]+)\/transcript\/images\/([^/]+)\/(\d+)$/.exec(path);
       if (transcriptImageMatch && method === "GET") {
         const runId = transcriptImageMatch[1] ?? "";
-        const messageId = decodeURIComponent(transcriptImageMatch[2] ?? "");
+        const messageId = decodePathSegment(transcriptImageMatch[2] ?? "");
         const index = Number(transcriptImageMatch[3]);
         const run = await requireRun(runId);
         if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        if (messageId === null) {
+          notFound(res);
           return;
         }
         const image = findTranscriptImage(snapshotForRun(runId), messageId, index);

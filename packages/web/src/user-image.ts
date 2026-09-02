@@ -1,5 +1,19 @@
+const FALLBACK_IMAGE_MEDIA_TYPE = "image/jpeg";
+
+type TranscriptImage = { mediaType?: string; data?: string; href?: string };
+
+/**
+ * Pick what an `<img>` should load for a chat photo.
+ *
+ * A transcript page asked with `images=href` carries no bytes, so the browser
+ * fetches the image once and can cache it instead of re-parsing base64 on every
+ * poll. The token rides in the query like the run event stream does, because an
+ * `<img>` cannot send an Authorization header.
+ *
+ * Locally attached images (not yet sent) still arrive as raw base64.
+ */
 export function transcriptUserImageSrc(
-  image: { mediaType?: string; data?: string; href?: string },
+  image: TranscriptImage,
   token: string,
   withBase: (path: string) => string = (path) => path,
 ): string {
@@ -9,8 +23,8 @@ export function transcriptUserImageSrc(
     if (!token) {
       return url;
     }
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}access_token=${encodeURIComponent(token)}`;
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}access_token=${encodeURIComponent(token)}`;
   }
   const data = image.data?.trim();
   if (!data) {
@@ -19,5 +33,5 @@ export function transcriptUserImageSrc(
   if (data.startsWith("data:")) {
     return data;
   }
-  return `data:${image.mediaType || "image/jpeg"};base64,${data}`;
+  return `data:${image.mediaType || FALLBACK_IMAGE_MEDIA_TYPE};base64,${data}`;
 }
