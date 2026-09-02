@@ -860,7 +860,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       <header className="topbar">
         <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
       </header>
-      <IslandHome expertName={expertName} />
+      <IslandHome expertName={expertName} onPickRecipe={applyRecipe} />
       {composer}
       {drawer}
     </div>
