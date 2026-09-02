@@ -127,7 +127,11 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /上下文用量/);
   assert.match(appText, /窗口未知/);
   assert.match(appText, /系统提示/);
-  assert.match(appText, /工具定义/);
+  assert.match(appText, /规则/);
+  assert.match(appText, /记忆/);
+  assert.match(appText, /技能目录/);
+  assert.match(appText, /内置工具/);
+  assert.match(appText, /云端工具/);
   assert.match(appText, /已压缩对话/);
   assert.match(cssText, /pulse-dot/);
   assert.match(cssText, /think-bounce/);
