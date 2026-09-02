@@ -1,5 +1,6 @@
 import type { ExpertPick } from "@neo-cloud-agent/contracts/expert";
-import type { AgentMode, CreateRunRequest, RunSource } from "@neo-cloud-agent/contracts/run";
+import type { AgentMode, CreateRunRequest, ImageRef, RunSource } from "@neo-cloud-agent/contracts/run";
+import { MAX_IMAGES } from "./images.js";
 import { CLOUD_TARGET } from "./place.js";
 
 /** Web sends this so the agent reads without touching the workspace. Mobile matches it verbatim. */
@@ -18,12 +19,14 @@ export function cloudRunRequest(input: {
   pluginIds?: string[];
   projectId?: string;
   mode?: AgentMode;
+  images?: ImageRef[];
 }): CreateRunRequest {
   // A run takes an expert or a team, never both; the control plane rejects the pair.
   const expertTeamId = input.expert?.expertTeamId || undefined;
   const expertId = expertTeamId ? undefined : input.expert?.expertId || undefined;
+  const images = input.images?.length ? input.images.slice(0, MAX_IMAGES) : undefined;
   return {
-    prompt: askPrompt(input.prompt, input.mode),
+    prompt: askPrompt(input.prompt, input.mode) || "（图片）",
     repoUrls: [],
     envId: input.envId || undefined,
     source: input.source,
@@ -33,6 +36,18 @@ export function cloudRunRequest(input: {
     pluginIds: input.pluginIds?.length ? input.pluginIds : undefined,
     projectId: input.projectId || undefined,
     mode: input.mode,
+    images,
     target: { ...CLOUD_TARGET },
+  };
+}
+
+/** Follow-ups take the same cloud field, capped the same way. */
+export function cloudFollowUp(input: { text: string; mode?: AgentMode; images?: ImageRef[] }): {
+  text: string;
+  images?: ImageRef[];
+} {
+  return {
+    text: askPrompt(input.text, input.mode) || "（图片）",
+    images: input.images?.length ? input.images.slice(0, MAX_IMAGES) : undefined,
   };
 }

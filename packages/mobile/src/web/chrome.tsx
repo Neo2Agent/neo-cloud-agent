@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, preview, resolveChatModel } from "../format";
 import { dayGreeting } from "../island-theme";
 import type { StartVoiceResult } from "../speech-cloud";
@@ -281,8 +281,12 @@ export function IslandComposer(props: {
   sending: boolean;
   canStop: boolean;
   model: string;
+  images?: ImageRef[];
+  imageHint?: string;
   onModel: (value: string) => void;
   onPrompt: (value: string) => void;
+  onPickImages?: (files: FileList | null) => void;
+  onDropImage?: (index: number) => void;
   onSend: () => void;
   onStop?: () => void;
   startVoice: (
@@ -389,9 +393,29 @@ export function IslandComposer(props: {
     applyHoldResult(heldMs, spoken);
   };
 
+  const images = props.images ?? [];
+  const canSend = Boolean(props.prompt.trim() || images.length > 0);
+
   return (
     <div className="composer-dock">
       <div className="composer-bar">
+        {images.length > 0 ? (
+          <div className="composer-thumbs">
+            {images.map((image, index) => (
+              <button
+                key={`${image.mediaType}-${index}`}
+                type="button"
+                className="composer-thumb"
+                aria-label={`移除第 ${index + 1} 张图`}
+                onClick={() => props.onDropImage?.(index)}
+              >
+                <img src={`data:${image.mediaType};base64,${image.data}`} alt="" />
+                <span aria-hidden="true">×</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {props.imageHint ? <p className="composer-legal">{props.imageHint}</p> : null}
         <textarea
           ref={fieldRef}
           className="composer-field"
@@ -435,6 +459,27 @@ export function IslandComposer(props: {
             ) : null}
           </div>
           <div className="composer-send-group">
+            {props.onPickImages ? (
+              <label className="composer-attach" title="加图片">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                  disabled={props.locked || props.sending}
+                  onChange={(event) => {
+                    props.onPickImages?.(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M5 19h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2l-1.2-1.6a1 1 0 0 0-.8-.4H10.2a1 1 0 0 0-.8.4L8.2 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2Zm7-3.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
+                  />
+                </svg>
+              </label>
+            ) : null}
             <button
               type="button"
               className={listening ? "composer-mic is-on" : "composer-mic"}
@@ -469,7 +514,7 @@ export function IslandComposer(props: {
                 type="button"
                 className="composer-send"
                 aria-label="发送"
-                disabled={props.locked || props.sending || !props.prompt.trim()}
+                disabled={props.locked || props.sending || !canSend}
                 onClick={props.onSend}
               >
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">

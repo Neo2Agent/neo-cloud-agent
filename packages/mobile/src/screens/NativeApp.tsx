@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
@@ -17,7 +17,9 @@ import type { CredentialStore } from "../api/credentials";
 import { nextEnvId } from "../api/shell";
 import { detectMobileSource } from "../api/source";
 import { schedulePreset } from "../automations";
-import { cloudRunRequest } from "../create-run";
+import { cloudFollowUp, cloudRunRequest } from "../create-run";
+import { acceptImages, imageHint, overImageBudget } from "../images";
+import { ImagePickError, pickImagesFromLibrary } from "../native/pick-images";
 import { chatModelShort, resolveChatModel } from "../format";
 import { listenNeoDeepLinks } from "../native/linking";
 import { attachForegroundPushPolicy, listenNotificationOpen, registerExpoPushDevice } from "../native/push";
@@ -94,6 +96,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
   const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{ name: string; content: string }>>([]);
   const [pluginIds, setPluginIds] = useState<string[]>([]);
+  const [images, setImages] = useState<ImageRef[]>([]);
   const [history, setHistory] = useState<TranscriptMessage[]>([]);
   const [older, setOlder] = useState<{ remaining: number; nextBefore: string | null }>({ remaining: 0, nextBefore: null });
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -385,6 +388,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     setHistory([]);
     setOlder({ remaining: 0, nextBefore: null });
     setPrompt("");
+    setImages([]);
     setExpertPick({});
     setExpertName("");
     setPluginIds([]);
@@ -421,11 +425,17 @@ export function NativeApp({ store }: { store: CredentialStore }) {
 
   const send = async () => {
     const text = prompt.trim();
-    if (!text || sending) return;
+    if ((!text && images.length === 0) || sending) return;
     if (composerGate(current, desks).locked) return;
-    const pending = pendingUserMessage(text);
+    if (overImageBudget(images)) {
+      setPageError("图片太大了，删掉一张再发");
+      return;
+    }
+    const attached = images;
+    const pending = pendingUserMessage(text || "（图片）", undefined, attached);
     setSending(true);
     setPrompt("");
+    setImages([]);
     setPendingTurn(pending);
     setMessages((prev) => appendPendingUser(prev, pending));
     setScreen("chat");
@@ -440,15 +450,17 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             expert: expertPick,
             pluginIds,
             projectId: projectId ?? undefined,
+            images: attached,
           }),
         );
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
         await openRun(created.id, { keepPending: true });
         return;
       }
-      await client.followUp(current.id, { text });
+      await client.followUp(current.id, cloudFollowUp({ text, images: attached }));
     } catch (error) {
       setPrompt(text);
+      setImages(attached);
       setPendingTurn(null);
       setMessages((prev) => [
         ...prev.filter((item) => item.id !== pending.id),
@@ -695,8 +707,18 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       sending={sending}
       canStop={Boolean(current) && gate.running}
       model={model}
+      images={images}
+      imageHint={imageHint(images)}
       onModel={setModel}
       onPrompt={setPrompt}
+      onPickImages={() => {
+        void pickImagesFromLibrary(images.length)
+          .then((next) => setImages((prev) => acceptImages(prev, next)))
+          .catch((error) => {
+            Alert.alert("加图片失败", error instanceof ImagePickError ? error.message : "读不出这张图");
+          });
+      }}
+      onDropImage={(index) => setImages((prev) => prev.filter((_, item) => item !== index))}
       onSend={() => void send()}
       onStop={current ? () => void client.abort(current.id) : undefined}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}

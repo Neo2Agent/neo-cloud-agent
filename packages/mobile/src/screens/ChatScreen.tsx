@@ -162,6 +162,17 @@ export function ChatScreen({
                 neo={!mineMsg}
               />
               <View style={styles.col}>
+                {message.images?.length ? (
+                  <View style={styles.imageRow}>
+                    {message.images.map((image, index) => (
+                      <Image
+                        key={`${message.id}-img${index}`}
+                        source={{ uri: `data:${image.mediaType};base64,${image.data}` }}
+                        style={styles.userImage}
+                      />
+                    ))}
+                  </View>
+                ) : null}
                 {groups.map((group, index) =>
                   group.type === "text" ? (
                     <View key={`${message.id}-t${index}`} style={[styles.bubble, mineMsg ? styles.user : styles.agent]}>
@@ -229,6 +240,8 @@ const styles = StyleSheet.create({
   user: { backgroundColor: colors.bubbleUser },
   agent: { backgroundColor: colors.bubbleAgent },
   body: { color: colors.ink, fontSize: 15, lineHeight: 22 },
+  imageRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  userImage: { width: 120, height: 120, borderRadius: 12, borderWidth: 1, borderColor: colors.line },
   toolStack: { gap: 8 },
   toolCard: {
     padding: 10,

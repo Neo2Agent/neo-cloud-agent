@@ -9,7 +9,7 @@ import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contrac
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
@@ -21,7 +21,9 @@ import { sharedWebCredentials, type CredentialStore } from "../api/credentials";
 import { nextEnvId } from "../api/shell";
 import { detectMobileSource, parseMobileScreen } from "../api/source";
 import { schedulePreset, type ScheduleKind } from "../automations";
-import { cloudRunRequest } from "../create-run";
+import { cloudFollowUp, cloudRunRequest } from "../create-run";
+import { acceptImages, imageHint, overImageBudget } from "../images";
+import { filesToImageRefs } from "./pick-images";
 import { avatarLetter, chatModelShort, resolveChatModel, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { chatStatusText, composerGate } from "../session";
 import {
@@ -113,6 +115,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [older, setOlder] = useState<{ remaining: number; nextBefore: string | null }>({ remaining: 0, nextBefore: null });
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [pluginIds, setPluginIds] = useState<string[]>([]);
+  const [images, setImages] = useState<ImageRef[]>([]);
   const [inviteInfo, setInviteInfo] = useState<{ projectName: string; status: string }>({ projectName: "", status: "" });
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [pendingTurn, setPendingTurn] = useState<TranscriptMessage | null>(null);
@@ -441,11 +444,17 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
 
   const send = async () => {
     const text = prompt.trim();
-    if (!text || sending) return;
+    if ((!text && images.length === 0) || sending) return;
     if (composerGate(current, desks).locked) return;
-    const pending = pendingUserMessage(text);
+    if (overImageBudget(images)) {
+      setPageError("图片太大了，删掉一张再发");
+      return;
+    }
+    const attached = images;
+    const pending = pendingUserMessage(text || "（图片）", undefined, attached);
     setSending(true);
     setPrompt("");
+    setImages([]);
     setPendingTurn(pending);
     setMessages((prev) => appendPendingUser(prev, pending));
     try {
@@ -459,15 +468,17 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             expert: expertPick,
             pluginIds,
             projectId: projectId ?? undefined,
+            images: attached,
           }),
         );
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
         await openRun(created.id, { keepPending: true });
         return;
       }
-      await client.followUp(current.id, { text });
+      await client.followUp(current.id, cloudFollowUp({ text, images: attached }));
     } catch (error) {
       setPrompt(text);
+      setImages(attached);
       setPendingTurn(null);
       setMessages((prev) => [
         ...prev.filter((item) => item.id !== pending.id),
@@ -724,8 +735,17 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       sending={sending}
       canStop={Boolean(current) && gate.running}
       model={model}
+      images={images}
+      imageHint={imageHint(images)}
       onModel={setModel}
       onPrompt={setPrompt}
+      onPickImages={(files) => {
+        setPageError("");
+        void filesToImageRefs(files)
+          .then((next) => setImages((prev) => acceptImages(prev, next)))
+          .catch((error) => setPageError(error instanceof Error ? error.message : "读不出这张图"));
+      }}
+      onDropImage={(index) => setImages((prev) => prev.filter((_, item) => item !== index))}
       onSend={() => void send()}
       onStop={current ? () => void client.abort(current.id) : undefined}
       startVoice={(onPreview, onError, onEnded) => startAppVoice(client, onPreview, onError, onEnded)}
@@ -803,7 +823,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             }
             if (!hasVisibleTranscript(message)) return null;
             return (
-            <div key={message.id} className={`msg-row ${message.role}`}>
+            <div key={message.id} className={`msg-row ${message.role}`} data-images={message.images?.length ? "1" : undefined}>
               {message.role === "user" && userAvatar ? (
                 <img className="avatar user" src={userAvatar} alt="" />
               ) : message.role !== "user" && neoAvatar ? (
@@ -814,6 +834,18 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
                 </span>
               )}
               <div className="msg-col">
+                {message.images?.length ? (
+                  <div className="image-row">
+                    {message.images.map((image, index) => (
+                      <img
+                        key={`${message.id}-img${index}`}
+                        className="user-image"
+                        src={`data:${image.mediaType};base64,${image.data}`}
+                        alt=""
+                      />
+                    ))}
+                  </div>
+                ) : null}
                 {transcriptGroups(message).map((group, index) =>
                   group.type === "text" ? (
                     <article key={`${message.id}-t${index}`} className={`bubble ${message.role}`}>
