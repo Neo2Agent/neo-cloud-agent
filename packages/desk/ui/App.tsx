@@ -1686,7 +1686,7 @@ export function App() {
 
         <nav className="rail-nav">
           <IslandButton type="primary" block className="rail-new-chat" icon={<IconNewChat />} onClick={newChat}>
-            New Chat
+            新对话
           </IslandButton>
           <button
             type="button"
@@ -1707,7 +1707,7 @@ export function App() {
             <span className="rail-icon">
               <IconSearch />
             </span>
-            Search
+            搜索
           </button>
           <button
             type="button"
@@ -1721,7 +1721,7 @@ export function App() {
             <span className="rail-icon">
               <IconAutomations />
             </span>
-            Automations
+            定时任务
           </button>
           <button
             type="button"
@@ -1736,7 +1736,7 @@ export function App() {
             <span className="rail-icon">
               <IconProjects />
             </span>
-            Projects
+            项目
           </button>
           <div className="rail-more-wrap">
             <button

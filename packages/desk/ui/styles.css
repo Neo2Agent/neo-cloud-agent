@@ -416,7 +416,7 @@ button:disabled {
   background: transparent;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-4px, -42%);
+  transform: translate(-6px, -50%);
   transition: opacity 0.14s ease, transform 0.14s ease;
 }
 
@@ -434,10 +434,11 @@ button:disabled {
 .rail-more-pop-card::before {
   content: "";
   position: absolute;
-  top: 28px;
+  top: 50%;
   left: -7px;
   width: 12px;
   height: 12px;
+  margin-top: -6px;
   border-left: var(--ink-line);
   border-bottom: var(--ink-line);
   background: var(--bg-raised);
@@ -456,7 +457,7 @@ button:disabled {
 .rail-more-wrap:focus-within .rail-more-pop {
   opacity: 1;
   pointer-events: auto;
-  transform: translate(0, -42%);
+  transform: translate(0, -50%);
 }
 
 .rail-more-pop button {
