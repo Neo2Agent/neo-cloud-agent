@@ -1,9 +1,19 @@
-import { CLOUD_SYSTEM_PROMPT, BASELINE_TOOL_TEXT } from "./system-prompt.js";
+import { CLOUD_SYSTEM_PROMPT, BASELINE_BUILTIN_TOOL_TEXT, BASELINE_CLOUD_TOOL_TEXT } from "./system-prompt.js";
 import { resolveModelLimits } from "./models.js";
 
 export { resolveModelLimits };
 
-export type ContextUsageBucketId = "system" | "tools" | "summarized" | "conversation";
+export type ContextUsageBucketId =
+  | "system"
+  | "rules"
+  | "memory"
+  | "skills"
+  | "tools"
+  | "cloudTools"
+  | "mcp"
+  | "subagents"
+  | "summarized"
+  | "conversation";
 
 export interface ContextUsageBucket {
   id: ContextUsageBucketId;
@@ -23,12 +33,32 @@ export interface ContextUsageSnapshot {
 
 export const CONTEXT_BUCKET_LABELS: Record<ContextUsageBucketId, string> = {
   system: "系统提示",
-  tools: "工具定义",
+  rules: "规则",
+  memory: "记忆",
+  skills: "技能目录",
+  tools: "内置工具",
+  cloudTools: "云端工具",
+  mcp: "MCP 与动态工具",
+  subagents: "Subagent 定义",
   summarized: "已压缩对话",
   conversation: "对话",
 };
 
-const BUCKET_IDS = new Set<ContextUsageBucketId>(["system", "tools", "summarized", "conversation"]);
+/** Render order for the bar and legend. Keeps segments stable across snapshots. */
+export const CONTEXT_BUCKET_ORDER: ContextUsageBucketId[] = [
+  "system",
+  "rules",
+  "memory",
+  "skills",
+  "tools",
+  "cloudTools",
+  "mcp",
+  "subagents",
+  "summarized",
+  "conversation",
+];
+
+const BUCKET_IDS = new Set<ContextUsageBucketId>(CONTEXT_BUCKET_ORDER);
 
 /** Same chars/4 heuristic pi uses for estimates. */
 export function estimateTokensFromText(text: string): number {
@@ -51,12 +81,50 @@ export function formatTokenCount(tokens: number): string {
   return String(Math.round(abs));
 }
 
+/**
+ * Scales every bucket by the same factor so the parts add up to the tokens the
+ * provider actually reported. The previous behaviour left the system and tool
+ * buckets at their raw estimate and made `conversation` absorb the whole error,
+ * which showed an empty conversation whenever the estimate overshot.
+ */
+function scaleToReported(
+  estimates: Record<ContextUsageBucketId, number>,
+  estimatedTotal: number,
+  tokens: number,
+): Record<ContextUsageBucketId, number> {
+  if (estimatedTotal <= 0) {
+    return { ...estimates, conversation: tokens };
+  }
+  const factor = tokens / estimatedTotal;
+  const scaled = { ...estimates };
+  let largest: ContextUsageBucketId = "conversation";
+  let sum = 0;
+  for (const id of CONTEXT_BUCKET_ORDER) {
+    scaled[id] = Math.round(estimates[id] * factor);
+    sum += scaled[id];
+    if (scaled[id] > scaled[largest]) {
+      largest = id;
+    }
+  }
+  // Rounding each bucket independently drifts by a few tokens; park it on the
+  // biggest bucket so the parts still sum to `tokens` exactly.
+  scaled[largest] = Math.max(0, scaled[largest] + (tokens - sum));
+  return scaled;
+}
+
 export function assembleContextUsage(input: {
   model?: string;
   contextWindow?: number | null;
   reportedTokens?: number | null;
+  /** The whole system prompt. Attributable sections below are subtracted from it. */
   systemText?: string;
+  rulesText?: string;
+  memoryText?: string;
+  skillsText?: string;
+  subagentsText?: string;
   toolsText?: string;
+  cloudToolsText?: string;
+  mcpText?: string;
   summarizedText?: string;
   conversationText?: string;
   source?: "session" | "estimate";
@@ -67,36 +135,42 @@ export function assembleContextUsage(input: {
     typeof rawWindow === "number" && Number.isFinite(rawWindow) && rawWindow > 0
       ? Math.round(rawWindow)
       : catalogWindow;
-  const system = estimateTokensFromText(input.systemText ?? "");
-  const tools = estimateTokensFromText(input.toolsText ?? "");
-  const summarizedEst = estimateTokensFromText(input.summarizedText ?? "");
-  const conversationEst = estimateTokensFromText(input.conversationText ?? "");
-  const estimatedTotal = system + tools + summarizedEst + conversationEst;
+
+  const rules = estimateTokensFromText(input.rulesText ?? "");
+  const memory = estimateTokensFromText(input.memoryText ?? "");
+  const skills = estimateTokensFromText(input.skillsText ?? "");
+  const subagents = estimateTokensFromText(input.subagentsText ?? "");
+  // These sections live inside the system prompt string, so the leftover is
+  // what stays in the `system` bucket. Keeps the parts summing to the whole no
+  // matter how pi rearranges its template.
+  const systemWhole = estimateTokensFromText(input.systemText ?? "");
+  const system = Math.max(0, systemWhole - rules - memory - skills - subagents);
+
+  const estimates: Record<ContextUsageBucketId, number> = {
+    system,
+    rules,
+    memory,
+    skills,
+    subagents,
+    tools: estimateTokensFromText(input.toolsText ?? ""),
+    cloudTools: estimateTokensFromText(input.cloudToolsText ?? ""),
+    mcp: estimateTokensFromText(input.mcpText ?? ""),
+    summarized: estimateTokensFromText(input.summarizedText ?? ""),
+    conversation: estimateTokensFromText(input.conversationText ?? ""),
+  };
+  const estimatedTotal = CONTEXT_BUCKET_ORDER.reduce((sum, id) => sum + estimates[id], 0);
+
   const reported = input.reportedTokens;
   const hasReported = typeof reported === "number" && Number.isFinite(reported) && reported > 0;
   const tokens = hasReported ? Math.round(reported) : estimatedTotal;
-  const fixed = system + tools;
-  const variableEst = summarizedEst + conversationEst;
-  let summarized = summarizedEst;
-  let conversation = conversationEst;
-  if (hasReported) {
-    const remaining = Math.max(0, tokens - fixed);
-    if (variableEst > 0) {
-      summarized = Math.round(remaining * (summarizedEst / variableEst));
-      conversation = Math.max(0, remaining - summarized);
-    } else {
-      summarized = 0;
-      conversation = remaining;
-    }
-  }
-  const buckets: ContextUsageBucket[] = (
-    [
-      { id: "system", label: CONTEXT_BUCKET_LABELS.system, tokens: system },
-      { id: "tools", label: CONTEXT_BUCKET_LABELS.tools, tokens: tools },
-      { id: "summarized", label: CONTEXT_BUCKET_LABELS.summarized, tokens: summarized },
-      { id: "conversation", label: CONTEXT_BUCKET_LABELS.conversation, tokens: conversation },
-    ] satisfies ContextUsageBucket[]
-  ).filter((bucket) => bucket.tokens > 0);
+  const resolved = hasReported ? scaleToReported(estimates, estimatedTotal, tokens) : estimates;
+
+  const buckets: ContextUsageBucket[] = CONTEXT_BUCKET_ORDER.map((id) => ({
+    id,
+    label: CONTEXT_BUCKET_LABELS[id],
+    tokens: resolved[id],
+  })).filter((bucket) => bucket.tokens > 0);
+
   return {
     tokens,
     contextWindow,
@@ -135,7 +209,8 @@ export function baselineContextUsage(model?: string | null): ContextUsageSnapsho
   return assembleContextUsage({
     model: model ?? undefined,
     systemText: CLOUD_SYSTEM_PROMPT,
-    toolsText: BASELINE_TOOL_TEXT,
+    toolsText: BASELINE_BUILTIN_TOOL_TEXT,
+    cloudToolsText: BASELINE_CLOUD_TOOL_TEXT,
   });
 }
 
@@ -172,6 +247,7 @@ export function parseContextUsage(data?: Record<string, unknown> | null): Contex
         tokens: Math.max(0, Math.round(bucketTokens)),
       });
     }
+    buckets.sort((a, b) => CONTEXT_BUCKET_ORDER.indexOf(a.id) - CONTEXT_BUCKET_ORDER.indexOf(b.id));
   }
   return {
     tokens: Math.round(tokens),

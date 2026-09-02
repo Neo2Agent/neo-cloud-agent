@@ -2677,6 +2677,8 @@ button.composer-mic.is-listening,
   left: auto;
   bottom: calc(100% + 10px);
   width: min(360px, calc(100vw - 48px));
+  max-height: min(70vh, 460px);
+  overflow: auto;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 14px;

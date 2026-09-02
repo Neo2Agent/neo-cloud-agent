@@ -3,7 +3,13 @@ import { formatTokenCount } from "@neo-cloud-agent/contracts/context-usage";
 
 const COLORS: Record<ContextUsageBucketId, string> = {
   system: "#9ca3af",
+  rules: "#047857",
+  memory: "#a16207",
+  skills: "#0891b2",
   tools: "#8b5cf6",
+  cloudTools: "#9d174d",
+  mcp: "#2563eb",
+  subagents: "#7c3aed",
   summarized: "#b91c1c",
   conversation: "#f97316",
 };

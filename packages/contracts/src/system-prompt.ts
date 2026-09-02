@@ -15,7 +15,7 @@ When waiting on GitHub review comments or Actions, call neo_subscribe then end t
 When the user asks you to remember a fact, call neo_memory_add with one concise fact. When they ask what you remember, call neo_memory_search. Recalled facts may also appear under "Recalled user memory". You cannot write the store yourself. There is no automatic extraction when a conversation ends. Do not claim you saved a fact unless neo_memory_add succeeded.
 Be concise and verify your work.`;
 
-export const BASELINE_TOOL_TEXT = [
+export const BASELINE_BUILTIN_TOOL_TEXT = [
   "read: Read a workspace file with optional offset/limit.",
   "write: Write a workspace file.",
   "edit: Apply text replacements to a workspace file.",
@@ -23,6 +23,9 @@ export const BASELINE_TOOL_TEXT = [
   "grep: Search file contents.",
   "find: Find files by name.",
   "ls: List a directory.",
+].join("\n");
+
+export const BASELINE_CLOUD_TOOL_TEXT = [
   "neo_git_commit: Commit through the control plane.",
   "neo_pr_open: Open a draft pull request through the control plane.",
   "neo_diag: Inspect setup logs, egress denials, and environment version.",
@@ -35,3 +38,5 @@ export const BASELINE_TOOL_TEXT = [
   "neo_memory_add: Persist one user fact through the control plane. Keys stay off the VM.",
   "neo_memory_search: Search this user's persisted facts through the control plane.",
 ].join("\n");
+
+export const BASELINE_TOOL_TEXT = `${BASELINE_BUILTIN_TOOL_TEXT}\n${BASELINE_CLOUD_TOOL_TEXT}`;
