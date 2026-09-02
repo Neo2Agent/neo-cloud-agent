@@ -4,6 +4,7 @@ import {
   DEFAULT_TRANSCRIPT_PAGE,
   displayTranscriptMessages,
   settleTranscriptMessages,
+  transcriptBodyNeeded,
 } from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
@@ -70,6 +71,14 @@ import {
 import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
 
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
+
+function transcriptUrl(id: string, extra?: { before?: string }): string {
+  const params = new URLSearchParams({ limit: String(HISTORY_PAGE), images: "href" });
+  if (extra?.before) {
+    params.set("before", extra.before);
+  }
+  return `/v1/runs/${id}/transcript?${params}`;
+}
 
 function localErrorMessage(runId: string | null, title: string): TranscriptMessage {
   return {
@@ -672,7 +681,7 @@ export function App() {
       history.replaceState(null, "", `/#/runs/${id}`);
       const [runRes, transcriptRes] = await Promise.all([
         api(tokenRef.current, `/v1/runs/${id}`),
-        api(tokenRef.current, `/v1/runs/${id}/transcript?limit=${HISTORY_PAGE}`),
+        api(tokenRef.current, transcriptUrl(id)),
       ]);
       if (openGenRef.current !== gen) return false;
       if (!runRes.ok) {
@@ -1237,21 +1246,30 @@ export function App() {
       const status = currentStatusRef.current;
       if (!shouldRefreshTranscript({ lastSseAt: lastSseAtRef.current, status })) return;
       try {
-        const [runRes, transcriptRes] = await Promise.all([
-          api(tokenRef.current, `/v1/runs/${runId}`),
-          api(tokenRef.current, `/v1/runs/${runId}/transcript?limit=${HISTORY_PAGE}`),
-        ]);
+        const runRes = await api(tokenRef.current, `/v1/runs/${runId}`);
         if (cancelled) return;
         const fresh = runRes.ok ? await readJson<Run>(runRes) : null;
+        const nextStatus = fresh?.status ?? status;
         if (fresh && fresh.id === runId) {
           setCurrentRun((prev) => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
           setRuns((prev) => prev.map((item) => (item.id === fresh.id ? { ...item, ...fresh } : item)));
         }
+        if (
+          fresh &&
+          !transcriptBodyNeeded({
+            appliedEventId: lastEventIdRef.current,
+            runLastEventId: fresh.lastEventId,
+          })
+        ) {
+          setMessages((prev) => withQueuedNotice(prev, nextStatus));
+          return;
+        }
+        const transcriptRes = await api(tokenRef.current, transcriptUrl(runId));
+        if (cancelled) return;
         if (!transcriptRes.ok) return;
         const body = await readJson<{ snapshot?: TranscriptSnapshot }>(transcriptRes);
         const snapshot = body.snapshot;
         if (!snapshot) return;
-        const nextStatus = fresh?.status ?? status;
         if (snapshot.lastEventId && snapshot.lastEventId === lastEventIdRef.current) {
           setMessages((prev) => withQueuedNotice(prev, nextStatus));
           return;
@@ -1703,7 +1721,7 @@ export function App() {
       try {
         const response = await api(
           tokenRef.current,
-          `/v1/runs/${runId}/transcript?limit=${HISTORY_PAGE}&before=${encodeURIComponent(before)}`,
+          transcriptUrl(runId, { before }),
         );
         if (!response.ok) return;
         const body = await readJson<{ snapshot?: TranscriptSnapshot }>(response);
@@ -2292,6 +2310,7 @@ export function App() {
                   />
                 ) : (
                   <Transcript
+                    token={token}
                     messages={displayMessages}
                     remaining={remaining}
                     empty={!loadingTranscript && displayMessages.length === 0}

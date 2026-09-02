@@ -96,3 +96,34 @@ test("GET /transcript returns a tail snapshot without the raw event log", async 
   assert.equal(cached.snapshot.messages.length, 3);
   assert.equal(cached.snapshot.messages.at(-1)?.text, "turn 13");
 });
+
+test("GET /transcript can omit image bytes and serve them on a second URL", async (t) => {
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(() => {
+    server.close();
+  });
+  const run = await createRun({
+    prompt: "see this",
+    repoUrls: ["fixtures/toy-repo"],
+    images: [{ mediaType: "image/jpeg", data: "ZmFrZQ" }],
+  });
+  const fat = (await (await fetch(`http://127.0.0.1:${port}/v1/runs/${run.id}/transcript`)).json()) as {
+    snapshot: TranscriptSnapshot;
+  };
+  const fatImage = fat.snapshot.messages.find((item) => item.role === "user")?.images?.[0];
+  assert.equal(fatImage?.data, "ZmFrZQ");
+
+  const slim = (await (
+    await fetch(`http://127.0.0.1:${port}/v1/runs/${run.id}/transcript?images=href`)
+  ).json()) as { snapshot: TranscriptSnapshot };
+  const user = slim.snapshot.messages.find((item) => item.role === "user");
+  const image = user?.images?.[0];
+  assert.equal(image?.data, "");
+  assert.ok(image?.href?.includes("/transcript/images/"));
+
+  const response = await fetch(`http://127.0.0.1:${port}${image?.href}`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "image/jpeg");
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from("ZmFrZQ", "base64"));
+});

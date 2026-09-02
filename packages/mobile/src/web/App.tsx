@@ -2,7 +2,7 @@
  * Vite :5175 visual lab. Island chrome + the same /v1 client as Expo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
@@ -201,8 +201,15 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     const tick = async () => {
       if (!shouldRefreshTranscript({ lastSseAt: lastSseAt.current, status: statusRef.current })) return;
       try {
-        const [run, transcript] = await Promise.all([client.getRun(id), client.transcript(id)]);
+        const run = await client.getRun(id);
         setCurrent(run);
+        if (
+          !transcriptBodyNeeded({ appliedEventId: lastEventId.current, runLastEventId: run.lastEventId })
+        ) {
+          setMessages((prev) => withQueuedNotice(prev, run.status));
+          return;
+        }
+        const transcript = await client.transcript(id);
         if (
           (transcript.snapshot.lastEventId && transcript.snapshot.lastEventId === lastEventId.current) ||
           !shouldReplaceLiveTranscript({ liveSse: liveSse.current, lastSseAt: lastSseAt.current })

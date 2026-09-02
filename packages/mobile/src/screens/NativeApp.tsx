@@ -6,6 +6,7 @@ import type { Expert, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
+import { transcriptBodyNeeded } from "@neo-cloud-agent/contracts/transcript";
 import { MobileApiError, MobileClient } from "../api/client";
 import type { CredentialStore } from "../api/credentials";
 import { nextEnvId } from "../api/shell";
@@ -199,8 +200,15 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         return;
       }
       try {
-        const [run, transcript] = await Promise.all([client.getRun(id), client.transcript(id)]);
+        const run = await client.getRun(id);
         setCurrent(run);
+        if (
+          !transcriptBodyNeeded({ appliedEventId: lastEventId.current, runLastEventId: run.lastEventId })
+        ) {
+          setMessages((prev) => withQueuedNotice(prev, run.status));
+          return;
+        }
+        const transcript = await client.transcript(id);
         if (
           (transcript.snapshot.lastEventId && transcript.snapshot.lastEventId === lastEventId.current) ||
           !shouldReplaceLiveTranscript({ liveSse: liveSse.current, lastSseAt: lastSseAt.current })

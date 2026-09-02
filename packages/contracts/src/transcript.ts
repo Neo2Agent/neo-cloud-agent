@@ -718,3 +718,70 @@ export function pageTranscriptSnapshot(
     total: snapshot.total ?? snapshot.messages.length,
   };
 }
+
+/**
+ * The event stream went quiet, so a client pays for the transcript body only
+ * when the run produced a new event. Comparing ids also covers token deltas,
+ * which never bump `updatedAt`. A server that reports no cursor keeps the old
+ * always-refetch behaviour.
+ */
+export function transcriptBodyNeeded(input: {
+  appliedEventId?: string | null;
+  runLastEventId?: string | null;
+}): boolean {
+  if (!input.runLastEventId) {
+    return true;
+  }
+  return input.runLastEventId !== (input.appliedEventId ?? null);
+}
+
+/** Where a chat photo is served, so the list payload never carries a JPEG. */
+export function transcriptImagePath(runId: string, messageId: string, index: number): string {
+  return `/v1/runs/${encodeURIComponent(runId)}/transcript/images/${encodeURIComponent(messageId)}/${index}`;
+}
+
+/**
+ * Replace inline base64 with a URL. A phone re-fetches this page whenever the
+ * event stream is quiet, and parsing image bytes each time is what makes the
+ * chat hitch. Callers that need the bytes keep asking for the plain snapshot.
+ */
+export function slimTranscriptSnapshotImages(snapshot: TranscriptSnapshot): TranscriptSnapshot {
+  let changed = false;
+  const messages = snapshot.messages.map((message) => {
+    if (!message.images?.length) {
+      return message;
+    }
+    changed = true;
+    return {
+      ...message,
+      images: message.images.map((image, index) => ({
+        mediaType: image.mediaType,
+        data: "",
+        href: image.href || transcriptImagePath(snapshot.runId, message.id, index),
+      })),
+    };
+  });
+  return changed ? { ...snapshot, messages } : snapshot;
+}
+
+/** Bytes behind `transcriptImagePath`. Null covers unknown ids and slim pages. */
+export function findTranscriptImage(
+  snapshot: TranscriptSnapshot,
+  messageId: string,
+  index: number,
+): { mediaType: string; data: string } | null {
+  if (!Number.isInteger(index) || index < 0) {
+    return null;
+  }
+  const image = snapshot.messages.find((item) => item.id === messageId)?.images?.[index];
+  if (!image || typeof image.data !== "string" || !image.data) {
+    return null;
+  }
+  return { mediaType: image.mediaType, data: image.data };
+}
+
+/** Strip a `data:` prefix so the payload is plain base64. */
+export function rawTranscriptImageData(data: string): string {
+  const trimmed = data.trim();
+  return trimmed.includes(",") ? trimmed.slice(trimmed.indexOf(",") + 1) : trimmed;
+}

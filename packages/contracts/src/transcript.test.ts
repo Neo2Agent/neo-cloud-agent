@@ -8,6 +8,11 @@ import {
   isSetupKind,
   pageTranscriptMessages,
   pageTranscriptSnapshot,
+  slimTranscriptSnapshotImages,
+  findTranscriptImage,
+  rawTranscriptImageData,
+  transcriptBodyNeeded,
+  transcriptImagePath,
   sortRunEvents,
   transcriptHasUnsettledWork,
   transcriptGroups,
@@ -568,4 +573,28 @@ test("user bubbles keep follow-up actor metadata and stay hidden while queued", 
   assert.equal(user?.actorEmail, "ping");
   assert.equal(displayTranscriptMessages(snapshot.messages, { hideFollowUpIds: ["fu-b"] }).length, 0);
   assert.equal(displayTranscriptMessages(snapshot.messages, { hideFollowUpIds: ["other"] }).length, 1);
+});
+
+test("transcriptBodyNeeded skips the body until the run reports a newer event", () => {
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: "e9" }), false);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: "e10" }), true);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: null, runLastEventId: "e1" }), true);
+  assert.equal(transcriptBodyNeeded({ appliedEventId: "e9", runLastEventId: null }), true);
+});
+
+test("slimTranscriptSnapshotImages drops inline bytes and points at the image GET", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({
+      id: "u1",
+      kind: "user.message",
+      data: { text: "see", images: [{ mediaType: "image/jpeg", data: "ZmFrZQ" }] },
+    }),
+  ]);
+  const slim = slimTranscriptSnapshotImages(snapshot);
+  const image = slim.messages[0]?.images?.[0];
+  assert.equal(image?.data, "");
+  assert.equal(image?.href, transcriptImagePath("run-1", "u1", 0));
+  assert.equal(findTranscriptImage(snapshot, "u1", 0)?.data, "ZmFrZQ");
+  assert.equal(findTranscriptImage(slim, "u1", 0), null);
+  assert.equal(rawTranscriptImageData("data:image/jpeg;base64,ZmFrZQ"), "ZmFrZQ");
 });

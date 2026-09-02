@@ -153,6 +153,11 @@ export interface Run {
   vmSlotId?: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Newest event id, derived per response and never persisted. Lets a poller
+   * tell "nothing happened" from "new tokens" without pulling the transcript.
+   */
+  lastEventId?: string | null;
   idleAt: string | null;
   expiresAt: string | null;
   /** MySQL/file soft-delete. Hidden from lists once set. */

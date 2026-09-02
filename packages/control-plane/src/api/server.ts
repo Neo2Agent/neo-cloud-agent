@@ -31,6 +31,9 @@ import {
   evaluateEgress,
   isDeskTarget,
   pageTranscriptSnapshot,
+  slimTranscriptSnapshotImages,
+  findTranscriptImage,
+  rawTranscriptImageData,
   parseAutomationSchedule,
   parseLlmSettingsRequest,
   publicLlmSettings,
@@ -39,7 +42,7 @@ import {
   resolveModelLimits,
   writeLlmSettings,
 } from "@neo-cloud-agent/contracts";
-import { eventsForRun } from "../events/bus.js";
+import { eventsForRun, lastEventIdForRun } from "../events/bus.js";
 import { snapshotForRun } from "../events/snapshot.js";
 import { SSE_HEADERS, attachEventStream } from "../events/stream.js";
 import {
@@ -331,6 +334,36 @@ function requestOrigin(req: IncomingMessage): string {
   const host = headerValue(req.headers.host);
   const proto = headerValue(req.headers["x-forwarded-proto"]) || "http";
   return host ? `${proto}://${host}` : getConfig().controlPlaneUrl;
+}
+
+/** A transcript image is keyed by event id, so its bytes never change. */
+const IMMUTABLE_PRIVATE_CACHE = "private, max-age=86400, immutable";
+
+function sendBytes(res: ServerResponse, status: number, body: Buffer, contentType: string): void {
+  res.writeHead(status, {
+    ...CORS,
+    "content-type": contentType,
+    "content-length": body.length,
+    "cache-control": IMMUTABLE_PRIVATE_CACHE,
+  });
+  res.end(body);
+}
+
+function decodePathSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+}
+
+function decodeTranscriptImageData(data: string): Buffer | null {
+  const raw = rawTranscriptImageData(data);
+  if (!raw) {
+    return null;
+  }
+  const body = Buffer.from(raw, "base64");
+  return body.length > 0 ? body : null;
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -1723,11 +1756,12 @@ export function createApiServer() {
 
       const runMatch = /^\/v1\/runs\/([^/]+)$/.exec(path);
       if (runMatch && method === "GET") {
-        const run = await requireRun(runMatch[1] ?? "");
+        const runId = runMatch[1] ?? "";
+        const run = await requireRun(runId);
         if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
-        send(res, 200, run);
+        send(res, 200, run ? { ...run, lastEventId: lastEventIdForRun(runId) } : run);
         return;
       }
       if (runMatch && method === "DELETE") {
@@ -2155,6 +2189,29 @@ export function createApiServer() {
         return;
       }
 
+      const transcriptImageMatch = /^\/v1\/runs\/([^/]+)\/transcript\/images\/([^/]+)\/(\d+)$/.exec(path);
+      if (transcriptImageMatch && method === "GET") {
+        const runId = transcriptImageMatch[1] ?? "";
+        const messageId = decodePathSegment(transcriptImageMatch[2] ?? "");
+        const index = Number(transcriptImageMatch[3]);
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        if (messageId === null) {
+          notFound(res);
+          return;
+        }
+        const image = findTranscriptImage(snapshotForRun(runId), messageId, index);
+        const body = image ? decodeTranscriptImageData(image.data) : null;
+        if (!image || !body) {
+          notFound(res);
+          return;
+        }
+        sendBytes(res, 200, body, image.mediaType || "application/octet-stream");
+        return;
+      }
+
       const transcriptMatch = /^\/v1\/runs\/([^/]+)\/transcript$/.exec(path);
       if (transcriptMatch && method === "GET") {
         const runId = transcriptMatch[1] ?? "";
@@ -2166,10 +2223,11 @@ export function createApiServer() {
         const before = url.searchParams.get("before");
         const limitParam = url.searchParams.get("limit");
         const full = snapshotForRun(runId);
-        const snapshot = pageTranscriptSnapshot(full, {
+        const paged = pageTranscriptSnapshot(full, {
           before,
           limit: includeEvents && !limitParam ? full.messages.length || 1 : limitParam ? Number(limitParam) : undefined,
         });
+        const snapshot = url.searchParams.get("images") === "href" ? slimTranscriptSnapshotImages(paged) : paged;
         send(res, 200, includeEvents ? { snapshot, events: eventsForRun(runId) } : { snapshot });
         return;
       }

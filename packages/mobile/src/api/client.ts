@@ -168,7 +168,8 @@ export class MobileClient {
   }
 
   transcript(id: string): Promise<TranscriptResponse> {
-    return this.request("GET", `/v1/runs/${id}/transcript`);
+    // Phone client: ask for image URLs so a poll never re-parses base64 bytes.
+    return this.request("GET", `/v1/runs/${id}/transcript?images=href`);
   }
 
   listEnvironments(): Promise<{ environments: Environment[] }> {

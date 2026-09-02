@@ -193,6 +193,67 @@ test("live runs are reattached after a control-plane reload", async () => {
   assert.equal(expireStaleWorkers(Date.now() + 60_000).includes(run.id), false);
 });
 
+function longAgo(): string {
+  return new Date(Date.now() - 10 * 60_000).toISOString();
+}
+
+test("reattaching a run whose turn went silent puts the prompt back on the inbox", async () => {
+  const run = await createRun({
+    prompt: "see the photo",
+    repoUrls: ["fixtures/toy-repo"],
+    images: [{ mediaType: "image/jpeg", data: "ZmFrZQ" }],
+  });
+  const taken = takeInbound(run.id);
+  assert.equal(taken[0]?.type, "prompt");
+  assert.equal(taken[0] && "images" in taken[0] ? taken[0].images?.[0]?.data : "", "ZmFrZQ");
+  // The worker answered nothing and stopped emitting well before the restart.
+  ingestEvents(run.id, [
+    {
+      id: "msg-end-stale",
+      runId: run.id,
+      createdAt: longAgo(),
+      category: "agent_run",
+      level: "info",
+      kind: "message.end",
+      title: "Assistant message completed",
+    },
+  ]);
+  reloadPersistedState();
+  await recoverLiveWorkers();
+  const inbox = takeInbound(run.id);
+  assert.equal(inbox[0]?.type, "prompt");
+  assert.equal("text" in (inbox[0] ?? {}) ? inbox[0]?.text : "", "see the photo");
+  assert.equal(inbox[0] && "images" in inbox[0] ? inbox[0].images?.[0]?.data : "", "ZmFrZQ");
+  assert.ok(listEvents(run.id).some((item) => item.title === "中断的回合已自动排队继续"));
+});
+
+test("reattaching a worker that is still answering does not replay its prompt", async () => {
+  const run = await createRun({
+    prompt: "keep writing",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  // Assistant opened long ago and never closed: the adopted process owns it.
+  ingestEvents(run.id, [
+    {
+      id: "msg-start-open",
+      runId: run.id,
+      createdAt: longAgo(),
+      category: "agent_run",
+      level: "info",
+      kind: "message.start",
+      title: "Assistant message started",
+    },
+  ]);
+  reloadPersistedState();
+  await recoverLiveWorkers();
+  assert.equal(takeInbound(run.id).length, 0);
+  assert.equal(
+    listEvents(run.id).some((item) => item.title === "中断的回合已自动排队继续"),
+    false,
+  );
+});
+
 test("detached live runs requeue the unfinished prompt", async () => {
   const run = await createRun({
     prompt: "lost worker",

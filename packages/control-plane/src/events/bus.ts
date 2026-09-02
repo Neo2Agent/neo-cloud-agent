@@ -2,7 +2,12 @@ import { EventEmitter } from "node:events";
 import { buildTranscriptSnapshot, redactRunEvent, type RunEvent } from "@neo-cloud-agent/contracts";
 import { scheduleArchive } from "../objects/archive.js";
 import { controlPlaneSecrets } from "../security/secrets.js";
-import { loadPersistedEvents, persistEvent, persistTranscriptSnapshot } from "../store/persist.js";
+import {
+  loadPersistedEvents,
+  peekLastPersistedEventId,
+  persistEvent,
+  persistTranscriptSnapshot,
+} from "../store/persist.js";
 import { compactClosedDeltaRuns, compactHotEvents } from "./history.js";
 
 function rememberTranscript(runId: string, events: RunEvent[]): void {
@@ -80,6 +85,18 @@ export function resetHistory(): void {
 
 export function listEvents(runId: string): RunEvent[] {
   return history.get(runId) ?? [];
+}
+
+/**
+ * Cheap cursor for pollers. RAM is O(1); a cold run only tail-reads the JSONL
+ * instead of parsing a multi-megabyte log every few seconds.
+ */
+export function lastEventIdForRun(runId: string): string | null {
+  const hot = history.get(runId);
+  if (hot && hot.length > 0) {
+    return hot.at(-1)?.id ?? null;
+  }
+  return peekLastPersistedEventId(runId);
 }
 
 /** Live RAM first; archived / evicted runs read the persisted log and collapse deltas. */

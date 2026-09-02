@@ -8,8 +8,11 @@ import { fileToolDiff, formatDuration, formatMessageTime, formatWhen, toolArgPre
 import { IconCheck, IconError, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "../markdown";
 import { shouldShowThinking } from "../turn";
+import { transcriptUserImageSrc } from "../user-image";
+import { withApiBase } from "../desk";
 
 type Props = {
+  token?: string;
   messages: TranscriptMessage[];
   remaining: number;
   empty: boolean;
@@ -157,6 +160,7 @@ function ArtifactCard({ message }: { message: TranscriptMessage }) {
 }
 
 export function Transcript({
+  token = "",
   messages,
   remaining,
   empty,
@@ -282,14 +286,18 @@ export function Transcript({
                   {message.text ? <div className="body">{message.text}</div> : null}
                   {message.images?.length ? (
                     <div className="image-row">
-                      {message.images.map((image, index) => (
-                        <img
-                          key={`${message.id}-${index}`}
-                          className="user-image"
-                          src={`data:${image.mediaType};base64,${image.data}`}
-                          alt=""
-                        />
-                      ))}
+                      {message.images.map((image, index) => {
+                        const src = transcriptUserImageSrc(image, token, withApiBase);
+                        return src ? (
+                          <img
+                            key={`${message.id}-${index}`}
+                            className="user-image"
+                            src={src}
+                            alt=""
+                            decoding="async"
+                          />
+                        ) : null;
+                      })}
                     </div>
                   ) : null}
                   <MessageTime message={message} />
