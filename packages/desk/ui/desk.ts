@@ -1,4 +1,5 @@
 import type { DeskAssignment } from "@neo-cloud-agent/contracts/desk";
+import type { ListSkillsResult } from "../src/skill-list";
 
 export const TARGET_CLOUD = "cloud" as const;
 export const TARGET_DESK = "desk" as const;
@@ -134,6 +135,7 @@ export type NeoDeskBridge = {
   takeAssignment?(runId?: string, folder?: string): Promise<{ started?: boolean; runId?: string }>;
   stopRun?(runId: string): Promise<boolean>;
   listDir?(input: { folder: string; path?: string; content?: boolean }): Promise<LocalFsListing>;
+  listSkills?(input?: { folder?: string }): Promise<ListSkillsResult>;
   writeFile?(input: { folder: string; path: string; content?: string }): Promise<{ path?: string; error?: string }>;
   diffStat?(folder: string): Promise<{ added: number; removed: number } | null>;
   termOpen?(folder: string): Promise<{ id?: string; cwd?: string; error?: string }>;

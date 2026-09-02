@@ -11,6 +11,6 @@
     "isolatedModules": true,
     "types": ["vite/client"]
   },
-  "include": ["./**/*.ts", "./**/*.tsx", "../src/composer-size.ts", "../src/format.ts", "../src/ports.ts", "../src/rail.ts", "../src/stream.ts", "../src/term-keys.ts", "../src/file-kind.ts"],
+  "include": ["./**/*.ts", "./**/*.tsx", "../src/composer-size.ts", "../src/format.ts", "../src/ports.ts", "../src/rail.ts", "../src/stream.ts", "../src/term-keys.ts", "../src/file-kind.ts", "../src/skill-list.ts"],
   "exclude": ["./**/*.test.ts"]
 }

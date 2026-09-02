@@ -30,6 +30,7 @@ export function getWorkerConfig() {
   const file = readBootstrapFile(workspaceDir);
   const sandboxRoot = process.env.NEO_SANDBOX_ROOT?.trim();
   const scratchDir = process.env.NEO_RUN_SCRATCH_DIR?.trim();
+  /** Desk This Computer only. Cloud VMs leave this unset so host homes stay unread. */
   const hostSkillDirs = (process.env.NEO_HOST_SKILL_DIRS ?? "")
     .split(path.delimiter)
     .map((item) => item.trim())

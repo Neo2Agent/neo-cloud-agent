@@ -28,6 +28,7 @@ import {
 } from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskStateDir, migrateLegacyDeskState, skillsNeoDir } from "../src/home.js";
+import { isAllowedSkillScanFolder, listLocalSkills, UNAUTHORIZED_SKILL_FOLDER_ERROR } from "../src/skill-scan.js";
 import { bundledSkillsSourceDir, syncSkillsNeo } from "../src/skills-neo.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import { deskAssignmentAlert } from "../src/notify-assignment.js";
@@ -115,6 +116,9 @@ const bootLog = deskLogger("boot");
 const runLog = deskLogger("local-run");
 const deskLog = deskLogger("desk");
 const leaseLog = deskLogger("lease");
+const skillsLog = deskLogger("skills");
+
+const LIST_SKILLS_CHANNEL = "desk:listSkills";
 
 /** The one-line form of a caught value, for a log field or a UI message. */
 function errorText(error: unknown, fallback = ""): string {
@@ -242,6 +246,32 @@ function boundWorkspaces(): BoundWorkspace[] {
 
 function saveBoundWorkspaces(items: BoundWorkspace[]): void {
   writeJson(stateFile(WORKSPACES_STATE_FILE), items);
+}
+
+function listSkillsPayload(folder?: string) {
+  const requested = folder?.trim() ?? "";
+  const allowed =
+    !requested ||
+    isAllowedSkillScanFolder({
+      folder: requested,
+      boundFolders: boundWorkspaces().map((item) => item.folder),
+      selectedFolder: currentTarget().folder,
+    });
+  const listed = listLocalSkills({
+    systemDir: skillsNeoDir(),
+    workspaceDir: requested && allowed ? requested : undefined,
+  });
+  for (const skip of listed.skipped) {
+    skillsLog.warn("skipped a skill file", {
+      origin: skip.origin,
+      path: skip.relativePath,
+      reason: skip.reason,
+    });
+  }
+  if (requested && !allowed) {
+    return { ...listed, workspace: [], error: UNAUTHORIZED_SKILL_FOLDER_ERROR };
+  }
+  return listed;
 }
 
 function findBound(selector: { workspaceId?: string | null; folder?: string }): BoundWorkspace | undefined {
@@ -1118,6 +1148,10 @@ function wireIpc(): void {
     } catch (error) {
       return { error: errorText(error, "读取失败") };
     }
+  });
+  ipcMain.handle(LIST_SKILLS_CHANNEL, (_event, input?: { folder?: string }) => {
+    const folder = typeof input?.folder === "string" ? input.folder : undefined;
+    return listSkillsPayload(folder);
   });
   ipcMain.handle("desk:writeFile", (_event, input: { folder: string; path: string; content?: string }) => {
     try {

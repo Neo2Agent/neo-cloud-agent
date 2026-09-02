@@ -27,7 +27,7 @@ pnpm pack:desk   # mac / Windows / Linux zip，默认连现网
 - `~/.neo/desk/` — 登录、偏好、desk 登记（旧的 `userData/neo-desk` 会在第一次启动时迁过来）
 - `~/.neo/skills-neo/` — 系统技能，形状同 `~/.cursor/skills-cursor`（每个 skill 一个文件夹 + `.sync-manifest.json`）
 
-This Computer 会扫 `skills-neo`，也会扫你选中的项目里的 `.neo/skills` / `.cursor/skills`。
+This Computer 会扫 `skills-neo`，也会扫你选中的项目里的 `.neo/skills` / `.cursor/skills`。技能页分栏看「系统 / 本仓库 / 官方目录」；云端 Run 不读 `~/.neo`。
 
 覆盖地址：`NEO_CONTROL_PLANE_URL=http://host pnpm dev:desk:prod`。`.env` 里的本地 `CONTROL_PLANE_URL` 不会把 prod 模式拽回 8080。
 
