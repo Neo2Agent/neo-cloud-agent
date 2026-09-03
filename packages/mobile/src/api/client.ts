@@ -133,7 +133,8 @@ export class MobileClient {
       }
     }
     if (!response.ok) {
-      const err = (parsed as { error?: string } | undefined)?.error ?? response.statusText;
+      const payload = parsed as { error?: string; message?: string } | undefined;
+      const err = payload?.message ?? payload?.error ?? response.statusText;
       throw new MobileApiError(err || `http ${response.status}`, response.status);
     }
     return parsed as T;
@@ -247,6 +248,17 @@ export class MobileClient {
 
   deleteMemory(id: string): Promise<{ ok: boolean }> {
     return this.request("DELETE", `/v1/memories/${encodeURIComponent(id)}`);
+  }
+
+  searchMemories(query: string, limit?: number): Promise<{ memories: MemoryItem[] }> {
+    return this.request("POST", "/v1/memories/search", { query, ...(limit === undefined ? {} : { limit }) });
+  }
+
+  updateMemory(id: string, text: string, updatedAt?: string): Promise<{ memory: MemoryItem }> {
+    return this.request("PATCH", `/v1/memories/${encodeURIComponent(id)}`, {
+      text,
+      ...(updatedAt ? { updatedAt } : {}),
+    });
   }
 
   listInbox(): Promise<{ items: InboxItem[]; unread: number }> {

@@ -3,21 +3,9 @@
  * memories, inbox, artifacts and skills. UI-free so both shells can use them.
  */
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
-import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 
-export function memoryHint(input: { configured: boolean; count: number; error?: string }): string {
-  if (input.error) return input.error;
-  if (!input.configured) return "记忆还没接上。接上后新对话会自动带上你的偏好。";
-  if (input.count === 0) return "还没有记忆。对话里让 Agent 记下，或在这里记一条。";
-  return `已记住 ${input.count} 条。新对话会自动带上；不对的可以删。`;
-}
-
-export function filterMemories(items: MemoryItem[], query: string): MemoryItem[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return items;
-  return items.filter((item) => item.text.toLowerCase().includes(needle));
-}
+export { filterMemories, memoryHint } from "@neo-cloud-agent/contracts/memory";
 
 /** Matches the web bell: caps at 9+ so the badge stays one glyph wide. */
 export function unreadBadge(unread: number): string {

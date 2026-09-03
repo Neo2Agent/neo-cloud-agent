@@ -2,10 +2,15 @@
  * The cloud surfaces the web chat page already has: personal memory, the inbox
  * bell and the skill catalog. Same `/v1` routes, redrawn for a narrow screen.
  */
-import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { artifactKindLabel, prettyBytes } from "@neo-cloud-agent/contracts/artifact";
-import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
+import {
+  MEMORY_SEARCH_DEBOUNCE_MS,
+  MEMORY_TEXT_MAX_LENGTH,
+  memoryEdited,
+  type MemoryItem,
+} from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import type { RunArtifact } from "../api/client";
@@ -27,12 +32,43 @@ export function MemoriesScreen(props: {
   error: string;
   onBack: () => void;
   onAdd: (text: string) => Promise<void>;
+  onUpdate: (id: string, text: string, updatedAt?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onSearch: (query: string) => Promise<MemoryItem[]>;
 }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<MemoryItem[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const visible = useMemo(() => filterMemories(props.items, query), [props.items, query]);
+  const [editing, setEditing] = useState<{ id: string; original: string; updatedAt?: string } | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const visible = query.trim() ? (hits ?? []) : filterMemories(props.items, "");
+
+  useEffect(() => {
+    const needle = query.trim();
+    if (!needle) {
+      setHits(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void props.onSearch(needle).then(setHits).catch(() => setHits([]));
+    }, MEMORY_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const remove = (id: string) => {
+    Alert.alert("删除这条记忆？", "删掉后跨对话不会再带上它。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: () => {
+          void props.onDelete(id);
+        },
+      },
+    ]);
+  };
+
   return (
     <Frame title="记忆" onBack={props.onBack}>
       <Text style={frameStyles.hint}>
@@ -40,7 +76,13 @@ export function MemoriesScreen(props: {
       </Text>
       {props.configured ? (
         <>
-          <IslandInput value={text} onChangeText={setText} placeholder="记一条，比如「测试用 pnpm test」" multiline />
+          <IslandInput
+            value={text}
+            onChangeText={setText}
+            placeholder="记一条，比如「测试用 pnpm test」"
+            multiline
+            maxLength={MEMORY_TEXT_MAX_LENGTH}
+          />
           <IslandButton
             primary
             label={busy ? "保存中…" : "记一条"}
@@ -55,11 +97,50 @@ export function MemoriesScreen(props: {
           ) : null}
         </>
       ) : null}
+      {editing ? (
+        <>
+          <IslandInput
+            value={editDraft}
+            onChangeText={setEditDraft}
+            placeholder="改这条"
+            multiline
+            maxLength={MEMORY_TEXT_MAX_LENGTH}
+          />
+          <View style={frameStyles.row}>
+            <IslandButton
+              primary
+              label={busy ? "保存中…" : "保存"}
+              disabled={busy || !editDraft.trim()}
+              onPress={() => {
+                const next = editDraft.trim();
+                if (next === editing.original) {
+                  setEditing(null);
+                  return;
+                }
+                setBusy(true);
+                void props
+                  .onUpdate(editing.id, next, editing.updatedAt)
+                  .then(() => setEditing(null))
+                  .finally(() => setBusy(false));
+              }}
+            />
+            <IslandButton label="取消" onPress={() => setEditing(null)} />
+          </View>
+        </>
+      ) : null}
       {visible.map((item) => (
         <View key={item.id} style={frameStyles.card}>
-          <Text style={frameStyles.cardTitle}>{item.text}</Text>
+          <Pressable
+            onPress={() => {
+              setEditing({ id: item.id, original: item.text, updatedAt: item.updatedAt });
+              setEditDraft(item.text);
+            }}
+          >
+            <Text style={frameStyles.cardTitle}>{item.text}</Text>
+            {memoryEdited(item) ? <Text style={frameStyles.hint}>改过</Text> : null}
+          </Pressable>
           <View style={frameStyles.row}>
-            <IslandButton label="删除" onPress={() => void props.onDelete(item.id)} />
+            <IslandButton label="删除" onPress={() => remove(item.id)} />
           </View>
         </View>
       ))}
@@ -76,7 +157,7 @@ export function InboxScreen(props: {
   onBack: () => void;
   onOpen: (item: InboxItem) => void;
 }) {
-  const ordered = useMemo(() => sortInbox(props.items), [props.items]);
+  const ordered = sortInbox(props.items);
   return (
     <Frame title="消息" onBack={props.onBack}>
       <Text style={frameStyles.hint}>项目邀请、审批、转交和提到你的留言。</Text>
@@ -107,7 +188,7 @@ export function SkillsScreen(props: {
 }) {
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState("");
-  const visible = useMemo(() => filterPlugins(props.items, query), [props.items, query]);
+  const visible = filterPlugins(props.items, query);
   return (
     <Frame title="技能" onBack={props.onBack}>
       <Text style={frameStyles.hint}>启用的技能会在开对话时装进工作区。</Text>

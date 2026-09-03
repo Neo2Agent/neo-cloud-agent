@@ -126,7 +126,7 @@ iOS / Android / PWA
 
 手机主打 cloud，对齐对象就是对话页已经落地的那几刀。**已接**（`MobileClient` + 两个壳同一套）：
 
-- 个人记忆：`GET|POST /v1/memories`、`DELETE /v1/memories/:id`；抽屉进「记忆」。Mem0 没配就显示 `configured: false`，不当报错
+- 个人记忆：`GET|POST /v1/memories`、`POST /v1/memories/search`、`PATCH|DELETE /v1/memories/:id`；抽屉进「记忆」。Mem0 没配就显示 `configured: false`，不当报错
 - 站内 Inbox：`GET /v1/inbox`、`POST /v1/inbox/:id/read`；抽屉「消息」带未读角标，点一条有 `runId` 就开对话，否则跳项目
 - 产物：`GET /v1/runs/:id/artifacts` + `POST …/save-to-project`（非项目对话按控制面语义禁掉）
 - 出错跳诊断：`GET /v1/runs/:id/diagnostics`
