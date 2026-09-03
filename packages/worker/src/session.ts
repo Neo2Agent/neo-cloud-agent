@@ -13,6 +13,8 @@ import {
   appendUserMemory,
   deliveryForPi,
   intersectSessionTools,
+  MEMORY_FILE,
+  NEO_DIR,
   wrapPromptWithConversationReplay,
   type WorkerInbound,
 } from "@neo-cloud-agent/contracts";
@@ -220,18 +222,35 @@ function appendWorkspaceBoundary(prompt: string, sandboxRoot: string): string {
   ].join("\n");
 }
 
+function isEnoent(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT");
+}
+
+function warnWorkspaceRead(fileName: string, error: unknown): void {
+  const code = error && typeof error === "object" && "code" in error ? String((error as NodeJS.ErrnoException).code) : "unknown";
+  console.warn(`workspace: skip ${NEO_DIR}/${fileName} code=${code}`);
+}
+
 function readProjectInstruction(cwd: string): string {
   try {
-    return readFileSync(path.join(cwd, ".neo", "PROJECT.md"), "utf8");
-  } catch {
+    return readFileSync(path.join(cwd, NEO_DIR, "PROJECT.md"), "utf8");
+  } catch (error) {
+    if (isEnoent(error)) {
+      return process.env.NEO_PROJECT_INSTRUCTION ?? "";
+    }
+    warnWorkspaceRead("PROJECT.md", error);
     return process.env.NEO_PROJECT_INSTRUCTION ?? "";
   }
 }
 
 export function readUserMemory(cwd: string): string {
   try {
-    return readFileSync(path.join(cwd, ".neo", "MEMORY.md"), "utf8");
-  } catch {
+    return readFileSync(path.join(cwd, NEO_DIR, MEMORY_FILE), "utf8");
+  } catch (error) {
+    if (isEnoent(error)) {
+      return "";
+    }
+    warnWorkspaceRead(MEMORY_FILE, error);
     return "";
   }
 }

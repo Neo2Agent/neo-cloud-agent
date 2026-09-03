@@ -41,6 +41,9 @@ import {
   readNewApiInfo,
   resolveModelLimits,
   writeLlmSettings,
+  MEMORY_ACTION,
+  MEMORY_ERROR_CODE,
+  memoryErrorMessage,
 } from "@neo-cloud-agent/contracts";
 import { eventsForRun, lastEventIdForRun } from "../events/bus.js";
 import { snapshotForRun } from "../events/snapshot.js";
@@ -210,14 +213,15 @@ import {
 } from "../notify/settings.js";
 import { registerTelegramWebhook } from "../notify/telegram.js";
 import { serveWebFile } from "./static.js";
+import { readMem0Info } from "../memory/client.js";
+import { MemoryServiceError } from "../memory/service.js";
 import {
-  addMemory,
-  deleteMemory,
-  listMemories,
-  Mem0Error,
-  readMem0Info,
-  searchMemories,
-} from "../memory/client.js";
+  addUserMemory,
+  listUserMemories,
+  removeUserMemory,
+  searchUserMemories,
+  updateUserMemory,
+} from "../memory/service.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
 import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
 
@@ -273,12 +277,29 @@ function sendAccountError(res: ServerResponse, error: unknown): void {
   send(res, message.includes("already registered") ? 409 : 500, { error: message });
 }
 
-function sendMem0Error(res: ServerResponse, error: unknown): void {
-  if (error instanceof Mem0Error) {
-    send(res, error.status, { error: error.message });
+function sendMemoryError(res: ServerResponse, error: unknown): void {
+  if (error instanceof MemoryServiceError) {
+    send(res, error.status, {
+      error: error.userTip,
+      code: error.code,
+      message: error.userTip,
+      ...(error.detail ? { detail: error.detail } : {}),
+    });
     return;
   }
-  send(res, 502, { error: error instanceof Error ? error.message : "mem0_failed" });
+  send(res, 502, {
+    error: memoryErrorMessage(MEMORY_ERROR_CODE.STORE_FAILED),
+    code: MEMORY_ERROR_CODE.STORE_FAILED,
+    message: memoryErrorMessage(MEMORY_ERROR_CODE.STORE_FAILED),
+  });
+}
+
+function sendMemoryLoginRequired(res: ServerResponse): void {
+  send(res, 401, {
+    error: memoryErrorMessage(MEMORY_ERROR_CODE.LOGIN_REQUIRED),
+    code: MEMORY_ERROR_CODE.LOGIN_REQUIRED,
+    message: memoryErrorMessage(MEMORY_ERROR_CODE.LOGIN_REQUIRED),
+  });
 }
 
 async function readRawBody(req: IncomingMessage): Promise<Buffer> {
@@ -452,7 +473,7 @@ export function createApiServer() {
           llmContextWindow: resolveModelLimits(llm.model)?.contextWindow ?? null,
           llmConfigured: llm.configured,
           newApi: readNewApiInfo(),
-          mem0: readMem0Info(),
+          mem0: { configured: readMem0Info().configured },
           workerRuntime: config.workerRuntime,
           spawnLocalWorker: config.spawnLocalWorker,
           vmSlots: summarizeVmSlots(config.workerRuntime),
@@ -1190,7 +1211,7 @@ export function createApiServer() {
         }
         if (method === "GET" && path === "/v1/memories") {
           if (actor.kind !== "user") {
-            send(res, 401, { error: "login_required" });
+            sendMemoryLoginRequired(res);
             return;
           }
           const configured = readMem0Info().configured;
@@ -1199,60 +1220,67 @@ export function createApiServer() {
             return;
           }
           try {
-            const limit = Number(url.searchParams.get("limit") ?? 50);
-            send(res, 200, { configured: true, memories: await listMemories(actor.userId, limit) });
+            send(res, 200, {
+              configured: true,
+              memories: await listUserMemories(actor.userId, url.searchParams.get("limit") ?? undefined),
+            });
           } catch (error) {
-            sendMem0Error(res, error);
+            sendMemoryError(res, error);
           }
           return;
         }
         if (method === "POST" && path === "/v1/memories") {
           if (actor.kind !== "user") {
-            send(res, 401, { error: "login_required" });
+            sendMemoryLoginRequired(res);
             return;
           }
           try {
-            const body = (await readJson(req)) as { text?: string; infer?: boolean };
-            const text = (body.text ?? "").trim();
-            if (!text) {
-              send(res, 400, { error: "text is required" });
-              return;
-            }
-            send(res, 201, { memories: await addMemory({ userId: actor.userId, text, infer: body.infer === true }) });
+            const body = (await readJson(req)) as { text?: string };
+            send(res, 201, { memories: await addUserMemory(actor.userId, body.text ?? "") });
           } catch (error) {
-            sendMem0Error(res, error);
+            sendMemoryError(res, error);
           }
           return;
         }
         if (method === "POST" && path === "/v1/memories/search") {
           if (actor.kind !== "user") {
-            send(res, 401, { error: "login_required" });
+            sendMemoryLoginRequired(res);
             return;
           }
           try {
             const body = (await readJson(req)) as { query?: string; limit?: number };
-            const query = (body.query ?? "").trim();
-            if (!query) {
-              send(res, 400, { error: "query is required" });
-              return;
-            }
-            send(res, 200, { memories: await searchMemories({ userId: actor.userId, query, limit: body.limit }) });
+            send(res, 200, {
+              memories: await searchUserMemories(actor.userId, body.query ?? "", body.limit),
+            });
           } catch (error) {
-            sendMem0Error(res, error);
+            sendMemoryError(res, error);
           }
           return;
         }
-        const memoryDelete = /^\/v1\/memories\/([^/]+)$/.exec(path);
-        if (memoryDelete && method === "DELETE") {
+        const memoryItem = /^\/v1\/memories\/([^/]+)$/.exec(path);
+        const memoryId = memoryItem?.[1] ?? "";
+        if (memoryId && memoryId !== "search" && (method === "PATCH" || method === "DELETE")) {
           if (actor.kind !== "user") {
-            send(res, 401, { error: "login_required" });
+            sendMemoryLoginRequired(res);
             return;
           }
           try {
-            await deleteMemory(memoryDelete[1] ?? "");
+            if (method === "PATCH") {
+              const body = (await readJson(req)) as { text?: string; updatedAt?: string };
+              send(res, 200, {
+                memory: await updateUserMemory({
+                  userId: actor.userId,
+                  id: memoryId,
+                  text: body.text ?? "",
+                  updatedAt: body.updatedAt,
+                }),
+              });
+              return;
+            }
+            await removeUserMemory(actor.userId, memoryId);
             send(res, 200, { ok: true });
           } catch (error) {
-            sendMem0Error(res, error);
+            sendMemoryError(res, error);
           }
           return;
         }
@@ -1835,7 +1863,14 @@ export function createApiServer() {
           return;
         }
         if (!readMem0Info().configured) {
-          send(res, 503, { error: "mem0_not_configured" });
+          sendMemoryError(
+            res,
+            new MemoryServiceError(
+              MEMORY_ERROR_CODE.STORE_UNAVAILABLE,
+              503,
+              memoryErrorMessage(MEMORY_ERROR_CODE.STORE_UNAVAILABLE),
+            ),
+          );
           return;
         }
         try {
@@ -1846,38 +1881,23 @@ export function createApiServer() {
             limit?: number;
           };
           const action = (body.action ?? "").trim();
-          if (action === "add") {
-            const text = (body.text ?? "").trim();
-            if (!text) {
-              send(res, 400, { error: "text is required" });
-              return;
-            }
+          if (action === MEMORY_ACTION.add) {
             send(res, 201, {
-              memories: await addMemory({
-                userId: run.userId,
-                text,
-                infer: false,
-                metadata: { source: "agent", runId },
-              }),
+              memories: await addUserMemory(run.userId, body.text ?? "", { source: "agent", runId }),
             });
             return;
           }
-          if (action === "search") {
-            const query = (body.query ?? "").trim();
-            if (!query) {
-              send(res, 400, { error: "query is required" });
-              return;
-            }
-            send(res, 200, { memories: await searchMemories({ userId: run.userId, query, limit: body.limit }) });
+          if (action === MEMORY_ACTION.search) {
+            send(res, 200, { memories: await searchUserMemories(run.userId, body.query ?? "", body.limit) });
             return;
           }
-          if (action === "list") {
-            send(res, 200, { memories: await listMemories(run.userId, body.limit ?? 50) });
+          if (action === MEMORY_ACTION.list) {
+            send(res, 200, { memories: await listUserMemories(run.userId, body.limit) });
             return;
           }
           send(res, 400, { error: "action must be add, search, or list" });
         } catch (error) {
-          sendMem0Error(res, error);
+          sendMemoryError(res, error);
         }
         return;
       }

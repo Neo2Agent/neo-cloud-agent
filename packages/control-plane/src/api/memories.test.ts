@@ -47,7 +47,7 @@ function withMem0Env(t: { after: (fn: () => void) => void }): void {
   });
 }
 
-test("GET /health reports mem0 without exposing the key", async (t) => {
+test("GET /health reports mem0 without exposing the url", async (t) => {
   withMem0Env(t);
   const server = createApiServer();
   const port = await listen(server);
@@ -58,7 +58,8 @@ test("GET /health reports mem0 without exposing the key", async (t) => {
     mem0?: { configured?: boolean; url?: string };
   };
   assert.equal(health.mem0?.configured, true);
-  assert.equal(health.mem0?.url, "http://mem0.test");
+  assert.equal(health.mem0?.url, undefined);
+  assert.deepEqual(Object.keys(health.mem0 ?? {}), ["configured"]);
 });
 
 test("/v1/memories add search list and delete go through Mem0", async (t) => {
@@ -106,7 +107,215 @@ test("/v1/memories add search list and delete go through Mem0", async (t) => {
 
   const deleted = await fetch(`${base}/v1/memories/m1`, { method: "DELETE", headers });
   assert.equal(deleted.status, 200);
-  assert.ok(calls.some((call) => call.method === "DELETE" && call.url.endsWith("/memories/m1")));
+  assert.ok(calls.some((call) => call.method === "DELETE" && call.url.includes("/memories/m1?user_id=")));
+});
+
+test("PATCH /v1/memories/:id goes out as PUT with the session user", async (t) => {
+  withMem0Env(t);
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    setMem0FetchForTests(null);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const token = await login(base);
+  const headers = { "content-type": "application/json", authorization: `Bearer ${token}` };
+  const calls: Array<{ method?: string; url: string; body?: unknown }> = [];
+  setMem0FetchForTests(async (url, init) => {
+    let body: unknown;
+    if (typeof init?.body === "string") {
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
+    }
+    calls.push({ method: init?.method, url, body });
+    return new Response(
+      JSON.stringify({
+        results: [
+          {
+            id: "m1",
+            memory: "改用 bun",
+            user_id: "admin",
+            created_at: "2026-09-01T00:00:00.000Z",
+            updated_at: "2026-09-01T00:00:01.000Z",
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  });
+
+  const patched = await fetch(`${base}/v1/memories/m1`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ text: "改用 bun", updatedAt: "2026-09-01T00:00:00.000Z" }),
+  });
+  assert.equal(patched.status, 200);
+  const payload = (await patched.json()) as { memory?: { text?: string } };
+  assert.equal(payload.memory?.text, "改用 bun");
+  const put = calls.find((call) => call.method === "PUT");
+  assert.ok(put?.url.endsWith("/memories/m1"));
+  assert.equal((put?.body as { user_id?: string }).user_id, "admin");
+  assert.equal((put?.body as { text?: string }).text, "改用 bun");
+});
+
+test("PATCH empty or too long text does not call Mem0", async (t) => {
+  withMem0Env(t);
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    setMem0FetchForTests(null);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const token = await login(base);
+  const headers = { "content-type": "application/json", authorization: `Bearer ${token}` };
+  const calls: Array<{ method?: string; url: string }> = [];
+  setMem0FetchForTests(async (url, init) => {
+    calls.push({ method: init?.method, url });
+    return new Response("{}", { status: 200 });
+  });
+
+  const empty = await fetch(`${base}/v1/memories/m1`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ text: "   " }),
+  });
+  assert.equal(empty.status, 400);
+  const emptyBody = (await empty.json()) as { code?: string; error?: string; message?: string };
+  assert.equal(emptyBody.code, "MEMORY_TEXT_REQUIRED");
+  assert.equal(emptyBody.error, "请填写记忆内容");
+
+  const tooLong = await fetch(`${base}/v1/memories/m1`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ text: "字".repeat(501) }),
+  });
+  assert.equal(tooLong.status, 400);
+  assert.equal(((await tooLong.json()) as { code?: string }).code, "MEMORY_TEXT_TOO_LONG");
+  assert.equal(calls.length, 0);
+});
+
+test("PATCH without a session is 401", async (t) => {
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+  });
+  const response = await fetch(`http://127.0.0.1:${port}/v1/memories/m1`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "改" }),
+  });
+  assert.equal(response.status, 401);
+  const body = (await response.json()) as { code?: string; error?: string; message?: string };
+  assert.equal(body.code, "MEMORY_LOGIN_REQUIRED");
+  assert.equal(body.error, "请先登录");
+  assert.equal(body.message, "请先登录");
+});
+
+test("PATCH sidecar 404 and 409 map to the Chinese envelope", async (t) => {
+  withMem0Env(t);
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    setMem0FetchForTests(null);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const token = await login(base);
+  const headers = { "content-type": "application/json", authorization: `Bearer ${token}` };
+  setMem0FetchForTests(async () => new Response(JSON.stringify({ detail: "memory_not_found" }), { status: 404 }));
+  const missing = await fetch(`${base}/v1/memories/m1`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ text: "改" }),
+  });
+  assert.equal(missing.status, 404);
+  assert.deepEqual(await missing.json(), {
+    error: "记忆不存在",
+    code: "MEMORY_NOT_FOUND",
+    message: "记忆不存在",
+  });
+
+  setMem0FetchForTests(async () => new Response(JSON.stringify({ detail: "version_conflict" }), { status: 409 }));
+  const conflict = await fetch(`${base}/v1/memories/m1`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ text: "改", updatedAt: "2026-09-01T00:00:00.000Z" }),
+  });
+  assert.equal(conflict.status, 409);
+  assert.equal(((await conflict.json()) as { code?: string }).code, "MEMORY_VERSION_CONFLICT");
+});
+
+test("GET ?limit=abc and search limit 33 are normalized", async (t) => {
+  withMem0Env(t);
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    setMem0FetchForTests(null);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const token = await login(base);
+  const headers = { "content-type": "application/json", authorization: `Bearer ${token}` };
+  const calls: Array<{ method?: string; url: string; body?: unknown }> = [];
+  setMem0FetchForTests(async (url, init) => {
+    let body: unknown;
+    if (typeof init?.body === "string") {
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
+    }
+    calls.push({ method: init?.method, url, body });
+    return new Response(JSON.stringify({ results: [] }), { status: 200 });
+  });
+
+  const listed = await fetch(`${base}/v1/memories?limit=abc`, { headers });
+  assert.equal(listed.status, 200);
+  const listCall = calls.find((call) => call.url.includes("/memories?"));
+  assert.match(listCall?.url ?? "", /limit=50/);
+  assert.doesNotMatch(listCall?.url ?? "", /NaN/);
+
+  const found = await fetch(`${base}/v1/memories/search`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ query: "包管理器", limit: 33 }),
+  });
+  assert.equal(found.status, 200);
+  const searchCall = calls.find((call) => call.url.endsWith("/search"));
+  assert.equal((searchCall?.body as { limit?: number }).limit, 32);
+});
+
+test("DELETE /v1/memories/search is not treated as a memory id", async (t) => {
+  withMem0Env(t);
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    setMem0FetchForTests(null);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const token = await login(base);
+  const calls: Array<{ method?: string; url: string }> = [];
+  setMem0FetchForTests(async (url, init) => {
+    calls.push({ method: init?.method, url });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  });
+  const response = await fetch(`${base}/v1/memories/search`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.notEqual(response.status, 200);
+  assert.equal(
+    calls.some((call) => call.method === "DELETE"),
+    false,
+  );
 });
 
 test("worker JWT can add and search memories for the run user", async (t) => {

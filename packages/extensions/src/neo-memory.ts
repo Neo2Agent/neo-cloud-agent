@@ -1,5 +1,6 @@
 import {
   MEMORY_ADD_TOOL_NAME,
+  MEMORY_SEARCH_LIMIT_DEFAULT,
   MEMORY_SEARCH_TOOL_NAME,
   type MemoryItem,
 } from "@neo-cloud-agent/contracts";
@@ -124,7 +125,7 @@ export function createMemorySearchTool(ctx: CloudToolContext): CloudToolDefiniti
         },
         limit: {
           type: "integer",
-          description: "Max hits. Default 8.",
+          description: `Max hits. Default ${MEMORY_SEARCH_LIMIT_DEFAULT}.`,
         },
       },
     },
