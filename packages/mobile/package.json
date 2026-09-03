@@ -7,20 +7,25 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.native.json --noEmit",
     "start": "expo start",
     "ios": "expo start --ios",
     "android": "expo start --android",
-    "pack:android": "eas-cli build --platform android --profile preview --non-interactive"
+    "pack:android": "EXPO_TOKEN=\"${EXPO_TOKEN:-$EXPO_ACCESS_TOKEN}\" eas build --platform android --profile preview --non-interactive"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.10",
+    "@expo/vector-icons": "^15.0.3",
     "@neo-cloud-agent/contracts": "workspace:*",
     "@neo-cloud-agent/ui": "workspace:*",
     "babel-preset-expo": "~54.0.12",
     "expo": "~54.0.0",
     "expo-build-properties": "^57.0.15",
+    "expo-constants": "~18.0.14",
+    "expo-image-manipulator": "~14.0.8",
+    "expo-image-picker": "~17.0.11",
     "expo-linking": "~8.0.8",
+    "expo-modules-core": "~3.0.30",
     "expo-notifications": "~0.32.11",
     "expo-secure-store": "~15.0.7",
     "expo-status-bar": "~3.0.8",

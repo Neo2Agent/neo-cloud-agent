@@ -15,7 +15,9 @@
           "NSAllowsArbitraryLoads": true,
           "NSAllowsLocalNetworking": true
         },
-        "NSMicrophoneUsageDescription": "Neo 用麦克风把你说的话写进发送框。"
+        "NSMicrophoneUsageDescription": "Neo 用麦克风把你说的话写进发送框。",
+        "NSPhotoLibraryUsageDescription": "Neo 把你选的照片作为附件发给云端对话。",
+        "NSCameraUsageDescription": "Neo 用相机拍一张作为附件发给云端对话。"
       }
     },
     "android": {
@@ -25,7 +27,9 @@
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/linabell-face.png",
@@ -40,14 +44,21 @@
     "plugins": [
       "./plugins/with-cleartext.cjs",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Neo 把你选的照片作为附件发给云端对话。",
+          "cameraPermission": "Neo 用相机拍一张作为附件发给云端对话。"
+        }
+      ]
     ],
     "extra": {
       "apiUrl": "http://62.234.211.200",
       "eas": {
-        "projectId": "904b90b0-8796-4c87-80b5-2eb1d7b4f024"
+        "projectId": "c2e24fe1-c980-4ba8-9333-a79cc28903a6"
       }
     },
-    "owner": "kaibairen"
+    "owner": "kaibairen_yi"
   }
 }

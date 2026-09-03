@@ -124,17 +124,24 @@ iOS / Android / PWA
 
 ### P1 — 像对话页的随身版
 
-- 相册 / 相机图片，最多 4 张，走现有 `images[]`（worker 落到 `.neo/inbox-images/`）
-- 产物列表和下载体：`GET /v1/runs/:id/artifacts`
-- Diff 摘要 + 浏览器打开 PR
-- 环境 / 快照选择（只读列表 + 点选，不在手机上编辑 `environment.json`）
-- 槽位占用提示（`GET /v1/vms`），避免用户不知道为什么 `queued`
+手机主打 cloud，对齐对象就是对话页已经落地的那几刀。**已接**（`MobileClient` + 两个壳同一套）：
+
+- 个人记忆：`GET|POST /v1/memories`、`DELETE /v1/memories/:id`；抽屉进「记忆」。Mem0 没配就显示 `configured: false`，不当报错
+- 站内 Inbox：`GET /v1/inbox`、`POST /v1/inbox/:id/read`；抽屉「消息」带未读角标，点一条有 `runId` 就开对话，否则跳项目
+- 产物：`GET /v1/runs/:id/artifacts` + `POST …/save-to-project`（非项目对话按控制面语义禁掉）
+- 出错跳诊断：`GET /v1/runs/:id/diagnostics`
+- 技能启停：`POST|DELETE /v1/plugins/:id/install`、`POST …/enable`
+- 空态 Recipe 与专家团：`BUNDLED_RECIPES` 预填 `prompt` / `expertId` / `expertTeamId` / `pluginIds`
+- 列表多选归档、删除已归档；长会话「加载更早」（`?limit=&before=`）
+- 图片附件：走现成的 `images[]`，服务端零改动。两个壳都在发之前把图**归一化成 JPEG 并把长边压到 1600**——SDK 54 的 picker 默认 `Passthrough`，iPhone 取出来是几 MB 的 HEIC，而 worker 的扩展名映射只认 png/webp/gif、`mediaType` 又原样当 vision mime 传给模型，不归一化会同时错在格式和体积上。实验室用 canvas，RN 用 `expo-image-manipulator`
+
+**仍后置：** Diff 摘要、环境 / 快照选择、槽位占用提示（`GET /v1/vms` 客户端已封装，未做产品面）。
 
 ### P2 — 和 Web 对齐的管理面
 
 - 工作区只读文件树（`GET /v1/runs/:id/fs`）
-- 项目列表 / 邀请链接（已有 `#/projects`、`#/invite/:token`）
-- 定时任务只读 + 开关
+- 项目资产 / 成员 / 邀请审批 / 转交（`MobileClient` 已封装，产品面只做了项目列表与接受邀请）
+- 定时任务只读 + 开关（已有）
 - 设备管理：登出其它手机、吊销 session
 
 **明确不做（任何一期都不要混进来）：**
