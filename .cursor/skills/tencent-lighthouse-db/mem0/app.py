@@ -1,14 +1,22 @@
-"""Slim Mem0 HTTP API: add / search / list / delete. No dashboard."""
+"""Slim Mem0 HTTP API: add / search / list / update / delete. No dashboard."""
 
 from __future__ import annotations
 
 import hmac
 import os
+from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
+
+# Keep in lockstep with packages/contracts/src/memory.ts
+MEMORY_LIST_LIMIT_DEFAULT = 50
+MEMORY_LIST_LIMIT_MAX = 100
+MEMORY_SEARCH_LIMIT_DEFAULT = 8
+MEMORY_SEARCH_LIMIT_MAX = 32
+MEMORY_TEXT_MAX_LENGTH = 500
 
 app = FastAPI(title="neo-mem0-slim", docs_url=None, redoc_url=None)
 
@@ -90,8 +98,8 @@ def require_key(x_api_key: str | None, authorization: str | None) -> None:
 class AddBody(BaseModel):
     user_id: str = Field(min_length=1)
     messages: str | list[dict[str, str]] | None = None
-    text: str | None = None
-    infer: bool = True
+    text: str | None = Field(default=None, max_length=MEMORY_TEXT_MAX_LENGTH)
+    infer: bool = False
     agent_id: str | None = None
     run_id: str | None = None
     metadata: dict[str, Any] | None = None
@@ -100,9 +108,15 @@ class AddBody(BaseModel):
 class SearchBody(BaseModel):
     query: str = Field(min_length=1)
     user_id: str = Field(min_length=1)
-    limit: int = Field(default=8, ge=1, le=32)
+    limit: int = Field(default=MEMORY_SEARCH_LIMIT_DEFAULT, ge=1, le=MEMORY_SEARCH_LIMIT_MAX)
     agent_id: str | None = None
     run_id: str | None = None
+
+
+class UpdateBody(BaseModel):
+    user_id: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=MEMORY_TEXT_MAX_LENGTH)
+    updated_at: str | None = None
 
 
 def _entity_filters(user_id: str, agent_id: str | None = None, run_id: str | None = None) -> dict[str, Any]:
@@ -124,6 +138,48 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _as_record(value: Any) -> dict[str, Any] | None:
+    parsed = _jsonable(value)
+    if isinstance(parsed, dict) and parsed:
+        return parsed
+    return None
+
+
+def _epoch_ms(value: str | None) -> float | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).timestamp() * 1000
+    except ValueError:
+        return None
+
+
+def _same_updated_at(left: str | None, right: str | None) -> bool:
+    left_ms = _epoch_ms(left)
+    right_ms = _epoch_ms(right)
+    if left_ms is None or right_ms is None:
+        return False
+    return left_ms == right_ms
+
+
+def _require_owned_memory(memory_id: str, user_id: str) -> dict[str, Any]:
+    try:
+        raw = get_memory().get(memory_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="memory_get_failed") from exc
+    record = _as_record(raw)
+    owner = ""
+    if record:
+        owner = str(record.get("user_id") or "")
+    if not record or owner != user_id:
+        raise HTTPException(status_code=404, detail="memory_not_found")
+    return record
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
@@ -131,8 +187,6 @@ def health() -> dict[str, Any]:
         "service": "neo-mem0-slim",
         "embedder": _env("EMBEDDER_MODEL", "BAAI/bge-small-zh-v1.5"),
         "embedding_dims": embedding_dims(),
-        "llm_model": _env("LLM_MODEL", "deepseek-v4-flash"),
-        "llm_base": _env("OPENAI_BASE_URL", "http://new-api:3000/v1"),
         "vector": "pgvector",
     }
 
@@ -164,6 +218,27 @@ def add_memory(
     return _jsonable(get_memory().add(payload, **kwargs))
 
 
+@app.put("/memories/{memory_id}")
+def update_memory(
+    memory_id: str,
+    body: UpdateBody,
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> Any:
+    require_key(x_api_key, authorization)
+    record = _require_owned_memory(memory_id, body.user_id)
+    if body.updated_at is not None:
+        stored = record.get("updated_at")
+        stored_text = stored if isinstance(stored, str) else None
+        if not _same_updated_at(stored_text, body.updated_at):
+            raise HTTPException(status_code=409, detail="version_conflict")
+    get_memory().update(memory_id, text=body.text)
+    fresh = _as_record(get_memory().get(memory_id))
+    if not fresh:
+        raise HTTPException(status_code=500, detail="memory_update_missing")
+    return {"results": [fresh]}
+
+
 @app.post("/search")
 def search_memory(
     body: SearchBody,
@@ -173,32 +248,33 @@ def search_memory(
     require_key(x_api_key, authorization)
     memory = get_memory()
     filters = _entity_filters(body.user_id, body.agent_id, body.run_id)
-    try:
-        return _jsonable(memory.search(body.query, filters=filters, top_k=body.limit))
-    except TypeError:
-        return _jsonable(memory.search(body.query, user_id=body.user_id, limit=body.limit))
+    return _jsonable(memory.search(body.query, filters=filters, top_k=body.limit))
 
 
 @app.get("/memories")
 def list_memories(
     user_id: str,
-    limit: int = 50,
+    limit: int = MEMORY_LIST_LIMIT_DEFAULT,
     x_api_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
 ) -> Any:
     require_key(x_api_key, authorization)
+    if limit < 1:
+        limit = MEMORY_LIST_LIMIT_DEFAULT
+    if limit > MEMORY_LIST_LIMIT_MAX:
+        limit = MEMORY_LIST_LIMIT_MAX
     memory = get_memory()
-    try:
-        return _jsonable(memory.get_all(filters=_entity_filters(user_id), top_k=limit))
-    except TypeError:
-        return _jsonable(memory.get_all(user_id=user_id, limit=limit))
+    return _jsonable(memory.get_all(filters=_entity_filters(user_id), top_k=limit))
 
 
 @app.delete("/memories/{memory_id}")
 def delete_memory(
     memory_id: str,
+    user_id: str | None = None,
     x_api_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
 ) -> Any:
     require_key(x_api_key, authorization)
+    if user_id:
+        _require_owned_memory(memory_id, user_id)
     return _jsonable(get_memory().delete(memory_id))
