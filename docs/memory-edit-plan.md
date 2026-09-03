@@ -1,177 +1,281 @@
 # 记忆编辑：技术方案
 
-配套分析见 [memory-edit-analysis.md](./memory-edit-analysis.md)（为什么要做、代价在哪）。本文只讲怎么做：契约、逐文件改动、测试、发布顺序、回滚。
+配套分析见 [memory-edit-analysis.md](./memory-edit-analysis.md)。规约按《阿里巴巴 Java 开发手册（嵩山版）》七维意图等价落到 TypeScript / Python，只落约定，不引入 eslint / prettier。
 
-一句话范围：**给用户记忆加「改」，并把「改」和「删」都补上归属校验。** 不做自动抽取、不做项目级作用域、不做编辑历史 UI。
+基线：手机云端面对齐已在 [PR #138](https://github.com/Neo2Agent/neo-cloud-agent/pull/138) 合上（源 PR [#129](https://github.com/Neo2Agent/neo-cloud-agent/pull/129)）。合入后 Web / Desk / mobile 都有同一套看 / 记 / 删。本文只谈怎么加「改」。
 
----
-
-## 1. 设计决策
-
-### 1.1 归属校验放侧车，不放控制面
-
-| 方案 | 代价 |
-| --- | --- |
-| **侧车内校验**（选这个） | 一次跨主机往返。检查离数据最近，未来任何调用方都受保护。逻辑只有一份 |
-| 控制面校验 | 要新增 `GET /memories/{id}`，北京应用机 → 库机两次往返，且每个写路由都得自己比对一遍 |
-
-侧车内用 `Memory.get(memory_id)`（一次向量库主键取行，不用 embedding）拿到 `user_id` 比对。控制面**不做二次校验**——两套真相比没有校验更糟。
-
-不匹配和不存在都返回 **404**，不返回 403：不泄漏「这个 id 存在」。这也和 `/v1/experts/:id` 现有的 404 语义一致。
-
-### 1.2 编辑是原地 `update`，不是「删除 + 新增」
-
-`mem0ai==2.0.19` 的 `Memory.update(memory_id, text=...)` 保留 `created_at`、写 `updated_at`、身份字段不可变、重新 embed、写一条 `UPDATE` history。把编辑实现成删+增会丢掉这一整套，还多一个可能中途失败的两步事务。
-
-### 1.3 侧车只发一次
-
-侧车部署走 `mem0/deploy-mem0.sh`（库机 docker build + compose up），不在常规 `deploy.sh` 路径上，是整件事里最贵的一步。所以**把侧车的全部改动一次发完**（归属校验 + `PUT` 路由），控制面和 UI 再分批跟上。`PUT` 路由先落地、暂时没人调用，是有意为之的 expand/contract。
-
-### 1.4 公开 API 用 `PATCH`
-
-仓库现有约定是 `PATCH`（`/v1/me`、`/v1/experts/:id`、`/v1/desks/:id`）。侧车对内用 `PUT`，因为它是整段文本替换，且和 Mem0 Platform 的形状一致。
-
-### 1.5 Agent 不给编辑工具
-
-`neo_memory_add` 够用。给 Agent 加 `neo_memory_update` 需要它先拿到 id，而 `neo_memory_search` 现在只把 id 放在 `details` 里、正文只返回文本。让模型改自己写过的记忆，收益不明、错误面变大。等有真实需求再说。
+一句话范围：给用户记忆加原地编辑，把「改」和「删」都补上归属校验，并把已经核实的合规缺口收在同一条产品路径里。不做自动抽取、不做项目级作用域、不做编辑历史 UI、不给 Agent 编辑工具、不引入新工具链。
 
 ---
 
-## 2. API 契约
-
-### 2.1 Mem0 侧车（`mem0/app.py`）
+## 1. 现状与目标
 
 ```
-PUT    /memories/{memory_id}                  新增
-       body: { user_id: str, text: str }
-       200 { results: [ { id, memory, created_at, updated_at, user_id, ... } ] }
-       401 未带 key ｜ 404 不存在或不属于该 user_id
+写入: Web / Desk / mobile「记一条」或 neo_memory_add
+    → control-plane /v1/memories 或 /internal/runs/:id/memories
+    → Mem0 侧车 POST /memories（infer=false）→ pgvector
 
-DELETE /memories/{memory_id}?user_id=...      user_id 从「无」变成「可选，给了就强制」
-       200 ｜ 401 ｜ 404 不存在或不属于该 user_id
+召回: createRun → search 8 条 → workspace/.neo/MEMORY.md
+    → worker 拼进系统提示
+    对话中还可 neo_memory_search
 ```
 
-`PUT` 返回体包成 `{ results: [...] }` 是为了让控制面现成的 `normalizeMemoryResults` 直接吃（`Memory.update()` 本身只返回一句 `{'message': ...}`，所以要 update 完再 `get` 一次）。
+已核对的事实：
 
-`text` 为空时侧车返回 **422**（pydantic 的 `min_length=1`），不是 400。用户看不到它：控制面在 §3.4 已经先用 400 拦掉了。
+- 存储在 Mem0 侧车，不在业务 MySQL。控制面无本地索引。
+- 两条写入都是 `infer=false`，逐字存原文。没有对话结束抽取。
+- 用户动词只有看 / 记 / 删。底层 `Memory.update()` 已存在，侧车没暴露。
+- `DELETE /v1/memories/:id` 全链路不校验归属：登录用户名下 0 条，删别人的 id 仍 200。
+- `GET /v1/memories?limit=abc` 会拼出 `?limit=NaN`，侧车 422，界面显示 `mem0_422`。
+- 公开路由与内部路由各写一份校验；Web 的 `MemoryRow` 是 `MemoryItem` 的窄化副本。
 
-`DELETE` 的 `user_id` 这一轮是**可选**的，老控制面不带也照常工作——这是零停机的关键。等控制面全量发完，再用一行把它改成必填（见 §7 的 PR 4）。
-
-### 2.2 控制面公开 API
-
-```
-PATCH  /v1/memories/:id     新增
-       body: { text: string }
-       200 { memory: MemoryItem }
-       400 text 为空 ｜ 401 未登录 ｜ 404 记忆不存在 ｜ 502/503 Mem0 不可用
-
-DELETE /v1/memories/:id     行为变化：现在会带上当前用户
-       200 { ok: true } ｜ 401 ｜ 404
-```
-
-限流不用额外配：`actorRateLimitPolicies` 对所有 `/v1/` 非 auth 路径给 `api`，对 `PATCH` 再加 `write`，已经覆盖。不要把它加进 `isExpensiveWrite`——编辑不打 LLM，只是一次本地 embed，和 `POST /v1/memories` 同级。
-
-### 2.3 内部 API
-
-不变。`POST /internal/runs/:id/memories` 仍然只有 `add` / `search` / `list`。
+目标验收：用户能改一条记忆且 id / `createdAt` / `source` 不变；别人的 id 改或删都是 404；非法 `limit` 不再冒烟；错误提示是中文而不是 `mem0_*`。
 
 ---
 
-## 3. 逐文件改动
+## 2. 规约怎么落到本仓库
 
-### 3.1 `mem0/app.py`
+手册是 Java 视角。只列本功能会碰到的强制 / 推荐项。集合处理、线程池、Javadoc、MySQL 整章不适用，不硬套。
 
-```python
-class UpdateBody(BaseModel):
-    user_id: str = Field(min_length=1)
-    text: str = Field(min_length=1)
+- 命名：lowerCamelCase 函数、PascalCase 类型。Python 前导下划线是语言级私有，与现有 `_env` / `_jsonable` 一致。归属检查叫 `_require_owned_memory`，不把状态码写进函数名。
+- 常量：不允许未定义字面量直接出现。按功能放 [`packages/contracts/src/memory.ts`](../packages/contracts/src/memory.ts)，照现有 `MEMORY_ADD_TOOL_NAME` 推广，不建全局常量类。
+- 日期时间：比较用 epoch，不用字符串相等。
+- 控制语句：新代码卫语句，嵌套不超过 3 层。
+- 注释：TSDoc 只写契约（入参、返回、抛出、不变量），不写叙述。
+- 前后端：协议 / 方法 / 状态码 / 响应体写死；空列表返回 `[]`；错误含状态码 + `code` + 排查信息 + 用户提示；JSON 键 lowerCamelCase。
+- 异常日志：禁止用异常做流程控制；禁止吞掉原始错误；禁止把用户记忆正文打进日志。
+- 单元测试：AIR + BCDE。增量代码必须有测试。覆盖率自检，不设 CI 数字门禁。
+- 安全：不信任客户端入参；权限校验；入参有效性验证；敏感数据脱敏。
+- 工程结构：Controller 不直连防腐层。
+- 设计：避免过度设计（不拆 DO/DTO/VO）；有现成搜索接口就要接上。
 
+---
 
-def _owned_or_404(memory_id: str, user_id: str) -> dict[str, Any]:
-    try:
-        item = get_memory().get(memory_id)
-    except Exception:
-        # Backing-store failure, not a bad id.
-        raise HTTPException(status_code=500, detail="memory_lookup_failed")
-    if not item or item.get("user_id") != user_id:
-        # Same 404 for missing and not-yours: do not leak which ids exist.
-        raise HTTPException(status_code=404, detail="memory_not_found")
-    return item
+## 3. 原样复用 vs 必须改
 
+原样复用（新代码必须继承）：
 
-@app.put("/memories/{memory_id}")
-def update_memory(
-    memory_id: str,
-    body: UpdateBody,
-    x_api_key: str | None = Header(default=None),
-    authorization: str | None = Header(default=None),
-) -> Any:
-    require_key(x_api_key, authorization)
-    _owned_or_404(memory_id, body.user_id)
-    memory = get_memory()
-    memory.update(memory_id, text=body.text)
-    return {"results": [_jsonable(memory.get(memory_id))]}
+- 内部路由用 `run.userId`，忽略客户端 `userId`。[`memories.test.ts`](../packages/control-plane/src/api/memories.test.ts) 已锁。
+- Key 只在控制面，`X-API-Key` 不下 VM；侧车 `hmac.compare_digest`。
+- `mem0Request` 统一超时；`Mem0Error` 带 HTTP 状态。
+- `normalizeMemoryResults` 把 snake_case 关在防腐层。
+- `memoryHint` 集中用户文案。
+- `writeRecalledMemory` 失败只 warn、不阻塞 Run、日志不含正文。
+- `setMem0FetchForTests` 作为单测注入点。
+- `tsconfig` `strict`。
+
+必须改：
+
+- 无编辑、无归属校验。
+- 路由直连 client，公开 / 内部各写一份校验。
+- 错误体只有 `error`，前端原样显示 `mem0_405`。
+- 正文无长度上限；`limit` 钳制放错层且透传 `NaN`。
+- 魔法数字 / 字符串多处各写一份，Desk 与 Web 截断行为已不一致。
+- `/health` 无鉴权回传 `mem0.url`；侧车 `/health` 回传 `llm_base`。
+- 侧车 `infer` 默认 `True`；`AddBody` 同时收 `messages` 和 `text`。
+- `except TypeError` 做版本分支（`mem0ai==2.0.19` 已 pin，死代码）。
+- `Mem0Error` 不带 `cause`；worker 裸 `catch` 吞掉非 ENOENT。
+- `metadata` 是 `Record<string, unknown>`；搜索接口存在但 UI 用客户端过滤。
+- Web 的 `MemoryRow` 与重复单测。
+
+---
+
+## 4. 设计决策
+
+**归属校验放侧车。** `Memory.get(id)` 是主键取行，不用 embedding。离数据最近，未来任何调用方都受保护。控制面不做二次校验。不匹配与不存在都返回 404，不泄漏 id 存在性。
+
+**编辑是原地 `update`，不是删 + 增。** 保留 `created_at`、身份字段、`UPDATE` history，一次重新 embed。
+
+**侧车一次发完。** `deploy-mem0.sh` 最贵，`PUT` + 归属 + `max_length` + `infer` 默认改 `False` 一起上。`DELETE` 的 `user_id` 本轮可选，老控制面不带也能删，零停机。
+
+**公开 API 用 `PATCH`。** 与 `/v1/me`、`/v1/experts/:id` 一致。侧车对内用 `PUT`（整段替换）。
+
+**乐观锁。** `PATCH` 带可选 `updatedAt`。侧车 `_require_owned_memory` 已取过记录，顺带比对，不一致 409。不传则 last-write-wins，仅供脚本。
+
+**`limit` 在 Service 归一化，不在 client 钳制。** 非法值回退默认（展示参数，不打断老客户端）；越界钳制。`client.ts` 参数收窄为已归一化的 `number`。
+
+**Agent 不给编辑工具。** `neo_memory_search` 正文不返回 id，模型改自己写过的记忆收益不明。
+
+---
+
+## 5. 分层与数据流
+
+```
+/v1/memories ──鉴权后只传 actor.userId──► memory/service.ts
+/internal/runs/:id/memories ──只传 run.userId──► memory/service.ts
+        │
+        ├─ normalizeLimit / 正文校验 / 乐观锁
+        ▼
+ memory/client.ts（防腐，snake_case 不外泄）
+        ▼
+ 侧车 _require_owned_memory → mem0ai Memory
 ```
 
-`delete_memory` 加一个可选 query 参数：
-
-```python
-@app.delete("/memories/{memory_id}")
-def delete_memory(
-    memory_id: str,
-    user_id: str | None = None,        # PR 4 改成必填
-    x_api_key: str | None = Header(default=None),
-    authorization: str | None = Header(default=None),
-) -> Any:
-    require_key(x_api_key, authorization)
-    if user_id:
-        _owned_or_404(memory_id, user_id)
-    return _jsonable(get_memory().delete(memory_id))
-```
-
-顺带修好的一个毛病：删一个不存在的 id，现在 `_delete_memory` 抛 `ValueError` → 500。带上 `user_id` 之后会先在 `_owned_or_404` 拿到干净的 404。
-
-### 3.2 `packages/control-plane/src/memory/client.ts`
+新增 [`packages/control-plane/src/memory/service.ts`](../packages/control-plane/src/memory/service.ts)：
 
 ```ts
-export async function updateMemory(input: {
-  id: string;
+export class MemoryServiceError extends Error {
+  constructor(
+    readonly code: MemoryErrorCode,
+    readonly status: number,
+    readonly userTip: string,
+    readonly detail?: string,
+    options?: { cause?: unknown },
+  ) {
+    super(code, options);
+  }
+}
+
+export function listUserMemories(userId: string, limitRaw?: string | number): Promise<MemoryItem[]>;
+export function addUserMemory(userId: string, text: string, metadata?: MemoryMetadata): Promise<MemoryItem[]>;
+export function searchUserMemories(userId: string, query: string, limitRaw?: string | number): Promise<MemoryItem[]>;
+export function updateUserMemory(input: {
   userId: string;
+  id: string;
   text: string;
-}): Promise<MemoryItem | null> {
-  const parsed = await mem0Request("PUT", `/memories/${encodeURIComponent(input.id)}`, {
-    user_id: input.userId,
-    text: input.text,
-  });
-  return normalizeMemoryResults(parsed)[0] ?? null;
-}
+  updatedAt?: string;
+}): Promise<MemoryItem>;
+export function removeUserMemory(userId: string, id: string): Promise<void>;
+```
 
-export async function deleteMemory(id: string, userId: string): Promise<void> {
-  await mem0Request(
-    "DELETE",
-    `/memories/${encodeURIComponent(id)}?user_id=${encodeURIComponent(userId)}`,
-  );
+路由只做：未登录 401、读 body、调 Service、`sendMemoryError`。内部路由复用同一组函数。
+
+---
+
+## 6. API 契约
+
+### 6.1 侧车
+
+```
+PUT    /memories/{id}
+       body: { user_id, text, updated_at? }     text 1..MEMORY_TEXT_MAX_LENGTH
+       200 { results: [ MemoryItem ] }
+       401 / 404 / 409 / 422
+
+DELETE /memories/{id}?user_id=                  user_id 可选；给了就强制
+       200 / 401 / 404
+```
+
+`Memory.update()` 只返回 `{'message': ...}`，所以 update 后再 `get` 一次，包成 `{ results: [...] }` 给现成的 `normalizeMemoryResults`。原型已验证：8 项契约测试全过，返回体能被当前 `normalizeMemoryResults` 吃下（缺的只是时间戳）。
+
+`AddBody.infer` 默认改为 `False`。控制面只发 `text`。`search` / `list` 删掉 `except TypeError` 分支。
+
+侧车 `/health` 去掉 `llm_base`，保留 `ok` / `service` / `embedder` / `embedding_dims` / `vector`。
+
+### 6.2 控制面
+
+```
+GET    /v1/memories?limit=
+POST   /v1/memories                 { text }
+POST   /v1/memories/search          { query, limit? }
+PATCH  /v1/memories/:id             { text, updatedAt? }     新增
+DELETE /v1/memories/:id             现改为带 actor.userId
+```
+
+成功：`200/201`，列表仍 `{ configured, memories }`，编辑 `{ memory }`。
+
+失败（仅记忆路由试点）：
+
+```ts
+{ error: string; code: MemoryErrorCode; message: string; detail?: string }
+```
+
+`error` **继续是中文**。旧 Desk / 旧 mobile 包只读这个字段；改成错误码会直接画在页面上。`code` 给新客户端和排查；`message` 与 `error` 同文案。新客户端读 `message ?? error`。
+
+| code | HTTP | 类 | message |
+| --- | --- | --- | --- |
+| `MEMORY_LOGIN_REQUIRED` | 401 | A | 请先登录 |
+| `MEMORY_TEXT_REQUIRED` | 400 | A | 请填写记忆内容 |
+| `MEMORY_TEXT_TOO_LONG` | 400 | A | 单条记忆不能超过 500 字 |
+| `MEMORY_QUERY_REQUIRED` | 400 | A | 请填写要搜索的内容 |
+| `MEMORY_NOT_FOUND` | 404 | A | 记忆不存在 |
+| `MEMORY_VERSION_CONFLICT` | 409 | A | 这条记忆刚被改过，请刷新后再试 |
+| `MEMORY_STORE_UNAVAILABLE` | 503 | C | 记忆还没接上 |
+| `MEMORY_STORE_FAILED` | 502 | C | 记忆服务暂时不可用 |
+
+`GET /health` 的 `mem0` 只保留 `{ configured }`，去掉 `url`。运维看 URL 用主机上的 `MEM0_URL`。
+
+限流：`PATCH` 已走 `api` + `write`。不要加进 `isExpensiveWrite`。
+
+内部 API 不变：`action` 仍是 `add | search | list`，改成引用 `MEMORY_ACTION` 常量。
+
+---
+
+## 7. 常量与 `limit`
+
+放 [`packages/contracts/src/memory.ts`](../packages/contracts/src/memory.ts)：
+
+```ts
+export const MEMORY_LIST_LIMIT_DEFAULT = 50;
+export const MEMORY_LIST_LIMIT_MAX = 100;
+export const MEMORY_SEARCH_LIMIT_DEFAULT = 8;
+export const MEMORY_SEARCH_LIMIT_MAX = 32;
+export const MEMORY_RECALL_LIMIT = 8;
+export const MEMORY_SNIPPET_LENGTH = 72;
+export const MEMORY_TEXT_MAX_LENGTH = 500;
+export const MEMORY_FILE = "MEMORY.md";
+export const NEO_DIR = ".neo";
+export const MEMORY_ACTION = { add: "add", search: "search", list: "list" } as const;
+export type MemoryAction = (typeof MEMORY_ACTION)[keyof typeof MEMORY_ACTION];
+export type MemorySource = "manual" | "agent";
+```
+
+已核实的替换点：
+
+- `50`：client 默认、server 公开 GET、server 内部 list、Desk `?limit=50`、侧车默认。
+- `100`：只在 client 钳制，改到 Service。
+- `8`：inject、client search 默认、侧车 search 默认、`neo-memory.ts` 工具描述 "Default 8."。
+- `32`：只在侧车 `Field(le=32)`，控制面 search 现在无校验透传。
+- `72`：`catalog.ts` `snippet` 默认、Web 显式传入、Desk `slice(0, 72)`（Desk 没有省略号）。
+- 路径：`inject.ts` 写 `MEMORY.md`，`session.ts` 读同一文件名。本方案只改记忆读写路径，不收拢全仓 `.neo`。
+
+侧车 Python 无法 import TS 常量。`app.py` 顶部用同名大写常量，值必须相同。`memory.test.ts` 与 `app_test.py` 各锁一条「默认 / 上限」断言。
+
+归一化（Service，带单测）：
+
+```ts
+export function normalizeLimit(
+  raw: string | number | null | undefined,
+  fallback: number,
+  max: number,
+): number {
+  if (raw === null || raw === undefined || raw === "") {
+    return fallback;
+  }
+  const value = Math.trunc(Number(raw));
+  if (!Number.isFinite(value) || value < 1) {
+    return fallback;
+  }
+  return Math.min(max, value);
 }
 ```
 
-`deleteMemory` 多一个必填参数是**故意的**：这是个破坏性签名变更，`pnpm typecheck` 会把所有漏改的调用点报出来。
+用例：缺省 / 空串 / `"abc"` / `NaN` / `-5` / `3.7` / `1e9` / 正好等于 max / max+1。非法与小于 1 回退 fallback；`3.7` 变成 `3`；越界钳到 max。
 
-`normalizeMemoryResults` 保留时间戳（现在被丢掉）：
+取舍：非法 `limit` 回退而不是 400，因为它是可选展示参数。正文非法（空 / 超长）仍然 400，二者不要混。
+
+---
+
+## 8. 逐文件改动
+
+### 8.1 侧车
+
+[`.cursor/skills/tencent-lighthouse-db/mem0/app.py`](../.cursor/skills/tencent-lighthouse-db/mem0/app.py)：
+
+- `_require_owned_memory(memory_id, user_id)`：`get` 失败 500；无记录或 `user_id` 不符 404。
+- `PUT`：校验归属 → 可选比对 `updated_at` → `update` → `get` → `{ results: [...] }`。
+- `DELETE`：`user_id` 可选 query；给了就走归属。
+- `AddBody.infer` 默认 `False`；`text` 加 `max_length`。
+- 删 `search` / `list` 的 `except TypeError`。
+- `/health` 去掉 `llm_base`。
+- [`app_test.py`](../.cursor/skills/tencent-lighthouse-db/mem0/app_test.py) 与 [`smoke-mem0.sh`](../.cursor/skills/tencent-lighthouse-db/mem0/smoke-mem0.sh) 按 §10。收尾删 `neo_smoke` 的测试数据。
+
+### 8.2 contracts
+
+[`packages/contracts/src/memory.ts`](../packages/contracts/src/memory.ts)：
 
 ```ts
-if (typeof raw.created_at === "string") {
-  item.createdAt = raw.created_at;
-}
-if (typeof raw.updated_at === "string") {
-  item.updatedAt = raw.updated_at;
-}
-```
-
-Mem0 的 `get` / `get_all` / `search` 三条路径都会带这两个字段（`mem0/memory/main.py` 1240、1361、1708 行附近），所以列表页拿得到，不是只有编辑返回值才有。
-
-### 3.3 `packages/contracts/src/memory.ts`
-
-```ts
+export type MemoryMetadata = { source?: MemorySource; runId?: string };
 export type MemoryItem = {
   id: string;
   text: string;
@@ -179,294 +283,198 @@ export type MemoryItem = {
   userId?: string;
   createdAt?: string;
   updatedAt?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: MemoryMetadata;
 };
 
-export function memoryEdited(item: { createdAt?: string; updatedAt?: string }): boolean {
-  const created = (item.createdAt ?? "").trim();
-  const updated = (item.updatedAt ?? "").trim();
-  return Boolean(created && updated && created !== updated);
+export function memoryEdited(item: Pick<MemoryItem, "createdAt" | "updatedAt">): boolean {
+  const created = Date.parse(item.createdAt ?? "");
+  const updated = Date.parse(item.updatedAt ?? "");
+  if (!Number.isFinite(created) || !Number.isFinite(updated)) {
+    return false;
+  }
+  return updated > created;
 }
 ```
 
-`memoryEdited` 放 contracts 而不是各写一遍，理由和现有的 `filterMemories` / `memoryHint` 一样：Web 和 Desk 两个记忆页必须表现一致。`index.ts` 跟着导出。
+`memoryHint` 文案补上「也可以改」。`index.ts` 导出新符号。
 
-### 3.4 `packages/control-plane/src/api/server.ts`
+### 8.3 控制面 client
 
-现在的删除分支替换成一个同时管 `DELETE` 和 `PATCH` 的分支：
+[`packages/control-plane/src/memory/client.ts`](../packages/control-plane/src/memory/client.ts)：
 
-```ts
-const memoryItem = /^\/v1\/memories\/([^/]+)$/.exec(path);
-if (memoryItem && memoryItem[1] !== "search" && (method === "DELETE" || method === "PATCH")) {
-  if (actor.kind !== "user") {
-    send(res, 401, { error: "login_required" });
-    return;
-  }
-  const memoryId = memoryItem[1] ?? "";
-  try {
-    if (method === "DELETE") {
-      await deleteMemory(memoryId, actor.userId);
-      send(res, 200, { ok: true });
-      return;
-    }
-    const body = (await readJson(req)) as { text?: string };
-    const text = (body.text ?? "").trim();
-    if (!text) {
-      send(res, 400, { error: "text is required" });
-      return;
-    }
-    const memory = await updateMemory({ id: memoryId, userId: actor.userId, text });
-    if (!memory) {
-      notFound(res);
-      return;
-    }
-    send(res, 200, { memory });
-  } catch (error) {
-    sendMem0Error(res, error);
-  }
-  return;
-}
-```
+- `normalizeMemoryResults` 保留 `createdAt` / `updatedAt`，`metadata` 只取 `source` / `runId`。
+- `updateMemory({ id, userId, text, updatedAt? })`。
+- `deleteMemory(id, userId)`：破坏性签名，typecheck 报出漏改点。
+- `listMemories` / `searchMemories` 的 `limit` 改为必填 `number`，去掉 `Math.min` / `Math.max`。
+- `Mem0Error` 构造带 `{ cause }`。
 
-`memoryItem[1] !== "search"` 那一段是顺手补的：现有正则会让 `DELETE /v1/memories/search` 变成「删一条 id 叫 search 的记忆」。
+### 8.4 Service + 路由
 
-`sendMem0Error` 把 404 的机器码换成人话，删除和编辑都受益：
+- 新文件 `service.ts`：校验、归一化、映射 `Mem0Error` → `MemoryServiceError`。
+- [`server.ts`](../packages/control-plane/src/api/server.ts)：公开与内部记忆分支改调 Service；`PATCH` / `DELETE` 合并到 `/v1/memories/:id`，排除 `search` 段（现有正则会让 `DELETE /v1/memories/search` 变成删一条 id 叫 search 的记忆）。
+- `sendMemoryError`：404 不泄漏；502/503 用 C 类码。
+- `/health` 的 mem0 只回 `configured`。
+- [`inject.ts`](../packages/control-plane/src/memory/inject.ts)：`MEMORY_RECALL_LIMIT`、`NEO_DIR`、`MEMORY_FILE`。
 
-```ts
-send(res, error.status, { error: error.status === 404 ? "记忆不存在" : error.message });
-```
+### 8.5 Worker
 
-### 3.5 Web `packages/web/src/components/MemoriesPage.tsx`
-
-状态从「开不开弹窗」升成「编辑器在编谁」：
-
-```ts
-type Editor = { mode: "new" } | { mode: "edit"; id: string; original: string };
-const [editor, setEditor] = useState<Editor | null>(null);
-```
-
-保存分流：
-
-```ts
-const save = () => {
-  const text = draft.trim();
-  if (!text || busy || !token || !editor) return;
-  if (editor.mode === "edit" && text === editor.original) {
-    setEditor(null);
-    return;
-  }
-  setBusy(true);
-  void (async () => {
-    if (editor.mode === "new") {
-      const body = await readJson<{ memories?: MemoryRow[]; error?: string }>(
-        await api(token, "/v1/memories", { method: "POST", body: JSON.stringify({ text }) }),
-      );
-      if (body.error) throw new Error(body.error);
-      await refresh();
-    } else {
-      const body = await readJson<{ memory?: MemoryRow; error?: string }>(
-        await api(token, `/v1/memories/${encodeURIComponent(editor.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ text }),
-        }),
-      );
-      if (body.error) throw new Error(body.error);
-      const updated = body.memory;
-      if (updated) {
-        setItems((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-      }
-    }
-    setDraft("");
-    setEditor(null);
-  })()
-    .catch((caught) => setError(caught instanceof Error ? caught.message : "保存失败"))
-    .finally(() => setBusy(false));
-};
-```
-
-编辑走**就地替换**而不是 `refresh()`：`GET /v1/memories` 的顺序由 Mem0 决定，整页刷新会让刚改完的那条跳走，用户找不到。新增仍然 `refresh()`，因为新条目的 id 只有服务端知道。
-
-卡片加按钮和「改过」角标：
-
-```tsx
-<CatalogCard
-  key={item.id}
-  title={snippet(item.text, 72)}
-  description={item.text.length > 72 ? item.text : undefined}
-  badge={memoryEdited(item) ? "改过" : undefined}
-  initial="记"
-  actions={
-    <>
-      <button
-        type="button"
-        className="ghost"
-        disabled={busy}
-        onClick={() => {
-          setDraft(item.text);
-          setEditor({ mode: "edit", id: item.id, original: item.text });
-        }}
-      >
-        编辑
-      </button>
-      <button type="button" className="ghost danger" disabled={busy} onClick={() => void remove(item.id)}>
-        删除
-      </button>
-    </>
-  }
-/>
-```
-
-`CatalogModal` 的 `title` 跟着 `editor.mode` 变（「记一条」/「改这条」），`open` 变成 `editor !== null`。`CatalogCard` 已经有 `badge` 和多个 `actions` 的支持，不用动 `Catalog.tsx`。
-
-`packages/web/src/memory.ts` 里的 `MemoryRow` 从手写的 `{ id, text }` 改成直接复用 contracts 的 `MemoryItem`，否则时间戳会在类型层被截掉。
-
-### 3.6 Desk `packages/desk/ui/MemoriesPage.tsx`
-
-同一套状态机和同一套请求，控件换成 Desk 的 `Modal` / `IslandButton`。Desk 没有 `badge`，用一个 `<em>` 放在标题后面。删除仍用 `window.confirm`（Desk 没有 `useConfirm`，不在这次范围里统一）。
+[`packages/worker/src/session.ts`](../packages/worker/src/session.ts)：`readUserMemory` / `readProjectInstruction` 只对 `ENOENT` 返回空；其余 `console.warn`（路径 + 错误码，不打文件内容）。读路径用 `NEO_DIR` + `MEMORY_FILE`。
 
 ---
 
-## 4. 兼容性
+## 9. 三端功能适配
 
-| 变更 | 谁会受影响 | 处理 |
+三端已经是同一套机制（同一用户、同一 Mem0、同一 `/v1/memories`），管理面都是看 / 记 / 删，缺的都是「改」。适配是三页各加编辑。
+
+| 端 | 今天的管理面 | 源码 | 发布节奏 |
+| --- | --- | --- | --- |
+| Web | 列表 / 客户端搜索 / 记一条 / 删 | [`MemoriesPage.tsx`](../packages/web/src/components/MemoriesPage.tsx) | 与控制面同发 |
+| Desk | 同构，无分页，`window.confirm` 删除，截断无省略号 | [`desk/ui/MemoriesPage.tsx`](../packages/desk/ui/MemoriesPage.tsx) | Electron 包，可能落后 |
+| mobile | 同构：`listMemories` / `addMemory` / `deleteMemory`，抽屉有「记忆」 | RN [`CloudScreens.tsx`](../packages/mobile/src/screens/CloudScreens.tsx)、DOM [`CloudPages.tsx`](../packages/mobile/src/web/CloudPages.tsx)、[`client.ts`](../packages/mobile/src/api/client.ts) | 商店 / 侧载，可能落后 |
+
+对话路径三端都不用改。Agent 仍走 `neo_memory_add`。编辑后**下一条新 Run** 才会把新文本写进 `.neo/MEMORY.md`。正在跑的对话不会热更新。
+
+共享层只放 contracts，不抽跨端组件：
+
+- 类型：`MemoryItem` / `MemoryMetadata` / 错误码
+- 文案：`memoryHint` / `memoryErrorMessage` / `memoryEdited`
+- 常量：`MEMORY_SNIPPET_LENGTH` / `MEMORY_TEXT_MAX_LENGTH` / `MEMORY_LIST_LIMIT_*`
+- 读错误体：`readMemoryError(body)` → 优先 `message`，回落 `error`
+
+### 9.1 Web
+
+入口不变：`#/memories`、底栏「记忆」、加号里「记忆」。
+
+```ts
+type Editor = { mode: "new" } | { mode: "edit"; id: string; original: string; updatedAt?: string };
+```
+
+- 记一条 / 编辑共用 `CatalogModal`，标题「记一条」/「改这条」。
+- 新增：POST + `refresh()`。
+- 编辑：PATCH，**就地替换**，避免列表顺序把刚改的条目跳走。
+- 文本没变：关弹窗，不发请求。
+- 卡片加「编辑」，保留「删除」+ `useConfirm`；`memoryEdited` 为真则 `badge="改过"`。
+- 搜索改 `POST /v1/memories/search`（300ms 防抖）。空查询用已加载列表。
+- 输入框 `maxLength={MEMORY_TEXT_MAX_LENGTH}`。
+- 删 `MemoryRow` 和 [`packages/web/src/memory.test.ts`](../packages/web/src/memory.test.ts)。
+- `memoryHint` 改成「不对的可以改或删」。
+
+### 9.2 Desk
+
+入口不变：`#/memories`、轨上「记忆」。状态机与 Web 相同，控件用 `Modal` / `IslandButton`。
+
+- 截断改用 `MEMORY_SNIPPET_LENGTH` 并补省略号。
+- 「改过」用标题旁 `<em>`。
+- 删除仍 `window.confirm`。
+- 旧包：继续看 / 记 / 删，没有「编辑」。降级，不是断裂。
+
+### 9.3 mobile
+
+已有 `listMemories` / `addMemory` / `deleteMemory`、RN 记忆页、DOM lab 记忆页、抽屉「记忆」。RN 和 DOM **两套 markup 都要改**。
+
+1. `client.ts` 加 `searchMemories` / `updateMemory`。错误读 `message ?? error`。
+2. props 从 `{ onAdd, onDelete }` 加上 `onUpdate`。记一条仍是页内输入框；编辑用点卡片打开第二块输入，保存走 PATCH 就地替换。
+3. 搜索防抖打 `POST /v1/memories/search`。
+4. `memoryEdited` 为真时卡片标「改过」。
+5. 删除用 RN `Alert` / DOM `confirm`。
+6. 旧包：继续看 / 记 / 删，没有「编辑」。
+
+不做：对话加号里再塞「记忆」；不做离线缓存；不把 `CatalogModal` 搬进 RN。
+
+### 9.4 发布对三端的含义
+
+```
+侧车 → 控制面（含 Web 静态）→ Desk 打新包 → mobile 打新包
+```
+
+Web 与控制面同发，当天就有编辑。Desk / mobile 未升级期间：看 / 记 / 删仍可用。不要等商店审核齐了再发控制面。
+
+---
+
+## 10. 兼容性
+
+- 侧车 `DELETE` 可选 `user_id`：老控制面行为不变。
+- 侧车新增 `PUT`：无人调用，无害。
+- `deleteMemory` 签名破坏：仅控制面内部，typecheck 兜住。
+- `MemoryItem` 新字段全可选。
+- 存量记忆创建时 `updated_at == created_at`（Mem0 `_create_memory`），`memoryEdited` 为 false。
+- 无 schema 迁移。
+- `/health` 去掉 `mem0.url`：仓库内只有 `memories.test.ts` 读它。
+
+---
+
+## 11. 测试（AIR + BCDE）
+
+AIR：继续用 `setMem0FetchForTests`，不打真 Mem0，用例互不依赖。
+
+侧车 pytest：
+
+- PUT 本人：200，`update` 收到 `text=`，返回 `{ results }`。
+- PUT 换人 / 不存在：404，且 `update` 未被调用。
+- PUT 无 key：401；空 text：422。
+- PUT `updated_at` 不一致：409。
+- DELETE 匹配 / 不匹配 / 不带 `user_id`（兼容路径）。
+- `infer` 默认 False。
+- 常量上限与 TS 同值。
+
+控制面 [`memories.test.ts`](../packages/control-plane/src/api/memories.test.ts)：
+
+- PATCH 200，出站是 `PUT`，`user_id` 等于会话用户。
+- PATCH 空 / 超长：400，无出站。
+- PATCH 未登录：401；侧车 404 → `{ error: "记忆不存在", code: "MEMORY_NOT_FOUND", message: "记忆不存在" }`。
+- PATCH 409。
+- DELETE 出站 URL 含 `user_id=<会话用户>`。
+- `DELETE /v1/memories/search` 不再当删除。
+- `GET ?limit=abc` 出站 `limit=50`，不是 `NaN`。
+- `POST /search { limit: 33 }` 出站 `limit=32`。
+- `/health.mem0` 只有 `configured`。
+
+单元：`normalizeLimit` 全部分支；`normalizeMemoryResults` 保留时间戳；`memoryEdited`（缺字段 / 非法日期 / 相等 / updated 更大）；`memoryErrorMessage` 码表。
+
+冒烟：改一条，断言文本变、`created_at` 不变；假 `user_id` 改 → 404；收尾删除 `neo_smoke`。
+
+全量：`pnpm typecheck` + `pnpm test`。覆盖率自检（不进 CI）：
+
+```bash
+npx tsx --test --experimental-test-coverage \
+  packages/control-plane/src/memory/*.test.ts \
+  packages/control-plane/src/api/memories.test.ts \
+  packages/contracts/src/memory.test.ts
+```
+
+---
+
+## 12. 发布、回滚、实现 PR
+
+顺序不能反。控制面先发则 `PATCH` 打旧侧车得 405，控制面没有能力探测。
+
+```
+1. deploy-mem0.sh
+2. 卡口：应用机 curl PUT 一个不存在的 id，期望 404；拿到 405 就停
+3. deploy.sh（control-plane + web）
+4. neorun.cloud 记忆页改一条，刷新仍在，带「改过」
+```
+
+回滚：控制面可单独回；侧车回滚必须先回控制面。无 schema 变更。
+
+| 实现 PR | 内容 | 发布 |
 | --- | --- | --- |
-| 侧车 `DELETE` 多一个可选 `user_id` | 老控制面 | 不带就走老路径，行为不变 |
-| 侧车新增 `PUT` | 无 | 纯新增 |
-| `deleteMemory()` 签名多一个参数 | 控制面内部 | `pnpm typecheck` 全量报出来 |
-| `MemoryItem` 多两个可选字段 | Web / Desk / worker | 可选字段，不破坏现有解构 |
-| `MemoryRow` 变成 `MemoryItem` | Web | 超集，只会变宽 |
-
-没有数据迁移。存量记忆的 `updated_at` 由 Mem0 在创建时就写了（等于 `created_at`），所以 `memoryEdited` 对存量条目正确返回 `false`。
+| 1 | 侧车：归属、PUT、可选 `user_id`、`max_length`、`infer` 默认 False、删 TypeError 分支、health 收窄、pytest、smoke | `deploy-mem0.sh` |
+| 2 | `deleteMemory(id, userId)` + DELETE 回归锁 + `?limit=abc` 不再 NaN | `deploy.sh` |
+| 3 | Service、错误体、常量、乐观锁、PATCH；Web / Desk / mobile 三页都加编辑 | `deploy.sh`；Desk / mobile 另打客户端包 |
+| 4 | 侧车 `user_id` 改必填 | `deploy-mem0.sh` |
 
 ---
 
-## 5. 测试
+## 13. 明确不做与有意偏离
 
-### 5.1 侧车 `mem0/app_test.py`
+不做：编辑历史 UI、`neo_memory_update`、项目级 scope、自动抽取、相似度去重、用 `score` 重排、Admin 审计、全仓 CSRF、全局 `readJson` 体积上限、把 `.neo` 全仓 9 处一次性收拢。
 
-沿用现有的 `monkeypatch.setattr(slim, "get_memory", lambda: fake)` 打桩风格：
+偏离：
 
-1. `PUT` 命中：`fake.get` 返回 `{"user_id": "u1", ...}` → 200，且 `fake.update` 收到 `text=`。
-2. `PUT` 换人：`fake.get` 返回 `{"user_id": "u2"}` → 404，且 `fake.update` **没被调用**。
-3. `PUT` 不存在：`fake.get` 返回 `None` → 404。
-4. `PUT` 无 key → 401。
-5. `DELETE` 带匹配的 `user_id` → 200 且 `fake.delete` 被调用。
-6. `DELETE` 带不匹配的 `user_id` → 404 且 `fake.delete` **没被调用**。
-7. `DELETE` 不带 `user_id` → 200（兼容路径，PR 4 里改成 422）。
-
-### 5.2 控制面 `packages/control-plane/src/api/memories.test.ts`
-
-1. `PATCH` happy path：200，返回体是 `{ memory }`，且发给 Mem0 的是 `PUT /memories/m1`、body 里 `user_id` 等于**会话用户**（不是请求里能指定的）。
-2. `PATCH` 空 text → 400，且没有出站请求。
-3. `PATCH` 未登录 → 401。
-4. `PATCH` 侧车返回 404 → 控制面 404，body 是 `{ error: "记忆不存在" }`。
-5. `DELETE` 现在带 `user_id`：断言出站 URL 含 `user_id=<会话用户>`。这条是**归属校验的回归锁**，不能省。
-6. `DELETE /v1/memories/search` 不再被当成删除。
-
-### 5.3 单元
-
-- `client.test.ts`：`updateMemory` 的 method / path / body；`normalizeMemoryResults` 保留 `createdAt` / `updatedAt`。
-- `contracts/src/memory.test.ts` 和 `packages/web/src/memory.test.ts`：`memoryEdited` 的三种输入（缺字段、相等、不等）。
-
-### 5.4 冒烟 `mem0/smoke-mem0.sh`
-
-在现有 add / search 之后追加：改一次 → 断言文本变了且 `created_at` 没变；用一个假 `user_id` 去改 → 断言 404。
-
-顺手修一个现有毛病：这个脚本每次部署都往 `neo_smoke` 下写一条记忆，从来不删。收尾加一次 `DELETE ?user_id=neo_smoke`，正好也把新的归属路径顺带冒烟了。
-
-### 5.5 全量
-
-`pnpm typecheck` + `pnpm test` 必须绿。侧车的 `pytest` 在库机或本地容器里跑，不进 `pnpm test`。
-
----
-
-## 6. 发布顺序与回滚
-
-**顺序不能反。** 控制面先发的话，`PATCH` 打到旧侧车拿 405，`mem0Request` 原样抛成 `Mem0Error("mem0_405", 405)`，用户看到一个看不懂的报错——控制面没有 Mem0 能力探测（`/health` 只报 `configured` 和 `url`），没法优雅降级。
-
-```
-1. bash .cursor/skills/tencent-lighthouse-db/mem0/deploy-mem0.sh
-      库机 docker build + compose up + smoke
-
-2. 卡口：从应用机确认 PUT 真的在
-      curl -sS -o /dev/null -w '%{http_code}\n' -X PUT \
-        -H "X-API-Key: $MEM0_API_KEY" -H 'content-type: application/json' \
-        -d '{"user_id":"deploy-probe","text":"probe"}' \
-        http://101.42.105.230:8888/memories/00000000-0000-4000-8000-000000000000
-      期望 404（不存在）。拿到 405 说明侧车没换，停在这里
-
-3. bash .cursor/skills/tencent-lighthouse-deploy/deploy.sh
-      control-plane + web
-
-4. 在 https://neorun.cloud 的记忆页改一条，刷新确认还在，且带「改过」
-```
-
-回滚：
-
-- 控制面可以单独回滚，侧车多出来的 `PUT` 没人调用，无害。
-- 侧车要回滚，必须**先**回滚控制面，否则编辑功能直接 405。
-- 两边都不涉及 schema 变更，回滚不用动数据。
-
----
-
-## 7. PR 拆分
-
-| PR | 内容 | 发布 |
-| --- | --- | --- |
-| **1** | 侧车：`_owned_or_404`、`PUT /memories/{id}`、`DELETE` 可选 `user_id`、`app_test.py`、`smoke-mem0.sh` | `deploy-mem0.sh` |
-| **2** | 安全修复：`deleteMemory(id, userId)`、路由传 `actor.userId`、回归测试 | `deploy.sh` |
-| **3** | 编辑：contracts 时间戳 + `memoryEdited`、`updateMemory`、`PATCH /v1/memories/:id`、Web + Desk UI、测试 | `deploy.sh` |
-| **4** | 清理：侧车 `user_id` 改必填，删掉兼容分支 | `deploy-mem0.sh` |
-
-PR 2 是纯安全修复，不依赖 PR 3，可以先合先发。PR 4 是一行加一个测试改动，等 PR 2 在现网跑稳之后再发。
-
----
-
-## 8. 验收
-
-1. 记忆页每条卡片有「编辑」。点开预填原文，改完保存，卡片就地更新，不跳位。
-2. 改过的条目带「改过」角标；没改过的没有。
-3. 内容没变时点保存直接关弹窗，不发请求。
-4. 改完开一条新 Run，`.neo/MEMORY.md` 里是新文本。
-5. 换一个账号，拿着别人的记忆 id 打 `PATCH` 和 `DELETE`，都拿 404，且对方的记忆没变。
-6. Mem0 没配时记忆页仍然是「还没接上」，不报错。
-7. `pnpm typecheck`、`pnpm test`、侧车 `pytest`、`smoke-mem0.sh` 全绿。
-
----
-
-## 9. 风险
-
-| 风险 | 影响 | 处理 |
-| --- | --- | --- |
-| 发布顺序反了 | 编辑报 `mem0_405` | §6 第 2 步的卡口挡住 |
-| 用户和 Agent 同时写同一条 | 后写覆盖先写 | 接受。这个条数量级不值得上乐观锁 |
-| 改完撞上另一条重复 | 两条近义记忆 | 接受。`infer=false` 本来就不去重，编辑不会让情况更糟 |
-| `update` 的向量写成功、history 写失败 | 向量对、审计缺一条 | Mem0 内部不是事务的，接受。history 现在也没有 UI |
-| 侧车 512Mi 顶不住 | 编辑变慢 | 一次编辑 = 一次本地 embed，和现有 `add` 同级，不新增一类负载 |
-| 存量记忆没有 `updated_at` | 角标不显示 | Mem0 创建时就写了，`memoryEdited` 对相等值返回 `false`，退化正确 |
-
----
-
-## 10. 这份方案验证到哪一步
-
-写方案时把风险最高的一段——跨服务的侧车契约——做了一次性原型验证（原型在 `/tmp`，没有进仓库）：把 §3.1 的代码原样打进 `app.py` 的副本，按 §5.1 的用例跑 `pytest`，8 条全过，包括「换个 `user_id` 去 `PUT` 拿 404 且 `Memory.update` 完全没被调用」。
-
-再把原型真实吐出的 `PUT` 返回体喂给控制面现成的 `normalizeMemoryResults`，确认 `{ results: [...] }` 这个包装选对了：`id` / `text` / `userId` / `metadata` 全部落位，唯一缺的就是时间戳——正好是 §3.2 要补的那两行。
-
-没有验证的部分（实现时才知道）：Mem0 在真 pgvector 上的 `update` 时延、`memoryEdited` 在存量数据上的表现、两个 UI 的交互细节。
-
-其余结论来自读 `mem0ai==2.0.19` 的源码（`Memory.update` / `get` / `delete` 的返回值和副作用）和本仓库代码，不是从文档推的。
-
----
-
-## 11. 明确不做
-
-| 不做 | 为什么 |
-| --- | --- |
-| 编辑历史 UI | `Memory.history(id)` 有数据，但产品没问。不要为了「有」而做 |
-| Agent 的 `neo_memory_update` 工具 | 见 §1.5 |
-| 项目级作用域 `scope=user\|project` | 另一个设计，别混进来 |
-| 对话结束自动抽取 | 应该排在编辑**后面**，理由见分析文第 4 节 |
-| 相似度去重 | 独立话题，和编辑不耦合 |
-| 用 `score` 做召回排序 / 阈值过滤 | 真缺口，但属于召回质量，不是管理面 |
-| Admin 台的记忆审计 | 没有需求方 |
+- 测试文件与源码同目录：`noEmit` + glob 已满足「不进构建产物」，迁目录是全仓重构。
+- 不引入日志门面 / eslint：只落约定层。
+- 不拆 DO/DTO/VO：`MemoryItem` 跨层复用。
+- 不加 CSRF token：CORS `origin: *` 且未开 credentials，cookie `SameSite=Lax`；全站缺口另案。
+- 不用悲观锁：单条整体覆盖，乐观锁足够。
+- 非法 `limit` 回退不 400：见 §7。
