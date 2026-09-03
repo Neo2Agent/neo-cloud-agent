@@ -864,6 +864,7 @@ pnpm typecheck && pnpm test
 | [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md) | 2026-08-28 再对标：骨架已齐之后还值得跟什么 |
 | [agent-memory-research.md](./agent-memory-research.md) | 跨 Run 记忆：第 0 期文件，第 1 期 Mem0，不换 pi |
 | [memory-edit-analysis.md](./memory-edit-analysis.md) | 记忆现在怎么跑、要不要让用户改、先补归属校验 |
+| [memory-edit-plan.md](./memory-edit-plan.md) | 记忆编辑的技术方案：契约、逐文件改动、发布顺序 |
 | [browser-computer-use.md](./browser-computer-use.md) | 先做 Playwright a11y browser-use；桌面和远程接管后置 |
 | [production-domain.md](./production-domain.md) | `neorun.cloud` / HTTPS / Caddy |
 | [README.md](../README.md) | 命令、环境变量、不要做的五件事 |
