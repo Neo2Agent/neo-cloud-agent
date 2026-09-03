@@ -35,8 +35,12 @@ export function statusFromEventKind(kind: string, fallback?: string): string | u
   return fallback;
 }
 
-export function pendingUserMessage(text: string, now = new Date().toISOString()): TranscriptMessage {
-  return { id: `pending-${now}`, role: "user", text, createdAt: now };
+export function pendingUserMessage(
+  text: string,
+  now = new Date().toISOString(),
+  images?: TranscriptMessage["images"],
+): TranscriptMessage {
+  return { id: `pending-${now}`, role: "user", text, createdAt: now, images: images?.length ? images : undefined };
 }
 
 function isPendingUserId(id: string): boolean {

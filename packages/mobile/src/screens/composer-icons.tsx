@@ -11,3 +11,7 @@ export function SendIcon({ color }: { color: string }) {
 export function SettingsIcon({ color }: { color: string }) {
   return <Ionicons name="settings-outline" size={22} color={color} />;
 }
+
+export function PhotoIcon({ color }: { color: string }) {
+  return <Ionicons name="image-outline" size={20} color={color} />;
+}

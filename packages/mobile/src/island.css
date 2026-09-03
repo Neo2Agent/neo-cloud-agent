@@ -183,6 +183,24 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .home-hero h2 { margin: 0 0 8px; font-size: 22px; }
 .home-hero p { margin: 0; color: var(--muted); }
+.recipe-grid {
+  width: 100%;
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+.recipe-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px 12px;
+  text-align: left;
+}
+.recipe-card b { display: block; color: var(--ink); }
+.recipe-card small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 .composer-dock {
   padding: 8px 16px 16px;
@@ -467,11 +485,34 @@ button:disabled { opacity: 0.4; cursor: default; }
   .drawer-backdrop, .drawer { transition-duration: 0.01ms; }
 }
 .drawer-brand { font-size: 20px; font-weight: 800; color: var(--ink); margin-bottom: 12px; }
-.drawer button.nav { display: block; width: 100%; text-align: left; padding: 12px 4px; font-size: 16px; }
+.drawer button.nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 4px;
+  font-size: 16px;
+}
+.nav-badge {
+  background: var(--accent);
+  color: var(--cream, #fff);
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 20px;
+  text-align: center;
+  border-radius: 10px;
+  padding: 2px 6px;
+}
 .drawer .section { color: var(--muted); font-size: 13px; margin: 12px 0 4px; }
 .run-row { display: block; width: 100%; text-align: left; padding: 10px 4px; border-bottom: 1px solid rgba(196, 184, 158, 0.5); }
 .run-row b { display: block; }
 .run-row span { color: var(--muted); font-size: 12px; }
+.run-row.is-shelved { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.run-open { flex: 1; min-width: 0; text-align: left; background: none; border: 0; }
+.run-delete { color: var(--red); font-size: 12px; background: none; border: 0; flex: none; }
+.section-row { display: flex; align-items: center; justify-content: space-between; }
+.section-action { color: var(--accent); font-size: 13px; font-weight: 700; background: none; border: 0; }
 .drawer-foot { margin-top: auto; padding-top: 12px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .drawer-account { flex: 1; min-width: 0; }
 .drawer-account div { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -500,6 +541,47 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .dash-card strong, .dash-card p { display: block; margin: 0; }
 .dash-card p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.dash-card.is-unread { border-color: var(--accent); border-width: 2px; }
+.chat-actions { display: flex; gap: 8px; padding: 0 16px 8px; }
+.image-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.user-image { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); }
+.composer-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.composer-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: none;
+}
+.composer-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.composer-thumb span {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: rgba(61, 52, 40, 0.62);
+  color: #fff;
+  font-size: 13px;
+  border-bottom-left-radius: 8px;
+}
+.composer-attach {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ink);
+  background: var(--bg);
+  cursor: pointer;
+}
+.load-older { display: block; margin: 0 auto 8px; color: var(--muted); font-size: 12px; background: none; border: 0; }
 .card-actions { display: flex; align-items: center; gap: 8px; }
 .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
 .error { color: var(--red); margin: 0; }
