@@ -108,8 +108,17 @@ export function MemoriesPage({ token }: Props) {
       const message = readMemoryError(body);
       if (!response.ok || message || !body.memory) throw new Error(message || "改不了");
       const next = body.memory;
-      setItems((prev) => prev.map((item) => (item.id === next.id ? next : item)));
-      setHits((prev) => (prev ? prev.map((item) => (item.id === next.id ? next : item)) : prev));
+      const merge = (item: MemoryItem) =>
+        item.id === next.id
+          ? {
+              ...item,
+              ...next,
+              createdAt: next.createdAt ?? item.createdAt,
+              updatedAt: next.updatedAt ?? item.updatedAt,
+            }
+          : item;
+      setItems((prev) => prev.map(merge));
+      setHits((prev) => (prev ? prev.map(merge) : prev));
       closeEditor();
     })()
       .catch((caught) => {

@@ -625,7 +625,18 @@ export function NativeApp({ store }: { store: CredentialStore }) {
           setPageError("");
           try {
             const next = await client.updateMemory(id, text, updatedAt);
-            setMemories((prev) => prev.map((item) => (item.id === id ? next.memory : item)));
+            setMemories((prev) =>
+              prev.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      ...next.memory,
+                      createdAt: next.memory.createdAt ?? item.createdAt,
+                      updatedAt: next.memory.updatedAt ?? item.updatedAt,
+                    }
+                  : item,
+              ),
+            );
           } catch (error) {
             setPageError(error instanceof Error ? error.message : "改不了");
           }
