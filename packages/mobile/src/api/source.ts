@@ -11,7 +11,17 @@ export function runDeepLink(runId: string, apiUrl = ""): string {
   return `neo://runs/${runId}`;
 }
 
-export type MobileScreen = "home" | "chat" | "settings" | "experts" | "projects" | "automations" | "invite";
+export type MobileScreen =
+  | "home"
+  | "chat"
+  | "settings"
+  | "experts"
+  | "projects"
+  | "automations"
+  | "invite"
+  | "memories"
+  | "inbox"
+  | "skills";
 
 export function parseMobileScreen(href: string): { screen: MobileScreen; runId: string | null; inviteToken: string | null } {
   const hash = href.includes("#") ? href.slice(href.indexOf("#")) : href;
@@ -19,6 +29,10 @@ export function parseMobileScreen(href: string): { screen: MobileScreen; runId: 
   if (hash === "#/experts") return { screen: "experts", runId: null, inviteToken: null };
   if (hash === "#/projects") return { screen: "projects", runId: null, inviteToken: null };
   if (hash === "#/automations") return { screen: "automations", runId: null, inviteToken: null };
+  // Same hashes as the web chat page, so a shared link lands on the same surface.
+  if (hash === "#/memories") return { screen: "memories", runId: null, inviteToken: null };
+  if (hash === "#/inbox") return { screen: "inbox", runId: null, inviteToken: null };
+  if (hash === "#/skills") return { screen: "skills", runId: null, inviteToken: null };
   const inviteToken = parseInviteTokenFromHref(href);
   if (inviteToken) return { screen: "invite", runId: null, inviteToken };
   const runId = parseRunIdFromHref(href);

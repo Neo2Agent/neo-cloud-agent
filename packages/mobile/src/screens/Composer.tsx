@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, resolveChatModel } from "../format";
 import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
-import { MicIcon, SendIcon } from "./composer-icons";
+import { MicIcon, PhotoIcon, SendIcon } from "./composer-icons";
 import { colors } from "./theme";
 
 type Props = {
@@ -13,8 +14,12 @@ type Props = {
   sending: boolean;
   canStop: boolean;
   model: string;
+  images?: ImageRef[];
+  imageHint?: string;
   onModel: (value: string) => void;
   onPrompt: (value: string) => void;
+  onPickImages?: () => void;
+  onDropImage?: (index: number) => void;
   onSend: () => void;
   onStop?: () => void;
   startVoice: (
@@ -34,7 +39,8 @@ export function Composer(props: Props) {
   const holdStarted = useRef(0);
   const holdArmed = useRef(false);
   promptRef.current = props.prompt;
-  const canSend = !props.locked && !props.sending && Boolean(props.prompt.trim());
+  const images = props.images ?? [];
+  const canSend = !props.locked && !props.sending && Boolean(props.prompt.trim() || images.length > 0);
   const selected = resolveChatModel(props.model);
 
   useEffect(() => () => {
@@ -114,6 +120,24 @@ export function Composer(props: Props) {
   return (
     <View style={styles.dock}>
       <View style={styles.bar}>
+        {images.length > 0 ? (
+          <View style={styles.thumbs}>
+            {images.map((image, index) => (
+              <Pressable
+                key={`${image.mediaType}-${index}`}
+                onPress={() => props.onDropImage?.(index)}
+                style={styles.thumb}
+                accessibilityLabel={`移除第 ${index + 1} 张图`}
+              >
+                <Image source={{ uri: `data:${image.mediaType};base64,${image.data}` }} style={styles.thumbImage} />
+                <View style={styles.thumbClose}>
+                  <Text style={styles.thumbCloseText}>×</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        {props.imageHint ? <Text style={styles.imageHint}>{props.imageHint}</Text> : null}
         <TextInput
           ref={fieldRef}
           value={props.prompt}
@@ -149,6 +173,16 @@ export function Composer(props: Props) {
             </Pressable>
           </View>
           <View style={styles.sendGroup}>
+            {props.onPickImages ? (
+              <Pressable
+                disabled={props.locked || props.sending}
+                onPress={props.onPickImages}
+                style={styles.mic}
+                accessibilityLabel="加图片"
+              >
+                <PhotoIcon color={props.locked || props.sending ? colors.muted : colors.ink} />
+              </Pressable>
+            ) : null}
             <Pressable
               disabled={props.locked || props.sending}
               onPressIn={() => void beginHold()}
@@ -193,6 +227,22 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   field: { minHeight: 52, maxHeight: 140, color: colors.ink, padding: 0, textAlignVertical: "top" },
+  thumbs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  thumb: { width: 56, height: 56, borderRadius: 12, overflow: "hidden", borderWidth: 1, borderColor: colors.line },
+  thumbImage: { width: "100%", height: "100%" },
+  thumbClose: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(61, 52, 40, 0.62)",
+    borderBottomLeftRadius: 8,
+  },
+  thumbCloseText: { color: "#fff", fontSize: 13, lineHeight: 15 },
+  imageHint: { color: colors.muted, fontSize: 12 },
   tools: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8, zIndex: 3 },
   modelWrap: { position: "relative", zIndex: 4 },
   modelMenu: {

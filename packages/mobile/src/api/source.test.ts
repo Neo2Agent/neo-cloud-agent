@@ -13,6 +13,9 @@ test("parseMobileScreen maps island routes", () => {
   assert.deepEqual(parseMobileScreen("#/projects"), { screen: "projects", runId: null, inviteToken: null });
   assert.deepEqual(parseMobileScreen("#/automations"), { screen: "automations", runId: null, inviteToken: null });
   assert.deepEqual(parseMobileScreen("#/settings"), { screen: "settings", runId: null, inviteToken: null });
+  assert.deepEqual(parseMobileScreen("#/memories"), { screen: "memories", runId: null, inviteToken: null });
+  assert.deepEqual(parseMobileScreen("#/inbox"), { screen: "inbox", runId: null, inviteToken: null });
+  assert.deepEqual(parseMobileScreen("#/skills"), { screen: "skills", runId: null, inviteToken: null });
   assert.deepEqual(parseMobileScreen("https://neorun.cloud/#/runs/r1"), { screen: "chat", runId: "r1", inviteToken: null });
   assert.deepEqual(parseMobileScreen("#/invite/tok"), { screen: "invite", runId: null, inviteToken: "tok" });
 });
