@@ -52,7 +52,8 @@ export type RunEventKind =
   | "artifact.uploaded"
   | "workspace.persist_failed"
   | "workspace.reclaimed"
-  | "workspace.restored";
+  | "workspace.restored"
+  | "turn.rewind";
 
 export interface RunEvent {
   id: string;

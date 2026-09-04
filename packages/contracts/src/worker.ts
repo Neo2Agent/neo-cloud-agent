@@ -39,6 +39,9 @@ export interface RuntimeSpec {
   workspaceMount: string;
   controlPlaneUrl: string;
   llmGatewayUrl: string;
+  workerRole?: "all" | "tools";
+  neoLoopUrl?: string;
+  neoLoopToken?: string;
   /** Host path bind-mounted into the worker when using Docker. */
   hostWorkspaceBind?: string;
   dockerNetwork?: string | null;

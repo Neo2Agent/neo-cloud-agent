@@ -16,6 +16,7 @@ const {
   archiveRun,
   deleteRun,
   claimDeskRun,
+  completeLoopTurn,
   commitRun,
   createRun,
   enqueueFollowUp,
@@ -721,6 +722,31 @@ test("desk target waits for a claim instead of spawning a server worker", async 
   detach();
 });
 
+test("agentscope cloud-loop desk-tools assignment carries the loop URL", async () => {
+  const previous = process.env.NEO_LOOP_URL;
+  process.env.NEO_LOOP_URL = "http://127.0.0.1:8082";
+  try {
+    const registered = newDesk("remote-tools");
+    const run = await createRun({
+      prompt: "edit on this computer with a cloud loop",
+      repoUrls: ["/tmp/desk-ws"],
+      source: "desk",
+      start: "inline",
+      kernel: "agentscope",
+      target: { loop: "cloud", tools: "desk", deskId: registered.desk.id },
+    });
+    assert.equal(run.kernel, "agentscope");
+    assert.equal(run.executionTarget?.loop, "cloud");
+    assert.equal(run.executionTarget?.tools, "desk");
+    const assignment = deskAssignmentForRun(run.id);
+    assert.equal(assignment.kernel, "agentscope");
+    assert.equal(assignment.neoLoopUrl, "http://127.0.0.1:8082");
+    assert.equal(takeInbound(run.id).length, 0);
+  } finally {
+    process.env.NEO_LOOP_URL = previous;
+  }
+});
+
 test("an inline desk run is handed its assignment instead of queueing for a claim", async () => {
   const registered = newDesk("inline-box");
   const events: unknown[] = [];
@@ -1154,4 +1180,37 @@ test("deleteRun reclaims the queue file and inbox objects", async () => {
   await deleteRun(run.id);
   assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".control", `${run.id}.queue.json`)), false);
   assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".objects", "runs", run.id, "inbox")), false);
+});
+
+test("agentscope createRun skips inbox prompt and records the kernel", async () => {
+  const previous = process.env.NEO_LOOP_URL;
+  process.env.NEO_LOOP_URL = "http://127.0.0.1:9";
+  try {
+    const run = await createRun({
+      prompt: "use the java loop",
+      repoUrls: ["fixtures/toy-repo"],
+      kernel: "agentscope",
+    });
+    assert.equal(run.kernel, "agentscope");
+    assert.equal(takeInbound(run.id).length, 0);
+    assert.equal(run.status, "RUNNING");
+  } finally {
+    process.env.NEO_LOOP_URL = previous;
+  }
+});
+
+test("completeLoopTurn marks the run idle and does not use the inbox", async () => {
+  const run = await createRun({
+    prompt: "finish a java turn",
+    repoUrls: ["fixtures/toy-repo"],
+    kernel: "agentscope",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const live = getRun(run.id);
+  live.currentTurnId = "turn-complete-1";
+  completeLoopTurn(live.id, { turnId: "turn-complete-1", status: "idle" });
+  assert.equal(getRun(run.id).status, "IDLE");
+  assert.equal(getRun(run.id).currentTurnId ?? null, null);
+  assert.ok(listEvents(run.id).some((item) => item.kind === "agent.end"));
+  assert.ok(listEvents(run.id).some((item) => item.kind === "run.idle"));
 });

@@ -59,6 +59,36 @@ function workerEpoch(event: RunEvent): string {
   return typeof value === "string" ? value : "";
 }
 
+/** Drop tokens a later turn.rewind said to forget. */
+export function foldRewoundEvents(events: RunEvent[]): RunEvent[] {
+  const cuts = new Map<string, number>();
+  for (const event of events) {
+    if (event.kind !== "turn.rewind") {
+      continue;
+    }
+    const replyId = typeof event.data?.replyId === "string" ? event.data.replyId : "";
+    const fromSeq = Number(event.data?.fromSeq ?? 0);
+    if (replyId && Number.isFinite(fromSeq)) {
+      cuts.set(replyId, fromSeq);
+    }
+  }
+  if (cuts.size === 0) {
+    return events.filter((event) => event.kind !== "turn.rewind");
+  }
+  return events.filter((event) => {
+    if (event.kind === "turn.rewind") {
+      return false;
+    }
+    const replyId = typeof event.data?.replyId === "string" ? event.data.replyId : "";
+    const cut = replyId ? cuts.get(replyId) : undefined;
+    const seq = workerSeq(event);
+    if (cut == null || seq == null) {
+      return true;
+    }
+    return seq < cut;
+  });
+}
+
 /** Restore emission order when HTTP ingest races or clocks stay close. */
 export function sortRunEvents(events: RunEvent[]): RunEvent[] {
   return events
@@ -681,7 +711,7 @@ export function applyRunEventsToMessages(messages: TranscriptMessage[], events: 
     return messages;
   }
   const state = stateFromMessages(messages);
-  for (const event of sortRunEvents(events)) {
+  for (const event of sortRunEvents(foldRewoundEvents(events))) {
     applyEventToState(state, event);
   }
   return state.messages;
@@ -690,7 +720,7 @@ export function applyRunEventsToMessages(messages: TranscriptMessage[], events: 
 /** Compact catch-up view so a late subscriber does not replay every token. */
 export function buildTranscriptSnapshot(runId: string, events: RunEvent[]): TranscriptSnapshot {
   const state: BuildState = { messages: [], open: null };
-  for (const event of sortRunEvents(events)) {
+  for (const event of sortRunEvents(foldRewoundEvents(events))) {
     applyEventToState(state, event);
   }
   const last = events.at(-1);

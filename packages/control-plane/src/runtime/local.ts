@@ -80,6 +80,9 @@ export class LocalProcessRuntime implements ExecutionRuntime {
       model: spec.model,
       egressMode: spec.egress.mode,
       egressDomains: spec.egress.domains,
+      workerRole: spec.workerRole,
+      neoLoopUrl: spec.neoLoopUrl,
+      neoLoopToken: spec.neoLoopToken,
     });
     assertNoProviderSecrets(env);
 

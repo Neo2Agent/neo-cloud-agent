@@ -69,6 +69,9 @@ export interface DeskAssignment {
   expertAgents?: Array<{ slug: string; markdown: string }>;
   pluginSkills?: Array<{ slug: string; files: Array<{ relativePath: string; content: string }> }>;
   pluginSnapshot?: string;
+  kernel?: "pi" | "agentscope";
+  neoLoopUrl?: string;
+  neoLoopToken?: string;
 }
 
 export interface DeskLeaseResponse {

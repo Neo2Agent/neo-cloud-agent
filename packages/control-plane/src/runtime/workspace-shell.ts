@@ -4,7 +4,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import { isDeskTarget, SECRET_ENV_KEYS, type ExecutionTarget } from "@neo-cloud-agent/contracts";
+import { isDeskToolsTarget, SECRET_ENV_KEYS, type ExecutionTarget } from "@neo-cloud-agent/contracts";
 import { SSE_HEADERS } from "../events/stream.js";
 
 export const MAX_TERMS_PER_RUN = 4;
@@ -51,7 +51,7 @@ type Session = {
 const sessions = new Map<string, Session>();
 
 export function workspaceTermDeniedReason(target?: ExecutionTarget | null): string | null {
-  if (isDeskTarget(target)) {
+  if (isDeskToolsTarget(target)) {
     return "本机对话请在 Desk 右侧栏用终端。网页打不开那台电脑上的 shell。";
   }
   return null;

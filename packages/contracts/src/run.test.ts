@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertColocatedTarget,
+  assertExecutionTarget,
   colocatedTarget,
+  isCloudLoopTarget,
   isDeskTarget,
+  isDeskToolsTarget,
   isRemoteControlTarget,
   parseExecutionTarget,
   parseRunSource,
@@ -68,4 +71,17 @@ test("P0–P2 reject a split loop/tools target", () => {
   assert.equal(isDeskTarget(colocatedTarget("desk", "desk_1")), true);
   assert.throws(() => assertColocatedTarget({ loop: "cloud", tools: "desk", deskId: "desk_1" }), /同址/);
   assert.throws(() => assertColocatedTarget({ loop: "desk", tools: "desk" }), /deskId/);
+});
+
+test("agentscope kernel allows cloud loop + desk tools", () => {
+  const split = { loop: "cloud" as const, tools: "desk" as const, deskId: "desk_1" };
+  assert.equal(isDeskToolsTarget(split), true);
+  assert.equal(isCloudLoopTarget(split), true);
+  assert.equal(isDeskTarget(split), false);
+  assertExecutionTarget(split, "agentscope");
+  assert.throws(() => assertExecutionTarget(split, "pi"), /同址/);
+  assert.throws(
+    () => assertExecutionTarget({ loop: "desk", tools: "cloud" }, "agentscope"),
+    /本机 loop/,
+  );
 });

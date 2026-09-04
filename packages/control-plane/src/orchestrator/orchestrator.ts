@@ -27,12 +27,14 @@ import type {
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
 import {
-  assertColocatedTarget,
+  assertExecutionTarget,
   buildTranscriptSnapshot,
   conversationReplayFromMessages,
   deskRepoKey,
   evaluateEgress,
   isDeskTarget,
+  isDeskToolsTarget,
+  resolveAgentKernel,
   MAX_SUBSCRIPTION_WAKES,
   mintRunToken,
   verifyRunToken,
@@ -104,6 +106,17 @@ import { assertClientImages, runIndexTitle } from "../store/run-record.js";
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
+import {
+  applyTurnComplete,
+  applyTurnHeartbeat,
+  clearLoopHeartbeat,
+  dispatchTurn,
+  hasQueuedLoopFollowUp,
+  queueLoopFollowUp,
+  signalTurn,
+  takeQueuedLoopFollowUp,
+} from "../loop/client.js";
+import type { TurnCompleteRequest, TurnHeartbeatRequest } from "@neo-cloud-agent/contracts";
 import { assignmentExpertFields, buildExpertFiles, resolveTeam, writeExpertFiles } from "../experts/materialize.js";
 import { assignmentPluginFields, buildPluginFiles, writePluginFiles } from "../plugins/materialize.js";
 import { resolveEnabledPlugins } from "../plugins/store.js";
@@ -133,6 +146,10 @@ const subscriptions = new Map<string, RunSubscription[]>();
 const runJwts = new Map<string, string>();
 const handles = new Map<string, RuntimeHandle>();
 const heartbeats = new Map<string, number>();
+const pendingLoopStarts = new Map<
+  string,
+  { delivery: FollowUpDelivery; text: string; images?: import("@neo-cloud-agent/contracts").ImageRef[]; followUpId?: string | null }
+>();
 const runEgress = new Map<string, EgressPolicy>();
 const releasingIdle = new Set<string>();
 const activeTurns = new Map<string, ActiveTurn>();
@@ -258,7 +275,10 @@ export function isWorkerAttached(runId: string, at = Date.now()): boolean {
 }
 
 function hasPendingUserInbound(runId: string): boolean {
-  return (inbound.get(runId) ?? []).some((item) => item.type === "prompt" || item.type === "steer" || item.type === "follow_up");
+  if ((inbound.get(runId) ?? []).some((item) => item.type === "prompt" || item.type === "steer" || item.type === "follow_up")) {
+    return true;
+  }
+  return pendingLoopStarts.has(runId) || hasQueuedLoopFollowUp(runId);
 }
 
 function asActiveTurn(item: WorkerInbound): ActiveTurn | null {
@@ -352,7 +372,7 @@ function settleDetachedRun(run: Run, title: string): void {
 
 function detachOrQueue(run: Run, queuedTitle: string, idleTitle: string): void {
   const resumed = requeueActiveTurn(run);
-  if (isDeskTarget(run.executionTarget)) {
+  if (isDeskToolsTarget(run.executionTarget)) {
     const deskId = run.executionTarget.deskId ?? "";
     offerDeskAssignment(deskId, run.id);
     pushDeskInbox(deskId, { kind: "assignment", assignment: assignmentFor(run) });
@@ -541,7 +561,7 @@ export async function tryStartQueued(): Promise<string | null> {
     const waiting = [...runs.values()]
       .filter(
         (run) =>
-          !isDeskTarget(run.executionTarget) &&
+          !isDeskToolsTarget(run.executionTarget) &&
           !handles.has(run.id) &&
           (run.status === "NOT_YET_STARTED" ||
             ((run.status === "IDLE" || run.status === "ERROR") && hasPendingUserInbound(run.id))),
@@ -837,6 +857,9 @@ function launchSpec(run: Run, jwt: string): RuntimeSpec {
     llmGatewayUrl: config.workerLlmGatewayUrl,
     dockerNetwork: config.dockerNetwork,
     command: workerCommand(),
+    workerRole: run.kernel === "agentscope" ? "tools" : "all",
+    neoLoopUrl: run.kernel === "agentscope" ? config.neoLoopUrl : undefined,
+    neoLoopToken: run.kernel === "agentscope" ? config.neoLoopToken : undefined,
   };
 }
 
@@ -1109,10 +1132,11 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     repoUrls = [...(getEnvironment(input.envId)?.config.repos ?? [])];
   }
   const target = parseExecutionTarget(input.target);
+  const kernel = resolveAgentKernel(input.kernel);
   if (target) {
-    assertColocatedTarget(target);
+    assertExecutionTarget(target, kernel);
   }
-  if (!isDeskTarget(target)) {
+  if (!isDeskToolsTarget(target)) {
     repoUrls = repoUrls.filter((url) => {
       if (looksRemoteRepo(url) || !looksLocalFilesystem(url)) {
         return true;
@@ -1121,7 +1145,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     });
   }
   const start = parseRunStart(input.start) ?? "dispatch";
-  if (isDeskTarget(target)) {
+  if (isDeskToolsTarget(target)) {
     if (input.source === "automation") {
       throw new Error("定时任务不能派到本机");
     }
@@ -1153,8 +1177,9 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     buildId: null,
     status: "PROVISIONING",
     setupStatus: null,
-    source: parseRunSource(input.source) ?? (isDeskTarget(target) ? "desk" : "api"),
+    source: parseRunSource(input.source) ?? (isDeskToolsTarget(target) ? "desk" : "api"),
     executionTarget: target ?? { loop: "cloud", tools: "cloud" },
+    kernel,
     expertId: expert?.id ?? null,
     expertTeamId: team?.id ?? null,
     model: input.model ?? expert?.model ?? config.defaultModel,
@@ -1181,7 +1206,10 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   }
   runs.set(run.id, run);
   followUps.set(run.id, []);
-  inbound.set(run.id, [{ type: "prompt", text: input.prompt, images: input.images }]);
+  inbound.set(run.id, kernel === "pi" ? [{ type: "prompt", text: input.prompt, images: input.images }] : []);
+  if (kernel === "agentscope") {
+    pendingLoopStarts.set(run.id, { delivery: "prompt", text: input.prompt, images: input.images });
+  }
   subscriptions.set(run.id, []);
   publish(event(run.id, "run.provisioning", "Provisioning worker"));
   publish(
@@ -1195,7 +1223,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   mintJwtForRun(run);
   flushRun(run.id);
 
-  if (isDeskTarget(run.executionTarget)) {
+  if (isDeskToolsTarget(run.executionTarget)) {
     if (start === "inline") {
       // The caller is that desk: it spawns the worker from this response, so
       // there is nothing to hand out and nothing to wait for.
@@ -1399,6 +1427,21 @@ async function attachWorker(run: Run, title: string): Promise<void> {
   });
   publish(event(run.id, "run.running", title));
   flushRun(run.id);
+  void startPendingLoopTurn(run);
+}
+
+async function startPendingLoopTurn(run: Run): Promise<void> {
+  if ((run.kernel ?? "pi") !== "agentscope") {
+    return;
+  }
+  const pending = pendingLoopStarts.get(run.id) ?? { delivery: "prompt" as const, text: run.prompt };
+  pendingLoopStarts.delete(run.id);
+  try {
+    await dispatchTurn(run, usableRunJwt(run), pending);
+    flushRun(run.id);
+  } catch (error) {
+    console.error(`neo-loop dispatch failed for ${run.id}`, error);
+  }
 }
 
 export async function resumeRun(runId: string): Promise<Run> {
@@ -1409,7 +1452,7 @@ export async function resumeRun(runId: string): Promise<Run> {
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
-  if (isDeskTarget(run.executionTarget)) {
+  if (isDeskToolsTarget(run.executionTarget)) {
     dispatchToDesk(run);
     return run;
   }
@@ -1604,6 +1647,9 @@ function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
     expertTeamId: run.expertTeamId ?? null,
     ...assignmentExpertFields(files),
     ...assignmentPluginFields(pluginFilesForRun(run)),
+    kernel: run.kernel ?? "pi",
+    neoLoopUrl: run.kernel === "agentscope" ? config.neoLoopUrl : undefined,
+    neoLoopToken: run.kernel === "agentscope" ? config.neoLoopToken : undefined,
   };
 }
 
@@ -1613,7 +1659,7 @@ function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
  */
 export function deskAssignmentForRun(runId: string): DeskAssignment {
   const run = requireRun(runId);
-  if (!isDeskTarget(run.executionTarget)) {
+  if (!isDeskToolsTarget(run.executionTarget)) {
     throw new Error("run is not a desk run");
   }
   return assignmentFor(run);
@@ -1630,7 +1676,7 @@ function dispatchToDesk(run: Run, requestedBy?: string | null): void {
 /** Desk could not take the run. Surface why instead of leaving it queued forever. */
 export function rejectDeskRun(deskId: string, runId: string, reason?: string): Run {
   const run = requireRun(runId);
-  if (!isDeskTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
+  if (!isDeskToolsTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
     throw new Error("run is not assigned to this desk");
   }
   dropDeskAssignment(deskId, runId);
@@ -1667,7 +1713,7 @@ export async function claimDeskRun(
   input: { runId: string; workspaceDir: string; pid?: number },
 ): Promise<Run> {
   const run = requireRun(input.runId);
-  if (!isDeskTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
+  if (!isDeskToolsTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
     throw new Error("run is not assigned to this desk");
   }
   const workspaceDir = input.workspaceDir.trim();
@@ -1706,6 +1752,7 @@ export async function claimDeskRun(
   });
   publish(event(run.id, "run.running", "Desk worker claimed this run"));
   flushRun(run.id);
+  void startPendingLoopTurn(run);
   return run;
 }
 
@@ -1716,7 +1763,7 @@ export async function claimDeskRun(
  */
 export function releaseDeskRun(deskId: string, runId: string, input: { code?: number | null } = {}): Run {
   const run = requireRun(runId);
-  if (!isDeskTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
+  if (!isDeskToolsTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
     throw new Error("run is not assigned to this desk");
   }
   touchDesk(deskId);
@@ -1759,7 +1806,7 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
   if (!target) {
     throw new Error("invalid execution target");
   }
-  assertColocatedTarget(target);
+  assertExecutionTarget(target, run.kernel ?? "pi");
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
@@ -1779,7 +1826,7 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
     run.workerHandle = null;
     run.vmSlotId = null;
   }
-  if (isDeskTarget(target)) {
+  if (isDeskToolsTarget(target)) {
     // Same posture as Cursor: only pull back to a machine that already has this
     // repo bound. No generic "clone it somewhere" fallback.
     const resolved = resolveDeskTarget(
@@ -1820,13 +1867,50 @@ export function getBootstrap(runId: string) {
     run,
     jwt: usableRunJwt(run),
     llmGatewayUrl: config.workerLlmGatewayUrl,
-    workspaceDir: isDeskTarget(run.executionTarget)
+    workspaceDir: isDeskToolsTarget(run.executionTarget)
       ? (deskWorkspaces.get(runId) ?? "")
       : config.workerRuntime === "docker"
         ? config.workerWorkspaceMount
         : workspaceFor(runId),
     egress: egressForRun(run),
   };
+}
+
+export function completeLoopTurn(runId: string, body: TurnCompleteRequest): void {
+  const run = requireRun(runId);
+  applyTurnComplete(run, body);
+  applyTurnHeartbeat(runId, { turnId: body.turnId, phase: "done" });
+  if (body.status === "waiting_for_background") {
+    run.status = "WAITING_FOR_BACKGROUND_WORK";
+    run.updatedAt = now();
+    flushRun(runId);
+    return;
+  }
+  if (body.status === "error" && !body.cancelled) {
+    failRun(run, body.errorMessage || "neo-loop turn failed");
+    return;
+  }
+  ingestEvents(runId, [
+    {
+      id: crypto.randomUUID(),
+      runId,
+      createdAt: now(),
+      category: "agent_run",
+      level: "info",
+      kind: "agent.end",
+      title: body.cancelled ? "Turn cancelled" : "Agent turn finished",
+    },
+  ]);
+  const next = takeQueuedLoopFollowUp(runId);
+  if (next) {
+    pendingLoopStarts.set(runId, { delivery: "prompt", text: next.text, images: next.images, followUpId: next.followUpId });
+    void startPendingLoopTurn(run);
+  }
+}
+
+export function heartbeatLoopTurn(runId: string, body: TurnHeartbeatRequest): void {
+  requireRun(runId);
+  applyTurnHeartbeat(runId, body);
 }
 
 export function ingestEvents(runId: string, events: RunEvent[]): void {
@@ -1953,13 +2037,30 @@ export async function enqueueFollowUp(
     deliveredAt: null,
   };
   followUps.get(runId)?.push(item);
-  inbound.get(runId)?.push({
-    type: delivery,
-    text: input.text,
-    images: input.images,
-    followUpId: item.id,
-    conversationReplay: conversationReplayFor(runId),
-  });
+  if ((run.kernel ?? "pi") === "agentscope") {
+    if (run.status === "RUNNING" && delivery === "steer" && run.currentTurnId) {
+      void signalTurn(run, { type: "steer", text: input.text, followUpId: item.id }).catch((error) => {
+        console.error(`neo-loop steer failed for ${runId}`, error);
+      });
+    } else if (run.status === "RUNNING" && delivery === "follow_up") {
+      queueLoopFollowUp(runId, { text: input.text, images: input.images, followUpId: item.id });
+    } else {
+      pendingLoopStarts.set(runId, {
+        delivery,
+        text: input.text,
+        images: input.images,
+        followUpId: item.id,
+      });
+    }
+  } else {
+    inbound.get(runId)?.push({
+      type: delivery,
+      text: input.text,
+      images: input.images,
+      followUpId: item.id,
+      conversationReplay: conversationReplayFor(runId),
+    });
+  }
   publish(
     event(runId, "followup.queued", "Follow-up queued", {
       data: {
@@ -2300,7 +2401,13 @@ export function abortRun(runId: string): Run {
   }
   clearActiveTurn(runId);
   inbound.get(runId)?.push({ type: "abort" });
-  if (isDeskTarget(run.executionTarget)) {
+  if ((run.kernel ?? "pi") === "agentscope" && run.currentTurnId) {
+    void signalTurn(run, { type: "abort" }).catch((error) => {
+      console.error(`neo-loop abort failed for ${runId}`, error);
+    });
+    clearLoopHeartbeat(runId);
+  }
+  if (isDeskToolsTarget(run.executionTarget)) {
     pushDeskInbox(run.executionTarget.deskId ?? "", { kind: "cancel", runId, reason: "用户停止" });
     run.status = "IDLE";
     run.errorMessage = null;
@@ -2371,7 +2478,7 @@ export function mintRunGitToken(runId: string, input: CreateGitTokenRequest) {
  */
 function gitCwdFor(runId: string): string {
   const run = runs.get(runId);
-  if (!isDeskTarget(run?.executionTarget)) {
+  if (!isDeskToolsTarget(run?.executionTarget)) {
     return workspaceFor(runId);
   }
   const folder = deskWorkspaces.get(runId) ?? "";
@@ -2507,7 +2614,7 @@ export function getRunSession(runId: string, options?: { includeContent?: boolea
 export async function getRunDiff(runId: string) {
   const run = requireRun(runId);
   // A desk run is diffed by the desk itself; this host has no such folder.
-  const cwd = isDeskTarget(run.executionTarget) ? (deskWorkspaces.get(runId) ?? "") : workspaceFor(runId);
+  const cwd = isDeskToolsTarget(run.executionTarget) ? (deskWorkspaces.get(runId) ?? "") : workspaceFor(runId);
   const diff = cwd && existsSync(cwd) ? await diffRunWorkspace(cwd, run) : { stat: "", patch: "" };
   return {
     branch: run.branchName,

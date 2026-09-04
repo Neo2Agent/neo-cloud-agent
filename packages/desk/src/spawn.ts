@@ -52,6 +52,9 @@ export function spawnDeskWorker(input: {
   scratchDir: string;
   model: string;
   nodePath?: string;
+  workerRole?: "all" | "tools";
+  neoLoopUrl?: string;
+  neoLoopToken?: string;
 }): ChildProcess {
   const launch = deskWorkerLaunch({ execPath: input.nodePath ?? process.execPath });
   const env: NodeJS.ProcessEnv = {
@@ -73,6 +76,9 @@ export function spawnDeskWorker(input: {
     // JWT and holds a concurrency slot it is no longer using. See docs/desk.md.
     WORKER_EXIT_AFTER_TURN: "1",
     ELECTRON_RUN_AS_NODE: "1",
+    ...(input.workerRole ? { WORKER_ROLE: input.workerRole } : {}),
+    ...(input.neoLoopUrl ? { NEO_LOOP_URL: input.neoLoopUrl } : {}),
+    ...(input.neoLoopToken ? { NEO_LOOP_TOKEN: input.neoLoopToken } : {}),
   };
   for (const key of SECRET_ENV_KEYS) {
     delete env[key];

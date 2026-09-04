@@ -8,6 +8,9 @@ export interface WorkerEnvInput {
   model: string;
   egressMode?: string;
   egressDomains?: string[];
+  workerRole?: "all" | "tools";
+  neoLoopUrl?: string;
+  neoLoopToken?: string;
 }
 
 const SECRET_KEYS = [
@@ -37,6 +40,9 @@ export function buildWorkerEnv(input: WorkerEnvInput): Record<string, string> {
     NEO_MODEL: input.model,
     NEO_EGRESS_MODE: input.egressMode ?? "allow_all",
     NEO_EGRESS_DOMAINS: (input.egressDomains ?? []).join(","),
+    ...(input.workerRole ? { WORKER_ROLE: input.workerRole } : {}),
+    ...(input.neoLoopUrl ? { NEO_LOOP_URL: input.neoLoopUrl } : {}),
+    ...(input.neoLoopToken ? { NEO_LOOP_TOKEN: input.neoLoopToken } : {}),
   };
 }
 

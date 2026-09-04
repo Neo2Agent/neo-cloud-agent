@@ -29,7 +29,7 @@ import {
   BUNDLED_EXPERT_TEAMS,
   canManageProject,
   evaluateEgress,
-  isDeskTarget,
+  isDeskToolsTarget,
   pageTranscriptSnapshot,
   slimTranscriptSnapshotImages,
   findTranscriptImage,
@@ -70,6 +70,8 @@ import {
   getRunDiagnostics,
   getRunDiff,
   getRunSession,
+  completeLoopTurn,
+  heartbeatLoopTurn,
   ingestEvents,
   listFollowUps,
   listProjectRunCards,
@@ -1773,7 +1775,7 @@ export function createApiServer() {
             });
             // An inline desk run is started by the caller itself, so hand back
             // everything it needs to spawn instead of making it poll for it.
-            const inline = body.start === "inline" && isDeskTarget(run.executionTarget);
+            const inline = body.start === "inline" && isDeskToolsTarget(run.executionTarget);
             send(res, 201, inline ? { ...run, assignment: deskAssignmentForRun(run.id) } : run);
           } catch (error) {
             if (error instanceof QuotaError) {
@@ -2217,6 +2219,32 @@ export function createApiServer() {
         const runId = ingestMatch[1] ?? "";
         const body = (await readJson(req)) as { events?: RunEvent[] };
         ingestEvents(runId, body.events ?? []);
+        send(res, 202, { ok: true });
+        return;
+      }
+
+      const turnCompleteMatch = /^\/internal\/runs\/([^/]+)\/turn-complete$/.exec(path);
+      if (turnCompleteMatch && method === "POST") {
+        const runId = turnCompleteMatch[1] ?? "";
+        const body = (await readJson(req)) as import("@neo-cloud-agent/contracts").TurnCompleteRequest;
+        if (!body?.turnId) {
+          send(res, 400, { error: "turnId is required" });
+          return;
+        }
+        completeLoopTurn(runId, body);
+        send(res, 202, { ok: true });
+        return;
+      }
+
+      const turnHeartbeatMatch = /^\/internal\/runs\/([^/]+)\/turn-heartbeat$/.exec(path);
+      if (turnHeartbeatMatch && method === "POST") {
+        const runId = turnHeartbeatMatch[1] ?? "";
+        const body = (await readJson(req)) as import("@neo-cloud-agent/contracts").TurnHeartbeatRequest;
+        if (!body?.turnId) {
+          send(res, 400, { error: "turnId is required" });
+          return;
+        }
+        heartbeatLoopTurn(runId, body);
         send(res, 202, { ok: true });
         return;
       }

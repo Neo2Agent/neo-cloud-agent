@@ -684,6 +684,9 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
       stateDir: launch.stateDir,
       scratchDir: launch.scratchDir,
       model: assignment.model,
+      workerRole: assignment.kernel === "agentscope" ? "tools" : "all",
+      neoLoopUrl: assignment.neoLoopUrl,
+      neoLoopToken: assignment.neoLoopToken,
     });
     localRuns.set(runId, { folder: workspaceDir, child });
     runLog.info("worker spawned", { runId, pid: child.pid, folder: workspaceDir });
