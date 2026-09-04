@@ -2108,6 +2108,44 @@ button.send:disabled {
   background: var(--bg);
 }
 
+#memories-page .catalog-grid.is-searching {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+#memories-page .catalog-card.is-editing {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+#memories-page .memory-search-status {
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#memories-page .memory-editor-count {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #memories-page .catalog-card-actions {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--ease);
+  }
+
+  #memories-page .catalog-card:hover .catalog-card-actions,
+  #memories-page .catalog-card:focus-within .catalog-card-actions,
+  #memories-page .catalog-card.is-editing .catalog-card-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .catalog-pager {
   display: flex;
   align-items: center;

@@ -25,13 +25,15 @@ export function MemoriesPage({ token, onBack }: Props) {
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<MemoryItem[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState("");
   const [editor, setEditor] = useState<Editor | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const confirm = useConfirm();
-  const visibleItems = query.trim() ? (hits ?? []) : items;
+  const needle = query.trim();
+  const visibleItems = needle ? (hits ?? items) : items;
   const listPage = clampPage(page, visibleItems.length);
   const visible = paginate(visibleItems, listPage);
 
@@ -57,28 +59,41 @@ export function MemoriesPage({ token, onBack }: Props) {
   }, [query]);
 
   useEffect(() => {
-    const needle = query.trim();
     if (!needle) {
       setHits(null);
+      setSearching(false);
       return;
     }
     if (!token) return;
+    let cancelled = false;
+    setSearching(true);
     const timer = window.setTimeout(() => {
       void (async () => {
-        const response = await api(token, "/v1/memories/search", {
-          method: "POST",
-          body: JSON.stringify({ query: needle }),
-        });
-        const body = await readJson<{ memories?: MemoryItem[] }>(response);
-        const message = readMemoryError(body);
-        if (!response.ok || message) throw new Error(message || "搜索失败");
-        setHits((body.memories ?? []).filter((item) => item.id && item.text));
-      })().catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "搜索失败");
-      });
+        try {
+          const response = await api(token, "/v1/memories/search", {
+            method: "POST",
+            body: JSON.stringify({ query: needle }),
+          });
+          const body = await readJson<{ memories?: MemoryItem[] }>(response);
+          const message = readMemoryError(body);
+          if (!response.ok || message) throw new Error(message || "搜索失败");
+          if (cancelled) return;
+          setHits((body.memories ?? []).filter((item) => item.id && item.text));
+          setError("");
+        } catch (caught) {
+          if (cancelled) return;
+          setHits([]);
+          setError(caught instanceof Error ? caught.message : "搜索失败");
+        } finally {
+          if (!cancelled) setSearching(false);
+        }
+      })();
     }, MEMORY_SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [query, token]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [token, needle]);
 
   const closeEditor = () => {
     setEditor(null);
@@ -158,7 +173,17 @@ export function MemoriesPage({ token, onBack }: Props) {
   };
 
   const hint = memoryHint({ configured, count: items.length, error: error || undefined });
-  const emptyTitle = error ? "记忆打不开" : configured ? (items.length === 0 ? "还没有记忆" : "没有匹配的记忆") : "记忆还没接上";
+  const emptyTitle = searching
+    ? "正在搜索…"
+    : error
+      ? "记忆打不开"
+      : configured
+        ? items.length === 0
+          ? "还没有记忆"
+          : "没有匹配的记忆"
+        : "记忆还没接上";
+  const searchStatus = !needle ? "" : searching ? "正在搜索…" : `找到 ${hits?.length ?? 0} 条`;
+  const editingId = editor?.mode === "edit" ? editor.id : "";
 
   return (
     <section className="proj-page catalog-page" id="memories-page">
@@ -191,13 +216,22 @@ export function MemoriesPage({ token, onBack }: Props) {
             : undefined
         }
       />
+      {searchStatus ? <p className="memory-search-status">{searchStatus}</p> : null}
 
       {visibleItems.length === 0 ? (
         <CatalogEmpty
           title={emptyTitle}
-          hint={items.length === 0 && configured && !error ? "对话里说「帮我记住」，或点右上角记一条。" : hint}
+          hint={
+            searching
+              ? "正在按你输入的内容检索。"
+              : items.length === 0 && configured && !error
+                ? "对话里说「帮我记住」，或点右上角记一条。"
+                : needle
+                  ? "换个词试试，或清空搜索看全部。"
+                  : hint
+          }
           action={
-            configured && items.length === 0 && !error ? (
+            configured && items.length === 0 && !error && !needle ? (
               <button
                 className="proj-add"
                 type="button"
@@ -213,7 +247,7 @@ export function MemoriesPage({ token, onBack }: Props) {
         />
       ) : (
         <>
-          <CatalogGrid>
+          <CatalogGrid className={searching ? "is-searching" : undefined}>
             {visible.map((item) => {
               const openEditor = () => {
                 setDraft(item.text);
@@ -225,6 +259,7 @@ export function MemoriesPage({ token, onBack }: Props) {
                   title={item.text}
                   badge={memoryEdited(item) ? "改过" : undefined}
                   initial="记"
+                  active={item.id === editingId}
                   onOpen={openEditor}
                   actions={
                     <>
@@ -253,7 +288,12 @@ export function MemoriesPage({ token, onBack }: Props) {
             <button type="button" className="ghost" onClick={closeEditor}>
               取消
             </button>
-            <button type="button" className="proj-add" disabled={busy || !draft.trim()} onClick={save}>
+            <button
+              type="button"
+              className="proj-add"
+              disabled={busy || !draft.trim() || (editor?.mode === "edit" && draft.trim() === editor.original)}
+              onClick={save}
+            >
               保存
             </button>
           </>
@@ -275,6 +315,9 @@ export function MemoriesPage({ token, onBack }: Props) {
               onChange={(event) => setDraft(event.target.value)}
             />
           </label>
+          <p className="memory-editor-count">
+            {draft.length}/{MEMORY_TEXT_MAX_LENGTH}
+          </p>
         </CatalogForm>
       </CatalogModal>
     </section>
