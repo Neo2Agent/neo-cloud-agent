@@ -55,14 +55,14 @@
 | tab | 本机 | 云端 |
 | --- | --- | --- |
 | Files | 可展开的文件树 + 只读预览，锁在授权根 | `GET /v1/runs/:id/fs`，只读 |
-| Terminal | 浅色工作区 + 右侧会话列表，可新开多个 | 命令输出 + setup 日志，标题写「输出」，**不能打字** |
+| Terminal | 浅色工作区 + 右侧会话列表，可新开多个 | 沙箱工作区管道 shell，可打字；setup 日志收在下面。本机对话仍走 Desk IPC |
 
 **不做 IDE。** Files 只有树 + 只读预览，没有栏内编辑保存。要改文件：让 Agent 改，或自己在编辑器里改，Files 刷新即可。
 
 两点如实说明：
 
 - 本机终端是**管道 shell，不是 pty**。真终端设备要 native 模块，而本仓库 `onlyBuiltDependencies` 只放行 esbuild。在黑色区域里直接输入（中文输入法走隐藏输入框）；需要 tty 的全屏 TUI 不行。`createLocalShell` 是留好的接缝。
-- 云端交互式 PTY 没做（要另开一条打进 VM 的通道）。
+- 云端交互式 PTY 没做（要另开一条打进 VM 的通道）。网页 / Desk 云端终端是控制面在工作区里起的管道 shell，和本机 Desk 一样能敲命令，全屏 TUI 不行。本机对话不能从网页打开。
 
 ## 已落地的执行面
 
@@ -72,7 +72,7 @@
 | P1 | Agents Window 壳：侧栏对话/空间、composer 上的 Cloud / This Computer / 模型、`Cmd+W` |
 | P2 | `/v1/desks` 登记；inline 本地起 + dispatch 远程派；`DeskRuntime`；`POST /v1/runs` 的 `target`；双向 handoff（干净 clone，未提交改动不跟随）；右侧栏 Files / Terminal |
 
-未做（刻意）：隔离 worktree、P3 并排窗格 / SSH 远程机、云 loop + 本机工具 RPC、云端交互 PTY、栏内编辑器。
+未做（刻意）：隔离 worktree、P3 并排窗格 / SSH 远程机、云 loop + 本机工具 RPC、云端交互 PTY（管道 shell 已做）、栏内编辑器。
 
 ## This Computer 和 Remote control 是两个东西
 

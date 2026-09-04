@@ -2348,7 +2348,14 @@ export function App() {
                 onCommit={(message) => void commitWorkspace(message)}
               />
             ) : sessionTab === "terminal" ? (
-              <TerminalPanel open loading={diagLoading} error={diagError} logs={diagLogs} />
+              <TerminalPanel
+                open
+                token={token}
+                runId={runId}
+                setupLoading={diagLoading}
+                setupError={diagError}
+                setupLogs={diagLogs}
+              />
             ) : sessionTab === "artifacts" ? (
               <ArtifactsPanel
                 open

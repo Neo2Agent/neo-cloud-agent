@@ -17,6 +17,7 @@ test("web shell keeps the original cool-gray chrome", () => {
   assert.match(css, /button:focus-visible/);
   assert.match(css, /\.toast-host/);
   assert.match(css, /\.settings-group/);
+  assert.match(css, /\.term-shell\s*\{/);
 });
 
 test("welcome cluster fits a 14-inch laptop viewport without a page scroll", () => {
