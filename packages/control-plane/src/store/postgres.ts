@@ -22,7 +22,21 @@ import {
   type SessionRecord,
   type UserRecord,
 } from "../accounts/types.js";
-import type { PersistedRun, WorkerLease } from "./persist.js";
+import { persistImagesForRecord, type PersistedRun, type WorkerLease } from "./persist.js";
+import {
+  applyRunIndexColumns,
+  BACKFILL_BATCH_SIZE,
+  backfillRunRecords,
+  hydrationRowFromStore,
+  mergeStoredRun,
+  parseQueue,
+  RECORD_VERSION_SLIM,
+  recordVersionOf,
+  runIndexTitle,
+  runsBackupTableName,
+  type RunHydrationRow,
+  type RunQueueDocument,
+} from "./run-record.js";
 
 export type SqlQuery = (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
 
@@ -50,9 +64,22 @@ CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   org_id TEXT NOT NULL,
+  title TEXT,
+  status TEXT,
+  project_id TEXT,
+  record_version SMALLINT NOT NULL DEFAULT 1,
   record JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   deleted_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS run_queues (
+  run_id TEXT PRIMARY KEY,
+  follow_ups JSONB NOT NULL,
+  inbound JSONB NOT NULL,
+  subscriptions JSONB NOT NULL,
+  active_turn JSONB,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
 );
 CREATE TABLE IF NOT EXISTS events (
   run_id TEXT NOT NULL,
@@ -127,6 +154,9 @@ export interface PostgresMetadataStore extends AccountStore {
   loadRun(runId: string): Promise<PersistedRun | null>;
   loadRuns(): Promise<PersistedRun[]>;
   loadRunSummaries(): Promise<Run[]>;
+  loadRunHydrationRows(): Promise<RunHydrationRow[]>;
+  loadRunQueues(): Promise<Map<string, RunQueueDocument>>;
+  deleteRunQueue(runId: string): Promise<void>;
   saveEvent(event: RunEvent): Promise<void>;
   loadEvents(runId: string): Promise<RunEvent[]>;
   saveLease(lease: WorkerLease): Promise<void>;
@@ -287,17 +317,39 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_fen INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE runs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
         "CREATE INDEX IF NOT EXISTS runs_deleted_at ON runs (deleted_at)",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS title TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS status TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS project_id TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS record_version SMALLINT NOT NULL DEFAULT 1",
+        "CREATE INDEX IF NOT EXISTS idx_runs_deleted_updated ON runs (deleted_at, updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_runs_status ON runs (status)",
+        "CREATE INDEX IF NOT EXISTS idx_runs_project_id ON runs (project_id)",
+        `CREATE TABLE IF NOT EXISTS run_queues (
+          run_id TEXT PRIMARY KEY,
+          follow_ups JSONB NOT NULL,
+          inbound JSONB NOT NULL,
+          subscriptions JSONB NOT NULL,
+          active_turn JSONB,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL
+        )`,
       ]) {
         await query(statement);
       }
+      await backfillPostgresRunRecords(query);
     },
     async saveRun(record) {
+      await upsertPostgresQueue(query, record);
       await query(
-        `INSERT INTO runs (id, user_id, org_id, record, updated_at, deleted_at)
-         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::timestamptz)
+        `INSERT INTO runs (id, user_id, org_id, title, status, project_id, record_version, record, updated_at, deleted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::timestamptz, $10::timestamptz)
          ON CONFLICT (id) DO UPDATE SET
            user_id = EXCLUDED.user_id,
            org_id = EXCLUDED.org_id,
+           title = EXCLUDED.title,
+           status = EXCLUDED.status,
+           project_id = EXCLUDED.project_id,
+           record_version = EXCLUDED.record_version,
            record = EXCLUDED.record,
            updated_at = EXCLUDED.updated_at,
            deleted_at = EXCLUDED.deleted_at`,
@@ -305,6 +357,10 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
           record.run.id,
           record.run.userId,
           record.run.orgId,
+          runIndexTitle(record.run),
+          record.run.status,
+          record.run.projectId ?? null,
+          RECORD_VERSION_SLIM,
           JSON.stringify(record),
           record.run.updatedAt,
           record.run.deletedAt ?? null,
@@ -312,22 +368,51 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       );
     },
     async loadRun(runId) {
-      const result = await query(`SELECT record FROM runs WHERE id = $1`, [runId]);
-      return parseJson(result.rows[0]?.record, asRecord);
+      const result = await query(
+        `SELECT r.record, r.record_version, r.title, r.status, r.project_id,
+                q.follow_ups, q.inbound, q.subscriptions, q.active_turn
+         FROM runs r
+         LEFT JOIN run_queues q ON q.run_id = r.id
+         WHERE r.id = $1`,
+        [runId],
+      );
+      return mergePostgresRunRow(result.rows[0]);
     },
     async loadRuns() {
-      const result = await query(`SELECT record FROM runs WHERE deleted_at IS NULL`);
-      return result.rows
-        .map((row) => parseJson(row.record, asRecord))
-        .filter((item): item is PersistedRun => item != null && !item.run.deletedAt)
-        .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
+      const rows = await this.loadRunHydrationRows();
+      const queues = await this.loadRunQueues();
+      return rows
+        .map((row) => mergeStoredRun(row.document ?? { version: 1, run: row.run }, queues.get(row.run.id) ?? null, row.recordVersion))
+        .filter((item): item is PersistedRun => item != null && !item.run.deletedAt);
     },
     async loadRunSummaries() {
-      const result = await query(`SELECT record->'run' AS run FROM runs WHERE deleted_at IS NULL`);
+      const rows = await this.loadRunHydrationRows();
+      return rows.map((row) => row.run).filter((run) => !run.deletedAt);
+    },
+    async loadRunHydrationRows() {
+      const result = await query(
+        `SELECT id, user_id, org_id, title, status, project_id, record_version, record, updated_at, deleted_at
+         FROM runs
+         WHERE deleted_at IS NULL
+         ORDER BY updated_at DESC`,
+      );
       return result.rows
-        .map((row) => parseJson(row.run, asRun))
-        .filter((item): item is Run => item != null && !item.deletedAt)
-        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+        .map((row) => hydrationRowFromStore(row, (value) => parseJson(value, asRecord), (value) => parseJson(value, asRun)))
+        .filter((item): item is RunHydrationRow => item != null);
+    },
+    async loadRunQueues() {
+      const result = await query(`SELECT run_id, follow_ups, inbound, subscriptions, active_turn FROM run_queues`);
+      const queues = new Map<string, RunQueueDocument>();
+      for (const row of result.rows) {
+        const parsed = parseQueue(row);
+        if (parsed && row.run_id) {
+          queues.set(String(row.run_id), parsed);
+        }
+      }
+      return queues;
+    },
+    async deleteRunQueue(runId) {
+      await query(`DELETE FROM run_queues WHERE run_id = $1`, [runId]);
     },
     async saveEvent(event) {
       await query(
@@ -650,6 +735,80 @@ function toIso(value: unknown): string {
     return value.toISOString();
   }
   return String(value);
+}
+
+function mergePostgresRunRow(row?: Record<string, unknown>): PersistedRun | null {
+  if (!row) {
+    return null;
+  }
+  const document = parseJson(row.record, asRecord);
+  const merged = mergeStoredRun(document, parseQueue(row), recordVersionOf(row.record_version));
+  if (!merged) {
+    return null;
+  }
+  merged.run = applyRunIndexColumns(merged.run, row);
+  return merged;
+}
+
+async function upsertPostgresQueue(query: SqlQuery, record: PersistedRun): Promise<void> {
+  const updatedAt = record.run.updatedAt;
+  await query(
+    `INSERT INTO run_queues (run_id, follow_ups, inbound, subscriptions, active_turn, created_at, updated_at)
+     VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::timestamptz, $7::timestamptz)
+     ON CONFLICT (run_id) DO UPDATE SET
+       follow_ups = EXCLUDED.follow_ups,
+       inbound = EXCLUDED.inbound,
+       subscriptions = EXCLUDED.subscriptions,
+       active_turn = EXCLUDED.active_turn,
+       updated_at = EXCLUDED.updated_at`,
+    [
+      record.run.id,
+      JSON.stringify(record.followUps ?? []),
+      JSON.stringify(record.inbound ?? []),
+      JSON.stringify(record.subscriptions ?? []),
+      record.activeTurn == null ? null : JSON.stringify(record.activeTurn),
+      updatedAt,
+      updatedAt,
+    ],
+  );
+}
+
+async function backfillPostgresRunRecords(query: SqlQuery): Promise<void> {
+  const hasPending = async () => {
+    const result = await query(`SELECT id FROM runs WHERE record_version < $1 LIMIT 1`, [RECORD_VERSION_SLIM]);
+    return result.rows.length > 0;
+  };
+  if (!(await hasPending())) {
+    return;
+  }
+  await query(`CREATE TABLE IF NOT EXISTS ${runsBackupTableName()} AS SELECT * FROM runs`);
+  await backfillRunRecords({
+    hasPending,
+    loadBatch: async () => {
+      const result = await query(
+        `SELECT id, record FROM runs WHERE record_version < $1 ORDER BY id LIMIT $2`,
+        [RECORD_VERSION_SLIM, BACKFILL_BATCH_SIZE],
+      );
+      return result.rows.map((row) => ({ id: String(row.id), record: row.record }));
+    },
+    parseRecord: (value) => parseJson(value, asRecord),
+    migrateRow: async (id, record) => {
+      const stored = persistImagesForRecord(record);
+      stored.run = { ...stored.run, title: runIndexTitle(stored.run) };
+      await upsertPostgresQueue(query, stored);
+      await query(
+        `UPDATE runs SET record = $1::jsonb, title = $2, status = $3, project_id = $4, record_version = $5 WHERE id = $6`,
+        [
+          JSON.stringify(stored),
+          runIndexTitle(stored.run),
+          stored.run.status,
+          stored.run.projectId ?? null,
+          RECORD_VERSION_SLIM,
+          id,
+        ],
+      );
+    },
+  });
 }
 
 export async function connectPostgres(url: string): Promise<PostgresMetadataStore> {

@@ -66,6 +66,18 @@ test("CI failure autofixes until the cap, then stops", () => {
   assert.equal(exhausted.action === "skip" ? exhausted.reason : "", "autofix_exhausted");
 });
 
+test("a delivered user follow-up without images still blocks autofix", () => {
+  assert.equal(
+    decideSubscriptionWake({
+      subscription: sub(),
+      ingress: ci("failure"),
+      pullRequests: [{ number: 3 }],
+      followUps: [{ source: "user" }],
+    }).action,
+    "skip",
+  );
+});
+
 test("user follow-up or human push or a foreign PR blocks autofix", () => {
   assert.equal(
     decideSubscriptionWake({

@@ -144,6 +144,8 @@ export interface Run {
   executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
+  /** Sidebar title. Set once at create; a non-empty value is not auto-overwritten. */
+  title?: string | null;
   branchName: string | null;
   baseBranch: string | null;
   repoUrls: string[];

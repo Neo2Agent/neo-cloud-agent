@@ -34,6 +34,7 @@ export type AdminRunRow = {
   id: string;
   status: Run["status"];
   prompt: string;
+  title?: string | null;
   userId: string;
   orgId: string;
   model: string;
@@ -132,6 +133,7 @@ export function buildAdminRunRows(runs: Run[], limit = 100): AdminRunRow[] {
       id: run.id,
       status: run.status,
       prompt: run.prompt,
+      title: run.title ?? null,
       userId: run.userId,
       orgId: run.orgId,
       model: run.model,

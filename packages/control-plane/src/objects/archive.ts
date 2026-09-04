@@ -1,14 +1,25 @@
 import type { RunEvent } from "@neo-cloud-agent/contracts";
 import { buildTranscriptSnapshot } from "../events/transcript.js";
 import {
+  listInboxObjectKeys,
   loadPersistedEvents,
-  loadPersistedRun,
+  loadPersistedQueue,
+  loadPersistedRunDocument,
+  loadPersistedRunRaw,
   loadSessionFiles,
   persistRunRecord,
   persistSessionFiles,
+  readInboxObject,
   replacePersistedEvents,
+  writeInboxObject,
   type PersistedRun,
 } from "../store/persist.js";
+import {
+  mergeStoredRun,
+  RECORD_VERSION_FAT,
+  RECORD_VERSION_SLIM,
+  slimRunDocument,
+} from "../store/run-record.js";
 import { artifactKey, getObjectStore } from "./store.js";
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -37,17 +48,27 @@ export async function archiveRunArtifacts(runId: string): Promise<void> {
     return;
   }
   const events = loadPersistedEvents(runId);
-  const record = loadPersistedRun(runId);
+  const document = loadPersistedRunDocument(runId);
+  const queue = loadPersistedQueue(runId);
   const session = loadSessionFiles(runId);
   const snapshot = buildTranscriptSnapshot(runId, events);
   await store.put(artifactKey(runId, "events.jsonl"), events.map((item) => JSON.stringify(item)).join("\n") + (events.length ? "\n" : ""));
   await store.put(artifactKey(runId, "snapshot.json"), `${JSON.stringify(snapshot)}\n`, "application/json");
-  if (record) {
-    await store.put(artifactKey(runId, "record.json"), `${JSON.stringify(record)}\n`, "application/json");
+  if (document) {
+    await store.put(artifactKey(runId, "record.json"), `${JSON.stringify(slimRunDocument(document))}\n`, "application/json");
+  }
+  if (queue) {
+    await store.put(artifactKey(runId, "queue.json"), `${JSON.stringify(queue)}\n`, "application/json");
   }
   await store.put(artifactKey(runId, "session-manifest.json"), `${JSON.stringify(session.map((file) => file.name))}\n`, "application/json");
   for (const file of session) {
     await store.put(artifactKey(runId, `session/${file.name}`), file.content);
+  }
+  for (const key of listInboxObjectKeys(runId)) {
+    const body = readInboxObject(key);
+    if (body != null) {
+      await store.put(key, body);
+    }
   }
 }
 
@@ -55,6 +76,7 @@ export async function loadArchivedArtifacts(runId: string): Promise<{
   record: PersistedRun | null;
   events: RunEvent[];
   session: Array<{ name: string; content: string }>;
+  inbox: Array<{ key: string; body: string }>;
 } | null> {
   const store = getObjectStore();
   const eventsRaw = await store.get(artifactKey(runId, "events.jsonl"));
@@ -66,7 +88,12 @@ export async function loadArchivedArtifacts(runId: string): Promise<{
     .split("\n")
     .filter((line) => line.trim())
     .map((line) => JSON.parse(line) as RunEvent);
-  const record = recordRaw ? (JSON.parse(recordRaw) as PersistedRun) : null;
+  const document = recordRaw ? (JSON.parse(recordRaw) as PersistedRun) : null;
+  const queueRaw = await store.get(artifactKey(runId, "queue.json"));
+  const queue = queueRaw ? (JSON.parse(queueRaw) as ReturnType<typeof loadPersistedQueue>) : null;
+  const record = document
+    ? mergeStoredRun(document, queue, queue ? RECORD_VERSION_SLIM : RECORD_VERSION_FAT)
+    : null;
   const manifestRaw = await store.get(artifactKey(runId, "session-manifest.json"));
   const names = manifestRaw ? (JSON.parse(manifestRaw) as string[]) : [];
   const session: Array<{ name: string; content: string }> = [];
@@ -76,7 +103,14 @@ export async function loadArchivedArtifacts(runId: string): Promise<{
       session.push({ name, content });
     }
   }
-  return { record, events, session };
+  const inbox: Array<{ key: string; body: string }> = [];
+  for (const key of await store.list(`runs/${runId}/inbox/`)) {
+    const body = await store.get(key);
+    if (typeof body === "string") {
+      inbox.push({ key, body });
+    }
+  }
+  return { record, events, session, inbox };
 }
 
 export async function restoreArchivedArtifacts(runId: string): Promise<{
@@ -87,8 +121,11 @@ export async function restoreArchivedArtifacts(runId: string): Promise<{
   if (!loaded) {
     return null;
   }
+  for (const item of loaded.inbox) {
+    writeInboxObject(item.key, item.body);
+  }
   if (loaded.record) {
-    const current = loadPersistedRun(runId);
+    const current = loadPersistedRunRaw(runId) ?? loadPersistedRun(runId);
     if (current?.run?.deletedAt) {
       return { record: current, events: loaded.events };
     }

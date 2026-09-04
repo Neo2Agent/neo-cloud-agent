@@ -87,6 +87,7 @@ import {
   startWorkerLeaseWatch,
   takeInbound,
 } from "../orchestrator/orchestrator.js";
+import { publicFollowUpsForRun } from "../store/persist.js";
 import { loadPersistedRun } from "../store/persist.js";
 import { listWorkspacePath } from "../workspace-fs.js";
 import { loadWorkspaceMeta, summarizeWorkspaceStore } from "../runtime/workspace-store.js";
@@ -1846,7 +1847,8 @@ export function createApiServer() {
         if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
-        send(res, 200, { followUps: listFollowUps(followMatch[1] ?? "") });
+        const runId = followMatch[1] ?? "";
+        send(res, 200, { followUps: publicFollowUpsForRun(runId, listFollowUps(runId)) });
         return;
       }
 

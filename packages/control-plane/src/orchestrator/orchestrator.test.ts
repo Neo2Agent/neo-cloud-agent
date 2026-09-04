@@ -32,6 +32,7 @@ const {
   listRunSubscriptions,
   loadRunIntoMemory,
   mintRunGitToken,
+  projectRunCard,
   subscribeRun,
   openRunDraftPr,
   recoverLiveWorkers,
@@ -1092,4 +1093,64 @@ test("handoff back to a machine needs that repo already bound there", async () =
   });
   assert.equal(moved.executionTarget?.deskWorkspaceId, bound.id);
   detach();
+});
+
+test("createRun stores a title and rejects client object image keys", async () => {
+  const run = await createRun({
+    prompt: "第一行标题\n第二行",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  assert.equal(run.title, "第一行标题");
+  assert.equal(projectRunCard(run).title, "第一行标题");
+  await assert.rejects(
+    () =>
+      createRun({
+        prompt: "forged",
+        repoUrls: ["fixtures/toy-repo"],
+        images: [{ mediaType: "image/png", data: "obj:runs/other/inbox/x" }],
+      }),
+    /invalid image payload/,
+  );
+});
+
+test("queued follow-up images survive reload and leave the queue after deliver", async () => {
+  const run = await createRun({
+    prompt: "start with a picture",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  const follow = await enqueueFollowUp(run.id, {
+    text: "看这张",
+    images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }],
+  });
+  reloadPersistedState();
+  const inbox = takeInbound(run.id);
+  const item = inbox[0];
+  assert.ok(item && "images" in item);
+  assert.equal(item.images?.[0]?.data, "aW1nZGF0YQ");
+  const delivered = listFollowUps(run.id).find((entry) => entry.id === follow.id);
+  assert.equal(delivered?.status, "delivered");
+  assert.equal(delivered?.source, "user");
+  assert.equal(delivered?.images, undefined);
+  const published = eventsForRun(run.id).find((event) => event.kind === "user.message" && event.data?.followUpId === follow.id);
+  assert.equal((published?.data?.images as Array<{ data: string }> | undefined)?.[0]?.data, "aW1nZGF0YQ");
+  reloadPersistedState();
+  assert.equal(listFollowUps(run.id).find((entry) => entry.id === follow.id)?.source, "user");
+  assert.equal(listFollowUps(run.id).find((entry) => entry.id === follow.id)?.images, undefined);
+});
+
+test("deleteRun reclaims the queue file and inbox objects", async () => {
+  const run = await createRun({
+    prompt: "reclaim after delete",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  takeInbound(run.id);
+  await enqueueFollowUp(run.id, {
+    text: "queued pic",
+    images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }],
+  });
+  await archiveRun(run.id);
+  await deleteRun(run.id);
+  assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".control", `${run.id}.queue.json`)), false);
+  assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".objects", "runs", run.id, "inbox")), false);
 });
