@@ -20,6 +20,7 @@
 | 80 | Caddy → 对话页（对外用这个） |
 | 443 | 以后上 TLS |
 | 8080 / 8081 | 可选直连控制面 / 网关；平时不必对公网开 |
+| 8082 | **不要放行。** `neo-loop` 只绑 `127.0.0.1`，Caddy 也不反代 |
 
 ## TAT 写入 SSH 公钥（首次）
 
@@ -58,6 +59,13 @@ sudo apt-get install -y e2fsprogs iproute2 iptables caddy
 
 不要为了跑 Docker / Firecracker 去装一整套虚拟化。轻量没有 `/dev/kvm`。
 
+Java 21 **先不装**。只有以后要 `systemctl enable --now neo-loop` 时才：
+
+```bash
+sudo apt-get install -y openjdk-21-jre-headless
+java -version
+```
+
 ## 代码与依赖
 
 GitHub 通：
@@ -95,20 +103,24 @@ DEFAULT_ADMIN=1
 
 `LLM_GATEWAY_JWT_SECRET` 在主机上生成一次，两边 unit 共用，不要提交。
 
+现网不要写 `AGENT_KERNEL=agentscope`。控制面默认就是 `pi`。`NEO_LOOP_URL` 代码里已默认 `http://127.0.0.1:8082`，没开 loop 时也不必写进 `.env`。
+
 要落 MySQL / Redis 时，在这台机的 `.env` 加 `DATABASE_URL` / `REDIS_URL`（值从库机 `/home/ubuntu/db/.env` 拼，不要打印）。改完重启 `neo-control-plane`。
 
 API Key **不要**写进 `.env` 也可以：上线后在对话页保存，落到 `.neo/llm-upstream.env`。
 
 ## systemd
 
-模板：[units/neo-llm-gateway.service](units/neo-llm-gateway.service)、[units/neo-control-plane.service](units/neo-control-plane.service)、[units/neo-admin-api.service](units/neo-admin-api.service)。
+模板：[units/neo-llm-gateway.service](units/neo-llm-gateway.service)、[units/neo-control-plane.service](units/neo-control-plane.service)、[units/neo-admin-api.service](units/neo-admin-api.service)、[units/neo-loop.service](units/neo-loop.service)（默认 disabled）。
 
 ```bash
 sudo cp infra-or-skill-units/neo-llm-gateway.service /etc/systemd/system/
 sudo cp infra-or-skill-units/neo-control-plane.service /etc/systemd/system/
 sudo cp infra-or-skill-units/neo-admin-api.service /etc/systemd/system/
+sudo cp infra-or-skill-units/neo-loop.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now neo-llm-gateway neo-control-plane neo-admin-api
+sudo systemctl disable neo-loop
 ```
 
 仓库里的副本也在本 skill 的 `units/`。`WorkingDirectory` 必须是仓库根，`EnvironmentFile` 指向根目录 `.env`。控制面 `ExecStart` 必须是 `node --import tsx packages/control-plane/src/index.ts`，不要用 `pnpm --filter … start`：否则 MainPID 是 pnpm，`KillMode=process` 停不掉真正听 `:8080` 的进程。
@@ -125,7 +137,7 @@ sudo cp units/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，对外用 `https://neorun.cloud/` 对话、`https://neorun.cloud/admin/` 管理台（域名 HTTP 308 到 HTTPS），不要让用户去记 `:8080` / `:8090`。8090 只听本机。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
+必须 `flush_interval -1`，否则对话 SSE 会缓冲。现网 Caddy 听 80 + 443，对外用 `https://neorun.cloud/` 对话、`https://neorun.cloud/admin/` 管理台（域名 HTTP 308 到 HTTPS），不要让用户去记 `:8080` / `:8090`。8090 只听本机。**不要**反代 `neo-loop` 的 `:8082`。不要用轻量控制台一键 HTTPS（只支持应用镜像）。现网文件就是 [../tencent-lighthouse-domain/units/Caddyfile.https](../tencent-lighthouse-domain/units/Caddyfile.https)。
 
 ## 系统镜像
 

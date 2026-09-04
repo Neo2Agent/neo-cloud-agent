@@ -182,11 +182,14 @@ flowchart LR
     CP["neo-control-plane :8080"]
     GW["neo-llm-gateway :8081"]
     Admin["admin-api :8090"]
+    Loop["neo-loop :8082\n默认 disabled"]
     Slots["2 × loop ext4 槽\nWORKER_RUNTIME=vm"]
     Caddy -->|"/"| CP
     Caddy -->|"/admin/"| Admin
     CP --> Slots
     Slots --> GW
+    CP -.->|"仅 AGENT_KERNEL=agentscope"| Loop
+    Loop -.-> Slots
   end
 
   subgraph db [库机 101.42.105.230]
@@ -211,7 +214,7 @@ flowchart LR
 | 直播事件 | 库机 Redis Pub/Sub + Stream |
 | 模型渠道 | 库机 New API `:3000`；Gateway 打 `http://101.42.105.230:3000/v1` |
 | 对象存储 | 应用机 `RUNS_DIR/.objects`，现网不切 S3 |
-| systemd | `neo-control-plane`、`neo-llm-gateway`、Caddy |
+| systemd | 必开：`neo-control-plane`、`neo-llm-gateway`、`neo-admin-api`、Caddy。`neo-loop` 装 unit 但默认 disabled，Caddy 不反代 `:8082` |
 
 操作手册：[.cursor/skills/tencent-lighthouse-deploy/SKILL.md](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)、[.cursor/skills/tencent-lighthouse-db/SKILL.md](../.cursor/skills/tencent-lighthouse-db/SKILL.md)、[production-domain.md](./production-domain.md)。
 

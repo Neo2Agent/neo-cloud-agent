@@ -593,11 +593,11 @@ NEO_LOOP_JAVA_XMX=512m
 WORKER_ROLE=all|tools               # worker 镜像
 ```
 
-### 9.2 systemd（第 2 期可装，默认不 Enable）
+### 9.2 systemd（可装，默认不 Enable）
 
-`neo-loop.service`：`User=` 与 control-plane 同级，读同一份 `.env`，但 **忽略** `DEEPSEEK_API_KEY` / `OPENAI_API_KEY`。`MemoryMax=768M`。
+现网轻量用 [.cursor/skills/tencent-lighthouse-deploy/units/neo-loop.service](../.cursor/skills/tencent-lighthouse-deploy/units/neo-loop.service)（`WorkingDirectory=/home/ubuntu/neo-cloud-agent`）。通用模板在 [infra/neo-loop.service](../infra/neo-loop.service)。`User=` 与 control-plane 同级，读同一份 `.env`，但 **忽略** `DEEPSEEK_API_KEY` / `OPENAI_API_KEY`。`MemoryMax=768M`。`deploy.sh` 会拷 unit 和 jar，**不会** `enable --now`。
 
-4C/4G 账：2×512MiB worker + 512MiB loop + control-plane + gateway。余量不够就 **不要**在现网 Enable。开发机 `pnpm dev` 增加可选 `pnpm dev:loop`（`./mvnw -f services/neo-loop spring-boot:run`）。
+4C/4G 账：2×512MiB worker + 512MiB loop + control-plane + gateway。余量不够就 **不要**在现网 Enable。开发机 `pnpm dev` 增加可选 `pnpm dev:loop`（`mvn -f services/neo-loop spring-boot:run`）。操作步骤见 [tencent-lighthouse-deploy SKILL](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)「可选：neo-loop」。
 
 ### 9.3 CI
 
