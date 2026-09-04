@@ -50,6 +50,7 @@ test("term env does not inherit control-plane secrets", () => {
   assert.equal(env.CONTROL_PLANE_TOKEN, undefined);
   assert.equal(env.DEEPSEEK_API_KEY, undefined);
   assert.equal(workspaceTermEnv("/tmp/ws", "/bin/bash", { pty: true }).TERM, "xterm");
+  assert.match(workspaceTermEnv("/tmp/ws", "/bin/bash").INPUTRC ?? "", /workspace-term\.inputrc/);
 });
 
 test("a workspace shell runs a written command", async (t) => {
@@ -75,6 +76,8 @@ test("a workspace shell runs a written command", async (t) => {
     text = chunks.join("");
   }
   assert.match(text, /hello-term/);
+  assert.doesNotMatch(text, /ubuntu@cursor/);
+  assert.doesNotMatch(text, /sudo <command>/);
   assert.throws(
     () => writeWorkspaceTerm("someone-else", opened.id, "echo no\n"),
     (error: Error) => error.name === "WorkspaceTermError",

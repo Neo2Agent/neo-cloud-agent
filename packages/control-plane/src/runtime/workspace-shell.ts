@@ -13,7 +13,7 @@ export const TERM_BUFFER_CHARS = 60_000;
 
 const IDLE_MS = 30 * 60 * 1000;
 const DEAD_KEEP_MS = 2 * 60 * 1000;
-const BASH_RC = fileURLToPath(new URL("./workspace-term.bashrc", import.meta.url));
+const INPUTRC = fileURLToPath(new URL("./workspace-term.inputrc", import.meta.url));
 
 export type WorkspaceTermEvent =
   | { type: "ready"; id: string; cwd: string; shell: string; pty: boolean }
@@ -72,8 +72,8 @@ export function workspaceShellLaunch(): { command: string; args: string[]; name:
   const candidates = [
     { command: "/bin/zsh", name: "zsh", args: ["-f", "-i"] },
     { command: "/usr/bin/zsh", name: "zsh", args: ["-f", "-i"] },
-    { command: "/bin/bash", name: "bash", args: ["--noprofile", "--rcfile", BASH_RC, "-i"] },
-    { command: "/usr/bin/bash", name: "bash", args: ["--noprofile", "--rcfile", BASH_RC, "-i"] },
+    { command: "/bin/bash", name: "bash", args: ["--norc", "--noprofile", "-i"] },
+    { command: "/usr/bin/bash", name: "bash", args: ["--norc", "--noprofile", "-i"] },
   ];
   for (const item of candidates) {
     if (existsSync(item.command)) {
@@ -134,6 +134,7 @@ export function workspaceTermEnv(
     PS1: "\\W $ ",
     PROMPT: "%~ %# ",
     HISTFILE: "/dev/null",
+    INPUTRC,
     COLUMNS: "80",
     LINES: "24",
   };
