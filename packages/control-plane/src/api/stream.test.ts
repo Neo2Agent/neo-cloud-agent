@@ -145,3 +145,29 @@ test("two clients subscribe to the same live stream and can resume after an id",
   assert.equal(options.status, 204);
   assert.equal(options.headers.get("access-control-allow-origin"), "*");
 });
+
+test("SSE carries image bytes, not the stored object key", async (t) => {
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(() => {
+    server.close();
+  });
+  const run = await createRun({
+    prompt: "look at this",
+    repoUrls: ["fixtures/toy-repo"],
+    images: [{ mediaType: "image/jpeg", data: "ZmFrZQ" }],
+  });
+  const client = attachSse(`http://127.0.0.1:${port}/v1/runs/${run.id}/events`);
+  t.after(() => client.close());
+  await waitFor(() => client.events.some((item) => item.kind === "user.message"));
+  const streamed = client.events.find((item) => item.kind === "user.message");
+  const images = streamed?.data?.images as Array<{ data: string }> | undefined;
+  // A live bubble renders data.images directly, so an obj: key here is a broken photo.
+  assert.equal(images?.[0]?.data, "ZmFrZQ");
+
+  const withEvents = (await (
+    await fetch(`http://127.0.0.1:${port}/v1/runs/${run.id}/transcript?includeEvents=1`)
+  ).json()) as { events: RunEvent[] };
+  const replayed = withEvents.events.find((item) => item.kind === "user.message");
+  assert.equal((replayed?.data?.images as Array<{ data: string }> | undefined)?.[0]?.data, "ZmFrZQ");
+});

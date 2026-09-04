@@ -32,7 +32,6 @@ import {
   isDeskToolsTarget,
   pageTranscriptSnapshot,
   slimTranscriptSnapshotImages,
-  findTranscriptImage,
   rawTranscriptImageData,
   parseAutomationSchedule,
   parseLlmSettingsRequest,
@@ -47,6 +46,11 @@ import {
 } from "@neo-cloud-agent/contracts";
 import { eventsForRun, lastEventIdForRun } from "../events/bus.js";
 import { snapshotForRun } from "../events/snapshot.js";
+import {
+  resolveEventImagesForClient,
+  resolveSnapshotImagesForClient,
+  resolveTranscriptImage,
+} from "../store/event-images.js";
 import { SSE_HEADERS, attachEventStream } from "../events/stream.js";
 import {
   abortRun,
@@ -2262,7 +2266,9 @@ export function createApiServer() {
           notFound(res);
           return;
         }
-        const image = findTranscriptImage(snapshotForRun(runId), messageId, index);
+        const image = resolveTranscriptImage(runId, messageId, index, snapshotForRun(runId), () =>
+          eventsForRun(runId),
+        );
         const body = image ? decodeTranscriptImageData(image.data) : null;
         if (!image || !body) {
           notFound(res);
@@ -2287,8 +2293,17 @@ export function createApiServer() {
           before,
           limit: includeEvents && !limitParam ? full.messages.length || 1 : limitParam ? Number(limitParam) : undefined,
         });
-        const snapshot = url.searchParams.get("images") === "href" ? slimTranscriptSnapshotImages(paged) : paged;
-        send(res, 200, includeEvents ? { snapshot, events: eventsForRun(runId) } : { snapshot });
+        const snapshot =
+          url.searchParams.get("images") === "href"
+            ? slimTranscriptSnapshotImages(paged)
+            : resolveSnapshotImagesForClient(paged);
+        send(
+          res,
+          200,
+          includeEvents
+            ? { snapshot, events: eventsForRun(runId).map((item) => resolveEventImagesForClient(item)) }
+            : { snapshot },
+        );
         return;
       }
 

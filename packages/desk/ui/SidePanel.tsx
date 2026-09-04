@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { applyTermChunk, createTermScreen, termScreenText } from "@neo-cloud-agent/ui/term-render";
+import { createTermWriteQueue } from "@neo-cloud-agent/ui/term-write";
 import { fileKind, nextUntitledName, sortFsEntries } from "../src/file-kind";
-import { nextHistoryIndex, termKeyAction } from "../src/term-keys";
+import { nextHistoryIndex, termKeyAction, termKeyBytes } from "../src/term-keys";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { api, readJson } from "./api";
 import { ArtifactsPane } from "./ArtifactsPane";
@@ -230,14 +232,42 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<Record<string, string[]>>({});
   const [historyAt, setHistoryAt] = useState<Record<string, number>>({});
+  const [ptyById, setPtyById] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
   const cloudUnsubs = useRef(new Map<string, () => void>());
+  const screens = useRef(new Map<string, ReturnType<typeof createTermScreen>>());
+  const writes = useRef(Promise.resolve());
+  const inputRef = useRef(input);
+  const writeTarget = useRef("");
+  inputRef.current = input;
+  const writeQueue = useRef(
+    createTermWriteQueue((data) => {
+      const current = inputRef.current;
+      const id = writeTarget.current;
+      if (current.local) {
+        void deskBridge()?.termWrite?.(id, data);
+        return;
+      }
+      const runId = current.runId;
+      if (!runId || !id) {
+        return;
+      }
+      writes.current = writes.current
+        .then(() => writeWorkspaceTerm(current.token, runId, id, data))
+        .catch((caught) => {
+          setError(caught instanceof Error ? caught.message : "写入失败");
+        });
+    }),
+  );
   const label = defaultTermLabel();
 
-  const adopt = useCallback((id: string, sessionLabel: string) => {
+  const adopt = useCallback((id: string, sessionLabel: string, pty?: boolean) => {
     setSessions((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, { id, label: sessionLabel }]));
     setActiveId((cur) => cur || id);
     setOutput((prev) => (id in prev ? prev : { ...prev, [id]: "" }));
+    if (pty !== undefined) {
+      setPtyById((prev) => ({ ...prev, [id]: pty }));
+    }
   }, []);
 
   const attachCloud = useCallback(
@@ -245,13 +275,18 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
       if (!input.runId || cloudUnsubs.current.has(id)) {
         return;
       }
+      cloudUnsubs.current.set(id, () => undefined);
       const stop = subscribeWorkspaceTerm(input.token, input.runId, id, (event) => {
         if (event.type === "data") {
-          setOutput((prev) => ({ ...prev, [id]: `${prev[id] ?? ""}${event.chunk}`.slice(-60_000) }));
+          const screen = applyTermChunk(screens.current.get(id) ?? createTermScreen(), event.chunk);
+          screens.current.set(id, screen);
+          setOutput((prev) => ({ ...prev, [id]: termScreenText(screen).slice(-60_000) }));
           return;
         }
         if (event.type === "exit") {
-          setOutput((prev) => ({ ...prev, [id]: `${prev[id] ?? ""}\n[已结束]\n` }));
+          const screen = applyTermChunk(screens.current.get(id) ?? createTermScreen(), "\n[已结束]\n");
+          screens.current.set(id, screen);
+          setOutput((prev) => ({ ...prev, [id]: termScreenText(screen) }));
         }
       });
       cloudUnsubs.current.set(id, stop);
@@ -281,7 +316,7 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
     }
     try {
       const created = await openWorkspaceTerm(input.token, input.runId);
-      adopt(created.id, created.shell || label);
+      adopt(created.id, created.shell || label, created.pty);
       attachCloud(created.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "打不开终端");
@@ -303,7 +338,7 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
     try {
       const existing = await ensureWorkspaceTerms(input.token, input.runId);
       for (const item of existing) {
-        adopt(item.id, item.shell || label);
+        adopt(item.id, item.shell || label, item.pty);
         attachCloud(item.id);
       }
     } catch (caught) {
@@ -337,15 +372,13 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
   }, [input.runId, input.token]);
 
   const write = (id: string, data: string) => {
+    writeTarget.current = id;
     if (input.local) {
       void deskBridge()?.termWrite?.(id, data);
       return;
     }
-    if (input.runId) {
-      void writeWorkspaceTerm(input.token, input.runId, id, data).catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "写入失败");
-      });
-    }
+    const immediate = data === "\r" || data === "\t" || data === "\x03" || data.includes("\r");
+    writeQueue.current.push(data, immediate);
   };
 
   const close = (id: string) => {
@@ -379,6 +412,7 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
     setHistory,
     historyAt,
     setHistoryAt,
+    ptyById,
     error,
     open,
     ensure,
@@ -532,7 +566,9 @@ function TerminalView({
   const [focused, setFocused] = useState(false);
   const outRef = useRef<HTMLDivElement | null>(null);
   const ghostRef = useRef<HTMLTextAreaElement | null>(null);
+  const composing = useRef(false);
   const draft = term.drafts[term.activeId] ?? "";
+  const pty = !local && term.ptyById[term.activeId] !== false;
 
   useEffect(() => {
     if (outRef.current) {
@@ -571,27 +607,72 @@ function TerminalView({
                 }}
               >
                 <pre>
-                  {(term.output[term.activeId] ?? "") + draft}
+                  {(term.output[term.activeId] ?? "") + (pty ? "" : draft)}
                   <span className="term-caret" aria-hidden="true" />
                 </pre>
                 <textarea
                   ref={ghostRef}
                   className="term-ghost"
-                  value={draft}
+                  value={pty ? undefined : draft}
+                  defaultValue={pty ? "" : undefined}
                   spellCheck={false}
                   autoCapitalize="off"
                   autoCorrect="off"
                   aria-label="终端输入"
                   onFocus={() => setFocused(true)}
                   onBlur={() => setFocused(false)}
+                  onCompositionStart={() => {
+                    composing.current = true;
+                  }}
+                  onCompositionEnd={(event) => {
+                    composing.current = false;
+                    if (!pty) {
+                      return;
+                    }
+                    const value = event.currentTarget.value;
+                    event.currentTarget.value = "";
+                    if (value) {
+                      term.write(term.activeId, value);
+                    }
+                  }}
                   onChange={(event) => {
                     const id = term.activeId;
-                    const value = event.target.value;
-                    term.setDrafts((prev) => ({ ...prev, [id]: value }));
+                    if (pty) {
+                      if (composing.current || Boolean((event.nativeEvent as InputEvent).isComposing)) {
+                        return;
+                      }
+                      const value = event.target.value;
+                      event.target.value = "";
+                      if (value) {
+                        term.write(id, value);
+                      }
+                      return;
+                    }
+                    term.setDrafts((prev) => ({ ...prev, [id]: event.target.value }));
                     term.setHistoryAt((prev) => ({ ...prev, [id]: -1 }));
                   }}
                   onKeyDown={(event) => {
                     const id = term.activeId;
+                    if (pty) {
+                      if (event.nativeEvent.isComposing || composing.current) {
+                        return;
+                      }
+                      const bytes = termKeyBytes({
+                        key: event.key,
+                        ctrlKey: event.ctrlKey,
+                        metaKey: event.metaKey,
+                        altKey: event.altKey,
+                      });
+                      if (bytes == null) {
+                        return;
+                      }
+                      if (bytes === "\x03" && window.getSelection()?.toString()) {
+                        return;
+                      }
+                      event.preventDefault();
+                      term.write(id, bytes);
+                      return;
+                    }
                     const action = termKeyAction({
                       key: event.key,
                       ctrlKey: event.ctrlKey,
@@ -607,7 +688,6 @@ function TerminalView({
                       if (draft.trim()) {
                         term.setHistory((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), draft] }));
                       }
-                      term.setOutput((prev) => ({ ...prev, [id]: `${prev[id] ?? ""}${draft}\n` }));
                       term.setDrafts((prev) => ({ ...prev, [id]: "" }));
                       term.setHistoryAt((prev) => ({ ...prev, [id]: -1 }));
                       return;

@@ -149,7 +149,6 @@ export {
   pageTranscriptMessages,
   pageTranscriptSnapshot,
   slimTranscriptSnapshotImages,
-  findTranscriptImage,
   rawTranscriptImageData,
   transcriptBodyNeeded,
   settleTranscriptMessages,

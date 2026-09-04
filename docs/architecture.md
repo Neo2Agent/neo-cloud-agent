@@ -471,7 +471,7 @@ worker 在 `message_end` / `tool_execution_end` / `agent_end` 时把规范化事
 
 `GET /v1/runs/:id/transcript` 用 `buildTranscriptSnapshot` 把事件收成消息。同一轮里：`message.end` 之后的工具单独成组，下一句模型文字再开一条气泡。对话页按 `transcriptGroups` 渲染——**工具调研在最终答复上面**，不再整段回复底下挂一排工具卡。worker 给每条事件打 `data.workerSeq` 并串行 POST；快照按 `workerSeq` / `createdAt` 还原顺序，避免 HTTP 乱序把工具挤到回复后面。
 
-对话页（`packages/web`，React）还提供：Markdown 流式渲染、文件 diff、工作区文件树（`GET /v1/runs/:id/fs`）、沙箱终端（`/v1/runs/:id/term`，管道 shell，可打字）、粘贴图片（最多 4 张，worker 落到 `.neo/inbox-images/`）、token 用量、归档、DeepSeek Flash / Pro 选择。不要从浏览器 import `@neo-cloud-agent/contracts` 主桶，只用 `./transcript`、`./events`、`./run`。
+对话页（`packages/web`，React）还提供：Markdown 流式渲染、文件 diff、工作区文件树（`GET /v1/runs/:id/fs`）、沙箱终端（`/v1/runs/:id/term`，`script` PTY，按键直送、Tab 补全路径）、粘贴图片（最多 4 张，worker 落到 `.neo/inbox-images/`）、token 用量、归档、DeepSeek Flash / Pro 选择。不要从浏览器 import `@neo-cloud-agent/contracts` 主桶，只用 `./transcript`、`./events`、`./run`。
 
 ---
 
@@ -565,7 +565,7 @@ POST   /v1/runs/:id/archive
 GET    /v1/runs/:id/events       SSE（多端订阅；`id` + `after` / `Last-Event-ID` 续订）
 GET    /v1/runs/:id/transcript   原始事件 + 压缩 snapshot
 GET    /v1/runs/:id/fs           工作区文件树；`?content=1` 读文件（限制在工作区内）
-GET|POST /v1/runs/:id/term       沙箱工作区管道 shell（不是 PTY）；本机 Desk 对话 409
+GET|POST /v1/runs/:id/term       沙箱工作区 PTY shell（`script`，无则管道）；本机 Desk 对话 409
 GET    /v1/runs/:id/term/:id/events
 POST|DELETE /v1/runs/:id/term/:id
 GET    /v1/runs/:id/diff

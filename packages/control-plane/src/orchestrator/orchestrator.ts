@@ -86,6 +86,7 @@ import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequ
 import { materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
+  backfillPersistedEventImages,
   listSessionFiles,
   loadPersistedEvents,
   loadPersistedRun,
@@ -236,6 +237,11 @@ function hydrateRecord(record: {
 }
 
 function hydrateFromDisk(): void {
+  try {
+    backfillPersistedEventImages();
+  } catch (error) {
+    console.error("event image file backfill aborted", error);
+  }
   for (const record of loadPersistedRuns()) {
     hydrateRecord(record);
   }

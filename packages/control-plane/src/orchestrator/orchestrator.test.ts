@@ -52,6 +52,8 @@ const { bindDeskWorkspace, createDesk, openDeskInbox, takeDeskAssignment, update
   "../desks/store.js"
 );
 const { eventsForRun, listEvents } = await import("../events/bus.js");
+const { resolveEventImageData } = await import("../store/event-images.js");
+const { isObjectImageRef } = await import("../store/run-record.js");
 
 test("createRun mints a bootstrap JWT, copies the local repo, and queues the first prompt", async () => {
   const run = await createRun({
@@ -1164,7 +1166,10 @@ test("queued follow-up images survive reload and leave the queue after deliver",
   assert.equal(delivered?.status, "delivered");
   assert.equal(delivered?.source, "user");
   const published = eventsForRun(run.id).find((event) => event.kind === "user.message" && event.data?.followUpId === follow.id);
-  assert.equal((published?.data?.images as Array<{ data: string }> | undefined)?.[0]?.data, "aW1nZGF0YQ");
+  const publishedData = (published?.data?.images as Array<{ data: string }> | undefined)?.[0]?.data ?? "";
+  assert.equal(isObjectImageRef(publishedData), true);
+  assert.ok(publishedData.includes("/events/"));
+  assert.equal(resolveEventImageData(run.id, publishedData), "aW1nZGF0YQ");
   reloadPersistedState();
   const afterReload = listFollowUps(run.id).find((entry) => entry.id === follow.id);
   assert.equal(afterReload?.source, "user");
@@ -1176,6 +1181,7 @@ test("deleteRun reclaims the queue file and inbox objects", async () => {
   const run = await createRun({
     prompt: "reclaim after delete",
     repoUrls: ["fixtures/toy-repo"],
+    images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }],
   });
   takeInbound(run.id);
   await enqueueFollowUp(run.id, {
@@ -1186,6 +1192,7 @@ test("deleteRun reclaims the queue file and inbox objects", async () => {
   await deleteRun(run.id);
   assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".control", `${run.id}.queue.json`)), false);
   assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".objects", "runs", run.id, "inbox")), false);
+  assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".objects", "runs", run.id, "events")), true);
 });
 
 test("agentscope createRun skips inbox prompt and records the kernel", async () => {

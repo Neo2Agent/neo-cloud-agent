@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { buildTranscriptSnapshot, redactRunEvent, type RunEvent } from "@neo-cloud-agent/contracts";
 import { scheduleArchive } from "../objects/archive.js";
 import { controlPlaneSecrets } from "../security/secrets.js";
+import { persistEventImages } from "../store/event-images.js";
 import {
   loadPersistedEvents,
   peekLastPersistedEventId,
@@ -30,38 +31,40 @@ export function attachHotBus(next: HotPublisher | null): void {
 }
 
 export function ingestRemoteEvent(event: RunEvent): boolean {
-  const list = history.get(event.runId) ?? [];
-  if (list.some((item) => item.id === event.id)) {
+  const slim = persistEventImages(event);
+  const list = history.get(slim.runId) ?? [];
+  if (list.some((item) => item.id === slim.id)) {
     return false;
   }
-  const seq = event.seq ?? (list.at(-1)?.seq ?? 0) + 1;
-  const clean = { ...event, seq };
+  const seq = slim.seq ?? (list.at(-1)?.seq ?? 0) + 1;
+  const clean = { ...slim, seq };
   list.push(clean);
   compactClosedDeltaRuns(list);
-  history.set(event.runId, list);
+  history.set(slim.runId, list);
   if (clean.kind !== "message.delta") {
-    rememberTranscript(event.runId, list);
+    rememberTranscript(slim.runId, list);
   }
-  bus.emit(event.runId, clean);
+  bus.emit(slim.runId, clean);
   bus.emit("*", clean);
   return true;
 }
 
 export function publish(event: RunEvent, options?: { persist?: boolean }): void {
-  const list = history.get(event.runId) ?? [];
-  const seq = event.seq ?? (list.at(-1)?.seq ?? 0) + 1;
-  const clean = { ...redactRunEvent(event, controlPlaneSecrets()), seq };
+  const slim = persistEventImages(redactRunEvent(event, controlPlaneSecrets()));
+  const list = history.get(slim.runId) ?? [];
+  const seq = slim.seq ?? (list.at(-1)?.seq ?? 0) + 1;
+  const clean = { ...slim, seq };
   list.push(clean);
   compactClosedDeltaRuns(list);
-  history.set(event.runId, list);
+  history.set(slim.runId, list);
   if (options?.persist !== false) {
     persistEvent(clean);
-    scheduleArchive(event.runId);
+    scheduleArchive(slim.runId);
     if (clean.kind !== "message.delta") {
-      rememberTranscript(event.runId, list);
+      rememberTranscript(slim.runId, list);
     }
   }
-  bus.emit(event.runId, clean);
+  bus.emit(slim.runId, clean);
   bus.emit("*", clean);
   if (options?.persist !== false) {
     hot?.publish(clean);

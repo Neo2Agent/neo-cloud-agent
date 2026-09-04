@@ -793,22 +793,6 @@ export function slimTranscriptSnapshotImages(snapshot: TranscriptSnapshot): Tran
   return changed ? { ...snapshot, messages } : snapshot;
 }
 
-/** Bytes behind `transcriptImagePath`. Null covers unknown ids and slim pages. */
-export function findTranscriptImage(
-  snapshot: TranscriptSnapshot,
-  messageId: string,
-  index: number,
-): { mediaType: string; data: string } | null {
-  if (!Number.isInteger(index) || index < 0) {
-    return null;
-  }
-  const image = snapshot.messages.find((item) => item.id === messageId)?.images?.[index];
-  if (!image || typeof image.data !== "string" || !image.data) {
-    return null;
-  }
-  return { mediaType: image.mediaType, data: image.data };
-}
-
 /** Strip a `data:` prefix so the payload is plain base64. */
 export function rawTranscriptImageData(data: string): string {
   const trimmed = data.trim();

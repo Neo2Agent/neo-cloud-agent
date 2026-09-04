@@ -82,6 +82,9 @@ test("mysql store upserts run JSON, events, and users", async () => {
   } satisfies RunEvent;
   await store.saveEvent(event);
   assert.match(calls.at(-1)?.text ?? "", /INSERT IGNORE INTO events/);
+  assert.match(calls.at(-1)?.text ?? "", /image_version, has_images/);
+  assert.equal(calls.at(-1)?.values[4], 1);
+  assert.equal(calls.at(-1)?.values[5], 0);
 
   rowsByQuery.run = [{ record, record_version: 2, follow_ups: [], inbound: [], subscriptions: [], active_turn: null }];
   const loaded = await store.loadRun("run-mysql-1");
@@ -210,11 +213,14 @@ test("mysql migrate adds deleted_at before indexing it", async () => {
   assert.ok(addColumn < addIndex);
   assert.ok(calls.some((text) => /ALTER TABLE runs ADD COLUMN record_version/i.test(text)));
   assert.ok(calls.some((text) => /idx_runs_deleted_updated/i.test(text)));
+  assert.ok(calls.some((text) => /ALTER TABLE events ADD COLUMN image_version/i.test(text)));
+  assert.ok(calls.some((text) => /ALTER TABLE events ADD COLUMN has_images/i.test(text)));
+  assert.ok(calls.some((text) => /CREATE INDEX events_image_version/i.test(text)));
 });
 
 test("migrate still succeeds when the backfill itself fails", async () => {
   const store = createMysqlMetadataStore(async (text) => {
-    if (/record_version </.test(text)) {
+    if (/record_version </.test(text) || /image_version </.test(text)) {
       throw new Error("mysql went away");
     }
     return { rows: [] };
@@ -252,4 +258,49 @@ test("mysql backfill writes run_queues then marks record_version 2", async () =>
   const marked = updates.find((item) => /UPDATE runs SET record/.test(item.text));
   assert.ok(marked);
   assert.equal(marked?.values[4], 2);
+});
+
+test("mysql event image backfill probes without body and marks image_version 1", async () => {
+  process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-mysql-evt-"));
+  const fat = {
+    id: "evt-1",
+    runId: "run-evt-1",
+    createdAt: "2026-09-04T00:00:00.000Z",
+    category: "agent_run",
+    level: "info",
+    kind: "user.message",
+    title: "User message",
+    seq: 1,
+    data: { text: "旧图", images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }] },
+  };
+  let pending = [{ event_id: "evt-1" }];
+  let batch = [{ run_id: "run-evt-1", event_id: "evt-1", seq: 1, body: fat }];
+  const updates: Array<{ text: string; values: unknown[] }> = [];
+  const texts: string[] = [];
+  const store = createMysqlMetadataStore(async (text, values) => {
+    texts.push(text);
+    if (/SELECT event_id FROM events WHERE image_version/.test(text) && /LIMIT 1/.test(text) && !/ORDER BY/.test(text)) {
+      assert.doesNotMatch(text, /\bbody\b/);
+      return { rows: pending };
+    }
+    if (/SELECT run_id, event_id, seq, body FROM events WHERE image_version/.test(text)) {
+      return { rows: batch };
+    }
+    if (/UPDATE events SET body/.test(text)) {
+      updates.push({ text, values: values ?? [] });
+      pending = [];
+      batch = [];
+    }
+    return { rows: [] };
+  });
+  await store.migrate();
+  assert.ok(updates.some((item) => /UPDATE events SET body/.test(item.text)));
+  const marked = updates.find((item) => /UPDATE events SET body/.test(item.text));
+  assert.equal(marked?.values[1], 1);
+  assert.equal(marked?.values[2], 1);
+  assert.ok(!String(marked?.values[0]).includes("aW1nZGF0YQ"));
+  const backup = texts.find((text) => /CREATE TABLE IF NOT EXISTS `events_backup_img_\d{8}`/.test(text)) ?? "";
+  assert.match(backup, /WHERE image_version < 1/);
+  const batchSql = texts.find((text) => /SELECT run_id, event_id, seq, body FROM events/.test(text)) ?? "";
+  assert.match(batchSql, /ORDER BY run_id, seq LIMIT \?/);
 });

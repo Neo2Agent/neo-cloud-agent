@@ -23,7 +23,13 @@ test("arrows walk command history", () => {
   assert.equal(nextHistoryIndex("history-prev", -1, 0), -1);
 });
 
-test("PTY keys send Tab without treating it as local submit", () => {
+test("PTY key map sends Tab, Enter, arrows and backspace", () => {
   assert.equal(termKeyBytes({ key: "Tab" }), "\t");
-  assert.equal(termKeyAction({ key: "Tab" }), "ignore");
+  assert.equal(termKeyBytes({ key: "Enter" }), "\r");
+  assert.equal(termKeyBytes({ key: "Backspace" }), "\x7f");
+  assert.equal(termKeyBytes({ key: "ArrowUp" }), "\x1b[A");
+  assert.equal(termKeyBytes({ key: "l" }), "l");
+  assert.equal(termKeyBytes({ key: "c", ctrlKey: true }), "\x03");
+  assert.equal(termKeyBytes({ key: "Enter", composing: true }), null);
+  assert.equal(termKeyBytes({ key: "F1" }), null);
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nextHistoryIndex, termKeyAction } from "./term-keys.js";
+import { nextHistoryIndex, termKeyAction, termKeyBytes } from "./term-keys.js";
 
 test("Enter submits, composition does not", () => {
   assert.equal(termKeyAction({ key: "Enter" }), "submit");
@@ -21,4 +21,9 @@ test("arrows walk command history", () => {
   assert.equal(nextHistoryIndex("history-next", 1, 3), 2);
   assert.equal(nextHistoryIndex("history-next", 2, 3), -1);
   assert.equal(nextHistoryIndex("history-prev", -1, 0), -1);
+});
+
+test("PTY keys send Tab without treating it as local submit", () => {
+  assert.equal(termKeyBytes({ key: "Tab" }), "\t");
+  assert.equal(termKeyAction({ key: "Tab" }), "ignore");
 });

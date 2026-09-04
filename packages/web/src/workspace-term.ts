@@ -6,6 +6,7 @@ export type WorkspaceTermInfo = {
   cwd: string;
   shell: string;
   alive?: boolean;
+  pty?: boolean;
 };
 
 export type WorkspaceTermEvent =
@@ -85,23 +86,51 @@ export function parseTermSseData(raw: string): WorkspaceTermEvent | null {
   }
 }
 
+type LiveTerm = {
+  source: EventSource;
+  listeners: Set<(event: WorkspaceTermEvent) => void>;
+};
+
+const liveTerms = new Map<string, LiveTerm>();
+
+function liveTermKey(token: string, runId: string, id: string): string {
+  return `${runId}\0${id}\0${token}`;
+}
+
 export function subscribeWorkspaceTerm(
   token: string,
   runId: string,
   id: string,
   onEvent: (event: WorkspaceTermEvent) => void,
 ): () => void {
-  const params = new URLSearchParams();
-  if (token) {
-    params.set("access_token", token);
+  const key = liveTermKey(token, runId, id);
+  let live = liveTerms.get(key);
+  if (!live) {
+    const params = new URLSearchParams();
+    if (token) {
+      params.set("access_token", token);
+    }
+    const query = params.toString() ? `?${params}` : "";
+    const source = new EventSource(withApiBase(`/v1/runs/${runId}/term/${id}/events${query}`));
+    const created: LiveTerm = { source, listeners: new Set() };
+    source.onmessage = (message) => {
+      const event = parseTermSseData(message.data);
+      if (!event) {
+        return;
+      }
+      for (const listener of created.listeners) {
+        listener(event);
+      }
+    };
+    liveTerms.set(key, created);
+    live = created;
   }
-  const query = params.toString() ? `?${params}` : "";
-  const source = new EventSource(withApiBase(`/v1/runs/${runId}/term/${id}/events${query}`));
-  source.onmessage = (message) => {
-    const event = parseTermSseData(message.data);
-    if (event) {
-      onEvent(event);
+  live.listeners.add(onEvent);
+  return () => {
+    live.listeners.delete(onEvent);
+    if (live.listeners.size === 0) {
+      live.source.close();
+      liveTerms.delete(key);
     }
   };
-  return () => source.close();
 }

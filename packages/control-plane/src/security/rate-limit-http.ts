@@ -176,6 +176,7 @@ export async function rateLimitSnapshot(actor: Actor | null, ip: string) {
     webhook: ip,
     api: userKey,
     write: userKey,
+    term: userKey,
     create_run: orgKey,
     follow_up: userKey,
     expensive: userKey,

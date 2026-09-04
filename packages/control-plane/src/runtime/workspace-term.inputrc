@@ -1,0 +1,7 @@
+$include /etc/inputrc
+set bell-style none
+set completion-ignore-case on
+set show-all-if-ambiguous on
+set page-completions off
+set colored-stats off
+set colored-completion-prefix off

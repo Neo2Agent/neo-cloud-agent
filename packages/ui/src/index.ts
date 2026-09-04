@@ -21,4 +21,13 @@ export {
   startSpeechRecognition,
   type SpeechSession,
 } from "./buddy/speech";
+export { applyTermChunk, createTermScreen, termScreenText, type TermScreen } from "./term-render";
+export { createTermWriteQueue } from "./term-write";
+export {
+  nextHistoryIndex,
+  termKeyAction,
+  termKeyBytes,
+  type TermKeyAction,
+  type TermKeyInput,
+} from "./term-keys";
 
