@@ -5,6 +5,7 @@ import {
   createTermScreen,
   type TermScreen,
 } from "@neo-cloud-agent/ui/term-render";
+import { createTermWriteQueue } from "@neo-cloud-agent/ui/term-write";
 import {
   closeWorkspaceTerm,
   ensureWorkspaceTerms,
@@ -46,6 +47,26 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
   const composing = useRef(false);
   const writes = useRef(Promise.resolve());
   const unsubs = useRef(new Map<string, () => void>());
+  const runIdRef = useRef(runId);
+  const activeIdRef = useRef(activeId);
+  const tokenRef = useRef(token);
+  runIdRef.current = runId;
+  activeIdRef.current = activeId;
+  tokenRef.current = token;
+  const queue = useRef(
+    createTermWriteQueue((data) => {
+      const currentRun = runIdRef.current;
+      const id = activeIdRef.current;
+      if (!currentRun || !id) {
+        return;
+      }
+      writes.current = writes.current
+        .then(() => writeWorkspaceTerm(tokenRef.current, currentRun, id, data))
+        .catch((caught) => {
+          setError(caught instanceof Error ? caught.message : "写入失败");
+        });
+    }),
+  );
   const active = sessions.find((item) => item.info.id === activeId) ?? sessions[0];
   const pty = active?.info.pty !== false;
 
@@ -176,11 +197,8 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
     if (!runId || !active) {
       return;
     }
-    writes.current = writes.current
-      .then(() => writeWorkspaceTerm(token, runId, active.info.id, data))
-      .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "写入失败");
-      });
+    const immediate = data === "\r" || data === "\t" || data === "\x03" || data.includes("\r");
+    queue.current.push(data, immediate);
   };
 
   const closeSession = async (id: string) => {

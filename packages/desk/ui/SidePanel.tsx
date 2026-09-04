@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyTermChunk, createTermScreen, termScreenText } from "@neo-cloud-agent/ui/term-render";
+import { createTermWriteQueue } from "@neo-cloud-agent/ui/term-write";
 import { fileKind, nextUntitledName, sortFsEntries } from "../src/file-kind";
 import { nextHistoryIndex, termKeyAction, termKeyBytes } from "../src/term-keys";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
@@ -236,6 +237,28 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
   const cloudUnsubs = useRef(new Map<string, () => void>());
   const screens = useRef(new Map<string, ReturnType<typeof createTermScreen>>());
   const writes = useRef(Promise.resolve());
+  const inputRef = useRef(input);
+  const writeTarget = useRef("");
+  inputRef.current = input;
+  const writeQueue = useRef(
+    createTermWriteQueue((data) => {
+      const current = inputRef.current;
+      const id = writeTarget.current;
+      if (current.local) {
+        void deskBridge()?.termWrite?.(id, data);
+        return;
+      }
+      const runId = current.runId;
+      if (!runId || !id) {
+        return;
+      }
+      writes.current = writes.current
+        .then(() => writeWorkspaceTerm(current.token, runId, id, data))
+        .catch((caught) => {
+          setError(caught instanceof Error ? caught.message : "写入失败");
+        });
+    }),
+  );
   const label = defaultTermLabel();
 
   const adopt = useCallback((id: string, sessionLabel: string, pty?: boolean) => {
@@ -349,18 +372,13 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
   }, [input.runId, input.token]);
 
   const write = (id: string, data: string) => {
+    writeTarget.current = id;
     if (input.local) {
       void deskBridge()?.termWrite?.(id, data);
       return;
     }
-    const runId = input.runId;
-    if (runId) {
-      writes.current = writes.current
-        .then(() => writeWorkspaceTerm(input.token, runId, id, data))
-        .catch((caught) => {
-          setError(caught instanceof Error ? caught.message : "写入失败");
-        });
-    }
+    const immediate = data === "\r" || data === "\t" || data === "\x03" || data.includes("\r");
+    writeQueue.current.push(data, immediate);
   };
 
   const close = (id: string) => {

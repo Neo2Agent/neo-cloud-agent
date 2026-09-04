@@ -7,6 +7,7 @@ export type RateLimitPolicyName =
   | "webhook"
   | "api"
   | "write"
+  | "term"
   | "create_run"
   | "follow_up"
   | "expensive"
@@ -53,6 +54,7 @@ const DEFAULTS: Record<RateLimitPolicyName, RateLimitSpec> = {
   webhook: { limit: 120, windowMs: 60_000, burst: 40, kind: "token" },
   api: { limit: 180, windowMs: 60_000, burst: 40, kind: "token" },
   write: { limit: 60, windowMs: 60_000, burst: 15, kind: "token" },
+  term: { limit: 1800, windowMs: 60_000, burst: 240, kind: "token" },
   create_run: { limit: 12, windowMs: 60_000, burst: 4, kind: "token" },
   follow_up: { limit: 30, windowMs: 60_000, burst: 10, kind: "token" },
   expensive: { limit: 10, windowMs: 60_000, burst: 3, kind: "token" },
@@ -71,6 +73,7 @@ const ENV_LIMIT: Record<RateLimitPolicyName, string> = {
   webhook: "RATE_LIMIT_WEBHOOK",
   api: "RATE_LIMIT_API",
   write: "RATE_LIMIT_WRITE",
+  term: "RATE_LIMIT_TERM",
   create_run: "RATE_LIMIT_CREATE_RUN",
   follow_up: "RATE_LIMIT_FOLLOW_UP",
   expensive: "RATE_LIMIT_EXPENSIVE",
@@ -436,6 +439,9 @@ export function actorRateLimitPolicies(method: string, path: string): RateLimitP
   }
   if (method === "POST" && path === "/v1/speech/iat") {
     return ["speech"];
+  }
+  if (method === "POST" && /^\/v1\/runs\/[^/]+\/term\/[^/]+$/.test(path)) {
+    return ["term"];
   }
   const out: RateLimitPolicyName[] = ["api"];
   if (method === "POST" || method === "DELETE" || method === "PUT" || method === "PATCH") {
