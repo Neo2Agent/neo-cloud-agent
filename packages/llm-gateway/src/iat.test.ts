@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mintRunToken } from "@neo-cloud-agent/contracts";
 import {
+  applyIatSlice,
   applyIatTranscript,
   buildIatWebSocketUrl,
   decodeIatResult,
+  emptyIatAssembly,
   encodeIatFrame,
   handleIatRequest,
+  joinIatSlices,
   resetIatSessions,
   type IatSocket,
 } from "./iat.js";
@@ -46,6 +49,63 @@ test("decodeIatResult joins cw words", () => {
 test("applyIatTranscript replaces the last segment on wpgs rpl", () => {
   const replaced = applyIatTranscript({ committed: "请", last: "打开" }, { text: "打开设置", status: 1, pgs: "rpl" });
   assert.equal(replaced.text, "请打开设置");
+});
+
+test("applyIatTranscript keeps the sentence when the last frame is only punctuation", () => {
+  const ended = applyIatTranscript({ committed: "", last: "你在吗" }, { text: "？", status: 2 });
+  assert.equal(ended.text, "你在吗？");
+  const replaced = applyIatTranscript({ committed: "", last: "先看天气" }, { text: "。", status: 1, pgs: "rpl" });
+  assert.equal(replaced.text, "先看天气。");
+});
+
+test("applyIatTranscript appends slices when wpgs fields are missing", () => {
+  const first = applyIatTranscript({ committed: "", last: "" }, { text: "你好", status: 1 });
+  const second = applyIatTranscript(first, { text: "世界", status: 1 });
+  assert.equal(second.text, "你好世界");
+});
+
+test("applyIatSlice uses sn/rg and refuses a punctuation-only wipe", () => {
+  let assembly = emptyIatAssembly();
+  assembly = applyIatSlice(assembly, {
+    text: "你好",
+    status: 1,
+    pgs: "apd",
+    sn: 1,
+  });
+  assembly = applyIatSlice(assembly, {
+    text: "你好世界",
+    status: 1,
+    pgs: "rpl",
+    sn: 2,
+    rg: [1, 1],
+  });
+  assert.equal(joinIatSlices(assembly), "你好世界");
+  assembly = applyIatSlice(assembly, {
+    text: "。",
+    status: 2,
+    pgs: "rpl",
+    sn: 3,
+    rg: [1, 2],
+  });
+  assert.equal(joinIatSlices(assembly), "你好世界。");
+});
+
+test("decodeIatResult reads sn and rg", () => {
+  const parsed = decodeIatResult({
+    data: {
+      status: 1,
+      result: {
+        sn: 2,
+        pgs: "rpl",
+        rg: [1, 1],
+        ws: [{ cw: [{ w: "测试" }] }],
+      },
+    },
+  });
+  assert.equal(parsed.text, "测试");
+  assert.equal(parsed.sn, 2);
+  assert.deepEqual(parsed.rg, [1, 1]);
+  assert.equal(parsed.pgs, "rpl");
 });
 
 test("handleIatRequest refuses missing keys", async () => {
@@ -92,6 +152,47 @@ test("handleIatRequest opens a session and returns streamed text", async () => {
   assert.equal(end.status, 200);
   assert.equal("done" in end.body && end.body.done, true);
   assert.equal(sent.length >= 2, true);
+  resetIatSessions();
+});
+
+test("handleIatRequest keeps words when the last wpgs frame is only a period", async () => {
+  process.env.IFLYTEK_APP_ID = "app";
+  process.env.IFLYTEK_API_KEY = "key";
+  process.env.IFLYTEK_API_SECRET = "secret";
+  resetIatSessions();
+  const listeners = new Map<string, Array<(event: { data?: string }) => void>>();
+  const connect = (): IatSocket => ({
+    send: () => undefined,
+    close: () => undefined,
+    addEventListener: (type, listener) => {
+      const list = listeners.get(type) ?? [];
+      list.push(listener);
+      listeners.set(type, list);
+      if (type === "open") queueMicrotask(() => listener({}));
+    },
+  });
+  const opened = await handleIatRequest({ status: 0, audio: "AAAA" }, connect);
+  const sessionId = "sessionId" in opened.body ? opened.body.sessionId : "";
+  const emit = (payload: unknown) => {
+    for (const listener of listeners.get("message") ?? []) {
+      listener({ data: JSON.stringify(payload) });
+    }
+  };
+  emit({
+    data: {
+      status: 1,
+      result: { sn: 1, pgs: "apd", ws: [{ cw: [{ w: "先看天气" }] }] },
+    },
+  });
+  emit({
+    data: {
+      status: 2,
+      result: { sn: 2, pgs: "rpl", rg: [1, 1], ws: [{ cw: [{ w: "。" }] }] },
+    },
+  });
+  const end = await handleIatRequest({ sessionId, status: 2 }, connect);
+  assert.equal(end.status, 200);
+  assert.equal("text" in end.body && end.body.text, "先看天气。");
   resetIatSessions();
 });
 
