@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
 import { isDeskTarget, SECRET_ENV_KEYS, type ExecutionTarget } from "@neo-cloud-agent/contracts";
 import { SSE_HEADERS } from "../events/stream.js";
@@ -12,9 +13,10 @@ export const TERM_BUFFER_CHARS = 60_000;
 
 const IDLE_MS = 30 * 60 * 1000;
 const DEAD_KEEP_MS = 2 * 60 * 1000;
+const INPUTRC = fileURLToPath(new URL("./workspace-term.inputrc", import.meta.url));
 
 export type WorkspaceTermEvent =
-  | { type: "ready"; id: string; cwd: string; shell: string }
+  | { type: "ready"; id: string; cwd: string; shell: string; pty: boolean }
   | { type: "data"; chunk: string }
   | { type: "exit"; code: number | null };
 
@@ -23,6 +25,7 @@ export type WorkspaceTermInfo = {
   cwd: string;
   shell: string;
   alive: boolean;
+  pty: boolean;
 };
 
 export class WorkspaceTermError extends Error {
@@ -40,6 +43,7 @@ type Session = {
   runId: string;
   cwd: string;
   shell: string;
+  pty: boolean;
   child: ChildProcess;
   alive: boolean;
   exitCode: number | null;
@@ -79,20 +83,61 @@ export function workspaceShellLaunch(): { command: string; args: string[]; name:
   return { command: "/bin/sh", args: ["-i"], name: "sh" };
 }
 
-export function workspaceTermEnv(cwd: string, shell: string): NodeJS.ProcessEnv {
+export function workspaceTermScript(): string | null {
+  for (const candidate of ["/usr/bin/script", "/bin/script"]) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+export function posixShellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) {
+    return value;
+  }
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function wrapWorkspaceShell(launch: { command: string; args: string[] }): {
+  command: string;
+  args: string[];
+  pty: boolean;
+} {
+  const script = workspaceTermScript();
+  if (!script) {
+    return { command: launch.command, args: launch.args, pty: false };
+  }
+  const inner = [launch.command, ...launch.args].map(posixShellQuote).join(" ");
+  return {
+    command: script,
+    args: ["-q", "-f", "-e", "-c", inner, "/dev/null"],
+    pty: true,
+  };
+}
+
+export function workspaceTermEnv(
+  cwd: string,
+  shell: string,
+  opts: { pty?: boolean } = {},
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     HOME: cwd,
     PWD: cwd,
-    TERM: "dumb",
+    TERM: opts.pty ? "xterm" : "dumb",
     LANG: process.env.LANG || "C.UTF-8",
     LC_ALL: process.env.LC_ALL || process.env.LANG || "C.UTF-8",
-    SHELL: shell,
+    // bash --norc ignores env PS1 when SHELL points at bash and uses bash-5.2$.
+    SHELL: /bash$/.test(shell) ? "/bin/sh" : shell,
     USER: process.env.USER || "neo",
     LOGNAME: process.env.LOGNAME || process.env.USER || "neo",
     PS1: "\\W $ ",
     PROMPT: "%~ %# ",
     HISTFILE: "/dev/null",
+    INPUTRC,
+    COLUMNS: "80",
+    LINES: "24",
   };
   for (const key of SECRET_ENV_KEYS) {
     delete env[key];
@@ -112,7 +157,13 @@ function emit(session: Session, event: WorkspaceTermEvent): void {
 }
 
 function sessionInfo(session: Session): WorkspaceTermInfo {
-  return { id: session.id, cwd: session.cwd, shell: session.shell, alive: session.alive };
+  return {
+    id: session.id,
+    cwd: session.cwd,
+    shell: session.shell,
+    alive: session.alive,
+    pty: session.pty,
+  };
 }
 
 export function listWorkspaceTerms(runId: string): WorkspaceTermInfo[] {
@@ -148,22 +199,25 @@ export function openWorkspaceTerm(input: { runId: string; cwd: string }): Worksp
   }
   mkdirSync(input.cwd, { recursive: true });
   const launch = workspaceShellLaunch();
+  const wrapped = wrapWorkspaceShell(launch);
   const id = `term_${randomBytes(4).toString("hex")}`;
-  const env = workspaceTermEnv(input.cwd, launch.command);
-  const child = spawn(launch.command, launch.args, {
+  const env = workspaceTermEnv(input.cwd, launch.command, { pty: wrapped.pty });
+  const child = spawn(wrapped.command, wrapped.args, {
     cwd: input.cwd,
     env,
     stdio: ["pipe", "pipe", "pipe"],
+    detached: wrapped.pty,
   });
   const session: Session = {
     id,
     runId: input.runId,
     cwd: path.resolve(input.cwd),
     shell: launch.name,
+    pty: wrapped.pty,
     child,
     alive: true,
     exitCode: null,
-    buffer: `${launch.name} · ${path.resolve(input.cwd)}\n`,
+    buffer: "",
     lastWriteAt: Date.now(),
     listeners: new Set(),
   };
@@ -207,6 +261,14 @@ export function writeWorkspaceTerm(runId: string, id: string, data: string): voi
 
 function destroyChild(child: ChildProcess): void {
   child.stdin?.end();
+  if (child.pid) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // Process is not a group leader (piped fallback).
+    }
+  }
   child.kill("SIGKILL");
 }
 
@@ -239,7 +301,7 @@ export function attachWorkspaceTermStream(
   const write = (event: WorkspaceTermEvent) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
-  write({ type: "ready", id: session.id, cwd: session.cwd, shell: session.shell });
+  write({ type: "ready", id: session.id, cwd: session.cwd, shell: session.shell, pty: session.pty });
   if (session.buffer) {
     write({ type: "data", chunk: session.buffer });
   }

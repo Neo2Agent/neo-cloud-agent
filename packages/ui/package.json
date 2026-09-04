@@ -5,6 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./term": "./src/term-keys.ts",
+    "./term-render": "./src/term-render.ts",
+    "./term-write": "./src/term-write.ts",
     "./speech": "./src/speech/index.ts",
     "./styles.css": "./src/styles.css",
     "./buddy.css": "./src/buddy/styles.css"
