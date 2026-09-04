@@ -72,6 +72,10 @@ test(
     const loopPort = 18_000 + Math.floor(Math.random() * 1000);
     process.env.NEO_LOOP_URL = `http://127.0.0.1:${loopPort}`;
     const loop = startLoop(loopPort, loopState);
+    loop.stdout?.on("data", (chunk) => process.stderr.write(`[neo-loop] ${chunk}`));
+    loop.stderr?.on("data", (chunk) => process.stderr.write(`[neo-loop] ${chunk}`));
+    await waitHttp(`http://127.0.0.1:${loopPort}/health`, 180_000);
+
     const api = createApiServer();
     const apiPort = await listen(api);
     process.env.CONTROL_PLANE_URL = `http://127.0.0.1:${apiPort}`;
@@ -90,8 +94,6 @@ test(
       delete process.env.AGENT_KERNEL;
     });
 
-    await waitHttp(`http://127.0.0.1:${loopPort}/health`, 180_000);
-
     const created = await fetch(`${apiBase}/v1/runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -102,8 +104,9 @@ test(
         kernel: "agentscope",
       }),
     });
-    assert.equal(created.status, 201, await created.text());
-    const run = (await created.json()) as { id: string; status: string; errorMessage: string | null; kernel?: string };
+    const createdBody = await created.text();
+    assert.equal(created.status, 201, createdBody);
+    const run = JSON.parse(createdBody) as { id: string; status: string; errorMessage: string | null; kernel?: string };
     runId = run.id;
     assert.equal(run.kernel, "agentscope");
     assert.equal(run.status, "RUNNING", run.errorMessage ?? "");
