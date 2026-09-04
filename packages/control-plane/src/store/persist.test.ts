@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import type { Run, RunEvent } from "@neo-cloud-agent/contracts";
 import {
   listSessionFiles,
   loadPersistedEvents,
+  loadPersistedRun,
   loadPersistedRuns,
   loadSessionFiles,
   loadTranscriptSnapshot,
@@ -91,9 +92,79 @@ test("persists a run record and JSONL events next to the workspace dir", () => {
   assert.equal(loaded[0]?.run.setupStatus, "INSTALL_SUCCEEDED");
   assert.equal(loaded[0]?.run.vmSlotId, "slot-0");
   assert.equal(loaded[0]?.subscriptions?.[0]?.kind, "github_ci");
+  const document = JSON.parse(readFileSync(path.join(runsDir, ".control", `${run.id}.json`), "utf8")) as {
+    followUps?: unknown;
+    run: { prompt: string };
+  };
+  assert.equal(document.followUps, undefined);
+  assert.equal(document.run.prompt, "hello");
+  const queue = JSON.parse(readFileSync(path.join(runsDir, ".control", `${run.id}.queue.json`), "utf8")) as {
+    subscriptions?: Array<{ kind: string }>;
+  };
+  assert.equal(queue.subscriptions?.[0]?.kind, "github_ci");
   const events = loadPersistedEvents(run.id, runsDir);
   assert.equal(events.length, 1);
   assert.equal(events[0]?.kind, "user.message");
+});
+
+test("follow-up images live in object files, not the run or queue json", () => {
+  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-persist-img-"));
+  const run = sampleRun("run-img-1");
+  persistRunRecord(
+    {
+      version: 1,
+      run,
+      followUps: [
+        {
+          id: "f1",
+          runId: run.id,
+          text: "see",
+          delivery: "prompt",
+          status: "queued",
+          createdAt: run.createdAt,
+          deliveredAt: null,
+          images: [{ mediaType: "image/jpeg", data: "ZmFrZQ" }],
+        },
+      ],
+      inbound: [],
+    },
+    runsDir,
+  );
+  const documentRaw = readFileSync(path.join(runsDir, ".control", `${run.id}.json`), "utf8");
+  const queueRaw = readFileSync(path.join(runsDir, ".control", `${run.id}.queue.json`), "utf8");
+  assert.doesNotMatch(documentRaw, /ZmFrZQ/);
+  assert.doesNotMatch(queueRaw, /ZmFrZQ/);
+  const queue = JSON.parse(queueRaw) as { followUps: Array<{ images?: Array<{ data: string }> }> };
+  assert.match(queue.followUps[0]?.images?.[0]?.data ?? "", /^obj:/);
+  const loaded = loadPersistedRuns(runsDir);
+  assert.equal(loaded[0]?.followUps[0]?.images?.[0]?.data, "ZmFrZQ");
+});
+
+test("loadPersistedRun still reads a legacy fat control file", () => {
+  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-persist-legacy-"));
+  const run = sampleRun("run-legacy-1");
+  mkdirSync(path.join(runsDir, ".control"), { recursive: true });
+  writeFileSync(
+    path.join(runsDir, ".control", `${run.id}.json`),
+    `${JSON.stringify({
+      version: 1,
+      run,
+      followUps: [
+        {
+          id: "f-legacy",
+          runId: run.id,
+          text: "old queue",
+          delivery: "prompt",
+          status: "queued",
+          createdAt: run.createdAt,
+          deliveredAt: null,
+        },
+      ],
+      inbound: [],
+    })}\n`,
+  );
+  const loaded = loadPersistedRun(run.id, runsDir);
+  assert.equal(loaded?.followUps[0]?.id, "f-legacy");
 });
 
 test("session backup keeps nested paths and rejects escapes", () => {

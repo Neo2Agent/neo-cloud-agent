@@ -23,7 +23,20 @@ import {
   type UserRecord,
 } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
+import { persistableRecord } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
+import {
+  mergeStoredRun,
+  overlayRunIndex,
+  parseJson,
+  parseQueue,
+  queueFromRecord,
+  recordHasEmbeddedQueue,
+  recordHasQueueKeys,
+  runIndexTitle,
+  slimRunDocument,
+  type RunQueueState,
+} from "./run-record.js";
 
 export type MysqlMetadataStore = PostgresMetadataStore;
 
@@ -53,10 +66,24 @@ CREATE TABLE IF NOT EXISTS runs (
   id VARCHAR(191) PRIMARY KEY,
   user_id VARCHAR(191) NOT NULL,
   org_id VARCHAR(191) NOT NULL,
+  title VARCHAR(191) NULL,
+  status VARCHAR(64) NULL,
+  project_id VARCHAR(191) NULL,
   record JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL,
   deleted_at DATETIME(3) NULL,
-  KEY runs_deleted_at (deleted_at)
+  KEY runs_deleted_at (deleted_at),
+  KEY runs_updated_at (updated_at),
+  KEY runs_status (status),
+  KEY runs_project_id (project_id)
+);
+CREATE TABLE IF NOT EXISTS run_queues (
+  run_id VARCHAR(191) PRIMARY KEY,
+  follow_ups JSON NOT NULL,
+  inbound JSON NOT NULL,
+  subscriptions JSON NOT NULL,
+  active_turn JSON NULL,
+  updated_at DATETIME(3) NOT NULL
 );
 CREATE TABLE IF NOT EXISTS events (
   run_id VARCHAR(191) NOT NULL,
@@ -124,22 +151,6 @@ CREATE TABLE IF NOT EXISTS plugin_installs (
   updated_at DATETIME(3) NOT NULL
 );
 `;
-
-function asRecord(value: unknown): PersistedRun | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const record = value as PersistedRun;
-  return record.run?.id ? record : null;
-}
-
-function asRun(value: unknown): Run | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const run = value as Run;
-  return run.id && run.prompt ? run : null;
-}
 
 function asEvent(value: unknown): RunEvent | null {
   if (!value || typeof value !== "object") {
@@ -230,15 +241,71 @@ function asAutomation(value: unknown): Automation | null {
   return item.id && item.prompt && item.schedule ? item : null;
 }
 
-function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
-  if (typeof value === "string") {
-    try {
-      return map(JSON.parse(value));
-    } catch {
-      return null;
+function queueValues(record: PersistedRun): RunQueueState {
+  return queueFromRecord(record);
+}
+
+async function writeRunQueue(query: SqlQuery, record: PersistedRun): Promise<void> {
+  const queue = queueValues(record);
+  await query(
+    `INSERT INTO run_queues (run_id, follow_ups, inbound, subscriptions, active_turn, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?) AS incoming
+     ON DUPLICATE KEY UPDATE
+       follow_ups = incoming.follow_ups,
+       inbound = incoming.inbound,
+       subscriptions = incoming.subscriptions,
+       active_turn = incoming.active_turn,
+       updated_at = incoming.updated_at`,
+    [
+      record.run.id,
+      JSON.stringify(queue.followUps),
+      JSON.stringify(queue.inbound),
+      JSON.stringify(queue.subscriptions),
+      queue.activeTurn ? JSON.stringify(queue.activeTurn) : null,
+      mysqlDateTime(record.run.updatedAt),
+    ],
+  );
+}
+
+async function readRunQueue(query: SqlQuery, runId: string): Promise<RunQueueState | null> {
+  const result = await query(
+    `SELECT follow_ups, inbound, subscriptions, active_turn FROM run_queues WHERE run_id = ?`,
+    [runId],
+  );
+  const row = result.rows[0];
+  return row
+    ? parseQueue({
+        follow_ups: row.follow_ups,
+        inbound: row.inbound,
+        subscriptions: row.subscriptions,
+        active_turn: row.active_turn,
+      })
+    : null;
+}
+
+async function backfillSplitRunRecords(query: SqlQuery): Promise<void> {
+  const result = await query(`SELECT id, title, record FROM runs`);
+  for (const row of result.rows) {
+    const merged = mergeStoredRun(row.record);
+    if (!merged) {
+      continue;
     }
+    const embedded = recordHasEmbeddedQueue(merged) || recordHasQueueKeys(row.record);
+    if (!embedded && typeof row.title === "string" && row.title.trim()) {
+      continue;
+    }
+    const stored = persistableRecord(merged);
+    if (embedded) {
+      await writeRunQueue(query, stored);
+    }
+    await query(`UPDATE runs SET record = ?, title = ?, status = ?, project_id = ? WHERE id = ?`, [
+      JSON.stringify(slimRunDocument(stored)),
+      runIndexTitle(stored.run),
+      stored.run.status,
+      stored.run.projectId ?? null,
+      stored.run.id,
+    ]);
   }
-  return map(value);
 }
 
 function schemaStatements(schema: string): string[] {
@@ -267,6 +334,11 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "ALTER TABLE users ADD COLUMN credit_fen INT NOT NULL DEFAULT 0",
         "ALTER TABLE runs ADD COLUMN deleted_at DATETIME(3) NULL",
         "CREATE INDEX runs_deleted_at ON runs (deleted_at)",
+        "ALTER TABLE runs ADD COLUMN title VARCHAR(191) NULL",
+        "ALTER TABLE runs ADD COLUMN status VARCHAR(64) NULL",
+        "ALTER TABLE runs ADD COLUMN project_id VARCHAR(191) NULL",
+        "CREATE INDEX runs_status ON runs (status)",
+        "CREATE INDEX runs_project_id ON runs (project_id)",
       ]) {
         try {
           await query(statement);
@@ -277,48 +349,84 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
           }
         }
       }
+      await backfillSplitRunRecords(query);
     },
     async saveRun(record) {
+      const stored = persistableRecord(record);
       await query(
-        `INSERT INTO runs (id, user_id, org_id, record, updated_at, deleted_at)
-         VALUES (?, ?, ?, ?, ?, ?) AS incoming
+        `INSERT INTO runs (id, user_id, org_id, title, status, project_id, record, updated_at, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) AS incoming
          ON DUPLICATE KEY UPDATE
            user_id = incoming.user_id,
            org_id = incoming.org_id,
+           title = incoming.title,
+           status = incoming.status,
+           project_id = incoming.project_id,
            record = incoming.record,
            updated_at = incoming.updated_at,
            deleted_at = incoming.deleted_at`,
         [
-          record.run.id,
-          record.run.userId,
-          record.run.orgId,
-          JSON.stringify(record),
-          mysqlDateTime(record.run.updatedAt),
-          record.run.deletedAt ? mysqlDateTime(record.run.deletedAt) : null,
+          stored.run.id,
+          stored.run.userId,
+          stored.run.orgId,
+          runIndexTitle(stored.run),
+          stored.run.status,
+          stored.run.projectId ?? null,
+          JSON.stringify(slimRunDocument(stored)),
+          mysqlDateTime(stored.run.updatedAt),
+          stored.run.deletedAt ? mysqlDateTime(stored.run.deletedAt) : null,
         ],
       );
+      await writeRunQueue(query, stored);
     },
     async loadRun(runId) {
       const result = await query(`SELECT record FROM runs WHERE id = ?`, [runId]);
-      return parseJson(result.rows[0]?.record, asRecord);
+      return mergeStoredRun(result.rows[0]?.record, await readRunQueue(query, runId));
     },
     async loadRuns() {
-      // Do not ORDER BY in MySQL: filesort of JSON blobs hits ER_OUT_OF_SORTMEMORY
-      // with the default 256KiB sort_buffer_size.
-      const result = await query(`SELECT record FROM runs WHERE deleted_at IS NULL`);
+      const result = await query(`SELECT id, record FROM runs WHERE deleted_at IS NULL`);
+      const queues = await query(`SELECT run_id, follow_ups, inbound, subscriptions, active_turn FROM run_queues`);
+      const byId = new Map(
+        queues.rows.map((row) => [
+          String(row.run_id),
+          parseQueue({
+            follow_ups: row.follow_ups,
+            inbound: row.inbound,
+            subscriptions: row.subscriptions,
+            active_turn: row.active_turn,
+          }),
+        ]),
+      );
       return result.rows
-        .map((row) => parseJson(row.record, asRecord))
+        .map((row) => mergeStoredRun(row.record, byId.get(String(row.id))))
         .filter((item): item is PersistedRun => item != null && !item.run.deletedAt)
         .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
     },
     async loadRunSummaries() {
-      // Pull only $.run. Persisted followUps can be megabytes and make the
-      // public path between the app host and MySQL take several seconds.
-      const result = await query(`SELECT JSON_EXTRACT(record, '$.run') AS run FROM runs WHERE deleted_at IS NULL`);
+      const result = await query(
+        `SELECT title, status, project_id, record
+         FROM runs WHERE deleted_at IS NULL ORDER BY updated_at DESC`,
+      );
       return result.rows
-        .map((row) => parseJson(row.run, asRun))
-        .filter((item): item is Run => item != null && !item.deletedAt)
-        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+        .map((row) => {
+          const parsed = mergeStoredRun(row.record);
+          return parsed ? overlayRunIndex(parsed.run, row) : null;
+        })
+        .filter((item): item is Run => item != null && !item.deletedAt);
+    },
+    async loadRunQueues() {
+      const result = await query(`SELECT run_id, follow_ups, inbound, subscriptions, active_turn FROM run_queues`);
+      return result.rows
+        .map((row) => {
+          const queue = parseQueue({
+            follow_ups: row.follow_ups,
+            inbound: row.inbound,
+            subscriptions: row.subscriptions,
+            active_turn: row.active_turn,
+          });
+          return queue ? ([String(row.run_id), queue] as const) : null;
+        })
+        .filter((item): item is readonly [string, RunQueueState] => item != null);
     },
     async saveEvent(event) {
       await query(

@@ -25,6 +25,7 @@ import { reloadPersistedState } from "./orchestrator/orchestrator.js";
 import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
 import { persistRunRecord, persistWorkerLease, setPersistHooks } from "./store/persist.js";
+import { mergeRunAndQueue } from "./store/run-record.js";
 
 let started: Promise<void> | null = null;
 let metadata: MetadataStore | null = null;
@@ -192,10 +193,11 @@ async function doStart(): Promise<void> {
 }
 
 async function hydrateFromStore(store: MetadataStore): Promise<void> {
-  const records = await store.loadRuns();
-  for (const record of records) {
-    persistRunRecord(record, undefined, { mirror: false });
-    const lease = await store.loadLease(record.run.id);
+  const runs = await store.loadRunSummaries();
+  const queues = new Map(await store.loadRunQueues());
+  for (const run of runs) {
+    persistRunRecord(mergeRunAndQueue(run, queues.get(run.id)), undefined, { mirror: false });
+    const lease = await store.loadLease(run.id);
     if (lease) {
       persistWorkerLease(lease, undefined, { mirror: false });
     }

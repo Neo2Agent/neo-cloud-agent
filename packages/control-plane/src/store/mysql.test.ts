@@ -56,12 +56,31 @@ test("mysql store upserts run JSON, events, and users", async () => {
     return { rows: rowsByQuery[key] ?? [] };
   });
 
-  const record = { version: 1 as const, run: sampleRun("run-mysql-1"), followUps: [], inbound: [] };
+  const record = {
+    version: 1 as const,
+    run: sampleRun("run-mysql-1"),
+    followUps: [
+      {
+        id: "f1",
+        runId: "run-mysql-1",
+        text: "later",
+        delivery: "prompt" as const,
+        status: "queued" as const,
+        createdAt: "2026-08-21T00:00:00.000Z",
+        deliveredAt: null,
+      },
+    ],
+    inbound: [],
+  };
   await store.saveRun(record);
   assert.match(calls[0]?.text ?? "", /INSERT INTO runs/);
   assert.match(calls[0]?.text ?? "", /ON DUPLICATE KEY UPDATE/);
   assert.equal(calls[0]?.values[0], "run-mysql-1");
   assert.equal(calls[0]?.values[1], "user_ada");
+  assert.equal(calls[0]?.values[3], "hello mysql");
+  assert.doesNotMatch(String(calls[0]?.values[6] ?? ""), /followUps/);
+  assert.match(calls[1]?.text ?? "", /INSERT INTO run_queues/);
+  assert.match(String(calls[1]?.values[1] ?? ""), /later/);
 
   const event = {
     id: "evt-1",
@@ -76,25 +95,51 @@ test("mysql store upserts run JSON, events, and users", async () => {
   await store.saveEvent(event);
   assert.match(calls.at(-1)?.text ?? "", /INSERT IGNORE INTO events/);
 
-  rowsByQuery.run = [{ record }];
+  rowsByQuery.run = [{ record: { version: 1, run: record.run } }];
   const loaded = await store.loadRun("run-mysql-1");
   assert.equal(loaded?.run.prompt, "hello mysql");
+  assert.equal(loaded?.followUps[0]?.id, undefined);
+
+  const slimStore = createMysqlMetadataStore(async (text) => {
+    if (text.includes("FROM run_queues WHERE")) {
+      return {
+        rows: [
+          {
+            follow_ups: record.followUps,
+            inbound: [],
+            subscriptions: [],
+            active_turn: null,
+          },
+        ],
+      };
+    }
+    if (text.includes("FROM runs WHERE id")) {
+      return { rows: [{ record: { version: 1, run: record.run } }] };
+    }
+    return { rows: [] };
+  });
+  const merged = await slimStore.loadRun("run-mysql-1");
+  assert.equal(merged?.followUps[0]?.id, "f1");
 
   const older = { version: 1 as const, run: sampleRun("run-old"), followUps: [], inbound: [] };
   older.run.updatedAt = "2026-08-01T00:00:00.000Z";
-  rowsByQuery.runs = [{ record: older }, { record }];
+  rowsByQuery.runs = [{ id: "run-old", record: older }, { id: "run-mysql-1", record }];
   const listedRuns = await store.loadRuns();
   assert.equal(listedRuns[0]?.run.id, "run-mysql-1");
-  const loadRunsSql = calls.find((item) => item.text.includes("SELECT record FROM runs") && item.text.includes("deleted_at"))?.text ?? "";
-  assert.match(loadRunsSql, /SELECT record FROM runs WHERE deleted_at IS NULL/);
-  assert.doesNotMatch(loadRunsSql, /ORDER BY/);
+  const loadRunsSql =
+    calls.find((item) => item.text.includes("FROM runs") && item.text.includes("deleted_at") && item.text.includes("SELECT"))
+      ?.text ?? "";
+  assert.match(loadRunsSql, /FROM runs WHERE deleted_at IS NULL/);
+  assert.doesNotMatch(loadRunsSql, /ORDER BY record/i);
 
-  rowsByQuery.runs = [{ run: record.run }];
+  rowsByQuery.runs = [{ record, title: "hello mysql", status: "IDLE", project_id: null }];
   const summaries = await store.loadRunSummaries();
   assert.equal(summaries[0]?.id, "run-mysql-1");
-  const summarySql = calls.find((item) => item.text.includes("JSON_EXTRACT"))?.text ?? "";
-  assert.match(summarySql, /JSON_EXTRACT\(record, '\$\.run'\)/);
-  assert.doesNotMatch(summarySql, /SELECT record FROM runs/);
+  assert.equal(summaries[0]?.title, "hello mysql");
+  const summarySql = calls.find((item) => item.text.includes("SELECT title, status, project_id, record"))?.text ?? "";
+  assert.match(summarySql, /ORDER BY updated_at DESC/);
+  assert.doesNotMatch(summarySql, /ORDER BY record/i);
+  assert.doesNotMatch(summarySql, /JSON_EXTRACT/);
 
   await store.createUser({
     id: "user-1",
@@ -200,4 +245,43 @@ test("mysql migrate adds deleted_at before indexing it", async () => {
   assert.ok(addColumn >= 0);
   assert.ok(addIndex >= 0);
   assert.ok(addColumn < addIndex);
+  assert.ok(calls.some((text) => /ALTER TABLE runs ADD COLUMN title/i.test(text)));
+  assert.ok(calls.some((text) => /CREATE TABLE IF NOT EXISTS run_queues/i.test(text)));
+});
+
+test("mysql migrate splits a fat run record into index columns and run_queues", async () => {
+  const run = sampleRun("run-fat");
+  const fat = {
+    version: 1 as const,
+    run,
+    followUps: [
+      {
+        id: "f-fat",
+        runId: run.id,
+        text: "queued later",
+        delivery: "prompt" as const,
+        status: "queued" as const,
+        createdAt: run.createdAt,
+        deliveredAt: null,
+      },
+    ],
+    inbound: [],
+  };
+  const calls: Array<{ text: string; values: unknown[] }> = [];
+  const store = createMysqlMetadataStore(async (text, values) => {
+    calls.push({ text, values: values ?? [] });
+    if (text.includes("SELECT id, title, record FROM runs")) {
+      return { rows: [{ id: run.id, title: null, record: fat }] };
+    }
+    return { rows: [] };
+  });
+  await store.migrate();
+  const queueWrite = calls.find((item) => item.text.includes("INSERT INTO run_queues"));
+  assert.ok(queueWrite);
+  assert.match(String(queueWrite?.values[1] ?? ""), /queued later/);
+  const slim = calls.find((item) => /UPDATE runs SET record/.test(item.text));
+  assert.ok(slim);
+  assert.doesNotMatch(String(slim?.values[0] ?? ""), /followUps/);
+  assert.equal(slim?.values[1], "hello mysql");
+  assert.equal(slim?.values[2], "IDLE");
 });

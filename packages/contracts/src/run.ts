@@ -144,6 +144,8 @@ export interface Run {
   executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
+  /** Sidebar / list label. Independent of the first prompt. */
+  title?: string | null;
   branchName: string | null;
   baseBranch: string | null;
   repoUrls: string[];

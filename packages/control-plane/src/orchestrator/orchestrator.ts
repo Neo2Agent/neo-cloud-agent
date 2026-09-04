@@ -98,6 +98,7 @@ import {
   restoreSessionToDir,
   type ActiveTurn,
 } from "../store/persist.js";
+import { runIndexTitle } from "../store/run-record.js";
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
@@ -1147,6 +1148,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     expertTeamId: team?.id ?? null,
     model: input.model ?? expert?.model ?? config.defaultModel,
     prompt: input.prompt,
+    title: runIndexTitle({ prompt: input.prompt }),
     branchName: null,
     baseBranch: null,
     repoUrls,

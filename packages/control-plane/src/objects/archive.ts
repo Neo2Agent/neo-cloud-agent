@@ -1,14 +1,17 @@
 import type { RunEvent } from "@neo-cloud-agent/contracts";
 import { buildTranscriptSnapshot } from "../events/transcript.js";
 import {
+  listInboxObjectBodies,
   loadPersistedEvents,
   loadPersistedRun,
   loadSessionFiles,
   persistRunRecord,
   persistSessionFiles,
   replacePersistedEvents,
+  writeInboxObjectBody,
   type PersistedRun,
 } from "../store/persist.js";
+import { mergeStoredRun, queueFromRecord, slimRunDocument } from "../store/run-record.js";
 import { artifactKey, getObjectStore } from "./store.js";
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -31,19 +34,30 @@ export function scheduleArchive(runId: string): void {
   timers.set(runId, timer);
 }
 
+function localObjectKeyFromArtifact(runId: string, key: string): string {
+  const marker = `runs/${runId}/`;
+  const index = key.indexOf(marker);
+  return index >= 0 ? key.slice(index) : key;
+}
+
 export async function archiveRunArtifacts(runId: string): Promise<void> {
   const store = getObjectStore();
   if (store.kind === "none") {
     return;
   }
   const events = loadPersistedEvents(runId);
-  const record = loadPersistedRun(runId);
+  const record = loadPersistedRun(runId, undefined, { resolveImages: false });
   const session = loadSessionFiles(runId);
   const snapshot = buildTranscriptSnapshot(runId, events);
   await store.put(artifactKey(runId, "events.jsonl"), events.map((item) => JSON.stringify(item)).join("\n") + (events.length ? "\n" : ""));
   await store.put(artifactKey(runId, "snapshot.json"), `${JSON.stringify(snapshot)}\n`, "application/json");
   if (record) {
-    await store.put(artifactKey(runId, "record.json"), `${JSON.stringify(record)}\n`, "application/json");
+    await store.put(artifactKey(runId, "record.json"), `${JSON.stringify(slimRunDocument(record))}\n`, "application/json");
+    await store.put(artifactKey(runId, "queue.json"), `${JSON.stringify(queueFromRecord(record))}\n`, "application/json");
+  }
+  for (const item of listInboxObjectBodies(runId)) {
+    const suffix = item.key.startsWith(`runs/${runId}/`) ? item.key.slice(`runs/${runId}/`.length) : item.key;
+    await store.put(artifactKey(runId, suffix), item.body);
   }
   await store.put(artifactKey(runId, "session-manifest.json"), `${JSON.stringify(session.map((file) => file.name))}\n`, "application/json");
   for (const file of session) {
@@ -66,7 +80,14 @@ export async function loadArchivedArtifacts(runId: string): Promise<{
     .split("\n")
     .filter((line) => line.trim())
     .map((line) => JSON.parse(line) as RunEvent);
-  const record = recordRaw ? (JSON.parse(recordRaw) as PersistedRun) : null;
+  const queueRaw = await store.get(artifactKey(runId, "queue.json"));
+  for (const key of await store.list(artifactKey(runId, "inbox/"))) {
+    const body = await store.get(key);
+    if (body != null) {
+      writeInboxObjectBody(localObjectKeyFromArtifact(runId, key), body);
+    }
+  }
+  const record = recordRaw ? mergeStoredRun(JSON.parse(recordRaw), queueRaw ? JSON.parse(queueRaw) : undefined) : null;
   const manifestRaw = await store.get(artifactKey(runId, "session-manifest.json"));
   const names = manifestRaw ? (JSON.parse(manifestRaw) as string[]) : [];
   const session: Array<{ name: string; content: string }> = [];

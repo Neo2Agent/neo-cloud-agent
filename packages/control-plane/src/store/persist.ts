@@ -23,6 +23,16 @@ import type {
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
+import {
+  inboxImageObjectKey,
+  inboxImageObjectKeyFromRef,
+  inboxImageRefKey,
+  isInboxImageKey,
+  mapRecordImages,
+  mergeStoredRun,
+  queueFromRecord,
+  slimRunDocument,
+} from "./run-record.js";
 
 export type ActiveTurn = {
   type: "prompt" | "steer" | "follow_up";
@@ -46,6 +56,81 @@ export function controlStateDir(runsDir = getConfig().runsDir): string {
 
 function runFile(runId: string, runsDir?: string): string {
   return path.join(controlStateDir(runsDir), `${runId}.json`);
+}
+
+function queueFile(runId: string, runsDir?: string): string {
+  return path.join(controlStateDir(runsDir), `${runId}.queue.json`);
+}
+
+function objectRoot(runsDir?: string): string {
+  return path.join(runsDir ?? getConfig().runsDir, ".objects");
+}
+
+function objectPath(key: string, runsDir?: string): string {
+  const relative = key.replaceAll("\\", "/").replace(/^\/+/, "");
+  if (!relative || relative.includes("..")) {
+    throw new Error(`invalid object key: ${key}`);
+  }
+  return path.join(objectRoot(runsDir), ...relative.split("/"));
+}
+
+function persistInboxImage(runId: string, image: ImageRef, name: string, runsDir?: string): ImageRef {
+  if (isInboxImageKey(image.data) || !image.data.trim()) {
+    return image;
+  }
+  const key = inboxImageObjectKey(runId, name);
+  const dest = objectPath(key, runsDir);
+  mkdirSync(path.dirname(dest), { recursive: true });
+  const tmp = `${dest}.tmp`;
+  writeFileSync(tmp, image.data);
+  renameSync(tmp, dest);
+  return { mediaType: image.mediaType, data: inboxImageRefKey(runId, name) };
+}
+
+export function resolveInboxImage(image: ImageRef, runsDir?: string): ImageRef {
+  const key = inboxImageObjectKeyFromRef(image.data);
+  if (!key) {
+    return image;
+  }
+  try {
+    return { mediaType: image.mediaType, data: readFileSync(objectPath(key, runsDir), "utf8") };
+  } catch {
+    return image;
+  }
+}
+
+export function resolveInboxImages(images: ImageRef[] | undefined, runsDir?: string): ImageRef[] | undefined {
+  return images?.map((image) => resolveInboxImage(image, runsDir));
+}
+
+export function listInboxObjectBodies(runId: string, runsDir?: string): Array<{ key: string; body: string }> {
+  const dir = path.join(objectRoot(runsDir), "runs", runId, "inbox");
+  try {
+    return readdirSync(dir)
+      .filter((name) => !name.endsWith(".tmp"))
+      .map((name) => ({
+        key: inboxImageObjectKey(runId, name),
+        body: readFileSync(path.join(dir, name), "utf8"),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export function writeInboxObjectBody(key: string, body: string, runsDir?: string): void {
+  const dest = objectPath(key, runsDir);
+  mkdirSync(path.dirname(dest), { recursive: true });
+  const tmp = `${dest}.tmp`;
+  writeFileSync(tmp, body);
+  renameSync(tmp, dest);
+}
+
+export function persistableRecord(record: PersistedRun, runsDir?: string): PersistedRun {
+  return mapRecordImages({ ...record, version: 1 }, (runId, image, name) => persistInboxImage(runId, image, name, runsDir));
+}
+
+function loadableRecord(record: PersistedRun, runsDir?: string): PersistedRun {
+  return mapRecordImages(record, (_runId, image) => resolveInboxImage(image, runsDir));
 }
 
 function eventsFile(runId: string, runsDir?: string): string {
@@ -82,9 +167,11 @@ export type PersistOptions = {
 };
 
 export function persistRunRecord(record: PersistedRun, runsDir?: string, options?: PersistOptions): void {
-  writeJsonAtomic(runFile(record.run.id, runsDir), { ...record, version: 1 });
+  const stored = persistableRecord(record, runsDir);
+  writeJsonAtomic(runFile(stored.run.id, runsDir), slimRunDocument(stored));
+  writeJsonAtomic(queueFile(stored.run.id, runsDir), queueFromRecord(stored));
   if (options?.mirror !== false) {
-    persistHooks.onRun?.(record);
+    persistHooks.onRun?.(stored);
   }
 }
 
@@ -267,9 +354,24 @@ export function restoreSessionToDir(runId: string, destDir: string, runsDir?: st
   return restored;
 }
 
-export function loadPersistedRun(runId: string, runsDir?: string): PersistedRun | null {
+export function loadPersistedRun(
+  runId: string,
+  runsDir?: string,
+  options?: { resolveImages?: boolean },
+): PersistedRun | null {
   try {
-    return JSON.parse(readFileSync(runFile(runId, runsDir), "utf8")) as PersistedRun;
+    const document = JSON.parse(readFileSync(runFile(runId, runsDir), "utf8")) as unknown;
+    let queue: unknown;
+    try {
+      queue = JSON.parse(readFileSync(queueFile(runId, runsDir), "utf8")) as unknown;
+    } catch {
+      queue = undefined;
+    }
+    const merged = mergeStoredRun(document, queue);
+    if (!merged) {
+      return null;
+    }
+    return options?.resolveImages === false ? merged : loadableRecord(merged, runsDir);
   } catch {
     return null;
   }
@@ -291,15 +393,10 @@ export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[]
           name.endsWith(".json") &&
           !name.endsWith(".tmp") &&
           !name.endsWith(".worker.json") &&
-          !name.endsWith(".transcript.json"),
+          !name.endsWith(".transcript.json") &&
+          !name.endsWith(".queue.json"),
       )
-      .map((name) => {
-        try {
-          return JSON.parse(readFileSync(path.join(dir, name), "utf8")) as PersistedRun;
-        } catch {
-          return null;
-        }
-      })
+      .map((name) => loadPersistedRun(name.replace(/\.json$/, ""), runsDir))
       .filter((item): item is PersistedRun => Boolean(item?.run?.id));
   } catch {
     return [];

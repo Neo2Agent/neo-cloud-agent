@@ -47,11 +47,29 @@ test("postgres store upserts run JSON, events, and users", async () => {
     return { rows: rowsByQuery[key] ?? [] };
   });
 
-  const record = { version: 1 as const, run: sampleRun("run-pg-1"), followUps: [], inbound: [] };
+  const record = {
+    version: 1 as const,
+    run: sampleRun("run-pg-1"),
+    followUps: [
+      {
+        id: "f1",
+        runId: "run-pg-1",
+        text: "later",
+        delivery: "prompt" as const,
+        status: "queued" as const,
+        createdAt: "2026-08-21T00:00:00.000Z",
+        deliveredAt: null,
+      },
+    ],
+    inbound: [],
+  };
   await store.saveRun(record);
   assert.match(calls[0]?.text ?? "", /INSERT INTO runs/);
   assert.equal(calls[0]?.values[0], "run-pg-1");
   assert.equal(calls[0]?.values[1], "user_ada");
+  assert.equal(calls[0]?.values[3], "hello postgres");
+  assert.doesNotMatch(String(calls[0]?.values[6] ?? ""), /followUps/);
+  assert.match(calls[1]?.text ?? "", /INSERT INTO run_queues/);
 
   const event = {
     id: "evt-1",
@@ -66,9 +84,30 @@ test("postgres store upserts run JSON, events, and users", async () => {
   await store.saveEvent(event);
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO events/);
 
-  rowsByQuery.run = [{ record }];
+  rowsByQuery.run = [{ record: { version: 1, run: record.run } }];
   const loaded = await store.loadRun("run-pg-1");
   assert.equal(loaded?.run.prompt, "hello postgres");
+
+  const slimStore = createPostgresMetadataStore(async (text) => {
+    if (text.includes("FROM run_queues WHERE")) {
+      return {
+        rows: [
+          {
+            follow_ups: record.followUps,
+            inbound: [],
+            subscriptions: [],
+            active_turn: null,
+          },
+        ],
+      };
+    }
+    if (text.includes("FROM runs WHERE")) {
+      return { rows: [{ record: { version: 1, run: record.run } }] };
+    }
+    return { rows: [] };
+  });
+  const merged = await slimStore.loadRun("run-pg-1");
+  assert.equal(merged?.followUps[0]?.id, "f1");
 
   await store.createUser({
     id: "user-1",

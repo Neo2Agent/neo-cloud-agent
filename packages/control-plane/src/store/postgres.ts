@@ -23,6 +23,19 @@ import {
   type UserRecord,
 } from "../accounts/types.js";
 import type { PersistedRun, WorkerLease } from "./persist.js";
+import { persistableRecord } from "./persist.js";
+import {
+  mergeStoredRun,
+  overlayRunIndex,
+  parseJson,
+  parseQueue,
+  queueFromRecord,
+  recordHasEmbeddedQueue,
+  recordHasQueueKeys,
+  runIndexTitle,
+  slimRunDocument,
+  type RunQueueState,
+} from "./run-record.js";
 
 export type SqlQuery = (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
 
@@ -50,9 +63,23 @@ CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   org_id TEXT NOT NULL,
+  title TEXT,
+  status TEXT,
+  project_id TEXT,
   record JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS runs_updated_at ON runs (updated_at);
+CREATE INDEX IF NOT EXISTS runs_status ON runs (status);
+CREATE INDEX IF NOT EXISTS runs_project_id ON runs (project_id);
+CREATE TABLE IF NOT EXISTS run_queues (
+  run_id TEXT PRIMARY KEY,
+  follow_ups JSONB NOT NULL,
+  inbound JSONB NOT NULL,
+  subscriptions JSONB NOT NULL,
+  active_turn JSONB,
+  updated_at TIMESTAMPTZ NOT NULL
 );
 CREATE TABLE IF NOT EXISTS events (
   run_id TEXT NOT NULL,
@@ -127,6 +154,7 @@ export interface PostgresMetadataStore extends AccountStore {
   loadRun(runId: string): Promise<PersistedRun | null>;
   loadRuns(): Promise<PersistedRun[]>;
   loadRunSummaries(): Promise<Run[]>;
+  loadRunQueues(): Promise<Array<readonly [string, RunQueueState]>>;
   saveEvent(event: RunEvent): Promise<void>;
   loadEvents(runId: string): Promise<RunEvent[]>;
   saveLease(lease: WorkerLease): Promise<void>;
@@ -156,22 +184,6 @@ export interface PostgresMetadataStore extends AccountStore {
   saveDevice(item: Device): Promise<void>;
   loadDevices(): Promise<Device[]>;
   deleteDevice(id: string): Promise<void>;
-}
-
-function asRecord(value: unknown): PersistedRun | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const record = value as PersistedRun;
-  return record.run?.id ? record : null;
-}
-
-function asRun(value: unknown): Run | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const run = value as Run;
-  return run.id && run.prompt ? run : null;
 }
 
 function asEvent(value: unknown): RunEvent | null {
@@ -263,15 +275,67 @@ function asExpertPolicy(value: unknown): BundledExpertPolicyDocument | null {
   return item.version === 1 && item.experts && typeof item.experts === "object" ? item : null;
 }
 
-function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
-  if (typeof value === "string") {
-    try {
-      return map(JSON.parse(value));
-    } catch {
-      return null;
+async function writeRunQueue(query: SqlQuery, record: PersistedRun): Promise<void> {
+  const queue = queueFromRecord(record);
+  await query(
+    `INSERT INTO run_queues (run_id, follow_ups, inbound, subscriptions, active_turn, updated_at)
+     VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::timestamptz)
+     ON CONFLICT (run_id) DO UPDATE SET
+       follow_ups = EXCLUDED.follow_ups,
+       inbound = EXCLUDED.inbound,
+       subscriptions = EXCLUDED.subscriptions,
+       active_turn = EXCLUDED.active_turn,
+       updated_at = EXCLUDED.updated_at`,
+    [
+      record.run.id,
+      JSON.stringify(queue.followUps),
+      JSON.stringify(queue.inbound),
+      JSON.stringify(queue.subscriptions),
+      queue.activeTurn ? JSON.stringify(queue.activeTurn) : null,
+      record.run.updatedAt,
+    ],
+  );
+}
+
+async function readRunQueue(query: SqlQuery, runId: string): Promise<RunQueueState | null> {
+  const result = await query(
+    `SELECT follow_ups, inbound, subscriptions, active_turn FROM run_queues WHERE run_id = $1`,
+    [runId],
+  );
+  const row = result.rows[0];
+  return row
+    ? parseQueue({
+        follow_ups: row.follow_ups,
+        inbound: row.inbound,
+        subscriptions: row.subscriptions,
+        active_turn: row.active_turn,
+      })
+    : null;
+}
+
+async function backfillSplitRunRecords(query: SqlQuery): Promise<void> {
+  const result = await query(`SELECT id, title, record FROM runs`);
+  for (const row of result.rows) {
+    const merged = mergeStoredRun(row.record);
+    if (!merged) {
+      continue;
     }
+    const embedded = recordHasEmbeddedQueue(merged) || recordHasQueueKeys(row.record);
+    if (!embedded && typeof row.title === "string" && row.title.trim()) {
+      continue;
+    }
+    const stored = persistableRecord(merged);
+    if (embedded) {
+      await writeRunQueue(query, stored);
+    }
+    await query(`UPDATE runs SET record = $1::jsonb, title = $2, status = $3, project_id = $4 WHERE id = $5`, [
+      JSON.stringify(slimRunDocument(stored)),
+      runIndexTitle(stored.run),
+      stored.run.status,
+      stored.run.projectId ?? null,
+      stored.run.id,
+    ]);
   }
-  return map(value);
 }
 
 export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataStore {
@@ -287,47 +351,92 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_fen INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE runs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
         "CREATE INDEX IF NOT EXISTS runs_deleted_at ON runs (deleted_at)",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS title TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS status TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS project_id TEXT",
+        "CREATE INDEX IF NOT EXISTS runs_status ON runs (status)",
+        "CREATE INDEX IF NOT EXISTS runs_project_id ON runs (project_id)",
       ]) {
         await query(statement);
       }
+      await backfillSplitRunRecords(query);
     },
     async saveRun(record) {
+      const stored = persistableRecord(record);
       await query(
-        `INSERT INTO runs (id, user_id, org_id, record, updated_at, deleted_at)
-         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::timestamptz)
+        `INSERT INTO runs (id, user_id, org_id, title, status, project_id, record, updated_at, deleted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::timestamptz, $9::timestamptz)
          ON CONFLICT (id) DO UPDATE SET
            user_id = EXCLUDED.user_id,
            org_id = EXCLUDED.org_id,
+           title = EXCLUDED.title,
+           status = EXCLUDED.status,
+           project_id = EXCLUDED.project_id,
            record = EXCLUDED.record,
            updated_at = EXCLUDED.updated_at,
            deleted_at = EXCLUDED.deleted_at`,
         [
-          record.run.id,
-          record.run.userId,
-          record.run.orgId,
-          JSON.stringify(record),
-          record.run.updatedAt,
-          record.run.deletedAt ?? null,
+          stored.run.id,
+          stored.run.userId,
+          stored.run.orgId,
+          runIndexTitle(stored.run),
+          stored.run.status,
+          stored.run.projectId ?? null,
+          JSON.stringify(slimRunDocument(stored)),
+          stored.run.updatedAt,
+          stored.run.deletedAt ?? null,
         ],
       );
+      await writeRunQueue(query, stored);
     },
     async loadRun(runId) {
       const result = await query(`SELECT record FROM runs WHERE id = $1`, [runId]);
-      return parseJson(result.rows[0]?.record, asRecord);
+      return mergeStoredRun(result.rows[0]?.record, await readRunQueue(query, runId));
     },
     async loadRuns() {
-      const result = await query(`SELECT record FROM runs WHERE deleted_at IS NULL`);
+      const result = await query(
+        `SELECT r.record, q.follow_ups, q.inbound, q.subscriptions, q.active_turn
+         FROM runs r
+         LEFT JOIN run_queues q ON q.run_id = r.id
+         WHERE r.deleted_at IS NULL
+         ORDER BY r.updated_at DESC`,
+      );
       return result.rows
-        .map((row) => parseJson(row.record, asRecord))
-        .filter((item): item is PersistedRun => item != null && !item.run.deletedAt)
-        .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
+        .map((row) =>
+          mergeStoredRun(row.record, {
+            follow_ups: row.follow_ups,
+            inbound: row.inbound,
+            subscriptions: row.subscriptions,
+            active_turn: row.active_turn,
+          }),
+        )
+        .filter((item): item is PersistedRun => item != null && !item.run.deletedAt);
     },
     async loadRunSummaries() {
-      const result = await query(`SELECT record->'run' AS run FROM runs WHERE deleted_at IS NULL`);
+      const result = await query(
+        `SELECT title, status, project_id, record
+         FROM runs WHERE deleted_at IS NULL ORDER BY updated_at DESC`,
+      );
       return result.rows
-        .map((row) => parseJson(row.run, asRun))
-        .filter((item): item is Run => item != null && !item.deletedAt)
-        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+        .map((row) => {
+          const parsed = mergeStoredRun(row.record);
+          return parsed ? overlayRunIndex(parsed.run, row) : null;
+        })
+        .filter((item): item is Run => item != null && !item.deletedAt);
+    },
+    async loadRunQueues() {
+      const result = await query(`SELECT run_id, follow_ups, inbound, subscriptions, active_turn FROM run_queues`);
+      return result.rows
+        .map((row) => {
+          const queue = parseQueue({
+            follow_ups: row.follow_ups,
+            inbound: row.inbound,
+            subscriptions: row.subscriptions,
+            active_turn: row.active_turn,
+          });
+          return queue ? ([String(row.run_id), queue] as const) : null;
+        })
+        .filter((item): item is readonly [string, RunQueueState] => item != null);
     },
     async saveEvent(event) {
       await query(
