@@ -835,7 +835,7 @@ pnpm typecheck && pnpm test
 
 **还没有、不要假装有的：**
 
-- 把 Agent loop 放控制面，或 CLI / 手机在本机跑 pi
+- 把 Agent loop 放控制面，或 CLI / 手机在本机跑 pi。若要把 loop 从槽里拆出来（Cursor 现行形态），见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)，不要嵌进 `control-plane`
 - 云 loop + 本机工具 RPC（`loop !== tools`），见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 插件 git marketplace、zip 上传、插件自带 MCP / hooks
 - `GET /v1/search`、`GET /v1/recipes`（配方只在客户端）
@@ -853,6 +853,7 @@ pnpm typecheck && pnpm test
 | 文档 | 读什么 |
 | --- | --- |
 | [architecture.md](./architecture.md) | 设计蓝图、原则、分阶段、与 Cursor 对照 |
+| [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md) | 对照 Cursor 现行「loop 与机器拆开」，用 AgentScope Java 做独立 loop 进程的方案；未落地 |
 | 本文 | 现状总览：包、进程、现网、数据流 |
 | [cli.md](./cli.md) | `neo` 命令面；明确不做本机 Agent |
 | [desk.md](./desk.md) / [desk-this-computer.md](./desk-this-computer.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为、This Computer 工作区一期、项目工作台 |

@@ -797,7 +797,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 2. **不要把 Provider Key 写进 VM 的 `auth.json`。** 只用 `InMemoryCredentialStore` + 运行时 JWT。
 3. **不要在 `install` 里起 dev server。** 快照不会保存进程。
 4. **不要让 bash 直接 `git push` 带长期 token。** push 经 scm-service。
-5. **不要为了「推理在云端」把 Agent 放控制面。** 推理走 Gateway 即可。
+5. **不要为了「推理在云端」把 Agent 放控制面。** 推理走 Gateway 即可。若要把 loop 从 VM 拆到独立进程（对标 Cursor 后来的 Temporal 形态），那是第四个进程，不是把 `HarnessAgent` 嵌进控制面；方案见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。
 
 ---
 

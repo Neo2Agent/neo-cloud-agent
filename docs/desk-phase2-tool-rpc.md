@@ -2,7 +2,7 @@
 
 调研报告 + 影响范围评估。2026-08-27，代码基线 `main` `4d35d9e`。
 
-对照文档：[desk.md](./desk.md)（现状）、[architecture.md §2](./architecture.md)（一期锁死的原则）、[desk-project-design.md](./desk-project-design.md)。
+对照文档：[desk.md](./desk.md)（现状）、[architecture.md §2](./architecture.md)（一期锁死的原则）、[desk-project-design.md](./desk-project-design.md)、[agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)（若用 AgentScope 做云端 loop，第 4 期才解 `loop !== tools`；本报告的协议和权限工作不因此作废）。
 
 ---
 
