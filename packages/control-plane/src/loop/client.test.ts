@@ -55,7 +55,11 @@ test("dispatchTurn posts a start-turn payload to neo-loop", async () => {
     assert.equal(posted.body.jwt, "jwt-1");
     assert.equal(posted.body.runId, "run-loop-1");
   } finally {
-    process.env.NEO_LOOP_URL = previous;
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });

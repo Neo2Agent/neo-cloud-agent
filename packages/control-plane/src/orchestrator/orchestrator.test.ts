@@ -743,7 +743,11 @@ test("agentscope cloud-loop desk-tools assignment carries the loop URL", async (
     assert.equal(assignment.neoLoopUrl, "http://127.0.0.1:8082");
     assert.equal(takeInbound(run.id).length, 0);
   } finally {
-    process.env.NEO_LOOP_URL = previous;
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
   }
 });
 
@@ -1195,7 +1199,11 @@ test("agentscope createRun skips inbox prompt and records the kernel", async () 
     assert.equal(takeInbound(run.id).length, 0);
     assert.equal(run.status, "RUNNING");
   } finally {
-    process.env.NEO_LOOP_URL = previous;
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
   }
 });
 

@@ -59,33 +59,32 @@ function workerEpoch(event: RunEvent): string {
   return typeof value === "string" ? value : "";
 }
 
-/** Drop tokens a later turn.rewind said to forget. */
+/** Drop tokens a later turn.rewind said to forget. Replacement deltas after the rewind stay. */
 export function foldRewoundEvents(events: RunEvent[]): RunEvent[] {
-  const cuts = new Map<string, number>();
-  for (const event of events) {
+  const cuts: Array<{ replyId: string; fromSeq: number; at: number }> = [];
+  events.forEach((event, index) => {
     if (event.kind !== "turn.rewind") {
-      continue;
+      return;
     }
     const replyId = typeof event.data?.replyId === "string" ? event.data.replyId : "";
     const fromSeq = Number(event.data?.fromSeq ?? 0);
     if (replyId && Number.isFinite(fromSeq)) {
-      cuts.set(replyId, fromSeq);
+      cuts.push({ replyId, fromSeq, at: index });
     }
-  }
-  if (cuts.size === 0) {
+  });
+  if (cuts.length === 0) {
     return events.filter((event) => event.kind !== "turn.rewind");
   }
-  return events.filter((event) => {
+  return events.filter((event, index) => {
     if (event.kind === "turn.rewind") {
       return false;
     }
     const replyId = typeof event.data?.replyId === "string" ? event.data.replyId : "";
-    const cut = replyId ? cuts.get(replyId) : undefined;
     const seq = workerSeq(event);
-    if (cut == null || seq == null) {
+    if (!replyId || seq == null) {
       return true;
     }
-    return seq < cut;
+    return !cuts.some((cut) => cut.replyId === replyId && index < cut.at && seq >= cut.fromSeq);
   });
 }
 
