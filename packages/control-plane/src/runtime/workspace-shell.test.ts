@@ -76,6 +76,8 @@ test("a workspace shell runs a written command", async (t) => {
     text = chunks.join("");
   }
   assert.match(text, /hello-term/);
+  assert.match(text, /~ \$/);
+  assert.doesNotMatch(text, /bash-\d/);
   assert.doesNotMatch(text, /ubuntu@cursor/);
   assert.doesNotMatch(text, /sudo <command>/);
   assert.throws(

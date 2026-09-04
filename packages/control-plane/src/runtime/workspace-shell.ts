@@ -128,7 +128,8 @@ export function workspaceTermEnv(
     TERM: opts.pty ? "xterm" : "dumb",
     LANG: process.env.LANG || "C.UTF-8",
     LC_ALL: process.env.LC_ALL || process.env.LANG || "C.UTF-8",
-    SHELL: shell,
+    // bash --norc ignores env PS1 when SHELL points at bash and uses bash-5.2$.
+    SHELL: /bash$/.test(shell) ? "/bin/sh" : shell,
     USER: process.env.USER || "neo",
     LOGNAME: process.env.LOGNAME || process.env.USER || "neo",
     PS1: "\\W $ ",
