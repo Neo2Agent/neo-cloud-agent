@@ -25,6 +25,9 @@ function fakeRun(): Run {
     workerHandle: "local-1",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    idleAt: null,
+    expiresAt: null,
+    errorMessage: null,
   };
 }
 

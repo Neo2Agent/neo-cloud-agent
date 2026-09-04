@@ -1254,10 +1254,13 @@ test("completeLoopTurn marks the run idle and does not use the inbox", async () 
   });
   await new Promise((resolve) => setTimeout(resolve, 80));
   const live = getRun(run.id);
+  assert.ok(live);
   live.currentTurnId = "turn-complete-1";
   completeLoopTurn(live.id, { turnId: "turn-complete-1", status: "idle" });
-  assert.equal(getRun(run.id).status, "IDLE");
-  assert.equal(getRun(run.id).currentTurnId ?? null, null);
+  const finished = getRun(run.id);
+  assert.ok(finished);
+  assert.equal(finished.status, "IDLE");
+  assert.equal(finished.currentTurnId ?? null, null);
   assert.ok(listEvents(run.id).some((item) => item.kind === "agent.end"));
   assert.ok(listEvents(run.id).some((item) => item.kind === "run.idle"));
 });
@@ -1278,16 +1281,21 @@ test("agentscope idle follow-up with an attached worker starts a new turn", asyn
     });
     await waitUntil(() => loop.seen.length >= 1);
     const live = getRun(run.id);
+    assert.ok(live);
     completeLoopTurn(live.id, { turnId: live.currentTurnId ?? "missing", status: "idle" });
-    assert.equal(getRun(run.id).status, "IDLE");
+    const idle = getRun(run.id);
+    assert.ok(idle);
+    assert.equal(idle.status, "IDLE");
     const follow = await enqueueFollowUp(run.id, { text: "second java turn" });
     assert.equal(follow.delivery, "prompt");
     await waitUntil(() => loop.seen.length >= 2);
     const second = loop.seen[1]?.body;
     assert.equal(second?.text, "second java turn");
     assert.equal(second?.delivery, "prompt");
-    assert.equal(getRun(run.id).status, "IDLE");
-    assert.ok(getRun(run.id).currentTurnId);
+    const after = getRun(run.id);
+    assert.ok(after);
+    assert.equal(after.status, "IDLE");
+    assert.ok(after.currentTurnId);
     assert.equal(takeInbound(run.id).length, 0);
   } finally {
     if (previous === undefined) {
@@ -1314,6 +1322,7 @@ test("agentscope follow-up after idle release resumes and dispatches", async () 
     });
     await waitUntil(() => loop.seen.length >= 1);
     const live = getRun(run.id);
+    assert.ok(live);
     completeLoopTurn(live.id, { turnId: live.currentTurnId ?? "missing", status: "idle" });
     assert.equal(await releaseIdleWorker(run.id), true);
     assert.equal(getRun(run.id)?.workerHandle, null);

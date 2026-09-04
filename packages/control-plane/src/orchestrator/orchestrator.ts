@@ -1132,7 +1132,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     repoUrls = [...(getEnvironment(input.envId)?.config.repos ?? [])];
   }
   const target = parseExecutionTarget(input.target);
-  const kernel = resolveAgentKernel(input.kernel);
+  const kernel = resolveAgentKernel(input.kernel, process.env);
   if (target) {
     assertExecutionTarget(target, kernel);
   }

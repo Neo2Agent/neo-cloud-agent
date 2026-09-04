@@ -40,7 +40,7 @@ export {
   parseRunStart,
   runDisplayTitle,
 } from "./run.js";
-export type { AgentKernel as AgentKernelName, WorkerRole } from "./kernel.js";
+export type { AgentKernel as AgentKernelName, KernelEnv, WorkerRole } from "./kernel.js";
 export {
   AGENT_KERNELS,
   defaultAgentKernel,
@@ -54,6 +54,7 @@ export type {
   ToolsChannelRole,
   ToolsErrFrame,
   ToolsHelloFrame,
+  ToolsOkFrame,
 } from "./tools-channel.js";
 export { TOOLS_CHANNEL_VERSION, isToolsChannelFrame } from "./tools-channel.js";
 export type {
