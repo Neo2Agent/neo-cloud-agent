@@ -2432,6 +2432,10 @@ export function createApiServer() {
         const runId = termEventsMatch[1] ?? "";
         const termId = termEventsMatch[2] ?? "";
         const run = await requireRun(runId);
+        if (!run) {
+          notFound(res);
+          return;
+        }
         if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
@@ -2457,6 +2461,10 @@ export function createApiServer() {
         const runId = termItemMatch[1] ?? "";
         const termId = termItemMatch[2] ?? "";
         const run = await requireRun(runId);
+        if (!run) {
+          notFound(res);
+          return;
+        }
         if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }
@@ -2493,6 +2501,10 @@ export function createApiServer() {
       if (termCollectionMatch && (method === "GET" || method === "POST")) {
         const runId = termCollectionMatch[1] ?? "";
         const run = await requireRun(runId);
+        if (!run) {
+          notFound(res);
+          return;
+        }
         if (!actor || !denyUnless(run, actor, res, req)) {
           return;
         }

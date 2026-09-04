@@ -205,12 +205,17 @@ export function writeWorkspaceTerm(runId: string, id: string, data: string): voi
   session.child.stdin?.write(data);
 }
 
+function destroyChild(child: ChildProcess): void {
+  child.stdin?.end();
+  child.kill("SIGKILL");
+}
+
 export function closeWorkspaceTerm(runId: string, id: string): boolean {
   const session = sessions.get(id);
   if (!session || session.runId !== runId) {
     return false;
   }
-  session.child.kill("SIGTERM");
+  destroyChild(session.child);
   sessions.delete(id);
   return true;
 }
@@ -255,7 +260,7 @@ export function attachWorkspaceTermStream(
 
 export function resetWorkspaceShellsForTests(): void {
   for (const session of [...sessions.values()]) {
-    session.child.kill("SIGTERM");
+    destroyChild(session.child);
   }
   sessions.clear();
 }
@@ -264,7 +269,7 @@ const reaper = setInterval(() => {
   const now = Date.now();
   for (const session of [...sessions.values()]) {
     if (session.alive && now - session.lastWriteAt > IDLE_MS) {
-      session.child.kill("SIGTERM");
+      destroyChild(session.child);
       continue;
     }
     if (!session.alive && now - session.lastWriteAt > DEAD_KEEP_MS) {

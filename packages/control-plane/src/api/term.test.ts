@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import http from "node:http";
+import { EventEmitter } from "node:events";
 import { mkdtempSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,44 +13,22 @@ process.env.CONTROL_PLANE_TOKEN = "term-api-token";
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-term-api-"));
 delete process.env.WORKER_WORKSPACE_MOUNT;
 process.env.ACCOUNTS_REQUIRED = "0";
-delete process.env.DATABASE_URL;
-delete process.env.REDIS_URL;
+process.env.OBJECT_STORE = "memory";
+process.env.DATABASE_URL = "";
+process.env.REDIS_URL = "";
+process.env.MEM0_URL = "";
+process.env.MEM0_API_KEY = "";
+process.env.BUILD_CAPTURE = "0";
 
 const { createApiServer } = await import("./server.js");
 const { listen, close } = await import("../e2e/helpers.js");
 const { createRun } = await import("../orchestrator/orchestrator.js");
-const { resetWorkspaceShellsForTests } = await import("../runtime/workspace-shell.js");
+const { attachWorkspaceTermStream, onWorkspaceTermEvent, resetWorkspaceShellsForTests } = await import(
+  "../runtime/workspace-shell.js"
+);
 
-function auth(headers: http.OutgoingHttpHeaders = {}): http.OutgoingHttpHeaders {
+function auth(headers: Record<string, string> = {}): Record<string, string> {
   return { authorization: "Bearer term-api-token", ...headers };
-}
-
-function attachTermSse(url: string) {
-  const events: Array<{ type?: string; chunk?: string; code?: number | null }> = [];
-  let buffer = "";
-  const request = http.get(
-    url,
-    { headers: { accept: "text/event-stream", authorization: "Bearer term-api-token" } },
-    (response) => {
-      response.on("data", (chunk) => {
-        buffer += String(chunk);
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part.split("\n").find((item) => item.startsWith("data: "));
-          if (line) {
-            events.push(JSON.parse(line.slice(6)) as { type?: string; chunk?: string });
-          }
-        }
-      });
-    },
-  );
-  return {
-    events,
-    close() {
-      request.destroy();
-    },
-  };
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 4000): Promise<void> {
@@ -60,7 +39,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 4000): Promise<void
     }
     await new Promise((resolve) => setTimeout(resolve, 40));
   }
-  throw new Error("timed out waiting for term SSE");
+  throw new Error("timed out waiting for term output");
 }
 
 test("workspace term is a typed shell, not setup logs", async (t) => {
@@ -72,7 +51,7 @@ test("workspace term is a typed shell, not setup logs", async (t) => {
     await close(server);
   });
   const base = `http://127.0.0.1:${port}`;
-  const run = await createRun({ prompt: "open a shell", repoUrls: ["fixtures/toy-repo"] });
+  const run = await createRun({ prompt: "open a shell", repoUrls: [] });
 
   const denied = await fetch(`${base}/v1/runs/${run.id}/term`);
   assert.equal(denied.status, 401);
@@ -92,9 +71,13 @@ test("workspace term is a typed shell, not setup logs", async (t) => {
   const listing = (await listed.json()) as { sessions: Array<{ id: string }> };
   assert.equal(listing.sessions.some((item) => item.id === session.id), true);
 
-  const stream = attachTermSse(`${base}/v1/runs/${run.id}/term/${session.id}/events`);
-  t.after(() => stream.close());
-  await waitFor(() => stream.events.some((item) => item.type === "ready"));
+  const chunks: string[] = [];
+  const stop = onWorkspaceTermEvent(session.id, (event) => {
+    if (event.type === "data") {
+      chunks.push(event.chunk);
+    }
+  });
+  t.after(stop);
 
   const written = await fetch(`${base}/v1/runs/${run.id}/term/${session.id}`, {
     method: "POST",
@@ -102,9 +85,9 @@ test("workspace term is a typed shell, not setup logs", async (t) => {
     body: JSON.stringify({ data: "printf 'from-web-term\\n'\n" }),
   });
   assert.equal(written.status, 200);
-  await waitFor(() => stream.events.some((item) => (item.chunk ?? "").includes("from-web-term")));
+  await waitFor(() => chunks.join("").includes("from-web-term"));
 
-  const other = await createRun({ prompt: "other", repoUrls: ["fixtures/toy-repo"] });
+  const other = await createRun({ prompt: "other", repoUrls: [] });
   const stolen = await fetch(`${base}/v1/runs/${other.id}/term/${session.id}`, {
     method: "POST",
     headers: auth({ "content-type": "application/json" }),
@@ -117,4 +100,29 @@ test("workspace term is a typed shell, not setup logs", async (t) => {
     headers: auth(),
   });
   assert.equal(closed.status, 200);
+});
+
+test("term SSE replays the buffer then live chunks", async (t) => {
+  resetWorkspaceShellsForTests();
+  const { openWorkspaceTerm, writeWorkspaceTerm } = await import("../runtime/workspace-shell.js");
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-term-sse-"));
+  const opened = openWorkspaceTerm({ runId: "run_sse", cwd });
+  t.after(() => resetWorkspaceShellsForTests());
+
+  const chunks: string[] = [];
+  const req = new EventEmitter() as IncomingMessage;
+  const res = new EventEmitter() as ServerResponse;
+  res.writeHead = (() => res) as ServerResponse["writeHead"];
+  res.write = ((chunk: string) => {
+    chunks.push(String(chunk));
+    return true;
+  }) as ServerResponse["write"];
+
+  attachWorkspaceTermStream(req, res, "run_sse", opened.id);
+  assert.match(chunks.join(""), /"type":"ready"/);
+  assert.match(chunks.join(""), new RegExp(opened.id));
+
+  writeWorkspaceTerm("run_sse", opened.id, "printf 'sse-live\\n'\n");
+  await waitFor(() => chunks.join("").includes("sse-live"));
+  req.emit("close");
 });
