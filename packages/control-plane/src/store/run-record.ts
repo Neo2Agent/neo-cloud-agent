@@ -113,8 +113,8 @@ export function parseQueue(value: unknown): RunQueueState | null {
   const followUps = Array.isArray(item.followUps) ? item.followUps : Array.isArray(item.follow_ups) ? item.follow_ups : undefined;
   const inbound = Array.isArray(item.inbound) ? item.inbound : undefined;
   const subscriptions = Array.isArray(item.subscriptions) ? item.subscriptions : undefined;
-  const activeTurn =
-    item.activeTurn !== undefined ? item.activeTurn : item.active_turn !== undefined ? item.active_turn : undefined;
+  const rawActive = item.activeTurn !== undefined ? item.activeTurn : item.active_turn;
+  const activeTurn = rawActive == null ? undefined : rawActive;
   if (followUps === undefined && inbound === undefined && subscriptions === undefined && activeTurn === undefined) {
     return null;
   }
