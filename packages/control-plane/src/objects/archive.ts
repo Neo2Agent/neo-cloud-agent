@@ -1,6 +1,7 @@
 import type { RunEvent } from "@neo-cloud-agent/contracts";
 import { buildTranscriptSnapshot } from "../events/transcript.js";
 import {
+  listEventObjectKeys,
   listInboxObjectKeys,
   loadPersistedEvents,
   loadPersistedQueue,
@@ -10,8 +11,10 @@ import {
   loadSessionFiles,
   persistRunRecord,
   persistSessionFiles,
+  readEventObject,
   readInboxObject,
   replacePersistedEvents,
+  writeEventObject,
   writeInboxObject,
   type PersistedRun,
 } from "../store/persist.js";
@@ -71,6 +74,12 @@ export async function archiveRunArtifacts(runId: string): Promise<void> {
       await store.put(key, body);
     }
   }
+  for (const key of listEventObjectKeys(runId)) {
+    const body = readEventObject(key);
+    if (body != null) {
+      await store.put(key, body);
+    }
+  }
 }
 
 export async function loadArchivedArtifacts(runId: string): Promise<{
@@ -78,6 +87,7 @@ export async function loadArchivedArtifacts(runId: string): Promise<{
   events: RunEvent[];
   session: Array<{ name: string; content: string }>;
   inbox: Array<{ key: string; body: string }>;
+  eventImages: Array<{ key: string; body: string }>;
 } | null> {
   const store = getObjectStore();
   const eventsRaw = await store.get(artifactKey(runId, "events.jsonl"));
@@ -111,7 +121,14 @@ export async function loadArchivedArtifacts(runId: string): Promise<{
       inbox.push({ key, body });
     }
   }
-  return { record, events, session, inbox };
+  const eventImages: Array<{ key: string; body: string }> = [];
+  for (const key of await store.list(`runs/${runId}/events/`)) {
+    const body = await store.get(key);
+    if (typeof body === "string") {
+      eventImages.push({ key, body });
+    }
+  }
+  return { record, events, session, inbox, eventImages };
 }
 
 export async function restoreArchivedArtifacts(runId: string): Promise<{
@@ -124,6 +141,9 @@ export async function restoreArchivedArtifacts(runId: string): Promise<{
   }
   for (const item of loaded.inbox) {
     writeInboxObject(item.key, item.body);
+  }
+  for (const item of loaded.eventImages) {
+    writeEventObject(item.key, item.body);
   }
   if (loaded.record) {
     const current = loadPersistedRunRaw(runId);

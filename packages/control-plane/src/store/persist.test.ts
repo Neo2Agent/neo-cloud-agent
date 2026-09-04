@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { Run, RunEvent } from "@neo-cloud-agent/contracts";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import type { FollowUp } from "@neo-cloud-agent/contracts";
 import {
   listSessionFiles,
@@ -15,11 +15,15 @@ import {
   loadSessionFiles,
   loadTranscriptSnapshot,
   peekLastPersistedEventId,
+  backfillPersistedEventImages,
   persistEvent,
   persistRunRecord,
   persistSessionFiles,
   persistTranscriptSnapshot,
+  purgePersistedRun,
+  reclaimPersistedRun,
 } from "./persist.js";
+import { eventImageKey } from "./event-images.js";
 import { inboxImageKey, isObjectImageRef } from "./run-record.js";
 
 function sampleRun(id: string): Run {
@@ -220,6 +224,75 @@ test("delivered follow-ups keep the entry and drop images", () => {
   assert.equal(queue?.followUps[0]?.source, "user");
   assert.equal(queue?.followUps[0]?.images, undefined);
   assert.equal(existsSync(path.join(runsDir, ".objects", "runs", run.id, "inbox")), false);
+});
+
+test("persistEvent offloads event images and soft reclaim keeps them", () => {
+  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-persist-evt-"));
+  const run = sampleRun("run-evt-1");
+  persistRunRecord({ version: 1, run, followUps: [], inbound: [] }, runsDir);
+  persistEvent(
+    {
+      id: "evt-img",
+      runId: run.id,
+      createdAt: run.createdAt,
+      category: "agent_run",
+      level: "info",
+      kind: "user.message",
+      title: "User message",
+      data: { text: "看这张", images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }] },
+    } satisfies RunEvent,
+    runsDir,
+  );
+  const events = loadPersistedEvents(run.id, runsDir);
+  const stored = (events[0]?.data?.images as Array<{ data: string }>)[0]?.data ?? "";
+  assert.equal(isObjectImageRef(stored), true);
+  assert.ok(!JSON.stringify(events).includes("aW1nZGF0YQ"));
+  assert.equal(existsSync(path.join(runsDir, ".objects", ...eventImageKey(run.id, "evt-img", 0).split("/"))), true);
+  reclaimPersistedRun(run.id, runsDir);
+  assert.equal(existsSync(path.join(runsDir, ".objects", ...eventImageKey(run.id, "evt-img", 0).split("/"))), true);
+  purgePersistedRun(run.id, runsDir);
+  assert.equal(existsSync(path.join(runsDir, ".objects", ...eventImageKey(run.id, "evt-img", 0).split("/"))), false);
+});
+
+test("file event image backfill rewrites leftover base64 in JSONL", () => {
+  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-persist-bf-"));
+  const run = sampleRun("run-bf-evt");
+  const dir = path.join(runsDir, ".control");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, `${run.id}.events.jsonl`),
+    `${JSON.stringify({
+      id: "evt-fat",
+      runId: run.id,
+      createdAt: run.createdAt,
+      category: "agent_run",
+      level: "info",
+      kind: "user.message",
+      title: "User message",
+      data: { text: "旧图", images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }] },
+    })}\n`,
+  );
+  const imageFree = sampleRun("run-bf-plain");
+  writeFileSync(
+    path.join(dir, `${imageFree.id}.events.jsonl`),
+    `${JSON.stringify({
+      id: "evt-text",
+      runId: imageFree.id,
+      createdAt: imageFree.createdAt,
+      category: "agent_run",
+      level: "info",
+      kind: "message.delta",
+      title: "delta",
+      data: { delta: "hi" },
+    })}\n`,
+  );
+  const before = statSync(path.join(dir, `${imageFree.id}.events.jsonl`)).mtimeMs;
+  backfillPersistedEventImages(runsDir);
+  const events = loadPersistedEvents(run.id, runsDir);
+  const stored = (events[0]?.data?.images as Array<{ data: string }>)[0]?.data ?? "";
+  assert.equal(isObjectImageRef(stored), true);
+  assert.ok(!JSON.stringify(events).includes("aW1nZGF0YQ"));
+  assert.equal(statSync(path.join(dir, `${imageFree.id}.events.jsonl`)).mtimeMs, before);
 });
 
 test("legacy fat control json still loads when the queue file is missing", () => {

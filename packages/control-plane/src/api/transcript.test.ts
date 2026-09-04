@@ -113,6 +113,10 @@ test("GET /transcript can omit image bytes and serve them on a second URL", asyn
   };
   const fatImage = fat.snapshot.messages.find((item) => item.role === "user")?.images?.[0];
   assert.equal(fatImage?.data, "ZmFrZQ");
+  const { loadPersistedEvents } = await import("../store/persist.js");
+  const persisted = JSON.stringify(loadPersistedEvents(run.id));
+  assert.ok(!persisted.includes("ZmFrZQ"));
+  assert.ok(persisted.includes("obj:runs/"));
 
   const slim = (await (
     await fetch(`http://127.0.0.1:${port}/v1/runs/${run.id}/transcript?images=href`)

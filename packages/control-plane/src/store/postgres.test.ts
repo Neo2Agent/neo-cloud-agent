@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import type { Run, RunEvent } from "@neo-cloud-agent/contracts";
 import { createPostgresMetadataStore } from "./postgres.js";
@@ -67,6 +70,9 @@ test("postgres store upserts run JSON, events, and users", async () => {
   } satisfies RunEvent;
   await store.saveEvent(event);
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO events/);
+  assert.match(calls.at(-1)?.text ?? "", /image_version, has_images/);
+  assert.equal(calls.at(-1)?.values[4], 1);
+  assert.equal(calls.at(-1)?.values[5], 0);
 
   rowsByQuery.run = [{ record, record_version: 2, follow_ups: [], inbound: [], subscriptions: [], active_turn: null }];
   const loaded = await store.loadRun("run-pg-1");
@@ -125,4 +131,57 @@ test("postgres store upserts run JSON, events, and users", async () => {
     failureMessage: null,
   });
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO builds/);
+});
+
+test("postgres migrate still succeeds when event image backfill fails", async () => {
+  const store = createPostgresMetadataStore(async (text) => {
+    if (/image_version </.test(text)) {
+      throw new Error("postgres went away");
+    }
+    return { rows: [] };
+  });
+  await store.migrate();
+});
+
+test("postgres event image backfill probes without body and marks image_version 1", async () => {
+  process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-pg-evt-"));
+  const fat = {
+    id: "evt-1",
+    runId: "run-evt-1",
+    createdAt: "2026-09-04T00:00:00.000Z",
+    category: "agent_run",
+    level: "info",
+    kind: "user.message",
+    title: "User message",
+    seq: 1,
+    data: { text: "旧图", images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }] },
+  };
+  let pending = [{ event_id: "evt-1" }];
+  let batch = [{ run_id: "run-evt-1", event_id: "evt-1", seq: 1, body: fat }];
+  const updates: Array<{ text: string; values: unknown[] }> = [];
+  const texts: string[] = [];
+  const store = createPostgresMetadataStore(async (text, values) => {
+    texts.push(text);
+    if (/SELECT event_id FROM events WHERE image_version/.test(text) && /LIMIT 1/.test(text) && !/ORDER BY/.test(text)) {
+      assert.doesNotMatch(text, /\bbody\b/);
+      return { rows: pending };
+    }
+    if (/SELECT run_id, event_id, seq, body FROM events WHERE image_version/.test(text)) {
+      return { rows: batch };
+    }
+    if (/UPDATE events SET body/.test(text)) {
+      updates.push({ text, values: values ?? [] });
+      pending = [];
+      batch = [];
+    }
+    return { rows: [] };
+  });
+  await store.migrate();
+  const marked = updates.find((item) => /UPDATE events SET body/.test(item.text));
+  assert.ok(marked);
+  assert.equal(marked?.values[1], 1);
+  assert.equal(marked?.values[2], 1);
+  assert.ok(!String(marked?.values[0]).includes("aW1nZGF0YQ"));
+  const backup = texts.find((text) => /CREATE TABLE IF NOT EXISTS events_backup_img_\d{8}/.test(text)) ?? "";
+  assert.match(backup, /WHERE image_version < 1/);
 });

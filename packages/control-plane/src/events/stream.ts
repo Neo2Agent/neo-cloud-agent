@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RunEvent } from "@neo-cloud-agent/contracts";
+import { resolveEventImagesForClient } from "../store/event-images.js";
 import { listEventsAfter, subscribe } from "./bus.js";
 
 export const SSE_HEADERS = {
@@ -12,7 +13,7 @@ export const SSE_HEADERS = {
 
 export function writeSseEvent(res: ServerResponse, event: RunEvent): void {
   res.write(`id: ${event.id}\n`);
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
+  res.write(`data: ${JSON.stringify(resolveEventImagesForClient(event))}\n\n`);
 }
 
 export function resumeAfter(req: IncomingMessage, url: URL): string | null {
