@@ -1,5 +1,7 @@
 # WorkBuddy 对标报告：还值得跟什么
 
+> **2026-09-04 注：** 本文按 `26b1e76` 写。Web 验收面、Inbox、Recipe / 胶囊、侧栏分组、对话内搜索、记忆 CRUD 已落地，§6「第一刀」不要再当待办。对话存储对齐之后的实现规格见 [workbuddy-alignment-plan.md](./workbuddy-alignment-plan.md)。WorkBuddy 官方 changelog 已到 5.5.2，新增积分 / 行业 Buddy / 视频生成等继续不跟。
+
 调研日期：2026-08-28。  
 对象：腾讯云 WorkBuddy（桌面 + Web + 小程序，文档站「从入门到精通」这一支，不是 CodeBuddy IDE Plan Mode）。  
 对照基线：本仓库 `main`（`26b1e76` 一带），项目 / 专家 / 技能骨架已经落地。  
