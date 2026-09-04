@@ -53,6 +53,8 @@ import { compressAvatarFile } from "./avatar-file";
 import { ExpertsPage } from "./ExpertsPage";
 import { MemoriesPage } from "./MemoriesPage";
 import { SkillsPage } from "./SkillsPage";
+import { resolveSkillMention, resolveSkillUse, skillComposerMentions } from "./skill-mentions";
+import { SKILL_ORIGIN_WORKSPACE, type ListedSkill, type ListedSkills } from "../src/skill-list";
 import { jumpToTranscriptMessage, TranscriptSearch } from "./chat/TranscriptSearch";
 import { IslandButton, IslandCard, IslandInput, IslandTag, IslandTitle } from "./island";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
@@ -243,6 +245,8 @@ export function App() {
   const [expertPick, setExpertPick] = useState<ExpertPick>({});
   const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
   const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
+  const [localSkillPick, setLocalSkillPick] = useState<ListedSkill | null>(null);
+  const [localSkills, setLocalSkills] = useState<ListedSkills>({ system: [], workspace: [], skipped: [] });
   const [skillId, setSkillId] = useState<string | null>(null);
   const [highlightAssetId, setHighlightAssetId] = useState<string | null>(null);
   const [images, setImages] = useState<ImageRef[]>([]);
@@ -372,6 +376,15 @@ export function App() {
     const response = await api(tokenRef.current, `/v1/plugins${query}`);
     if (!response.ok) return;
     setPluginCatalog((await readJson<{ plugins?: PluginCatalogItem[] }>(response)).plugins ?? []);
+  }, []);
+
+  const refreshLocalSkills = useCallback(async (workspaceFolder?: string) => {
+    const listSkills = deskBridge()?.listSkills;
+    if (!listSkills) {
+      setLocalSkills({ system: [], workspace: [], skipped: [] });
+      return;
+    }
+    setLocalSkills(await listSkills(workspaceFolder ? { folder: workspaceFolder } : {}));
   }, []);
 
   const openProject = useCallback(async (id: string, tab: WorkbenchTab = "board", assetId?: string | null) => {
@@ -875,6 +888,7 @@ export function App() {
           await deskBridge()?.takeAssignment?.(created.id, folder);
         }
         setPluginPick(null);
+        setLocalSkillPick(null);
         await openRun(created.id, { keepPending: true });
         return;
       }
@@ -963,6 +977,11 @@ export function App() {
       offInbox?.();
     };
   }, [refreshRuns]);
+
+  useEffect(() => {
+    if (!authed) return;
+    void refreshLocalSkills(folder).catch(() => undefined);
+  }, [authed, folder, refreshLocalSkills]);
 
   useEffect(() => {
     const bridge = deskBridge();
@@ -1086,6 +1105,16 @@ export function App() {
     return todoHits.filter((item) => !q || item.title.toLowerCase().includes(q) || item.meta.toLowerCase().includes(q)).slice(0, 12);
   }, [query, todoHits]);
 
+  const skillMentions = useMemo(
+    () =>
+      skillComposerMentions({
+        workspace: localSkills.workspace,
+        system: localSkills.system,
+        plugins: pluginCatalog,
+      }),
+    [localSkills.system, localSkills.workspace, pluginCatalog],
+  );
+
   useEffect(() => {
     if (!authed) {
       setMentions([]);
@@ -1124,14 +1153,7 @@ export function App() {
             label: item.name,
             insert: `@专家团 ${item.name}`,
           })),
-          ...pluginCatalog
-            .filter((item) => item.installed && item.enabled)
-            .map((item) => ({
-              kind: "plugin" as const,
-              id: item.id,
-              label: item.name,
-              insert: `@技能 ${item.name}`,
-            })),
+          ...skillMentions,
         ]);
         return;
       }
@@ -1155,14 +1177,7 @@ export function App() {
             label: item.name,
             insert: `@专家团 ${item.name}`,
           })),
-          ...pluginCatalog
-            .filter((item) => item.installed && item.enabled)
-            .map((item) => ({
-              kind: "plugin" as const,
-              id: item.id,
-              label: item.name,
-              insert: `@技能 ${item.name}`,
-            })),
+          ...skillMentions,
         ]);
         return;
       }
@@ -1202,20 +1217,13 @@ export function App() {
             label: item.name,
             insert: `@专家团 ${item.name}`,
           })),
-          ...pluginCatalog
-            .filter((item) => item.installed && item.enabled)
-            .map((item) => ({
-              kind: "plugin" as const,
-              id: item.id,
-              label: item.name,
-              insert: `@技能 ${item.name}`,
-            })),
+          ...skillMentions,
         ]);
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeProject, authed, automations, current, experts, pluginCatalog, teams]);
+  }, [activeProject, authed, automations, current, experts, skillMentions, teams]);
 
   useEffect(() => {
     if (!searchOpen || !authed) return;
@@ -1261,6 +1269,7 @@ export function App() {
     setDiff(null);
     setImages([]);
     setPluginPick(null);
+    setLocalSkillPick(null);
     setSearchOpen(false);
     setModelMenu(false);
     setContextOpen(null);
@@ -1421,8 +1430,19 @@ export function App() {
     if (item.kind === "expert") setExpertPick({ expertId: item.id });
     if (item.kind === "team") setExpertPick({ expertTeamId: item.id });
     if (item.kind === "plugin") {
-      const plugin = pluginCatalog.find((entry) => entry.id === item.id || entry.slug === item.id);
-      if (plugin) setPluginPick(plugin);
+      const resolved = resolveSkillMention({
+        mentionId: item.id,
+        workspace: localSkills.workspace,
+        system: localSkills.system,
+        plugins: pluginCatalog,
+      });
+      if (resolved && "plugin" in resolved) {
+        setPluginPick(resolved.plugin);
+        setLocalSkillPick(null);
+      } else if (resolved && "local" in resolved) {
+        setPluginPick(null);
+        setLocalSkillPick(resolved.local);
+      }
     }
   };
 
@@ -1981,10 +2001,12 @@ export function App() {
             token={token}
             selectedId={skillId}
             projectId={activeProject?.id}
+            folder={folder}
             onOpenPlugin={(id) => openSkills(id)}
             onChanged={() => void refreshPlugins(activeProject?.id)}
-            onUse={(plugin) => {
+            onUsePlugin={(plugin) => {
               setPluginPick(plugin);
+              setLocalSkillPick(null);
               runIdRef.current = null;
               setRunId(null);
               setCurrent(null);
@@ -1993,6 +2015,24 @@ export function App() {
               setNav("chats");
               location.hash = "";
               void refreshPlugins();
+            }}
+            onUseLocal={(skill) => {
+              const resolved = resolveSkillUse(skill, pluginCatalog);
+              if ("plugin" in resolved) {
+                setPluginPick(resolved.plugin);
+                setLocalSkillPick(null);
+              } else {
+                setPluginPick(null);
+                setLocalSkillPick(resolved.local);
+                setPrompt((current) => current.trim() || `@技能 ${resolved.local.name}`);
+              }
+              runIdRef.current = null;
+              setRunId(null);
+              setCurrent(null);
+              setMessages([]);
+              closeStream();
+              setNav("chats");
+              location.hash = "";
             }}
           />
         ) : nav === "memories" ? (
@@ -2283,7 +2323,9 @@ export function App() {
                         ? hostLock.hint
                         : pluginPick
                           ? `${greetLine}  将使用技能：${pluginPick.name}`
-                          : greetLine
+                          : localSkillPick
+                            ? `${greetLine}  将使用${localSkillPick.origin === SKILL_ORIGIN_WORKSPACE ? "本仓库" : "系统"}技能：${localSkillPick.name}`
+                            : greetLine
                     }
                     sending={sending}
                     locked={hostLock.locked}

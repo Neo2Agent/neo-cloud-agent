@@ -7,15 +7,25 @@ import { createWorkspaceSandboxExtension } from "./sandbox.js";
 
 export { WORKSPACE_SKILL_DIRS };
 
-export function existingWorkspaceSkillPaths(cwd: string, scratchDir?: string): string[] {
+export function existingWorkspaceSkillPaths(
+  cwd: string,
+  scratchDir?: string,
+  hostSkillDirs: string[] = [],
+): string[] {
   const found: string[] = [];
   const seen = new Set<string>();
+  const host = hostSkillDirs.map((dir) => path.resolve(dir));
+  const hostSet = new Set(host);
   const candidates = [
     scratchDir?.trim() ? path.resolve(scratchDir, "skills") : "",
     ...WORKSPACE_SKILL_DIRS.map((relative) => path.resolve(cwd, relative)),
+    ...host,
   ];
   for (const dir of candidates) {
-    if (!dir || seen.has(dir) || !existsSync(dir) || !isInsideWorkspace(cwd, dir)) {
+    if (!dir || seen.has(dir) || !existsSync(dir)) {
+      continue;
+    }
+    if (!hostSet.has(dir) && !isInsideWorkspace(cwd, dir)) {
       continue;
     }
     seen.add(dir);
@@ -40,6 +50,8 @@ export async function createWorkspaceLoader(input: {
   sandboxRoot?: string;
   /** Desk parallel runs: look in the run scratch before `<cwd>/.neo/skills`. */
   scratchDir?: string;
+  /** Desk host catalog, typically `~/.neo/skills-neo`. */
+  hostSkillDirs?: string[];
 }): Promise<ResourceLoader> {
   const cwd = path.resolve(input.cwd);
   const extensionFactories = [createWorkspaceHookExtension(cwd)];
@@ -55,7 +67,7 @@ export async function createWorkspaceLoader(input: {
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: false,
-    additionalSkillPaths: existingWorkspaceSkillPaths(cwd, input.scratchDir),
+    additionalSkillPaths: existingWorkspaceSkillPaths(cwd, input.scratchDir, input.hostSkillDirs),
     systemPrompt: input.systemPrompt,
     extensionFactories,
     agentsFilesOverride: (current) => ({

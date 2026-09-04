@@ -37,6 +37,25 @@ Say hello from the skill.
 `,
   );
   assert.deepEqual(existingWorkspaceSkillPaths(cwd), [path.join(cwd, ".cursor/skills")]);
+  const host = path.join(parent, "skills-neo");
+  mkdirSync(path.join(host, "pr-review"), { recursive: true });
+  writeFileSync(
+    path.join(host, "pr-review", "SKILL.md"),
+    `---
+name: pr-review
+description: Host system skill
+---
+
+Review.
+`,
+  );
+  assert.deepEqual(existingWorkspaceSkillPaths(cwd, undefined, [host]), [
+    path.join(cwd, ".cursor/skills"),
+    host,
+  ]);
+  assert.deepEqual(existingWorkspaceSkillPaths(cwd, undefined, [path.join(parent, "not-allowed")]), [
+    path.join(cwd, ".cursor/skills"),
+  ]);
   const loader = await createWorkspaceLoader({
     cwd,
     agentDir,
@@ -52,4 +71,55 @@ Say hello from the skill.
     ["demo-skill"],
   );
   assert.equal(loader.getExtensions().extensions.some((item) => item.path.includes("neo-workspace-hooks")), true);
+
+  const withHost = await createWorkspaceLoader({
+    cwd,
+    agentDir,
+    systemPrompt: "cloud prompt",
+    settingsManager: SettingsManager.inMemory({}),
+    hostSkillDirs: [host],
+  });
+  assert.deepEqual(
+    withHost.getSkills().skills.map((skill) => skill.name).sort(),
+    ["demo-skill", "pr-review"],
+  );
+});
+
+test("a workspace skill of the same name wins over the host catalog", async () => {
+  const parent = mkdtempSync(path.join(tmpdir(), "neo-loader-override-"));
+  const cwd = path.join(parent, "workspace");
+  const agentDir = path.join(parent, "agent");
+  const host = path.join(parent, "skills-neo");
+  mkdirSync(path.join(cwd, ".cursor", "skills", "pr-review"), { recursive: true });
+  mkdirSync(path.join(host, "pr-review"), { recursive: true });
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(
+    path.join(cwd, ".cursor/skills/pr-review/SKILL.md"),
+    `---
+name: pr-review
+description: Workspace copy
+---
+
+Repo review wins.
+`,
+  );
+  writeFileSync(
+    path.join(host, "pr-review", "SKILL.md"),
+    `---
+name: pr-review
+description: System copy
+---
+
+Bundled review.
+`,
+  );
+  const loader = await createWorkspaceLoader({
+    cwd,
+    agentDir,
+    systemPrompt: "desk",
+    settingsManager: SettingsManager.inMemory({}),
+    hostSkillDirs: [host],
+  });
+  const skill = loader.getSkills().skills.find((item) => item.name === "pr-review");
+  assert.equal(skill?.description, "Workspace copy");
 });
