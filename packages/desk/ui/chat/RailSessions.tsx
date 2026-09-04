@@ -1,4 +1,4 @@
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import { runDisplayTitle, type Run } from "@neo-cloud-agent/contracts/run";
 import { isRemoteControlRun } from "../desk";
 import type { RailSpaceGroup } from "../../src/rail";
 import { IconChevron, IconCloud, IconComputer, IconProjects } from "../icons";
@@ -8,6 +8,10 @@ const INBOX_PREVIEW = 8;
 
 function preview(text: string, n = 40): string {
   return (text || "对话").replace(/\s+/g, " ").slice(0, n);
+}
+
+function runListTitle(run: Run, n = 40): string {
+  return preview(runDisplayTitle(run), n);
 }
 
 function SpaceGlyph({ kind }: { kind: RailSpaceGroup["kind"] }) {
@@ -146,7 +150,7 @@ function ChatRow({
       className={`chat-row${nested ? " nested" : ""}${active ? " active" : ""}`}
       onClick={() => onOpen(run.id)}
     >
-      <span className="chat-title">{preview(run.prompt, 40)}</span>
+      <span className="chat-title">{runListTitle(run, 40)}</span>
       <span className="chat-meta">
         <i
           className={`chat-local-dot${localRunning ? " on" : ""}`}

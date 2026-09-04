@@ -1,4 +1,5 @@
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
+import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 
 export const STATUS_LABELS: Record<string, string> = {
   NOT_YET_STARTED: "排队中",
@@ -14,6 +15,10 @@ export const STATUS_LABELS: Record<string, string> = {
 
 export function preview(text: string): string {
   return (text || "未命名任务").replace(/\s+/g, " ").slice(0, 48);
+}
+
+export function runListTitle(run: { title?: string | null; prompt?: string }): string {
+  return preview(runDisplayTitle(run));
 }
 
 export function shortId(id: string): string {

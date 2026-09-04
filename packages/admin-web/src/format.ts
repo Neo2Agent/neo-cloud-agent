@@ -1,3 +1,5 @@
+import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
+
 const SHANGHAI = "Asia/Shanghai";
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -123,6 +125,10 @@ export function shortId(id: string): string {
 
 export function preview(text: string, max = 72): string {
   return (text || "未命名任务").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+export function runListTitle(run: { title?: string | null; prompt?: string }, max = 72): string {
+  return preview(runDisplayTitle(run), max);
 }
 
 export function slotLabel(id?: string | null): string {

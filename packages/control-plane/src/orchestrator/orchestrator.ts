@@ -94,10 +94,13 @@ import {
   persistRunRecord,
   persistSessionFiles,
   persistWorkerLease,
+  reclaimPersistedRun,
   replacePersistedEvents,
+  resolvePersistedRun,
   restoreSessionToDir,
   type ActiveTurn,
 } from "../store/persist.js";
+import { assertClientImages, runIndexTitle } from "../store/run-record.js";
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
@@ -186,6 +189,14 @@ function hydrateRecord(record: {
   subscriptions?: RunSubscription[];
   activeTurn?: ActiveTurn | null;
 }): void {
+  record = resolvePersistedRun({
+    version: 1,
+    run: record.run,
+    followUps: record.followUps ?? [],
+    inbound: record.inbound ?? [],
+    subscriptions: record.subscriptions ?? [],
+    activeTurn: record.activeTurn ?? null,
+  });
   const run = record.run;
   if (run.deletedAt) {
     return;
@@ -925,7 +936,7 @@ export function projectRunCard(run: Run): ProjectRunCard {
   const host = run.collaborators?.find((item) => item.role === "host");
   return {
     id: run.id,
-    title: (run.prompt || "对话").replace(/\s+/g, " ").slice(0, 72),
+    title: runIndexTitle(run),
     status: run.status,
     projectId: run.projectId ?? "",
     hostUserId: host?.userId ?? run.assigneeUserId ?? run.userId,
@@ -1070,6 +1081,7 @@ function requestedRepoKey(repoUrls: string[]): string {
 }
 
 export async function createRun(input: CreateRunRequest, owner?: { userId?: string; orgId?: string; email?: string }): Promise<Run> {
+  assertClientImages(input.images);
   const config = getConfig();
   const listed = [...runs.values()];
   assertCreateRunAllowed(listed, owner?.orgId ?? config.orgId);
@@ -1147,6 +1159,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     expertTeamId: team?.id ?? null,
     model: input.model ?? expert?.model ?? config.defaultModel,
     prompt: input.prompt,
+    title: runIndexTitle({ prompt: input.prompt }),
     branchName: null,
     baseBranch: null,
     repoUrls,
@@ -1914,6 +1927,7 @@ export async function enqueueFollowUp(
   if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
     throw new Error(`run ${run.status.toLowerCase()}: ${runId}`);
   }
+  assertClientImages(input.images);
   const creditUserId = actor?.userId ?? run.userId;
   if (creditUserId) {
     const account = await getAccountStore().findUserById(creditUserId);
@@ -2270,6 +2284,7 @@ export async function deleteRun(runId: string): Promise<{ ok: true; id: string; 
   run.updatedAt = deletedAt;
   publish(event(runId, "run.deleted", "Run deleted"));
   flushRun(runId);
+  reclaimPersistedRun(runId);
   dropHistory(runId);
   forgetDeletedRun(runId);
   return { ok: true, id: runId, deletedAt };
@@ -2466,21 +2481,19 @@ export async function restoreArchivedRun(runId: string) {
     run.errorMessage = run.errorMessage ?? "control plane restarted; worker was not recovered";
     run.updatedAt = now();
   }
-  runs.set(run.id, run);
-  followUps.set(run.id, restored.record.followUps ?? []);
-  inbound.set(run.id, restored.record.inbound ?? []);
-  subscriptions.set(run.id, restored.record.subscriptions ?? []);
-  if (keepHotHistory(run.status)) {
-    seedEvents(run.id, restored.events);
-  }
   persistRunRecord({
     version: 1,
     run,
-    followUps: followUps.get(run.id) ?? [],
-    inbound: inbound.get(run.id) ?? [],
-    subscriptions: subscriptions.get(run.id) ?? [],
+    followUps: restored.record.followUps ?? [],
+    inbound: restored.record.inbound ?? [],
+    subscriptions: restored.record.subscriptions ?? [],
+    activeTurn: restored.record.activeTurn,
   });
-  return run;
+  hydrateRecord(restored.record);
+  if (keepHotHistory(run.status) && !eventsForRun(run.id).length) {
+    seedEvents(run.id, restored.events);
+  }
+  return runs.get(run.id) ?? run;
 }
 
 export function getRunSession(runId: string, options?: { includeContent?: boolean }) {

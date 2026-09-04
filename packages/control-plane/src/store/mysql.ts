@@ -9,7 +9,6 @@ import type {
   Expert,
   PluginInstall,
   Project,
-  Run,
   RunEvent,
 } from "@neo-cloud-agent/contracts";
 import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
@@ -22,8 +21,22 @@ import {
   type SessionRecord,
   type UserRecord,
 } from "../accounts/types.js";
-import type { PersistedRun, WorkerLease } from "./persist.js";
+import { persistImagesForRecord, type PersistedRun, type WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
+import {
+  applyRunIndexColumns,
+  BACKFILL_BATCH_SIZE,
+  backfillRunRecords,
+  hydrationRowFromStore,
+  mergeStoredRun,
+  parseQueue,
+  RECORD_VERSION_SLIM,
+  recordVersionOf,
+  runIndexTitle,
+  runsBackupTableName,
+  type RunHydrationRow,
+  type RunQueueDocument,
+} from "./run-record.js";
 
 export type MysqlMetadataStore = PostgresMetadataStore;
 
@@ -53,10 +66,23 @@ CREATE TABLE IF NOT EXISTS runs (
   id VARCHAR(191) PRIMARY KEY,
   user_id VARCHAR(191) NOT NULL,
   org_id VARCHAR(191) NOT NULL,
+  title VARCHAR(191) NULL,
+  status VARCHAR(64) NULL,
+  project_id VARCHAR(191) NULL,
+  record_version SMALLINT NOT NULL DEFAULT 1,
   record JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL,
   deleted_at DATETIME(3) NULL,
   KEY runs_deleted_at (deleted_at)
+);
+CREATE TABLE IF NOT EXISTS run_queues (
+  run_id VARCHAR(191) PRIMARY KEY,
+  follow_ups JSON NOT NULL,
+  inbound JSON NOT NULL,
+  subscriptions JSON NOT NULL,
+  active_turn JSON NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL
 );
 CREATE TABLE IF NOT EXISTS events (
   run_id VARCHAR(191) NOT NULL,
@@ -131,14 +157,6 @@ function asRecord(value: unknown): PersistedRun | null {
   }
   const record = value as PersistedRun;
   return record.run?.id ? record : null;
-}
-
-function asRun(value: unknown): Run | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const run = value as Run;
-  return run.id && run.prompt ? run : null;
 }
 
 function asEvent(value: unknown): RunEvent | null {
@@ -267,6 +285,13 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "ALTER TABLE users ADD COLUMN credit_fen INT NOT NULL DEFAULT 0",
         "ALTER TABLE runs ADD COLUMN deleted_at DATETIME(3) NULL",
         "CREATE INDEX runs_deleted_at ON runs (deleted_at)",
+        "ALTER TABLE runs ADD COLUMN title VARCHAR(191) NULL",
+        "ALTER TABLE runs ADD COLUMN status VARCHAR(64) NULL",
+        "ALTER TABLE runs ADD COLUMN project_id VARCHAR(191) NULL",
+        "ALTER TABLE runs ADD COLUMN record_version SMALLINT NOT NULL DEFAULT 1",
+        "CREATE INDEX idx_runs_deleted_updated ON runs (deleted_at, updated_at)",
+        "CREATE INDEX idx_runs_status ON runs (status)",
+        "CREATE INDEX idx_runs_project_id ON runs (project_id)",
       ]) {
         try {
           await query(statement);
@@ -277,14 +302,20 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
           }
         }
       }
+      await backfillMysqlRunRecords(query);
     },
     async saveRun(record) {
+      await upsertMysqlQueue(query, record);
       await query(
-        `INSERT INTO runs (id, user_id, org_id, record, updated_at, deleted_at)
-         VALUES (?, ?, ?, ?, ?, ?) AS incoming
+        `INSERT INTO runs (id, user_id, org_id, title, status, project_id, record_version, record, updated_at, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS incoming
          ON DUPLICATE KEY UPDATE
            user_id = incoming.user_id,
            org_id = incoming.org_id,
+           title = incoming.title,
+           status = incoming.status,
+           project_id = incoming.project_id,
+           record_version = incoming.record_version,
            record = incoming.record,
            updated_at = incoming.updated_at,
            deleted_at = incoming.deleted_at`,
@@ -292,6 +323,10 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
           record.run.id,
           record.run.userId,
           record.run.orgId,
+          runIndexTitle(record.run),
+          record.run.status,
+          record.run.projectId ?? null,
+          RECORD_VERSION_SLIM,
           JSON.stringify(record),
           mysqlDateTime(record.run.updatedAt),
           record.run.deletedAt ? mysqlDateTime(record.run.deletedAt) : null,
@@ -299,26 +334,51 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       );
     },
     async loadRun(runId) {
-      const result = await query(`SELECT record FROM runs WHERE id = ?`, [runId]);
-      return parseJson(result.rows[0]?.record, asRecord);
+      const result = await query(
+        `SELECT r.record, r.record_version, r.title, r.status, r.project_id,
+                q.follow_ups, q.inbound, q.subscriptions, q.active_turn
+         FROM runs r
+         LEFT JOIN run_queues q ON q.run_id = r.id
+         WHERE r.id = ?`,
+        [runId],
+      );
+      return mergeMysqlRunRow(result.rows[0]);
     },
     async loadRuns() {
-      // Do not ORDER BY in MySQL: filesort of JSON blobs hits ER_OUT_OF_SORTMEMORY
-      // with the default 256KiB sort_buffer_size.
-      const result = await query(`SELECT record FROM runs WHERE deleted_at IS NULL`);
-      return result.rows
-        .map((row) => parseJson(row.record, asRecord))
-        .filter((item): item is PersistedRun => item != null && !item.run.deletedAt)
-        .sort((left, right) => Date.parse(right.run.updatedAt) - Date.parse(left.run.updatedAt));
+      const rows = await this.loadRunHydrationRows();
+      const queues = await this.loadRunQueues();
+      return rows
+        .map((row) => mergeStoredRun(row.document, queues.get(row.run.id) ?? null, row.recordVersion))
+        .filter((item): item is PersistedRun => item != null && !item.run.deletedAt);
     },
     async loadRunSummaries() {
-      // Pull only $.run. Persisted followUps can be megabytes and make the
-      // public path between the app host and MySQL take several seconds.
-      const result = await query(`SELECT JSON_EXTRACT(record, '$.run') AS run FROM runs WHERE deleted_at IS NULL`);
+      const rows = await this.loadRunHydrationRows();
+      return rows.map((row) => row.run).filter((run) => !run.deletedAt);
+    },
+    async loadRunHydrationRows() {
+      const result = await query(
+        `SELECT id, user_id, org_id, title, status, project_id, record_version, record, updated_at, deleted_at
+         FROM runs
+         WHERE deleted_at IS NULL
+         ORDER BY updated_at DESC`,
+      );
       return result.rows
-        .map((row) => parseJson(row.run, asRun))
-        .filter((item): item is Run => item != null && !item.deletedAt)
-        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+        .map((row) => hydrationRowFromStore(row, (value) => parseJson(value, asRecord)))
+        .filter((item): item is RunHydrationRow => item != null);
+    },
+    async loadRunQueues() {
+      const result = await query(`SELECT run_id, follow_ups, inbound, subscriptions, active_turn FROM run_queues`);
+      const queues = new Map<string, RunQueueDocument>();
+      for (const row of result.rows) {
+        const parsed = parseQueue(row);
+        if (parsed && row.run_id) {
+          queues.set(String(row.run_id), parsed);
+        }
+      }
+      return queues;
+    },
+    async deleteRunQueue(runId) {
+      await query(`DELETE FROM run_queues WHERE run_id = ?`, [runId]);
     },
     async saveEvent(event) {
       await query(
@@ -638,6 +698,76 @@ function toIso(value: unknown): string {
     return value.toISOString();
   }
   return String(value);
+}
+
+function mergeMysqlRunRow(row?: Record<string, unknown>): PersistedRun | null {
+  if (!row) {
+    return null;
+  }
+  const document = parseJson(row.record, asRecord);
+  const merged = mergeStoredRun(document, parseQueue(row), recordVersionOf(row.record_version));
+  if (!merged) {
+    return null;
+  }
+  merged.run = applyRunIndexColumns(merged.run, row);
+  return merged;
+}
+
+async function upsertMysqlQueue(query: SqlQuery, record: PersistedRun): Promise<void> {
+  const updatedAt = mysqlDateTime(record.run.updatedAt);
+  await query(
+    `INSERT INTO run_queues (run_id, follow_ups, inbound, subscriptions, active_turn, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?) AS incoming
+     ON DUPLICATE KEY UPDATE
+       follow_ups = incoming.follow_ups,
+       inbound = incoming.inbound,
+       subscriptions = incoming.subscriptions,
+       active_turn = incoming.active_turn,
+       updated_at = incoming.updated_at`,
+    [
+      record.run.id,
+      JSON.stringify(record.followUps ?? []),
+      JSON.stringify(record.inbound ?? []),
+      JSON.stringify(record.subscriptions ?? []),
+      record.activeTurn == null ? null : JSON.stringify(record.activeTurn),
+      updatedAt,
+      updatedAt,
+    ],
+  );
+}
+
+async function backfillMysqlRunRecords(query: SqlQuery): Promise<void> {
+  const hasPending = async () => {
+    const result = await query(`SELECT id FROM runs WHERE record_version < ? LIMIT 1`, [RECORD_VERSION_SLIM]);
+    return result.rows.length > 0;
+  };
+  if (!(await hasPending())) {
+    return;
+  }
+  // Rollback point before the record is rewritten in place. A backup must copy
+  // every column, so this is the one place a star select is the correct form.
+  await query(`CREATE TABLE IF NOT EXISTS \`${runsBackupTableName()}\` AS SELECT * FROM runs`);
+  await backfillRunRecords({
+    hasPending,
+    loadBatch: async () => {
+      const result = await query(
+        `SELECT id, record FROM runs WHERE record_version < ? ORDER BY id LIMIT ?`,
+        [RECORD_VERSION_SLIM, BACKFILL_BATCH_SIZE],
+      );
+      return result.rows.map((row) => ({ id: String(row.id), record: row.record }));
+    },
+    parseRecord: (value) => parseJson(value, asRecord),
+    migrateRow: async (id, record) => {
+      const stored = persistImagesForRecord(record);
+      const title = runIndexTitle(stored.run);
+      stored.run = { ...stored.run, title };
+      await upsertMysqlQueue(query, stored);
+      await query(
+        `UPDATE runs SET record = ?, title = ?, status = ?, project_id = ?, record_version = ? WHERE id = ?`,
+        [JSON.stringify(stored), title, stored.run.status, stored.run.projectId ?? null, RECORD_VERSION_SLIM, id],
+      );
+    },
+  });
 }
 
 function mysqlDateTime(value: unknown): string {

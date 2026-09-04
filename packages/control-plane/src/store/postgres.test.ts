@@ -35,7 +35,7 @@ test("postgres store upserts run JSON, events, and users", async () => {
   const rowsByQuery: Record<string, Array<Record<string, unknown>>> = {};
   const store = createPostgresMetadataStore(async (text, values) => {
     calls.push({ text, values: values ?? [] });
-    const key = text.includes("FROM runs WHERE")
+    const key = text.includes("LEFT JOIN run_queues")
       ? "run"
       : text.includes("FROM events")
         ? "events"
@@ -49,9 +49,11 @@ test("postgres store upserts run JSON, events, and users", async () => {
 
   const record = { version: 1 as const, run: sampleRun("run-pg-1"), followUps: [], inbound: [] };
   await store.saveRun(record);
-  assert.match(calls[0]?.text ?? "", /INSERT INTO runs/);
-  assert.equal(calls[0]?.values[0], "run-pg-1");
-  assert.equal(calls[0]?.values[1], "user_ada");
+  assert.match(calls[0]?.text ?? "", /INSERT INTO run_queues/);
+  assert.match(calls[1]?.text ?? "", /INSERT INTO runs/);
+  assert.equal(calls[1]?.values[0], "run-pg-1");
+  assert.equal(calls[1]?.values[1], "user_ada");
+  assert.equal(calls[1]?.values[3], "hello postgres");
 
   const event = {
     id: "evt-1",
@@ -66,7 +68,7 @@ test("postgres store upserts run JSON, events, and users", async () => {
   await store.saveEvent(event);
   assert.match(calls.at(-1)?.text ?? "", /INSERT INTO events/);
 
-  rowsByQuery.run = [{ record }];
+  rowsByQuery.run = [{ record, record_version: 2, follow_ups: [], inbound: [], subscriptions: [], active_turn: null }];
   const loaded = await store.loadRun("run-pg-1");
   assert.equal(loaded?.run.prompt, "hello postgres");
 

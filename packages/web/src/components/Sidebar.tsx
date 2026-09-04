@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { formatRunTime, preview, slotLabel, STATUS_LABELS } from "../format";
+import { formatRunTime, runListTitle, slotLabel, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
 import { IconAutomations, IconClose, IconExperts, IconPlus, IconProjects, IconSkills, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
@@ -116,7 +116,7 @@ export function Sidebar({
         <div className="run-main">
           <span className="run-title">
             {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
-            {preview(run.prompt)}
+            {runListTitle(run)}
           </span>
           <small>
             {STATUS_LABELS[run.status] ?? run.status}

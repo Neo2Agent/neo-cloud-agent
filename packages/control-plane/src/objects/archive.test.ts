@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { Run, RunEvent } from "@neo-cloud-agent/contracts";
-import { persistEvent, persistRunRecord, persistSessionFiles, loadPersistedEvents, loadPersistedRun, loadSessionFiles } from "../store/persist.js";
+import { persistEvent, persistRunRecord, persistSessionFiles, loadPersistedEvents, loadPersistedQueue, loadPersistedRun, loadPersistedRunDocument, loadSessionFiles } from "../store/persist.js";
+import { isObjectImageRef } from "../store/run-record.js";
 import { archiveRunArtifacts, restoreArchivedArtifacts } from "./archive.js";
 import { createMemoryObjectStore } from "./memory.js";
-import { setObjectStoreForTests } from "./store.js";
+import { artifactKey, getObjectStore, setObjectStoreForTests } from "./store.js";
 
 function sampleRun(id: string): Run {
   const createdAt = "2026-08-21T00:00:00.000Z";
@@ -87,5 +88,48 @@ test("restore does not overwrite a soft-deleted run record", async () => {
   const restored = await restoreArchivedArtifacts(run.id);
   assert.equal(restored?.record?.run.deletedAt, "2026-08-31T00:00:00.000Z");
   assert.equal(loadPersistedRun(run.id)?.run.deletedAt, "2026-08-31T00:00:00.000Z");
+  setObjectStoreForTests(null);
+});
+
+test("archive writes a slim record and inbox objects without resolving base64", async () => {
+  process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-archive-img-"));
+  setObjectStoreForTests(createMemoryObjectStore());
+  const run = sampleRun("run-archive-img");
+  persistRunRecord({
+    version: 1,
+    run,
+    followUps: [
+      {
+        id: "f-arch",
+        runId: run.id,
+        text: "看图",
+        delivery: "follow_up",
+        status: "queued",
+        source: "user",
+        createdAt: run.createdAt,
+        deliveredAt: null,
+        images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }],
+      },
+    ],
+    inbound: [],
+  });
+  await archiveRunArtifacts(run.id);
+  const store = getObjectStore();
+  const recordRaw = await store.get(artifactKey(run.id, "record.json"));
+  assert.ok(recordRaw);
+  assert.ok(!recordRaw.includes("aW1nZGF0YQ"));
+  assert.equal(JSON.parse(recordRaw).followUps, undefined);
+  const queueRaw = await store.get(artifactKey(run.id, "queue.json"));
+  assert.ok(queueRaw);
+  assert.equal(isObjectImageRef(JSON.parse(queueRaw).followUps[0].images[0].data), true);
+  assert.equal(await store.get(`runs/${run.id}/inbox/followup-f-arch-1`), "aW1nZGF0YQ");
+
+  rmSync(path.join(process.env.RUNS_DIR, ".control"), { recursive: true, force: true });
+  rmSync(path.join(process.env.RUNS_DIR, ".objects"), { recursive: true, force: true });
+  const restored = await restoreArchivedArtifacts(run.id);
+  assert.equal(loadPersistedRun(run.id)?.followUps[0]?.images?.[0]?.data, "aW1nZGF0YQ");
+  assert.equal(loadPersistedRunDocument(run.id)?.followUps, undefined);
+  assert.equal(isObjectImageRef(loadPersistedQueue(run.id)?.followUps[0]?.images?.[0]?.data ?? ""), true);
+  assert.equal(restored?.record?.run.prompt, "hello");
   setObjectStoreForTests(null);
 });

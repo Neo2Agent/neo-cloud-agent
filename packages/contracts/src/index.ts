@@ -34,6 +34,7 @@ export {
   parseExecutionTarget,
   parseRunSource,
   parseRunStart,
+  runDisplayTitle,
 } from "./run.js";
 export type { CreateDeviceRequest, Device, DevicePlatform } from "./device.js";
 export { parseDevicePlatform } from "./device.js";

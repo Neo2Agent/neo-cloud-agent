@@ -25,6 +25,7 @@ import { reloadPersistedState } from "./orchestrator/orchestrator.js";
 import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
 import { persistRunRecord, persistWorkerLease, setPersistHooks } from "./store/persist.js";
+import { mergeStoredRun } from "./store/run-record.js";
 
 let started: Promise<void> | null = null;
 let metadata: MetadataStore | null = null;
@@ -121,6 +122,9 @@ async function doStart(): Promise<void> {
       onDeleteLease: (runId) => {
         void metadata?.deleteLease(runId).catch((error) => console.error("metadata deleteLease failed", error));
       },
+      onDeleteQueue: (runId) => {
+        void metadata?.deleteRunQueue(runId).catch((error) => console.error("metadata deleteRunQueue failed", error));
+      },
     });
     setAutomationPersistHooks({
       onWrite: (items) => {
@@ -192,8 +196,13 @@ async function doStart(): Promise<void> {
 }
 
 async function hydrateFromStore(store: MetadataStore): Promise<void> {
-  const records = await store.loadRuns();
-  for (const record of records) {
+  const rows = await store.loadRunHydrationRows();
+  const queues = await store.loadRunQueues();
+  for (const row of rows) {
+    const record = mergeStoredRun(row.document, queues.get(row.run.id) ?? null, row.recordVersion);
+    if (!record) {
+      continue;
+    }
     persistRunRecord(record, undefined, { mirror: false });
     const lease = await store.loadLease(record.run.id);
     if (lease) {

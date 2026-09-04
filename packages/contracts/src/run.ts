@@ -144,6 +144,8 @@ export interface Run {
   executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
+  /** Sidebar title. Set once at create; a non-empty value is not auto-overwritten. */
+  title?: string | null;
   branchName: string | null;
   baseBranch: string | null;
   repoUrls: string[];
@@ -186,6 +188,14 @@ export interface Run {
       children?: Array<{ id: string; label: string; tokens: number }>;
     }>;
   } | null;
+}
+
+/**
+ * List label source: the stored title when set, else the prompt.
+ * Not truncated; each client applies its own width.
+ */
+export function runDisplayTitle(run: { title?: string | null; prompt?: string | null }): string {
+  return (run.title ?? "").trim() || (run.prompt ?? "").trim();
 }
 
 export interface PullRequestRef {

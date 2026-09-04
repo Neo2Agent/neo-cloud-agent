@@ -5,7 +5,7 @@ import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
-import type { ExecutionTarget, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
+import { runDisplayTitle, type ExecutionTarget, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Tooltip } from "@neo-cloud-agent/ui";
@@ -152,6 +152,10 @@ function workbenchTabForInbox(kind?: string): WorkbenchTab {
 
 function preview(text: string, n = 56): string {
   return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
+}
+
+function runListTitle(run: Run, n = 56): string {
+  return preview(runDisplayTitle(run), n);
 }
 
 function repoLabel(url?: string): string {
@@ -1052,6 +1056,7 @@ export function App() {
         const repo = repoLabel(run.repoUrls[0]).toLowerCase();
         const projectName = projects.find((item) => item.id === run.projectId)?.name.toLowerCase() ?? "";
         return (
+          (run.title ?? "").toLowerCase().includes(q) ||
           run.prompt.toLowerCase().includes(q) ||
           run.id.toLowerCase().includes(q) ||
           repo.includes(q) ||
@@ -1063,7 +1068,7 @@ export function App() {
       .slice(0, 12)
       .map((run) => ({
         id: run.id,
-        title: preview(run.prompt, 72),
+        title: runListTitle(run, 72),
         meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRelShort(run.updatedAt)),
       }));
   }, [projects, query, runs]);

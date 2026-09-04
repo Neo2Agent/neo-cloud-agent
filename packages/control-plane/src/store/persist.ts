@@ -22,7 +22,32 @@ import type {
   TranscriptSnapshot,
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
+import {
+  getObjectSync,
+  listObjectsSync,
+  putObjectSync,
+  removeObjectPrefixSync,
+  removeObjectSync,
+} from "../objects/fs.js";
 import { getConfig } from "../config.js";
+import {
+  collectObjectKeys,
+  inboxImageKey,
+  inboxPrefix,
+  isObjectImageRef,
+  isOwnedInboxKey,
+  mapRecordImages,
+  mergeStoredRun,
+  objectImageData,
+  parseObjectImageKey,
+  publicFollowUps,
+  queueFromRecord,
+  RECORD_VERSION_FAT,
+  RECORD_VERSION_SLIM,
+  slimRunDocument,
+  stripDeliveredImages,
+  type RunQueueDocument,
+} from "./run-record.js";
 
 export type ActiveTurn = {
   type: "prompt" | "steer" | "follow_up";
@@ -48,6 +73,20 @@ function runFile(runId: string, runsDir?: string): string {
   return path.join(controlStateDir(runsDir), `${runId}.json`);
 }
 
+function queueFile(runId: string, runsDir?: string): string {
+  return path.join(controlStateDir(runsDir), `${runId}.queue.json`);
+}
+
+function isRunControlFile(name: string): boolean {
+  return (
+    name.endsWith(".json") &&
+    !name.endsWith(".tmp") &&
+    !name.endsWith(".worker.json") &&
+    !name.endsWith(".transcript.json") &&
+    !name.endsWith(".queue.json")
+  );
+}
+
 function eventsFile(runId: string, runsDir?: string): string {
   return path.join(controlStateDir(runsDir), `${runId}.events.jsonl`);
 }
@@ -68,6 +107,7 @@ export type PersistHooks = {
   onEvent?: (event: RunEvent) => void;
   onLease?: (lease: WorkerLease) => void;
   onDeleteLease?: (runId: string) => void;
+  onDeleteQueue?: (runId: string) => void;
 };
 
 let persistHooks: PersistHooks = {};
@@ -81,10 +121,82 @@ export type PersistOptions = {
   mirror?: boolean;
 };
 
+/** Clone, offload queued images, strip delivered images, then GC unreferenced inbox keys. */
+export function persistImagesForRecord(record: PersistedRun, runsDir?: string): PersistedRun {
+  const dir = runsDir ?? getConfig().runsDir;
+  const stripped = stripDeliveredImages(structuredClone(record));
+  const stored = mapRecordImages(stripped, (images, ownerId, kind) =>
+    persistImages(images, record.run.id, ownerId, kind, dir),
+  );
+  reclaimUnreferencedInbox(record.run.id, collectObjectKeys(stored), dir);
+  return stored;
+}
+
+function persistImages(
+  images: ImageRef[] | undefined,
+  runId: string,
+  ownerId: string,
+  kind: string,
+  runsDir: string,
+): ImageRef[] | undefined {
+  if (!images?.length) {
+    return undefined;
+  }
+  const next: ImageRef[] = [];
+  for (const [index, image] of images.entries()) {
+    if (isObjectImageRef(image.data)) {
+      const key = parseObjectImageKey(image.data);
+      if (key && isOwnedInboxKey(runId, key)) {
+        next.push(image);
+      }
+      continue;
+    }
+    const key = inboxImageKey(runId, `${kind}-${ownerId}-${index + 1}`);
+    putObjectSync(runsDir, key, image.data);
+    next.push({ mediaType: image.mediaType, data: objectImageData(key) });
+  }
+  return next.length > 0 ? next : undefined;
+}
+
+export function resolvePersistedRun(record: PersistedRun, runsDir?: string): PersistedRun {
+  const dir = runsDir ?? getConfig().runsDir;
+  return mapRecordImages(record, (images) => resolveImages(images, record.run.id, dir));
+}
+
+function resolveImages(
+  images: ImageRef[] | undefined,
+  runId: string,
+  runsDir?: string,
+): ImageRef[] | undefined {
+  if (!images?.length) {
+    return images;
+  }
+  const dir = runsDir ?? getConfig().runsDir;
+  const resolved: ImageRef[] = [];
+  for (const image of images) {
+    const key = parseObjectImageKey(image.data);
+    if (!key) {
+      resolved.push(image);
+      continue;
+    }
+    if (!isOwnedInboxKey(runId, key)) {
+      continue;
+    }
+    const body = getObjectSync(dir, key);
+    if (body == null) {
+      continue;
+    }
+    resolved.push({ mediaType: image.mediaType, data: body });
+  }
+  return resolved;
+}
+
 export function persistRunRecord(record: PersistedRun, runsDir?: string, options?: PersistOptions): void {
-  writeJsonAtomic(runFile(record.run.id, runsDir), { ...record, version: 1 });
+  const stored = persistImagesForRecord(record, runsDir);
+  writeJsonAtomic(queueFile(stored.run.id, runsDir), queueFromRecord(stored));
+  writeJsonAtomic(runFile(stored.run.id, runsDir), slimRunDocument(stored));
   if (options?.mirror !== false) {
-    persistHooks.onRun?.(record);
+    persistHooks.onRun?.(stored);
   }
 }
 
@@ -267,11 +379,79 @@ export function restoreSessionToDir(runId: string, destDir: string, runsDir?: st
   return restored;
 }
 
-export function loadPersistedRun(runId: string, runsDir?: string): PersistedRun | null {
+export function loadPersistedQueue(runId: string, runsDir?: string): RunQueueDocument | null {
   try {
-    return JSON.parse(readFileSync(runFile(runId, runsDir), "utf8")) as PersistedRun;
+    const parsed = JSON.parse(readFileSync(queueFile(runId, runsDir), "utf8")) as RunQueueDocument;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    return {
+      followUps: Array.isArray(parsed.followUps) ? parsed.followUps : [],
+      inbound: Array.isArray(parsed.inbound) ? parsed.inbound : [],
+      subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
+      activeTurn: parsed.activeTurn ?? null,
+    };
   } catch {
     return null;
+  }
+}
+
+export function loadPersistedRunDocument(runId: string, runsDir?: string): PersistedRun | null {
+  try {
+    const parsed = JSON.parse(readFileSync(runFile(runId, runsDir), "utf8")) as PersistedRun;
+    return parsed?.run?.id ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Merge the slim document with its queue file. Images stay as `obj:` keys. */
+export function loadPersistedRunRaw(runId: string, runsDir?: string): PersistedRun | null {
+  const document = loadPersistedRunDocument(runId, runsDir);
+  if (!document) {
+    return null;
+  }
+  const queue = loadPersistedQueue(runId, runsDir);
+  return mergeStoredRun(document, queue, queue ? RECORD_VERSION_SLIM : RECORD_VERSION_FAT);
+}
+
+export function loadPersistedRun(runId: string, runsDir?: string): PersistedRun | null {
+  const merged = loadPersistedRunRaw(runId, runsDir);
+  return merged ? resolvePersistedRun(merged, runsDir) : null;
+}
+
+export function publicFollowUpsForRun(runId: string, items: FollowUp[], runsDir?: string): FollowUp[] {
+  return publicFollowUps(items, (images) => resolveImages(images, runId, runsDir));
+}
+
+export function listInboxObjectKeys(runId: string, runsDir?: string): string[] {
+  return listObjectsSync(runsDir ?? getConfig().runsDir, inboxPrefix(runId));
+}
+
+export function readInboxObject(key: string, runsDir?: string): string | null {
+  return getObjectSync(runsDir ?? getConfig().runsDir, key);
+}
+
+export function writeInboxObject(key: string, body: string, runsDir?: string): void {
+  putObjectSync(runsDir ?? getConfig().runsDir, key, body);
+}
+
+export function reclaimPersistedRun(runId: string, runsDir?: string): void {
+  const dir = runsDir ?? getConfig().runsDir;
+  try {
+    rmSync(queueFile(runId, dir), { force: true });
+  } catch {
+    // ignore
+  }
+  removeObjectPrefixSync(dir, inboxPrefix(runId));
+  persistHooks.onDeleteQueue?.(runId);
+}
+
+function reclaimUnreferencedInbox(runId: string, kept: Set<string>, runsDir: string): void {
+  for (const key of listObjectsSync(runsDir, inboxPrefix(runId))) {
+    if (!kept.has(key)) {
+      removeObjectSync(runsDir, key);
+    }
   }
 }
 
@@ -286,20 +466,8 @@ export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[]
   const dir = controlStateDir(runsDir);
   try {
     return readdirSync(dir)
-      .filter(
-        (name) =>
-          name.endsWith(".json") &&
-          !name.endsWith(".tmp") &&
-          !name.endsWith(".worker.json") &&
-          !name.endsWith(".transcript.json"),
-      )
-      .map((name) => {
-        try {
-          return JSON.parse(readFileSync(path.join(dir, name), "utf8")) as PersistedRun;
-        } catch {
-          return null;
-        }
-      })
+      .filter(isRunControlFile)
+      .map((name) => loadPersistedRun(name.slice(0, -".json".length), runsDir))
       .filter((item): item is PersistedRun => Boolean(item?.run?.id));
   } catch {
     return [];
