@@ -503,6 +503,19 @@ worker 在 `message_end` / `tool_execution_end` / `agent_end` 时推规范化事
 
 归档后控制面丢掉内存里的事件树；补播从 persist 读并折叠 `message.delta`。
 
+事件图和 inbox 图是两套前缀，不要共用 key：
+
+| 前缀 | 谁写 | 何时删 |
+| --- | --- | --- |
+| `runs/<id>/inbox/` | 未投递队列（`persistImagesForRecord`） | 投递后无引用，或 soft-delete 回收队列 |
+| `runs/<id>/events/` | `persistEventImages`，在 `publish` / `ingestRemoteEvent` 入热内存之前 | 仅 hard purge |
+
+`ImageRef.data` 在热事件、JSONL、`events.body`、Redis、transcript 快照里只留 `obj:runs/<id>/events/<eventId>-<n>`。字节只在应用机 `RUNS_DIR/.objects`。inbox 的 `obj:` 出现在事件里时**拷贝**到 events 前缀，禁止引用原 key——投递后 inbox GC 不能把 transcript 图一起带走。
+
+`GET /v1/runs/:id/transcript?images=href` 仍只给 URL；`GET .../transcript/images/:messageId/:n` 从 `obj:` 解出字节，不把全量图 hydrate 进 RAM。默认 transcript GET 只在响应副本里把指针还原成 base64，客户端永不信任 `obj:`。
+
+`events.image_version` 是迁移条件（禁止 `JSON_EXTRACT(body, '$.data.images')`）。回填先建 `events_backup_img_<yyyymmdd>`，一批 200 行，失败只打日志，不挡 boot。无 `DATABASE_URL` 时只扫 `.events.jsonl`。
+
 ---
 
 ## 12. SCM 与交付
@@ -642,7 +655,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 | --- | --- | --- |
 | MySQL 或 Postgres（`DATABASE_URL` scheme 决定） | 用户、Run、事件、Environment、Build、Project、Desk、Device、Automation、`experts`、`expert_policies`、`plugin_installs` | `.neo/runs/.control` JSON |
 | Redis | 直播事件 Pub/Sub + Stream、限流固定窗口、lease | 进程内 EventEmitter + token bucket |
-| 对象存储（默认 fs） | transcript 归档、artifacts、session JSONL 备份 | `RUNS_DIR/.objects` |
+| 对象存储（默认 fs） | transcript 归档、artifacts、session JSONL 备份、inbox / events 图像字节 | `RUNS_DIR/.objects` |
 | 块存储 | Build 快照、warm slot、loop 盘 | `RUNS_DIR/.builds` |
 | 密钥文件 | LLM / SCM / notify（gitignore） | `.env`、`.neo/*.env` |
 

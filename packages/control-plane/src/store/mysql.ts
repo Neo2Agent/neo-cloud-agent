@@ -21,6 +21,14 @@ import {
   type SessionRecord,
   type UserRecord,
 } from "../accounts/types.js";
+import {
+  EVENT_IMAGE_BACKFILL_BATCH,
+  EVENT_IMAGE_VERSION,
+  backfillEventImageRows,
+  eventHasImages,
+  eventsBackupTableName,
+  persistEventImages,
+} from "./event-images.js";
 import { persistImagesForRecord, type PersistedRun, type WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
 import {
@@ -89,8 +97,11 @@ CREATE TABLE IF NOT EXISTS events (
   event_id VARCHAR(191) NOT NULL,
   seq BIGINT NOT NULL,
   body JSON NOT NULL,
+  image_version SMALLINT NOT NULL DEFAULT 0,
+  has_images TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, event_id),
-  KEY events_run_seq (run_id, seq)
+  KEY events_run_seq (run_id, seq),
+  KEY events_image_version (image_version, run_id)
 );
 CREATE TABLE IF NOT EXISTS worker_leases (
   run_id VARCHAR(191) PRIMARY KEY,
@@ -292,6 +303,9 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "CREATE INDEX idx_runs_deleted_updated ON runs (deleted_at, updated_at)",
         "CREATE INDEX idx_runs_status ON runs (status)",
         "CREATE INDEX idx_runs_project_id ON runs (project_id)",
+        "ALTER TABLE events ADD COLUMN image_version SMALLINT NOT NULL DEFAULT 0",
+        "ALTER TABLE events ADD COLUMN has_images TINYINT NOT NULL DEFAULT 0",
+        "CREATE INDEX events_image_version ON events (image_version, run_id)",
       ]) {
         try {
           await query(statement);
@@ -308,6 +322,11 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         await backfillMysqlRunRecords(query);
       } catch (error) {
         console.error("mysql run record backfill aborted", error);
+      }
+      try {
+        await backfillMysqlEventImages(query);
+      } catch (error) {
+        console.error("mysql event image backfill aborted", error);
       }
     },
     async saveRun(record) {
@@ -387,13 +406,24 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       await query(`DELETE FROM run_queues WHERE run_id = ?`, [runId]);
     },
     async saveEvent(event) {
+      const slim = persistEventImages(event);
       await query(
-        `INSERT IGNORE INTO events (run_id, event_id, seq, body) VALUES (?, ?, ?, ?)`,
-        [event.runId, event.id, event.seq ?? 0, JSON.stringify(event)],
+        `INSERT IGNORE INTO events (run_id, event_id, seq, body, image_version, has_images) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          slim.runId,
+          slim.id,
+          slim.seq ?? 0,
+          JSON.stringify(slim),
+          EVENT_IMAGE_VERSION,
+          eventHasImages(slim) ? 1 : 0,
+        ],
       );
     },
     async loadEvents(runId) {
-      const result = await query(`SELECT body FROM events WHERE run_id = ? ORDER BY seq ASC`, [runId]);
+      const result = await query(
+        `SELECT run_id, event_id, seq, body FROM events WHERE run_id = ? ORDER BY seq ASC`,
+        [runId],
+      );
       return result.rows.map((row) => parseJson(row.body, asEvent)).filter((item): item is RunEvent => Boolean(item));
     },
     async saveLease(lease) {
@@ -771,6 +801,39 @@ async function backfillMysqlRunRecords(query: SqlQuery): Promise<void> {
       await query(
         `UPDATE runs SET record = ?, title = ?, status = ?, project_id = ?, record_version = ? WHERE id = ?`,
         [JSON.stringify(stored), title, stored.run.status, stored.run.projectId ?? null, RECORD_VERSION_SLIM, id],
+      );
+    },
+  });
+}
+
+async function backfillMysqlEventImages(query: SqlQuery): Promise<void> {
+  const hasPending = async () => {
+    const result = await query(`SELECT event_id FROM events WHERE image_version < ? LIMIT 1`, [EVENT_IMAGE_VERSION]);
+    return result.rows.length > 0;
+  };
+  if (!(await hasPending())) {
+    return;
+  }
+  await query(`CREATE TABLE IF NOT EXISTS \`${eventsBackupTableName()}\` AS SELECT * FROM events`);
+  await backfillEventImageRows({
+    hasPending,
+    loadBatch: async () => {
+      const result = await query(
+        `SELECT run_id, event_id, seq, body FROM events WHERE image_version < ? ORDER BY run_id, seq LIMIT ?`,
+        [EVENT_IMAGE_VERSION, EVENT_IMAGE_BACKFILL_BATCH],
+      );
+      return result.rows.map((row) => ({
+        runId: String(row.run_id),
+        eventId: String(row.event_id),
+        body: row.body,
+      }));
+    },
+    parseEvent: (value) => parseJson(value, asEvent),
+    migrateRow: async ({ runId, eventId, event }) => {
+      const slim = persistEventImages(event);
+      await query(
+        `UPDATE events SET body = ?, image_version = ?, has_images = ? WHERE run_id = ? AND event_id = ?`,
+        [JSON.stringify(slim), EVENT_IMAGE_VERSION, eventHasImages(slim) ? 1 : 0, runId, eventId],
       );
     },
   });

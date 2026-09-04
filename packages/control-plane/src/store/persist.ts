@@ -31,6 +31,12 @@ import {
 } from "../objects/fs.js";
 import { getConfig } from "../config.js";
 import {
+  eventNeedsImageBackfill,
+  eventsImagePrefix,
+  persistEventImages,
+  reclaimEventImages,
+} from "./event-images.js";
+import {
   collectObjectKeys,
   inboxImageKey,
   inboxPrefix,
@@ -250,11 +256,12 @@ export function peekLastPersistedEventId(runId: string, runsDir?: string): strin
 }
 
 export function persistEvent(event: RunEvent, runsDir?: string, options?: PersistOptions): void {
-  const file = eventsFile(event.runId, runsDir);
+  const slim = persistEventImages(event, runsDir);
+  const file = eventsFile(slim.runId, runsDir);
   mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, `${JSON.stringify(event)}\n`, { flag: "a" });
+  writeFileSync(file, `${JSON.stringify(slim)}\n`, { flag: "a" });
   if (options?.mirror !== false) {
-    persistHooks.onEvent?.(event);
+    persistHooks.onEvent?.(slim);
   }
 }
 
@@ -428,11 +435,23 @@ export function listInboxObjectKeys(runId: string, runsDir?: string): string[] {
   return listObjectsSync(runsDir ?? getConfig().runsDir, inboxPrefix(runId));
 }
 
+export function listEventObjectKeys(runId: string, runsDir?: string): string[] {
+  return listObjectsSync(runsDir ?? getConfig().runsDir, eventsImagePrefix(runId));
+}
+
 export function readInboxObject(key: string, runsDir?: string): string | null {
   return getObjectSync(runsDir ?? getConfig().runsDir, key);
 }
 
 export function writeInboxObject(key: string, body: string, runsDir?: string): void {
+  putObjectSync(runsDir ?? getConfig().runsDir, key, body);
+}
+
+export function readEventObject(key: string, runsDir?: string): string | null {
+  return getObjectSync(runsDir ?? getConfig().runsDir, key);
+}
+
+export function writeEventObject(key: string, body: string, runsDir?: string): void {
   putObjectSync(runsDir ?? getConfig().runsDir, key, body);
 }
 
@@ -447,6 +466,12 @@ export function reclaimPersistedRun(runId: string, runsDir?: string): void {
   persistHooks.onDeleteQueue?.(runId);
 }
 
+/** Soft-delete keeps `events/` objects and JSONL. Hard purge removes the events prefix. */
+export function purgePersistedRun(runId: string, runsDir?: string): void {
+  reclaimPersistedRun(runId, runsDir);
+  reclaimEventImages(runId, runsDir);
+}
+
 function reclaimUnreferencedInbox(runId: string, kept: Set<string>, runsDir: string): void {
   for (const key of listObjectsSync(runsDir, inboxPrefix(runId))) {
     if (!kept.has(key)) {
@@ -458,8 +483,32 @@ function reclaimUnreferencedInbox(runId: string, kept: Set<string>, runsDir: str
 export function replacePersistedEvents(runId: string, events: RunEvent[], runsDir?: string): void {
   const file = eventsFile(runId, runsDir);
   mkdirSync(path.dirname(file), { recursive: true });
-  const body = events.length === 0 ? "" : `${events.map((item) => JSON.stringify(item)).join("\n")}\n`;
+  const slim = events.map((item) => persistEventImages(item, runsDir));
+  const body = slim.length === 0 ? "" : `${slim.map((item) => JSON.stringify(item)).join("\n")}\n`;
   writeFileSync(file, body);
+}
+
+/** Rewrite fat `.events.jsonl` rows. Failure is logged per run and does not throw. */
+export function backfillPersistedEventImages(runsDir?: string): void {
+  const dir = runsDir ?? getConfig().runsDir;
+  let names: string[];
+  try {
+    names = readdirSync(controlStateDir(dir)).filter((name) => name.endsWith(".events.jsonl"));
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const runId = name.slice(0, -".events.jsonl".length);
+    try {
+      const events = loadPersistedEvents(runId, dir);
+      if (!events.some(eventNeedsImageBackfill)) {
+        continue;
+      }
+      replacePersistedEvents(runId, events, dir);
+    } catch (error) {
+      console.error("event image file backfill failed", runId, error);
+    }
+  }
 }
 
 export function loadPersistedRuns(runsDir = getConfig().runsDir): PersistedRun[] {

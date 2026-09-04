@@ -22,6 +22,14 @@ import {
   type SessionRecord,
   type UserRecord,
 } from "../accounts/types.js";
+import {
+  EVENT_IMAGE_BACKFILL_BATCH,
+  EVENT_IMAGE_VERSION,
+  backfillEventImageRows,
+  eventHasImages,
+  eventsBackupTableName,
+  persistEventImages,
+} from "./event-images.js";
 import { persistImagesForRecord, type PersistedRun, type WorkerLease } from "./persist.js";
 import {
   applyRunIndexColumns,
@@ -86,9 +94,12 @@ CREATE TABLE IF NOT EXISTS events (
   event_id TEXT NOT NULL,
   seq BIGINT NOT NULL,
   body JSONB NOT NULL,
+  image_version SMALLINT NOT NULL DEFAULT 0,
+  has_images SMALLINT NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, event_id)
 );
 CREATE INDEX IF NOT EXISTS events_run_seq ON events (run_id, seq);
+CREATE INDEX IF NOT EXISTS events_image_version ON events (image_version, run_id);
 CREATE TABLE IF NOT EXISTS worker_leases (
   run_id TEXT PRIMARY KEY,
   lease JSONB NOT NULL,
@@ -316,6 +327,9 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         "CREATE INDEX IF NOT EXISTS idx_runs_deleted_updated ON runs (deleted_at, updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_runs_status ON runs (status)",
         "CREATE INDEX IF NOT EXISTS idx_runs_project_id ON runs (project_id)",
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS image_version SMALLINT NOT NULL DEFAULT 0",
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS has_images SMALLINT NOT NULL DEFAULT 0",
+        "CREATE INDEX IF NOT EXISTS events_image_version ON events (image_version, run_id)",
       ]) {
         await query(statement);
       }
@@ -325,6 +339,11 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         await backfillPostgresRunRecords(query);
       } catch (error) {
         console.error("postgres run record backfill aborted", error);
+      }
+      try {
+        await backfillPostgresEventImages(query);
+      } catch (error) {
+        console.error("postgres event image backfill aborted", error);
       }
     },
     async saveRun(record) {
@@ -404,15 +423,26 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       await query(`DELETE FROM run_queues WHERE run_id = $1`, [runId]);
     },
     async saveEvent(event) {
+      const slim = persistEventImages(event);
       await query(
-        `INSERT INTO events (run_id, event_id, seq, body)
-         VALUES ($1, $2, $3, $4::jsonb)
+        `INSERT INTO events (run_id, event_id, seq, body, image_version, has_images)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6)
          ON CONFLICT (run_id, event_id) DO NOTHING`,
-        [event.runId, event.id, event.seq ?? 0, JSON.stringify(event)],
+        [
+          slim.runId,
+          slim.id,
+          slim.seq ?? 0,
+          JSON.stringify(slim),
+          EVENT_IMAGE_VERSION,
+          eventHasImages(slim) ? 1 : 0,
+        ],
       );
     },
     async loadEvents(runId) {
-      const result = await query(`SELECT body FROM events WHERE run_id = $1 ORDER BY seq ASC`, [runId]);
+      const result = await query(
+        `SELECT run_id, event_id, seq, body FROM events WHERE run_id = $1 ORDER BY seq ASC`,
+        [runId],
+      );
       return result.rows.map((row) => parseJson(row.body, asEvent)).filter((item): item is RunEvent => Boolean(item));
     },
     async saveLease(lease) {
@@ -791,6 +821,39 @@ async function backfillPostgresRunRecords(query: SqlQuery): Promise<void> {
       await query(
         `UPDATE runs SET record = $1::jsonb, title = $2, status = $3, project_id = $4, record_version = $5 WHERE id = $6`,
         [JSON.stringify(stored), title, stored.run.status, stored.run.projectId ?? null, RECORD_VERSION_SLIM, id],
+      );
+    },
+  });
+}
+
+async function backfillPostgresEventImages(query: SqlQuery): Promise<void> {
+  const hasPending = async () => {
+    const result = await query(`SELECT event_id FROM events WHERE image_version < $1 LIMIT 1`, [EVENT_IMAGE_VERSION]);
+    return result.rows.length > 0;
+  };
+  if (!(await hasPending())) {
+    return;
+  }
+  await query(`CREATE TABLE IF NOT EXISTS ${eventsBackupTableName()} AS SELECT * FROM events`);
+  await backfillEventImageRows({
+    hasPending,
+    loadBatch: async () => {
+      const result = await query(
+        `SELECT run_id, event_id, seq, body FROM events WHERE image_version < $1 ORDER BY run_id, seq LIMIT $2`,
+        [EVENT_IMAGE_VERSION, EVENT_IMAGE_BACKFILL_BATCH],
+      );
+      return result.rows.map((row) => ({
+        runId: String(row.run_id),
+        eventId: String(row.event_id),
+        body: row.body,
+      }));
+    },
+    parseEvent: (value) => parseJson(value, asEvent),
+    migrateRow: async ({ runId, eventId, event }) => {
+      const slim = persistEventImages(event);
+      await query(
+        `UPDATE events SET body = $1::jsonb, image_version = $2, has_images = $3 WHERE run_id = $4 AND event_id = $5`,
+        [JSON.stringify(slim), EVENT_IMAGE_VERSION, eventHasImages(slim) ? 1 : 0, runId, eventId],
       );
     },
   });

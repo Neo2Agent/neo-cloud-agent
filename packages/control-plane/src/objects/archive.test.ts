@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { Run, RunEvent } from "@neo-cloud-agent/contracts";
 import { persistEvent, persistRunRecord, persistSessionFiles, loadPersistedEvents, loadPersistedQueue, loadPersistedRun, loadPersistedRunDocument, loadSessionFiles } from "../store/persist.js";
+import { eventImageKey, resolveEventImageData } from "../store/event-images.js";
 import { isObjectImageRef } from "../store/run-record.js";
 import { archiveRunArtifacts, restoreArchivedArtifacts } from "./archive.js";
 import { createMemoryObjectStore } from "./memory.js";
@@ -131,5 +132,36 @@ test("archive writes a slim record and inbox objects without resolving base64", 
   assert.equal(loadPersistedRunDocument(run.id)?.followUps, undefined);
   assert.equal(isObjectImageRef(loadPersistedQueue(run.id)?.followUps[0]?.images?.[0]?.data ?? ""), true);
   assert.equal(restored?.record?.run.prompt, "hello");
+  setObjectStoreForTests(null);
+});
+
+test("archive copies event image objects so restore still serves transcript bytes", async () => {
+  process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-archive-evt-"));
+  setObjectStoreForTests(createMemoryObjectStore());
+  const run = sampleRun("run-archive-evt");
+  persistRunRecord({ version: 1, run, followUps: [], inbound: [] });
+  persistEvent({
+    id: "evt-img",
+    runId: run.id,
+    createdAt: run.createdAt,
+    category: "agent_run",
+    level: "info",
+    kind: "user.message",
+    title: "User message",
+    data: { text: "看图", images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }] },
+  } satisfies RunEvent);
+  await archiveRunArtifacts(run.id);
+  const store = getObjectStore();
+  const eventsRaw = await store.get(artifactKey(run.id, "events.jsonl"));
+  assert.ok(eventsRaw);
+  assert.ok(!eventsRaw.includes("aW1nZGF0YQ"));
+  assert.equal(await store.get(eventImageKey(run.id, "evt-img", 0)), "aW1nZGF0YQ");
+
+  rmSync(path.join(process.env.RUNS_DIR, ".control"), { recursive: true, force: true });
+  rmSync(path.join(process.env.RUNS_DIR, ".objects"), { recursive: true, force: true });
+  await restoreArchivedArtifacts(run.id);
+  const stored = (loadPersistedEvents(run.id)[0]?.data?.images as Array<{ data: string }>)[0]?.data ?? "";
+  assert.equal(isObjectImageRef(stored), true);
+  assert.equal(resolveEventImageData(run.id, stored), "aW1nZGF0YQ");
   setObjectStoreForTests(null);
 });
