@@ -13,6 +13,27 @@ export const UNSUPPORTED_MIC_HINT = "这个浏览器不支持麦克风。请换 
 export const EMPTY_RECORDING_HINT = "没听清，请再录一次，或直接打字。";
 export const BAD_RECORDING_HINT = "读不了这段录音。请换 wav / m4a / mp3，或直接打字。";
 
+const IAT_PUNCT_RE = /^[\s。．.？?！!，,、；;：:…—\-–~～'"“”‘’]+$/u;
+
+export function isSpokenPunctuation(text: string): boolean {
+  return text.length > 0 && IAT_PUNCT_RE.test(text);
+}
+
+/** Keep the spoken sentence when the last IAT frame is only 。 / ？. */
+export function mergeSpokenText(previous: string, incoming: string): string {
+  const prev = previous.replace(/\s+/g, " ").trim();
+  const next = incoming.replace(/\s+/g, " ").trim();
+  if (!next) return prev;
+  if (!prev) return next;
+  if (isSpokenPunctuation(next) && !isSpokenPunctuation(prev)) {
+    return prev.endsWith(next) ? prev : `${prev}${next}`;
+  }
+  if (next.length < prev.length && prev.startsWith(next) && isSpokenPunctuation(prev.slice(next.length))) {
+    return prev;
+  }
+  return next;
+}
+
 export function describeSpeechError(message: string): string {
   if (/rate_limited/i.test(message)) return "听写请求太密，请稍后再试。";
   if (/NotAllowedError|NotReadableError|permission|denied|请允许麦克风/i.test(message)) {
@@ -99,8 +120,8 @@ export async function startCloudVoice(
       if (reply.error) throw new Error(reply.error);
       sessionId = reply.sessionId || sessionId;
       if (reply.text) {
-        lastText = reply.text;
-        onPreview(reply.text);
+        lastText = mergeSpokenText(lastText, reply.text);
+        onPreview(lastText);
       }
       if (status !== 2) nextStatus = 1;
     });

@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { concatPcm, describeSpeechError, IAT_HTTP_MIN_BYTES, pcmToBase64, startCloudVoice } from "./cloud.js";
+import {
+  concatPcm,
+  describeSpeechError,
+  IAT_HTTP_MIN_BYTES,
+  mergeSpokenText,
+  pcmToBase64,
+  startCloudVoice,
+} from "./cloud.js";
+
+test("mergeSpokenText keeps words when the last reply is only punctuation", () => {
+  assert.equal(mergeSpokenText("你在吗", "？"), "你在吗？");
+  assert.equal(mergeSpokenText("先看天气", "。"), "先看天气。");
+  assert.equal(mergeSpokenText("先看天气。", "。"), "先看天气。");
+  assert.equal(mergeSpokenText("你好", "你好世界"), "你好世界");
+});
 
 test("pcmToBase64 encodes raw bytes", () => {
   assert.equal(pcmToBase64(Uint8Array.from([0, 1, 2])), btoa("\u0000\u0001\u0002"));
@@ -34,6 +48,30 @@ test("startCloudVoice streams frames then finalizes on stop", async () => {
   assert.equal(spoken, "你好世界");
   assert.equal(calls[0]?.status, 0);
   assert.equal(calls.at(-1)?.status, 2);
+});
+
+test("startCloudVoice does not let a final period replace the sentence", async () => {
+  const push = async (body: { status: 0 | 1 | 2 }) => ({
+    sessionId: "s1",
+    text: body.status === 2 ? "。" : "先看天气",
+  });
+  const started = await startCloudVoice(
+    push,
+    {
+      start: async (onFrame) => {
+        onFrame(Uint8Array.from([1, 0]));
+      },
+      stop: async () => undefined,
+    },
+    () => undefined,
+    undefined,
+    undefined,
+    { minHttpBytes: 1 },
+  );
+  assert.equal(started.kind, "session");
+  if (started.kind !== "session") throw new Error("expected session");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(await started.session.stop(), "先看天气。");
 });
 
 test("describeSpeechError maps rate_limited to a single Chinese hint", () => {

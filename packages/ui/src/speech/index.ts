@@ -2,6 +2,8 @@ export {
   BAD_RECORDING_HINT,
   concatPcm,
   describeSpeechError,
+  isSpokenPunctuation,
+  mergeSpokenText,
   EMPTY_RECORDING_HINT,
   IAT_HTTP_MIN_BYTES,
   INSECURE_MIC_HINT,

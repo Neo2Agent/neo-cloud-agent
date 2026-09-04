@@ -78,7 +78,39 @@ export type IatParse = {
   text: string;
   status: number;
   pgs?: string;
+  sn?: number;
+  rg?: [number, number];
 };
+
+export type IatAssembly = {
+  slices: Map<number, string>;
+  nextSn: number;
+};
+
+const IAT_PUNCT_RE = /^[\s。．.？?！!，,、；;：:…—\-–~～'"“”‘’]+$/u;
+
+export function emptyIatAssembly(): IatAssembly {
+  return { slices: new Map(), nextSn: 1 };
+}
+
+export function isIatPunctuation(text: string): boolean {
+  return text.length > 0 && IAT_PUNCT_RE.test(text);
+}
+
+export function joinIatSlices(assembly: IatAssembly): string {
+  return [...assembly.slices.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, text]) => text)
+    .join("");
+}
+
+function parseRg(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const from = Number(value[0]);
+  const to = Number(value[1]);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return undefined;
+  return [from, to];
+}
 
 export function decodeIatResult(payload: unknown): IatParse {
   const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
@@ -93,7 +125,42 @@ export function decodeIatResult(payload: unknown): IatParse {
     .join("");
   const status = typeof data.status === "number" ? data.status : 0;
   const pgs = typeof result.pgs === "string" ? result.pgs : undefined;
-  return { text, status, pgs };
+  const sn = typeof result.sn === "number" ? result.sn : undefined;
+  return { text, status, pgs, sn, rg: parseRg(result.rg) };
+}
+
+export function applyIatSlice(assembly: IatAssembly, parsed: IatParse): IatAssembly {
+  const previous = joinIatSlices(assembly);
+  const slices = new Map(assembly.slices);
+  let nextSn = assembly.nextSn;
+  const sn = typeof parsed.sn === "number" ? parsed.sn : nextSn;
+  nextSn = Math.max(nextSn, sn + 1);
+
+  if (parsed.pgs === "rpl") {
+    if (parsed.rg) {
+      for (let index = parsed.rg[0]; index <= parsed.rg[1]; index += 1) {
+        slices.delete(index);
+      }
+    } else {
+      const lastKey = [...slices.keys()].sort((left, right) => left - right).at(-1);
+      if (lastKey !== undefined) slices.delete(lastKey);
+    }
+  }
+
+  if (parsed.text) slices.set(sn, parsed.text);
+  const next = { slices, nextSn };
+  const joined = joinIatSlices(next);
+  if (isIatPunctuation(parsed.text) && previous && isIatPunctuation(joined) && joined.length < previous.length) {
+    const restored = new Map(assembly.slices);
+    const lastKey = [...restored.keys()].sort((left, right) => left - right).at(-1);
+    if (lastKey === undefined) {
+      restored.set(sn, parsed.text);
+    } else {
+      restored.set(lastKey, `${restored.get(lastKey) ?? ""}${parsed.text}`);
+    }
+    return { slices: restored, nextSn };
+  }
+  return next;
 }
 
 export function applyIatTranscript(
@@ -101,17 +168,25 @@ export function applyIatTranscript(
   parsed: IatParse,
 ): { committed: string; last: string; text: string } {
   if (parsed.pgs === "rpl") {
+    if (isIatPunctuation(parsed.text) && current.last && !isIatPunctuation(current.last)) {
+      const last = `${current.last}${parsed.text}`;
+      return { committed: current.committed, last, text: `${current.committed}${last}` };
+    }
     return { committed: current.committed, last: parsed.text, text: `${current.committed}${parsed.text}` };
   }
   if (parsed.status === 2) {
-    const committed = `${current.committed}${parsed.text || current.last}`;
+    const tail = isIatPunctuation(parsed.text)
+      ? `${current.last}${parsed.text}`
+      : parsed.text || current.last;
+    const committed = `${current.committed}${tail}`;
     return { committed, last: "", text: committed };
   }
   if (parsed.pgs === "apd") {
     const committed = `${current.committed}${current.last}`;
     return { committed, last: parsed.text, text: `${committed}${parsed.text}` };
   }
-  return { committed: current.committed, last: parsed.text, text: `${current.committed}${parsed.text}` };
+  const last = `${current.last}${parsed.text}`;
+  return { committed: current.committed, last, text: `${current.committed}${last}` };
 }
 
 export type IatSocket = {
@@ -139,8 +214,7 @@ type Session = {
   id: string;
   socket: IatSocket;
   opened: Promise<void>;
-  committed: string;
-  last: string;
+  assembly: IatAssembly;
   pending: string[];
   done: boolean;
   timer: ReturnType<typeof setTimeout>;
@@ -191,10 +265,8 @@ function attachSocket(session: Session): void {
     if (!event.data) return;
     try {
       const parsed = decodeIatResult(JSON.parse(event.data) as unknown);
-      const next = applyIatTranscript({ committed: session.committed, last: session.last }, parsed);
-      session.committed = next.committed;
-      session.last = next.last;
-      session.pending.push(next.text);
+      session.assembly = applyIatSlice(session.assembly, parsed);
+      session.pending.push(joinIatSlices(session.assembly));
       if (parsed.status === 2) session.done = true;
     } catch {
       /* ignore malformed upstream frames */
@@ -223,8 +295,7 @@ async function openSession(credentials: IatCredentials, connect: IatConnect): Pr
     id: randomUUID(),
     socket,
     opened,
-    committed: "",
-    last: "",
+    assembly: emptyIatAssembly(),
     pending: [],
     done: false,
     timer: setTimeout(() => undefined, SESSION_MS),
@@ -239,7 +310,7 @@ async function openSession(credentials: IatCredentials, connect: IatConnect): Pr
 function flushText(session: Session): string {
   const last = session.pending.at(-1);
   session.pending = [];
-  return last ?? `${session.committed}${session.last}`;
+  return last ?? joinIatSlices(session.assembly);
 }
 
 async function waitBriefly(session: Session): Promise<void> {
@@ -270,7 +341,13 @@ export async function handleIatRequest(
     touch(session);
     session.socket.send(JSON.stringify(encodeIatFrame(credentials.appId, status, body.audio ?? "")));
     if (status === 2) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      const started = Date.now();
+      while (!session.done && Date.now() - started < 800) {
+        const before = session.pending.length;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        if (session.done) break;
+        if (Date.now() - started >= 200 && session.pending.length === before) break;
+      }
       const text = flushText(session);
       sessions.delete(session.id);
       clearTimeout(session.timer);
