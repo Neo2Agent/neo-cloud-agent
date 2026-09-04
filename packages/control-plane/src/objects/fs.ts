@@ -65,7 +65,7 @@ export function removeObjectSync(runsDir: string, key: string): void {
 
 export function listObjectsSync(runsDir: string, prefix: string): string[] {
   const root = objectsRoot(runsDir);
-  const relative = prefix.replaceAll("\\", "/").replace(/^\/+/, "");
+  const relative = prefix.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
   const dir = relative ? path.join(root, ...relative.split("/")) : root;
   try {
     if (!statSync(dir).isDirectory()) {

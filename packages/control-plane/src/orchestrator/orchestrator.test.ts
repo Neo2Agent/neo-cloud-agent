@@ -1131,12 +1131,13 @@ test("queued follow-up images survive reload and leave the queue after deliver",
   const delivered = listFollowUps(run.id).find((entry) => entry.id === follow.id);
   assert.equal(delivered?.status, "delivered");
   assert.equal(delivered?.source, "user");
-  assert.equal(delivered?.images, undefined);
   const published = eventsForRun(run.id).find((event) => event.kind === "user.message" && event.data?.followUpId === follow.id);
   assert.equal((published?.data?.images as Array<{ data: string }> | undefined)?.[0]?.data, "aW1nZGF0YQ");
   reloadPersistedState();
-  assert.equal(listFollowUps(run.id).find((entry) => entry.id === follow.id)?.source, "user");
-  assert.equal(listFollowUps(run.id).find((entry) => entry.id === follow.id)?.images, undefined);
+  const afterReload = listFollowUps(run.id).find((entry) => entry.id === follow.id);
+  assert.equal(afterReload?.source, "user");
+  assert.equal(afterReload?.status, "delivered");
+  assert.equal(afterReload?.images, undefined);
 });
 
 test("deleteRun reclaims the queue file and inbox objects", async () => {

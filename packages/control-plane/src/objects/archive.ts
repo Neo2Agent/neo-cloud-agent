@@ -4,6 +4,7 @@ import {
   listInboxObjectKeys,
   loadPersistedEvents,
   loadPersistedQueue,
+  loadPersistedRun,
   loadPersistedRunDocument,
   loadPersistedRunRaw,
   loadSessionFiles,
