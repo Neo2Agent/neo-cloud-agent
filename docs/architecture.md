@@ -1,8 +1,8 @@
 # Neo Cloud Agent 架构
 
-对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离 VM 运行；**LLM 推理走云端网关**；**Agent 循环和工具执行在 VM 内**；Agent 内核使用 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
+对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离执行单元；**LLM 推理走云端网关**；**工具在执行面**；**Agent 循环现网仍在 worker 内 pi，目标态在独立 Java `neo-loop`**。默认内核是 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
 
-本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（12 个 package、三个控制面进程、现网、专家 / 插件、数据流）见 [architecture-overview.md](./architecture-overview.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)，现网 `https://neorun.cloud/architecture`。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
+本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（package、三个必开进程 + 可选 `neo-loop`、双内核、现网、专家 / 插件、数据流）见 [architecture-overview.md](./architecture-overview.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)，现网 `https://neorun.cloud/architecture`。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
 
 ---
 
@@ -14,7 +14,7 @@
 | --- | --- |
 | 云端推理 | Provider API Key / 自建推理集群只存在于 LLM Gateway，VM 看不到明文密钥 |
 | 隔离执行 | 每个 Run 独占一台短暂 VM（或等价隔离单元），可编译、跑测试、开服务、操作浏览器 |
-| pi 内核 | 不自研 Agent loop。用 pi 的 `createAgentSession`、工具、session、compaction、steer / follow-up、extensions |
+| Agent 内核 | 默认不自研 loop：用 pi 的 `createAgentSession`、工具、session、compaction、steer / follow-up、extensions。第二条轨是 `services/neo-loop`（AgentScope Java），现网默认关 |
 | 可恢复 | Run 可跟进、可空闲挂起、可在快照上恢复；会话以 JSONL 持久化。跨 Run 的用户 / 项目事实是控制面旁路，不是 pi session，见 [agent-memory-research.md](./agent-memory-research.md) |
 | 可交付 | 在独立分支上改代码，push，开 PR，附带 artifacts |
 | 可加速 | Environment Builds：后台预装依赖并打盘，新 Run 从热快照启动，而不是每次冷装 |

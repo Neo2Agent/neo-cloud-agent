@@ -36,7 +36,8 @@ neo-cloud-agent/
 | 对话页 | React。工具调研和模型答复按时间拆行（工具在最终答复上面）。Markdown、Diff、文件树、沙箱终端（可打字）、粘贴图片、token 用量、归档。`#/experts` / `#/skills` / `#/projects` 目录。配方和 `@` 只预填 `POST /v1/runs` |
 | 管理台 | 独立应用：本地 `pnpm dev:admin`（API `:8090` + UI `:5176`）。现网 `https://neorun.cloud/admin/`，对话页仍是 `https://neorun.cloud/`。不和对话页共用。仅平台管理员。可配置 / 下发内置专家 |
 | 模型 | 默认 DeepSeek **v4-flash**；设置里可切 Pro。退役的 `deepseek-chat` / `deepseek-reasoner` 会改写成 flash。Gateway 把 `max_tokens` 封在 16384。现网上游是库机 New API，不是第四个进程 |
-| 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错 |
+| 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错。`neo-loop` unit 已装、默认 disabled，现网 `AGENT_KERNEL=pi` |
+| 双内核 | `Run.kernel`：`pi`（默认，loop+工具同址）或 `agentscope`（Java `neo-loop` + `WORKER_ROLE=tools`）。对外 `/v1` 不变。见 [architecture-overview.md](docs/architecture-overview.md) §5 |
 | 专家 / 技能 | `POST /v1/runs` 可带 `expertId` 或 `expertTeamId`。已安装插件物化进 `.neo/skills`。没有 `/v1/search`、没有插件 git 市场 |
 | CLI | `pnpm neo`，见 [docs/cli.md](docs/cli.md) |
 | 云工具 | `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` |

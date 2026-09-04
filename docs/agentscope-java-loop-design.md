@@ -1,6 +1,6 @@
 # Neo Loop 详细设计：Java + Cursor 三态
 
-工程设计，不是再做一次选型。路径选择见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。基线 `main` `0bd20a1`。
+工程设计，不是再做一次选型。路径选择见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。实现已在 `main` `550645f`（2026-09-04）：`services/neo-loop` + `WORKER_ROLE=tools`。现网 unit 已装、默认 disabled，`AGENT_KERNEL` 未写则走 `pi`。现状地图见 [architecture-overview.md](./architecture-overview.md)。
 
 对标 Cursor 现行形态：loop 在可恢复工作流里，机器单独租约，对话是 append-only 事件流。实现栈：AgentScope Java 2.0 `HarnessAgent` + 自建 `NeoSandbox` + 现有 TypeScript 控制面 / Gateway / 槽。
 

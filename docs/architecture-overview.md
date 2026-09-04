@@ -2,15 +2,15 @@
 
 本文是**现在仓库里实际长什么样**的完整地图：包怎么拆、进程怎么跑、一次 Run 怎么走、现网怎么叠。设计原则、分阶段蓝图、以及「为什么这样拆」仍以 [architecture.md](./architecture.md) 为准。本文不重复那份蓝图的每一条落地笔记，只把**核心架构**和**当前实现边界**摊开。
 
-对照 `origin/main` `c2fda3c`（2026-08-28）。锁死的分层没变；相对 2026-08-26 那版总览，main 上多了共享 UI 包、控制面 `experts/` / `plugins/`、库机 New API 上游、Desk inline/dispatch、空闲槽工作区写回，以及 Web 上的专家 / 技能 / 配方面。[workbuddy-experts.md](./workbuddy-experts.md) §4.4 缺口表写于 Expert 实体落地前，已经过时。
+对照 `origin/main` `550645f`（2026-09-04）。锁死的分层没变。相对 2026-08-28 那版，main 上多了可选 Java `neo-loop`（`AGENT_KERNEL=agentscope`）、`WORKER_ROLE=tools`、tools WebSocket 帧，以及轻量部署 skill 对 loop unit 的默认 disabled 处理。现网仍走 `pi`，loop 进程已装未启。
 
-对标对象：[Cursor Cloud Agent](https://cursor.com/docs/cloud-agent)。Agent 内核是 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent`），不自研 tool loop。
+对标对象：[Cursor Cloud Agent](https://cursor.com/docs/cloud-agent)。默认内核仍是 [pi-agent](https://github.com/earendil-works/pi)。第二条轨是 AgentScope Java `HarnessAgent`，住在独立进程，不嵌控制面。
 
 ---
 
 ## 1. 一句话
 
-**用户从任意客户端发任务 → 控制面编排一次隔离执行单元 → worker 在仓库旁边跑 pi → pi 用 run JWT 打 LLM Gateway → Gateway 持有 Provider Key 去推理。**
+**客户端只打 `/v1` → 控制面编排 Run 和机器 → 推理只在 Gateway → Agent 循环要么在槽里的 pi（现网默认），要么在独立 Java `neo-loop`（代码已落地、现网未开）→ 工具必须在仓库旁边执行。**
 
 锁死的原则：
 
@@ -45,7 +45,8 @@
 | --- | --- | --- | --- |
 | 控制面 | 高（账号体系） | `packages/control-plane` 一个进程 `:8080` | 鉴权、Run 状态机、环境 / Build、SCM、事件扇出、项目协作、专家 / 插件物化、配额、限流 |
 | LLM Gateway | 高（唯一持钥） | `packages/llm-gateway` 一个进程 `:8081` | 验 run JWT、模型别名、`max_tokens` 封顶 16384、限流、打上游（New API / DeepSeek / OpenAI / mock） |
-| 执行面 | 低（按 Run 隔离） | `packages/worker` + `packages/extensions`，**镜像不是长驻服务** | 嵌入 pi、操作磁盘和进程、遵守 egress、只拿短寿命 JWT |
+| Loop | 高（能看消息，不能看盘 / 钥） | 现网：worker 内 pi。目标态 / 开发：`services/neo-loop` `:8082` | 想下一步、调工具、盖章 `RunEvent`。`HarnessAgent` **不**嵌控制面 |
+| 执行面 | 低（按 Run 隔离） | `packages/worker` + `packages/extensions`，**镜像不是长驻服务** | `pi` 时嵌 loop+工具；`agentscope` 时只做 `ToolsServer`。操作磁盘和进程、遵守 egress、只拿短寿命 JWT |
 
 客户端（Web / Desk / CLI / Mobile / IM）**都不是第四个控制面**。它们只打 `/v1`，不跑 loop，不持有 Provider Key。
 
@@ -75,13 +76,14 @@ flowchart TB
   end
 
   AdminAPI["admin-api :8090\n读同一套账号和 Run"]
+  Loop["neo-loop :8082\n可选，现网 disabled"]
   GW["llm-gateway :8081"]
   NewAPI["New API :3000\n库机上游，不是 Neo 进程"]
 
   subgraph exec [Execution — 每 Run 一份]
     Runtime["Runtime: local / vm / docker / firecracker / desk"]
-    Worker["neo-worker"]
-    Pi["pi-coding-agent"]
+    Worker["neo-worker\nrole=all 或 tools"]
+    Pi["pi-coding-agent\n仅 kernel=pi"]
     WS["/workspace + tmux + skills"]
   end
 
@@ -100,13 +102,25 @@ flowchart TB
   Orch --> Events
   Orch --> Experts
   Orch --> Runtime
+  Orch -.->|"kernel=agentscope"| Loop
   Runtime --> Worker
   Worker --> Pi
+  Worker -->|"tools WS"| Loop
   Pi --> WS
+  Worker --> WS
   Pi -->|"run JWT"| GW
+  Loop -->|"run JWT"| GW
   GW --> NewAPI
   NewAPI --> Provider["DeepSeek / OpenAI / mock"]
 ```
+
+三份状态对标 Cursor，不要揉进一个进程：
+
+| 状态 | 存哪 | 谁写 | IDLE 卸槽 |
+| --- | --- | --- | --- |
+| Conversation（用户看见的 transcript） | 控制面 `RunEvent`（Redis 热，MySQL / 对象存储冷） | `pi`：worker；`agentscope`：loop 盖章 `workerSeq` | 保留 |
+| Loop（想到哪、session、compaction） | `pi`：槽里 session JSONL；`agentscope`：`neo-loop` 的 `AgentStateStore`（现先写盘） | 对应内核 | **不丢** |
+| Machine（磁盘、进程、tmux） | Runtime 槽 / `RUNS_DIR/<runId>` | worker | 可卸；跟进再 provision |
 
 ---
 
@@ -117,7 +131,7 @@ flowchart TB
 | 概念 | 现在的数量 | 是什么 |
 | --- | --- | --- |
 | Git 仓库 | 1（`neo-cloud-agent`） | 代码怎么管 |
-| 可部署进程 | 3 + worker 镜像 | `control-plane`、`llm-gateway`、`admin-api`；worker 随 Run 生灭 |
+| 可部署进程 | 3 必开 + 1 可选 + worker 镜像 | `control-plane`、`llm-gateway`、`admin-api`；`neo-loop` 默认 disabled；worker 随 Run 生灭 |
 | 可选上游 | 0 或 1 | 库机 Docker `calciumion/new-api` `:3000`。**不是** Neo 进程，只当 Gateway 上游 |
 | 逻辑 package | 12 | 代码怎么分层（含共享 UI 包） |
 | 客户端 | 5 | Web / Desk / CLI / Mobile / Admin Web——都不是 Deployment |
@@ -139,7 +153,8 @@ neo-cloud-agent/
     desk             Electron 壳 + 独立 UI + 本机 worker
     cli              终端客户端 neo，打 /v1
     mobile           手机客户端（Expo 壳 + Vite :5175 视觉实验室）
-  infra/             compose 与三份 Dockerfile + Firecracker 配方
+  services/neo-loop  可选进程：Java 21 AgentScope loop（不进 pnpm workspace）
+  infra/             compose 与三份 Dockerfile + Firecracker 配方 + neo-loop.service 模板
   docs/              架构、CLI、Desk、Mobile、域名、后管调研
   .neo/environment.json
 ```
@@ -224,6 +239,10 @@ flowchart LR
 
 ## 5. 一次 Run 的主路径
 
+开关在 `Run.kernel`：请求字段 → `AGENT_KERNEL` → 默认 `pi`。对外 `/v1` 不变。
+
+### 5.1 `kernel=pi`（现网默认）
+
 ```mermaid
 sequenceDiagram
   participant U as Client
@@ -255,7 +274,45 @@ sequenceDiagram
   end
 ```
 
-多端是**订阅制**：worker 只生产一次事件。浏览器多个标签、CLI、Desk、手机都订控制面同一条 SSE。晚到的端先拉 `GET /v1/runs/:id/transcript` 压缩快照，再带 `after` / `Last-Event-ID` 跟直播。
+### 5.2 `kernel=agentscope`（代码在 main，现网未开 `neo-loop`）
+
+控制面不把 prompt 塞 inbox，记 `pendingLoopStarts`。worker `WORKER_ROLE=tools`，出向连 `ws://127.0.0.1:8082/internal/tools/{runId}`。槽 ready 后 `POST /internal/loop/turns`。
+
+```mermaid
+sequenceDiagram
+  participant U as Client
+  participant CP as control-plane
+  participant R as Runtime
+  participant W as neo-worker tools
+  participant Loop as neo-loop
+  participant G as llm-gateway
+
+  U->>CP: POST /v1/runs kernel=agentscope
+  CP->>R: provision
+  R->>W: boot WORKER_ROLE=tools
+  W->>Loop: tools WS hello
+  CP->>Loop: POST /internal/loop/turns
+  loop 一个 turn
+    Loop->>G: chat/completions (run JWT)
+    Loop->>CP: RunEvent message.delta / tool.*
+    Loop->>W: exec / fs.*
+    W-->>Loop: stdout + exit
+  end
+  Loop->>CP: turn-complete → IDLE
+  U->>CP: follow-ups / steer / abort
+  CP->>Loop: 下一 turn 或 signal
+```
+
+`LocalTurnEngine`：等 tools 通道 → 恢复 session → 推理 → 工具 → 先写盘再副作用 → `turn-complete`。**只有 complete 后控制面才标 IDLE。** 中间 LLM round 不是 `agent.end`。
+
+| `LOOP_ENGINE` | 含义 | 什么时候用 |
+| --- | --- | --- |
+| `harness`（默认） | AgentScope `HarnessAgent` + `ReActAgent`，关掉宿主机 shell / filesystem | 目标形态 |
+| `react` | 自研 Activity ReAct | 本机 / e2e 更稳（mock Gateway 下 harness 更脆） |
+
+Desk：`{loop:desk, tools:desk}` 仍是本机 pi。`{loop:cloud, tools:desk}` 合约已允许，产品第 4 期。禁止 desk loop + cloud tools。
+
+多端是**订阅制**：事件只生产一次。浏览器多个标签、CLI、Desk、手机都订控制面同一条 SSE。晚到的端先拉 `GET /v1/runs/:id/transcript` 压缩快照，再带 `after` / `Last-Event-ID` 跟直播。`agentscope` 重试会发 `turn.rewind`；`foldRewoundEvents` 只切 rewind **之前**、同 `replyId` 且 `workerSeq >= fromSeq` 的事件，重播 delta 保留。
 
 ---
 
@@ -283,20 +340,20 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 | `NOT_YET_STARTED` | 已创建；槽满则排队，记 `run.queued`，**不要标 ERROR** |
 | `PROVISIONING` | Runtime 占槽 / 起进程 / 起容器 / 等 Desk claim |
 | `INSTALLING` | 冷启动跑 `install`；从 active Build 启动则跳过 |
-| `RUNNING` | pi 正在 turn |
+| `RUNNING` | 本轮 turn 未结束（`pi` 或 `neo-loop`） |
 | `IDLE` | 本轮结束、会话还在，可跟进。`vm` 运行时超过 `WORKER_IDLE_RELEASE_MS`（默认 15 分钟）先把工作区写回再卸槽；写回失败则留下槽。工作区预算与回收见 [workspace-persistence.md](./workspace-persistence.md) |
 | `WAITING_FOR_BACKGROUND_WORK` | 子任务 / 后台工作未完 |
 | `ERROR` | 失败；跟进仍可从 session 备份恢复 |
 | `ARCHIVED` / `EXPIRED` | 释放计算；transcript 按保留策略另存 |
 
-跟进语义对齐 pi，不要再写第二套队列执行器：
+跟进语义对齐 pi 三个动词，不要再写第二套队列执行器。`agentscope` 把同一套动词翻译给 `neo-loop`：
 
-| 用户动作 | 控制面 | worker → pi |
-| --- | --- | --- |
-| IDLE 时发消息 | 直接下发 | `session.prompt` |
-| RUNNING 时改方向 | `steer` | `session.steer` |
-| RUNNING 时「做完再做」 | 入队 | `session.followUp` |
-| 取消 | abort | `session.abort` |
+| 用户动作 | 控制面 | `pi` | `agentscope` |
+| --- | --- | --- | --- |
+| IDLE 时发消息 | 直接下发 | inbox `prompt` → `session.prompt` | `POST /internal/loop/turns` |
+| RUNNING 时改方向 | `steer` | `session.steer` | `signalTurn(steer)` |
+| RUNNING 时「做完再做」 | 入队 | `session.followUp` | loop 跟进队列；IDLE 且 worker 还挂着就立即 dispatch |
+| 取消 | abort | `session.abort` | `signalTurn(abort)` + 停 worker |
 
 控制面队列只解决：**worker 还没 ready 或暂时断线时把消息存住**。当前正在执行的消息不算 queued。
 
@@ -840,6 +897,8 @@ pnpm dev:desk            # Desk UI :5174 + Electron
 pnpm dev:mobile          # 手机 :5175
 pnpm neo -p "…"          # CLI 打同一套 /v1
 pnpm typecheck && pnpm test
+pnpm dev:loop            # 可选：Java neo-loop :8082（要测 agentscope 才开）
+pnpm test:loop           # mvn test + agentscope toy-repo e2e
 ```
 
 默认 mock 上游就能把 Run 跑到 IDLE。真模型把 `DEEPSEEK_API_KEY` 写进根目录 `.env`。现网部署用 `pnpm deploy:lighthouse`，不要手搓 tar。
@@ -848,12 +907,16 @@ pnpm typecheck && pnpm test
 
 ## 21. 现在有、明确没有
 
-**已经落地、文档必须对得上的：** P0 主路径（创建 Run → worker + pi → Gateway → SSE → IDLE → 跟进）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游。
+**已经落地、文档必须对得上的：** P0 主路径（创建 Run → worker + pi → Gateway → SSE → IDLE → 跟进）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；**可选 Java `neo-loop` + `WORKER_ROLE=tools` + `kernel=agentscope`（现网 unit 已装、默认 disabled，`AGENT_KERNEL` 未写则走 `pi`）**。
+
+**代码在 main、现网故意关掉的：** `systemctl enable --now neo-loop`、`.env` 里 `AGENT_KERNEL=agentscope`、Caddy / 防火墙放行 `:8082`。4C/4G 先不要开。操作见 [tencent-lighthouse-deploy SKILL](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)。
 
 **还没有、不要假装有的：**
 
-- 把 Agent loop 放控制面，或 CLI / 手机在本机跑 pi。若要把 loop 从槽里拆出来（Cursor 现行形态），见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)，不要嵌进 `control-plane`
-- 云 loop + 本机工具 RPC（`loop !== tools`），见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
+- 把 `HarnessAgent` 嵌进控制面，或 CLI / 手机在本机跑 pi。loop 拆出槽必须是 `neo-loop`，见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)
+- Temporal、Gateway `X-Neo-Step-Id` 幂等缓存、直播 SSE 页上的 rewind 覆盖（快照 fold 已做）
+- 现网把默认内核切成 `agentscope`
+- 云 loop + 本机工具作为产品入口（`{loop:cloud, tools:desk}` 合约已允许，产品第 4 期），见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 插件 git marketplace、zip 上传、插件自带 MCP / hooks
 - `GET /v1/search`、`GET /v1/recipes`（配方只在客户端）
 - Firecracker live-fork、headed browser / computer-use（分期见 [browser-computer-use.md](./browser-computer-use.md)）
