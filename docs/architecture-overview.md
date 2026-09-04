@@ -855,6 +855,7 @@ pnpm typecheck && pnpm test
 | [desk.md](./desk.md) / [desk-this-computer.md](./desk-this-computer.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为、This Computer 工作区一期、项目工作台 |
 | [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) | 云 loop + 本机工具，尚未做 |
 | [workspace-persistence.md](./workspace-persistence.md) | 空闲槽写回、预算、TTL |
+| [run-record-split-plan.md](./run-record-split-plan.md) | Run 存储拆分技术方案：列表行不再等于整包 `runs.record`，队列拆表、图片进对象存储 |
 | [mobile.md](./mobile.md) | 手机端蓝图与 P0 |
 | [admin-platform-research.md](./admin-platform-research.md) | 后管 vs New API 怎么拆 |
 | [nginx-research.md](./nginx-research.md) | 现网入口是 Caddy；不要再引入 Nginx |
