@@ -20,7 +20,7 @@ import {
 test("unix launch prefers a real interactive shell", () => {
   const launch = workspaceShellLaunch();
   assert.match(launch.command, /zsh|bash|sh/);
-  assert.deepEqual(launch.args, ["-i"]);
+  assert.ok(launch.args.includes("-i"));
 });
 
 test("desk runs are sent back to the local Desk terminal", () => {

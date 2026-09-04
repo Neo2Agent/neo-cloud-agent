@@ -66,14 +66,14 @@ export function workspaceTermStatus(error: WorkspaceTermError): number {
 
 export function workspaceShellLaunch(): { command: string; args: string[]; name: string } {
   const candidates = [
-    { command: "/bin/zsh", name: "zsh" },
-    { command: "/usr/bin/zsh", name: "zsh" },
-    { command: "/bin/bash", name: "bash" },
-    { command: "/usr/bin/bash", name: "bash" },
+    { command: "/bin/zsh", name: "zsh", args: ["-f", "-i"] },
+    { command: "/usr/bin/zsh", name: "zsh", args: ["-f", "-i"] },
+    { command: "/bin/bash", name: "bash", args: ["--norc", "--noprofile", "-i"] },
+    { command: "/usr/bin/bash", name: "bash", args: ["--norc", "--noprofile", "-i"] },
   ];
   for (const item of candidates) {
     if (existsSync(item.command)) {
-      return { ...item, args: ["-i"] };
+      return item;
     }
   }
   return { command: "/bin/sh", args: ["-i"], name: "sh" };
