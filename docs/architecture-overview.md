@@ -2,21 +2,21 @@
 
 本文是**现在仓库里实际长什么样**的完整地图：包怎么拆、进程怎么跑、一次 Run 怎么走、现网怎么叠。设计原则、分阶段蓝图、以及「为什么这样拆」仍以 [architecture.md](./architecture.md) 为准。本文不重复那份蓝图的每一条落地笔记，只把**核心架构**和**当前实现边界**摊开。
 
-对照 `origin/main` `550645f`（2026-09-04）。锁死的分层没变。相对 2026-08-28 那版，main 上多了可选 Java `neo-loop`（`AGENT_KERNEL=agentscope`）、`WORKER_ROLE=tools`、tools WebSocket 帧，以及轻量部署 skill 对 loop unit 的默认 disabled 处理。现网仍走 `pi`，loop 进程已装未启。
+对照 `origin/main`（2026-09-04 起现网默认 `agentscope`）。锁死的分层没变。相对 2026-08-28 那版，main 上多了 Java `neo-loop`（`AGENT_KERNEL=agentscope`）、`WORKER_ROLE=tools`、tools WebSocket 帧。现网启 `neo-loop`，不传 `kernel` 走 Java。
 
-对标对象：[Cursor Cloud Agent](https://cursor.com/docs/cloud-agent)。默认内核仍是 [pi-agent](https://github.com/earendil-works/pi)。第二条轨是 AgentScope Java `HarnessAgent`，住在独立进程，不嵌控制面。
+对标对象：[Cursor Cloud Agent](https://cursor.com/docs/cloud-agent)。默认内核是 AgentScope Java `HarnessAgent`，住在独立进程，不嵌控制面。pi-agent 仍可显式选用。
 
 ---
 
 ## 1. 一句话
 
-**客户端只打 `/v1` → 控制面编排 Run 和机器 → 推理只在 Gateway → Agent 循环要么在槽里的 pi（现网默认），要么在独立 Java `neo-loop`（代码已落地、现网未开）→ 工具必须在仓库旁边执行。**
+**客户端只打 `/v1` → 控制面编排 Run 和机器 → 推理只在 Gateway → Agent 循环默认在独立 Java `neo-loop`，也可显式走槽里的 pi → 工具必须在仓库旁边执行。**
 
 锁死的原则：
 
-> **推理在 Gateway。Loop 在 `neo-loop`（或现网默认的 worker 内 pi）。工具在执行面。不要把 Harness 嵌进控制面。**
+> **推理在 Gateway。Loop 在 `neo-loop`（或显式 `kernel=pi` 时在 worker 内）。工具在执行面。不要把 Harness 嵌进控制面。**
 
-现网默认 `AGENT_KERNEL=pi`：loop 仍和工具同址。`agentscope` 时 Java `neo-loop` 跑 turn，worker 只做 tools 通道。把 loop 放控制面会丢掉沙箱边界，也会把消息和编排揉进同一个进程。
+现网默认 `AGENT_KERNEL=agentscope`：Java `neo-loop` 跑 turn，worker 只做 tools 通道。`kernel=pi` 时 loop 和工具同址。把 loop 放控制面会丢掉沙箱边界，也会把消息和编排揉进同一个进程。
 
 ### 完整架构图
 
@@ -131,7 +131,7 @@ flowchart TB
 | 概念 | 现在的数量 | 是什么 |
 | --- | --- | --- |
 | Git 仓库 | 1（`neo-cloud-agent`） | 代码怎么管 |
-| 可部署进程 | 3 必开 + 1 可选 + worker 镜像 | `control-plane`、`llm-gateway`、`admin-api`；`neo-loop` 默认 disabled；worker 随 Run 生灭 |
+| 可部署进程 | 4 必开 + worker 镜像 | `control-plane`、`llm-gateway`、`admin-api`、`neo-loop`；worker 随 Run 生灭 |
 | 可选上游 | 0 或 1 | 库机 Docker `calciumion/new-api` `:3000`。**不是** Neo 进程，只当 Gateway 上游 |
 | 逻辑 package | 12 | 代码怎么分层（含共享 UI 包） |
 | 客户端 | 5 | Web / Desk / CLI / Mobile / Admin Web——都不是 Deployment |
@@ -164,7 +164,7 @@ neo-cloud-agent/
 | `contracts` | 类型与协议 | 无进程 |
 | `control-plane` | 对外 `/v1` + 内部 `/internal` + 托管 Web | `:8080` |
 | `llm-gateway` | OpenAI-compatible 代理 | `:8081` |
-| `neo-loop`（可选） | Java AgentScope turn 引擎；默认不启，现网 `AGENT_KERNEL=pi` | `:8082` 仅内网 |
+| `neo-loop` | Java AgentScope turn 引擎；现网默认内核 | `:8082` 仅内网 |
 | `worker` | 嵌入 pi 的执行进程 | 每 Run 一份 |
 | `extensions` | `neo_*` 云工具 | 打进 worker |
 | `ui` | 共享 Radix 控件 | 无进程；只被四个前端 import |
@@ -197,13 +197,13 @@ flowchart LR
     CP["neo-control-plane :8080"]
     GW["neo-llm-gateway :8081"]
     Admin["admin-api :8090"]
-    Loop["neo-loop :8082\n默认 disabled"]
+    Loop["neo-loop :8082\n现网默认"]
     Slots["2 × loop ext4 槽\nWORKER_RUNTIME=vm"]
     Caddy -->|"/"| CP
     Caddy -->|"/admin/"| Admin
     CP --> Slots
     Slots --> GW
-    CP -.->|"仅 AGENT_KERNEL=agentscope"| Loop
+    CP -->|"默认 AGENT_KERNEL=agentscope"| Loop
     Loop -.-> Slots
   end
 
@@ -229,7 +229,7 @@ flowchart LR
 | 直播事件 | 库机 Redis Pub/Sub + Stream |
 | 模型渠道 | 库机 New API `:3000`；Gateway 打 `http://101.42.105.230:3000/v1` |
 | 对象存储 | 应用机 `RUNS_DIR/.objects`，现网不切 S3 |
-| systemd | 必开：`neo-control-plane`、`neo-llm-gateway`、`neo-admin-api`、Caddy。`neo-loop` 装 unit 但默认 disabled，Caddy 不反代 `:8082` |
+| systemd | 必开：`neo-control-plane`、`neo-llm-gateway`、`neo-admin-api`、`neo-loop`、Caddy。Caddy 不反代 `:8082` |
 
 操作手册：[.cursor/skills/tencent-lighthouse-deploy/SKILL.md](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)、[.cursor/skills/tencent-lighthouse-db/SKILL.md](../.cursor/skills/tencent-lighthouse-db/SKILL.md)、[production-domain.md](./production-domain.md)。
 
@@ -239,9 +239,9 @@ flowchart LR
 
 ## 5. 一次 Run 的主路径
 
-开关在 `Run.kernel`：请求字段 → `AGENT_KERNEL` → 默认 `pi`。对外 `/v1` 不变。
+开关在 `Run.kernel`：请求字段 → `AGENT_KERNEL` → 默认 `agentscope`。对外 `/v1` 不变。
 
-### 5.1 `kernel=pi`（现网默认）
+### 5.1 `kernel=pi`（显式回退）
 
 ```mermaid
 sequenceDiagram
@@ -274,7 +274,7 @@ sequenceDiagram
   end
 ```
 
-### 5.2 `kernel=agentscope`（代码在 main，现网未开 `neo-loop`）
+### 5.2 `kernel=agentscope`（现网默认）
 
 控制面不把 prompt 塞 inbox，记 `pendingLoopStarts`。worker `WORKER_ROLE=tools`，出向连 `ws://127.0.0.1:8082/internal/tools/{runId}`。槽 ready 后 `POST /internal/loop/turns`。
 
@@ -907,15 +907,15 @@ pnpm test:loop           # mvn test + agentscope toy-repo e2e
 
 ## 21. 现在有、明确没有
 
-**已经落地、文档必须对得上的：** P0 主路径（创建 Run → worker + pi → Gateway → SSE → IDLE → 跟进）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；**可选 Java `neo-loop` + `WORKER_ROLE=tools` + `kernel=agentscope`（现网 unit 已装、默认 disabled，`AGENT_KERNEL` 未写则走 `pi`）**。
+**已经落地、文档必须对得上的：** P0 主路径（创建 Run → Java `neo-loop` + tools worker → Gateway → SSE → IDLE → 跟进；也可显式 `kernel=pi`）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；**Java `neo-loop` + `WORKER_ROLE=tools` + 默认 `kernel=agentscope`（现网 `enable --now`，Caddy 仍不反代 `:8082`）**。
 
-**代码在 main、现网故意关掉的：** `systemctl enable --now neo-loop`、`.env` 里 `AGENT_KERNEL=agentscope`、Caddy / 防火墙放行 `:8082`。4C/4G 先不要开。操作见 [tencent-lighthouse-deploy SKILL](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)。
+**代码在 main、现网故意关掉的：** Caddy / 防火墙放行 `:8082`。操作见 [tencent-lighthouse-deploy SKILL](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)。
 
 **还没有、不要假装有的：**
 
 - 把 `HarnessAgent` 嵌进控制面，或 CLI / 手机在本机跑 pi。loop 拆出槽必须是 `neo-loop`，见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)
 - Temporal、Gateway `X-Neo-Step-Id` 幂等缓存、直播 SSE 页上的 rewind 覆盖（快照 fold 已做）
-- 现网把默认内核切成 `agentscope`
+- 把 `:8082` 暴露到公网
 - 云 loop + 本机工具作为产品入口（`{loop:cloud, tools:desk}` 合约已允许，产品第 4 期），见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 插件 git marketplace、zip 上传、插件自带 MCP / hooks
 - `GET /v1/search`、`GET /v1/recipes`（配方只在客户端）

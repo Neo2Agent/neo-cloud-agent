@@ -9,6 +9,7 @@ test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
   const runsDir = mkdtempSync(path.join(tmpdir(), "neo-e2e-"));
   process.env.WORKER_RUNTIME = "local";
   process.env.SPAWN_LOCAL_WORKER = "1";
+  process.env.AGENT_KERNEL = "pi";
   process.env.LLM_SETTINGS_DIR = mkdtempSync(path.join(tmpdir(), "neo-e2e-llm-"));
   delete process.env.DEEPSEEK_API_KEY;
   delete process.env.OPENAI_API_KEY;

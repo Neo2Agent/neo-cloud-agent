@@ -30,6 +30,7 @@ def main() -> int:
             slots = data.get("vmSlots") or {}
             bits += [
                 f"runtime={data.get('workerRuntime')}",
+                f"kernel={data.get('agentKernel')}",
                 f"slots={slots.get('total')}",
                 f"store={data.get('metadataStore')}",
                 f"bus={data.get('eventBus')}",
@@ -38,10 +39,10 @@ def main() -> int:
         if svc == "llm-gateway":
             bits += [f"upstream={data.get('upstream')}", f"configured={data.get('configured')}"]
         if svc == "neo-loop":
-            bits += ["optional=1"]
+            bits += ["required=1"]
         print(" ".join(str(bit) for bit in bits))
         seen.add(svc)
-    needed = {"control-plane", "llm-gateway", "admin-api"}
+    needed = {"control-plane", "llm-gateway", "admin-api", "neo-loop"}
     return 0 if needed <= seen else 1
 
 

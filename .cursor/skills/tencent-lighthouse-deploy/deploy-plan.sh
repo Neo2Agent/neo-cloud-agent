@@ -144,9 +144,8 @@ if [[ "${1:-}" == "--full" ]]; then
   restart_control_plane=1
   restart_admin_api=1
   build_loop=1
-  # Do not start a disabled unit on --full. deploy.sh only restarts neo-loop
-  # when the host already has it enabled.
-  restart_loop=0
+  # Default kernel is agentscope; --full must restart the Java loop too.
+  restart_loop=1
   update_units=1
   shift
 fi

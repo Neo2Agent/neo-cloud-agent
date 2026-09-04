@@ -1,7 +1,7 @@
 {
   "name": "neo-cloud-agent",
   "private": true,
-  "description": "Cloud agent control plane and VM worker, with pi-agent as the in-VM kernel.",
+  "description": "Cloud agent control plane and VM worker, with Java neo-loop as the default kernel.",
   "packageManager": "pnpm@10.33.3",
   "engines": {
     "node": ">=22.19"
@@ -22,7 +22,7 @@
     "pack:desk": "tsx packages/desk/scripts/pack.ts",
     "neo": "tsx packages/cli/src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && pnpm --filter @neo-cloud-agent/ui --config.engine-strict=false typecheck && pnpm --filter @neo-cloud-agent/web --config.engine-strict=false typecheck && pnpm --filter @neo-cloud-agent/admin-web --config.engine-strict=false typecheck && pnpm --filter @neo-cloud-agent/desk typecheck && pnpm --filter @neo-cloud-agent/mobile --config.engine-strict=false typecheck",
-    "test": "pnpm --filter @neo-cloud-agent/web --config.engine-strict=false build && env LLM_UPSTREAM=mock LLM_SETTINGS_DIR=/tmp/neo-test-llm-empty DEEPSEEK_API_KEY= OPENAI_API_KEY= LLM_UPSTREAM_API_KEY= LLM_API_KEY= tsx --test packages/**/*.test.ts scripts/**/*.test.ts && bash .cursor/skills/tencent-lighthouse-deploy/deploy-plan.test.sh",
+    "test": "pnpm --filter @neo-cloud-agent/web --config.engine-strict=false build && env AGENT_KERNEL=pi LLM_UPSTREAM=mock LLM_SETTINGS_DIR=/tmp/neo-test-llm-empty DEEPSEEK_API_KEY= OPENAI_API_KEY= LLM_UPSTREAM_API_KEY= LLM_API_KEY= tsx --test packages/**/*.test.ts scripts/**/*.test.ts && bash .cursor/skills/tencent-lighthouse-deploy/deploy-plan.test.sh",
     "build:web": "pnpm --filter @neo-cloud-agent/web --config.engine-strict=false build",
     "build:admin": "pnpm --filter @neo-cloud-agent/admin-web --config.engine-strict=false build",
     "deploy:lighthouse": "bash .cursor/skills/tencent-lighthouse-deploy/deploy.sh",

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveAgentKernel } from "@neo-cloud-agent/contracts";
 import { loadRootEnv } from "./env.js";
 
 loadRootEnv();
@@ -66,7 +67,7 @@ export function getConfig() {
       (kind === "docker" ? `http://host.docker.internal:${gatewayPort}` : llmGatewayUrl)
     ).replace(/\/$/, ""),
     dockerNetwork: process.env.DOCKER_NETWORK || null,
-    agentKernel: process.env.AGENT_KERNEL === "agentscope" ? "agentscope" : "pi",
+    agentKernel: resolveAgentKernel(undefined, process.env),
     neoLoopUrl: (process.env.NEO_LOOP_URL ?? "http://127.0.0.1:8082").replace(/\/$/, ""),
     neoLoopToken: process.env.NEO_LOOP_TOKEN ?? "",
     objectStore: (process.env.OBJECT_STORE === "s3" || process.env.OBJECT_STORE === "none" || process.env.OBJECT_STORE === "memory"
