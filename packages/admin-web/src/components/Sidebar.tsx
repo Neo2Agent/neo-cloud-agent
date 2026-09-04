@@ -1,5 +1,5 @@
 import { BrandMark } from "@neo-cloud-agent/ui";
-import { formatWhen, preview, slotBusy, slotLabel, statusLabel } from "../format";
+import { formatWhen, preview, runListTitle, slotBusy, slotLabel, statusLabel } from "../format";
 import { IconChatHome, IconClose } from "../icons";
 import type { AdminOverview, AdminRun } from "../types";
 
@@ -85,7 +85,7 @@ export function Sidebar({ userEmail, health, overview, liveRuns, onOpenRuns, onC
               >
                 <span className="run-title">
                   <span className="pulse-dot" aria-hidden="true" />
-                  {preview(run.prompt)}
+                  {runListTitle(run)}
                 </span>
                 <small>{statusLabel(run.status)}</small>
                 <time className="run-time" dateTime={run.updatedAt}>

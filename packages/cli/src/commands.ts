@@ -351,7 +351,7 @@ export async function lsCommand(parsed: ParsedCli, io: CliIo): Promise<number> {
     return EXIT_OK;
   }
   for (const run of runs) {
-    const preview = run.prompt.replace(/\s+/g, " ").slice(0, 60);
+    const preview = (run.title || run.prompt).replace(/\s+/g, " ").slice(0, 60);
     writeLine(io.out, `${run.id}\t${run.status}\t${run.model}\t${preview}`);
   }
   return EXIT_OK;

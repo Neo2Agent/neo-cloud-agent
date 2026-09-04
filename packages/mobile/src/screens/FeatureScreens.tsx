@@ -5,7 +5,7 @@ import { expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agen
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { SCHEDULE_PRESETS, type ScheduleKind } from "../automations";
-import { preview } from "../format";
+import { runListTitle } from "../format";
 import { runRowMeta } from "../session";
 import { Frame } from "./Frame";
 import { IslandButton, IslandInput, IslandSwitch } from "./island";
@@ -132,7 +132,7 @@ export function ProjectsScreen(props: {
         <Text style={styles.hint}>{selected.instruction || "还没有项目指令。"}</Text>
         {projectRuns.map((run) => (
           <Pressable key={run.id} style={styles.card} onPress={() => props.onOpenRun(run.id)}>
-            <Text style={styles.cardTitle}>{preview(run.prompt)}</Text>
+            <Text style={styles.cardTitle}>{runListTitle(run)}</Text>
             <Text style={styles.hint}>{runRowMeta(run)}</Text>
           </Pressable>
         ))}

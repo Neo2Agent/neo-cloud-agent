@@ -34,6 +34,7 @@ export type AdminRun = {
   id: string;
   status: string;
   prompt: string;
+  title?: string | null;
   userId: string;
   orgId?: string;
   model: string;

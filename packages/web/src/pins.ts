@@ -36,10 +36,15 @@ export function groupRuns<T extends { id: string; status: string; createdAt: str
   return { pinned: pinnedRuns, active, recent };
 }
 
-export function filterRuns<T extends { prompt?: string; id: string }>(runs: T[], query: string): T[] {
+export function filterRuns<T extends { title?: string | null; prompt?: string; id: string }>(runs: T[], query: string): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return runs;
-  return runs.filter((run) => (run.prompt ?? "").toLowerCase().includes(needle) || run.id.toLowerCase().includes(needle));
+  return runs.filter(
+    (run) =>
+      (run.title ?? "").toLowerCase().includes(needle) ||
+      (run.prompt ?? "").toLowerCase().includes(needle) ||
+      run.id.toLowerCase().includes(needle),
+  );
 }
 
 const SHELVED = new Set(["ARCHIVED", "EXPIRED"]);

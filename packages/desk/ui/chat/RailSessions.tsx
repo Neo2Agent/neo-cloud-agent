@@ -10,6 +10,10 @@ function preview(text: string, n = 40): string {
   return (text || "对话").replace(/\s+/g, " ").slice(0, n);
 }
 
+function runListTitle(run: { title?: string | null; prompt?: string }, n = 40): string {
+  return preview(run.title?.trim() || run.prompt || "", n);
+}
+
 function SpaceGlyph({ kind }: { kind: RailSpaceGroup["kind"] }) {
   if (kind === "project") return <IconProjects size={13} />;
   if (kind === "folder") return <IconComputer size={13} />;
@@ -146,7 +150,7 @@ function ChatRow({
       className={`chat-row${nested ? " nested" : ""}${active ? " active" : ""}`}
       onClick={() => onOpen(run.id)}
     >
-      <span className="chat-title">{preview(run.prompt, 40)}</span>
+      <span className="chat-title">{runListTitle(run, 40)}</span>
       <span className="chat-meta">
         <i
           className={`chat-local-dot${localRunning ? " on" : ""}`}

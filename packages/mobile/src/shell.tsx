@@ -1,6 +1,6 @@
 import { BuddyIcon, BuddyMascot } from "@neo-cloud-agent/ui";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { preview } from "./format";
+import { runListTitle } from "./format";
 import { runRowMeta } from "./session";
 import { isActiveRunStatus } from "./turn";
 
@@ -96,7 +96,7 @@ export function BuddyDrawer(props: {
             <button key={run.id} className="run-row" type="button" onClick={() => props.onOpenRun(run.id)}>
               <b>
                 {isActiveRunStatus(run.status) ? "● " : ""}
-                {preview(run.prompt)}
+                {runListTitle(run)}
               </b>
               <span>{runRowMeta(run)}</span>
             </button>
