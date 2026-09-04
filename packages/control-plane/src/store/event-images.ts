@@ -165,6 +165,35 @@ export function resolveTranscriptImage(
   return data ? { mediaType: fromEvent.mediaType, data } : null;
 }
 
+/**
+ * Wire copy only: turn `obj:` pointers into base64. Clients build live bubbles
+ * straight from SSE `data.images`, so a pointer there renders a broken photo.
+ * Hot RAM and every persisted copy keep the pointer.
+ */
+export function resolveEventImagesForClient(event: RunEvent, runsDir?: string): RunEvent {
+  const images = readEventImages(event);
+  if (images.length === 0) {
+    return event;
+  }
+  let changed = false;
+  const next: ImageRef[] = [];
+  for (const image of images) {
+    const data = resolveEventImageData(event.runId, image.data, runsDir);
+    if (!data) {
+      changed = true;
+      continue;
+    }
+    if (data !== image.data) {
+      changed = true;
+    }
+    next.push({ mediaType: image.mediaType, data });
+  }
+  if (!changed) {
+    return event;
+  }
+  return { ...event, data: { ...event.data, images: next.length > 0 ? next : undefined } };
+}
+
 /** Response copy only: turn `obj:` pointers into base64 so clients never see keys. */
 export function resolveSnapshotImagesForClient(
   snapshot: TranscriptSnapshot,

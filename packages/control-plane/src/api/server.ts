@@ -46,7 +46,11 @@ import {
 } from "@neo-cloud-agent/contracts";
 import { eventsForRun, lastEventIdForRun } from "../events/bus.js";
 import { snapshotForRun } from "../events/snapshot.js";
-import { resolveSnapshotImagesForClient, resolveTranscriptImage } from "../store/event-images.js";
+import {
+  resolveEventImagesForClient,
+  resolveSnapshotImagesForClient,
+  resolveTranscriptImage,
+} from "../store/event-images.js";
 import { SSE_HEADERS, attachEventStream } from "../events/stream.js";
 import {
   abortRun,
@@ -2255,7 +2259,13 @@ export function createApiServer() {
           url.searchParams.get("images") === "href"
             ? slimTranscriptSnapshotImages(paged)
             : resolveSnapshotImagesForClient(paged);
-        send(res, 200, includeEvents ? { snapshot, events: eventsForRun(runId) } : { snapshot });
+        send(
+          res,
+          200,
+          includeEvents
+            ? { snapshot, events: eventsForRun(runId).map((item) => resolveEventImagesForClient(item)) }
+            : { snapshot },
+        );
         return;
       }
 
