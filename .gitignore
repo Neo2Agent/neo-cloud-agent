@@ -1,5 +1,7 @@
 node_modules/
 dist/
+services/neo-loop/target/
+**/.agentscope/
 packages/desk/out/
 packages/desk/release/
 *.log
