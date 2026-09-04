@@ -146,7 +146,7 @@ function ChatRow({
       className={`chat-row${nested ? " nested" : ""}${active ? " active" : ""}`}
       onClick={() => onOpen(run.id)}
     >
-      <span className="chat-title">{preview(run.prompt, 40)}</span>
+      <span className="chat-title">{preview(run.title || run.prompt, 40)}</span>
       <span className="chat-meta">
         <i
           className={`chat-local-dot${localRunning ? " on" : ""}`}

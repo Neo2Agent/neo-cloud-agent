@@ -41,6 +41,7 @@ test("groupRunsByProject keeps unassigned runs separate", () => {
   assert.equal(grouped.sections[1]?.label, "未归项目");
   assert.deepEqual(filterRuns(runs, "官网"), []);
   assert.equal(filterRuns([{ id: "1", prompt: "修官网登录" }], "登录")[0]?.id, "1");
+  assert.equal(filterRuns([{ id: "2", prompt: "后面还有", title: "分析会话存储" }], "会话")[0]?.id, "2");
 });
 
 test("splitShelvedRuns keeps archived and expired out of the live list", () => {

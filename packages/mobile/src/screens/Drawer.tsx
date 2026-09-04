@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { preview } from "../format";
+import { runTitle } from "../format";
 import { runRowMeta } from "../session";
 import { isActiveRunStatus } from "../turn";
 import { splitShelvedRuns, toggleSelected } from "../cloud";
@@ -143,7 +143,7 @@ export function Drawer(props: Props) {
               >
                 <Text style={styles.rowTitle} numberOfLines={2}>
                   {selecting ? (selected.includes(run.id) ? "☑ " : "☐ ") : isActiveRunStatus(run.status) ? "● " : ""}
-                  {preview(run.prompt)}
+                  {runTitle(run)}
                 </Text>
                 <Text style={styles.rowMeta}>{runRowMeta(run)}</Text>
               </Pressable>
@@ -152,7 +152,7 @@ export function Drawer(props: Props) {
             {shelved.map((run) => (
               <View key={run.id} style={styles.row}>
                 <Pressable onPress={() => props.onOpenRun(run.id)}>
-                  <Text style={styles.rowTitle} numberOfLines={2}>{preview(run.prompt)}</Text>
+                  <Text style={styles.rowTitle} numberOfLines={2}>{runTitle(run)}</Text>
                   <Text style={styles.rowMeta}>{runRowMeta(run)}</Text>
                 </Pressable>
                 {props.onDeleteRun ? (

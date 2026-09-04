@@ -1,5 +1,5 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { preview, slotLabel } from "../format";
+import { runTitle, slotLabel } from "../format";
 import { isActiveRunStatus } from "../turn";
 import type { VmSlotView } from "./Sidebar";
 
@@ -24,7 +24,7 @@ export function VmSlots({ slots, backend, currentRunId, runs, onOpenRun }: Props
             const held = slot.status === "busy" || Boolean(slot.runId);
             const current = Boolean(currentRunId && (slot.runId === currentRunId || occupant?.id === currentRunId));
             const running = Boolean(occupant && isActiveRunStatus(occupant.status));
-            const title = occupant ? preview(occupant.prompt) : held ? slot.runId?.slice(0, 8) : "空闲";
+            const title = occupant ? runTitle(occupant) : held ? slot.runId?.slice(0, 8) : "空闲";
             const occupancy = running ? "占用" : held ? "待命" : "空闲";
             return (
               <article

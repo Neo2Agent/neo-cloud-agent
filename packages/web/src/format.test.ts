@@ -10,8 +10,14 @@ import {
   modelLabel,
   parseUnifiedDiff,
   resolveChatModel,
+  runTitle,
   toolArgPreview,
 } from "./format.js";
+
+test("runTitle prefers the stored title over the prompt", () => {
+  assert.equal(runTitle({ title: "分析会话存储", prompt: "帮我看看\n后面还有" }), "分析会话存储");
+  assert.equal(runTitle({ prompt: "帮我看看后面还有很长很长的提示词内容需要被截断" }), "帮我看看后面还有很长很长的提示词内容需要被截断".slice(0, 42));
+});
 
 test("modelLabel distinguishes DeepSeek Flash, Vision, and Pro", () => {
   assert.equal(modelLabel("deepseek", "deepseek-v4-flash"), "DeepSeek Flash");

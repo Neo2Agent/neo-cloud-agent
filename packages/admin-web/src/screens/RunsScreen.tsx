@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { clampPage, filterByQuery, paginate, snippet } from "../catalog";
+import { clampPage, filterByQuery, paginate } from "../catalog";
 import { CatalogCard, CatalogEmpty, CatalogGrid, CatalogPager, CatalogToolbar } from "../components/Catalog";
-import { formatTokens, formatWhen, sourceLabel, statusLabel } from "../format";
+import { formatTokens, formatWhen, runTitle, sourceLabel, statusLabel } from "../format";
 import type { AdminRun } from "../types";
 
 type Props = {
@@ -14,6 +14,7 @@ export function RunsScreen({ runs }: Props) {
   const filtered = useMemo(
     () =>
       filterByQuery(runs, query, (item) => [
+        item.title,
         item.prompt,
         item.status,
         statusLabel(item.status),
@@ -55,7 +56,7 @@ export function RunsScreen({ runs }: Props) {
             {visible.map((item) => (
               <CatalogCard
                 key={item.id}
-                title={snippet(item.prompt, 56) || "未命名任务"}
+                title={runTitle(item, 56)}
                 badge={statusLabel(item.status)}
                 description={[sourceLabel(item.source) || "对话", item.model].filter(Boolean).join(" · ")}
                 meta={`${item.usage?.totalTokens ? `${formatTokens(item.usage.totalTokens)} tok · ` : ""}${formatWhen(item.updatedAt)}`}

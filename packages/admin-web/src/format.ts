@@ -125,6 +125,10 @@ export function preview(text: string, max = 72): string {
   return (text || "未命名任务").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+export function runTitle(run: { title?: string | null; prompt?: string }, max = 72): string {
+  return preview(run.title?.trim() || run.prompt || "", max);
+}
+
 export function slotLabel(id?: string | null): string {
   const raw = String(id || "");
   const match = /^slot-(\d+)$/.exec(raw);

@@ -1,5 +1,5 @@
 import { BrandMark } from "@neo-cloud-agent/ui";
-import { formatWhen, preview, slotBusy, slotLabel, statusLabel } from "../format";
+import { formatWhen, runTitle, slotBusy, slotLabel, statusLabel } from "../format";
 import { IconChatHome, IconClose } from "../icons";
 import type { AdminOverview, AdminRun } from "../types";
 
@@ -54,7 +54,7 @@ export function Sidebar({ userEmail, health, overview, liveRuns, onOpenRuns, onC
                   <strong>{slotLabel(slot.id)}</strong>
                   <small>
                     {running ? "忙碌" : slot.mounted ? "空闲" : slot.status}
-                    {occupant ? ` · ${preview(occupant.prompt, 18)}` : ""}
+                    {occupant ? ` · ${runTitle(occupant, 18)}` : ""}
                   </small>
                 </article>
               );
@@ -85,7 +85,7 @@ export function Sidebar({ userEmail, health, overview, liveRuns, onOpenRuns, onC
               >
                 <span className="run-title">
                   <span className="pulse-dot" aria-hidden="true" />
-                  {preview(run.prompt)}
+                  {runTitle(run)}
                 </span>
                 <small>{statusLabel(run.status)}</small>
                 <time className="run-time" dateTime={run.updatedAt}>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
-import { CHAT_MODELS, chatModelLabel, preview, resolveChatModel } from "../format";
+import { CHAT_MODELS, chatModelLabel, resolveChatModel, runTitle } from "../format";
 import { dayGreeting } from "../island-theme";
 import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
@@ -215,7 +215,7 @@ export function IslandDrawer(props: {
           >
             <b>
               {selecting ? (selected.includes(run.id) ? "☑ " : "☐ ") : isActiveRunStatus(run.status) ? "● " : ""}
-              {preview(run.prompt)}
+              {runTitle(run)}
             </b>
             <span>{runRowMeta(run)}</span>
           </button>
@@ -224,7 +224,7 @@ export function IslandDrawer(props: {
         {shelved.map((run) => (
           <div key={run.id} className="run-row is-shelved">
             <button type="button" className="run-open" onClick={() => props.onOpenRun(run.id)}>
-              <b>{preview(run.prompt)}</b>
+              <b>{runTitle(run)}</b>
               <span>{runRowMeta(run)}</span>
             </button>
             {props.onDeleteRun ? (

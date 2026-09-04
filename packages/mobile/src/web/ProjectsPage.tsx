@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { preview } from "../format";
+import { runTitle } from "../format";
 import { runRowMeta } from "../session";
 import { IslandButton, IslandInput } from "./island";
 import { Modal, Page } from "./chrome";
@@ -45,7 +45,7 @@ export function ProjectsPage(props: {
         {projectRuns.map((run) => (
           <button key={run.id} className="dash-card" type="button" onClick={() => props.onOpenRun(run.id)}>
             <div>
-              <strong>{preview(run.prompt)}</strong>
+              <strong>{runTitle(run)}</strong>
               <p>{runRowMeta(run)}</p>
             </div>
           </button>

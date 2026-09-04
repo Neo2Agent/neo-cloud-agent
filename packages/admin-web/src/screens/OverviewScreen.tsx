@@ -1,5 +1,4 @@
-import { formatCount, formatTokens, formatWhen, quotaPercent, slotBusy, slotLabel, statusLabel } from "../format";
-import { snippet } from "../catalog";
+import { formatCount, formatTokens, formatWhen, quotaPercent, runTitle, slotBusy, slotLabel, statusLabel } from "../format";
 import { CatalogCard, CatalogEmpty, CatalogGrid } from "../components/Catalog";
 import type { AdminOverview, AdminRun } from "../types";
 
@@ -127,7 +126,7 @@ export function OverviewScreen({ overview, runs }: Props) {
             {liveRuns.map((item) => (
               <CatalogCard
                 key={item.id}
-                title={snippet(item.prompt, 48) || "未命名任务"}
+                title={runTitle(item, 48)}
                 badge={statusLabel(item.status)}
                 description={item.model || "默认模型"}
                 meta={`${item.usage?.totalTokens ? `${formatTokens(item.usage.totalTokens)} tok · ` : ""}${formatWhen(item.updatedAt)}`}

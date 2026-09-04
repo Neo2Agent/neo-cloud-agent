@@ -52,7 +52,7 @@ import {
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatRunTime, formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
+import { formatRunTime, formatUsage, modelLabel, resolveChatModel, runTitle, shortId, slotLabel } from "./format";
 import {
   activityLabel,
   isActiveRunStatus,
@@ -422,7 +422,7 @@ export function App() {
             setStopping(false);
             setSending(false);
             if (event.kind === "run.idle" || event.kind === "agent.end") {
-              void deskBridge()?.notify("对话已完成", preview(currentRun?.prompt ?? "Neo"));
+              void deskBridge()?.notify("对话已完成", currentRun ? runTitle(currentRun) : "Neo");
             }
             if (event.kind === "run.error") {
               void deskBridge()?.notify("对话出错", event.title || "Run error");
@@ -1951,7 +1951,7 @@ export function App() {
                       : mainTab === "context"
                       ? "这次对话占了什么"
                       : currentRun
-                        ? preview(currentRun.prompt)
+                        ? runTitle(currentRun)
                         : expertPick.expertTeamId || expertPick.expertId
                           ? `以「${
                               teams.find((item) => item.id === expertPick.expertTeamId)?.name ||

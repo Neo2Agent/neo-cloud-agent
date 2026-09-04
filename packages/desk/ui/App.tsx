@@ -1052,6 +1052,7 @@ export function App() {
         const repo = repoLabel(run.repoUrls[0]).toLowerCase();
         const projectName = projects.find((item) => item.id === run.projectId)?.name.toLowerCase() ?? "";
         return (
+          (run.title ?? "").toLowerCase().includes(q) ||
           run.prompt.toLowerCase().includes(q) ||
           run.id.toLowerCase().includes(q) ||
           repo.includes(q) ||
@@ -1063,7 +1064,7 @@ export function App() {
       .slice(0, 12)
       .map((run) => ({
         id: run.id,
-        title: preview(run.prompt, 72),
+        title: preview(run.title || run.prompt, 72),
         meta: runSearchMeta(run, repoLabel(run.repoUrls[0]), isCloudRun(run), formatRelShort(run.updatedAt)),
       }));
   }, [projects, query, runs]);
@@ -1268,7 +1269,7 @@ export function App() {
     requestAnimationFrame(() => taRef.current?.focus());
   };
 
-  const title = current ? preview(current.prompt, 42) : "New Agent";
+  const title = current ? preview(current.title || current.prompt, 42) : "New Agent";
 
   const createProject = async () => {
     if (!projectName.trim() || projectBusy) return;

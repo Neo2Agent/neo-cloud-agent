@@ -44,6 +44,10 @@ export function preview(text: string): string {
   return (text || "未命名任务").replace(/\s+/g, " ").slice(0, 42);
 }
 
+export function runTitle(run: { title?: string | null; prompt?: string }): string {
+  return preview(run.title?.trim() || run.prompt || "");
+}
+
 export function slotLabel(id?: string | null): string {
   const raw = String(id || "");
   const match = /^slot-(\d+)$/.exec(raw);
