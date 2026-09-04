@@ -2131,16 +2131,21 @@ button.send:disabled {
   text-align: right;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  #memories-page .catalog-card-actions {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--ease);
-  }
+#memories-page .catalog-card-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ease);
+}
 
-  #memories-page .catalog-card:hover .catalog-card-actions,
-  #memories-page .catalog-card:focus-within .catalog-card-actions,
-  #memories-page .catalog-card.is-editing .catalog-card-actions {
+#memories-page .catalog-card:hover .catalog-card-actions,
+#memories-page .catalog-card:focus-within .catalog-card-actions,
+#memories-page .catalog-card.is-editing .catalog-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  #memories-page .catalog-card-actions {
     opacity: 1;
     pointer-events: auto;
   }
