@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "pnpm --parallel --filter @neo-cloud-agent/control-plane --filter @neo-cloud-agent/llm-gateway dev",
+    "dev:loop": "mvn -f services/neo-loop spring-boot:run",
+    "test:loop": "mvn -f services/neo-loop -q test && AGENT_SCOPE_E2E=1 env LLM_UPSTREAM=mock tsx --test packages/control-plane/src/e2e/agentscope-turn.test.ts",
     "dev:control-plane": "pnpm --filter @neo-cloud-agent/control-plane dev",
     "dev:gateway": "pnpm --filter @neo-cloud-agent/llm-gateway dev",
     "dev:worker": "pnpm --filter @neo-cloud-agent/worker dev",
