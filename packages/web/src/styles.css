@@ -2054,6 +2054,10 @@ button.send:disabled {
   font-size: 13px;
 }
 
+#memories-page .catalog-grid {
+  align-items: start;
+}
+
 #memories-page .catalog-card {
   min-height: 0;
 }
