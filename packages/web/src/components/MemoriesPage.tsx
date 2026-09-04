@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   MEMORY_SEARCH_DEBOUNCE_MS,
-  MEMORY_SNIPPET_LENGTH,
   MEMORY_TEXT_MAX_LENGTH,
   memoryEdited,
   memoryHint,
@@ -9,7 +8,7 @@ import {
   type MemoryItem,
 } from "@neo-cloud-agent/contracts/memory";
 import { api, readJson } from "../api";
-import { clampPage, paginate, snippet } from "../catalog.js";
+import { clampPage, paginate } from "../catalog.js";
 import { IconBack } from "../icons.js";
 import { useConfirm } from "../feedback.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogToolbar } from "./Catalog.js";
@@ -215,33 +214,31 @@ export function MemoriesPage({ token, onBack }: Props) {
       ) : (
         <>
           <CatalogGrid>
-            {visible.map((item) => (
-              <CatalogCard
-                key={item.id}
-                title={snippet(item.text, MEMORY_SNIPPET_LENGTH)}
-                description={item.text.length > MEMORY_SNIPPET_LENGTH ? item.text : undefined}
-                badge={memoryEdited(item) ? "改过" : undefined}
-                initial="记"
-                actions={
-                  <>
-                    <button
-                      type="button"
-                      className="ghost"
-                      disabled={busy}
-                      onClick={() => {
-                        setDraft(item.text);
-                        setEditor({ mode: "edit", id: item.id, original: item.text, updatedAt: item.updatedAt });
-                      }}
-                    >
-                      编辑
-                    </button>
-                    <button type="button" className="ghost danger" disabled={busy} onClick={() => void remove(item.id)}>
-                      删除
-                    </button>
-                  </>
-                }
-              />
-            ))}
+            {visible.map((item) => {
+              const openEditor = () => {
+                setDraft(item.text);
+                setEditor({ mode: "edit", id: item.id, original: item.text, updatedAt: item.updatedAt });
+              };
+              return (
+                <CatalogCard
+                  key={item.id}
+                  title={item.text}
+                  badge={memoryEdited(item) ? "改过" : undefined}
+                  initial="记"
+                  onOpen={openEditor}
+                  actions={
+                    <>
+                      <button type="button" className="ghost" disabled={busy} onClick={openEditor}>
+                        编辑
+                      </button>
+                      <button type="button" className="ghost danger" disabled={busy} onClick={() => void remove(item.id)}>
+                        删除
+                      </button>
+                    </>
+                  }
+                />
+              );
+            })}
           </CatalogGrid>
           <CatalogPager page={listPage} total={visibleItems.length} onPage={setPage} />
         </>
