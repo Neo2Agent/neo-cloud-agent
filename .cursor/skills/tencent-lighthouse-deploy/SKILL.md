@@ -149,7 +149,7 @@ LLM_UPSTREAM=mock
 
 6. 安装 [units/](units/) 三个 systemd unit（gateway / control-plane / admin-api），`daemon-reload && enable --now`。
 7. 现网 Caddy 用 domain skill 的 HTTPS 模板：`/` → `:8080`，`/admin/` → `:8090`，`flush_interval -1`（SSE）。
-8. 打开 https://neorun.cloud/ 或 http://62.234.211.200/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。管理台是 https://neorun.cloud/admin/ 。域名还没解析时先走 IP，绑域名与 HTTPS 见 domain skill。
+8. 打开 https://neorun.cloud/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。管理台是 https://neorun.cloud/admin/ 。绑域名与 HTTPS 见 domain skill。
 
 ## 线上运行时
 

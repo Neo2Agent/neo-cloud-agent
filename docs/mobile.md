@@ -64,10 +64,10 @@ iOS / Android / PWA
 
 ### A. 手机浏览器 + 现有 Web（现在就能用）
 
-`packages/web` 已经按窄屏做了侧栏、登录、Enter 发送策略和 `visualViewport`。现网是 `https://neorun.cloud/`（IP 仍是 `http://62.234.211.200/`）。域名与证书见 [production-domain.md](./production-domain.md)。
+`packages/web` 已经按窄屏做了侧栏、登录、Enter 发送策略和 `visualViewport`。现网是 `https://neorun.cloud/`。域名与证书见 [production-domain.md](./production-domain.md)。
 
 适合：验证「手机上能不能下任务」。  
-不适合：当 iOS / Android 产品。iOS 后台会杀掉页面；没有 APNs；现网还是明文 HTTP。
+不适合：当 iOS / Android 产品。iOS 后台会杀掉页面；没有 APNs。
 
 **立刻可做的增强（不必开 App 工程）：** 加 Web App Manifest + service worker 做成 PWA；idle / PR 用 Web Push（浏览器允许时）。这是过渡，不是商店包。
 
@@ -80,7 +80,7 @@ iOS / Android / PWA
 - App Store / 国内应用市场对「套壳浏览器」审核紧
 - `EventSource` 在后台一样死
 - Web 的设置页、Desk 目标选择、文件树会把手机壳撑爆
-- 现网 HTTP 过不了 iOS ATS（必须 HTTPS）
+- 现网已经是 HTTPS；套壳仍过不了审核，也解决不了后台 SSE
 - 相机、钥匙串、推送最后还是要写原生插件，套壳优势消失
 
 内部 TestFlight / 自己用可以拿来探路。**不要把它当成要上架的 iOS / Android 端。**
@@ -208,7 +208,7 @@ Session TTL 已是 30 天（`SESSION_TTL_MS`），手机钥匙串存同一条即
 
 ## 7. 现网阻塞：HTTPS 和域名
 
-域名和 TLS 已经齐：`https://neorun.cloud/`（Caddy + Let's Encrypt → `:8080`，IP 仍是 `http://62.234.211.200/`）。解析与证书见 [production-domain.md](./production-domain.md)。
+域名和 TLS 已经齐：`https://neorun.cloud/`（Caddy + Let's Encrypt → `:8080`）。解析与证书见 [production-domain.md](./production-domain.md)。
 
 商店包 / TestFlight 用这个 HTTPS 主机名，不要再打明文 IP：
 

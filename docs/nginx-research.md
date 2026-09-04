@@ -54,7 +54,7 @@ flowchart LR
 | --- | --- | --- |
 | 对话 / `/v1` / webhook | `https://neorun.cloud/` → Caddy → `127.0.0.1:8080` | [Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https) |
 | 管理台 | `https://neorun.cloud/admin/` → Caddy `handle_path` → `127.0.0.1:8090` | 同上；admin-web 用 [`apiPrefix()`](../packages/admin-web/src/api.ts) 识别 `/admin` |
-| IP 书签 | `http://62.234.211.200/` 仍听 `:80`，同样两路 | 同上 |
+| IP 书签 | `http://62.234.211.200/` 仍听 `:80`，运维兜底 | 同上 |
 | `admin.neorun.cloud` | 308 到 `/admin/`，不单独挂后台 | 同上 |
 | TLS | Let's Encrypt，Caddy 自动续，0 元 | [production-domain.md](./production-domain.md) |
 | 压缩 | Caddy `encode gzip zstd`，只压 HTML/CSS/JS/JSON/SVG | Caddyfile |

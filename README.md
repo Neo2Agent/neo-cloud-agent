@@ -41,7 +41,7 @@ neo-cloud-agent/
 | 云工具 | `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` |
 | 桌面端 | Electron 壳 + This Computer / Remote。inline 响应带 assignment；dispatch 走 inbox SSE。见 [docs/desk.md](docs/desk.md) |
 | 手机端 | Expo 壳只订 `/v1`：新开只 cloud，列表含 Desk Remote；记忆 / Inbox / 产物 / 诊断 / 技能与对话页同一套接口。`pnpm start` 于 `packages/mobile`；`pnpm dev:mobile` 是 :5175 实验室。见 [docs/mobile.md](docs/mobile.md) |
-| 架构图 | 现网不用登录：`https://neorun.cloud/architecture` 或 `http://62.234.211.200/architecture` |
+| 架构图 | 现网不用登录：`https://neorun.cloud/architecture` |
 
 ```mermaid
 flowchart LR

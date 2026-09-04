@@ -31,14 +31,17 @@ function gatewayOriginFor(gatewayUrl: string, publicCp: string): string {
   const base = new URL(publicCp);
   try {
     const gateway = new URL(gatewayUrl);
-    if (gateway.port && gateway.port !== base.port) {
-      base.port = gateway.port;
-    } else if (!gateway.port && isLoopbackOrigin(gateway.origin)) {
-      base.port = "8081";
+    const gatewayPort = gateway.port || (isLoopbackOrigin(gateway.origin) ? "8081" : "");
+    if (!gatewayPort || gatewayPort === base.port) {
+      return publicCp.replace(/\/$/, "");
     }
+    if (base.hostname === "neorun.cloud" || base.hostname === "www.neorun.cloud") {
+      return `http://62.234.211.200:${gatewayPort}`;
+    }
+    base.port = gatewayPort;
+    if (gatewayPort === "8081") base.protocol = "http:";
     return base.origin;
   } catch {
-    base.port = "8081";
-    return base.origin;
+    return "http://62.234.211.200:8081";
   }
 }

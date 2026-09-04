@@ -22,7 +22,6 @@
 
 一张图把客户端、入口、控制面、执行面、推理、存储和外部依赖摊开。现网不用登录：
 
-- http://62.234.211.200/architecture
 - https://neorun.cloud/architecture
 
 源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）。
@@ -204,7 +203,7 @@ flowchart LR
 | --- | --- |
 | 对话页 | `https://neorun.cloud/` → Caddy → `:8080` |
 | 管理台 | `https://neorun.cloud/admin/` → Caddy `handle_path` → `:8090` |
-| IP 入口 | `http://62.234.211.200/` 仍可用（HTTP） |
+| IP 入口 | `http://62.234.211.200/` 仍听 `:80`，只做运维兜底。产品入口是 HTTPS |
 | 应用机 | 4C / 4G Ubuntu 24.04；**无 Docker、无 KVM** |
 | 执行面 | `WORKER_RUNTIME=vm`：2 个 loop 挂 ext4 槽，不是真 VM |
 | 元数据 | 库机 MySQL |
@@ -676,7 +675,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 - 默认管理员 `admin` / `123456`；可再 `BOOTSTRAP_EMAIL`。公开注册：用户名 + 手机号 + 密码（无验证码，手机号唯一），待管理员审核后才能登录，起步额度 ¥5。
 - Worker 只带 run JWT 打 `/internal`。
 - `/health`、静态页、公开 webhook 不需要用户令牌。
-- 限流：IP / 登录 / 建 Run / 用户写操作 / SSE 并发 / Gateway QPS。听写 `POST /v1/speech/iat` 走单独的 `speech` 桶，不占 write / llm_run。`GET /v1/rate-limits` 看桶。`RATE_LIMIT=0` 关闭。
+- 限流：IP / 登录 / 建 Run / 用户写操作 / SSE 并发 / Gateway QPS。听写 `POST /v1/speech/iat` 走单独的 `speech` 桶，不占 write / llm_run。`GET /v1/rate-limits` 看桶。`RATE_LIMIT=0` 关闭。网页 / 手机麦克风必须走 `https://neorun.cloud`；浏览器只打本站，讯飞密钥留在 gateway。
 - 配额：`GET /v1/quota` 同时跑的对话和本月 token。完整账务未做。
 
 ---
@@ -707,6 +706,7 @@ GET    /v1/vms
 GET    /v1/rate-limits
 GET    /v1/quota
 GET|POST /v1/settings/llm|scm|notify|quota|mcp
+GET|POST /v1/speech/iat                  讯飞听写代理；GET 只回 `{ configured }`
 GET|POST /v1/memories                    记忆页看/记；PATCH|DELETE /v1/memories/:id；POST /v1/memories/search
 ```
 

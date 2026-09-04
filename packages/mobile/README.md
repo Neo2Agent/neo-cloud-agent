@@ -22,7 +22,7 @@ npx expo install expo expo-secure-store expo-notifications expo-linking expo-sta
 pnpm start
 ```
 
-用 Expo Go 扫码。默认 API 是 `http://62.234.211.200`。
+用 Expo Go 扫码。默认 API 是 `https://neorun.cloud`。
 
 连本机控制面时，登录页把地址改成电脑的局域网 IP，例如 `http://192.168.1.8:8080`。手机和电脑要在同一 Wi-Fi；`app.json` 已允许本机明文 HTTP。不要用 `127.0.0.1`（那是手机自己）。
 
