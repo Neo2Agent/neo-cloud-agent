@@ -71,6 +71,7 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
       if (unsubs.current.has(info.id) || !runId) {
         return;
       }
+      unsubs.current.set(info.id, () => undefined);
       const stop = subscribeWorkspaceTerm(token, runId, info.id, (event) => {
         if (event.type === "data") {
           setSessions((prev) =>

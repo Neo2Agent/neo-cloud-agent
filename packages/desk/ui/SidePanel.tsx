@@ -252,6 +252,7 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
       if (!input.runId || cloudUnsubs.current.has(id)) {
         return;
       }
+      cloudUnsubs.current.set(id, () => undefined);
       const stop = subscribeWorkspaceTerm(input.token, input.runId, id, (event) => {
         if (event.type === "data") {
           const screen = applyTermChunk(screens.current.get(id) ?? createTermScreen(), event.chunk);
