@@ -123,7 +123,7 @@ test("mysql store upserts run JSON, events, and users", async () => {
   assert.doesNotMatch(loadRunsSql, /JSON_EXTRACT/);
 
   const summaries = await store.loadRunSummaries();
-  const summarySql = calls.find((item) => item.text.includes("usage_total_tokens") && item.text.includes("FROM runs"))?.text ?? "";
+  const summarySql = calls.find((item) => item.text.includes("usage_total_tokens") && item.text.includes("FROM runs") && !item.text.includes("LEFT JOIN"))?.text ?? "";
   assert.doesNotMatch(summarySql, /\brecord\b/);
   assert.equal(summaries[0]?.id, "run-mysql-1");
   assert.equal(summaries[0]?.title, "hello mysql");
