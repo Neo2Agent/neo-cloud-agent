@@ -623,7 +623,7 @@ export async function releaseIdleWorker(runId: string): Promise<boolean> {
     return false;
   }
   const pending = inbound.get(runId) ?? [];
-  if (pending.some((item) => item.type !== "shutdown")) {
+  if (pending.some((item) => item.type !== "shutdown") || hasPendingUserInbound(runId)) {
     return false;
   }
   releasingIdle.add(runId);
@@ -667,7 +667,7 @@ export async function releaseIdleWorker(runId: string): Promise<boolean> {
     releasingIdle.delete(runId);
   }
   const leftover = inbound.get(runId) ?? [];
-  if (leftover.some((item) => item.type !== "shutdown")) {
+  if (leftover.some((item) => item.type !== "shutdown") || hasPendingUserInbound(runId)) {
     try {
       await resumeRun(runId);
     } catch (error) {
@@ -2079,6 +2079,10 @@ export async function enqueueFollowUp(
     } catch {
       // follow-up stays queued; resumeRun queued or marked ERROR
     }
+  } else if ((run.kernel ?? "pi") === "agentscope" && run.status !== "RUNNING") {
+    // Worker is still leased after IDLE. Dispatch the turn now; do not wait for
+    // idle-release + resume, which never happens when WORKER_IDLE_RELEASE_MS=0.
+    void startPendingLoopTurn(run);
   }
   return item;
 }
