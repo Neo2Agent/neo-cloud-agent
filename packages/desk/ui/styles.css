@@ -3943,6 +3943,16 @@ img.avatar {
   resize: none;
 }
 
+.term-setup {
+  margin: 8px 12px 12px;
+}
+
+.term-setup summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* Local run chrome: which computer, which folder, what state. */
 
 .local-meta {

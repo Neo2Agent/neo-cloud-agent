@@ -3906,6 +3906,107 @@ button.composer-mic.is-listening,
   overflow: auto;
 }
 
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.term-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.term-head strong {
+  font-size: 13px;
+}
+
+.term-head .hint {
+  margin: 4px 0 0;
+}
+
+.term-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.term-actions .ghost.is-on {
+  color: var(--ink);
+  background: var(--bg-2);
+}
+
+.term-shell {
+  position: relative;
+  flex: 1;
+  min-height: 280px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #171717;
+  color: #e8e8e8;
+  font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  overflow: auto;
+  cursor: text;
+}
+
+.term-shell.is-focused {
+  box-shadow: inset 0 0 0 1px #3a3a3a;
+}
+
+.term-shell pre {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.term-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 1px;
+  background: #e8e8e8;
+  vertical-align: text-bottom;
+  animation: term-blink 1s step-end infinite;
+}
+
+.term-shell:not(.is-focused) .term-caret {
+  opacity: 0.35;
+  animation: none;
+}
+
+@keyframes term-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.term-ghost {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+  border: 0;
+  padding: 0;
+  resize: none;
+}
+
+.term-setup {
+  margin-top: 4px;
+}
+
+.term-setup summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .artifacts-panel {
   display: flex;
   flex-direction: column;

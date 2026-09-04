@@ -91,6 +91,16 @@ import { publicFollowUpsForRun } from "../store/persist.js";
 import { loadPersistedRun } from "../store/persist.js";
 import { listWorkspacePath } from "../workspace-fs.js";
 import { loadWorkspaceMeta, summarizeWorkspaceStore } from "../runtime/workspace-store.js";
+import {
+  attachWorkspaceTermStream,
+  closeWorkspaceTerm,
+  listWorkspaceTerms,
+  openWorkspaceTerm,
+  workspaceTermDeniedReason,
+  WorkspaceTermError,
+  workspaceTermStatus,
+  writeWorkspaceTerm,
+} from "../runtime/workspace-shell.js";
 import { workspaceFor } from "../worker-spawn.js";
 import {
   AccountError,
@@ -2414,6 +2424,108 @@ export function createApiServer() {
           return;
         }
         send(res, 201, mintRunGitToken(runId, body));
+        return;
+      }
+
+      const termEventsMatch = /^\/v1\/runs\/([^/]+)\/term\/([^/]+)\/events$/.exec(path);
+      if (termEventsMatch && method === "GET") {
+        const runId = termEventsMatch[1] ?? "";
+        const termId = termEventsMatch[2] ?? "";
+        const run = await requireRun(runId);
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        const denied = workspaceTermDeniedReason(run.executionTarget);
+        if (denied) {
+          send(res, 409, { error: denied });
+          return;
+        }
+        try {
+          attachWorkspaceTermStream(req, res, runId, termId);
+        } catch (error) {
+          if (error instanceof WorkspaceTermError) {
+            send(res, workspaceTermStatus(error), { error: error.message });
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
+
+      const termItemMatch = /^\/v1\/runs\/([^/]+)\/term\/([^/]+)$/.exec(path);
+      if (termItemMatch && (method === "POST" || method === "DELETE")) {
+        const runId = termItemMatch[1] ?? "";
+        const termId = termItemMatch[2] ?? "";
+        const run = await requireRun(runId);
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        const denied = workspaceTermDeniedReason(run.executionTarget);
+        if (denied) {
+          send(res, 409, { error: denied });
+          return;
+        }
+        if (method === "DELETE") {
+          const closed = closeWorkspaceTerm(runId, termId);
+          send(res, closed ? 200 : 404, closed ? { ok: true } : { error: "not_found" });
+          return;
+        }
+        const body = (await readJson(req)) as { data?: unknown };
+        const data = typeof body.data === "string" ? body.data : "";
+        if (data.length > 16_384) {
+          send(res, 400, { error: "input too long" });
+          return;
+        }
+        try {
+          writeWorkspaceTerm(runId, termId, data);
+          send(res, 200, { ok: true });
+        } catch (error) {
+          if (error instanceof WorkspaceTermError) {
+            send(res, workspaceTermStatus(error), { error: error.message });
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
+
+      const termCollectionMatch = /^\/v1\/runs\/([^/]+)\/term$/.exec(path);
+      if (termCollectionMatch && (method === "GET" || method === "POST")) {
+        const runId = termCollectionMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        const denied = workspaceTermDeniedReason(run.executionTarget);
+        if (denied) {
+          send(res, 409, { error: denied });
+          return;
+        }
+        if (method === "GET") {
+          send(res, 200, { sessions: listWorkspaceTerms(runId) });
+          return;
+        }
+        try {
+          send(res, 201, openWorkspaceTerm({ runId, cwd: workspaceFor(runId) }));
+        } catch (error) {
+          if (error instanceof WorkspaceTermError) {
+            send(res, workspaceTermStatus(error), { error: error.message });
+            return;
+          }
+          throw error;
+        }
         return;
       }
 

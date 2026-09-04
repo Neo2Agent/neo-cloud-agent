@@ -723,6 +723,9 @@ DELETE /v1/runs/:id                    仅已归档；MySQL 写 deleted_at，列
 GET    /v1/runs/:id/events          SSE
 GET    /v1/runs/:id/transcript
 GET    /v1/runs/:id/fs
+GET|POST /v1/runs/:id/term
+GET    /v1/runs/:id/term/:id/events
+POST|DELETE /v1/runs/:id/term/:id
 GET    /v1/runs/:id/diff
 GET    /v1/runs/:id/diagnostics
 GET|POST /v1/runs/:id/artifacts

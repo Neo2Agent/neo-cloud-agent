@@ -5,6 +5,13 @@ import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { api, readJson } from "./api";
 import { ArtifactsPane } from "./ArtifactsPane";
 import { deskBridge, STALE_DESK_HINT, type LocalFsListing } from "./desk";
+import {
+  closeWorkspaceTerm,
+  ensureWorkspaceTerms,
+  openWorkspaceTerm,
+  subscribeWorkspaceTerm,
+  writeWorkspaceTerm,
+} from "./workspace-term";
 import { FileGlyph } from "./FileGlyph";
 import { IconArtifacts, IconClose, IconExpand, IconFile, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";
 import { IslandButton, IslandCard, IslandInput } from "./island";
@@ -42,13 +49,13 @@ export function SidePanel({
   const [railOpen, setRailOpen] = useState(false);
   const [filesTab, setFilesTab] = useState(tab === "files");
   const [artifactsTab, setArtifactsTab] = useState(tab === "artifacts");
-  const term = useTerminalSessions(folder);
+  const term = useTerminalSessions({ folder, token, runId, local });
   const page =
     tab === "artifacts"
       ? "artifacts"
       : tab === "files" && filesTab
         ? "files"
-        : tab === "terminal" && term.sessions.length > 0
+        : tab === "terminal"
           ? "terminal"
           : filesTab
             ? "files"
@@ -58,7 +65,7 @@ export function SidePanel({
   const showRail = page !== "home" && railOpen;
 
   const openTerminal = () => {
-    void term.open();
+    void term.ensure();
     onTab("terminal");
   };
 
@@ -127,7 +134,10 @@ export function SidePanel({
           onCloseFiles={closeFiles}
           onArtifacts={openArtifacts}
           onCloseArtifacts={closeArtifacts}
-          onNew={openTerminal}
+          onNew={() => {
+            void term.open();
+            onTab("terminal");
+          }}
         />
         <ChromeTools onMax={() => setMaxed((cur) => !cur)} onStow={onClose} />
       </header>
@@ -148,7 +158,7 @@ export function SidePanel({
             }}
           >
             <IconTerminal size={22} />
-            <span>{local ? "Terminal" : "输出"}</span>
+            <span>Terminal</span>
           </IslandCard>
           <IslandCard
             hoverable
@@ -197,21 +207,23 @@ export function SidePanel({
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((cur) => !cur)}
         />
-      ) : local ? (
+      ) : (
         <TerminalView
           term={term}
+          local={local}
+          token={token}
+          runId={runId}
+          refreshKey={refreshKey}
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((cur) => !cur)}
           onCloseSession={closeSession}
         />
-      ) : (
-        <CloudOutputTab token={token} runId={runId} refreshKey={refreshKey} />
       )}
     </aside>
   );
 }
 
-function useTerminalSessions(folder: string) {
+function useTerminalSessions(input: { folder: string; token: string; runId: string | null; local: boolean }) {
   const [sessions, setSessions] = useState<Array<{ id: string; label: string }>>([]);
   const [activeId, setActiveId] = useState("");
   const [output, setOutput] = useState<Record<string, string>>({});
@@ -219,29 +231,89 @@ function useTerminalSessions(folder: string) {
   const [history, setHistory] = useState<Record<string, string[]>>({});
   const [historyAt, setHistoryAt] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
+  const cloudUnsubs = useRef(new Map<string, () => void>());
   const label = defaultTermLabel();
 
+  const adopt = useCallback((id: string, sessionLabel: string) => {
+    setSessions((prev) => (prev.some((item) => item.id === id) ? prev : [...prev, { id, label: sessionLabel }]));
+    setActiveId((cur) => cur || id);
+    setOutput((prev) => (id in prev ? prev : { ...prev, [id]: "" }));
+  }, []);
+
+  const attachCloud = useCallback(
+    (id: string) => {
+      if (!input.runId || cloudUnsubs.current.has(id)) {
+        return;
+      }
+      const stop = subscribeWorkspaceTerm(input.token, input.runId, id, (event) => {
+        if (event.type === "data") {
+          setOutput((prev) => ({ ...prev, [id]: `${prev[id] ?? ""}${event.chunk}`.slice(-60_000) }));
+          return;
+        }
+        if (event.type === "exit") {
+          setOutput((prev) => ({ ...prev, [id]: `${prev[id] ?? ""}\n[已结束]\n` }));
+        }
+      });
+      cloudUnsubs.current.set(id, stop);
+    },
+    [input.runId, input.token],
+  );
+
   const open = useCallback(async () => {
-    const termOpen = deskBridge()?.termOpen;
-    if (!folder) return;
-    if (!termOpen) {
-      setError(STALE_DESK_HINT);
+    if (input.local) {
+      const termOpen = deskBridge()?.termOpen;
+      if (!input.folder) return;
+      if (!termOpen) {
+        setError(STALE_DESK_HINT);
+        return;
+      }
+      const created = await termOpen(input.folder);
+      if (created.error || !created.id) {
+        setError(created.error || "打不开终端");
+        return;
+      }
+      adopt(created.id, sessions.length === 0 ? label : `${label} ${sessions.length + 1}`);
       return;
     }
-    const created = await termOpen(folder);
-    if (created.error || !created.id) {
-      setError(created.error || "打不开终端");
+    if (!input.runId) {
+      setError("发送任务后可以打开沙箱终端。");
       return;
     }
-    const id = created.id;
-    setSessions((prev) => [...prev, { id, label: prev.length === 0 ? label : `${label} ${prev.length + 1}` }]);
-    setActiveId(id);
-    setOutput((prev) => ({ ...prev, [id]: "" }));
-  }, [folder, label]);
+    try {
+      const created = await openWorkspaceTerm(input.token, input.runId);
+      adopt(created.id, created.shell || label);
+      attachCloud(created.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "打不开终端");
+    }
+  }, [adopt, attachCloud, input.folder, input.local, input.runId, input.token, label, sessions.length]);
+
+  const ensure = useCallback(async () => {
+    if (input.local) {
+      if (sessions.length > 0) {
+        return;
+      }
+      await open();
+      return;
+    }
+    if (!input.runId) {
+      setError("发送任务后可以打开沙箱终端。");
+      return;
+    }
+    try {
+      const existing = await ensureWorkspaceTerms(input.token, input.runId);
+      for (const item of existing) {
+        adopt(item.id, item.shell || label);
+        attachCloud(item.id);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "打不开终端");
+    }
+  }, [adopt, attachCloud, input.local, input.runId, input.token, label, open, sessions.length]);
 
   useEffect(() => {
     const bridge = deskBridge();
-    if (!bridge?.onTermData) return;
+    if (!input.local || !bridge?.onTermData) return;
     const offData = bridge.onTermData(({ id, chunk }) => {
       setOutput((prev) => ({ ...prev, [id]: `${prev[id] ?? ""}${chunk}`.slice(-60_000) }));
     });
@@ -252,10 +324,38 @@ function useTerminalSessions(folder: string) {
       offData?.();
       offExit?.();
     };
-  }, []);
+  }, [input.local]);
+
+  useEffect(() => {
+    const current = cloudUnsubs.current;
+    return () => {
+      for (const stop of current.values()) {
+        stop();
+      }
+      current.clear();
+    };
+  }, [input.runId, input.token]);
+
+  const write = (id: string, data: string) => {
+    if (input.local) {
+      void deskBridge()?.termWrite?.(id, data);
+      return;
+    }
+    if (input.runId) {
+      void writeWorkspaceTerm(input.token, input.runId, id, data).catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "写入失败");
+      });
+    }
+  };
 
   const close = (id: string) => {
-    void deskBridge()?.termClose?.(id);
+    if (input.local) {
+      void deskBridge()?.termClose?.(id);
+    } else if (input.runId) {
+      void closeWorkspaceTerm(input.token, input.runId, id).catch(() => undefined);
+    }
+    cloudUnsubs.current.get(id)?.();
+    cloudUnsubs.current.delete(id);
     setSessions((prev) => {
       const remaining = prev.filter((item) => item.id !== id);
       setActiveId((cur) => {
@@ -267,7 +367,24 @@ function useTerminalSessions(folder: string) {
     });
   };
 
-  return { sessions, activeId, setActiveId, output, setOutput, drafts, setDrafts, history, setHistory, historyAt, setHistoryAt, error, open, close };
+  return {
+    sessions,
+    activeId,
+    setActiveId,
+    output,
+    setOutput,
+    drafts,
+    setDrafts,
+    history,
+    setHistory,
+    historyAt,
+    setHistoryAt,
+    error,
+    open,
+    ensure,
+    write,
+    close,
+  };
 }
 
 function defaultTermLabel(): string {
@@ -395,11 +512,19 @@ function WorkbenchTabs({
 
 function TerminalView({
   term,
+  local,
+  token,
+  runId,
+  refreshKey,
   railOpen,
   onToggleRail,
   onCloseSession,
 }: {
   term: ReturnType<typeof useTerminalSessions>;
+  local: boolean;
+  token: string;
+  runId: string | null;
+  refreshKey: number;
   railOpen: boolean;
   onToggleRail: () => void;
   onCloseSession: (id: string) => void;
@@ -434,7 +559,7 @@ function TerminalView({
         <div className="wb-main">
           {term.error ? <p className="error">{term.error}</p> : null}
           {!term.activeId ? (
-            <p className="wb-empty">本机终端需要先选一个文件夹。</p>
+            <p className="wb-empty">{local ? "本机终端需要先选一个文件夹。" : "发送任务后可以打开沙箱终端。"}</p>
           ) : (
               <div
                 className={`term-out is-flat${focused ? " is-focused" : ""}`}
@@ -478,7 +603,7 @@ function TerminalView({
                     if (action === "interrupt" && window.getSelection()?.toString()) return;
                     event.preventDefault();
                     if (action === "submit") {
-                      void deskBridge()?.termWrite?.(id, `${draft}\n`);
+                      term.write(id, `${draft}\n`);
                       if (draft.trim()) {
                         term.setHistory((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), draft] }));
                       }
@@ -488,7 +613,7 @@ function TerminalView({
                       return;
                     }
                     if (action === "interrupt") {
-                      void deskBridge()?.termWrite?.(id, "\x03");
+                      term.write(id, "\x03");
                       return;
                     }
                     if (action === "clear") {
@@ -503,6 +628,7 @@ function TerminalView({
                 />
               </div>
           )}
+          {!local ? <SetupLogs token={token} runId={runId} refreshKey={refreshKey} /> : null}
         </div>
         {railOpen ? (
           <aside className="wb-rail">
@@ -787,7 +913,7 @@ async function readListing(input: {
   return readJson<LocalFsListing & { error?: string }>(response);
 }
 
-function CloudOutputTab({
+function SetupLogs({
   token,
   runId,
   refreshKey,
@@ -822,16 +948,16 @@ function CloudOutputTab({
   }, [refreshKey, runId, token]);
 
   return (
-      <div className="side-panel-body">
-        {!runId ? <p className="hint">发送任务后可以看云端输出。</p> : null}
-        {runId ? <p className="hint">云端对话看的是命令输出。要自己敲命令，请把对话开在 This Computer。</p> : null}
-        {error ? <p className="error">{error}</p> : null}
-        {logs.map((log) => (
-          <article key={log.name}>
-            <p className="eyebrow">{log.name}</p>
-            <pre className="wb-preview">{log.content || "（空）"}</pre>
-          </article>
-        ))}
-      </div>
+    <details className="term-setup">
+      <summary>Setup 日志</summary>
+      {error ? <p className="error">{error}</p> : null}
+      {logs.length === 0 && !error ? <p className="hint">还没有 setup 日志。</p> : null}
+      {logs.map((log) => (
+        <article key={log.name}>
+          <p className="eyebrow">{log.name}</p>
+          <pre className="wb-preview">{log.content || "（空）"}</pre>
+        </article>
+      ))}
+    </details>
   );
 }

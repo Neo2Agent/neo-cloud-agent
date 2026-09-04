@@ -303,5 +303,5 @@ Cursor 这块也没有公开的 worker 侧沙箱——`--worker-dir` 只是"expo
 
 - 不抄 Cursor 的 `workspaceRootPath` 上报。
 - 不把 `pi-client` / `pi-protocol` 的远程会话整套搬进来——那是"把 pi 会话搬远"，我们要的是"把工具搬远"，方向相反。
-- 不做云端交互式 PTY（仍是后置项）。
+- 不做云端交互式 PTY（仍是后置项）。网页 / Desk 云端已有工作区管道 shell，能打字；要 tty 的全屏 TUI 仍后置。
 - 不为了 RPC 放弃 Desk 侧沙箱。Cursor 没有公开的 worker 沙箱，这是我们的优势不是负债。
