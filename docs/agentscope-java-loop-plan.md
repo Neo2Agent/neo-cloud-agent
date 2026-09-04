@@ -1,6 +1,8 @@
 # 把 Agent loop 搬到服务器：对照 Cursor，用 AgentScope Java 改造 Neo
 
-调研 + 改造方案。2026-09-04。基线 `main` `0bd20a1`。
+调研 + 路径选择。2026-09-04。基线 `main` `0bd20a1`。
+
+**工程设计（进程、接口、工作流、Java 包、控制面钩子）见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)。** 实现以那份为准。
 
 对照：[architecture.md](./architecture.md)（一期锁死的原则）、[architecture-overview.md](./architecture-overview.md)（现状）、[desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)（云 loop + 本机工具，尚未做）。
 
