@@ -24,7 +24,7 @@ import { attachRateLimitRedis, resetRateLimitStore } from "./security/rate-limit
 import { reloadPersistedState } from "./orchestrator/orchestrator.js";
 import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
-import { persistRunRecord, persistWorkerLease, setPersistHooks } from "./store/persist.js";
+import { hydratedRunNeedsPersist, persistRunRecord, persistWorkerLease, setPersistHooks } from "./store/persist.js";
 import { mergeStoredRun } from "./store/run-record.js";
 
 let started: Promise<void> | null = null;
@@ -203,7 +203,9 @@ async function hydrateFromStore(store: MetadataStore): Promise<void> {
     if (!record) {
       continue;
     }
-    persistRunRecord(record, undefined, { mirror: false });
+    if (hydratedRunNeedsPersist(record)) {
+      persistRunRecord(record, undefined, { mirror: false });
+    }
     const lease = await store.loadLease(record.run.id);
     if (lease) {
       persistWorkerLease(lease, undefined, { mirror: false });

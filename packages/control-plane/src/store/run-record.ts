@@ -1,13 +1,17 @@
 import type { FollowUp, ImageRef, Run, RunSubscription, WorkerInbound } from "@neo-cloud-agent/contracts";
-import { runDisplayTitle } from "@neo-cloud-agent/contracts";
+import { parseRunSource, runDisplayTitle } from "@neo-cloud-agent/contracts";
 import type { ActiveTurn, PersistedRun } from "./persist.js";
 
 /** Max stored sidebar title length. */
 export const TITLE_MAX_LEN = 80;
 /** Legacy fat `runs.record` that still embeds the queue. */
 export const RECORD_VERSION_FAT = 1;
-/** Slim document; queue lives in `run_queues` / `.queue.json`. */
+/** Queue lives in `run_queues`; `record` may still embed a replica (dual-write). */
 export const RECORD_VERSION_SLIM = 2;
+/** `record` is `{ version, run }` only. */
+export const RECORD_VERSION_SLIM_RECORD = 3;
+/** Backup table stage for the slim-record rewrite. */
+export const BACKFILL_STAGE_SLIM_RECORD = "v3";
 /** Internal object-store pointer prefix. Never accepted from clients. */
 const INBOX_IMAGE_KEY_PREFIX = "obj:";
 /** Rows migrated per backfill batch. */
@@ -33,6 +37,21 @@ export type RunHydrationRow = {
   run: Run;
   recordVersion: number;
   document: PersistedRun | SlimRunDocument;
+};
+
+/** Indexed `runs` columns written on every save / backfill. */
+export type RunIndexWrite = {
+  title: string;
+  status: Run["status"];
+  projectId: string | null;
+  createdAt: string;
+  model: string;
+  source: Run["source"];
+  vmSlotId: string | null;
+  prompt: string;
+  usagePromptTokens: number | null;
+  usageCompletionTokens: number | null;
+  usageTotalTokens: number | null;
 };
 
 export class InvalidImageRefError extends Error {
@@ -103,6 +122,26 @@ export function emptyRunQueue(): RunQueueDocument {
 
 export function slimRunDocument(record: Pick<PersistedRun, "run">): SlimRunDocument {
   return { version: 1, run: record.run };
+}
+
+export function slimRecordJson(record: Pick<PersistedRun, "run">): string {
+  return JSON.stringify(slimRunDocument(record));
+}
+
+export function runIndexWrite(run: Run): RunIndexWrite {
+  return {
+    title: runIndexTitle(run),
+    status: run.status,
+    projectId: run.projectId ?? null,
+    createdAt: run.createdAt,
+    model: run.model ?? "",
+    source: run.source,
+    vmSlotId: run.vmSlotId ?? null,
+    prompt: run.prompt ?? "",
+    usagePromptTokens: asToken(run.usage?.promptTokens),
+    usageCompletionTokens: asToken(run.usage?.completionTokens),
+    usageTotalTokens: asToken(run.usage?.totalTokens),
+  };
 }
 
 export function queueFromRecord(record: PersistedRun): RunQueueDocument {
@@ -190,17 +229,104 @@ export function hydrationRowFromStore(
 
 export function applyRunIndexColumns(
   run: Run,
-  row: { title?: unknown; status?: unknown; project_id?: unknown },
+  row: {
+    title?: unknown;
+    status?: unknown;
+    project_id?: unknown;
+    created_at?: unknown;
+    model?: unknown;
+    source?: unknown;
+    vm_slot_id?: unknown;
+    prompt?: unknown;
+    usage_prompt_tokens?: unknown;
+    usage_completion_tokens?: unknown;
+    usage_total_tokens?: unknown;
+  },
 ): Run {
   const title = typeof row.title === "string" && row.title.trim() ? row.title : run.title;
   const status = typeof row.status === "string" && row.status ? (row.status as Run["status"]) : run.status;
   const projectId = row.project_id == null || row.project_id === "" ? (run.projectId ?? null) : String(row.project_id);
+  const createdAt = asIsoTime(row.created_at) || run.createdAt;
+  const model = typeof row.model === "string" && row.model ? row.model : run.model;
+  const source = parseRunSource(row.source) ?? run.source;
+  const vmSlotId = row.vm_slot_id == null || row.vm_slot_id === "" ? (run.vmSlotId ?? null) : String(row.vm_slot_id);
+  const prompt = typeof row.prompt === "string" ? row.prompt : run.prompt;
+  const usage = usageFromIndexRow(row) ?? run.usage ?? null;
   return {
     ...run,
     ...(title ? { title } : {}),
     status,
     projectId,
+    createdAt,
+    model,
+    source,
+    vmSlotId,
+    prompt,
+    usage,
   };
+}
+
+/**
+ * Build a list `Run` from indexed columns only. Nested fields stay empty;
+ * GET /v1/runs still reads the in-memory full Run.
+ */
+export function runFromIndexRow(row: Record<string, unknown>): Run | null {
+  const id = typeof row.id === "string" && row.id ? row.id : "";
+  if (!id) {
+    return null;
+  }
+  const updatedAt = asIsoTime(row.updated_at) || asIsoTime(row.created_at);
+  if (!updatedAt) {
+    return null;
+  }
+  const createdAt = asIsoTime(row.created_at) || updatedAt;
+  const usage = usageFromIndexRow(row);
+  return {
+    id,
+    orgId: asString(row.org_id),
+    userId: asString(row.user_id),
+    envId: null,
+    envVersionId: null,
+    buildId: null,
+    status: (typeof row.status === "string" && row.status ? row.status : "IDLE") as Run["status"],
+    setupStatus: null,
+    source: parseRunSource(row.source) ?? "api",
+    projectId: row.project_id == null || row.project_id === "" ? null : String(row.project_id),
+    model: asString(row.model),
+    prompt: asString(row.prompt),
+    title: typeof row.title === "string" && row.title.trim() ? row.title : undefined,
+    branchName: null,
+    baseBranch: null,
+    repoUrls: [],
+    pullRequests: [],
+    workerHandle: null,
+    vmSlotId: row.vm_slot_id == null || row.vm_slot_id === "" ? null : String(row.vm_slot_id),
+    createdAt,
+    updatedAt,
+    idleAt: null,
+    expiresAt: null,
+    deletedAt: asIsoTime(row.deleted_at) || undefined,
+    errorMessage: null,
+    ...(usage ? { usage } : {}),
+  };
+}
+
+/**
+ * Hydrate rewrite is skipped when disk already has a queue file and the
+ * same `updatedAt` + queue snapshot. Do not stringify the whole Run:
+ * JSON key order from disk parse vs a constructed object is not stable.
+ */
+export function shouldPersistHydratedRun(incoming: PersistedRun, existing: PersistedRun | null): boolean {
+  if (!existing?.run?.id) {
+    return true;
+  }
+  if (existing.run.updatedAt !== incoming.run.updatedAt) {
+    return true;
+  }
+  return (
+    JSON.stringify(queueFromRecord(stripDeliveredImages(incoming))) !==
+    JSON.stringify(queueFromRecord(stripDeliveredImages(existing)))
+  );
 }
 
 export function collectObjectKeys(record: PersistedRun): Set<string> {
@@ -282,9 +408,9 @@ export function recordVersionOf(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : RECORD_VERSION_FAT;
 }
 
-export function runsBackupTableName(now = new Date()): string {
+export function runsBackupTableName(now = new Date(), stage = ""): string {
   const stamp = now.toISOString().slice(0, 10).replaceAll("-", "");
-  return `runs_backup_${stamp}`;
+  return stage ? `runs_backup_${stage}_${stamp}` : `runs_backup_${stamp}`;
 }
 
 /**
@@ -321,6 +447,44 @@ export async function backfillRunRecords(input: {
       return;
     }
   }
+}
+
+function asToken(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null;
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asIsoTime(value: unknown): string {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "" : value.toISOString();
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return "";
+  }
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const parsed = new Date(normalized.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(normalized) ? normalized : `${normalized}Z`);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
+function usageFromIndexRow(row: {
+  usage_prompt_tokens?: unknown;
+  usage_completion_tokens?: unknown;
+  usage_total_tokens?: unknown;
+}): Run["usage"] | null {
+  const promptTokens = asToken(row.usage_prompt_tokens);
+  const completionTokens = asToken(row.usage_completion_tokens);
+  const totalTokens = asToken(row.usage_total_tokens);
+  if (promptTokens == null && completionTokens == null && totalTokens == null) {
+    return null;
+  }
+  return {
+    promptTokens: promptTokens ?? 0,
+    completionTokens: completionTokens ?? 0,
+    totalTokens: totalTokens ?? 0,
+  };
 }
 
 function asArray<T>(value: unknown): T[] {

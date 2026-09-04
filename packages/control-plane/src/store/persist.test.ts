@@ -19,6 +19,7 @@ import {
   persistRunRecord,
   persistSessionFiles,
   persistTranscriptSnapshot,
+  hydratedRunNeedsPersist,
 } from "./persist.js";
 import { inboxImageKey, isObjectImageRef } from "./run-record.js";
 
@@ -220,6 +221,36 @@ test("delivered follow-ups keep the entry and drop images", () => {
   assert.equal(queue?.followUps[0]?.source, "user");
   assert.equal(queue?.followUps[0]?.images, undefined);
   assert.equal(existsSync(path.join(runsDir, ".objects", "runs", run.id, "inbox")), false);
+});
+
+test("hydrate skip rewrite when the disk snapshot is already current", () => {
+  const runsDir = mkdtempSync(path.join(tmpdir(), "neo-persist-skip-"));
+  const run = sampleRun("run-skip-1");
+  const record = {
+    version: 1 as const,
+    run,
+    followUps: [
+      {
+        id: "f-skip",
+        runId: run.id,
+        text: "跟进",
+        delivery: "follow_up" as const,
+        status: "queued" as const,
+        createdAt: run.createdAt,
+        deliveredAt: null,
+      },
+    ],
+    inbound: [],
+    subscriptions: [],
+    activeTurn: null,
+  };
+  assert.equal(hydratedRunNeedsPersist(record, runsDir), true);
+  persistRunRecord(record, runsDir);
+  assert.equal(hydratedRunNeedsPersist(record, runsDir), false);
+  assert.equal(
+    hydratedRunNeedsPersist({ ...record, run: { ...run, updatedAt: "2026-09-05T00:00:00.000Z" } }, runsDir),
+    true,
+  );
 });
 
 test("legacy fat control json still loads when the queue file is missing", () => {
