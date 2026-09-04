@@ -7,6 +7,7 @@
 #   /            → 对话页  127.0.0.1:8080
 #   /admin/      → 管理台  127.0.0.1:8090（strip /admin 后 admin-api 仍听 /）
 #   /downloads/  → Desk 安装包  /opt/neo/downloads
+# 不要反代 :8082（neo-loop 仅本机，现网默认 disabled）。
 # 若 DNS 里已有 admin A 记录，下面单独站点只做 308，不把管理台挂到子域。
 # 8090 不要开公网防火墙。
 

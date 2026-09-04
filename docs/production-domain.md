@@ -13,7 +13,7 @@
 | HTTP | 域名 HTTP `308` 到 HTTPS。裸 IP `http://62.234.211.200/` 仍听 `:80`，只做运维兜底 |
 | HTTPS | Let's Encrypt，强制跳转并下 HSTS。产品入口是 `https://neorun.cloud/` |
 
-Caddy 用 [Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https)。域名走自动 HTTPS。`/` 反代 `127.0.0.1:8080`（对话），`/admin/` 反代 `127.0.0.1:8090`（管理台，`handle_path` 去掉 `/admin`）。`flush_interval -1`。不要用 `https://neorun.cloud/a` 这种无意义路径，也不要再买第二个域名。DNS 里如果已经有 `admin` A 记录，Caddy 把 `admin.neorun.cloud` 308 到 `https://neorun.cloud/admin/`。入口层要不要换成 Nginx：不要。理由和以后真换时的对齐清单见 [nginx-research.md](./nginx-research.md)。
+Caddy 用 [Caddyfile.https](../.cursor/skills/tencent-lighthouse-domain/units/Caddyfile.https)。域名走自动 HTTPS。`/` 反代 `127.0.0.1:8080`（对话），`/admin/` 反代 `127.0.0.1:8090`（管理台，`handle_path` 去掉 `/admin`）。`flush_interval -1`。**不要**反代 `neo-loop` 的 `:8082`，防火墙也不要放行 8082。不要用 `https://neorun.cloud/a` 这种无意义路径，也不要再买第二个域名。DNS 里如果已经有 `admin` A 记录，Caddy 把 `admin.neorun.cloud` 308 到 `https://neorun.cloud/admin/`。入口层要不要换成 Nginx：不要。理由和以后真换时的对齐清单见 [nginx-research.md](./nginx-research.md)。
 
 麦克风 / 讯飞听写必须走这个 HTTPS 域名。浏览器只打本站 `/v1/speech/iat`，讯飞 APPID / APIKey / APISecret 留在应用机 `.env`，控制台不用再绑 IP 或明文域名。
 

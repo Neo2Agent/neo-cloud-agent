@@ -98,11 +98,13 @@ export function rewriteUrlHost(url: string, host: string): string {
 export function withTapReachableUrls(spec: RuntimeSpec, hostIp: string): RuntimeSpec {
   const controlPlaneUrl = rewriteUrlHost(spec.controlPlaneUrl, hostIp);
   const llmGatewayUrl = rewriteUrlHost(spec.llmGatewayUrl, hostIp);
+  const neoLoopUrl = spec.neoLoopUrl ? rewriteUrlHost(spec.neoLoopUrl, hostIp) : spec.neoLoopUrl;
   const domains = [...new Set([...(spec.egress.domains ?? []), hostIp])];
   return {
     ...spec,
     controlPlaneUrl,
     llmGatewayUrl,
+    ...(neoLoopUrl ? { neoLoopUrl } : {}),
     egress: { ...spec.egress, domains },
   };
 }
@@ -156,6 +158,9 @@ export function writeRunBootstrap(spec: RuntimeSpec): string {
         model: spec.model,
         workspaceDir: spec.workspaceMount,
         egress: spec.egress,
+        ...(spec.workerRole ? { workerRole: spec.workerRole } : {}),
+        ...(spec.neoLoopUrl ? { neoLoopUrl: spec.neoLoopUrl } : {}),
+        ...(spec.neoLoopToken ? { neoLoopToken: spec.neoLoopToken } : {}),
       },
       null,
       2,

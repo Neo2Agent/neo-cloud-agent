@@ -1,0 +1,25 @@
+[Unit]
+Description=neo-loop (AgentScope Java turn engine)
+After=network.target
+# Default disabled on the 4C/4G app host. Install the unit, do not enable --now.
+# Enable only after Java 21 is installed and you accept the MemoryMax=768M hit.
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/neo-cloud-agent
+EnvironmentFile=-/home/ubuntu/neo-cloud-agent/.env
+# Loop must never see provider keys even if they sit in the shared env file.
+UnsetEnvironment=DEEPSEEK_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY LLM_API_KEY LLM_UPSTREAM_API_KEY
+Environment=NEO_LOOP_PORT=8082
+Environment=NEO_LOOP_BIND=127.0.0.1
+Environment=NEO_LOOP_JAVA_XMX=512m
+# systemd does not expand ${VAR:-default}; go through bash so .env can override Xmx.
+ExecStart=/bin/bash -c 'exec /usr/bin/java -Xmx"${NEO_LOOP_JAVA_XMX:-512m}" -jar /home/ubuntu/neo-cloud-agent/services/neo-loop/target/neo-loop-0.1.0.jar'
+Restart=on-failure
+RestartSec=3
+MemoryMax=768M
+# Bind loop to localhost only. Caddy must not reverse-proxy :8082.
+
+[Install]
+WantedBy=multi-user.target

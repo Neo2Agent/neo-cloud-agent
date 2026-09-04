@@ -6,6 +6,7 @@ export type {
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
+  AgentKernel,
   ExecutionPlace,
   ExecutionTarget,
   FollowUp,
@@ -28,14 +29,47 @@ export type {
 export {
   RUN_SOURCES,
   assertColocatedTarget,
+  assertExecutionTarget,
   colocatedTarget,
+  isCloudLoopTarget,
   isDeskTarget,
+  isDeskToolsTarget,
   isRemoteControlTarget,
   parseExecutionTarget,
   parseRunSource,
   parseRunStart,
   runDisplayTitle,
 } from "./run.js";
+export type { AgentKernel as AgentKernelName, KernelEnv, WorkerRole } from "./kernel.js";
+export {
+  AGENT_KERNELS,
+  defaultAgentKernel,
+  parseAgentKernel,
+  parseWorkerRole,
+  resolveAgentKernel,
+  resolveWorkerRole,
+} from "./kernel.js";
+export type {
+  ToolsChannelFrame,
+  ToolsChannelRole,
+  ToolsErrFrame,
+  ToolsHelloFrame,
+  ToolsOkFrame,
+} from "./tools-channel.js";
+export { TOOLS_CHANNEL_VERSION, isToolsChannelFrame } from "./tools-channel.js";
+export type {
+  LoopDelivery,
+  LoopToolsBinding,
+  LoopWorkspaceContext,
+  StartTurnRequest,
+  StartTurnResponse,
+  TurnCompleteRequest,
+  TurnCompleteStatus,
+  TurnHeartbeatRequest,
+  TurnSignalRequest,
+  TurnSignalType,
+  TurnSnapshot,
+} from "./loop.js";
 export type { CreateDeviceRequest, Device, DevicePlatform } from "./device.js";
 export { parseDevicePlatform } from "./device.js";
 export type {
@@ -108,6 +142,7 @@ export {
   clampTranscriptPage,
   cloneTranscriptMessage,
   displayTranscriptMessages,
+  foldRewoundEvents,
   isDeskHandshakeNotice,
   isSetupKind,
   isStaleRestartNotice,

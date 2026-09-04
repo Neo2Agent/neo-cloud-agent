@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -16,6 +17,7 @@ const {
   archiveRun,
   deleteRun,
   claimDeskRun,
+  completeLoopTurn,
   commitRun,
   createRun,
   enqueueFollowUp,
@@ -39,6 +41,7 @@ const {
   reloadPersistedState,
   restoreArchivedRun,
   expireStaleWorkers,
+  releaseIdleWorker,
   saveRunSession,
   takeInbound,
   deskAssignmentForRun,
@@ -723,6 +726,35 @@ test("desk target waits for a claim instead of spawning a server worker", async 
   detach();
 });
 
+test("agentscope cloud-loop desk-tools assignment carries the loop URL", async () => {
+  const previous = process.env.NEO_LOOP_URL;
+  process.env.NEO_LOOP_URL = "http://127.0.0.1:8082";
+  try {
+    const registered = newDesk("remote-tools");
+    const run = await createRun({
+      prompt: "edit on this computer with a cloud loop",
+      repoUrls: ["/tmp/desk-ws"],
+      source: "desk",
+      start: "inline",
+      kernel: "agentscope",
+      target: { loop: "cloud", tools: "desk", deskId: registered.desk.id },
+    });
+    assert.equal(run.kernel, "agentscope");
+    assert.equal(run.executionTarget?.loop, "cloud");
+    assert.equal(run.executionTarget?.tools, "desk");
+    const assignment = deskAssignmentForRun(run.id);
+    assert.equal(assignment.kernel, "agentscope");
+    assert.equal(assignment.neoLoopUrl, "http://127.0.0.1:8082");
+    assert.equal(takeInbound(run.id).length, 0);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
+  }
+});
+
 test("an inline desk run is handed its assignment instead of queueing for a claim", async () => {
   const registered = newDesk("inline-box");
   const events: unknown[] = [];
@@ -1161,4 +1193,194 @@ test("deleteRun reclaims the queue file and inbox objects", async () => {
   assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".control", `${run.id}.queue.json`)), false);
   assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".objects", "runs", run.id, "inbox")), false);
   assert.equal(existsSync(path.join(process.env.RUNS_DIR!, ".objects", "runs", run.id, "events")), true);
+});
+
+test("agentscope createRun skips inbox prompt and records the kernel", async () => {
+  const previous = process.env.NEO_LOOP_URL;
+  process.env.NEO_LOOP_URL = "http://127.0.0.1:9";
+  try {
+    const run = await createRun({
+      prompt: "use the java loop",
+      repoUrls: ["fixtures/toy-repo"],
+      kernel: "agentscope",
+    });
+    assert.equal(run.kernel, "agentscope");
+    assert.equal(takeInbound(run.id).length, 0);
+    assert.equal(run.status, "RUNNING");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
+  }
+});
+
+async function listenLoopMock(
+  onRequest: (req: IncomingMessage, body: Record<string, unknown>, res: ServerResponse) => void,
+): Promise<{ port: number; close: () => Promise<void>; seen: Array<{ url: string; body: Record<string, unknown> }> }> {
+  const seen: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += String(chunk);
+    });
+    req.on("end", () => {
+      const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      seen.push({ url: req.url ?? "", body });
+      onRequest(req, body, res);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  return {
+    port,
+    seen,
+    close: () =>
+      new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+  };
+}
+
+async function waitUntil(check: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (check()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("timed out waiting for neo-loop request");
+}
+
+test("completeLoopTurn marks the run idle and does not use the inbox", async () => {
+  const run = await createRun({
+    prompt: "finish a java turn",
+    repoUrls: ["fixtures/toy-repo"],
+    kernel: "agentscope",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const live = getRun(run.id);
+  assert.ok(live);
+  live.currentTurnId = "turn-complete-1";
+  completeLoopTurn(live.id, { turnId: "turn-complete-1", status: "idle" });
+  const finished = getRun(run.id);
+  assert.ok(finished);
+  assert.equal(finished.status, "IDLE");
+  assert.equal(finished.currentTurnId ?? null, null);
+  assert.ok(listEvents(run.id).some((item) => item.kind === "agent.end"));
+  assert.ok(listEvents(run.id).some((item) => item.kind === "run.idle"));
+});
+
+test.describe("agentscope loop dispatch", { concurrency: 1 }, () => {
+test("agentscope idle follow-up with an attached worker starts a new turn", async () => {
+  const previous = process.env.NEO_LOOP_URL;
+  const loop = await listenLoopMock((_req, body, res) => {
+    res.writeHead(202, { "content-type": "application/json" });
+    res.end(JSON.stringify({ turnId: body.turnId, runId: body.runId, accepted: true }));
+  });
+  process.env.NEO_LOOP_URL = `http://127.0.0.1:${loop.port}`;
+  try {
+    const run = await createRun({
+      prompt: "first java turn",
+      repoUrls: ["fixtures/toy-repo"],
+      kernel: "agentscope",
+    });
+    await waitUntil(() => loop.seen.length >= 1);
+    const live = getRun(run.id);
+    assert.ok(live);
+    completeLoopTurn(live.id, { turnId: live.currentTurnId ?? "missing", status: "idle" });
+    const idle = getRun(run.id);
+    assert.ok(idle);
+    assert.equal(idle.status, "IDLE");
+    const follow = await enqueueFollowUp(run.id, { text: "second java turn" });
+    assert.equal(follow.delivery, "prompt");
+    await waitUntil(() => loop.seen.length >= 2);
+    const second = loop.seen[1]?.body;
+    assert.equal(second?.text, "second java turn");
+    assert.equal(second?.delivery, "prompt");
+    const after = getRun(run.id);
+    assert.ok(after);
+    assert.equal(after.status, "IDLE");
+    assert.ok(after.currentTurnId);
+    assert.equal(takeInbound(run.id).length, 0);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
+    await loop.close();
+  }
+});
+
+test("agentscope follow-up after idle release resumes and dispatches", async () => {
+  const previous = process.env.NEO_LOOP_URL;
+  const loop = await listenLoopMock((_req, body, res) => {
+    res.writeHead(202, { "content-type": "application/json" });
+    res.end(JSON.stringify({ turnId: body.turnId, runId: body.runId, accepted: true }));
+  });
+  process.env.NEO_LOOP_URL = `http://127.0.0.1:${loop.port}`;
+  try {
+    const run = await createRun({
+      prompt: "release then continue",
+      repoUrls: ["fixtures/toy-repo"],
+      kernel: "agentscope",
+    });
+    await waitUntil(() => loop.seen.length >= 1);
+    const live = getRun(run.id);
+    assert.ok(live);
+    completeLoopTurn(live.id, { turnId: live.currentTurnId ?? "missing", status: "idle" });
+    assert.equal(await releaseIdleWorker(run.id), true);
+    assert.equal(getRun(run.id)?.workerHandle, null);
+    const follow = await enqueueFollowUp(run.id, { text: "continue after release" });
+    assert.equal(follow.delivery, "prompt");
+    await waitUntil(() => loop.seen.length >= 2);
+    assert.equal(loop.seen[1]?.body.text, "continue after release");
+    assert.equal(getRun(run.id)?.status, "RUNNING");
+    assert.ok(getRun(run.id)?.workerHandle);
+    assert.ok(listEvents(run.id).some((item) => item.title === "Resuming worker from session backup"));
+  } finally {
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
+    await loop.close();
+  }
+});
+
+test("agentscope abort signals the live turn", async () => {
+  const previous = process.env.NEO_LOOP_URL;
+  const loop = await listenLoopMock((req, body, res) => {
+    if (req.url?.includes("/signal")) {
+      res.writeHead(202, { "content-type": "application/json" });
+      res.end(JSON.stringify({ accepted: true }));
+      return;
+    }
+    res.writeHead(202, { "content-type": "application/json" });
+    res.end(JSON.stringify({ turnId: body.turnId, runId: body.runId, accepted: true }));
+  });
+  process.env.NEO_LOOP_URL = `http://127.0.0.1:${loop.port}`;
+  try {
+    const run = await createRun({
+      prompt: "stop this turn",
+      repoUrls: ["fixtures/toy-repo"],
+      kernel: "agentscope",
+    });
+    await waitUntil(() => loop.seen.length >= 1);
+    const aborted = abortRun(run.id);
+    assert.equal(aborted.status, "IDLE");
+    await waitUntil(() => loop.seen.some((item) => item.url.includes("/signal")));
+    const signal = loop.seen.find((item) => item.url.includes("/signal"));
+    assert.equal(signal?.body.type, "abort");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
+    await loop.close();
+  }
+});
 });

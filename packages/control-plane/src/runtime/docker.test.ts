@@ -64,8 +64,12 @@ test("worker env is a tight allowlist", () => {
       workspaceDir: "/workspace",
       sessionDir: "/var/neo/sessions",
       model: "neo/deepseek",
+      workerRole: "tools",
+      neoLoopUrl: "http://127.0.0.1:8082",
     });
     assert.equal(env.RUN_ID, "r");
+    assert.equal(env.WORKER_ROLE, "tools");
+    assert.equal(env.NEO_LOOP_URL, "http://127.0.0.1:8082");
     assert.equal(env.DEEPSEEK_API_KEY, undefined);
     assert.equal(env.GITHUB_TOKEN, undefined);
     assertNoProviderSecrets(env);

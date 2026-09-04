@@ -12,6 +12,7 @@ import {
   rawTranscriptImageData,
   transcriptBodyNeeded,
   transcriptImagePath,
+  foldRewoundEvents,
   sortRunEvents,
   transcriptHasUnsettledWork,
   transcriptGroups,
@@ -572,6 +573,20 @@ test("user bubbles keep follow-up actor metadata and stay hidden while queued", 
   assert.equal(user?.actorEmail, "ping");
   assert.equal(displayTranscriptMessages(snapshot.messages, { hideFollowUpIds: ["fu-b"] }).length, 0);
   assert.equal(displayTranscriptMessages(snapshot.messages, { hideFollowUpIds: ["other"] }).length, 1);
+});
+
+test("foldRewoundEvents drops deltas after the rewind cut", () => {
+  const events = [
+    ev({ id: "d1", kind: "message.delta", data: { replyId: "r1", workerSeq: 1, delta: "keep" } }),
+    ev({ id: "d2", kind: "message.delta", data: { replyId: "r1", workerSeq: 2, delta: "drop" } }),
+    ev({ id: "rw", kind: "turn.rewind", data: { replyId: "r1", fromSeq: 2 } }),
+    ev({ id: "d3", kind: "message.delta", data: { replyId: "r1", workerSeq: 3, delta: "new" } }),
+  ];
+  const folded = foldRewoundEvents(events);
+  assert.deepEqual(
+    folded.map((item) => item.id),
+    ["d1", "d3"],
+  );
 });
 
 test("transcriptBodyNeeded skips the body until the run reports a newer event", () => {

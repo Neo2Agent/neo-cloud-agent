@@ -1,3 +1,5 @@
+import type { AgentKernel } from "./kernel.js";
+
 /** Lifecycle of one cloud-agent execution. */
 export type RunStatus =
   | "NOT_YET_STARTED"
@@ -73,6 +75,8 @@ export interface ExecutionTarget {
 
 export type AgentMode = "agent" | "ask";
 
+export type { AgentKernel } from "./kernel.js";
+
 /**
  * Who starts the worker for a desk target.
  * `inline`: the caller is that desk, so it spawns right after the response.
@@ -114,10 +118,35 @@ export function assertColocatedTarget(target: ExecutionTarget): void {
   }
 }
 
+/**
+ * Agentscope kernel may split loop/tools. Desk loop + cloud tools is still forbidden.
+ */
+export function assertExecutionTarget(target: ExecutionTarget, kernel: AgentKernel = "pi"): void {
+  if (target.tools === "desk" && !target.deskId) {
+    throw new Error("本机执行需要 deskId");
+  }
+  if (target.loop === "desk" && target.tools === "cloud") {
+    throw new Error("不支持本机 loop + 云端工具");
+  }
+  if (kernel === "pi") {
+    assertColocatedTarget(target);
+  }
+}
+
 export function isDeskTarget(
   target?: ExecutionTarget | null,
 ): target is ExecutionTarget & { loop: "desk"; tools: "desk" } {
   return target?.loop === "desk" && target.tools === "desk";
+}
+
+export function isDeskToolsTarget(
+  target?: ExecutionTarget | null,
+): target is ExecutionTarget & { tools: "desk"; deskId: string } {
+  return target?.tools === "desk" && Boolean(target.deskId);
+}
+
+export function isCloudLoopTarget(target?: ExecutionTarget | null): boolean {
+  return (target?.loop ?? "cloud") === "cloud";
 }
 
 export function isRemoteControlTarget(target?: ExecutionTarget | null): boolean {
@@ -142,6 +171,10 @@ export interface Run {
   expertTeamId?: string | null;
   plugins?: Array<{ slug: string; version: string; digest: string }>;
   executionTarget?: ExecutionTarget | null;
+  /** pi = loop in worker; agentscope = loop in neo-loop. Default pi. */
+  kernel?: AgentKernel;
+  /** Active Java turn, if kernel=agentscope. */
+  currentTurnId?: string | null;
   model: string;
   prompt: string;
   /** Sidebar title. Set once at create; a non-empty value is not auto-overwritten. */
@@ -280,6 +313,7 @@ export interface CreateRunRequest {
   images?: ImageRef[];
   notifyChatId?: string;
   target?: ExecutionTarget;
+  kernel?: AgentKernel;
   /** Desk targets only. Default `dispatch`. */
   start?: RunStart;
   /** Desk targets only. Which bound workspace on that desk should run this. */

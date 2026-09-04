@@ -31,9 +31,11 @@ Ship this git checkout to ssh host `lighthouse` (62.234.211.200).
   --full            Overlay the whole tree (still skips .env / .neo / node_modules)
   --from-rev SHA    Diff against this revision instead of the host .deploy-revision
   --restart         Restart gateway + control-plane + admin-api even if the plan
-                    says they are unchanged
+                    says they are unchanged. neo-loop restarts only if already
+                    enabled on the host (default is disabled; AGENT_KERNEL=pi)
   --no-restart      Never restart units
-  --remote-build    Build web/admin on the host instead of this machine
+  --remote-build    Build web/admin on the host instead of this machine.
+                    neo-loop jar is always built on this machine (needs mvn)
   --skip-health     Do not wait for /health after restart
   -h, --help        Show this help
 
@@ -205,13 +207,15 @@ if [[ "$force_restart" -eq 1 ]]; then
   PLAN_TEXT="$(printf '%s\n' "$PLAN_TEXT" | sed \
     -e 's/^restart_gateway=0$/restart_gateway=1/' \
     -e 's/^restart_control_plane=0$/restart_control_plane=1/' \
-    -e 's/^restart_admin_api=0$/restart_admin_api=1/')"
+    -e 's/^restart_admin_api=0$/restart_admin_api=1/' \
+    -e 's/^restart_loop=0$/restart_loop=1/')"
 fi
 if [[ "$no_restart" -eq 1 ]]; then
   PLAN_TEXT="$(printf '%s\n' "$PLAN_TEXT" | sed \
     -e 's/^restart_gateway=1$/restart_gateway=0/' \
     -e 's/^restart_control_plane=1$/restart_control_plane=0/' \
-    -e 's/^restart_admin_api=1$/restart_admin_api=0/')"
+    -e 's/^restart_admin_api=1$/restart_admin_api=0/' \
+    -e 's/^restart_loop=1$/restart_loop=0/')"
 fi
 
 log "local=$LOCAL_REV"
@@ -249,6 +253,16 @@ if [[ "$(plan_get build_web)" == "1" || "$(plan_get build_admin)" == "1" ]]; the
   fi
 fi
 
+LOOP_JAR_REL="services/neo-loop/target/neo-loop-0.1.0.jar"
+if [[ "$(plan_get build_loop)" == "1" ]]; then
+  if command -v mvn >/dev/null 2>&1; then
+    log "build: neo-loop jar (local Maven)"
+    (cd "$ROOT" && mvn -f services/neo-loop -B -DskipTests package)
+  else
+    log "build: skip neo-loop jar (no mvn on this machine); unit stays disabled until a jar is present"
+  fi
+fi
+
 sync_started="$SECONDS"
 if [[ "$sync_mode" == "full" ]]; then
   log "sync: full overlay -> $HOST:$REMOTE_DIR"
@@ -262,6 +276,7 @@ if [[ "$sync_mode" == "full" ]]; then
       --exclude='dist/' \
       --exclude='.deploy-revision' \
       --exclude='.pnpm-store/' \
+      --exclude='services/neo-loop/target/' \
       -e 'ssh -o BatchMode=yes -o ConnectTimeout=10' \
       "$ROOT/" "$HOST:$REMOTE_DIR/"
   else
@@ -269,6 +284,7 @@ if [[ "$sync_mode" == "full" ]]; then
       --exclude=node_modules --exclude=.git \
       --exclude=.neo --exclude=.env --exclude=dist \
       --exclude=.deploy-revision \
+      --exclude=services/neo-loop/target \
       -czf - . \
     | ssh_h "tar -C ${REMOTE_DIR} -xzf -"
   fi
@@ -326,15 +342,27 @@ if [[ "$remote_build" -eq 0 ]]; then
     fi
   fi
 fi
+if [[ "$(plan_get build_loop)" == "1" && -f "$ROOT/$LOOP_JAR_REL" ]]; then
+  log "sync: $LOOP_JAR_REL"
+  ssh_h "mkdir -p ${REMOTE_DIR}/services/neo-loop/target"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -az -e 'ssh -o BatchMode=yes -o ConnectTimeout=10' \
+      "$ROOT/$LOOP_JAR_REL" "$HOST:$REMOTE_DIR/$LOOP_JAR_REL"
+  else
+    tar -C "$ROOT" -czf - "$LOOP_JAR_REL" | ssh_h "tar -C ${REMOTE_DIR} -xzf -"
+  fi
+fi
 log "sync: $((SECONDS - sync_started))s"
 
 if [[ "$(plan_get update_units)" == "1" ]]; then
   log "units: install templates"
-  for unit in neo-llm-gateway.service neo-control-plane.service neo-admin-api.service; do
+  for unit in neo-llm-gateway.service neo-control-plane.service neo-admin-api.service neo-loop.service; do
     scp -q -o BatchMode=yes -o ConnectTimeout=10 "$UNITS/$unit" "$HOST:/tmp/$unit"
     ssh_h "sudo cp /tmp/$unit /etc/systemd/system/$unit && rm -f /tmp/$unit"
   done
   ssh_h "sudo systemctl daemon-reload"
+  # Install only. Never enable --now; 4C/4G keeps AGENT_KERNEL=pi.
+  ssh_h "systemctl is-enabled neo-loop >/dev/null 2>&1 || sudo systemctl disable neo-loop >/dev/null 2>&1 || true"
 fi
 
 if [[ "$(plan_get install)" == "1" ]]; then
@@ -359,6 +387,16 @@ UNITS_TO_RESTART=()
 [[ "$(plan_get restart_gateway)" == "1" ]] && UNITS_TO_RESTART+=("neo-llm-gateway")
 [[ "$(plan_get restart_control_plane)" == "1" ]] && UNITS_TO_RESTART+=("neo-control-plane")
 [[ "$(plan_get restart_admin_api)" == "1" ]] && UNITS_TO_RESTART+=("neo-admin-api")
+if [[ "$(plan_get restart_loop)" == "1" ]]; then
+  if ssh_h 'systemctl is-enabled neo-loop >/dev/null 2>&1'; then
+    if ! ssh_h 'command -v java >/dev/null 2>&1'; then
+      die "neo-loop is enabled but java is missing; apt install openjdk-21-jre-headless first"
+    fi
+    UNITS_TO_RESTART+=("neo-loop")
+  else
+    log "loop: unit installed but disabled; not starting (AGENT_KERNEL=pi)"
+  fi
+fi
 
 if [[ "${#UNITS_TO_RESTART[@]}" -gt 0 ]]; then
   log "restart: ${UNITS_TO_RESTART[*]}"
@@ -373,7 +411,7 @@ if [[ "$skip_health" -eq 0 ]]; then
   log "health: waiting"
   ok=0
   for _ in $(seq 1 45); do
-    health="$(ssh_h 'systemctl is-active neo-llm-gateway neo-control-plane neo-admin-api; echo ---; curl -sS --max-time 4 http://127.0.0.1:8080/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8081/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8090/health 2>/dev/null; echo' || true)"
+    health="$(ssh_h 'systemctl is-active neo-llm-gateway neo-control-plane neo-admin-api; echo ---; curl -sS --max-time 4 http://127.0.0.1:8080/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8081/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8090/health 2>/dev/null; echo; echo loop=$(systemctl is-enabled neo-loop 2>/dev/null || echo disabled); curl -sS --max-time 2 http://127.0.0.1:8082/health 2>/dev/null || true; echo' || true)"
     if printf '%s\n' "$health" | python3 "$HERE/deploy-health.py"; then
       ok=1
       break
@@ -381,6 +419,11 @@ if [[ "$skip_health" -eq 0 ]]; then
     sleep 2
   done
   [[ "$ok" -eq 1 ]] || die "health check timed out after restart"
+  if printf '%s\n' "$health" | grep -q '"service":"neo-loop"'; then
+    log "health: neo-loop responding on :8082 (optional)"
+  else
+    log "health: neo-loop not required (disabled or not listening)"
+  fi
 fi
 
 log "done local=$LOCAL_REV total=$((SECONDS - started_at))s"

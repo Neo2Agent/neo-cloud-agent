@@ -49,12 +49,17 @@ test("boot.sh in dry-run starts a workspace worker entry", () => {
       llmGatewayUrl: "http://llm",
       model: "neo/deepseek",
       workspaceDir: workspace,
+      workerRole: "tools",
+      neoLoopUrl: "http://172.16.0.1:8082",
     }),
   );
   writeFileSync(
     path.join(workspace, ".neo/worker-entry.mjs"),
     `import { writeFileSync } from "node:fs";
-writeFileSync(\`\${process.env.WORKSPACE_DIR}/worker-started\`, process.env.RUN_ID ?? "");
+writeFileSync(
+  \`\${process.env.WORKSPACE_DIR}/worker-started\`,
+  \`\${process.env.RUN_ID ?? ""} \${process.env.WORKER_ROLE ?? ""} \${process.env.NEO_LOOP_URL ?? ""}\`,
+);
 `,
   );
   chmodSync(path.join(workspace, ".neo/worker-entry.mjs"), 0o644);
@@ -63,7 +68,10 @@ writeFileSync(\`\${process.env.WORKSPACE_DIR}/worker-started\`, process.env.RUN_
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(readFileSync(path.join(workspace, "worker-started"), "utf8"), "run-guest-1");
+  assert.equal(
+    readFileSync(path.join(workspace, "worker-started"), "utf8"),
+    "run-guest-1 tools http://172.16.0.1:8082",
+  );
 });
 
 test("ensureFirecrackerRootfs materializes an overlay and packs ext4 when mkfs exists", async () => {

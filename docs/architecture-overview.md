@@ -12,11 +12,11 @@
 
 **用户从任意客户端发任务 → 控制面编排一次隔离执行单元 → worker 在仓库旁边跑 pi → pi 用 run JWT 打 LLM Gateway → Gateway 持有 Provider Key 去推理。**
 
-锁死的原则只有这一条：
+锁死的原则：
 
-> **Agent loop 跑在执行面（VM / 槽 / 容器 / 本机 Desk worker），不跑在控制面。**
+> **推理在 Gateway。Loop 在 `neo-loop`（或现网默认的 worker 内 pi）。工具在执行面。不要把 Harness 嵌进控制面。**
 
-「推理在云端」靠 Gateway，不靠把 `read` / `edit` / `bash` 做成跨网络 RPC。把 loop 放控制面会丢掉 cwd、进程组、tmux 和 pi 本身。
+现网默认 `AGENT_KERNEL=pi`：loop 仍和工具同址。`agentscope` 时 Java `neo-loop` 跑 turn，worker 只做 tools 通道。把 loop 放控制面会丢掉沙箱边界，也会把消息和编排揉进同一个进程。
 
 ### 完整架构图
 
@@ -149,6 +149,7 @@ neo-cloud-agent/
 | `contracts` | 类型与协议 | 无进程 |
 | `control-plane` | 对外 `/v1` + 内部 `/internal` + 托管 Web | `:8080` |
 | `llm-gateway` | OpenAI-compatible 代理 | `:8081` |
+| `neo-loop`（可选） | Java AgentScope turn 引擎；默认不启，现网 `AGENT_KERNEL=pi` | `:8082` 仅内网 |
 | `worker` | 嵌入 pi 的执行进程 | 每 Run 一份 |
 | `extensions` | `neo_*` 云工具 | 打进 worker |
 | `ui` | 共享 Radix 控件 | 无进程；只被四个前端 import |
@@ -181,11 +182,14 @@ flowchart LR
     CP["neo-control-plane :8080"]
     GW["neo-llm-gateway :8081"]
     Admin["admin-api :8090"]
+    Loop["neo-loop :8082\n默认 disabled"]
     Slots["2 × loop ext4 槽\nWORKER_RUNTIME=vm"]
     Caddy -->|"/"| CP
     Caddy -->|"/admin/"| Admin
     CP --> Slots
     Slots --> GW
+    CP -.->|"仅 AGENT_KERNEL=agentscope"| Loop
+    Loop -.-> Slots
   end
 
   subgraph db [库机 101.42.105.230]
@@ -210,7 +214,7 @@ flowchart LR
 | 直播事件 | 库机 Redis Pub/Sub + Stream |
 | 模型渠道 | 库机 New API `:3000`；Gateway 打 `http://101.42.105.230:3000/v1` |
 | 对象存储 | 应用机 `RUNS_DIR/.objects`，现网不切 S3 |
-| systemd | `neo-control-plane`、`neo-llm-gateway`、Caddy |
+| systemd | 必开：`neo-control-plane`、`neo-llm-gateway`、`neo-admin-api`、Caddy。`neo-loop` 装 unit 但默认 disabled，Caddy 不反代 `:8082` |
 
 操作手册：[.cursor/skills/tencent-lighthouse-deploy/SKILL.md](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)、[.cursor/skills/tencent-lighthouse-db/SKILL.md](../.cursor/skills/tencent-lighthouse-db/SKILL.md)、[production-domain.md](./production-domain.md)。
 
@@ -848,7 +852,7 @@ pnpm typecheck && pnpm test
 
 **还没有、不要假装有的：**
 
-- 把 Agent loop 放控制面，或 CLI / 手机在本机跑 pi
+- 把 Agent loop 放控制面，或 CLI / 手机在本机跑 pi。若要把 loop 从槽里拆出来（Cursor 现行形态），见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)，不要嵌进 `control-plane`
 - 云 loop + 本机工具 RPC（`loop !== tools`），见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 插件 git marketplace、zip 上传、插件自带 MCP / hooks
 - `GET /v1/search`、`GET /v1/recipes`（配方只在客户端）
@@ -866,6 +870,8 @@ pnpm typecheck && pnpm test
 | 文档 | 读什么 |
 | --- | --- |
 | [architecture.md](./architecture.md) | 设计蓝图、原则、分阶段、与 Cursor 对照 |
+| [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md) | 对照 Cursor 现行「loop 与机器拆开」，用 AgentScope Java 做独立 loop 进程的路径选择 |
+| [agentscope-java-loop-design.md](./agentscope-java-loop-design.md) | 工程设计：三态、Turn 工作流、内外接口、Java 包、tools WS。实现落在 `services/neo-loop` + `WORKER_ROLE=tools` |
 | 本文 | 现状总览：包、进程、现网、数据流 |
 | [cli.md](./cli.md) | `neo` 命令面；明确不做本机 Agent |
 | [desk.md](./desk.md) / [desk-this-computer.md](./desk-this-computer.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为、This Computer 工作区一期、项目工作台 |

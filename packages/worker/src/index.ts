@@ -1,6 +1,6 @@
 import type { EgressPolicy, RunEvent } from "@neo-cloud-agent/contracts";
 import { getWorkerConfig } from "./config.js";
-import { runWorkspaceBoot, stopTerminals } from "./boot.js";
+import { runWorkspaceBoot, stopTerminals, type TerminalHandle } from "./boot.js";
 import { downloadSession, enqueueEvents, fetchBootstrap, pullInbox, pushEvents, uploadSession } from "./channel.js";
 import { installEgressGuard, policyFromEnv } from "./egress.js";
 import { inspectSessionContext } from "./context-usage.js";
@@ -9,9 +9,63 @@ import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { readSessionBackupPolicy, shouldBackupSession } from "./session-backup-schedule.js";
 import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
 import { abortNestedSubagents } from "./subagent.js";
+import { connectToolsChannel } from "./tools-ws.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runToolsWorker(input: {
+  runId: string;
+  jwt: string;
+  workspaceDir: string;
+  loopUrl: string;
+  token: string;
+  pollMs: number;
+  terminals: TerminalHandle[];
+}): Promise<void> {
+  if (!input.loopUrl) {
+    throw new Error("WORKER_ROLE=tools requires NEO_LOOP_URL");
+  }
+  const channel = connectToolsChannel({
+    runId: input.runId,
+    jwt: input.jwt,
+    loopUrl: input.loopUrl,
+    sandboxRoot: input.workspaceDir,
+    token: input.token,
+  });
+  let running = true;
+  const stop = () => {
+    running = false;
+    channel.close();
+    stopTerminals(input.terminals);
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  try {
+    while (running) {
+      let messages;
+      try {
+        messages = await pullInbox(input.runId);
+      } catch (error: unknown) {
+        console.error("tools worker inbox failed", error);
+        await sleep(input.pollMs);
+        continue;
+      }
+      for (const message of messages) {
+        if (message.type === "shutdown" || message.type === "abort") {
+          stop();
+          break;
+        }
+      }
+      if (running) {
+        await sleep(input.pollMs);
+      }
+    }
+  } finally {
+    channel.close();
+    stopTerminals(input.terminals);
+  }
 }
 
 async function backupSession(runId: string, sessionDir: string): Promise<void> {
@@ -73,6 +127,19 @@ async function main(): Promise<void> {
   if (boot.fatal) {
     stopTerminals(boot.terminals);
     process.exitCode = 2;
+    return;
+  }
+
+  if (config.workerRole === "tools") {
+    await runToolsWorker({
+      runId: config.runId,
+      jwt: bootstrap.jwt,
+      workspaceDir,
+      loopUrl: config.neoLoopUrl,
+      token: config.neoLoopToken,
+      pollMs: config.pollMs,
+      terminals: boot.terminals,
+    });
     return;
   }
 
