@@ -123,6 +123,8 @@ test("memory and inbox go to the same cloud routes the web page uses", async () 
 
 test("artifacts, diagnostics and transfer use the run cloud routes", async () => {
   const { calls, client } = recorder({ artifacts: [], logs: [] });
+  await client.patchRun("r1", { title: "首页改版" });
+  await client.patchRun("r1", { generate: true });
   await client.listArtifacts("r1");
   await client.saveArtifactToProject("r1", "report card.html");
   await client.diagnostics("r1");
@@ -130,13 +132,17 @@ test("artifacts, diagnostics and transfer use the run cloud routes", async () =>
   assert.deepEqual(
     calls.map((call) => `${call.method} ${call.url.replace("http://cp.test", "")}`),
     [
+      "PATCH /v1/runs/r1",
+      "PATCH /v1/runs/r1",
       "GET /v1/runs/r1/artifacts",
       "POST /v1/runs/r1/artifacts/report%20card.html/save-to-project",
       "GET /v1/runs/r1/diagnostics",
       "POST /v1/runs/r1/transfer",
     ],
   );
-  assert.equal(calls[3]?.body, JSON.stringify({ toUserId: "u2", note: "接手" }));
+  assert.equal(calls[0]?.body, JSON.stringify({ title: "首页改版" }));
+  assert.equal(calls[1]?.body, JSON.stringify({ generate: true }));
+  assert.equal(calls[5]?.body, JSON.stringify({ toUserId: "u2", note: "接手" }));
 });
 
 test("transcript pages with the shared contract default", async () => {

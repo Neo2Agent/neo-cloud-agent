@@ -144,7 +144,10 @@ export interface Run {
   executionTarget?: ExecutionTarget | null;
   model: string;
   prompt: string;
-  /** Sidebar title. Set once at create; a non-empty value is not auto-overwritten. */
+  /**
+   * Sidebar title. Create writes the first prompt line when omitted.
+   * Later changes only happen through PATCH (manual or explicit generate).
+   */
   title?: string | null;
   branchName: string | null;
   baseBranch: string | null;
@@ -264,6 +267,8 @@ export interface ImageRef {
 
 export interface CreateRunRequest {
   prompt: string;
+  /** Optional sidebar title. Empty/whitespace falls back to the prompt line. */
+  title?: string;
   repoUrls: string[];
   ref?: string;
   envId?: string;
@@ -285,6 +290,42 @@ export interface CreateRunRequest {
   /** Desk targets only. Which bound workspace on that desk should run this. */
   deskWorkspaceId?: string;
   mode?: AgentMode;
+}
+
+export type PatchRunRequest = {
+  /** Empty or null clears the stored title so the prompt is shown again. */
+  title?: string | null;
+  /** Explicit LLM rename. Overwrites a non-empty title. */
+  generate?: boolean;
+};
+
+export function parsePatchRunRequest(body: unknown): PatchRunRequest {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("title or generate is required");
+  }
+  const raw = body as Record<string, unknown>;
+  const hasTitle = Object.prototype.hasOwnProperty.call(raw, "title");
+  const hasGenerate = Object.prototype.hasOwnProperty.call(raw, "generate");
+  if (!hasTitle && !hasGenerate) {
+    throw new Error("title or generate is required");
+  }
+  const out: PatchRunRequest = {};
+  if (hasTitle) {
+    if (raw.title !== null && typeof raw.title !== "string") {
+      throw new Error("title must be a string or null");
+    }
+    out.title = raw.title;
+  }
+  if (hasGenerate) {
+    if (typeof raw.generate !== "boolean") {
+      throw new Error("generate must be a boolean");
+    }
+    out.generate = raw.generate;
+  }
+  if (out.title === undefined && out.generate !== true) {
+    throw new Error("title or generate is required");
+  }
+  return out;
 }
 
 export interface CreateFollowUpRequest {

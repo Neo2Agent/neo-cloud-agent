@@ -6,6 +6,7 @@ import type {
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
+  PatchRunRequest,
   CreateSubscriptionRequest,
   DeskAssignment,
   DeskLeaseResponse,
@@ -101,6 +102,7 @@ import {
   type ActiveTurn,
 } from "../store/persist.js";
 import { assertClientImages, runIndexTitle } from "../store/run-record.js";
+import { suggestRunTitle } from "../title/suggest.js";
 import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
@@ -1159,7 +1161,10 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     expertTeamId: team?.id ?? null,
     model: input.model ?? expert?.model ?? config.defaultModel,
     prompt: input.prompt,
-    title: runIndexTitle({ prompt: input.prompt }),
+    title:
+      typeof input.title === "string" && input.title.trim()
+        ? runIndexTitle({ title: input.title })
+        : runIndexTitle({ prompt: input.prompt }),
     branchName: null,
     baseBranch: null,
     repoUrls,
@@ -1450,6 +1455,27 @@ export async function resumeRun(runId: string): Promise<Run> {
     failRun(run, message);
     throw error;
   }
+  return run;
+}
+
+export async function patchRun(runId: string, input: PatchRunRequest): Promise<Run> {
+  const run = runs.get(runId);
+  if (!run) {
+    throw new Error("run not found");
+  }
+  if (input.generate === true) {
+    run.title = await suggestRunTitle({
+      prompt: run.prompt,
+      model: run.model,
+      jwt: usableRunJwt(run),
+      gatewayUrl: getConfig().llmGatewayUrl,
+    });
+  } else {
+    const raw = (input.title ?? "").trim();
+    run.title = raw ? runIndexTitle({ title: raw }) : null;
+  }
+  run.updatedAt = now();
+  flushRun(run.id);
   return run;
 }
 

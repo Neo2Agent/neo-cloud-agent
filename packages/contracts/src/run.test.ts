@@ -6,6 +6,7 @@ import {
   isDeskTarget,
   isRemoteControlTarget,
   parseExecutionTarget,
+  parsePatchRunRequest,
   parseRunSource,
   parseRunStart,
 } from "./run.js";
@@ -61,6 +62,19 @@ test("parseRunSource accepts mobile hosts", () => {
   assert.equal(parseRunSource("android"), "android");
   assert.equal(parseRunSource("web"), "web");
   assert.equal(parseRunSource("phone"), undefined);
+});
+
+test("parsePatchRunRequest needs a title or generate:true", () => {
+  assert.deepEqual(parsePatchRunRequest({ title: "首页改版" }), { title: "首页改版" });
+  assert.deepEqual(parsePatchRunRequest({ title: null }), { title: null });
+  assert.deepEqual(parsePatchRunRequest({ title: "" }), { title: "" });
+  assert.deepEqual(parsePatchRunRequest({ generate: true }), { generate: true });
+  assert.deepEqual(parsePatchRunRequest({ title: "旧名", generate: true }), { title: "旧名", generate: true });
+  assert.throws(() => parsePatchRunRequest({}), /title or generate/);
+  assert.throws(() => parsePatchRunRequest({ generate: false }), /title or generate/);
+  assert.throws(() => parsePatchRunRequest({ title: 1 }), /string or null/);
+  assert.throws(() => parsePatchRunRequest({ generate: "yes" }), /boolean/);
+  assert.throws(() => parsePatchRunRequest(null), /title or generate/);
 });
 
 test("P0–P2 reject a split loop/tools target", () => {

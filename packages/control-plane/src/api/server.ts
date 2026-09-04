@@ -7,6 +7,7 @@ import type {
   CreateGitTokenRequest,
   CreatePullRequestRequest,
   CreateRunRequest,
+  PatchRunRequest,
   CreateSubscriptionRequest,
   CreateAutomationRequest,
   BindDeskWorkspaceRequest,
@@ -36,6 +37,7 @@ import {
   rawTranscriptImageData,
   parseAutomationSchedule,
   parseLlmSettingsRequest,
+  parsePatchRunRequest,
   publicLlmSettings,
   readLlmSettings,
   readNewApiInfo,
@@ -56,6 +58,7 @@ import {
   claimDeskRun,
   commitRun,
   createRun,
+  patchRun,
   deskAssignmentForRun,
   rejectDeskRun,
   releaseDeskRun,
@@ -106,6 +109,7 @@ import {
   clearSessionCookieHeader,
 } from "../accounts/accounts.js";
 import { defaultWorkerResources, getConfig } from "../config.js";
+import { TitleSuggestError } from "../title/suggest.js";
 import { publicScmSettings, writeScmSettings } from "../scm/settings.js";
 import { getObjectStore } from "../objects/store.js";
 import { startPlatform, platformInfo } from "../platform.js";
@@ -1791,6 +1795,25 @@ export function createApiServer() {
           return;
         }
         send(res, 200, run ? { ...run, lastEventId: lastEventIdForRun(runId) } : run);
+        return;
+      }
+      if (runMatch && method === "PATCH") {
+        const runId = runMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        try {
+          const body = parsePatchRunRequest(await readJson(req)) as PatchRunRequest;
+          const updated = await patchRun(runId, body);
+          send(res, 200, { ...updated, lastEventId: lastEventIdForRun(runId) });
+        } catch (error) {
+          if (error instanceof TitleSuggestError) {
+            send(res, 502, { error: error.message });
+            return;
+          }
+          send(res, 400, { error: error instanceof Error ? error.message : "patch_failed" });
+        }
         return;
       }
       if (runMatch && method === "DELETE") {
