@@ -9,6 +9,9 @@ type RunBootstrapFile = Partial<{
   jwt: string;
   model: string;
   egress: EgressPolicy;
+  workerRole: "all" | "tools";
+  neoLoopUrl: string;
+  neoLoopToken: string;
 }>;
 
 /**
@@ -55,8 +58,8 @@ export function getWorkerConfig() {
      * turn gets a fresh process and restores the session backup.
      */
     exitAfterTurn: process.env.WORKER_EXIT_AFTER_TURN === "1",
-    workerRole: process.env.WORKER_ROLE === "tools" ? "tools" : "all",
-    neoLoopUrl: (process.env.NEO_LOOP_URL ?? "").replace(/\/$/, ""),
-    neoLoopToken: process.env.NEO_LOOP_TOKEN ?? "",
+    workerRole: process.env.WORKER_ROLE === "tools" || file.workerRole === "tools" ? "tools" : "all",
+    neoLoopUrl: (process.env.NEO_LOOP_URL || file.neoLoopUrl || "").replace(/\/$/, ""),
+    neoLoopToken: process.env.NEO_LOOP_TOKEN || file.neoLoopToken || "",
   };
 }

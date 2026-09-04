@@ -61,7 +61,10 @@ if [ -f "$bootstrap" ]; then
   LLM_GATEWAY_URL="${LLM_GATEWAY_URL:-$(read_json_field llmGatewayUrl "$bootstrap")}"
   NEO_MODEL="${NEO_MODEL:-$(read_json_field model "$bootstrap")}"
   WORKSPACE_DIR="${WORKSPACE_DIR:-$(read_json_field workspaceDir "$bootstrap")}"
-  export RUN_ID LLM_GATEWAY_JWT CONTROL_PLANE_URL LLM_GATEWAY_URL NEO_MODEL
+  WORKER_ROLE="${WORKER_ROLE:-$(read_json_field workerRole "$bootstrap")}"
+  NEO_LOOP_URL="${NEO_LOOP_URL:-$(read_json_field neoLoopUrl "$bootstrap")}"
+  NEO_LOOP_TOKEN="${NEO_LOOP_TOKEN:-$(read_json_field neoLoopToken "$bootstrap")}"
+  export RUN_ID LLM_GATEWAY_JWT CONTROL_PLANE_URL LLM_GATEWAY_URL NEO_MODEL WORKER_ROLE NEO_LOOP_URL NEO_LOOP_TOKEN
 fi
 
 export HOME="${HOME:-/tmp}"
