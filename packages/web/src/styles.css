@@ -1998,9 +1998,12 @@ button.send:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .catalog-card-top strong {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2049,6 +2052,103 @@ button.send:disabled {
   min-height: 32px;
   padding: 4px 10px;
   font-size: 13px;
+}
+
+#memories-page .catalog-grid {
+  align-items: start;
+}
+
+#memories-page .catalog-card {
+  min-height: 0;
+}
+
+#memories-page .catalog-card-main {
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 14px 6px;
+}
+
+#memories-page .catalog-avatar {
+  width: 32px;
+  height: 32px;
+  margin-top: 1px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+#memories-page .catalog-card-top {
+  align-items: flex-start;
+}
+
+#memories-page .catalog-card-top strong {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  line-height: 1.45;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+#memories-page .catalog-badge {
+  margin-top: 2px;
+}
+
+#memories-page .catalog-card-actions {
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 2px 12px 12px 56px;
+}
+
+#memories-page .catalog-card-actions .ghost {
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--bg);
+}
+
+#memories-page .catalog-grid.is-searching {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+#memories-page .catalog-card.is-editing {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+#memories-page .memory-search-status {
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#memories-page .memory-editor-count {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+#memories-page .catalog-card-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ease);
+}
+
+#memories-page .catalog-card:hover .catalog-card-actions,
+#memories-page .catalog-card:focus-within .catalog-card-actions,
+#memories-page .catalog-card.is-editing .catalog-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  #memories-page .catalog-card-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .catalog-pager {

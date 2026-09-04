@@ -98,6 +98,8 @@ test("memory and inbox go to the same cloud routes the web page uses", async () 
   const { calls, client } = recorder({ configured: true, memories: [], items: [], unread: 0 });
   await client.listMemories(20);
   await client.addMemory("用 pnpm");
+  await client.searchMemories("pnpm");
+  await client.updateMemory("m1", "改用 bun", "2026-09-01T00:00:00.000Z");
   await client.deleteMemory("m1");
   await client.listInbox();
   await client.markInboxRead("inb_1");
@@ -106,11 +108,15 @@ test("memory and inbox go to the same cloud routes the web page uses", async () 
     [
       "GET /v1/memories?limit=20",
       "POST /v1/memories",
+      "POST /v1/memories/search",
+      "PATCH /v1/memories/m1",
       "DELETE /v1/memories/m1",
       "GET /v1/inbox",
       "POST /v1/inbox/inb_1/read",
     ],
   );
+  assert.equal(calls[2]?.body, JSON.stringify({ query: "pnpm" }));
+  assert.equal(calls[3]?.body, JSON.stringify({ text: "改用 bun", updatedAt: "2026-09-01T00:00:00.000Z" }));
   assert.equal(calls[1]?.body, JSON.stringify({ text: "用 pnpm" }));
   assert.equal(calls.every((call) => call.headers.authorization === "Bearer neo_sess_1"), true);
 });

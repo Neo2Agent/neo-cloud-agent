@@ -246,14 +246,36 @@ export type {
   UpdateProjectRequest,
 } from "./project.js";
 export { appendProjectInstruction, canManageProject, formatProjectMemory } from "./project.js";
-export type { MemoryItem, MemoryListResponse } from "./memory.js";
+export type {
+  MemoryAction,
+  MemoryErrorCode,
+  MemoryItem,
+  MemoryListResponse,
+  MemoryMetadata,
+  MemorySource,
+} from "./memory.js";
 export {
+  MEMORY_ACTION,
   MEMORY_ADD_TOOL_NAME,
+  MEMORY_ERROR_CODE,
+  MEMORY_FILE,
+  MEMORY_LIST_LIMIT_DEFAULT,
+  MEMORY_LIST_LIMIT_MAX,
+  MEMORY_RECALL_LIMIT,
+  MEMORY_SEARCH_DEBOUNCE_MS,
+  MEMORY_SEARCH_LIMIT_DEFAULT,
+  MEMORY_SEARCH_LIMIT_MAX,
   MEMORY_SEARCH_TOOL_NAME,
+  MEMORY_SNIPPET_LENGTH,
+  MEMORY_TEXT_MAX_LENGTH,
+  NEO_DIR,
   appendUserMemory,
   filterMemories,
   formatUserMemory,
+  memoryEdited,
+  memoryErrorMessage,
   memoryHint,
+  readMemoryError,
 } from "./memory.js";
 export type { ArtifactKind, ArtifactPreviewKind } from "./artifact.js";
 export { artifactKind, artifactKindLabel, previewKind, prettyBytes } from "./artifact.js";

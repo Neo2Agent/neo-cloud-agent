@@ -1,3 +1,5 @@
+import { MEMORY_SNIPPET_LENGTH } from "@neo-cloud-agent/contracts/memory";
+
 export const CATALOG_PAGE_SIZE = 12;
 
 export function filterByQuery<T>(
@@ -31,7 +33,7 @@ export function initials(name: string): string {
   return [...trimmed].slice(0, 1).join("").toUpperCase();
 }
 
-export function snippet(text: string | undefined | null, max = 72): string {
+export function snippet(text: string | undefined | null, max = MEMORY_SNIPPET_LENGTH): string {
   const value = (text ?? "").replace(/\s+/g, " ").trim();
   if (!value) return "";
   return value.length > max ? `${value.slice(0, max)}…` : value;

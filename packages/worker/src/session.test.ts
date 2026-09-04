@@ -120,6 +120,23 @@ test("readUserMemory loads .neo/MEMORY.md and ignores a missing file", () => {
   assert.match(readUserMemory(cwd), /用 pnpm/);
 });
 
+test("readUserMemory warns on unexpected read errors without dumping content", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-user-memory-blocked-"));
+  mkdirSync(path.join(cwd, ".neo", "MEMORY.md"), { recursive: true });
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (message?: unknown) => {
+    warnings.push(String(message ?? ""));
+  };
+  try {
+    assert.equal(readUserMemory(cwd), "");
+    assert.match(warnings.join("\n"), /MEMORY\.md/);
+    assert.doesNotMatch(warnings.join("\n"), /用 pnpm/);
+  } finally {
+    console.warn = original;
+  }
+});
+
 test("conversation replay is injected only when the live session is empty", () => {
   assert.equal(applyConversationReplay({ messages: [] }, "我们刚才聊了什么"), "我们刚才聊了什么");
   assert.match(

@@ -78,4 +78,46 @@ count = len(results or [])
 print(f"smoke-mem0: search_ok hits={count}")
 if count < 1:
     raise SystemExit("smoke-mem0: search returned no hits")
+
+first = (results or [])[0] if results else {}
+memory_id = first.get("id") or first.get("memory_id")
+if not memory_id:
+    status, listed = call("GET", f"/memories?user_id={user}&limit=50")
+    listed_results = listed.get("results") if isinstance(listed, dict) else listed
+    for item in listed_results or []:
+        if isinstance(item, dict) and item.get("memory") == text:
+            memory_id = item.get("id")
+            break
+if not memory_id:
+    raise SystemExit("smoke-mem0: could not find added memory id")
+
+created_at = first.get("created_at")
+status, edited = call("PUT", f"/memories/{memory_id}", {"user_id": user, "text": text + " 已改。"})
+if status != 200:
+    raise SystemExit(f"smoke-mem0: put failed status={status} body={edited}")
+edited_item = ((edited.get("results") or [None])[0]) if isinstance(edited, dict) else None
+if not isinstance(edited_item, dict):
+    raise SystemExit(f"smoke-mem0: put missing results body={edited}")
+if created_at and edited_item.get("created_at") and edited_item.get("created_at") != created_at:
+    raise SystemExit("smoke-mem0: put changed created_at")
+print("smoke-mem0: put_ok")
+
+status, stolen = call("PUT", f"/memories/{memory_id}", {"user_id": "not_" + user, "text": "不该成功"})
+if status != 404:
+    raise SystemExit(f"smoke-mem0: expected 404 for other user, got {status} body={stolen}")
+print("smoke-mem0: put_owner_ok")
+
+status, deleted = call("DELETE", f"/memories/{memory_id}?user_id={user}")
+if status != 200:
+    raise SystemExit(f"smoke-mem0: delete failed status={status} body={deleted}")
+print("smoke-mem0: delete_ok")
+
+status, leftover = call("GET", f"/memories?user_id={user}&limit=50")
+if status == 200:
+    leftover_results = leftover.get("results") if isinstance(leftover, dict) else leftover
+    for item in leftover_results or []:
+        item_id = item.get("id") if isinstance(item, dict) else None
+        if item_id:
+            call("DELETE", f"/memories/{item_id}?user_id={user}")
+print("smoke-mem0: cleanup_ok")
 PY

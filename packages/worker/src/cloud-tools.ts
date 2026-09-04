@@ -1,5 +1,5 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { CLOUD_SYSTEM_PROMPT } from "@neo-cloud-agent/contracts";
+import { CLOUD_SYSTEM_PROMPT, MEMORY_SEARCH_LIMIT_DEFAULT } from "@neo-cloud-agent/contracts";
 import { CLOUD_TOOL_NAMES, createCloudTools, type CloudToolContext, type CloudToolResult } from "@neo-cloud-agent/extensions";
 import { Type } from "typebox";
 
@@ -164,7 +164,7 @@ export function createPiCloudTools(ctx: CloudToolContext) {
       description: memorySearch.description,
       parameters: Type.Object({
         query: Type.String({ description: "What to look up" }),
-        limit: Type.Optional(Type.Number({ description: "Max hits. Default 8." })),
+        limit: Type.Optional(Type.Number({ description: `Max hits. Default ${MEMORY_SEARCH_LIMIT_DEFAULT}.` })),
       }),
       execute: async (_id, params) => toPiResult(await memorySearch.execute((params ?? {}) as Record<string, unknown>)),
     }),

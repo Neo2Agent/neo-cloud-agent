@@ -98,8 +98,8 @@ export function CatalogEmpty(props: { title: string; hint?: string; action?: Rea
   );
 }
 
-export function CatalogGrid(props: { children: ReactNode }) {
-  return <ul className="catalog-grid">{props.children}</ul>;
+export function CatalogGrid(props: { children: ReactNode; className?: string }) {
+  return <ul className={["catalog-grid", props.className].filter(Boolean).join(" ")}>{props.children}</ul>;
 }
 
 export function CatalogCard(props: {
@@ -109,6 +109,8 @@ export function CatalogCard(props: {
   meta?: string;
   example?: string;
   initial?: string;
+  className?: string;
+  active?: boolean;
   onOpen?: () => void;
   actions?: ReactNode;
 }) {
@@ -128,7 +130,7 @@ export function CatalogCard(props: {
     </>
   );
   return (
-    <li className="catalog-card">
+    <li className={["catalog-card", props.className, props.active ? "is-editing" : ""].filter(Boolean).join(" ")}>
       {props.onOpen ? (
         <button type="button" className="catalog-card-main" onClick={props.onOpen}>
           {body}

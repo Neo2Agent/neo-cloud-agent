@@ -621,6 +621,30 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             setPageError(error instanceof Error ? error.message : "记不下来");
           }
         }}
+        onUpdate={async (id, text, updatedAt) => {
+          setPageError("");
+          try {
+            const next = await client.updateMemory(id, text, updatedAt);
+            setMemories((prev) =>
+              prev.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      ...next.memory,
+                      createdAt: next.memory.createdAt ?? item.createdAt,
+                      updatedAt: next.memory.updatedAt ?? item.updatedAt,
+                    }
+                  : item,
+              ),
+            );
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "改不了");
+          }
+        }}
+        onSearch={async (query) => {
+          const next = await client.searchMemories(query);
+          return next.memories ?? [];
+        }}
         onDelete={async (id) => {
           setPageError("");
           try {

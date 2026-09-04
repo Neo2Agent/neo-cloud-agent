@@ -1,9 +1,14 @@
 /**
  * Lab mirrors of the RN cloud screens. Same client and helpers, DOM markup.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { artifactKindLabel, prettyBytes } from "@neo-cloud-agent/contracts/artifact";
-import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
+import {
+  MEMORY_SEARCH_DEBOUNCE_MS,
+  MEMORY_TEXT_MAX_LENGTH,
+  memoryEdited,
+  type MemoryItem,
+} from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import type { RunArtifact } from "../api/client";
@@ -24,12 +29,30 @@ export function MemoriesPage(props: {
   error: string;
   onBack: () => void;
   onAdd: (text: string) => Promise<void>;
+  onUpdate: (id: string, text: string, updatedAt?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onSearch: (query: string) => Promise<MemoryItem[]>;
 }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<MemoryItem[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const visible = useMemo(() => filterMemories(props.items, query), [props.items, query]);
+  const [editing, setEditing] = useState<{ id: string; original: string; updatedAt?: string } | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const visible = query.trim() ? (hits ?? []) : filterMemories(props.items, "");
+
+  useEffect(() => {
+    const needle = query.trim();
+    if (!needle) {
+      setHits(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void props.onSearch(needle).then(setHits).catch(() => setHits([]));
+    }, MEMORY_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
   return (
     <Page title="记忆" onBack={props.onBack}>
       <p className="hint">{memoryHint({ configured: props.configured, count: props.items.length, error: props.error })}</p>
@@ -38,6 +61,7 @@ export function MemoriesPage(props: {
           <IslandInput
             value={text}
             placeholder="记一条，比如「测试用 pnpm test」"
+            maxLength={MEMORY_TEXT_MAX_LENGTH}
             onChange={(event) => setText(event.target.value)}
           />
           <IslandButton
@@ -55,12 +79,54 @@ export function MemoriesPage(props: {
           ) : null}
         </>
       ) : null}
+      {editing ? (
+        <>
+          <IslandInput
+            value={editDraft}
+            placeholder="改这条"
+            maxLength={MEMORY_TEXT_MAX_LENGTH}
+            onChange={(event) => setEditDraft(event.target.value)}
+          />
+          <IslandButton
+            type="primary"
+            disabled={busy || !editDraft.trim()}
+            onClick={() => {
+              const next = editDraft.trim();
+              if (next === editing.original) {
+                setEditing(null);
+                return;
+              }
+              setBusy(true);
+              void props
+                .onUpdate(editing.id, next, editing.updatedAt)
+                .then(() => setEditing(null))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {busy ? "保存中…" : "保存"}
+          </IslandButton>
+          <IslandButton onClick={() => setEditing(null)}>取消</IslandButton>
+        </>
+      ) : null}
       {visible.map((item) => (
         <div key={item.id} className="dash-card">
-          <div>
+          <button
+            type="button"
+            onClick={() => {
+              setEditing({ id: item.id, original: item.text, updatedAt: item.updatedAt });
+              setEditDraft(item.text);
+            }}
+          >
             <strong>{item.text}</strong>
-          </div>
-          <IslandButton onClick={() => void props.onDelete(item.id)}>删除</IslandButton>
+            {memoryEdited(item) ? <p>改过</p> : null}
+          </button>
+          <IslandButton
+            onClick={() => {
+              if (window.confirm("删除这条记忆？")) void props.onDelete(item.id);
+            }}
+          >
+            删除
+          </IslandButton>
         </div>
       ))}
       {props.configured && props.items.length > 0 && visible.length === 0 ? (
