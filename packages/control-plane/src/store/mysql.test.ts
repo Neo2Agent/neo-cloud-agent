@@ -49,15 +49,17 @@ test("mysql store upserts run JSON, events, and users", async () => {
       ? "run"
       : text.includes("FROM run_queues")
         ? "queues"
-        : text.includes("FROM runs") && text.includes("title")
+        : text.includes("FROM runs") && text.includes("record, updated_at")
           ? "runs"
-          : text.includes("FROM events")
-            ? "events"
-            : text.includes("FROM users WHERE email")
-              ? "user"
-              : text.includes("FROM users ORDER BY")
-                ? "users"
-                : "other";
+          : text.includes("FROM runs") && text.includes("usage_total_tokens")
+            ? "summaries"
+            : text.includes("FROM events")
+              ? "events"
+              : text.includes("FROM users WHERE email")
+                ? "user"
+                : text.includes("FROM users ORDER BY")
+                  ? "users"
+                  : "other";
     return { rows: rowsByQuery[key] ?? [] };
   });
 
@@ -69,6 +71,10 @@ test("mysql store upserts run JSON, events, and users", async () => {
   assert.equal(calls[1]?.values[0], "run-mysql-1");
   assert.equal(calls[1]?.values[1], "user_ada");
   assert.equal(calls[1]?.values[3], "hello mysql");
+  assert.equal(calls[1]?.values[14], 3);
+  const savedRecord = JSON.parse(String(calls[1]?.values[15]));
+  assert.equal(savedRecord.run.id, "run-mysql-1");
+  assert.equal(savedRecord.followUps, undefined);
 
   const event = {
     id: "evt-1",
@@ -90,19 +96,38 @@ test("mysql store upserts run JSON, events, and users", async () => {
   const older = { version: 1 as const, run: sampleRun("run-old"), followUps: [], inbound: [] };
   older.run.updatedAt = "2026-08-01T00:00:00.000Z";
   rowsByQuery.runs = [
-    { record, record_version: 2, title: "hello mysql", status: "IDLE", project_id: null },
+    { record, record_version: 3, title: "hello mysql", status: "IDLE", project_id: null },
     { record: older, record_version: 1, title: null, status: "IDLE", project_id: null },
   ];
   rowsByQuery.queues = [];
+  rowsByQuery.summaries = [
+    {
+      id: "run-mysql-1",
+      user_id: "user_ada",
+      org_id: "org_local",
+      title: "hello mysql",
+      status: "IDLE",
+      project_id: null,
+      created_at: record.run.createdAt,
+      updated_at: record.run.updatedAt,
+      model: "neo/deepseek",
+      source: "web",
+      prompt: "hello mysql",
+      usage_total_tokens: 9,
+    },
+  ];
   const listedRuns = await store.loadRuns();
   assert.equal(listedRuns[0]?.run.id, "run-mysql-1");
-  const loadRunsSql = calls.find((item) => item.text.includes("SELECT id, user_id, org_id, title") && item.text.includes("deleted_at"))?.text ?? "";
+  const loadRunsSql = calls.find((item) => item.text.includes("record, updated_at") && item.text.includes("FROM runs"))?.text ?? "";
   assert.match(loadRunsSql, /ORDER BY updated_at DESC/);
   assert.doesNotMatch(loadRunsSql, /JSON_EXTRACT/);
 
   const summaries = await store.loadRunSummaries();
+  const summarySql = calls.find((item) => item.text.includes("usage_total_tokens") && item.text.includes("FROM runs") && !item.text.includes("LEFT JOIN"))?.text ?? "";
+  assert.doesNotMatch(summarySql, /\brecord\b/);
   assert.equal(summaries[0]?.id, "run-mysql-1");
   assert.equal(summaries[0]?.title, "hello mysql");
+  assert.equal(summaries[0]?.usage?.totalTokens, 9);
 
   await store.createUser({
     id: "user-1",
@@ -209,6 +234,8 @@ test("mysql migrate adds deleted_at before indexing it", async () => {
   assert.ok(addIndex >= 0);
   assert.ok(addColumn < addIndex);
   assert.ok(calls.some((text) => /ALTER TABLE runs ADD COLUMN record_version/i.test(text)));
+  assert.ok(calls.some((text) => /ALTER TABLE runs ADD COLUMN created_at/i.test(text)));
+  assert.ok(calls.some((text) => /ALTER TABLE runs ADD COLUMN prompt/i.test(text)));
   assert.ok(calls.some((text) => /idx_runs_deleted_updated/i.test(text)));
 });
 
@@ -222,7 +249,7 @@ test("migrate still succeeds when the backfill itself fails", async () => {
   await store.migrate();
 });
 
-test("mysql backfill writes run_queues then marks record_version 2", async () => {
+test("mysql backfill writes run_queues then marks a slim record_version 3", async () => {
   process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-mysql-bf-"));
   const fat = {
     version: 1 as const,
@@ -251,5 +278,8 @@ test("mysql backfill writes run_queues then marks record_version 2", async () =>
   assert.ok(updates.some((item) => /INSERT INTO run_queues/.test(item.text)));
   const marked = updates.find((item) => /UPDATE runs SET record/.test(item.text));
   assert.ok(marked);
-  assert.equal(marked?.values[4], 2);
+  assert.equal(marked?.values[12], 3);
+  const written = JSON.parse(String(marked?.values[0]));
+  assert.equal(written.followUps, undefined);
+  assert.equal(written.run.id, "run-bf-1");
 });

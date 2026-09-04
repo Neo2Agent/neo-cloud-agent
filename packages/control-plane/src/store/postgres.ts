@@ -26,14 +26,18 @@ import { persistImagesForRecord, type PersistedRun, type WorkerLease } from "./p
 import {
   applyRunIndexColumns,
   BACKFILL_BATCH_SIZE,
+  BACKFILL_STAGE_SLIM_RECORD,
   backfillRunRecords,
   hydrationRowFromStore,
   mergeStoredRun,
   parseQueue,
-  RECORD_VERSION_SLIM,
+  RECORD_VERSION_SLIM_RECORD,
   recordVersionOf,
+  runFromIndexRow,
   runIndexTitle,
+  runIndexWrite,
   runsBackupTableName,
+  slimRecordJson,
   type RunHydrationRow,
   type RunQueueDocument,
 } from "./run-record.js";
@@ -67,6 +71,14 @@ CREATE TABLE IF NOT EXISTS runs (
   title TEXT,
   status TEXT,
   project_id TEXT,
+  created_at TIMESTAMPTZ,
+  model TEXT,
+  source TEXT,
+  vm_slot_id TEXT,
+  prompt TEXT,
+  usage_prompt_tokens INTEGER,
+  usage_completion_tokens INTEGER,
+  usage_total_tokens INTEGER,
   record_version SMALLINT NOT NULL DEFAULT 1,
   record JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
@@ -312,6 +324,14 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         "ALTER TABLE runs ADD COLUMN IF NOT EXISTS title TEXT",
         "ALTER TABLE runs ADD COLUMN IF NOT EXISTS status TEXT",
         "ALTER TABLE runs ADD COLUMN IF NOT EXISTS project_id TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS source TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS vm_slot_id TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS prompt TEXT",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS usage_prompt_tokens INTEGER",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS usage_completion_tokens INTEGER",
+        "ALTER TABLE runs ADD COLUMN IF NOT EXISTS usage_total_tokens INTEGER",
         "ALTER TABLE runs ADD COLUMN IF NOT EXISTS record_version SMALLINT NOT NULL DEFAULT 1",
         "CREATE INDEX IF NOT EXISTS idx_runs_deleted_updated ON runs (deleted_at, updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_runs_status ON runs (status)",
@@ -329,15 +349,27 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async saveRun(record) {
       await upsertPostgresQueue(query, record);
+      const index = runIndexWrite(record.run);
       await query(
-        `INSERT INTO runs (id, user_id, org_id, title, status, project_id, record_version, record, updated_at, deleted_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::timestamptz, $10::timestamptz)
+        `INSERT INTO runs (id, user_id, org_id, title, status, project_id,
+            created_at, model, source, vm_slot_id, prompt,
+            usage_prompt_tokens, usage_completion_tokens, usage_total_tokens,
+            record_version, record, updated_at, deleted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::timestamptz, $18::timestamptz)
          ON CONFLICT (id) DO UPDATE SET
            user_id = EXCLUDED.user_id,
            org_id = EXCLUDED.org_id,
            title = EXCLUDED.title,
            status = EXCLUDED.status,
            project_id = EXCLUDED.project_id,
+           created_at = EXCLUDED.created_at,
+           model = EXCLUDED.model,
+           source = EXCLUDED.source,
+           vm_slot_id = EXCLUDED.vm_slot_id,
+           prompt = EXCLUDED.prompt,
+           usage_prompt_tokens = EXCLUDED.usage_prompt_tokens,
+           usage_completion_tokens = EXCLUDED.usage_completion_tokens,
+           usage_total_tokens = EXCLUDED.usage_total_tokens,
            record_version = EXCLUDED.record_version,
            record = EXCLUDED.record,
            updated_at = EXCLUDED.updated_at,
@@ -346,11 +378,19 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
           record.run.id,
           record.run.userId,
           record.run.orgId,
-          runIndexTitle(record.run),
-          record.run.status,
-          record.run.projectId ?? null,
-          RECORD_VERSION_SLIM,
-          JSON.stringify(record),
+          index.title,
+          index.status,
+          index.projectId,
+          index.createdAt,
+          index.model,
+          index.source,
+          index.vmSlotId,
+          index.prompt,
+          index.usagePromptTokens,
+          index.usageCompletionTokens,
+          index.usageTotalTokens,
+          RECORD_VERSION_SLIM_RECORD,
+          slimRecordJson(record),
           record.run.updatedAt,
           record.run.deletedAt ?? null,
         ],
@@ -359,6 +399,8 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     async loadRun(runId) {
       const result = await query(
         `SELECT r.record, r.record_version, r.title, r.status, r.project_id,
+                r.created_at, r.model, r.source, r.vm_slot_id, r.prompt,
+                r.usage_prompt_tokens, r.usage_completion_tokens, r.usage_total_tokens,
                 q.follow_ups, q.inbound, q.subscriptions, q.active_turn
          FROM runs r
          LEFT JOIN run_queues q ON q.run_id = r.id
@@ -375,8 +417,15 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         .filter((item): item is PersistedRun => item != null && !item.run.deletedAt);
     },
     async loadRunSummaries() {
-      const rows = await this.loadRunHydrationRows();
-      return rows.map((row) => row.run).filter((run) => !run.deletedAt);
+      const result = await query(
+        `SELECT id, user_id, org_id, title, status, project_id, record_version,
+                created_at, updated_at, deleted_at, model, source, vm_slot_id, prompt,
+                usage_prompt_tokens, usage_completion_tokens, usage_total_tokens
+         FROM runs
+         WHERE deleted_at IS NULL
+         ORDER BY updated_at DESC`,
+      );
+      return result.rows.map((row) => runFromIndexRow(row)).filter((run): run is NonNullable<typeof run> => run != null);
     },
     async loadRunHydrationRows() {
       const result = await query(
@@ -764,7 +813,7 @@ async function upsertPostgresQueue(query: SqlQuery, record: PersistedRun): Promi
 
 async function backfillPostgresRunRecords(query: SqlQuery): Promise<void> {
   const hasPending = async () => {
-    const result = await query(`SELECT id FROM runs WHERE record_version < $1 LIMIT 1`, [RECORD_VERSION_SLIM]);
+    const result = await query(`SELECT id FROM runs WHERE record_version < $1 LIMIT 1`, [RECORD_VERSION_SLIM_RECORD]);
     return result.rows.length > 0;
   };
   if (!(await hasPending())) {
@@ -772,25 +821,43 @@ async function backfillPostgresRunRecords(query: SqlQuery): Promise<void> {
   }
   // Rollback point before the record is rewritten in place. A backup must copy
   // every column, so this is the one place a star select is the correct form.
-  await query(`CREATE TABLE IF NOT EXISTS ${runsBackupTableName()} AS SELECT * FROM runs`);
+  await query(`CREATE TABLE IF NOT EXISTS ${runsBackupTableName(new Date(), BACKFILL_STAGE_SLIM_RECORD)} AS SELECT * FROM runs`);
   await backfillRunRecords({
     hasPending,
     loadBatch: async () => {
       const result = await query(
         `SELECT id, record FROM runs WHERE record_version < $1 ORDER BY id LIMIT $2`,
-        [RECORD_VERSION_SLIM, BACKFILL_BATCH_SIZE],
+        [RECORD_VERSION_SLIM_RECORD, BACKFILL_BATCH_SIZE],
       );
       return result.rows.map((row) => ({ id: String(row.id), record: row.record }));
     },
     parseRecord: (value) => parseJson(value, asRecord),
     migrateRow: async (id, record) => {
       const stored = persistImagesForRecord(record);
-      const title = runIndexTitle(stored.run);
-      stored.run = { ...stored.run, title };
+      stored.run = { ...stored.run, title: runIndexTitle(stored.run) };
+      const index = runIndexWrite(stored.run);
       await upsertPostgresQueue(query, stored);
       await query(
-        `UPDATE runs SET record = $1::jsonb, title = $2, status = $3, project_id = $4, record_version = $5 WHERE id = $6`,
-        [JSON.stringify(stored), title, stored.run.status, stored.run.projectId ?? null, RECORD_VERSION_SLIM, id],
+        `UPDATE runs SET record = $1::jsonb, title = $2, status = $3, project_id = $4,
+            created_at = $5::timestamptz, model = $6, source = $7, vm_slot_id = $8, prompt = $9,
+            usage_prompt_tokens = $10, usage_completion_tokens = $11, usage_total_tokens = $12,
+            record_version = $13 WHERE id = $14`,
+        [
+          slimRecordJson(stored),
+          index.title,
+          index.status,
+          index.projectId,
+          index.createdAt,
+          index.model,
+          index.source,
+          index.vmSlotId,
+          index.prompt,
+          index.usagePromptTokens,
+          index.usageCompletionTokens,
+          index.usageTotalTokens,
+          RECORD_VERSION_SLIM_RECORD,
+          id,
+        ],
       );
     },
   });

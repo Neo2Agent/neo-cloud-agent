@@ -498,6 +498,8 @@ Egress 三模式（应用层，还不是 VM iptables）：
 | pi session JSONL | worker `SESSION_DIR` | pi 恢复上下文、compaction |
 | `RunEvent` | 控制面（Redis 热、对象存储冷、MySQL 索引） | UI、审计、跨设备打开 |
 
+对话列表行不是整包 `runs.record`。`runs` 上的 `title` / `status` / `project_id` / `created_at` / `model` / `source` / `prompt` 是索引列；跟进队列在 `run_queues` 和 `.control/<id>.queue.json`；在途图在 `RUNS_DIR/.objects/runs/<id>/inbox/`。`record_version = 3` 时 `record` 只剩 `{ version, run }`。事件流仍是正文，没有 Session / Message 表。
+
 worker 在 `message_end` / `tool_execution_end` / `agent_end` 时推规范化事件。UI **不**直接读 VM 磁盘。
 
 `GET /v1/runs/:id/transcript` 用 `buildTranscriptSnapshot` 把事件收成消息。同一轮里：`message.end` 之后的工具单独成组，下一句模型文字再开一条气泡。对话页按 `transcriptGroups` 渲染——**工具调研在最终答复上面**。事件带 `data.workerSeq`，快照按它还原顺序，避免 HTTP 乱序把工具挤到回复后面。
@@ -641,9 +643,9 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 
 | 存储 | 内容 | 没配时 |
 | --- | --- | --- |
-| MySQL 或 Postgres（`DATABASE_URL` scheme 决定） | 用户、Run、事件、Environment、Build、Project、Desk、Device、Automation、`experts`、`expert_policies`、`plugin_installs` | `.neo/runs/.control` JSON |
+| MySQL 或 Postgres（`DATABASE_URL` scheme 决定） | 用户、Run 索引列 + 瘦 `record`、`run_queues`、事件、Environment、Build、Project、Desk、Device、Automation、`experts`、`expert_policies`、`plugin_installs` | `.neo/runs/.control` 瘦 JSON + `.queue.json` |
 | Redis | 直播事件 Pub/Sub + Stream、限流固定窗口、lease | 进程内 EventEmitter + token bucket |
-| 对象存储（默认 fs） | transcript 归档、artifacts、session JSONL 备份 | `RUNS_DIR/.objects` |
+| 对象存储（默认 fs） | transcript 归档、artifacts、session JSONL 备份、在途跟进图 | `RUNS_DIR/.objects` |
 | 块存储 | Build 快照、warm slot、loop 盘 | `RUNS_DIR/.builds` |
 | 密钥文件 | LLM / SCM / notify（gitignore） | `.env`、`.neo/*.env` |
 

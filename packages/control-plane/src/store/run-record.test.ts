@@ -20,8 +20,13 @@ import {
   publicFollowUps,
   RECORD_VERSION_FAT,
   RECORD_VERSION_SLIM,
+  RECORD_VERSION_SLIM_RECORD,
+  runFromIndexRow,
   runIndexTitle,
+  runIndexWrite,
   runsBackupTableName,
+  shouldPersistHydratedRun,
+  slimRecordJson,
   slimRunDocument,
   stripDeliveredImages,
   TITLE_MAX_LEN,
@@ -124,6 +129,10 @@ test("mergeStoredRun uses queues only when record_version is slim", () => {
 
   const v2Missing = mergeStoredRun(slimRunDocument(fat), null, RECORD_VERSION_SLIM);
   assert.deepEqual(v2Missing?.followUps, []);
+
+  const v3 = mergeStoredRun(slimRunDocument(fat), queue, RECORD_VERSION_SLIM_RECORD);
+  assert.equal(v3?.followUps[0]?.text, "from-queue");
+  assert.equal(JSON.parse(slimRecordJson(fat)).followUps, undefined);
 });
 
 test("parseQueue treats a left-join null row as missing", () => {
@@ -167,10 +176,78 @@ test("publicFollowUps never returns obj keys", () => {
 });
 
 test("applyRunIndexColumns overlays title from the index row", () => {
-  const run = applyRunIndexColumns(sampleRun(), { title: "列标题", status: "RUNNING", project_id: "proj-1" });
+  const run = applyRunIndexColumns(sampleRun(), {
+    title: "列标题",
+    status: "RUNNING",
+    project_id: "proj-1",
+    model: "neo/other",
+    source: "web",
+    vm_slot_id: "slot-2",
+    prompt: "列上的 prompt",
+    created_at: "2026-09-01T00:00:00.000Z",
+    usage_total_tokens: 12,
+  });
   assert.equal(run.title, "列标题");
   assert.equal(run.status, "RUNNING");
   assert.equal(run.projectId, "proj-1");
+  assert.equal(run.model, "neo/other");
+  assert.equal(run.source, "web");
+  assert.equal(run.vmSlotId, "slot-2");
+  assert.equal(run.prompt, "列上的 prompt");
+  assert.equal(run.createdAt, "2026-09-01T00:00:00.000Z");
+  assert.equal(run.usage?.totalTokens, 12);
+});
+
+test("runFromIndexRow builds a list Run without nested metadata", () => {
+  const run = runFromIndexRow({
+    id: "run-1",
+    user_id: "user_local",
+    org_id: "org_local",
+    title: "侧栏标题",
+    status: "IDLE",
+    project_id: null,
+    created_at: "2026-09-04 00:00:00.000",
+    updated_at: "2026-09-04 01:00:00.000",
+    model: "neo/deepseek",
+    source: "web",
+    prompt: "帮我改首页",
+    usage_prompt_tokens: 3,
+    usage_completion_tokens: 5,
+    usage_total_tokens: 8,
+  });
+  assert.equal(run?.id, "run-1");
+  assert.equal(run?.title, "侧栏标题");
+  assert.equal(run?.source, "web");
+  assert.equal(run?.prompt, "帮我改首页");
+  assert.equal(run?.usage?.totalTokens, 8);
+  assert.deepEqual(run?.repoUrls, []);
+  assert.equal(runFromIndexRow({ title: "no-id" }), null);
+});
+
+test("runIndexWrite copies display columns and usage tokens", () => {
+  const run = sampleRun();
+  run.usage = { promptTokens: 1, completionTokens: 2, totalTokens: 3 };
+  run.vmSlotId = "slot-0";
+  const written = runIndexWrite(run);
+  assert.equal(written.title, "帮我改首页");
+  assert.equal(written.model, "neo/deepseek");
+  assert.equal(written.vmSlotId, "slot-0");
+  assert.equal(written.usageTotalTokens, 3);
+});
+
+test("shouldPersistHydratedRun skips an identical disk snapshot", () => {
+  const record: PersistedRun = {
+    version: 1,
+    run: sampleRun(),
+    followUps: [followUp()],
+    inbound: [],
+    subscriptions: [],
+    activeTurn: null,
+  };
+  assert.equal(shouldPersistHydratedRun(record, null), true);
+  assert.equal(shouldPersistHydratedRun(record, record), false);
+  const newer = { ...record, run: { ...record.run, updatedAt: "2026-09-05T00:00:00.000Z" } };
+  assert.equal(shouldPersistHydratedRun(newer, record), true);
 });
 
 test("backfillRunRecords stops instead of spinning when a batch migrates nothing", async () => {
@@ -207,6 +284,7 @@ test("backfillRunRecords probes, migrates a batch, then stops", async () => {
   assert.deepEqual(migrated, ["run-1"]);
   assert.ok(BACKFILL_BATCH_SIZE > 0);
   assert.match(runsBackupTableName(new Date("2026-09-04T12:00:00.000Z")), /runs_backup_20260904/);
+  assert.match(runsBackupTableName(new Date("2026-09-04T12:00:00.000Z"), "v3"), /runs_backup_v3_20260904/);
 });
 
 test("parseObjectImageKey only strips the prefix", () => {

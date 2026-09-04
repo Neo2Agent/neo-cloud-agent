@@ -44,6 +44,7 @@ import {
   queueFromRecord,
   RECORD_VERSION_FAT,
   RECORD_VERSION_SLIM,
+  shouldPersistHydratedRun,
   slimRunDocument,
   stripDeliveredImages,
   type RunQueueDocument,
@@ -198,6 +199,20 @@ export function persistRunRecord(record: PersistedRun, runsDir?: string, options
   if (options?.mirror !== false) {
     persistHooks.onRun?.(stored);
   }
+}
+
+/** True when disk is missing a queue file or the stored snapshot is stale. */
+export function hydratedRunNeedsPersist(record: PersistedRun, runsDir?: string): boolean {
+  const document = loadPersistedRunDocument(record.run.id, runsDir);
+  const queue = loadPersistedQueue(record.run.id, runsDir);
+  if (!document?.run || !queue) {
+    return true;
+  }
+  return shouldPersistHydratedRun(record, {
+    version: 1,
+    run: document.run,
+    ...queue,
+  });
 }
 
 export function persistTranscriptSnapshot(snapshot: TranscriptSnapshot, runsDir?: string): void {

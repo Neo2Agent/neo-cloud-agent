@@ -26,14 +26,18 @@ import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
 import {
   applyRunIndexColumns,
   BACKFILL_BATCH_SIZE,
+  BACKFILL_STAGE_SLIM_RECORD,
   backfillRunRecords,
   hydrationRowFromStore,
   mergeStoredRun,
   parseQueue,
-  RECORD_VERSION_SLIM,
+  RECORD_VERSION_SLIM_RECORD,
   recordVersionOf,
+  runFromIndexRow,
   runIndexTitle,
+  runIndexWrite,
   runsBackupTableName,
+  slimRecordJson,
   type RunHydrationRow,
   type RunQueueDocument,
 } from "./run-record.js";
@@ -69,6 +73,14 @@ CREATE TABLE IF NOT EXISTS runs (
   title VARCHAR(191) NULL,
   status VARCHAR(64) NULL,
   project_id VARCHAR(191) NULL,
+  created_at DATETIME(3) NULL,
+  model VARCHAR(191) NULL,
+  source VARCHAR(64) NULL,
+  vm_slot_id VARCHAR(191) NULL,
+  prompt MEDIUMTEXT NULL,
+  usage_prompt_tokens INT NULL,
+  usage_completion_tokens INT NULL,
+  usage_total_tokens INT NULL,
   record_version SMALLINT NOT NULL DEFAULT 1,
   record JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL,
@@ -288,6 +300,14 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "ALTER TABLE runs ADD COLUMN title VARCHAR(191) NULL",
         "ALTER TABLE runs ADD COLUMN status VARCHAR(64) NULL",
         "ALTER TABLE runs ADD COLUMN project_id VARCHAR(191) NULL",
+        "ALTER TABLE runs ADD COLUMN created_at DATETIME(3) NULL",
+        "ALTER TABLE runs ADD COLUMN model VARCHAR(191) NULL",
+        "ALTER TABLE runs ADD COLUMN source VARCHAR(64) NULL",
+        "ALTER TABLE runs ADD COLUMN vm_slot_id VARCHAR(191) NULL",
+        "ALTER TABLE runs ADD COLUMN prompt MEDIUMTEXT NULL",
+        "ALTER TABLE runs ADD COLUMN usage_prompt_tokens INT NULL",
+        "ALTER TABLE runs ADD COLUMN usage_completion_tokens INT NULL",
+        "ALTER TABLE runs ADD COLUMN usage_total_tokens INT NULL",
         "ALTER TABLE runs ADD COLUMN record_version SMALLINT NOT NULL DEFAULT 1",
         "CREATE INDEX idx_runs_deleted_updated ON runs (deleted_at, updated_at)",
         "CREATE INDEX idx_runs_status ON runs (status)",
@@ -312,15 +332,27 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async saveRun(record) {
       await upsertMysqlQueue(query, record);
+      const index = runIndexWrite(record.run);
       await query(
-        `INSERT INTO runs (id, user_id, org_id, title, status, project_id, record_version, record, updated_at, deleted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS incoming
+        `INSERT INTO runs (id, user_id, org_id, title, status, project_id,
+            created_at, model, source, vm_slot_id, prompt,
+            usage_prompt_tokens, usage_completion_tokens, usage_total_tokens,
+            record_version, record, updated_at, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS incoming
          ON DUPLICATE KEY UPDATE
            user_id = incoming.user_id,
            org_id = incoming.org_id,
            title = incoming.title,
            status = incoming.status,
            project_id = incoming.project_id,
+           created_at = incoming.created_at,
+           model = incoming.model,
+           source = incoming.source,
+           vm_slot_id = incoming.vm_slot_id,
+           prompt = incoming.prompt,
+           usage_prompt_tokens = incoming.usage_prompt_tokens,
+           usage_completion_tokens = incoming.usage_completion_tokens,
+           usage_total_tokens = incoming.usage_total_tokens,
            record_version = incoming.record_version,
            record = incoming.record,
            updated_at = incoming.updated_at,
@@ -329,11 +361,19 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
           record.run.id,
           record.run.userId,
           record.run.orgId,
-          runIndexTitle(record.run),
-          record.run.status,
-          record.run.projectId ?? null,
-          RECORD_VERSION_SLIM,
-          JSON.stringify(record),
+          index.title,
+          index.status,
+          index.projectId,
+          mysqlDateTime(index.createdAt),
+          index.model,
+          index.source,
+          index.vmSlotId,
+          index.prompt,
+          index.usagePromptTokens,
+          index.usageCompletionTokens,
+          index.usageTotalTokens,
+          RECORD_VERSION_SLIM_RECORD,
+          slimRecordJson(record),
           mysqlDateTime(record.run.updatedAt),
           record.run.deletedAt ? mysqlDateTime(record.run.deletedAt) : null,
         ],
@@ -342,6 +382,8 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     async loadRun(runId) {
       const result = await query(
         `SELECT r.record, r.record_version, r.title, r.status, r.project_id,
+                r.created_at, r.model, r.source, r.vm_slot_id, r.prompt,
+                r.usage_prompt_tokens, r.usage_completion_tokens, r.usage_total_tokens,
                 q.follow_ups, q.inbound, q.subscriptions, q.active_turn
          FROM runs r
          LEFT JOIN run_queues q ON q.run_id = r.id
@@ -358,8 +400,15 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         .filter((item): item is PersistedRun => item != null && !item.run.deletedAt);
     },
     async loadRunSummaries() {
-      const rows = await this.loadRunHydrationRows();
-      return rows.map((row) => row.run).filter((run) => !run.deletedAt);
+      const result = await query(
+        `SELECT id, user_id, org_id, title, status, project_id, record_version,
+                created_at, updated_at, deleted_at, model, source, vm_slot_id, prompt,
+                usage_prompt_tokens, usage_completion_tokens, usage_total_tokens
+         FROM runs
+         WHERE deleted_at IS NULL
+         ORDER BY updated_at DESC`,
+      );
+      return result.rows.map((row) => runFromIndexRow(row)).filter((run): run is NonNullable<typeof run> => run != null);
     },
     async loadRunHydrationRows() {
       const result = await query(
@@ -744,7 +793,7 @@ async function upsertMysqlQueue(query: SqlQuery, record: PersistedRun): Promise<
 
 async function backfillMysqlRunRecords(query: SqlQuery): Promise<void> {
   const hasPending = async () => {
-    const result = await query(`SELECT id FROM runs WHERE record_version < ? LIMIT 1`, [RECORD_VERSION_SLIM]);
+    const result = await query(`SELECT id FROM runs WHERE record_version < ? LIMIT 1`, [RECORD_VERSION_SLIM_RECORD]);
     return result.rows.length > 0;
   };
   if (!(await hasPending())) {
@@ -752,25 +801,43 @@ async function backfillMysqlRunRecords(query: SqlQuery): Promise<void> {
   }
   // Rollback point before the record is rewritten in place. A backup must copy
   // every column, so this is the one place a star select is the correct form.
-  await query(`CREATE TABLE IF NOT EXISTS \`${runsBackupTableName()}\` AS SELECT * FROM runs`);
+  await query(`CREATE TABLE IF NOT EXISTS \`${runsBackupTableName(new Date(), BACKFILL_STAGE_SLIM_RECORD)}\` AS SELECT * FROM runs`);
   await backfillRunRecords({
     hasPending,
     loadBatch: async () => {
       const result = await query(
         `SELECT id, record FROM runs WHERE record_version < ? ORDER BY id LIMIT ?`,
-        [RECORD_VERSION_SLIM, BACKFILL_BATCH_SIZE],
+        [RECORD_VERSION_SLIM_RECORD, BACKFILL_BATCH_SIZE],
       );
       return result.rows.map((row) => ({ id: String(row.id), record: row.record }));
     },
     parseRecord: (value) => parseJson(value, asRecord),
     migrateRow: async (id, record) => {
       const stored = persistImagesForRecord(record);
-      const title = runIndexTitle(stored.run);
-      stored.run = { ...stored.run, title };
+      stored.run = { ...stored.run, title: runIndexTitle(stored.run) };
+      const index = runIndexWrite(stored.run);
       await upsertMysqlQueue(query, stored);
       await query(
-        `UPDATE runs SET record = ?, title = ?, status = ?, project_id = ?, record_version = ? WHERE id = ?`,
-        [JSON.stringify(stored), title, stored.run.status, stored.run.projectId ?? null, RECORD_VERSION_SLIM, id],
+        `UPDATE runs SET record = ?, title = ?, status = ?, project_id = ?,
+            created_at = ?, model = ?, source = ?, vm_slot_id = ?, prompt = ?,
+            usage_prompt_tokens = ?, usage_completion_tokens = ?, usage_total_tokens = ?,
+            record_version = ? WHERE id = ?`,
+        [
+          slimRecordJson(stored),
+          index.title,
+          index.status,
+          index.projectId,
+          mysqlDateTime(index.createdAt),
+          index.model,
+          index.source,
+          index.vmSlotId,
+          index.prompt,
+          index.usagePromptTokens,
+          index.usageCompletionTokens,
+          index.usageTotalTokens,
+          RECORD_VERSION_SLIM_RECORD,
+          id,
+        ],
       );
     },
   });

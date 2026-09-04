@@ -54,6 +54,8 @@ test("postgres store upserts run JSON, events, and users", async () => {
   assert.equal(calls[1]?.values[0], "run-pg-1");
   assert.equal(calls[1]?.values[1], "user_ada");
   assert.equal(calls[1]?.values[3], "hello postgres");
+  assert.equal(calls[1]?.values[14], 3);
+  assert.equal(JSON.parse(String(calls[1]?.values[15])).followUps, undefined);
 
   const event = {
     id: "evt-1",
