@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -14,6 +14,8 @@ import {
   workspaceShellLaunch,
   workspaceTermDeniedReason,
   workspaceTermEnv,
+  workspaceTermScript,
+  wrapWorkspaceShell,
   writeWorkspaceTerm,
 } from "./workspace-shell.js";
 
@@ -21,6 +23,18 @@ test("unix launch prefers a real interactive shell", () => {
   const launch = workspaceShellLaunch();
   assert.match(launch.command, /zsh|bash|sh/);
   assert.ok(launch.args.includes("-i"));
+});
+
+test("script wraps the shell in a PTY when util-linux script is present", () => {
+  const launch = workspaceShellLaunch();
+  const wrapped = wrapWorkspaceShell(launch);
+  if (workspaceTermScript()) {
+    assert.equal(wrapped.pty, true);
+    assert.match(wrapped.command, /script/);
+    assert.ok(wrapped.args.includes("-c"));
+  } else {
+    assert.equal(wrapped.pty, false);
+  }
 });
 
 test("desk runs are sent back to the local Desk terminal", () => {
@@ -35,14 +49,16 @@ test("term env does not inherit control-plane secrets", () => {
   assert.equal(env.DATABASE_URL, undefined);
   assert.equal(env.CONTROL_PLANE_TOKEN, undefined);
   assert.equal(env.DEEPSEEK_API_KEY, undefined);
+  assert.equal(workspaceTermEnv("/tmp/ws", "/bin/bash", { pty: true }).TERM, "xterm");
 });
 
-test("a piped workspace shell runs a written command", async (t) => {
+test("a workspace shell runs a written command", async (t) => {
   resetWorkspaceShellsForTests();
   t.after(() => resetWorkspaceShellsForTests());
   const cwd = mkdtempSync(path.join(tmpdir(), "neo-term-"));
   const opened = openWorkspaceTerm({ runId: "run_term", cwd });
   assert.equal(opened.alive, true);
+  assert.equal(opened.pty, Boolean(workspaceTermScript()));
   assert.equal(listWorkspaceTerms("run_term").length, 1);
   const chunks: string[] = [];
   const stop = onWorkspaceTermEvent(opened.id, (event) => {
@@ -65,6 +81,38 @@ test("a piped workspace shell runs a written command", async (t) => {
   );
   assert.equal(closeWorkspaceTerm("run_term", opened.id), true);
   assert.equal(listWorkspaceTerms("run_term").length, 0);
+});
+
+test("PTY tab completes a unique filename once", async (t) => {
+  if (!workspaceTermScript()) {
+    t.skip("util-linux script is not available");
+    return;
+  }
+  resetWorkspaceShellsForTests();
+  t.after(() => resetWorkspaceShellsForTests());
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-term-tab-"));
+  writeFileSync(path.join(cwd, "alpha-unique.txt"), "ok");
+  const opened = openWorkspaceTerm({ runId: "run_tab", cwd });
+  assert.equal(opened.pty, true);
+  const chunks: string[] = [];
+  const stop = onWorkspaceTermEvent(opened.id, (event) => {
+    if (event.type === "data") {
+      chunks.push(event.chunk);
+    }
+  });
+  t.after(stop);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  writeWorkspaceTerm("run_tab", opened.id, "ls alpha-uni");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  writeWorkspaceTerm("run_tab", opened.id, "\t");
+  const deadline = Date.now() + 4_000;
+  let text = chunks.join("");
+  while (!text.includes("alpha-unique.txt") && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    text = chunks.join("");
+  }
+  assert.match(text, /alpha-unique\.txt/);
+  assert.equal(text.split("alpha-unique.txt").length - 1, 1);
 });
 
 test("a run cannot open more than the session cap", (t) => {

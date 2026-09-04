@@ -61,10 +61,17 @@ test("workspace term is a typed shell, not setup logs", async (t) => {
     headers: auth({ "content-type": "application/json" }),
   });
   assert.equal(opened.status, 201);
-  const session = (await opened.json()) as { id: string; cwd: string; shell: string; alive: boolean };
+  const session = (await opened.json()) as {
+    id: string;
+    cwd: string;
+    shell: string;
+    alive: boolean;
+    pty?: boolean;
+  };
   assert.ok(session.id);
   assert.equal(session.alive, true);
   assert.match(session.shell, /zsh|bash|sh/);
+  assert.equal(typeof session.pty, "boolean");
 
   const listed = await fetch(`${base}/v1/runs/${run.id}/term`, { headers: auth() });
   assert.equal(listed.status, 200);

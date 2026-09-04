@@ -6,6 +6,7 @@ export type WorkspaceTermInfo = {
   cwd: string;
   shell: string;
   alive?: boolean;
+  pty?: boolean;
 };
 
 export type WorkspaceTermEvent =

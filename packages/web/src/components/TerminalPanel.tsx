@@ -1,5 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { nextHistoryIndex, termKeyAction } from "../term-keys.js";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { nextHistoryIndex, termKeyAction, termKeyBytes } from "@neo-cloud-agent/ui/term";
+import {
+  applyTermChunk,
+  createTermScreen,
+  type TermScreen,
+} from "@neo-cloud-agent/ui/term-render";
 import {
   closeWorkspaceTerm,
   ensureWorkspaceTerms,
@@ -13,7 +18,7 @@ type Log = { name: string; content?: string };
 
 type SessionState = {
   info: WorkspaceTermInfo;
-  output: string;
+  screen: TermScreen;
   draft: string;
   history: string[];
   historyAt: number;
@@ -38,18 +43,28 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
   const [focused, setFocused] = useState(false);
   const outRef = useRef<HTMLDivElement | null>(null);
   const ghostRef = useRef<HTMLTextAreaElement | null>(null);
+  const composing = useRef(false);
+  const writes = useRef(Promise.resolve());
   const unsubs = useRef(new Map<string, () => void>());
   const active = sessions.find((item) => item.info.id === activeId) ?? sessions[0];
+  const pty = active?.info.pty !== false;
 
   const adopt = useCallback(
-    (info: WorkspaceTermInfo, seed = "") => {
+    (info: WorkspaceTermInfo) => {
       setSessions((prev) => {
         if (prev.some((item) => item.info.id === info.id)) {
           return prev;
         }
         return [
           ...prev,
-          { info, output: seed, draft: "", history: [], historyAt: -1, alive: info.alive !== false },
+          {
+            info,
+            screen: createTermScreen(),
+            draft: "",
+            history: [],
+            historyAt: -1,
+            alive: info.alive !== false,
+          },
         ];
       });
       setActiveId((cur) => cur || info.id);
@@ -60,9 +75,7 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
         if (event.type === "data") {
           setSessions((prev) =>
             prev.map((item) =>
-              item.info.id === info.id
-                ? { ...item, output: `${item.output}${event.chunk}`.slice(-60_000) }
-                : item,
+              item.info.id === info.id ? { ...item, screen: applyTermChunk(item.screen, event.chunk) } : item,
             ),
           );
           return;
@@ -70,7 +83,9 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
         if (event.type === "exit") {
           setSessions((prev) =>
             prev.map((item) =>
-              item.info.id === info.id ? { ...item, alive: false, output: `${item.output}\n[已结束]\n` } : item,
+              item.info.id === info.id
+                ? { ...item, alive: false, screen: applyTermChunk(item.screen, "\n[已结束]\n") }
+                : item,
             ),
           );
         }
@@ -144,7 +159,7 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
     if (outRef.current) {
       outRef.current.scrollTop = outRef.current.scrollHeight;
     }
-  }, [active?.output, active?.draft, activeId]);
+  }, [active?.screen, active?.draft, activeId]);
 
   useEffect(() => {
     if (open) {
@@ -156,15 +171,15 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
     setSessions((prev) => prev.map((item) => (item.info.id === activeId ? fn(item) : item)));
   };
 
-  const send = async (data: string) => {
+  const send = (data: string) => {
     if (!runId || !active) {
       return;
     }
-    try {
-      await writeWorkspaceTerm(token, runId, active.info.id, data);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "写入失败");
-    }
+    writes.current = writes.current
+      .then(() => writeWorkspaceTerm(token, runId, active.info.id, data))
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "写入失败");
+      });
   };
 
   const closeSession = async (id: string) => {
@@ -197,7 +212,9 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
           <strong>沙箱终端</strong>
           <p className="hint">
             {active
-              ? `${active.info.shell} · 工作区里可以直接敲命令。管道 shell，不是完整 PTY。`
+              ? pty
+                ? `${active.info.shell} · 工作区里可以直接敲命令。Tab 补全路径。`
+                : `${active.info.shell} · 工作区里可以直接敲命令。管道 shell，不是完整 PTY。`
               : "打开后进的是沙箱工作区，不是 setup 日志。"}
           </p>
         </div>
@@ -237,14 +254,12 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
             ghostRef.current?.focus();
           }}
         >
-          <pre>
-            {active.output + active.draft}
-            <span className="term-caret" aria-hidden="true" />
-          </pre>
+          <TermPre screen={active.screen} draft={pty ? "" : active.draft} />
           <textarea
             ref={ghostRef}
             className="term-ghost"
-            value={active.draft}
+            value={pty ? undefined : active.draft}
+            defaultValue={pty ? "" : undefined}
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
@@ -252,11 +267,56 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
             disabled={!active.alive}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={(event) => {
+              composing.current = false;
+              if (!pty) {
+                return;
+              }
+              const value = event.currentTarget.value;
+              event.currentTarget.value = "";
+              if (value) {
+                send(value);
+              }
+            }}
             onChange={(event) => {
+              if (pty) {
+                if (composing.current || Boolean((event.nativeEvent as InputEvent).isComposing)) {
+                  return;
+                }
+                const value = event.target.value;
+                event.target.value = "";
+                if (value) {
+                  send(value);
+                }
+                return;
+              }
               const value = event.target.value;
               patchActive((item) => ({ ...item, draft: value, historyAt: -1 }));
             }}
             onKeyDown={(event) => {
+              if (pty) {
+                if (event.nativeEvent.isComposing || composing.current) {
+                  return;
+                }
+                const bytes = termKeyBytes({
+                  key: event.key,
+                  ctrlKey: event.ctrlKey,
+                  metaKey: event.metaKey,
+                  altKey: event.altKey,
+                });
+                if (bytes == null) {
+                  return;
+                }
+                if (bytes === "\x03" && window.getSelection()?.toString()) {
+                  return;
+                }
+                event.preventDefault();
+                send(bytes);
+                return;
+              }
               const action = termKeyAction({
                 key: event.key,
                 ctrlKey: event.ctrlKey,
@@ -272,11 +332,10 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
               }
               event.preventDefault();
               if (action === "submit") {
-                void send(`${active.draft}\n`);
+                send(`${active.draft}\n`);
                 const line = active.draft;
                 patchActive((item) => ({
                   ...item,
-                  output: `${item.output}${line}\n`,
                   draft: "",
                   history: line.trim() ? [...item.history, line] : item.history,
                   historyAt: -1,
@@ -284,11 +343,11 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
                 return;
               }
               if (action === "interrupt") {
-                void send("\x03");
+                send("\x03");
                 return;
               }
               if (action === "clear") {
-                patchActive((item) => ({ ...item, output: "" }));
+                patchActive((item) => ({ ...item, screen: createTermScreen() }));
                 return;
               }
               const next = nextHistoryIndex(action, active.historyAt, active.history.length);
@@ -315,4 +374,23 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
       </details>
     </section>
   );
+}
+
+function TermPre({ screen, draft }: { screen: TermScreen; draft: string }) {
+  const nodes: ReactNode[] = [];
+  for (let i = 0; i < screen.lines.length; i += 1) {
+    const line = `${screen.lines[i] ?? ""}${i === screen.lines.length - 1 ? draft : ""}`;
+    if (i > 0) {
+      nodes.push("\n");
+    }
+    if (i === screen.row) {
+      const col = Math.min(screen.col + (i === screen.lines.length - 1 ? draft.length : 0), line.length);
+      nodes.push(line.slice(0, col));
+      nodes.push(<span key={`caret-${i}`} className="term-caret" aria-hidden="true" />);
+      nodes.push(line.slice(col));
+    } else {
+      nodes.push(line);
+    }
+  }
+  return <pre>{nodes}</pre>;
 }
