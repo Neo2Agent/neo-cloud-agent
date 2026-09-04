@@ -26,8 +26,8 @@ import {
   getObjectSync,
   listObjectsSync,
   putObjectSync,
+  removeObjectPrefixSync,
   removeObjectSync,
-  removePrefixSync,
 } from "../objects/fs.js";
 import { getConfig } from "../config.js";
 import {
@@ -163,7 +163,7 @@ export function resolvePersistedRun(record: PersistedRun, runsDir?: string): Per
   return mapRecordImages(record, (images) => resolveImages(images, record.run.id, dir));
 }
 
-export function resolveImages(
+function resolveImages(
   images: ImageRef[] | undefined,
   runId: string,
   runsDir?: string,
@@ -405,7 +405,8 @@ export function loadPersistedRunDocument(runId: string, runsDir?: string): Persi
   }
 }
 
-function mergeDiskRun(runId: string, runsDir?: string): PersistedRun | null {
+/** Merge the slim document with its queue file. Images stay as `obj:` keys. */
+export function loadPersistedRunRaw(runId: string, runsDir?: string): PersistedRun | null {
   const document = loadPersistedRunDocument(runId, runsDir);
   if (!document) {
     return null;
@@ -414,12 +415,8 @@ function mergeDiskRun(runId: string, runsDir?: string): PersistedRun | null {
   return mergeStoredRun(document, queue, queue ? RECORD_VERSION_SLIM : RECORD_VERSION_FAT);
 }
 
-export function loadPersistedRunRaw(runId: string, runsDir?: string): PersistedRun | null {
-  return mergeDiskRun(runId, runsDir);
-}
-
 export function loadPersistedRun(runId: string, runsDir?: string): PersistedRun | null {
-  const merged = mergeDiskRun(runId, runsDir);
+  const merged = loadPersistedRunRaw(runId, runsDir);
   return merged ? resolvePersistedRun(merged, runsDir) : null;
 }
 
@@ -446,12 +443,7 @@ export function reclaimPersistedRun(runId: string, runsDir?: string): void {
   } catch {
     // ignore
   }
-  removePrefixSync(dir, inboxPrefix(runId));
-  try {
-    rmSync(path.join(dir, ".objects", "runs", runId, "inbox"), { recursive: true, force: true });
-  } catch {
-    // ignore
-  }
+  removeObjectPrefixSync(dir, inboxPrefix(runId));
   persistHooks.onDeleteQueue?.(runId);
 }
 

@@ -196,14 +196,6 @@ function asRecord(value: unknown): PersistedRun | null {
   return record.run?.id ? record : null;
 }
 
-function asRun(value: unknown): Run | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const run = value as Run;
-  return run.id && run.prompt ? run : null;
-}
-
 function asEvent(value: unknown): RunEvent | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -324,15 +316,6 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         "CREATE INDEX IF NOT EXISTS idx_runs_deleted_updated ON runs (deleted_at, updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_runs_status ON runs (status)",
         "CREATE INDEX IF NOT EXISTS idx_runs_project_id ON runs (project_id)",
-        `CREATE TABLE IF NOT EXISTS run_queues (
-          run_id TEXT PRIMARY KEY,
-          follow_ups JSONB NOT NULL,
-          inbound JSONB NOT NULL,
-          subscriptions JSONB NOT NULL,
-          active_turn JSONB,
-          created_at TIMESTAMPTZ NOT NULL,
-          updated_at TIMESTAMPTZ NOT NULL
-        )`,
       ]) {
         await query(statement);
       }
@@ -382,7 +365,7 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       const rows = await this.loadRunHydrationRows();
       const queues = await this.loadRunQueues();
       return rows
-        .map((row) => mergeStoredRun(row.document ?? { version: 1, run: row.run }, queues.get(row.run.id) ?? null, row.recordVersion))
+        .map((row) => mergeStoredRun(row.document, queues.get(row.run.id) ?? null, row.recordVersion))
         .filter((item): item is PersistedRun => item != null && !item.run.deletedAt);
     },
     async loadRunSummaries() {
@@ -397,7 +380,7 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
          ORDER BY updated_at DESC`,
       );
       return result.rows
-        .map((row) => hydrationRowFromStore(row, (value) => parseJson(value, asRecord), (value) => parseJson(value, asRun)))
+        .map((row) => hydrationRowFromStore(row, (value) => parseJson(value, asRecord)))
         .filter((item): item is RunHydrationRow => item != null);
     },
     async loadRunQueues() {
@@ -781,6 +764,8 @@ async function backfillPostgresRunRecords(query: SqlQuery): Promise<void> {
   if (!(await hasPending())) {
     return;
   }
+  // Rollback point before the record is rewritten in place. A backup must copy
+  // every column, so this is the one place a star select is the correct form.
   await query(`CREATE TABLE IF NOT EXISTS ${runsBackupTableName()} AS SELECT * FROM runs`);
   await backfillRunRecords({
     hasPending,
@@ -794,18 +779,12 @@ async function backfillPostgresRunRecords(query: SqlQuery): Promise<void> {
     parseRecord: (value) => parseJson(value, asRecord),
     migrateRow: async (id, record) => {
       const stored = persistImagesForRecord(record);
-      stored.run = { ...stored.run, title: runIndexTitle(stored.run) };
+      const title = runIndexTitle(stored.run);
+      stored.run = { ...stored.run, title };
       await upsertPostgresQueue(query, stored);
       await query(
         `UPDATE runs SET record = $1::jsonb, title = $2, status = $3, project_id = $4, record_version = $5 WHERE id = $6`,
-        [
-          JSON.stringify(stored),
-          runIndexTitle(stored.run),
-          stored.run.status,
-          stored.run.projectId ?? null,
-          RECORD_VERSION_SLIM,
-          id,
-        ],
+        [JSON.stringify(stored), title, stored.run.status, stored.run.projectId ?? null, RECORD_VERSION_SLIM, id],
       );
     },
   });

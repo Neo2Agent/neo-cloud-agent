@@ -36,6 +36,8 @@ export function groupRuns<T extends { id: string; status: string; createdAt: str
   return { pinned: pinnedRuns, active, recent };
 }
 
+// Search both fields: a stored title is only the first line, so the rest of the
+// prompt must stay findable.
 export function filterRuns<T extends { title?: string | null; prompt?: string; id: string }>(runs: T[], query: string): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return runs;

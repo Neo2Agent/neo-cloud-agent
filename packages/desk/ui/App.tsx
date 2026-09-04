@@ -5,7 +5,7 @@ import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
-import type { ExecutionTarget, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
+import { runDisplayTitle, type ExecutionTarget, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Tooltip } from "@neo-cloud-agent/ui";
@@ -154,8 +154,8 @@ function preview(text: string, n = 56): string {
   return (text || "New Agent").replace(/\s+/g, " ").slice(0, n);
 }
 
-function runListTitle(run: { title?: string | null; prompt?: string }, n = 56): string {
-  return preview(run.title?.trim() || run.prompt || "", n);
+function runListTitle(run: Run, n = 56): string {
+  return preview(runDisplayTitle(run), n);
 }
 
 function repoLabel(url?: string): string {

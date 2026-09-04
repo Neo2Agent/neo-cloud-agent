@@ -126,7 +126,7 @@ export async function restoreArchivedArtifacts(runId: string): Promise<{
     writeInboxObject(item.key, item.body);
   }
   if (loaded.record) {
-    const current = loadPersistedRunRaw(runId) ?? loadPersistedRun(runId);
+    const current = loadPersistedRunRaw(runId);
     if (current?.run?.deletedAt) {
       return { record: current, events: loaded.events };
     }

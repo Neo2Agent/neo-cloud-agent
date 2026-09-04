@@ -190,6 +190,14 @@ export interface Run {
   } | null;
 }
 
+/**
+ * List label source: the stored title when set, else the prompt.
+ * Not truncated; each client applies its own width.
+ */
+export function runDisplayTitle(run: { title?: string | null; prompt?: string | null }): string {
+  return (run.title ?? "").trim() || (run.prompt ?? "").trim();
+}
+
 export interface PullRequestRef {
   repoUrl: string;
   branch: string;

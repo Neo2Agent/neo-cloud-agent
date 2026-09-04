@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { Run, RunEvent } from "@neo-cloud-agent/contracts";
+import { runDisplayTitle, type Run, type RunEvent } from "@neo-cloud-agent/contracts";
 import { ControlPlaneClient } from "./client.js";
 import { resolveApiToken, resolveApiUrl, saveStoredConfig, saveStoredCredentials, clearStoredCredentials } from "./config.js";
 import { CliError, EXIT_OK, EXIT_USAGE } from "./errors.js";
@@ -351,7 +351,7 @@ export async function lsCommand(parsed: ParsedCli, io: CliIo): Promise<number> {
     return EXIT_OK;
   }
   for (const run of runs) {
-    const preview = (run.title || run.prompt).replace(/\s+/g, " ").slice(0, 60);
+    const preview = runDisplayTitle(run).replace(/\s+/g, " ").slice(0, 60);
     writeLine(io.out, `${run.id}\t${run.status}\t${run.model}\t${preview}`);
   }
   return EXIT_OK;

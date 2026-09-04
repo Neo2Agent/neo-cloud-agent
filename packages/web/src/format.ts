@@ -1,4 +1,5 @@
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
+import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 
 export const STATUS_LABELS: Record<string, string> = {
   idle: "就绪",
@@ -45,7 +46,7 @@ export function preview(text: string): string {
 }
 
 export function runListTitle(run: { title?: string | null; prompt?: string }): string {
-  return preview(run.title?.trim() || run.prompt || "");
+  return preview(runDisplayTitle(run));
 }
 
 export function slotLabel(id?: string | null): string {

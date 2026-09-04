@@ -22,11 +22,11 @@ function walk(dir: string, prefix: string): string[] {
   return out;
 }
 
-export function objectsRoot(runsDir: string): string {
+function objectsRoot(runsDir: string): string {
   return path.join(runsDir, ".objects");
 }
 
-export function resolveObjectPath(runsDir: string, key: string): string {
+function resolveObjectPath(runsDir: string, key: string): string {
   const root = path.resolve(objectsRoot(runsDir));
   const relative = key.replaceAll("\\", "/").replace(/^\/+/, "");
   if (!relative || relative.includes("..")) {
@@ -77,12 +77,16 @@ export function listObjectsSync(runsDir: string, prefix: string): string[] {
   return walk(dir, relative).sort();
 }
 
-export function removePrefixSync(runsDir: string, prefix: string): string[] {
-  const keys = listObjectsSync(runsDir, prefix);
-  for (const key of keys) {
+/** Delete every object under `prefix`, then the now-empty directory. */
+export function removeObjectPrefixSync(runsDir: string, prefix: string): void {
+  for (const key of listObjectsSync(runsDir, prefix)) {
     removeObjectSync(runsDir, key);
   }
-  return keys;
+  try {
+    rmSync(resolveObjectPath(runsDir, prefix), { recursive: true, force: true });
+  } catch {
+    // ignore an already-missing prefix
+  }
 }
 
 export function createFsObjectStore(runsDir: string): ObjectStore {

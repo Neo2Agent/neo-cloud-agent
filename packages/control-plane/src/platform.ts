@@ -199,7 +199,7 @@ async function hydrateFromStore(store: MetadataStore): Promise<void> {
   const rows = await store.loadRunHydrationRows();
   const queues = await store.loadRunQueues();
   for (const row of rows) {
-    const record = mergeStoredRun(row.document ?? { version: 1, run: row.run }, queues.get(row.run.id) ?? null, row.recordVersion);
+    const record = mergeStoredRun(row.document, queues.get(row.run.id) ?? null, row.recordVersion);
     if (!record) {
       continue;
     }

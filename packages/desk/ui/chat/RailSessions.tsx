@@ -1,4 +1,4 @@
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import { runDisplayTitle, type Run } from "@neo-cloud-agent/contracts/run";
 import { isRemoteControlRun } from "../desk";
 import type { RailSpaceGroup } from "../../src/rail";
 import { IconChevron, IconCloud, IconComputer, IconProjects } from "../icons";
@@ -10,8 +10,8 @@ function preview(text: string, n = 40): string {
   return (text || "对话").replace(/\s+/g, " ").slice(0, n);
 }
 
-function runListTitle(run: { title?: string | null; prompt?: string }, n = 40): string {
-  return preview(run.title?.trim() || run.prompt || "", n);
+function runListTitle(run: Run, n = 40): string {
+  return preview(runDisplayTitle(run), n);
 }
 
 function SpaceGlyph({ kind }: { kind: RailSpaceGroup["kind"] }) {

@@ -1,3 +1,5 @@
+import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
+
 const SHANGHAI = "Asia/Shanghai";
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -126,7 +128,7 @@ export function preview(text: string, max = 72): string {
 }
 
 export function runListTitle(run: { title?: string | null; prompt?: string }, max = 72): string {
-  return preview(run.title?.trim() || run.prompt || "", max);
+  return preview(runDisplayTitle(run), max);
 }
 
 export function slotLabel(id?: string | null): string {

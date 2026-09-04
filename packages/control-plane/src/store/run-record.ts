@@ -1,4 +1,5 @@
 import type { FollowUp, ImageRef, Run, RunSubscription, WorkerInbound } from "@neo-cloud-agent/contracts";
+import { runDisplayTitle } from "@neo-cloud-agent/contracts";
 import type { ActiveTurn, PersistedRun } from "./persist.js";
 
 /** Max stored sidebar title length. */
@@ -8,13 +9,13 @@ export const RECORD_VERSION_FAT = 1;
 /** Slim document; queue lives in `run_queues` / `.queue.json`. */
 export const RECORD_VERSION_SLIM = 2;
 /** Internal object-store pointer prefix. Never accepted from clients. */
-export const INBOX_IMAGE_KEY_PREFIX = "obj:";
+const INBOX_IMAGE_KEY_PREFIX = "obj:";
 /** Rows migrated per backfill batch. */
 export const BACKFILL_BATCH_SIZE = 200;
 /** Fallback when prompt and title are empty. */
 export const UNNAMED_RUN_TITLE = "未命名任务";
 /** Client `ImageRef.data` must be a base64 payload. */
-export const INVALID_CLIENT_IMAGE_MESSAGE = "invalid image payload";
+const INVALID_CLIENT_IMAGE_MESSAGE = "invalid image payload";
 
 export type SlimRunDocument = {
   version: 1;
@@ -31,25 +32,19 @@ export type RunQueueDocument = {
 export type RunHydrationRow = {
   run: Run;
   recordVersion: number;
-  document: PersistedRun | SlimRunDocument | null;
+  document: PersistedRun | SlimRunDocument;
 };
 
 export class InvalidImageRefError extends Error {
-  readonly status = 400;
-
-  constructor(message = INVALID_CLIENT_IMAGE_MESSAGE) {
-    super(message);
+  constructor() {
+    super(INVALID_CLIENT_IMAGE_MESSAGE);
     this.name = "InvalidImageRefError";
   }
 }
 
-/** Prefer a non-empty title; otherwise first prompt line, truncated. */
+/** Stored `runs.title`: first line of the display source, compacted and truncated. */
 export function runIndexTitle(run: { title?: string | null; prompt?: string | null }): string {
-  const existing = (run.title ?? "").replace(/\s+/g, " ").trim();
-  if (existing) {
-    return existing.slice(0, TITLE_MAX_LEN);
-  }
-  const firstLine = (run.prompt ?? "").split(/\r?\n/, 1)[0] ?? "";
+  const firstLine = runDisplayTitle(run).split(/\r?\n/, 1)[0] ?? "";
   const compact = firstLine.replace(/\s+/g, " ").trim();
   return (compact || UNNAMED_RUN_TITLE).slice(0, TITLE_MAX_LEN);
 }
@@ -144,7 +139,7 @@ export function parseQueue(
     followUps: asArray<FollowUp>(row.follow_ups),
     inbound: asArray<WorkerInbound>(row.inbound),
     subscriptions: asArray<RunSubscription>(row.subscriptions),
-    activeTurn: row.active_turn == null ? null : ((asObject(row.active_turn) as ActiveTurn | null) ?? null),
+    activeTurn: asObject(row.active_turn) as ActiveTurn | null,
   };
 }
 
@@ -181,26 +176,16 @@ export function mergeStoredRun(
 export function hydrationRowFromStore(
   row: Record<string, unknown>,
   parseRecord: (value: unknown) => PersistedRun | null,
-  parseRun: (value: unknown) => Run | null,
 ): RunHydrationRow | null {
   const document = parseRecord(row.record);
-  const embedded = document?.run ?? parseRun(extractRun(row.record));
-  if (!embedded?.id) {
+  if (!document?.run?.id) {
     return null;
   }
   return {
-    run: applyRunIndexColumns(embedded, row),
+    run: applyRunIndexColumns(document.run, row),
     recordVersion: recordVersionOf(row.record_version),
-    document: document ?? (embedded ? { version: 1, run: embedded } : null),
+    document,
   };
-}
-
-function extractRun(value: unknown): unknown {
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  const record = value as { run?: unknown };
-  return record.run ?? value;
 }
 
 export function applyRunIndexColumns(
@@ -246,11 +231,11 @@ export function mapRecordImages(
 ): PersistedRun {
   return {
     ...record,
-    followUps: record.followUps.map((item) => ({
+    followUps: (record.followUps ?? []).map((item) => ({
       ...item,
       images: mapImages(item.images, item.id, "followup"),
     })),
-    inbound: record.inbound.map((item, index) => {
+    inbound: (record.inbound ?? []).map((item, index) => {
       if (!("images" in item)) {
         return item;
       }
@@ -271,7 +256,7 @@ export function mapRecordImages(
 export function stripDeliveredImages(record: PersistedRun): PersistedRun {
   return {
     ...record,
-    followUps: record.followUps.map((item) => {
+    followUps: (record.followUps ?? []).map((item) => {
       if (item.status !== "delivered" && item.status !== "cancelled") {
         return item;
       }
@@ -292,10 +277,6 @@ export function publicFollowUps(
   }));
 }
 
-export function asJsonArray<T>(value: unknown): T[] {
-  return asArray<T>(value);
-}
-
 export function recordVersionOf(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : RECORD_VERSION_FAT;
@@ -306,7 +287,11 @@ export function runsBackupTableName(now = new Date()): string {
   return `runs_backup_${stamp}`;
 }
 
-/** Probe / migrate-one / batch loop. Stops when the probe finds no pending rows. */
+/**
+ * Probe / migrate-one / batch loop. Stops when the probe finds no pending rows.
+ * A batch that migrates nothing also stops the loop, so a row that keeps
+ * failing cannot spin here forever: it stays at the old version for next boot.
+ */
 export async function backfillRunRecords(input: {
   hasPending: () => Promise<boolean>;
   loadBatch: () => Promise<Array<{ id: string; record: unknown }>>;
@@ -318,6 +303,7 @@ export async function backfillRunRecords(input: {
     if (batch.length === 0) {
       return;
     }
+    let migrated = 0;
     for (const row of batch) {
       const record = input.parseRecord(row.record);
       if (!record) {
@@ -325,9 +311,14 @@ export async function backfillRunRecords(input: {
       }
       try {
         await input.migrateRow(row.id, record);
+        migrated += 1;
       } catch (error) {
         console.error("run record backfill failed", row.id, error);
       }
+    }
+    if (migrated === 0) {
+      console.error("run record backfill made no progress; leaving rows for the next boot");
+      return;
     }
   }
 }

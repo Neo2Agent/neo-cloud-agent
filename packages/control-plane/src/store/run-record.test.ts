@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { FollowUp, Run } from "@neo-cloud-agent/contracts";
+import { runDisplayTitle, type FollowUp, type Run } from "@neo-cloud-agent/contracts";
 import type { PersistedRun } from "./persist.js";
 import {
   applyRunIndexColumns,
@@ -68,6 +68,13 @@ function followUp(overrides: Partial<FollowUp> = {}): FollowUp {
     ...overrides,
   };
 }
+
+test("runDisplayTitle prefers the stored title and does not truncate", () => {
+  assert.equal(runDisplayTitle({ title: "  已命名  ", prompt: "忽略" }), "已命名");
+  assert.equal(runDisplayTitle({ prompt: "  帮我改首页  " }), "帮我改首页");
+  assert.equal(runDisplayTitle({ title: "   ", prompt: "" }), "");
+  assert.equal(runDisplayTitle({ prompt: "x".repeat(TITLE_MAX_LEN + 10) }).length, TITLE_MAX_LEN + 10);
+});
 
 test("runIndexTitle prefers title, then first prompt line, then fallback", () => {
   assert.equal(runIndexTitle({ title: "  已命名  ", prompt: "ignored" }), "已命名");
@@ -164,6 +171,22 @@ test("applyRunIndexColumns overlays title from the index row", () => {
   assert.equal(run.title, "列标题");
   assert.equal(run.status, "RUNNING");
   assert.equal(run.projectId, "proj-1");
+});
+
+test("backfillRunRecords stops instead of spinning when a batch migrates nothing", async () => {
+  let batches = 0;
+  await backfillRunRecords({
+    hasPending: async () => true,
+    loadBatch: async () => {
+      batches += 1;
+      return [{ id: "run-stuck", record: { version: 1, run: sampleRun(), followUps: [], inbound: [] } }];
+    },
+    parseRecord: (value) => value as PersistedRun,
+    migrateRow: async () => {
+      throw new Error("mysql went away");
+    },
+  });
+  assert.equal(batches, 1);
 });
 
 test("backfillRunRecords probes, migrates a batch, then stops", async () => {

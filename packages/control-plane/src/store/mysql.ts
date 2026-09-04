@@ -9,7 +9,6 @@ import type {
   Expert,
   PluginInstall,
   Project,
-  Run,
   RunEvent,
 } from "@neo-cloud-agent/contracts";
 import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
@@ -158,14 +157,6 @@ function asRecord(value: unknown): PersistedRun | null {
   }
   const record = value as PersistedRun;
   return record.run?.id ? record : null;
-}
-
-function asRun(value: unknown): Run | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const run = value as Run;
-  return run.id && run.prompt ? run : null;
 }
 
 function asEvent(value: unknown): RunEvent | null {
@@ -357,7 +348,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       const rows = await this.loadRunHydrationRows();
       const queues = await this.loadRunQueues();
       return rows
-        .map((row) => mergeStoredRun(row.document ?? { version: 1, run: row.run }, queues.get(row.run.id) ?? null, row.recordVersion))
+        .map((row) => mergeStoredRun(row.document, queues.get(row.run.id) ?? null, row.recordVersion))
         .filter((item): item is PersistedRun => item != null && !item.run.deletedAt);
     },
     async loadRunSummaries() {
@@ -372,7 +363,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
          ORDER BY updated_at DESC`,
       );
       return result.rows
-        .map((row) => hydrationRowFromStore(row, (value) => parseJson(value, asRecord), (value) => parseJson(value, asRun)))
+        .map((row) => hydrationRowFromStore(row, (value) => parseJson(value, asRecord)))
         .filter((item): item is RunHydrationRow => item != null);
     },
     async loadRunQueues() {
@@ -753,14 +744,9 @@ async function backfillMysqlRunRecords(query: SqlQuery): Promise<void> {
   if (!(await hasPending())) {
     return;
   }
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS \`${runsBackupTableName()}\` AS SELECT * FROM runs`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/already exists/i.test(message)) {
-      throw error;
-    }
-  }
+  // Rollback point before the record is rewritten in place. A backup must copy
+  // every column, so this is the one place a star select is the correct form.
+  await query(`CREATE TABLE IF NOT EXISTS \`${runsBackupTableName()}\` AS SELECT * FROM runs`);
   await backfillRunRecords({
     hasPending,
     loadBatch: async () => {
@@ -773,18 +759,12 @@ async function backfillMysqlRunRecords(query: SqlQuery): Promise<void> {
     parseRecord: (value) => parseJson(value, asRecord),
     migrateRow: async (id, record) => {
       const stored = persistImagesForRecord(record);
-      stored.run = { ...stored.run, title: runIndexTitle(stored.run) };
+      const title = runIndexTitle(stored.run);
+      stored.run = { ...stored.run, title };
       await upsertMysqlQueue(query, stored);
       await query(
         `UPDATE runs SET record = ?, title = ?, status = ?, project_id = ?, record_version = ? WHERE id = ?`,
-        [
-          JSON.stringify(stored),
-          runIndexTitle(stored.run),
-          stored.run.status,
-          stored.run.projectId ?? null,
-          RECORD_VERSION_SLIM,
-          id,
-        ],
+        [JSON.stringify(stored), title, stored.run.status, stored.run.projectId ?? null, RECORD_VERSION_SLIM, id],
       );
     },
   });
