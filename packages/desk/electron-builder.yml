@@ -23,6 +23,8 @@ extraResources:
     to: ui
   - from: out/worker.cjs
     to: worker.cjs
+  - from: ../contracts/skills
+    to: skills
 mac:
   category: public.app-category.developer-tools
   identity: null

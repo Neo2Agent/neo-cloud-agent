@@ -178,6 +178,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<OpenedSess
     settingsManager,
     sandboxRoot: config.sandboxRoot,
     scratchDir,
+    hostSkillDirs: config.hostSkillDirs,
   });
   const loaded = summarizeWorkspaceResources(resourceLoader);
   const pluginNames = readPluginSnapshot(input.cwd, scratchDir);

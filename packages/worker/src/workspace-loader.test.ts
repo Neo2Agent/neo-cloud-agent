@@ -37,6 +37,25 @@ Say hello from the skill.
 `,
   );
   assert.deepEqual(existingWorkspaceSkillPaths(cwd), [path.join(cwd, ".cursor/skills")]);
+  const host = path.join(parent, "skills-neo");
+  mkdirSync(path.join(host, "pr-review"), { recursive: true });
+  writeFileSync(
+    path.join(host, "pr-review", "SKILL.md"),
+    `---
+name: pr-review
+description: Host system skill
+---
+
+Review.
+`,
+  );
+  assert.deepEqual(existingWorkspaceSkillPaths(cwd, undefined, [host]), [
+    path.join(cwd, ".cursor/skills"),
+    host,
+  ]);
+  assert.deepEqual(existingWorkspaceSkillPaths(cwd, undefined, [path.join(parent, "not-allowed")]), [
+    path.join(cwd, ".cursor/skills"),
+  ]);
   const loader = await createWorkspaceLoader({
     cwd,
     agentDir,
@@ -52,4 +71,16 @@ Say hello from the skill.
     ["demo-skill"],
   );
   assert.equal(loader.getExtensions().extensions.some((item) => item.path.includes("neo-workspace-hooks")), true);
+
+  const withHost = await createWorkspaceLoader({
+    cwd,
+    agentDir,
+    systemPrompt: "cloud prompt",
+    settingsManager: SettingsManager.inMemory({}),
+    hostSkillDirs: [host],
+  });
+  assert.deepEqual(
+    withHost.getSkills().skills.map((skill) => skill.name).sort(),
+    ["demo-skill", "pr-review"],
+  );
 });

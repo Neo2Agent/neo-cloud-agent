@@ -27,6 +27,8 @@ import {
   productionControlPlaneCandidates,
 } from "../src/ports.js";
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
+import { deskStateDir, migrateLegacyDeskState, skillsNeoDir } from "../src/home.js";
+import { bundledSkillsSourceDir, syncSkillsNeo } from "../src/skills-neo.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import { deskAssignmentAlert } from "../src/notify-assignment.js";
 import { isActiveRunStatus } from "../src/stream.js";
@@ -64,7 +66,7 @@ type DeskPrefs = {
 
 type InboxState = { connected: boolean; deskId?: string; error?: string };
 
-/** Files under `userData/neo-desk`. Two of them hold tokens. */
+/** Files under `~/.neo/desk`. Two of them hold tokens. */
 const SESSION_STATE_FILE = "session.json";
 const PREFS_STATE_FILE = "prefs.json";
 const DESK_STATE_FILE = "desk.json";
@@ -132,7 +134,7 @@ function leaseClient() {
 }
 
 let controlPlaneUrl = controlPlaneOrigin();
-const stateDir = () => path.join(app.getPath("userData"), "neo-desk");
+const stateDir = () => deskStateDir();
 const stateFile = (name: string) => path.join(stateDir(), name);
 
 let mainWindow: BrowserWindow | null = null;
@@ -1166,6 +1168,9 @@ app.whenReady().then(async () => {
   if (isDeskPackaged()) {
     process.env.NEO_DESK_RESOURCES = process.resourcesPath;
   }
+  migrateLegacyDeskState({ legacyDir: path.join(app.getPath("userData"), "neo-desk") });
+  const synced = syncSkillsNeo({ destDir: skillsNeoDir(), sourceDir: bundledSkillsSourceDir() });
+  bootLog.info("skills-neo ready", { dir: synced.destDir, skills: synced.skills.join(",") || "-" });
   await resolvePackedControlPlane();
   Menu.setApplicationMenu(null);
   if (existsSync(stateFile(DESK_STATE_FILE))) {
