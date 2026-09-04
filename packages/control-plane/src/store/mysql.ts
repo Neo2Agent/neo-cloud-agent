@@ -302,7 +302,13 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
           }
         }
       }
-      await backfillMysqlRunRecords(query);
+      // The read path still understands v1 fat rows, so a failed backfill must
+      // not keep the control plane from booting. Rows retry on the next start.
+      try {
+        await backfillMysqlRunRecords(query);
+      } catch (error) {
+        console.error("mysql run record backfill aborted", error);
+      }
     },
     async saveRun(record) {
       await upsertMysqlQueue(query, record);

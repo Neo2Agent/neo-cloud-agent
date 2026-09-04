@@ -319,7 +319,13 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
       ]) {
         await query(statement);
       }
-      await backfillPostgresRunRecords(query);
+      // The read path still understands v1 fat rows, so a failed backfill must
+      // not keep the control plane from booting. Rows retry on the next start.
+      try {
+        await backfillPostgresRunRecords(query);
+      } catch (error) {
+        console.error("postgres run record backfill aborted", error);
+      }
     },
     async saveRun(record) {
       await upsertPostgresQueue(query, record);

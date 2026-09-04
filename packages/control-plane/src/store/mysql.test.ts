@@ -212,6 +212,16 @@ test("mysql migrate adds deleted_at before indexing it", async () => {
   assert.ok(calls.some((text) => /idx_runs_deleted_updated/i.test(text)));
 });
 
+test("migrate still succeeds when the backfill itself fails", async () => {
+  const store = createMysqlMetadataStore(async (text) => {
+    if (/record_version </.test(text)) {
+      throw new Error("mysql went away");
+    }
+    return { rows: [] };
+  });
+  await store.migrate();
+});
+
 test("mysql backfill writes run_queues then marks record_version 2", async () => {
   process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-mysql-bf-"));
   const fat = {
