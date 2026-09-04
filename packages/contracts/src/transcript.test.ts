@@ -9,7 +9,6 @@ import {
   pageTranscriptMessages,
   pageTranscriptSnapshot,
   slimTranscriptSnapshotImages,
-  findTranscriptImage,
   rawTranscriptImageData,
   transcriptBodyNeeded,
   transcriptImagePath,
@@ -594,7 +593,6 @@ test("slimTranscriptSnapshotImages drops inline bytes and points at the image GE
   const image = slim.messages[0]?.images?.[0];
   assert.equal(image?.data, "");
   assert.equal(image?.href, transcriptImagePath("run-1", "u1", 0));
-  assert.equal(findTranscriptImage(snapshot, "u1", 0)?.data, "ZmFrZQ");
-  assert.equal(findTranscriptImage(slim, "u1", 0), null);
+  assert.equal(snapshot.messages[0]?.images?.[0]?.data, "ZmFrZQ");
   assert.equal(rawTranscriptImageData("data:image/jpeg;base64,ZmFrZQ"), "ZmFrZQ");
 });

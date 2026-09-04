@@ -31,6 +31,8 @@ import {
 } from "../objects/fs.js";
 import { getConfig } from "../config.js";
 import {
+  EVENT_IMAGE_BACKFILL_BATCH,
+  EVENT_IMAGES_FIELD,
   eventNeedsImageBackfill,
   eventsImagePrefix,
   persistEventImages,
@@ -265,20 +267,22 @@ export function persistEvent(event: RunEvent, runsDir?: string, options?: Persis
   }
 }
 
-export function loadPersistedEvents(runId: string, runsDir?: string): RunEvent[] {
-  const file = eventsFile(runId, runsDir);
-  try {
-    const lines = readFileSync(file, "utf8").split("\n");
-    const events: RunEvent[] = [];
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        events.push(JSON.parse(line) as RunEvent);
-      } catch {
-        // skip a torn JSONL line from a crashed write
-      }
+function parseEventLines(raw: string): RunEvent[] {
+  const events: RunEvent[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      events.push(JSON.parse(line) as RunEvent);
+    } catch {
+      // skip a torn JSONL line from a crashed write
     }
-    return events;
+  }
+  return events;
+}
+
+export function loadPersistedEvents(runId: string, runsDir?: string): RunEvent[] {
+  try {
+    return parseEventLines(readFileSync(eventsFile(runId, runsDir), "utf8"));
   } catch {
     return [];
   }
@@ -488,7 +492,11 @@ export function replacePersistedEvents(runId: string, events: RunEvent[], runsDi
   writeFileSync(file, body);
 }
 
-/** Rewrite fat `.events.jsonl` rows. Failure is logged per run and does not throw. */
+/**
+ * Rewrite fat `.events.jsonl` rows. Bounded per boot and never throws, so a
+ * large backlog costs several boots instead of stalling one. Logs are the only
+ * failure signal, matching the SQL backfill.
+ */
 export function backfillPersistedEventImages(runsDir?: string): void {
   const dir = runsDir ?? getConfig().runsDir;
   let names: string[];
@@ -497,14 +505,25 @@ export function backfillPersistedEventImages(runsDir?: string): void {
   } catch {
     return;
   }
+  let rewritten = 0;
   for (const name of names) {
+    if (rewritten >= EVENT_IMAGE_BACKFILL_BATCH) {
+      console.error("event image file backfill hit the per-boot limit; the rest retries next boot");
+      return;
+    }
     const runId = name.slice(0, -".events.jsonl".length);
     try {
-      const events = loadPersistedEvents(runId, dir);
+      const raw = readFileSync(eventsFile(runId, dir), "utf8");
+      // An image-free log is the common case and must not be parsed at boot.
+      if (!raw.includes(EVENT_IMAGES_FIELD)) {
+        continue;
+      }
+      const events = parseEventLines(raw);
       if (!events.some(eventNeedsImageBackfill)) {
         continue;
       }
       replacePersistedEvents(runId, events, dir);
+      rewritten += 1;
     } catch (error) {
       console.error("event image file backfill failed", runId, error);
     }

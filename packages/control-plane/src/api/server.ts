@@ -2224,11 +2224,7 @@ export function createApiServer() {
           notFound(res);
           return;
         }
-        const image = resolveTranscriptImage(
-          runId,
-          messageId,
-          index,
-          snapshotForRun(runId),
+        const image = resolveTranscriptImage(runId, messageId, index, snapshotForRun(runId), () =>
           eventsForRun(runId),
         );
         const body = image ? decodeTranscriptImageData(image.data) : null;

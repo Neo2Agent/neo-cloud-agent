@@ -13,6 +13,8 @@ import {
 export const EVENT_IMAGE_VERSION = 1;
 /** Rows migrated per events.body image backfill batch. */
 export const EVENT_IMAGE_BACKFILL_BATCH = BACKFILL_BATCH_SIZE;
+/** Serialized `data.images` key, used to skip parsing image-free logs. */
+export const EVENT_IMAGES_FIELD = '"images"';
 
 export function eventsImagePrefix(runId: string): string {
   return `runs/${runId}/events/`;
@@ -132,15 +134,16 @@ export function resolveEventImageData(runId: string, data: string, runsDir?: str
 }
 
 /**
- * Bytes for `GET .../transcript/images`. Snapshot pointers first; if the page
- * was slimmed to href, look up the event by message id. Does not hydrate RAM.
+ * Bytes for `GET .../transcript/images`. Snapshot pointers first; only a
+ * snapshot that lost the pointer pays for `readEvents`, so the common request
+ * never reloads the log. Never hydrates every image into RAM.
  */
 export function resolveTranscriptImage(
   runId: string,
   messageId: string,
   index: number,
   snapshot: Pick<TranscriptSnapshot, "messages">,
-  events: RunEvent[],
+  readEvents: () => RunEvent[],
   runsDir?: string,
 ): { mediaType: string; data: string } | null {
   if (!Number.isInteger(index) || index < 0) {
@@ -153,7 +156,7 @@ export function resolveTranscriptImage(
       return { mediaType: fromSnap.mediaType, data };
     }
   }
-  const event = events.find((item) => item.id === messageId);
+  const event = readEvents().find((item) => item.id === messageId);
   const fromEvent = event ? readEventImages(event)[index] : undefined;
   if (!fromEvent) {
     return null;

@@ -104,21 +104,26 @@ test("resolveTranscriptImage reads obj: and falls back to the event stream", () 
   const runsDir = mkdtempSync(path.join(tmpdir(), "neo-evt-tx-"));
   const slim = persistEventImages(eventWithImages([{ mediaType: "image/png", data: "aW1nZGF0YQ" }]), runsDir);
   const data = (slim.data?.images as Array<{ data: string }>)[0]?.data ?? "";
+  let reads = 0;
   const fromSnap = resolveTranscriptImage(
     "run-1",
     "evt-1",
     0,
     { messages: [{ id: "evt-1", role: "user", text: "看这张", createdAt: slim.createdAt, images: slim.data?.images as Array<{ mediaType: string; data: string }> }] },
-    [],
+    () => {
+      reads += 1;
+      return [slim];
+    },
     runsDir,
   );
   assert.equal(fromSnap?.data, "aW1nZGF0YQ");
+  assert.equal(reads, 0);
   const fromEvent = resolveTranscriptImage(
     "run-1",
     "evt-1",
     0,
     { messages: [{ id: "evt-1", role: "user", text: "看这张", createdAt: slim.createdAt, images: [{ mediaType: "image/png", data: "", href: "/x" }] }] },
-    [slim],
+    () => [slim],
     runsDir,
   );
   assert.equal(fromEvent?.data, "aW1nZGF0YQ");

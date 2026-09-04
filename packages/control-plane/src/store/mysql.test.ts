@@ -276,7 +276,9 @@ test("mysql event image backfill probes without body and marks image_version 1",
   let pending = [{ event_id: "evt-1" }];
   let batch = [{ run_id: "run-evt-1", event_id: "evt-1", seq: 1, body: fat }];
   const updates: Array<{ text: string; values: unknown[] }> = [];
+  const texts: string[] = [];
   const store = createMysqlMetadataStore(async (text, values) => {
+    texts.push(text);
     if (/SELECT event_id FROM events WHERE image_version/.test(text) && /LIMIT 1/.test(text) && !/ORDER BY/.test(text)) {
       assert.doesNotMatch(text, /\bbody\b/);
       return { rows: pending };
@@ -297,4 +299,8 @@ test("mysql event image backfill probes without body and marks image_version 1",
   assert.equal(marked?.values[1], 1);
   assert.equal(marked?.values[2], 1);
   assert.ok(!String(marked?.values[0]).includes("aW1nZGF0YQ"));
+  const backup = texts.find((text) => /CREATE TABLE IF NOT EXISTS `events_backup_img_\d{8}`/.test(text)) ?? "";
+  assert.match(backup, /WHERE image_version < 1/);
+  const batchSql = texts.find((text) => /SELECT run_id, event_id, seq, body FROM events/.test(text)) ?? "";
+  assert.match(batchSql, /ORDER BY run_id, seq LIMIT \?/);
 });

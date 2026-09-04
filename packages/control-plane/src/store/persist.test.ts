@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { Run, RunEvent } from "@neo-cloud-agent/contracts";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import type { FollowUp } from "@neo-cloud-agent/contracts";
 import {
   listSessionFiles,
@@ -272,11 +272,27 @@ test("file event image backfill rewrites leftover base64 in JSONL", () => {
       data: { text: "旧图", images: [{ mediaType: "image/png", data: "aW1nZGF0YQ" }] },
     })}\n`,
   );
+  const imageFree = sampleRun("run-bf-plain");
+  writeFileSync(
+    path.join(dir, `${imageFree.id}.events.jsonl`),
+    `${JSON.stringify({
+      id: "evt-text",
+      runId: imageFree.id,
+      createdAt: imageFree.createdAt,
+      category: "agent_run",
+      level: "info",
+      kind: "message.delta",
+      title: "delta",
+      data: { delta: "hi" },
+    })}\n`,
+  );
+  const before = statSync(path.join(dir, `${imageFree.id}.events.jsonl`)).mtimeMs;
   backfillPersistedEventImages(runsDir);
   const events = loadPersistedEvents(run.id, runsDir);
   const stored = (events[0]?.data?.images as Array<{ data: string }>)[0]?.data ?? "";
   assert.equal(isObjectImageRef(stored), true);
   assert.ok(!JSON.stringify(events).includes("aW1nZGF0YQ"));
+  assert.equal(statSync(path.join(dir, `${imageFree.id}.events.jsonl`)).mtimeMs, before);
 });
 
 test("legacy fat control json still loads when the queue file is missing", () => {

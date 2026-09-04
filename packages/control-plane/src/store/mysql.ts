@@ -420,10 +420,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       );
     },
     async loadEvents(runId) {
-      const result = await query(
-        `SELECT run_id, event_id, seq, body FROM events WHERE run_id = ? ORDER BY seq ASC`,
-        [runId],
-      );
+      const result = await query(`SELECT body FROM events WHERE run_id = ? ORDER BY seq ASC`, [runId]);
       return result.rows.map((row) => parseJson(row.body, asEvent)).filter((item): item is RunEvent => Boolean(item));
     },
     async saveLease(lease) {
@@ -814,7 +811,11 @@ async function backfillMysqlEventImages(query: SqlQuery): Promise<void> {
   if (!(await hasPending())) {
     return;
   }
-  await query(`CREATE TABLE IF NOT EXISTS \`${eventsBackupTableName()}\` AS SELECT * FROM events`);
+  // Rollback point. `events` is the largest table, so the copy is limited to the
+  // rows the backfill rewrites; untouched rows need no backup.
+  await query(
+    `CREATE TABLE IF NOT EXISTS \`${eventsBackupTableName()}\` AS SELECT * FROM events WHERE image_version < ${EVENT_IMAGE_VERSION}`,
+  );
   await backfillEventImageRows({
     hasPending,
     loadBatch: async () => {
