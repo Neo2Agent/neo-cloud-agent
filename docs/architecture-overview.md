@@ -615,7 +615,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 | worker | 继续只扫工作区 skill 目录，不另造运行时 |
 | API | `GET /v1/plugins`、`GET /v1/plugins/:id`、`POST\|DELETE …/install`、`POST …/enable` |
 
-**还没有：** git marketplace、zip 上传、插件带 MCP/hooks、`GET /v1/search`、`GET /v1/recipes`。
+**还没有：** git marketplace、zip 上传、插件带 MCP/hooks、`GET /v1/search`、`GET /v1/recipes`。对话存储对齐之后还要跟的 WorkBuddy 面见 [workbuddy-alignment-plan.md](./workbuddy-alignment-plan.md)。
 
 ### 14.4 配方 / 模板 / 意图胶囊（仅客户端）
 
@@ -630,6 +630,8 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 | 搜索 | 已加载 transcript / 目录上的 `?q=`，**没有** `GET /v1/search` |
 | 产物 | 检查器 iframe/img 预览（签名 `?token=`）+ `POST /v1/runs/:id/artifacts/:name/save-to-project`；存完跳 `#/projects/:id/assets/:assetId` |
 | 目录页 | `#/experts`、`#/skills`、`#/projects`、`#/projects/:id/assets` |
+
+还没齐、且对话存储已经解锁的：fork 转交只带摘要不带事件、`@资产` 没有 `assetIds`、没有结束后记忆抽取、微信没有中途推送。规格见 [workbuddy-alignment-plan.md](./workbuddy-alignment-plan.md)。
 
 ---
 
@@ -877,7 +879,8 @@ pnpm typecheck && pnpm test
 | [workbuddy-project-collaboration.md](./workbuddy-project-collaboration.md) | 项目协作对标 |
 | [workbuddy-experts.md](./workbuddy-experts.md) | WorkBuddy 专家 / 专家团调研与落地顺序 |
 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) | Codex / WorkBuddy 技能与插件市场调研与复刻顺序 |
-| [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md) | 2026-08-28 再对标：骨架已齐之后还值得跟什么 |
+| [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md) | 2026-08-28 再对标：骨架已齐之后还值得跟什么（第一刀已过时） |
+| [workbuddy-alignment-plan.md](./workbuddy-alignment-plan.md) | 对话存储之后的 WorkBuddy 对齐规格：交接包 / 资产进任务 / 记忆抽取 / 微信流式 |
 | [agent-memory-research.md](./agent-memory-research.md) | 跨 Run 记忆：第 0 期文件，第 1 期 Mem0，不换 pi |
 | [memory-edit-analysis.md](./memory-edit-analysis.md) | 记忆现在怎么跑、要不要让用户改、先补归属校验 |
 | [memory-edit-plan.md](./memory-edit-plan.md) | 记忆编辑技术方案：归属校验、PATCH、Service 层、Web / Desk / mobile 适配 |
