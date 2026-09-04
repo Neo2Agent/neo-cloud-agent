@@ -10,6 +10,7 @@ const image = process.env.WORKER_IMAGE ?? "neo-cloud-agent-worker:dev";
 test("docker worker mock turn: clone toy repo inside a container", { skip: !dockerAvailable() || !dockerImageExists(image) }, async (t) => {
   const runsDir = mkdtempSync(path.join(tmpdir(), "neo-dock-e2e-"));
   process.env.WORKER_RUNTIME = "docker";
+  process.env.AGENT_KERNEL = "pi";
   process.env.SPAWN_LOCAL_WORKER = "0";
   process.env.LLM_UPSTREAM = "mock";
   process.env.LLM_GATEWAY_JWT_SECRET = "e2e-secret";

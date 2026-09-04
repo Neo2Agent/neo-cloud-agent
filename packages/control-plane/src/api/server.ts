@@ -484,6 +484,7 @@ export function createApiServer() {
         send(res, 200, {
           ok: true,
           service: "control-plane",
+          agentKernel: config.agentKernel,
           defaultModel: config.defaultModel,
           llmUpstream: llm.configured ? llm.upstream : (config.llmUpstream ?? "mock"),
           llmModel: llm.model,

@@ -1,8 +1,8 @@
 [Unit]
 Description=neo-loop (AgentScope Java turn engine)
 After=network.target
-# Default disabled on the 4C/4G app host. Install the unit, do not enable --now.
-# Enable only after Java 21 is installed and you accept the MemoryMax=768M hit.
+# Required on the app host. Default kernel is agentscope.
+# Caddy and the Lighthouse firewall must not expose :8082.
 
 [Service]
 Type=simple

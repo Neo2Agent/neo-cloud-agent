@@ -33,7 +33,7 @@
 
 **推理在 Gateway。Loop 在 `neo-loop`。工具在执行面。三者不要住在同一个进程里。**
 
-现网默认仍是 `AGENT_KERNEL=pi`：loop 和工具同址，都在 worker / 槽里，行为与过去一致。`AGENT_KERNEL=agentscope` 时 loop 搬到独立的 Java 进程 `neo-loop`（AgentScope `HarnessAgent` + `LocalTurnEngine`），worker 只做 `ToolsServer`。不要把 `HarnessAgent` 嵌进 `control-plane`，也不要在 loop 宿主机上跑 `LocalFilesystemSpec` / `sh -c`。
+现网默认是 `AGENT_KERNEL=agentscope`：loop 在独立的 Java 进程 `neo-loop`（AgentScope `HarnessAgent` + `LocalTurnEngine`），worker 只做 `ToolsServer`。`AGENT_KERNEL=pi` 时 loop 和工具同址，都在 worker / 槽里。不要把 `HarnessAgent` 嵌进 `control-plane`，也不要在 loop 宿主机上跑 `LocalFilesystemSpec` / `sh -c`。
 
 pi-coding-agent 的默认工具是本地文件系统工具：`read` / `write` / `edit` / `bash`。这些调用必须在仓库旁边执行。agentscope 路径用同一条 tools WebSocket 帧，由 worker / Desk 强制沙箱。
 
@@ -794,7 +794,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 2. **不要把 Provider Key 写进 VM 的 `auth.json`。** 只用 `InMemoryCredentialStore` + 运行时 JWT。
 3. **不要在 `install` 里起 dev server。** 快照不会保存进程。
 4. **不要让 bash 直接 `git push` 带长期 token。** push 经 scm-service。
-5. **不要为了「推理在云端」把 Agent 放控制面。** 推理走 Gateway。loop 若拆出 VM，必须是第四个进程 `neo-loop`，不是把 `HarnessAgent` 嵌进控制面。现网默认 `AGENT_KERNEL=pi`。见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)。
+5. **不要为了「推理在云端」把 Agent 放控制面。** 推理走 Gateway。loop 必须是第四个进程 `neo-loop`，不是把 `HarnessAgent` 嵌进控制面。现网默认 `AGENT_KERNEL=agentscope`。见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)。
 
 ---
 

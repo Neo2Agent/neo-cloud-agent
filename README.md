@@ -6,14 +6,14 @@
 
 ## 怎么拆
 
-**一个 monorepo，三个控制面进程，一张 worker 镜像，外加可选的 Java `neo-loop`。** 不要按模块开仓库。库机上的 New API 是 Gateway 上游，不是第四个 Neo 进程。`neo-loop` 是第四个控制面进程，只在 `AGENT_KERNEL=agentscope` 时使用；现网默认 `pi`。
+**一个 monorepo，四个控制面进程，一张 worker 镜像。** 不要按模块开仓库。库机上的 New API 是 Gateway 上游，不是第五个 Neo 进程。`neo-loop` 是 Java AgentScope loop（`:8082` 仅内网）；现网默认 `AGENT_KERNEL=agentscope`。要回 pi 就显式传 `kernel:"pi"`。
 
 ```
 neo-cloud-agent/
   packages/contracts        共享协议（库，不是服务）
   packages/control-plane    进程 1：api + 编排 + 环境 + SCM + 事件 + 专家 / 插件
   packages/llm-gateway      进程 2：唯一持有模型密钥
-  services/neo-loop         可选进程：Java AgentScope loop（:8082 仅内网，默认不启）
+  services/neo-loop         进程 4：Java AgentScope loop（:8082 仅内网，现网默认）
   packages/worker           打进 VM / 任务容器，不是集群 Deployment
   packages/extensions       打进同一张 worker 镜像
   packages/ui               共享 Radix 控件（库）。web / desk / admin-web / mobile 引用
@@ -36,8 +36,8 @@ neo-cloud-agent/
 | 对话页 | React。工具调研和模型答复按时间拆行（工具在最终答复上面）。Markdown、Diff、文件树、沙箱终端（可打字）、粘贴图片、token 用量、归档。`#/experts` / `#/skills` / `#/projects` 目录。配方和 `@` 只预填 `POST /v1/runs` |
 | 管理台 | 独立应用：本地 `pnpm dev:admin`（API `:8090` + UI `:5176`）。现网 `https://neorun.cloud/admin/`，对话页仍是 `https://neorun.cloud/`。不和对话页共用。仅平台管理员。可配置 / 下发内置专家 |
 | 模型 | 默认 DeepSeek **v4-flash**；设置里可切 Pro。退役的 `deepseek-chat` / `deepseek-reasoner` 会改写成 flash。Gateway 把 `max_tokens` 封在 16384。现网上游是库机 New API，不是第四个进程 |
-| 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错。`neo-loop` unit 已装、默认 disabled，现网 `AGENT_KERNEL=pi` |
-| 双内核 | `Run.kernel`：`pi`（默认，loop+工具同址）或 `agentscope`（Java `neo-loop` + `WORKER_ROLE=tools`）。对外 `/v1` 不变。见 [architecture-overview.md](docs/architecture-overview.md) §5 |
+| 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错。`neo-loop` 必开，现网 `AGENT_KERNEL=agentscope` |
+| 双内核 | `Run.kernel`：`agentscope`（默认，Java `neo-loop` + `WORKER_ROLE=tools`）或 `pi`（loop+工具同址）。对外 `/v1` 不变。见 [architecture-overview.md](docs/architecture-overview.md) §5 |
 | 专家 / 技能 | `POST /v1/runs` 可带 `expertId` 或 `expertTeamId`。已安装插件物化进 `.neo/skills`。没有 `/v1/search`、没有插件 git 市场 |
 | CLI | `pnpm neo`，见 [docs/cli.md](docs/cli.md) |
 | 云工具 | `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` |
@@ -64,7 +64,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm dev                 # 只起后端：control-plane :8080 + llm-gateway :8081
-pnpm dev:loop            # 可选：Java neo-loop :8082（AGENT_KERNEL=agentscope 才用）
+pnpm dev:loop            # Java neo-loop :8082（本地默认内核；AGENT_KERNEL=pi 可回 pi）
 pnpm test:loop           # mvn test + agentscope toy-repo e2e
 pnpm dev:web             # Web UI :5173（后端已在则复用 :8080）
 pnpm dev:admin           # 独立管理台：admin-api :8090 + admin-web :5176（现网是 /admin/）

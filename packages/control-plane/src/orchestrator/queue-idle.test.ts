@@ -8,6 +8,7 @@ import type { AgentRuntime } from "../runtime/factory.js";
 
 process.env.WORKER_RUNTIME = "none";
 process.env.SPAWN_LOCAL_WORKER = "0";
+process.env.AGENT_KERNEL = "pi";
 process.env.LLM_GATEWAY_JWT_SECRET = "queue-secret";
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-queue-"));
 process.env.WORKER_IDLE_RELEASE_MS = "1";

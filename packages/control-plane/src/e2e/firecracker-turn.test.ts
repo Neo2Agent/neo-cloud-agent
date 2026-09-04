@@ -43,6 +43,7 @@ test(
     const runsDir = mkdtempSync(path.join(tmpdir(), "neo-fc-e2e-"));
     process.env.WORKER_RUNTIME = "firecracker";
     process.env.SPAWN_LOCAL_WORKER = "0";
+    process.env.AGENT_KERNEL = "pi";
     process.env.LLM_UPSTREAM = "mock";
     process.env.LLM_GATEWAY_JWT_SECRET = "e2e-secret";
     process.env.RUNS_DIR = runsDir;

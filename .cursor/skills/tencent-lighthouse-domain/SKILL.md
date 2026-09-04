@@ -75,7 +75,7 @@ description: Bind a Tencent Cloud / DNSPod domain to the Beijing Lighthouse app 
 
 ### 4. 主机侧
 
-现网 Caddy 用 [units/Caddyfile.https](units/Caddyfile.https)。域名走自动 HTTPS，HTTP 308 到 HTTPS，并下 HSTS。裸 IP 仍听 `:80`。`/` → `:8080`，`/admin/` → `:8090`（`handle_path` 去掉前缀）。`flush_interval -1`。不要点控制台一键 HTTPS。不要开 8090 公网。**不要**反代或放行 `neo-loop` 的 `:8082`（仅 127.0.0.1，现网默认 disabled）。
+现网 Caddy 用 [units/Caddyfile.https](units/Caddyfile.https)。域名走自动 HTTPS，HTTP 308 到 HTTPS，并下 HSTS。裸 IP 仍听 `:80`。`/` → `:8080`，`/admin/` → `:8090`（`handle_path` 去掉前缀）。`flush_interval -1`。不要点控制台一键 HTTPS。不要开 8090 公网。**不要**反代或放行 `neo-loop` 的 `:8082`（仅 127.0.0.1，现网必开但不对公网）。
 
 改证书配置：备份 `/etc/caddy/Caddyfile`，覆盖模板，`sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`，再 `sudo systemctl reload caddy`。看 `journalctl -u caddy` 里是否有 `certificate obtained successfully`。只听 `:80` 的旧模板在 [../tencent-lighthouse-deploy/units/Caddyfile](../tencent-lighthouse-deploy/units/Caddyfile)。
 

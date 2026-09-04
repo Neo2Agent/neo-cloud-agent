@@ -3,7 +3,7 @@ Description=neo-loop (AgentScope Java turn engine)
 After=network.target
 # Generic template. Lighthouse production copy is
 # .cursor/skills/tencent-lighthouse-deploy/units/neo-loop.service
-# (WorkingDirectory=/home/ubuntu/neo-cloud-agent). Default disabled.
+# (WorkingDirectory=/home/ubuntu/neo-cloud-agent). Production enables this unit.
 
 [Service]
 Type=simple

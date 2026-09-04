@@ -1,6 +1,6 @@
 # Neo Loop 详细设计：Java + Cursor 三态
 
-工程设计，不是再做一次选型。路径选择见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。实现已在 `main` `550645f`（2026-09-04）：`services/neo-loop` + `WORKER_ROLE=tools`。现网 unit 已装、默认 disabled，`AGENT_KERNEL` 未写则走 `pi`。现状地图见 [architecture-overview.md](./architecture-overview.md)。
+工程设计，不是再做一次选型。路径选择见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。实现已在 `main`（2026-09-04）：`services/neo-loop` + `WORKER_ROLE=tools`。现网默认 `AGENT_KERNEL=agentscope`，`neo-loop` 必开。现状地图见 [architecture-overview.md](./architecture-overview.md)。
 
 对标 Cursor 现行形态：loop 在可恢复工作流里，机器单独租约，对话是 append-only 事件流。实现栈：AgentScope Java 2.0 `HarnessAgent` + 自建 `NeoSandbox` + 现有 TypeScript 控制面 / Gateway / 槽。
 
@@ -17,7 +17,7 @@
 2. **一个用户回合 = 一条短工作流。** 不要一条 Run 一个永远活着的 workflow。Cursor 从 eternal workflow 退回来了，我们直接抄短 turn。
 3. **控制面不跑 loop，loop 不碰磁盘，Gateway 不执行工具。**
 4. **事件只由 loop 盖章。** 执行器可以推流式碎片，最终 `RunEvent` + `workerSeq` 由 `neo-loop` 写 `/internal/runs/:id/events`。
-5. **现网默认 `AGENT_KERNEL=pi`。** Java 路径用显式开关，4C/4G 没加内存之前不切默认。
+5. **现网默认 `AGENT_KERNEL=agentscope`。** pi 仍可用显式 `kernel:"pi"` 或 `AGENT_KERNEL=pi`。Caddy / 防火墙不要放行 `:8082`。
 6. **Desk This Computer 本期不动。** `{ loop:"desk", tools:"desk" }` 继续本机 pi。`{ loop:"cloud", tools:"desk" }` 留第 4 期。
 
 新原则（取代 `architecture.md` §2 那句「loop 必须在 VM 里」）：
@@ -332,7 +332,7 @@ loop **不要**再拉 `POST /internal/runs/:id/inbox`。inbox 对 `AGENT_KERNEL=
 `CreateRunRequest` 增：
 
 ```ts
-kernel?: "pi" | "agentscope"; // 默认 process.env.AGENT_KERNEL ?? "pi"
+kernel?: "pi" | "agentscope"; // 默认 process.env.AGENT_KERNEL ?? "agentscope"
 ```
 
 写入 `Run`（`packages/contracts/src/run.ts` 给 `Run` 加 `kernel?: "pi" | "agentscope"`）。
@@ -635,7 +635,7 @@ pnpm typecheck && pnpm test
 | `packages/control-plane/src/orchestrator/orchestrator.ts` | `createRun` / `enqueueFollowUp` / ready 回调分支 |
 | `packages/control-plane/src/api/server.ts` | `turn-complete` / `turn-heartbeat` |
 | `packages/worker/src/index.ts` | `WORKER_ROLE=tools` 跳过 pi |
-| `infra/neo-loop.service` | unit 文件，默认 disabled |
+| `infra/neo-loop.service` | unit 文件，现网必开 |
 | `package.json` | `dev:loop` / `test:loop` |
 
 验收：
