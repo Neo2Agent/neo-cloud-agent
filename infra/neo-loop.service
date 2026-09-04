@@ -1,7 +1,9 @@
 [Unit]
 Description=neo-loop (AgentScope Java turn engine)
 After=network.target
-# Default disabled on 4C/4G hosts. Enable only after adding memory.
+# Generic template. Lighthouse production copy is
+# .cursor/skills/tencent-lighthouse-deploy/units/neo-loop.service
+# (WorkingDirectory=/home/ubuntu/neo-cloud-agent). Default disabled.
 
 [Service]
 Type=simple
@@ -11,7 +13,8 @@ EnvironmentFile=-/opt/neo/.env
 UnsetEnvironment=DEEPSEEK_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY LLM_API_KEY LLM_UPSTREAM_API_KEY
 Environment=NEO_LOOP_PORT=8082
 Environment=NEO_LOOP_BIND=127.0.0.1
-ExecStart=/usr/bin/java -Xmx${NEO_LOOP_JAVA_XMX:-512m} -jar /opt/neo/services/neo-loop/target/neo-loop-0.1.0.jar
+Environment=NEO_LOOP_JAVA_XMX=512m
+ExecStart=/bin/bash -c 'exec /usr/bin/java -Xmx"${NEO_LOOP_JAVA_XMX:-512m}" -jar /opt/neo/services/neo-loop/target/neo-loop-0.1.0.jar'
 Restart=on-failure
 RestartSec=3
 MemoryMax=768M

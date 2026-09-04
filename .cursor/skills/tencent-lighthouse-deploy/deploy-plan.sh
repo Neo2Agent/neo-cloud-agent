@@ -11,6 +11,8 @@ build_admin=0
 restart_gateway=0
 restart_control_plane=0
 restart_admin_api=0
+build_loop=0
+restart_loop=0
 update_units=0
 
 usage() {
@@ -26,6 +28,8 @@ Prints:
   restart_gateway=0|1
   restart_control_plane=0|1
   restart_admin_api=0|1
+  build_loop=0|1
+  restart_loop=0|1
   update_units=0|1
 EOF
 }
@@ -33,7 +37,7 @@ EOF
 skip_path() {
   local p="${1#./}"
   case "$p" in
-    .env|.env.*|.neo|.neo/*|node_modules|*/node_modules|*/node_modules/*|.git|.git/*|dist|*/dist|*/dist/*|.deploy-revision)
+    .env|.env.*|.neo|.neo/*|node_modules|*/node_modules|*/node_modules/*|.git|.git/*|dist|*/dist|*/dist/*|.deploy-revision|services/neo-loop/target|services/neo-loop/target/*)
       return 0
       ;;
   esac
@@ -48,6 +52,8 @@ mark() {
     restart_gateway) restart_gateway=1 ;;
     restart_control_plane) restart_control_plane=1 ;;
     restart_admin_api) restart_admin_api=1 ;;
+    build_loop) build_loop=1 ;;
+    restart_loop) restart_loop=1 ;;
     update_units) update_units=1 ;;
   esac
 }
@@ -103,12 +109,21 @@ classify() {
       mark restart_admin_api
       return 0
       ;;
+    services/neo-loop/*|services/neo-loop|infra/neo-loop.service)
+      mark build_loop
+      mark restart_loop
+      return 0
+      ;;
     .cursor/skills/tencent-lighthouse-deploy/units/*.service)
       mark update_units
       case "$p" in
         */neo-llm-gateway.service) mark restart_gateway ;;
         */neo-control-plane.service) mark restart_control_plane ;;
         */neo-admin-api.service) mark restart_admin_api ;;
+        */neo-loop.service)
+          mark build_loop
+          mark restart_loop
+          ;;
       esac
       return 0
       ;;
@@ -128,6 +143,10 @@ if [[ "${1:-}" == "--full" ]]; then
   restart_gateway=1
   restart_control_plane=1
   restart_admin_api=1
+  build_loop=1
+  # Do not start a disabled unit on --full. deploy.sh only restarts neo-loop
+  # when the host already has it enabled.
+  restart_loop=0
   update_units=1
   shift
 fi
@@ -150,7 +169,7 @@ if [[ "$sync" != "full" && "$paths" -eq 0 ]]; then
   sync="none"
 fi
 
-if [[ "$sync" != "full" && "$install$build_web$build_admin$restart_gateway$restart_control_plane$restart_admin_api$update_units" == "0000000" && "$paths" -gt 0 ]]; then
+if [[ "$sync" != "full" && "$install$build_web$build_admin$restart_gateway$restart_control_plane$restart_admin_api$build_loop$restart_loop$update_units" == "000000000" && "$paths" -gt 0 ]]; then
   # Docs/tests/desk/mobile still copy, but nothing has to run on the host.
   :
 fi
@@ -162,4 +181,6 @@ printf 'build_admin=%s\n' "$build_admin"
 printf 'restart_gateway=%s\n' "$restart_gateway"
 printf 'restart_control_plane=%s\n' "$restart_control_plane"
 printf 'restart_admin_api=%s\n' "$restart_admin_api"
+printf 'build_loop=%s\n' "$build_loop"
+printf 'restart_loop=%s\n' "$restart_loop"
 printf 'update_units=%s\n' "$update_units"

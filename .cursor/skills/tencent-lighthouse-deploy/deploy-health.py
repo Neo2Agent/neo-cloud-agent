@@ -37,6 +37,8 @@ def main() -> int:
             ]
         if svc == "llm-gateway":
             bits += [f"upstream={data.get('upstream')}", f"configured={data.get('configured')}"]
+        if svc == "neo-loop":
+            bits += ["optional=1"]
         print(" ".join(str(bit) for bit in bits))
         seen.add(svc)
     needed = {"control-plane", "llm-gateway", "admin-api"}
