@@ -54,7 +54,7 @@
       ]
     ],
     "extra": {
-      "apiUrl": "http://62.234.211.200",
+      "apiUrl": "https://neorun.cloud",
       "eas": {
         "projectId": "c2e24fe1-c980-4ba8-9333-a79cc28903a6"
       }

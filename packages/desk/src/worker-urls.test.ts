@@ -27,3 +27,16 @@ test("already-public assignment urls are left alone", () => {
     },
   );
 });
+
+test("HTTPS public origin keeps the raw gateway on the production IP", () => {
+  assert.deepEqual(
+    publicizeWorkerUrls(
+      { controlPlaneUrl: "http://127.0.0.1:8080", llmGatewayUrl: "http://127.0.0.1:8081" },
+      "https://neorun.cloud",
+    ),
+    {
+      controlPlaneUrl: "https://neorun.cloud",
+      llmGatewayUrl: "http://62.234.211.200:8081",
+    },
+  );
+});

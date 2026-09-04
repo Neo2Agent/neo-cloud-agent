@@ -1,4 +1,4 @@
-# HTTP-only fallback。备案期间 Caddyfile.https 也听域名 HTTP、不 308。
+# HTTP-only 应急模板。现网用 domain skill 的 Caddyfile.https（域名强制 HTTPS）。
 # / → 对话 :8080；/admin/ → 管理台 :8090。8090 不要对公网开放。
 
 :80 {

@@ -2,12 +2,11 @@
 export const DEFAULT_DESK_UI_PORT = 5174;
 
 /**
- * The packaged app talks to the production IP.
- *
- * The hostname HTTP 308s onto a TLS endpoint the Electron net stack cannot
- * complete, so the IP is the address, not a fallback.
+ * The packaged app talks to the production HTTPS origin.
+ * The old HTTP IP remains a health-check fallback if TLS is unreachable.
  */
-export const DEFAULT_PRODUCTION_CONTROL_PLANE = "http://62.234.211.200";
+export const DEFAULT_PRODUCTION_CONTROL_PLANE = "https://neorun.cloud";
+export const LEGACY_PRODUCTION_CONTROL_PLANE = "http://62.234.211.200";
 
 export function isDeskPackaged(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NEO_DESK_PACKAGED === "1";
@@ -38,7 +37,7 @@ export function deskClientOrigin(env: NodeJS.ProcessEnv = process.env, opts: { p
 /** Origins a packaged build health-checks, best first, without repeats. */
 export function productionControlPlaneCandidates(env: NodeJS.ProcessEnv = process.env): string[] {
   const preferred = deskClientOrigin(env, { production: true });
-  return [...new Set([preferred, DEFAULT_PRODUCTION_CONTROL_PLANE])];
+  return [...new Set([preferred, DEFAULT_PRODUCTION_CONTROL_PLANE, LEGACY_PRODUCTION_CONTROL_PLANE])];
 }
 
 /** Paths the packaged renderer must send through the main-process proxy. */

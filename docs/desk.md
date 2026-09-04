@@ -217,5 +217,5 @@ Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，
 pnpm dev:web        # Web UI :5173，API :8080
 pnpm dev:desk       # Desk UI :5174 + Electron → 本地 :8080
 pnpm dev:desk:prod  # 同一套 Desk UI → 线上控制面
-pnpm pack:desk      # 打 mac / Windows / Linux zip，默认连 http://62.234.211.200
+pnpm pack:desk      # 打 mac / Windows / Linux zip，默认连 https://neorun.cloud
 ```

@@ -1,6 +1,7 @@
-# 备案未过：国内访问 https://neorun.cloud 的 443 会被重置。
-# HTTP 必须能单独用，不能 308 到 HTTPS，也不能下 HSTS。
-# 证书继续续着，备案过了再改回跳转。不要用轻量控制台一键 HTTPS。
+# 备案已过：公网入口是 https://neorun.cloud。
+# 域名 HTTP 由 Caddy 自动 308 到 HTTPS，并下 HSTS。
+# 裸 IP 仍听 :80，只给运维兜底，不要当产品入口（麦克风需要 HTTPS 域名）。
+# 不要用轻量控制台一键 HTTPS。
 #
 # 同一域名两条路径，不要 /a /b，也不要再买第二个域名：
 #   /            → 对话页  127.0.0.1:8080
@@ -8,9 +9,6 @@
 #   /downloads/  → Desk 安装包  /opt/neo/downloads
 # 若 DNS 里已有 admin A 记录，下面单独站点只做 308，不把管理台挂到子域。
 # 8090 不要开公网防火墙。
-{
-	auto_https disable_redirects
-}
 
 (neo_site) {
 	encode gzip zstd {
@@ -40,22 +38,15 @@
 	}
 }
 
-http://neorun.cloud, http://www.neorun.cloud, http://62.234.211.200 {
-	import neo_site
-}
-
 neorun.cloud, www.neorun.cloud {
-	header -Strict-Transport-Security
-	header Strict-Transport-Security "max-age=0"
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	import neo_site
 }
 
-http://admin.neorun.cloud {
-	redir http://neorun.cloud/admin/ 308
+http://62.234.211.200 {
+	import neo_site
 }
 
 admin.neorun.cloud {
-	header -Strict-Transport-Security
-	header Strict-Transport-Security "max-age=0"
-	redir http://neorun.cloud/admin/ 308
+	redir https://neorun.cloud/admin/ 308
 }

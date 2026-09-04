@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import type { CredentialStore } from "../api/credentials";
-import { DEFAULT_API_URL } from "../place";
+import { canonicalApiUrl } from "../place";
 
 const TOKEN_KEY = "neo.mobile.token";
 const URL_KEY = "neo.mobile.apiUrl";
@@ -19,15 +19,19 @@ export function nativeCredentials(): CredentialStore {
     },
     async getApiUrl() {
       const stored = (await SecureStore.getItemAsync(URL_KEY)) ?? "";
-      if (!stored || stored === "https://neorun.cloud" || stored === "https://neorun.cloud/") {
-        return DEFAULT_API_URL;
+      const next = canonicalApiUrl(stored);
+      if (stored && stored.replace(/\/$/, "") !== next) {
+        await SecureStore.setItemAsync(URL_KEY, next);
       }
-      return stored;
+      return next;
     },
     async setApiUrl(url) {
-      const next = url.replace(/\/$/, "");
-      if (next) await SecureStore.setItemAsync(URL_KEY, next);
-      else await SecureStore.deleteItemAsync(URL_KEY);
+      const trimmed = url.replace(/\/$/, "");
+      if (!trimmed) {
+        await SecureStore.deleteItemAsync(URL_KEY);
+        return;
+      }
+      await SecureStore.setItemAsync(URL_KEY, canonicalApiUrl(trimmed));
     },
   };
 }
