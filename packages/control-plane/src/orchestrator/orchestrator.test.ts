@@ -21,6 +21,7 @@ const {
   completeLoopTurn,
   commitRun,
   createRun,
+  patchRun,
   enqueueFollowUp,
   getBootstrap,
   getRun,
@@ -1137,6 +1138,12 @@ test("createRun stores a title and rejects client object image keys", async () =
   });
   assert.equal(run.title, "第一行标题");
   assert.equal(projectRunCard(run).title, "第一行标题");
+  const named = await createRun({
+    prompt: "会被忽略的提示",
+    title: "  指定标题  ",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  assert.equal(named.title, "指定标题");
   await assert.rejects(
     () =>
       createRun({
@@ -1146,6 +1153,30 @@ test("createRun stores a title and rejects client object image keys", async () =
       }),
     /invalid image payload/,
   );
+});
+
+test("patchRun renames, clears, and generates a title", async () => {
+  const { setSuggestFetchForTests } = await import("../title/suggest.js");
+  const run = await createRun({
+    prompt: "帮我改首页配色",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  assert.equal(run.title, "帮我改首页配色");
+  const renamed = await patchRun(run.id, { title: "  首页改版  " });
+  assert.equal(renamed.title, "首页改版");
+  assert.equal(getRun(run.id)?.title, "首页改版");
+  const cleared = await patchRun(run.id, { title: null });
+  assert.equal(cleared.title, null);
+  setSuggestFetchForTests(async () =>
+    new Response(JSON.stringify({ choices: [{ message: { content: "配色调整" } }] }), { status: 200 }),
+  );
+  try {
+    const generated = await patchRun(run.id, { generate: true });
+    assert.equal(generated.title, "配色调整");
+    assert.ok(generated.updatedAt >= renamed.updatedAt);
+  } finally {
+    setSuggestFetchForTests(null);
+  }
 });
 
 test("queued follow-up images survive reload and leave the queue after deliver", async () => {
