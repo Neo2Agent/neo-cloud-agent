@@ -1,7 +1,9 @@
 import { fireDueAutomations } from "../automations/runner.js";
 import { findActiveBuild, listBuilds } from "../env/builds.js";
 import { refillWarmPool, warmPoolSize } from "../env/warm-pool.js";
-import { extractDueIdleRuns, sweepMemoryDigests } from "../memory/digest.js";
+import { extractDueIdleRuns, MEMORY_EXTRACT_TICK_MS } from "../memory/idle-extract.js";
+
+const WARM_POOL_TICK_MS = 30_000;
 
 export async function refillActiveWarmPools(): Promise<void> {
   if (warmPoolSize() <= 0) {
@@ -21,15 +23,29 @@ export async function refillActiveWarmPools(): Promise<void> {
   }
 }
 
+function isTestProcess(): boolean {
+  return Boolean(process.env.NODE_TEST_CONTEXT);
+}
+
 export function startScheduler(): { stop: () => void } {
-  const timer = setInterval(() => {
+  const warmTimer = setInterval(() => {
     void refillActiveWarmPools().catch((error) => console.error("warm pool refill failed", error));
-    if (!process.env.NODE_TEST_CONTEXT) {
+    if (!isTestProcess()) {
       void fireDueAutomations().catch((error) => console.error("automation tick failed", error));
-      void extractDueIdleRuns().catch((error) => console.error("memory idle extract failed", error));
-      void sweepMemoryDigests().catch((error) => console.error("memory digest failed", error));
     }
-  }, 30_000);
-  timer.unref();
-  return { stop: () => clearInterval(timer) };
+  }, WARM_POOL_TICK_MS);
+  const memoryTimer = setInterval(() => {
+    if (isTestProcess()) {
+      return;
+    }
+    void extractDueIdleRuns().catch((error) => console.error("memory idle extract failed", error));
+  }, MEMORY_EXTRACT_TICK_MS);
+  warmTimer.unref();
+  memoryTimer.unref();
+  return {
+    stop: () => {
+      clearInterval(warmTimer);
+      clearInterval(memoryTimer);
+    },
+  };
 }

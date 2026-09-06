@@ -18,7 +18,6 @@ import {
   userMemoryEnabled,
   type PublicUser,
   type SessionRecord,
-  type UserRecord,
 } from "./types.js";
 import { signupCreditFen } from "../quota/quota.js";
 
@@ -254,10 +253,6 @@ export async function listPublicUsers(): Promise<PublicUser[]> {
   return users.map(toPublicUser);
 }
 
-export async function readUserMemoryRecord(userId: string): Promise<UserRecord | null> {
-  return getAccountStore().findUserById(userId);
-}
-
 export async function getUserMemorySettings(userId: string): Promise<{ enabled: boolean; userRules: string }> {
   const user = await getAccountStore().findUserById(userId);
   if (!user) {
@@ -271,9 +266,9 @@ export async function getUserMemorySettings(userId: string): Promise<{ enabled: 
 
 export async function patchUserMemorySettings(
   userId: string,
-  input: { enabled?: boolean; userRules?: string; memoryDigestOn?: string | null },
+  input: { enabled?: boolean; userRules?: string },
 ): Promise<{ enabled: boolean; userRules: string }> {
-  const patch: { memoryEnabled?: boolean; userRules?: string; memoryDigestOn?: string | null } = {};
+  const patch: { memoryEnabled?: boolean; userRules?: string } = {};
   if (input.enabled !== undefined) {
     patch.memoryEnabled = input.enabled;
   }
@@ -282,9 +277,6 @@ export async function patchUserMemorySettings(
       throw new AccountError("用户规则不能超过 4000 字", 400);
     }
     patch.userRules = input.userRules;
-  }
-  if (input.memoryDigestOn !== undefined) {
-    patch.memoryDigestOn = input.memoryDigestOn;
   }
   try {
     const user = await getAccountStore().updateUserMemorySettings(userId, patch);

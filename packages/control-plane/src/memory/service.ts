@@ -8,9 +8,7 @@ import {
   memoryErrorMessage,
   type MemoryErrorCode,
   type MemoryItem,
-  type MemoryKind,
   type MemoryMetadata,
-  type MemoryStatus,
 } from "@neo-cloud-agent/contracts";
 import { getUserMemorySettings } from "../accounts/accounts.js";
 import {
@@ -238,18 +236,5 @@ export async function pinUserMemory(userId: string, id: string, pinned: boolean)
   } catch {
     // Overlay is authoritative if the sidecar cannot store metadata yet.
   }
-  return findUserMemory(userId, id);
-}
-
-export async function confirmUserMemory(
-  userId: string,
-  id: string,
-  input?: { kind?: MemoryKind; status?: MemoryStatus },
-): Promise<MemoryItem> {
-  const item = await findUserMemory(userId, id);
-  mergeMemoryFlags(userId, id, {
-    kind: input?.kind ?? item.metadata?.kind,
-    status: input?.status ?? "confirmed",
-  });
   return findUserMemory(userId, id);
 }

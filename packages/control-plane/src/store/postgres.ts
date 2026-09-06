@@ -49,6 +49,9 @@ import {
 
 export type SqlQuery = (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
 
+const USER_COLUMNS =
+  "id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled";
+
 export const POSTGRES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -321,7 +324,6 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_fen INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS user_rules TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS memory_enabled BOOLEAN NOT NULL DEFAULT TRUE",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS memory_digest_on TEXT",
         "ALTER TABLE runs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
         "CREATE INDEX IF NOT EXISTS runs_deleted_at ON runs (deleted_at)",
         "ALTER TABLE runs ADD COLUMN IF NOT EXISTS title TEXT",
@@ -637,7 +639,7 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async findUserByEmail(email) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE email = $1`,
+        `SELECT ${USER_COLUMNS} FROM users WHERE email = $1`,
         [email],
       );
       return mapUser(result.rows[0]);
@@ -647,27 +649,27 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         return null;
       }
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE phone = $1`,
+        `SELECT ${USER_COLUMNS} FROM users WHERE phone = $1`,
         [phone],
       );
       return mapUser(result.rows[0]);
     },
     async findUserById(id) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE id = $1`,
+        `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
         [id],
       );
       return mapUser(result.rows[0]);
     },
     async listUsers() {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users ORDER BY created_at ASC`,
+        `SELECT ${USER_COLUMNS} FROM users ORDER BY created_at ASC`,
       );
       return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
     },
     async updateUserAccount(userId, patch) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE id = $1`,
+        `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
         [userId],
       );
       const user = mapUser(result.rows[0]);
@@ -683,7 +685,7 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async updateUserAvatars(userId, patch) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE id = $1`,
+        `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
         [userId],
       );
       const user = mapUser(result.rows[0]);
@@ -700,7 +702,7 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async updateUserMemorySettings(userId, patch) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE id = $1`,
+        `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
         [userId],
       );
       const user = mapUser(result.rows[0]);
@@ -708,10 +710,9 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         throw new Error("user not found");
       }
       const next = applyMemorySettingsPatch(user, patch);
-      await query(`UPDATE users SET user_rules = $1, memory_enabled = $2, memory_digest_on = $3 WHERE id = $4`, [
+      await query(`UPDATE users SET user_rules = $1, memory_enabled = $2 WHERE id = $3`, [
         next.userRules ?? "",
         next.memoryEnabled !== false,
-        next.memoryDigestOn ?? null,
         userId,
       ]);
       return next;
@@ -767,7 +768,6 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
     neoAvatar: parseStoredAvatar(row.neo_avatar_json),
     userRules: typeof row.user_rules === "string" ? row.user_rules : undefined,
     memoryEnabled: row.memory_enabled === false || row.memory_enabled === 0 || row.memory_enabled === "f" ? false : true,
-    memoryDigestOn: typeof row.memory_digest_on === "string" && row.memory_digest_on ? row.memory_digest_on : undefined,
   };
 }
 

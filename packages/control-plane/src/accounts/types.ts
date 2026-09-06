@@ -19,7 +19,6 @@ export type UserRecord = {
   neoAvatar?: UserAvatar;
   userRules?: string;
   memoryEnabled?: boolean;
-  memoryDigestOn?: string;
 };
 
 export type SessionRecord = {
@@ -55,7 +54,6 @@ export type UserAvatarPatch = {
 export type UserMemorySettingsPatch = {
   userRules?: string;
   memoryEnabled?: boolean;
-  memoryDigestOn?: string | null;
 };
 
 export interface AccountStore {
@@ -121,13 +119,6 @@ export function applyMemorySettingsPatch(user: UserRecord, patch: UserMemorySett
   }
   if (patch.memoryEnabled !== undefined) {
     next.memoryEnabled = patch.memoryEnabled;
-  }
-  if (patch.memoryDigestOn !== undefined) {
-    if (patch.memoryDigestOn) {
-      next.memoryDigestOn = patch.memoryDigestOn;
-    } else {
-      delete next.memoryDigestOn;
-    }
   }
   return next;
 }

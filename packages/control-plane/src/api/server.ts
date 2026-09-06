@@ -236,7 +236,6 @@ import { readMem0Info } from "../memory/client.js";
 import { MemoryServiceError } from "../memory/service.js";
 import {
   addUserMemory,
-  confirmUserMemory,
   listUserMemories,
   pinUserMemory,
   removeUserMemory,
@@ -1314,7 +1313,7 @@ export function createApiServer() {
           }
           return;
         }
-        const memoryAction = /^\/v1\/memories\/([^/]+)\/(pin|promote|confirm)$/.exec(path);
+        const memoryAction = /^\/v1\/memories\/([^/]+)\/(pin|promote)$/.exec(path);
         if (memoryAction && method === "POST") {
           if (actor.kind !== "user") {
             sendMemoryLoginRequired(res);
@@ -1326,10 +1325,6 @@ export function createApiServer() {
             if (action === "pin") {
               const body = (await readJson(req)) as { pinned?: boolean };
               send(res, 200, { memory: await pinUserMemory(actor.userId, memoryId, body.pinned !== false) });
-              return;
-            }
-            if (action === "confirm") {
-              send(res, 200, { memory: await confirmUserMemory(actor.userId, memoryId) });
               return;
             }
             const body = (await readJson(req)) as {

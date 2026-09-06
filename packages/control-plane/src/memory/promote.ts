@@ -1,4 +1,5 @@
 import {
+  canManageProject,
   MEMORY_ERROR_CODE,
   memoryErrorMessage,
   type MemoryItem,
@@ -6,7 +7,6 @@ import {
 } from "@neo-cloud-agent/contracts";
 import { appendUserRuleLine } from "../accounts/accounts.js";
 import { getProject, memberRole, updateProject } from "../projects/store.js";
-import { canManageProject } from "@neo-cloud-agent/contracts";
 import { findUserMemory, MemoryServiceError, removeUserMemory } from "./service.js";
 
 export async function promoteUserMemory(input: {

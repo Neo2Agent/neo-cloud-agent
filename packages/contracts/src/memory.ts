@@ -5,7 +5,6 @@ export const MEMORY_LIST_LIMIT_DEFAULT = 50;
 export const MEMORY_LIST_LIMIT_MAX = 100;
 export const MEMORY_SEARCH_LIMIT_DEFAULT = 8;
 export const MEMORY_SEARCH_LIMIT_MAX = 32;
-export const MEMORY_RECALL_LIMIT = 8;
 export const MEMORY_PINNED_LIMIT = 12;
 export const MEMORY_RELEVANT_LIMIT = 12;
 export const MEMORY_SEARCH_FETCH = 24;
@@ -188,14 +187,14 @@ export function selectRecalledMemories(input: {
       continue;
     }
     const kind = memoryKind(item);
-    if (isSoftMemoryKind(kind)) {
+    if (kind && isSoftMemoryKind(kind)) {
       if (softTotal >= MEMORY_SOFT_RELEVANT_LIMIT) {
         continue;
       }
-      if ((softCounts[kind!] ?? 0) >= MEMORY_SOFT_KIND_LIMIT) {
+      if ((softCounts[kind] ?? 0) >= MEMORY_SOFT_KIND_LIMIT) {
         continue;
       }
-      softCounts[kind!] = (softCounts[kind!] ?? 0) + 1;
+      softCounts[kind] = (softCounts[kind] ?? 0) + 1;
       softTotal += 1;
     }
     relevant.push(item);

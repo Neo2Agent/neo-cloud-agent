@@ -12,6 +12,11 @@ import { controlStateDir } from "../store/persist.js";
 import { readMem0Info } from "./client.js";
 import { addUserMemory, listUserMemories } from "./service.js";
 
+const EXTRACT_SAVE_LIMIT = 8;
+const EXTRACT_TRANSCRIPT_MESSAGES = 24;
+const EXTRACT_MESSAGE_CHARS = 800;
+const EXTRACT_GATEWAY_TIMEOUT_MS = 20_000;
+
 export const USER_MEMORY_EXTRACT_PROMPT = [
   "Extract only cross-project user coding tendencies from this conversation.",
   "Return a JSON array of {\"text\",\"kind\"} objects. kind must be style, habit, or coding.",
@@ -55,8 +60,8 @@ export function markRunExtracted(runId: string): void {
 export function formatTranscriptForExtract(messages: Array<{ role?: string; text?: string }>): string {
   return messages
     .filter((message) => (message.role === "user" || message.role === "assistant") && message.text?.trim())
-    .slice(-24)
-    .map((message) => `${message.role === "user" ? "用户" : "助手"}：${(message.text ?? "").trim().slice(0, 800)}`)
+    .slice(-EXTRACT_TRANSCRIPT_MESSAGES)
+    .map((message) => `${message.role === "user" ? "用户" : "助手"}：${(message.text ?? "").trim().slice(0, EXTRACT_MESSAGE_CHARS)}`)
     .join("\n");
 }
 
@@ -89,7 +94,7 @@ async function completeViaGateway(prompt: string): Promise<string> {
         { role: "user", content: prompt },
       ],
     }),
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(EXTRACT_GATEWAY_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`extract_gateway_${response.status}`);
@@ -127,7 +132,7 @@ export async function extractUserMemories(input: {
     (await listUserMemories(input.userId).catch(() => [])).map((item) => item.text.trim()),
   );
   const accepted = parseExtractedMemories(raw).filter((item) => !existing.has(item.text));
-  const limit = input.limit ?? 8;
+  const limit = input.limit ?? EXTRACT_SAVE_LIMIT;
   const saved: MemoryItem[] = [];
   for (const item of accepted.slice(0, limit)) {
     try {
