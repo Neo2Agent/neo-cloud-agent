@@ -424,3 +424,93 @@ test("POST /v1/memories requires a session", async (t) => {
   });
   assert.equal(response.status, 401);
 });
+
+test("memory settings pin promote and disabled add", async (t) => {
+  withMem0Env(t);
+  const server = createApiServer();
+  const port = await listen(server);
+  t.after(async () => {
+    await close(server);
+    setMem0FetchForTests(null);
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const { token } = await login(base);
+  const headers = { "content-type": "application/json", authorization: `Bearer ${token}` };
+  const store = new Map<string, { id: string; memory: string; metadata?: Record<string, unknown> }>();
+  setMem0FetchForTests(async (url, init) => {
+    const method = init?.method ?? "GET";
+    if (method === "POST" && String(url).endsWith("/memories")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string; metadata?: Record<string, unknown> };
+      store.set("m1", { id: "m1", memory: body.text ?? "", metadata: body.metadata });
+      return new Response(JSON.stringify({ results: [store.get("m1")] }), { status: 200 });
+    }
+    if (String(url).includes("/memories?")) {
+      return new Response(JSON.stringify({ results: [...store.values()] }), { status: 200 });
+    }
+    if (method === "PUT") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string; metadata?: Record<string, unknown> };
+      store.set("m1", { id: "m1", memory: body.text ?? store.get("m1")?.memory ?? "", metadata: body.metadata });
+      return new Response(JSON.stringify({ results: [store.get("m1")] }), { status: 200 });
+    }
+    if (method === "DELETE") {
+      store.delete("m1");
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ results: [...store.values()] }), { status: 200 });
+  });
+
+  const settings = await fetch(`${base}/v1/settings/memory`, { headers });
+  assert.equal(settings.status, 200);
+  const initial = (await settings.json()) as { enabled?: boolean; userRules?: string; configured?: boolean };
+  assert.equal(initial.enabled, true);
+  assert.equal(initial.configured, true);
+
+  const patched = await fetch(`${base}/v1/settings/memory`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ userRules: "用中文回复" }),
+  });
+  assert.equal(patched.status, 200);
+  assert.equal(((await patched.json()) as { userRules?: string }).userRules, "用中文回复");
+
+  const added = await fetch(`${base}/v1/memories`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ text: "通常用 pnpm" }),
+  });
+  assert.equal(added.status, 201);
+
+  const pinned = await fetch(`${base}/v1/memories/m1/pin`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ pinned: true }),
+  });
+  assert.equal(pinned.status, 200);
+  assert.equal(((await pinned.json()) as { memory?: { metadata?: { pinned?: boolean } } }).memory?.metadata?.pinned, true);
+
+  const promoted = await fetch(`${base}/v1/memories/m1/promote`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ target: "user", mode: "move" }),
+  });
+  assert.equal(promoted.status, 200);
+  const afterPromote = await fetch(`${base}/v1/settings/memory`, { headers });
+  assert.match(((await afterPromote.json()) as { userRules?: string }).userRules ?? "", /通常用 pnpm/);
+
+  await fetch(`${base}/v1/memories`, { method: "POST", headers, body: JSON.stringify({ text: "不要 force push" }) });
+  const disabled = await fetch(`${base}/v1/settings/memory`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ enabled: false }),
+  });
+  assert.equal(disabled.status, 200);
+  const blocked = await fetch(`${base}/v1/memories`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ text: "还想再记一条" }),
+  });
+  assert.equal(blocked.status, 403);
+  const body = (await blocked.json()) as { code?: string; message?: string };
+  assert.equal(body.code, "MEMORY_DISABLED");
+  assert.match(body.message ?? "", /记忆已关闭/);
+});

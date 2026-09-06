@@ -114,9 +114,11 @@ import {
   createTeammateAccount,
   findPublicUserByEmail,
   findPublicUserById,
+  getUserMemorySettings,
   loginAccount,
   registerAccount,
   patchUserAvatars,
+  patchUserMemorySettings,
   logoutSession,
   sessionCookieHeader,
   clearSessionCookieHeader,
@@ -234,11 +236,15 @@ import { readMem0Info } from "../memory/client.js";
 import { MemoryServiceError } from "../memory/service.js";
 import {
   addUserMemory,
+  confirmUserMemory,
   listUserMemories,
+  pinUserMemory,
   removeUserMemory,
   searchUserMemories,
   updateUserMemory,
 } from "../memory/service.js";
+import { promoteUserMemory } from "../memory/promote.js";
+import { appendRunSessionMemory } from "../memory/session-file.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
 import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
 
@@ -841,6 +847,33 @@ export function createApiServer() {
           }
           return;
         }
+        if (method === "GET" && path === "/v1/settings/memory") {
+          if (actor.kind !== "user") {
+            sendMemoryLoginRequired(res);
+            return;
+          }
+          try {
+            const settings = await getUserMemorySettings(actor.userId);
+            send(res, 200, { ...settings, configured: readMem0Info().configured });
+          } catch (error) {
+            sendAccountError(res, error);
+          }
+          return;
+        }
+        if (method === "PATCH" && path === "/v1/settings/memory") {
+          if (actor.kind !== "user") {
+            sendMemoryLoginRequired(res);
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as { enabled?: boolean; userRules?: string };
+            const settings = await patchUserMemorySettings(actor.userId, body);
+            send(res, 200, { ...settings, configured: readMem0Info().configured });
+          } catch (error) {
+            sendAccountError(res, error);
+          }
+          return;
+        }
         if (method === "GET" && path === "/v1/vms") {
           send(res, 200, {
             ...summarizeVmSlots(getConfig().workerRuntime),
@@ -1254,7 +1287,13 @@ export function createApiServer() {
           }
           try {
             const body = (await readJson(req)) as { text?: string };
-            send(res, 201, { memories: await addUserMemory(actor.userId, body.text ?? "") });
+            send(res, 201, {
+              memories: await addUserMemory(actor.userId, body.text ?? "", {
+                source: "manual",
+                kind: "coding",
+                status: "confirmed",
+              }),
+            });
           } catch (error) {
             sendMemoryError(res, error);
           }
@@ -1271,6 +1310,54 @@ export function createApiServer() {
               memories: await searchUserMemories(actor.userId, body.query ?? "", body.limit),
             });
           } catch (error) {
+            sendMemoryError(res, error);
+          }
+          return;
+        }
+        const memoryAction = /^\/v1\/memories\/([^/]+)\/(pin|promote|confirm)$/.exec(path);
+        if (memoryAction && method === "POST") {
+          if (actor.kind !== "user") {
+            sendMemoryLoginRequired(res);
+            return;
+          }
+          const memoryId = memoryAction[1] ?? "";
+          const action = memoryAction[2] ?? "";
+          try {
+            if (action === "pin") {
+              const body = (await readJson(req)) as { pinned?: boolean };
+              send(res, 200, { memory: await pinUserMemory(actor.userId, memoryId, body.pinned !== false) });
+              return;
+            }
+            if (action === "confirm") {
+              send(res, 200, { memory: await confirmUserMemory(actor.userId, memoryId) });
+              return;
+            }
+            const body = (await readJson(req)) as {
+              target?: "user" | "project";
+              mode?: "move" | "copy";
+              projectId?: string;
+            };
+            if (body.target !== "user" && body.target !== "project") {
+              send(res, 400, { error: "target 只能是 user 或 project" });
+              return;
+            }
+            send(
+              res,
+              200,
+              await promoteUserMemory({
+                userId: actor.userId,
+                email: actor.email,
+                id: memoryId,
+                target: body.target,
+                mode: body.mode,
+                projectId: body.projectId,
+              }),
+            );
+          } catch (error) {
+            if (error instanceof AccountError) {
+              sendAccountError(res, error);
+              return;
+            }
             sendMemoryError(res, error);
           }
           return;
@@ -1901,9 +1988,13 @@ export function createApiServer() {
           };
           const action = (body.action ?? "").trim();
           if (action === MEMORY_ACTION.add) {
-            send(res, 201, {
-              memories: await addUserMemory(run.userId, body.text ?? "", { source: "agent", runId }),
+            const memories = await addUserMemory(run.userId, body.text ?? "", {
+              source: "agent",
+              status: "confirmed",
+              runId,
             });
+            appendRunSessionMemory(run.id, body.text ?? "");
+            send(res, 201, { memories });
             return;
           }
           if (action === MEMORY_ACTION.search) {

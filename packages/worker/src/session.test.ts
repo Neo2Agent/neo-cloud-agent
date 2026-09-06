@@ -6,7 +6,13 @@ import test from "node:test";
 import { CLOUD_SYSTEM_PROMPT, CLOUD_TOOL_NAMES, createPiCloudTools, sessionToolNames } from "./cloud-tools.js";
 import { gatewayModelSpec, supportsVision } from "./model-spec.js";
 import { readExpertWorkspace } from "./expert-workspace.js";
-import { applyConversationReplay, readUserMemory } from "./session.js";
+import {
+  applyConversationReplay,
+  applySessionMemoryWrap,
+  markCompactionEnded,
+  readUserMemory,
+  resetSessionMemoryWrapForTests,
+} from "./session.js";
 
 test("session tools include filesystem tools plus neo-git, neo-pr, and neo-diag", () => {
   assert.deepEqual(sessionToolNames(), [
@@ -135,6 +141,20 @@ test("readUserMemory warns on unexpected read errors without dumping content", (
   } finally {
     console.warn = original;
   }
+});
+
+test("session memory wrap happens once after compaction", () => {
+  resetSessionMemoryWrapForTests();
+  const cwd = mkdtempSync(path.join(tmpdir(), "neo-session-memory-"));
+  mkdirSync(path.join(cwd, ".neo"), { recursive: true });
+  writeFileSync(path.join(cwd, ".neo", "SESSION_MEMORY.md"), "# Session memory\n- 用 pnpm\n");
+  assert.equal(applySessionMemoryWrap("继续", cwd), "继续");
+  markCompactionEnded();
+  const wrapped = applySessionMemoryWrap("继续", cwd);
+  assert.match(wrapped, /【本场已确认的事实】/);
+  assert.match(wrapped, /用 pnpm/);
+  assert.match(wrapped, /【用户继续】\n继续/);
+  assert.equal(applySessionMemoryWrap("再来", cwd), "再来");
 });
 
 test("conversation replay is injected only when the live session is empty", () => {

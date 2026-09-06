@@ -1,6 +1,7 @@
 import { fireDueAutomations } from "../automations/runner.js";
 import { findActiveBuild, listBuilds } from "../env/builds.js";
 import { refillWarmPool, warmPoolSize } from "../env/warm-pool.js";
+import { extractDueIdleRuns, sweepMemoryDigests } from "../memory/digest.js";
 
 export async function refillActiveWarmPools(): Promise<void> {
   if (warmPoolSize() <= 0) {
@@ -25,6 +26,8 @@ export function startScheduler(): { stop: () => void } {
     void refillActiveWarmPools().catch((error) => console.error("warm pool refill failed", error));
     if (!process.env.NODE_TEST_CONTEXT) {
       void fireDueAutomations().catch((error) => console.error("automation tick failed", error));
+      void extractDueIdleRuns().catch((error) => console.error("memory idle extract failed", error));
+      void sweepMemoryDigests().catch((error) => console.error("memory digest failed", error));
     }
   }, 30_000);
   timer.unref();

@@ -17,6 +17,9 @@ export type UserRecord = {
   creditFen?: number;
   avatar?: UserAvatar;
   neoAvatar?: UserAvatar;
+  userRules?: string;
+  memoryEnabled?: boolean;
+  memoryDigestOn?: string;
 };
 
 export type SessionRecord = {
@@ -49,6 +52,12 @@ export type UserAvatarPatch = {
   neoAvatar?: UserAvatar | null;
 };
 
+export type UserMemorySettingsPatch = {
+  userRules?: string;
+  memoryEnabled?: boolean;
+  memoryDigestOn?: string | null;
+};
+
 export interface AccountStore {
   createUser(user: UserRecord): Promise<UserRecord>;
   findUserByEmail(email: string): Promise<UserRecord | null>;
@@ -58,6 +67,7 @@ export interface AccountStore {
   updateUserAccount(userId: string, patch: UserAccountPatch): Promise<UserRecord>;
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
   updateUserAvatars(userId: string, patch: UserAvatarPatch): Promise<UserRecord>;
+  updateUserMemorySettings(userId: string, patch: UserMemorySettingsPatch): Promise<UserRecord>;
   createSession(session: SessionRecord): Promise<void>;
   findSessionByTokenHash(hash: string): Promise<SessionRecord | null>;
   deleteSession(id: string): Promise<void>;
@@ -102,6 +112,28 @@ export function applyAccountPatch(user: UserRecord, patch: UserAccountPatch): Us
     next.creditFen = Math.max(0, Math.floor(patch.creditFen));
   }
   return next;
+}
+
+export function applyMemorySettingsPatch(user: UserRecord, patch: UserMemorySettingsPatch): UserRecord {
+  const next = { ...user };
+  if (patch.userRules !== undefined) {
+    next.userRules = patch.userRules;
+  }
+  if (patch.memoryEnabled !== undefined) {
+    next.memoryEnabled = patch.memoryEnabled;
+  }
+  if (patch.memoryDigestOn !== undefined) {
+    if (patch.memoryDigestOn) {
+      next.memoryDigestOn = patch.memoryDigestOn;
+    } else {
+      delete next.memoryDigestOn;
+    }
+  }
+  return next;
+}
+
+export function userMemoryEnabled(user?: Pick<UserRecord, "memoryEnabled"> | null): boolean {
+  return user?.memoryEnabled !== false;
 }
 
 export function applyAvatarPatch(user: UserRecord, patch: UserAvatarPatch): UserRecord {

@@ -7,7 +7,7 @@ import { inspectSessionContext } from "./context-usage.js";
 import { contextUsageEvent, emptyAgentTurnEvent, stampWorkerSeq, toRunEvents, turnFinishedEvent, type LooseAgentEvent } from "./events.js";
 import { collectSessionFiles, restoreSessionFiles } from "./session-backup.js";
 import { readSessionBackupPolicy, shouldBackupSession } from "./session-backup-schedule.js";
-import { describeDispatch, dispatchInbound, openPiSession } from "./session.js";
+import { describeDispatch, dispatchInbound, markCompactionEnded, openPiSession } from "./session.js";
 import { abortNestedSubagents } from "./subagent.js";
 import { connectToolsChannel } from "./tools-ws.js";
 
@@ -245,6 +245,9 @@ async function main(): Promise<void> {
     if (mapped.some((item) => item.kind === "tool.end")) {
       toolsSinceBackup += mapped.filter((item) => item.kind === "tool.end").length;
       requestBackup();
+    }
+    if (event.type === "compaction_end") {
+      markCompactionEnded();
     }
     if (event.type === "agent_start" || event.type === "agent_end" || event.type === "compaction_end") {
       const usage = mapped.find((item) => item.kind === "llm.usage")?.data;

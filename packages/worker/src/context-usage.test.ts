@@ -36,7 +36,7 @@ function emptySources(overrides?: Partial<SessionContextSources>): SessionContex
       getAgentsFiles: () => ({ agentsFiles: [] }),
       getSkills: () => ({ skills: [] }),
     },
-    promptLayers: { base: "", boundary: "", expertRole: "", projectInstruction: "", userMemory: "" },
+    promptLayers: { base: "", boundary: "", expertRole: "", userRules: "", projectInstruction: "", userMemory: "" },
     ...overrides,
   } as SessionContextSources;
 }
@@ -81,6 +81,7 @@ test("AGENTS.md and the neo rule layers land in the rules bucket", () => {
       base: "",
       boundary: "",
       expertRole: "expert role text",
+      userRules: "use Chinese",
       projectInstruction: "project instruction text",
       userMemory: "remembered fact",
     },

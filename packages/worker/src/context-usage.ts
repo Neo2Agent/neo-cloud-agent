@@ -134,6 +134,9 @@ function serializeRules(sources?: SessionContextSources): {
   const layers = sources?.promptLayers;
   const files = serializeAgentsFiles(sources);
   const extras: ContextUsageItemDraft[] = [];
+  if (layers?.userRules) {
+    extras.push({ id: "user-rules", label: "USER.md", text: layers.userRules });
+  }
   if (layers?.projectInstruction) {
     extras.push({ id: "project", label: "PROJECT.md", text: layers.projectInstruction });
   }
@@ -141,7 +144,9 @@ function serializeRules(sources?: SessionContextSources): {
     extras.push({ id: "expert", label: "专家角色", text: layers.expertRole });
   }
   return {
-    text: [files.text, layers?.projectInstruction ?? "", layers?.expertRole ?? ""].filter(Boolean).join("\n"),
+    text: [files.text, layers?.userRules ?? "", layers?.projectInstruction ?? "", layers?.expertRole ?? ""]
+      .filter(Boolean)
+      .join("\n"),
     items: [...files.items, ...extras],
   };
 }

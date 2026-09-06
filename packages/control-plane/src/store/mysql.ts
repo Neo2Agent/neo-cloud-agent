@@ -15,6 +15,7 @@ import { BUNDLED_EXPERT_POLICY_ID } from "@neo-cloud-agent/contracts";
 import {
   applyAccountPatch,
   applyAvatarPatch,
+  applyMemorySettingsPatch,
   parseStoredAvatar,
   serializeStoredAvatar,
   type AccountStatus,
@@ -294,6 +295,9 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         "CREATE UNIQUE INDEX users_phone ON users (phone)",
         "ALTER TABLE users ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'",
         "ALTER TABLE users ADD COLUMN credit_fen INT NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN user_rules MEDIUMTEXT NULL",
+        "ALTER TABLE users ADD COLUMN memory_enabled TINYINT NOT NULL DEFAULT 1",
+        "ALTER TABLE users ADD COLUMN memory_digest_on VARCHAR(16) NULL",
         "ALTER TABLE runs ADD COLUMN deleted_at DATETIME(3) NULL",
         "CREATE INDEX runs_deleted_at ON runs (deleted_at)",
         "ALTER TABLE runs ADD COLUMN title VARCHAR(191) NULL",
@@ -613,7 +617,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async findUserByEmail(email) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE email = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE email = ?`,
         [email],
       );
       return mapUser(result.rows[0]);
@@ -623,27 +627,27 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         return null;
       }
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE phone = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE phone = ?`,
         [phone],
       );
       return mapUser(result.rows[0]);
     },
     async findUserById(id) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE id = ?`,
         [id],
       );
       return mapUser(result.rows[0]);
     },
     async listUsers() {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users ORDER BY created_at ASC`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users ORDER BY created_at ASC`,
       );
       return result.rows.map((row) => mapUser(row)).filter((item): item is UserRecord => Boolean(item));
     },
     async updateUserAccount(userId, patch) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE id = ?`,
         [userId],
       );
       const user = mapUser(result.rows[0]);
@@ -659,7 +663,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async updateUserAvatars(userId, patch) {
       const result = await query(
-        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json FROM users WHERE id = ?`,
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE id = ?`,
         [userId],
       );
       const user = mapUser(result.rows[0]);
@@ -670,6 +674,24 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
       await query(`UPDATE users SET avatar_json = ?, neo_avatar_json = ? WHERE id = ?`, [
         serializeStoredAvatar(next.avatar),
         serializeStoredAvatar(next.neoAvatar),
+        userId,
+      ]);
+      return next;
+    },
+    async updateUserMemorySettings(userId, patch) {
+      const result = await query(
+        `SELECT id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled, memory_digest_on FROM users WHERE id = ?`,
+        [userId],
+      );
+      const user = mapUser(result.rows[0]);
+      if (!user) {
+        throw new Error("user not found");
+      }
+      const next = applyMemorySettingsPatch(user, patch);
+      await query(`UPDATE users SET user_rules = ?, memory_enabled = ?, memory_digest_on = ? WHERE id = ?`, [
+        next.userRules ?? "",
+        next.memoryEnabled === false ? 0 : 1,
+        next.memoryDigestOn ?? null,
         userId,
       ]);
       return next;
@@ -723,6 +745,9 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
     creditFen: Number.isFinite(creditFen) ? Math.max(0, Math.floor(creditFen)) : 0,
     avatar: parseStoredAvatar(row.avatar_json),
     neoAvatar: parseStoredAvatar(row.neo_avatar_json),
+    userRules: typeof row.user_rules === "string" ? row.user_rules : undefined,
+    memoryEnabled: row.memory_enabled === 0 || row.memory_enabled === "0" || row.memory_enabled === false ? false : true,
+    memoryDigestOn: typeof row.memory_digest_on === "string" && row.memory_digest_on ? row.memory_digest_on : undefined,
   };
 }
 

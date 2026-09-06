@@ -11,11 +11,15 @@ import {
   appendExpertRole,
   appendProjectInstruction,
   appendUserMemory,
+  appendUserRules,
   deliveryForPi,
   intersectSessionTools,
   MEMORY_FILE,
   NEO_DIR,
+  SESSION_MEMORY_FILE,
+  USER_RULES_FILE,
   wrapPromptWithConversationReplay,
+  wrapPromptWithSessionMemory,
   type WorkerInbound,
 } from "@neo-cloud-agent/contracts";
 import { expertDocRoots } from "@neo-cloud-agent/extensions";
@@ -51,6 +55,7 @@ export interface PromptLayers {
   base: string;
   boundary: string;
   expertRole: string;
+  userRules: string;
   projectInstruction: string;
   userMemory: string;
 }
@@ -75,13 +80,15 @@ function composeSystemPrompt(input: {
   base: string;
   sandboxRoot: string;
   expertRole: string;
+  userRules: string;
   projectInstruction: string;
   userMemory: string;
 }): { text: string; layers: PromptLayers } {
   const { base } = input;
   const withBoundary = appendWorkspaceBoundary(base, input.sandboxRoot);
   const withExpert = appendExpertRole(withBoundary, input.expertRole);
-  const withProject = appendProjectInstruction(withExpert, input.projectInstruction);
+  const withRules = appendUserRules(withExpert, input.userRules);
+  const withProject = appendProjectInstruction(withRules, input.projectInstruction);
   const withMemory = appendUserMemory(withProject, input.userMemory);
   return {
     text: withMemory,
@@ -89,10 +96,21 @@ function composeSystemPrompt(input: {
       base,
       boundary: withBoundary.slice(base.length),
       expertRole: withExpert.slice(withBoundary.length),
-      projectInstruction: withProject.slice(withExpert.length),
+      userRules: withRules.slice(withExpert.length),
+      projectInstruction: withProject.slice(withRules.length),
       userMemory: withMemory.slice(withProject.length),
     },
   };
+}
+
+let pendingSessionMemoryWrap = false;
+
+export function markCompactionEnded(): void {
+  pendingSessionMemoryWrap = true;
+}
+
+export function resetSessionMemoryWrapForTests(): void {
+  pendingSessionMemoryWrap = false;
 }
 
 export async function openPiSession(input: OpenSessionInput): Promise<OpenedSession> {
@@ -168,6 +186,7 @@ export async function openPiSession(input: OpenSessionInput): Promise<OpenedSess
     base: input.systemPrompt ?? CLOUD_SYSTEM_PROMPT,
     sandboxRoot: config.sandboxRoot,
     expertRole: expert.role,
+    userRules: readUserRules(input.cwd),
     projectInstruction: readProjectInstruction(input.cwd),
     userMemory: readUserMemory(input.cwd),
   });
@@ -243,16 +262,28 @@ function readProjectInstruction(cwd: string): string {
   }
 }
 
-export function readUserMemory(cwd: string): string {
+function readNeoFile(cwd: string, fileName: string): string {
   try {
-    return readFileSync(path.join(cwd, NEO_DIR, MEMORY_FILE), "utf8");
+    return readFileSync(path.join(cwd, NEO_DIR, fileName), "utf8");
   } catch (error) {
     if (isEnoent(error)) {
       return "";
     }
-    warnWorkspaceRead(MEMORY_FILE, error);
+    warnWorkspaceRead(fileName, error);
     return "";
   }
+}
+
+export function readUserRules(cwd: string): string {
+  return readNeoFile(cwd, USER_RULES_FILE);
+}
+
+export function readSessionMemory(cwd: string): string {
+  return readNeoFile(cwd, SESSION_MEMORY_FILE);
+}
+
+export function readUserMemory(cwd: string): string {
+  return readNeoFile(cwd, MEMORY_FILE);
 }
 
 export async function dispatchInbound(session: AgentSession, message: WorkerInbound): Promise<"continue" | "stop"> {
@@ -273,7 +304,8 @@ export async function dispatchInbound(session: AgentSession, message: WorkerInbo
   const method = deliveryForPi(message.type);
   const config = getWorkerConfig();
   const { text, images } = inboundPrompt(config.workspaceDir, message, config.scratchDir);
-  const replayed = applyConversationReplay(session, text, inboundConversationReplay(message));
+  const withSession = applySessionMemoryWrap(text, config.workspaceDir);
+  const replayed = applyConversationReplay(session, withSession, inboundConversationReplay(message));
   const vision = images.length ? images : undefined;
   if (session.isStreaming) {
     if (method === "steer") {
@@ -306,6 +338,14 @@ export function sessionHasConversation(session: Pick<AgentSession, "messages">):
 }
 
 /** Only inject transcript when the live pi session has no turns (restore missed). */
+export function applySessionMemoryWrap(text: string, cwd: string): string {
+  if (!pendingSessionMemoryWrap) {
+    return text;
+  }
+  pendingSessionMemoryWrap = false;
+  return wrapPromptWithSessionMemory(text, readSessionMemory(cwd));
+}
+
 export function applyConversationReplay(
   session: Pick<AgentSession, "messages">,
   text: string,

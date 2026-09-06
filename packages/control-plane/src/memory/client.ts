@@ -1,4 +1,10 @@
-import type { MemoryItem, MemoryMetadata } from "@neo-cloud-agent/contracts";
+import {
+  parseMemoryKind,
+  parseMemorySource,
+  parseMemoryStatus,
+  type MemoryItem,
+  type MemoryMetadata,
+} from "@neo-cloud-agent/contracts";
 
 const DEFAULT_TIMEOUT_MS = 4000;
 
@@ -58,12 +64,21 @@ function readMetadata(raw: unknown): MemoryMetadata | undefined {
   if (!meta) {
     return undefined;
   }
-  const source = meta.source === "manual" || meta.source === "agent" ? meta.source : undefined;
+  const source = parseMemorySource(meta.source);
   const runId = typeof meta.runId === "string" ? meta.runId : undefined;
-  if (!source && !runId) {
+  const kind = parseMemoryKind(meta.kind);
+  const status = parseMemoryStatus(meta.status);
+  const pinned = typeof meta.pinned === "boolean" ? meta.pinned : undefined;
+  if (!source && !runId && !kind && !status && pinned === undefined) {
     return undefined;
   }
-  return { ...(source ? { source } : {}), ...(runId ? { runId } : {}) };
+  return {
+    ...(source ? { source } : {}),
+    ...(runId ? { runId } : {}),
+    ...(kind ? { kind } : {}),
+    ...(status ? { status } : {}),
+    ...(pinned !== undefined ? { pinned } : {}),
+  };
 }
 
 function readTimestamp(raw: Record<string, unknown>, snake: string, camel: string): string | undefined {
@@ -199,11 +214,13 @@ export async function updateMemory(input: {
   userId: string;
   text: string;
   updatedAt?: string;
+  metadata?: MemoryMetadata;
 }): Promise<MemoryItem> {
   const parsed = await mem0Request("PUT", `/memories/${encodeURIComponent(input.id)}`, {
     user_id: input.userId,
     text: input.text,
     ...(input.updatedAt ? { updated_at: input.updatedAt } : {}),
+    ...(input.metadata ? { metadata: input.metadata } : {}),
   });
   const items = normalizeMemoryResults(parsed);
   const item = items[0];

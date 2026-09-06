@@ -117,6 +117,7 @@ class UpdateBody(BaseModel):
     user_id: str = Field(min_length=1)
     text: str = Field(min_length=1, max_length=MEMORY_TEXT_MAX_LENGTH)
     updated_at: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 def _entity_filters(user_id: str, agent_id: str | None = None, run_id: str | None = None) -> dict[str, Any]:
@@ -232,7 +233,13 @@ def update_memory(
         stored_text = stored if isinstance(stored, str) else None
         if not _same_updated_at(stored_text, body.updated_at):
             raise HTTPException(status_code=409, detail="version_conflict")
-    get_memory().update(memory_id, text=body.text)
+    try:
+        if body.metadata is not None:
+            get_memory().update(memory_id, data=body.text, metadata=body.metadata)
+        else:
+            get_memory().update(memory_id, data=body.text)
+    except TypeError:
+        get_memory().update(memory_id, text=body.text)
     fresh = _as_record(get_memory().get(memory_id))
     if not fresh:
         raise HTTPException(status_code=500, detail="memory_update_missing")

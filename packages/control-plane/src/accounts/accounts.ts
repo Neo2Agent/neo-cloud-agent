@@ -4,6 +4,9 @@ import { hashPassword, verifyPassword } from "./password.js";
 import { accountStoreKind, getAccountStore } from "./store.js";
 import { AvatarError, parseAvatarInput } from "./avatars.js";
 import {
+  USER_RULES_MAX_LENGTH,
+} from "@neo-cloud-agent/contracts";
+import {
   accountStatus,
   isActiveAccount,
   isValidLogin,
@@ -12,8 +15,10 @@ import {
   normalizeEmail,
   normalizePhone,
   toPublicUser,
+  userMemoryEnabled,
   type PublicUser,
   type SessionRecord,
+  type UserRecord,
 } from "./types.js";
 import { signupCreditFen } from "../quota/quota.js";
 
@@ -247,6 +252,58 @@ export async function findPublicUserById(id: string): Promise<PublicUser | null>
 export async function listPublicUsers(): Promise<PublicUser[]> {
   const users = await getAccountStore().listUsers();
   return users.map(toPublicUser);
+}
+
+export async function readUserMemoryRecord(userId: string): Promise<UserRecord | null> {
+  return getAccountStore().findUserById(userId);
+}
+
+export async function getUserMemorySettings(userId: string): Promise<{ enabled: boolean; userRules: string }> {
+  const user = await getAccountStore().findUserById(userId);
+  if (!user) {
+    return { enabled: true, userRules: "" };
+  }
+  return {
+    enabled: userMemoryEnabled(user),
+    userRules: user.userRules ?? "",
+  };
+}
+
+export async function patchUserMemorySettings(
+  userId: string,
+  input: { enabled?: boolean; userRules?: string; memoryDigestOn?: string | null },
+): Promise<{ enabled: boolean; userRules: string }> {
+  const patch: { memoryEnabled?: boolean; userRules?: string; memoryDigestOn?: string | null } = {};
+  if (input.enabled !== undefined) {
+    patch.memoryEnabled = input.enabled;
+  }
+  if (input.userRules !== undefined) {
+    if (input.userRules.length > USER_RULES_MAX_LENGTH) {
+      throw new AccountError("用户规则不能超过 4000 字", 400);
+    }
+    patch.userRules = input.userRules;
+  }
+  if (input.memoryDigestOn !== undefined) {
+    patch.memoryDigestOn = input.memoryDigestOn;
+  }
+  try {
+    const user = await getAccountStore().updateUserMemorySettings(userId, patch);
+    return { enabled: userMemoryEnabled(user), userRules: user.userRules ?? "" };
+  } catch (error) {
+    if (error instanceof Error && error.message === "user not found") {
+      throw new AccountError("unauthorized", 401);
+    }
+    throw error;
+  }
+}
+
+export async function appendUserRuleLine(userId: string, line: string): Promise<void> {
+  const settings = await getUserMemorySettings(userId);
+  const next = [settings.userRules.trim(), line.trim()].filter(Boolean).join("\n");
+  if (next.length > USER_RULES_MAX_LENGTH) {
+    throw new AccountError("用户规则不能超过 4000 字", 400);
+  }
+  await patchUserMemorySettings(userId, { userRules: next });
 }
 
 export async function patchUserAvatars(

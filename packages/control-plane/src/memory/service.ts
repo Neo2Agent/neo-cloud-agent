@@ -8,8 +8,11 @@ import {
   memoryErrorMessage,
   type MemoryErrorCode,
   type MemoryItem,
+  type MemoryKind,
   type MemoryMetadata,
+  type MemoryStatus,
 } from "@neo-cloud-agent/contracts";
+import { getUserMemorySettings } from "../accounts/accounts.js";
 import {
   addMemory,
   deleteMemory,
@@ -18,6 +21,7 @@ import {
   searchMemories,
   updateMemory,
 } from "./client.js";
+import { applyMemoryFlags, deleteMemoryFlags, mergeMemoryFlags } from "./flags.js";
 
 export class MemoryServiceError extends Error {
   constructor(
@@ -138,9 +142,21 @@ async function callStore<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
+export async function assertMemoryEnabled(userId: string): Promise<void> {
+  const settings = await getUserMemorySettings(userId);
+  if (!settings.enabled) {
+    throw new MemoryServiceError(
+      MEMORY_ERROR_CODE.DISABLED,
+      403,
+      memoryErrorMessage(MEMORY_ERROR_CODE.DISABLED),
+    );
+  }
+}
+
 export async function listUserMemories(userId: string, limitRaw?: string | number): Promise<MemoryItem[]> {
   const limit = normalizeLimit(limitRaw, MEMORY_LIST_LIMIT_DEFAULT, MEMORY_LIST_LIMIT_MAX);
-  return callStore(() => listMemories(userId, limit));
+  const items = await callStore(() => listMemories(userId, limit));
+  return applyMemoryFlags(userId, items);
 }
 
 export async function addUserMemory(
@@ -148,8 +164,19 @@ export async function addUserMemory(
   text: string,
   metadata?: MemoryMetadata,
 ): Promise<MemoryItem[]> {
+  await assertMemoryEnabled(userId);
   const value = requireText(text);
-  return callStore(() => addMemory({ userId, text: value, infer: false, metadata }));
+  const items = await callStore(() => addMemory({ userId, text: value, infer: false, metadata }));
+  const flagged = applyMemoryFlags(userId, items);
+  if (metadata && flagged[0]) {
+    mergeMemoryFlags(userId, flagged[0].id, {
+      kind: metadata.kind,
+      status: metadata.status,
+      pinned: metadata.pinned,
+    });
+    return applyMemoryFlags(userId, flagged);
+  }
+  return flagged;
 }
 
 export async function searchUserMemories(
@@ -159,7 +186,8 @@ export async function searchUserMemories(
 ): Promise<MemoryItem[]> {
   const value = requireQuery(query);
   const limit = normalizeLimit(limitRaw, MEMORY_SEARCH_LIMIT_DEFAULT, MEMORY_SEARCH_LIMIT_MAX);
-  return callStore(() => searchMemories({ userId, query: value, limit }));
+  const items = await callStore(() => searchMemories({ userId, query: value, limit }));
+  return applyMemoryFlags(userId, items);
 }
 
 export async function updateUserMemory(input: {
@@ -181,4 +209,47 @@ export async function updateUserMemory(input: {
 
 export async function removeUserMemory(userId: string, id: string): Promise<void> {
   await callStore(() => deleteMemory(id, userId));
+  deleteMemoryFlags(userId, id);
+}
+
+export async function findUserMemory(userId: string, id: string): Promise<MemoryItem> {
+  const items = await listUserMemories(userId);
+  const item = items.find((entry) => entry.id === id);
+  if (!item) {
+    throw new MemoryServiceError(
+      MEMORY_ERROR_CODE.NOT_FOUND,
+      404,
+      memoryErrorMessage(MEMORY_ERROR_CODE.NOT_FOUND),
+    );
+  }
+  return item;
+}
+
+export async function pinUserMemory(userId: string, id: string, pinned: boolean): Promise<MemoryItem> {
+  const item = await findUserMemory(userId, id);
+  mergeMemoryFlags(userId, id, { pinned, status: "confirmed" });
+  try {
+    await updateMemory({
+      id,
+      userId,
+      text: item.text,
+      metadata: { ...item.metadata, pinned, status: "confirmed" },
+    });
+  } catch {
+    // Overlay is authoritative if the sidecar cannot store metadata yet.
+  }
+  return findUserMemory(userId, id);
+}
+
+export async function confirmUserMemory(
+  userId: string,
+  id: string,
+  input?: { kind?: MemoryKind; status?: MemoryStatus },
+): Promise<MemoryItem> {
+  const item = await findUserMemory(userId, id);
+  mergeMemoryFlags(userId, id, {
+    kind: input?.kind ?? item.metadata?.kind,
+    status: input?.status ?? "confirmed",
+  });
+  return findUserMemory(userId, id);
 }
