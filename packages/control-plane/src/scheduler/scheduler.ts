@@ -1,7 +1,7 @@
 import { fireDueAutomations } from "../automations/runner.js";
 import { findActiveBuild, listBuilds } from "../env/builds.js";
 import { refillWarmPool, warmPoolSize } from "../env/warm-pool.js";
-import { extractDueIdleRuns, MEMORY_EXTRACT_TICK_MS } from "../memory/idle-extract.js";
+import { MEMORY_EXTRACT_TICK_MS, sweepDailyExtracts } from "../memory/daily-extract.js";
 
 const WARM_POOL_TICK_MS = 30_000;
 
@@ -38,7 +38,7 @@ export function startScheduler(): { stop: () => void } {
     if (isTestProcess()) {
       return;
     }
-    void extractDueIdleRuns().catch((error) => console.error("memory idle extract failed", error));
+    void sweepDailyExtracts().catch((error) => console.error("memory daily extract failed", error));
   }, MEMORY_EXTRACT_TICK_MS);
   warmTimer.unref();
   memoryTimer.unref();

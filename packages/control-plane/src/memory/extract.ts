@@ -1,5 +1,3 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import {
   mintRunToken,
   parseExtractedMemories,
@@ -7,8 +5,6 @@ import {
 } from "@neo-cloud-agent/contracts";
 import { getUserMemorySettings } from "../accounts/accounts.js";
 import { getConfig } from "../config.js";
-import { snapshotForRun } from "../events/snapshot.js";
-import { controlStateDir } from "../store/persist.js";
 import { readMem0Info } from "./client.js";
 import { addUserMemory, listUserMemories } from "./service.js";
 
@@ -25,37 +21,6 @@ export const USER_MEMORY_EXTRACT_PROMPT = [
   "Do not extract family, health, mood, relationships, project names, module nicknames, architecture decisions, or idle-slot / repo-specific facts.",
   "If unsure, return []. Current task must remain able to override every item.",
 ].join(" ");
-
-type ExtractedMap = Record<string, string>;
-
-function extractedFile(): string {
-  return path.join(controlStateDir(), "memory-extracted.json");
-}
-
-function readExtracted(): ExtractedMap {
-  try {
-    const parsed = JSON.parse(readFileSync(extractedFile(), "utf8")) as ExtractedMap;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeExtracted(map: ExtractedMap): void {
-  const file = extractedFile();
-  mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(map)}\n`);
-  renameSync(tmp, file);
-}
-
-export function wasRunExtracted(runId: string): boolean {
-  return Boolean(readExtracted()[runId]);
-}
-
-export function markRunExtracted(runId: string): void {
-  writeExtracted({ ...readExtracted(), [runId]: new Date().toISOString() });
-}
 
 export function formatTranscriptForExtract(messages: Array<{ role?: string; text?: string }>): string {
   return messages
@@ -120,14 +85,7 @@ export async function extractUserMemories(input: {
   if (!transcript.trim()) {
     return [];
   }
-  let raw = "";
-  try {
-    raw = await extractComplete(transcript);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "extract_failed";
-    console.warn(`memory extract skipped user=${input.userId} ${message}`);
-    return [];
-  }
+  const raw = await extractComplete(transcript);
   const existing = new Set(
     (await listUserMemories(input.userId).catch(() => [])).map((item) => item.text.trim()),
   );
@@ -151,20 +109,5 @@ export async function extractUserMemories(input: {
       console.warn(`memory extract add failed user=${input.userId} ${message}`);
     }
   }
-  if (input.runId) {
-    markRunExtracted(input.runId);
-  }
   return saved;
-}
-
-export async function extractIdleRun(run: { id: string; userId?: string | null }): Promise<MemoryItem[]> {
-  if (!run.userId || wasRunExtracted(run.id)) {
-    return [];
-  }
-  const snapshot = snapshotForRun(run.id);
-  return extractUserMemories({
-    userId: run.userId,
-    runId: run.id,
-    messages: snapshot.messages,
-  });
 }
