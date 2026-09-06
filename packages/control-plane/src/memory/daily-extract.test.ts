@@ -23,7 +23,7 @@ import {
   sweepDailyExtracts,
   userExtractOffsetMs,
 } from "./daily-extract.js";
-import { setMem0FetchForTests } from "./client.js";
+import { readMem0Info, setMem0FetchForTests } from "./client.js";
 
 const SHANGHAI_SEPT7_0200 = new Date("2026-09-06T18:00:00.000Z");
 const USER_ID = "user_daily";
@@ -77,7 +77,7 @@ test("daily extract picks the latest yesterday runs for one user", () => {
   );
 });
 
-test("daily sweep stamps a due user once and skips overlapping ticks", async () => {
+async function withDailyExtractHarness(work: (now: Date) => Promise<void>): Promise<void> {
   const previousDir = process.env.RUNS_DIR;
   const previousUrl = process.env.MEM0_URL;
   const previousKey = process.env.MEM0_API_KEY;
@@ -95,23 +95,10 @@ test("daily sweep stamps a due user once and skips overlapping ticks", async () 
   });
   setMem0FetchForTests(async () => new Response(JSON.stringify({ results: [] }), { status: 200 }));
   resetDailyExtractForTests();
-  const offset = userExtractOffsetMs(USER_ID);
-  const now = new Date(shanghaiDateAtHour("2026-09-07", MEMORY_EXTRACT_HOUR) + offset);
-  let release!: () => void;
-  setDailyExtractBeforeWorkForTests(() => new Promise<void>((resolve) => { release = resolve; }));
+  const now = new Date(shanghaiDateAtHour("2026-09-07", MEMORY_EXTRACT_HOUR) + userExtractOffsetMs(USER_ID));
   try {
-    const first = sweepDailyExtracts(now);
-    const deadline = Date.now() + 1000;
-    while (!isDailyExtractRunning() && Date.now() < deadline) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-    assert.equal(isDailyExtractRunning(), true);
-    assert.equal(await sweepDailyExtracts(now), 0);
-    release();
-    assert.equal(await first, 0);
-    assert.equal(readDailyExtractStamps()[USER_ID], "2026-09-06");
-    assert.equal(await sweepDailyExtracts(now), 0);
-    assert.equal(readDailyExtractStamps()[USER_ID], "2026-09-06");
+    assert.equal(readMem0Info().configured, true);
+    await work(now);
   } finally {
     resetDailyExtractForTests();
     setMem0FetchForTests(null);
@@ -123,4 +110,41 @@ test("daily sweep stamps a due user once and skips overlapping ticks", async () 
     if (previousKey === undefined) delete process.env.MEM0_API_KEY;
     else process.env.MEM0_API_KEY = previousKey;
   }
+}
+
+test("daily sweep stamps a due user once", async () => {
+  await withDailyExtractHarness(async (now) => {
+    assert.equal(await sweepDailyExtracts(now), 0);
+    assert.equal(readDailyExtractStamps()[USER_ID], "2026-09-06");
+    assert.equal(await sweepDailyExtracts(now), 0);
+    assert.equal(readDailyExtractStamps()[USER_ID], "2026-09-06");
+  });
+});
+
+test("overlapping daily sweep ticks no-op until the first tick finishes", async () => {
+  await withDailyExtractHarness(async (now) => {
+    let startResolve!: () => void;
+    let holdResolve!: () => void;
+    const started = new Promise<void>((resolve) => {
+      startResolve = resolve;
+    });
+    const hold = new Promise<void>((resolve) => {
+      holdResolve = resolve;
+    });
+    const keepAlive = setTimeout(() => undefined, 5_000);
+    setDailyExtractBeforeWorkForTests(async () => {
+      startResolve();
+      await hold;
+    });
+    const first = sweepDailyExtracts(now);
+    try {
+      await started;
+      assert.equal(isDailyExtractRunning(), true);
+      assert.equal(await sweepDailyExtracts(now), 0);
+    } finally {
+      holdResolve();
+      await first;
+      clearTimeout(keepAlive);
+    }
+  });
 });
