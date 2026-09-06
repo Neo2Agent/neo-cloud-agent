@@ -261,6 +261,30 @@ export class MobileClient {
     });
   }
 
+  memorySettings(): Promise<{ enabled: boolean; userRules: string; configured: boolean }> {
+    return this.request("GET", "/v1/settings/memory");
+  }
+
+  patchMemorySettings(input: { enabled?: boolean; userRules?: string }): Promise<{
+    enabled: boolean;
+    userRules: string;
+    configured: boolean;
+  }> {
+    return this.request("PATCH", "/v1/settings/memory", input);
+  }
+
+  pinMemory(id: string, pinned = true): Promise<{ memory: MemoryItem }> {
+    return this.request("POST", `/v1/memories/${encodeURIComponent(id)}/pin`, { pinned });
+  }
+
+  promoteMemory(id: string, target: "user" | "project", projectId?: string): Promise<{ ok?: boolean }> {
+    return this.request("POST", `/v1/memories/${encodeURIComponent(id)}/promote`, {
+      target,
+      mode: "move",
+      ...(projectId ? { projectId } : {}),
+    });
+  }
+
   listInbox(): Promise<{ items: InboxItem[]; unread: number }> {
     return this.request("GET", "/v1/inbox");
   }

@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import {
+  MEMORY_KIND,
   MEMORY_SEARCH_DEBOUNCE_MS,
   MEMORY_TEXT_MAX_LENGTH,
+  USER_RULES_MAX_LENGTH,
+  isPinnedMemory,
   memoryEdited,
   memoryHint,
+  memoryKind,
+  memoryKindLabel,
   readMemoryError,
   type MemoryItem,
+  type MemoryKind,
+  type MemorySettings,
 } from "@neo-cloud-agent/contracts/memory";
 import { api, readJson } from "../api";
 import { clampPage, paginate } from "../catalog.js";
@@ -31,9 +38,14 @@ export function MemoriesPage({ token, onBack }: Props) {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [settings, setSettings] = useState<MemorySettings>({ enabled: true, userRules: "", configured: false });
+  const [rulesDraft, setRulesDraft] = useState("");
+  const [kindFilter, setKindFilter] = useState<MemoryKind | "">("");
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const confirm = useConfirm();
   const needle = query.trim();
-  const visibleItems = needle ? (hits ?? items) : items;
+  const filtered = (needle ? (hits ?? items) : items).filter((item) => !kindFilter || memoryKind(item) === kindFilter);
+  const visibleItems = filtered;
   const listPage = clampPage(page, visibleItems.length);
   const visible = paginate(visibleItems, listPage);
 
@@ -45,6 +57,25 @@ export function MemoriesPage({ token, onBack }: Props) {
     if (!response.ok || message) throw new Error(message || "加载记忆失败");
     setConfigured(Boolean(body.configured));
     setItems((body.memories ?? []).filter((item) => item.id && item.text));
+    const settingsResponse = await api(token, "/v1/settings/memory");
+    const settingsBody = await readJson<MemorySettings>(settingsResponse);
+    if (settingsResponse.ok) {
+      setSettings({
+        enabled: settingsBody.enabled !== false,
+        userRules: settingsBody.userRules ?? "",
+        configured: Boolean(settingsBody.configured ?? body.configured),
+      });
+      setRulesDraft(settingsBody.userRules ?? "");
+    }
+    const projectsResponse = await api(token, "/v1/projects");
+    const projectsBody = await readJson<{ projects?: Array<{ id?: string; name?: string }> }>(projectsResponse);
+    if (projectsResponse.ok) {
+      setProjects(
+        (projectsBody.projects ?? [])
+          .filter((item): item is { id: string; name: string } => Boolean(item.id && item.name))
+          .map((item) => ({ id: item.id, name: item.name })),
+      );
+    }
     setError("");
   };
 
@@ -172,6 +203,70 @@ export function MemoriesPage({ token, onBack }: Props) {
       .finally(() => setBusy(false));
   };
 
+  const saveSettings = (patch: { enabled?: boolean; userRules?: string }) => {
+    if (busy || !token) return;
+    setBusy(true);
+    void (async () => {
+      const response = await api(token, "/v1/settings/memory", {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      const body = await readJson<MemorySettings>(response);
+      const message = readMemoryError(body);
+      if (!response.ok || message) throw new Error(message || "保存设置失败");
+      setSettings({
+        enabled: body.enabled !== false,
+        userRules: body.userRules ?? "",
+        configured: Boolean(body.configured),
+      });
+      if (patch.userRules !== undefined) {
+        setRulesDraft(body.userRules ?? "");
+      }
+    })()
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "保存设置失败");
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const pin = (id: string, pinned: boolean) => {
+    if (busy || !token) return;
+    setBusy(true);
+    void (async () => {
+      const response = await api(token, `/v1/memories/${encodeURIComponent(id)}/pin`, {
+        method: "POST",
+        body: JSON.stringify({ pinned }),
+      });
+      const body = await readJson<{ memory?: MemoryItem }>(response);
+      const message = readMemoryError(body);
+      if (!response.ok || message || !body.memory) throw new Error(message || "钉住失败");
+      await refresh();
+    })()
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "钉住失败");
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const promote = (id: string, target: "user" | "project", projectId?: string) => {
+    if (busy || !token) return;
+    setBusy(true);
+    void (async () => {
+      const response = await api(token, `/v1/memories/${encodeURIComponent(id)}/promote`, {
+        method: "POST",
+        body: JSON.stringify({ target, mode: "move", projectId }),
+      });
+      const body = await readJson(response);
+      const message = readMemoryError(body);
+      if (!response.ok || message) throw new Error(message || "提升失败");
+      await refresh();
+    })()
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "提升失败");
+      })
+      .finally(() => setBusy(false));
+  };
+
   const hint = memoryHint({ configured, count: items.length, error: error || undefined });
   const emptyTitle = searching
     ? "正在搜索…"
@@ -201,6 +296,49 @@ export function MemoriesPage({ token, onBack }: Props) {
           <p className="hint">{hint}</p>
         </div>
       </header>
+
+      <section className="memory-settings">
+        <label className="memory-enabled">
+          <input
+            type="checkbox"
+            checked={settings.enabled}
+            disabled={busy}
+            onChange={(event) => saveSettings({ enabled: event.target.checked })}
+          />
+          开聊时召回用户记忆
+        </label>
+        <label>
+          <span>用户规则</span>
+          <textarea
+            value={rulesDraft}
+            rows={4}
+            maxLength={USER_RULES_MAX_LENGTH}
+            placeholder="人手写的硬规则。仍弱于当前消息和项目指令。"
+            onChange={(event) => setRulesDraft(event.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy || rulesDraft === settings.userRules}
+          onClick={() => saveSettings({ userRules: rulesDraft })}
+        >
+          保存规则
+        </button>
+      </section>
+
+      <div className="memory-kind-filters">
+        {(["", MEMORY_KIND.coding, MEMORY_KIND.style, MEMORY_KIND.habit] as const).map((kind) => (
+          <button
+            key={kind || "all"}
+            type="button"
+            className={kindFilter === kind ? "ghost is-active" : "ghost"}
+            onClick={() => setKindFilter(kind)}
+          >
+            {kind ? memoryKindLabel(kind) : "全部"}
+          </button>
+        ))}
+      </div>
 
       <CatalogToolbar
         search={query}
@@ -257,7 +395,16 @@ export function MemoriesPage({ token, onBack }: Props) {
                 <CatalogCard
                   key={item.id}
                   title={item.text}
-                  badge={memoryEdited(item) ? "改过" : undefined}
+                  badge={
+                    [
+                      memoryKindLabel(memoryKind(item)),
+                      isPinnedMemory(item) ? "钉住" : "",
+                      item.metadata?.status === "candidate" ? "候选" : "",
+                      memoryEdited(item) ? "改过" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || undefined
+                  }
                   initial="记"
                   active={item.id === editingId}
                   onOpen={openEditor}
@@ -266,6 +413,27 @@ export function MemoriesPage({ token, onBack }: Props) {
                       <button type="button" className="ghost" disabled={busy} onClick={openEditor}>
                         编辑
                       </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        disabled={busy}
+                        onClick={() => pin(item.id, !isPinnedMemory(item))}
+                      >
+                        {isPinnedMemory(item) ? "取消钉住" : "钉住"}
+                      </button>
+                      <button type="button" className="ghost" disabled={busy} onClick={() => promote(item.id, "user")}>
+                        提升为规则
+                      </button>
+                      {projects[0] ? (
+                        <button
+                          type="button"
+                          className="ghost"
+                          disabled={busy}
+                          onClick={() => promote(item.id, "project", projects[0]?.id)}
+                        >
+                          挪到项目
+                        </button>
+                      ) : null}
                       <button type="button" className="ghost danger" disabled={busy} onClick={() => void remove(item.id)}>
                         删除
                       </button>

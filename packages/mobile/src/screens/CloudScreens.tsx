@@ -8,8 +8,12 @@ import { artifactKindLabel, prettyBytes } from "@neo-cloud-agent/contracts/artif
 import {
   MEMORY_SEARCH_DEBOUNCE_MS,
   MEMORY_TEXT_MAX_LENGTH,
+  USER_RULES_MAX_LENGTH,
+  isPinnedMemory,
   memoryEdited,
+  memoryKindLabel,
   type MemoryItem,
+  type MemorySettings,
 } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
@@ -30,11 +34,15 @@ export function MemoriesScreen(props: {
   items: MemoryItem[];
   configured: boolean;
   error: string;
+  settings?: MemorySettings;
   onBack: () => void;
   onAdd: (text: string) => Promise<void>;
   onUpdate: (id: string, text: string, updatedAt?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onSearch: (query: string) => Promise<MemoryItem[]>;
+  onSettings?: (patch: { enabled?: boolean; userRules?: string }) => Promise<void>;
+  onPin?: (id: string, pinned: boolean) => Promise<void>;
+  onPromote?: (id: string) => Promise<void>;
 }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
@@ -42,6 +50,7 @@ export function MemoriesScreen(props: {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<{ id: string; original: string; updatedAt?: string } | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [rulesDraft, setRulesDraft] = useState(props.settings?.userRules ?? "");
   const visible = query.trim() ? (hits ?? []) : filterMemories(props.items, "");
 
   useEffect(() => {
@@ -74,6 +83,32 @@ export function MemoriesScreen(props: {
       <Text style={frameStyles.hint}>
         {memoryHint({ configured: props.configured, count: props.items.length, error: props.error })}
       </Text>
+      {props.settings && props.onSettings ? (
+        <>
+          <IslandButton
+            label={props.settings.enabled ? "关闭召回" : "开启召回"}
+            disabled={busy}
+            onPress={() => {
+              setBusy(true);
+              void props.onSettings?.({ enabled: !props.settings?.enabled }).finally(() => setBusy(false));
+            }}
+          />
+          <IslandInput
+            value={rulesDraft}
+            placeholder="用户规则"
+            maxLength={USER_RULES_MAX_LENGTH}
+            onChangeText={setRulesDraft}
+          />
+          <IslandButton
+            label="保存规则"
+            disabled={busy || rulesDraft === (props.settings.userRules ?? "")}
+            onPress={() => {
+              setBusy(true);
+              void props.onSettings?.({ userRules: rulesDraft }).finally(() => setBusy(false));
+            }}
+          />
+        </>
+      ) : null}
       {props.configured ? (
         <>
           <IslandInput
@@ -137,9 +172,22 @@ export function MemoriesScreen(props: {
             }}
           >
             <Text style={frameStyles.cardTitle}>{item.text}</Text>
-            {memoryEdited(item) ? <Text style={frameStyles.hint}>改过</Text> : null}
+            <Text style={frameStyles.hint}>
+              {[memoryKindLabel(item.metadata?.kind), isPinnedMemory(item) ? "钉住" : "", memoryEdited(item) ? "改过" : ""]
+                .filter(Boolean)
+                .join(" · ")}
+            </Text>
           </Pressable>
           <View style={frameStyles.row}>
+            {props.onPin ? (
+              <IslandButton
+                label={isPinnedMemory(item) ? "取消钉住" : "钉住"}
+                onPress={() => void props.onPin?.(item.id, !isPinnedMemory(item))}
+              />
+            ) : null}
+            {props.onPromote ? (
+              <IslandButton label="提升为规则" onPress={() => void props.onPromote?.(item.id)} />
+            ) : null}
             <IslandButton label="删除" onPress={() => remove(item.id)} />
           </View>
         </View>

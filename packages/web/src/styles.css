@@ -2118,6 +2118,33 @@ button.send:disabled {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+#memories-page .memory-settings {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+#memories-page .memory-settings textarea {
+  width: 100%;
+  min-height: 88px;
+}
+
+#memories-page .memory-enabled {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#memories-page .memory-kind-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
 #memories-page .memory-search-status {
   margin: 8px 2px 0;
   color: var(--muted);

@@ -92,6 +92,11 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [memoryConfigured, setMemoryConfigured] = useState(false);
+  const [memorySettings, setMemorySettings] = useState<{ enabled: boolean; userRules: string; configured: boolean }>({
+    enabled: true,
+    userRules: "",
+    configured: false,
+  });
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [unread, setUnread] = useState(0);
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
@@ -141,7 +146,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
 
   const refreshList = useCallback(async () => {
     if (!token) return;
-    const [listed, environments, settings, deskList, expertList, teamList, projectList, autoList, me, pluginList, inbox, memoryList] =
+    const [listed, environments, settings, deskList, expertList, teamList, projectList, autoList, me, pluginList, inbox, memoryList, memoryPref] =
       await Promise.all([
         client.listRuns(),
         client.listEnvironments().catch(() => ({ environments: [] })),
@@ -156,6 +161,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         client.listInbox().catch(() => ({ items: [], unread: 0 })),
         // Mem0 is optional; an unconfigured control plane answers `configured: false`.
         client.listMemories().catch(() => ({ configured: false, memories: [] })),
+        client.memorySettings().catch(() => ({ enabled: true, userRules: "", configured: false })),
       ]);
     setRuns(listed.runs);
     setDesks(deskList.desks);
@@ -167,6 +173,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     setInboxItems(inbox.items);
     setUnread(inbox.unread);
     setMemories(memoryList.memories);
+    setMemorySettings(memoryPref);
     setMemoryConfigured(memoryList.configured);
     if (me.user) {
       setEmail(me.user.email);
@@ -609,6 +616,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         items={memories}
         configured={memoryConfigured}
         error={pageError}
+        settings={memorySettings}
         onBack={() => setScreen("home")}
         onAdd={async (text) => {
           setPageError("");
@@ -652,6 +660,33 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             setMemories((prev) => prev.filter((item) => item.id !== id));
           } catch (error) {
             setPageError(error instanceof Error ? error.message : "删不掉");
+          }
+        }}
+        onSettings={async (patch) => {
+          setPageError("");
+          try {
+            setMemorySettings(await client.patchMemorySettings(patch));
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "保存设置失败");
+          }
+        }}
+        onPin={async (id, pinned) => {
+          setPageError("");
+          try {
+            const next = await client.pinMemory(id, pinned);
+            setMemories((prev) => prev.map((item) => (item.id === id ? { ...item, ...next.memory } : item)));
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "钉住失败");
+          }
+        }}
+        onPromote={async (id) => {
+          setPageError("");
+          try {
+            await client.promoteMemory(id, "user");
+            setMemories((prev) => prev.filter((item) => item.id !== id));
+            setMemorySettings(await client.memorySettings());
+          } catch (error) {
+            setPageError(error instanceof Error ? error.message : "提升失败");
           }
         }}
       />

@@ -101,6 +101,10 @@ test("memory and inbox go to the same cloud routes the web page uses", async () 
   await client.searchMemories("pnpm");
   await client.updateMemory("m1", "改用 bun", "2026-09-01T00:00:00.000Z");
   await client.deleteMemory("m1");
+  await client.memorySettings();
+  await client.patchMemorySettings({ enabled: false });
+  await client.pinMemory("m1", true);
+  await client.promoteMemory("m1", "user");
   await client.listInbox();
   await client.markInboxRead("inb_1");
   assert.deepEqual(
@@ -111,6 +115,10 @@ test("memory and inbox go to the same cloud routes the web page uses", async () 
       "POST /v1/memories/search",
       "PATCH /v1/memories/m1",
       "DELETE /v1/memories/m1",
+      "GET /v1/settings/memory",
+      "PATCH /v1/settings/memory",
+      "POST /v1/memories/m1/pin",
+      "POST /v1/memories/m1/promote",
       "GET /v1/inbox",
       "POST /v1/inbox/inb_1/read",
     ],
