@@ -78,6 +78,28 @@ test("next wake is the due slot, zero if already due, tomorrow after stamp", () 
   assert.equal(nextDailyExtractDelayMs({ now: beforeOpen, userIds: [] }), 5_000);
 });
 
+test("user is due exactly when the next wake delay is zero", () => {
+  const offset = userExtractOffsetMs(USER_ID);
+  const windowStart = shanghaiDateAtHour("2026-09-07", MEMORY_EXTRACT_HOUR);
+  const cases: Array<{ now: Date; lastTargetDate?: string }> = [
+    { now: new Date(windowStart + offset - 1_000) },
+    { now: new Date(windowStart + offset) },
+    { now: new Date(windowStart + offset + 1_000) },
+    { now: new Date(windowStart + offset + 1_000), lastTargetDate: "2026-09-06" },
+    { now: new Date(windowStart + offset + 1_000), lastTargetDate: "2026-09-05" },
+    { now: new Date(shanghaiDateAtHour("2026-09-07", MEMORY_EXTRACT_HOUR) - 5_000) },
+  ];
+  for (const item of cases) {
+    const due = isUserExtractDue({ userId: USER_ID, now: item.now, lastTargetDate: item.lastTargetDate });
+    const delay = nextDailyExtractDelayMs({
+      now: item.now,
+      userIds: [USER_ID],
+      stamps: item.lastTargetDate ? { [USER_ID]: item.lastTargetDate } : {},
+    });
+    assert.equal(due, delay === 0);
+  }
+});
+
 test("yesterday activity is the message Shanghai date, not updatedAt equality", () => {
   const targetDate = "2026-09-06";
   assert.equal(
