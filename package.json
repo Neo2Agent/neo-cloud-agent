@@ -28,6 +28,8 @@
     "deploy:lighthouse": "bash .cursor/skills/tencent-lighthouse-deploy/deploy.sh",
     "test:e2e": "tsx scripts/e2e-http.ts",
     "test:e2e:live": "E2E_EXPECT_README=1 tsx scripts/e2e-http.ts",
+    "test:e2e:core": "env AGENT_KERNEL=pi LLM_UPSTREAM=mock LLM_SETTINGS_DIR=/tmp/neo-core-e2e-llm DEEPSEEK_API_KEY= OPENAI_API_KEY= LLM_UPSTREAM_API_KEY= LLM_API_KEY= tsx --test e2e/core/api/**/*.test.ts",
+    "test:e2e:ui": "playwright test --config e2e/playwright.config.ts",
     "test:docker": "tsx --test packages/control-plane/src/e2e/docker-turn.test.ts",
     "test:firecracker": "FIRECRACKER_E2E=1 tsx --test packages/control-plane/src/e2e/firecracker-turn.test.ts",
     "fc:assets": "bash infra/firecracker/fetch-assets.sh",
@@ -35,11 +37,14 @@
     "build:worker-image": "docker build -f infra/Dockerfile.worker -t neo-cloud-agent-worker:dev ."
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.17.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
