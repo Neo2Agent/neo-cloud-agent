@@ -8,7 +8,7 @@ import { controlStateDir } from "../store/persist.js";
 import { readMem0Info } from "./client.js";
 import { extractUserMemories } from "./extract.js";
 
-export const MEMORY_EXTRACT_TIME_ZONE = "Asia/Shanghai";
+const MEMORY_EXTRACT_TIME_ZONE = "Asia/Shanghai";
 export const MEMORY_EXTRACT_HOUR = 2;
 export const MEMORY_EXTRACT_SPREAD_MS = 4 * 60 * 60 * 1000;
 export const MEMORY_EXTRACT_TICK_MS = 60 * 1000;
@@ -23,10 +23,12 @@ const FNV_PRIME = 0x01000193;
 export type DailyExtractRun = {
   id: string;
   userId?: string | null;
+  createdAt?: string | null;
   updatedAt?: string | null;
 };
 
 type StampMap = Record<string, string>;
+type ExtractMessage = { role?: string; text?: string; createdAt?: string };
 
 let sweepInFlight = false;
 let beforeWorkForTests: (() => Promise<void>) | null = null;
@@ -53,7 +55,7 @@ export function shanghaiDate(now: Date | number | string): string {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-export function addCalendarDays(yyyyMmDd: string, days: number): string {
+function addCalendarDays(yyyyMmDd: string, days: number): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(yyyyMmDd);
   if (!match) {
     return "";
@@ -77,7 +79,7 @@ export function shanghaiDateAtHour(yyyyMmDd: string, hour: number): number {
   return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hour - SHANGHAI_OFFSET_HOURS, 0, 0);
 }
 
-export function fnv1a32(text: string): number {
+function fnv1a32(text: string): number {
   let hash = FNV_OFFSET;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index);
@@ -104,13 +106,43 @@ export function isUserExtractDue(input: {
   return input.now.getTime() >= windowStart + userExtractOffsetMs(input.userId);
 }
 
+/**
+ * Coarse gate only. A run still talking today keeps an updatedAt on today,
+ * so equality with the target date would drop yesterday's slice.
+ */
+export function runMayContainShanghaiDate(run: DailyExtractRun, targetDate: string): boolean {
+  const dayStart = shanghaiDateAtHour(targetDate, 0);
+  const nextDayStart = shanghaiDateAtHour(addCalendarDays(targetDate, 1), 0);
+  if (!Number.isFinite(dayStart) || !Number.isFinite(nextDayStart)) {
+    return false;
+  }
+  const updatedAt = Date.parse(run.updatedAt ?? "");
+  if (!Number.isFinite(updatedAt) || updatedAt < dayStart) {
+    return false;
+  }
+  const createdAt = Date.parse(run.createdAt ?? "");
+  if (Number.isFinite(createdAt) && createdAt >= nextDayStart) {
+    return false;
+  }
+  return true;
+}
+
+export function selectMessagesOnShanghaiDate(messages: ExtractMessage[], targetDate: string): ExtractMessage[] {
+  return messages.filter(
+    (message) =>
+      (message.role === "user" || message.role === "assistant") &&
+      Boolean(message.text?.trim()) &&
+      shanghaiDate(message.createdAt ?? "") === targetDate,
+  );
+}
+
 export function selectRunsForDailyExtract(
   runs: DailyExtractRun[],
   userId: string,
   targetDate: string,
 ): DailyExtractRun[] {
   return runs
-    .filter((run) => run.userId === userId && shanghaiDate(run.updatedAt ?? "") === targetDate)
+    .filter((run) => run.userId === userId && runMayContainShanghaiDate(run, targetDate))
     .sort((left, right) => {
       const delta = Date.parse(right.updatedAt ?? "") - Date.parse(left.updatedAt ?? "");
       return delta !== 0 ? delta : left.id.localeCompare(right.id);
@@ -162,21 +194,11 @@ function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-function messagesOnTargetDate(
-  messages: Array<{ role?: string; text?: string; createdAt?: string }>,
-  targetDate: string,
-): Array<{ role?: string; text?: string; createdAt?: string }> {
-  return messages.filter(
-    (message) =>
-      (message.role === "user" || message.role === "assistant") &&
-      Boolean(message.text?.trim()) &&
-      shanghaiDate(message.createdAt ?? "") === targetDate,
-  );
-}
-
 async function extractOneUser(user: UserRecord, targetDate: string): Promise<number> {
   const runs = selectRunsForDailyExtract(listRuns(), user.id, targetDate);
-  const messages = [...runs].reverse().flatMap((run) => messagesOnTargetDate(snapshotForRun(run.id).messages, targetDate));
+  const messages = [...runs]
+    .reverse()
+    .flatMap((run) => selectMessagesOnShanghaiDate(snapshotForRun(run.id).messages, targetDate));
   if (messages.length === 0) {
     markUserExtracted(user.id, targetDate);
     return 0;

@@ -13,7 +13,7 @@ const EXTRACT_TRANSCRIPT_MESSAGES = 24;
 const EXTRACT_MESSAGE_CHARS = 800;
 const EXTRACT_GATEWAY_TIMEOUT_MS = 20_000;
 
-export const USER_MEMORY_EXTRACT_PROMPT = [
+const USER_MEMORY_EXTRACT_PROMPT = [
   "Extract only cross-project user coding tendencies from this conversation.",
   "Return a JSON array of {\"text\",\"kind\"} objects. kind must be style, habit, or coding.",
   "style = coding style tendencies. habit = collaboration rhythm. coding = toolchain facts that stay true in another repo.",
@@ -22,7 +22,7 @@ export const USER_MEMORY_EXTRACT_PROMPT = [
   "If unsure, return []. Current task must remain able to override every item.",
 ].join(" ");
 
-export function formatTranscriptForExtract(messages: Array<{ role?: string; text?: string }>): string {
+function formatTranscriptForExtract(messages: Array<{ role?: string; text?: string }>): string {
   return messages
     .filter((message) => (message.role === "user" || message.role === "assistant") && message.text?.trim())
     .slice(-EXTRACT_TRANSCRIPT_MESSAGES)

@@ -10,11 +10,12 @@ import {
   MEMORY_EXTRACT_SPREAD_MS,
   MEMORY_EXTRACT_TICK_MS,
   MEMORY_EXTRACT_USER_CONCURRENCY,
-  addCalendarDays,
   isDailyExtractRunning,
   isUserExtractDue,
   readDailyExtractStamps,
   resetDailyExtractForTests,
+  runMayContainShanghaiDate,
+  selectMessagesOnShanghaiDate,
   selectRunsForDailyExtract,
   setDailyExtractBeforeWorkForTests,
   shanghaiDate,
@@ -36,7 +37,7 @@ test("daily extract ticks every minute after a 02:00 Shanghai start", () => {
   assert.equal(shanghaiTargetDate(SHANGHAI_SEPT7_0200), "2026-09-06");
   assert.equal(shanghaiDate("2026-09-06T15:59:59.000Z"), "2026-09-06");
   assert.equal(shanghaiDate("2026-09-06T16:00:00.000Z"), "2026-09-07");
-  assert.equal(addCalendarDays("2026-09-01", -1), "2026-08-31");
+  assert.equal(shanghaiTargetDate(new Date("2026-08-31T18:00:00.000Z")), "2026-08-31");
 });
 
 test("user extract offset is stable and stays inside the four-hour spread", () => {
@@ -60,20 +61,80 @@ test("user is due only after 02:00 Shanghai plus the hashed offset", () => {
   assert.equal(isUserExtractDue({ userId: USER_ID, now: after, lastTargetDate: "2026-09-05" }), true);
 });
 
-test("daily extract picks the latest yesterday runs for one user", () => {
+test("yesterday activity is the message Shanghai date, not updatedAt equality", () => {
+  const targetDate = "2026-09-06";
+  assert.equal(
+    runMayContainShanghaiDate(
+      { id: "continued", createdAt: "2026-09-05T10:00:00.000Z", updatedAt: "2026-09-07T02:00:00.000Z" },
+      targetDate,
+    ),
+    true,
+  );
+  assert.equal(
+    runMayContainShanghaiDate(
+      { id: "today-only", createdAt: "2026-09-06T18:00:00.000Z", updatedAt: "2026-09-07T02:00:00.000Z" },
+      targetDate,
+    ),
+    false,
+  );
+  assert.equal(
+    runMayContainShanghaiDate({ id: "stale", updatedAt: "2026-09-05T10:00:00.000Z" }, targetDate),
+    false,
+  );
+  assert.deepEqual(
+    selectMessagesOnShanghaiDate(
+      [
+        { role: "user", text: "6 日的话", createdAt: "2026-09-06T08:00:00.000Z" },
+        { role: "assistant", text: "6 日的回", createdAt: "2026-09-06T08:01:00.000Z" },
+        { role: "user", text: "7 日续聊", createdAt: "2026-09-06T18:00:00.000Z" },
+        { role: "assistant", text: "  ", createdAt: "2026-09-06T08:02:00.000Z" },
+      ],
+      targetDate,
+    ).map((message) => message.text),
+    ["6 日的话", "6 日的回"],
+  );
+});
+
+test("daily extract keeps a continued run and drops stale or today-only runs", () => {
   const selected = selectRunsForDailyExtract(
     [
-      { id: "old", userId: USER_ID, updatedAt: "2026-09-05T10:00:00.000Z" },
-      { id: "mine", userId: USER_ID, updatedAt: "2026-09-06T08:00:00.000Z" },
-      { id: "other", userId: "someone", updatedAt: "2026-09-06T09:00:00.000Z" },
-      { id: "later", userId: USER_ID, updatedAt: "2026-09-06T12:00:00.000Z" },
+      {
+        id: "stale",
+        userId: USER_ID,
+        createdAt: "2026-09-04T10:00:00.000Z",
+        updatedAt: "2026-09-05T10:00:00.000Z",
+      },
+      {
+        id: "yesterday",
+        userId: USER_ID,
+        createdAt: "2026-09-06T08:00:00.000Z",
+        updatedAt: "2026-09-06T12:00:00.000Z",
+      },
+      {
+        id: "continued",
+        userId: USER_ID,
+        createdAt: "2026-09-05T10:00:00.000Z",
+        updatedAt: "2026-09-07T02:00:00.000Z",
+      },
+      {
+        id: "today-only",
+        userId: USER_ID,
+        createdAt: "2026-09-06T18:00:00.000Z",
+        updatedAt: "2026-09-07T02:00:00.000Z",
+      },
+      {
+        id: "other",
+        userId: "someone",
+        createdAt: "2026-09-06T08:00:00.000Z",
+        updatedAt: "2026-09-06T09:00:00.000Z",
+      },
     ],
     USER_ID,
     "2026-09-06",
   );
   assert.deepEqual(
     selected.map((run) => run.id),
-    ["later", "mine"],
+    ["continued", "yesterday"],
   );
 });
 
