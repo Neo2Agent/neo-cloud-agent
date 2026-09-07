@@ -1,5 +1,6 @@
 import {
   MEMORY_LIST_LIMIT_DEFAULT,
+  MEMORY_PROMOTE_TARGET,
   MEMORY_SEARCH_DEBOUNCE_MS,
   MEMORY_SNIPPET_LENGTH,
   MEMORY_TEXT_MAX_LENGTH,
@@ -293,7 +294,7 @@ export function MemoriesPage({ token }: Props) {
                       void (async () => {
                         await api(token, `/v1/memories/${encodeURIComponent(item.id)}/promote`, {
                           method: "POST",
-                          body: JSON.stringify({ target: "user", mode: "move" }),
+                          body: JSON.stringify({ target: MEMORY_PROMOTE_TARGET.user, mode: "move" }),
                         });
                         await refresh();
                       })().finally(() => setBusy(false));

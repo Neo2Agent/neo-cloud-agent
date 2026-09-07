@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   MEMORY_KIND,
+  MEMORY_PROMOTE_TARGET,
   MEMORY_SEARCH_DEBOUNCE_MS,
+  MEMORY_STATUS,
   MEMORY_TEXT_MAX_LENGTH,
   USER_RULES_MAX_LENGTH,
   isPinnedMemory,
@@ -12,6 +14,7 @@ import {
   readMemoryError,
   type MemoryItem,
   type MemoryKind,
+  type MemoryPromoteTarget,
   type MemorySettings,
 } from "@neo-cloud-agent/contracts/memory";
 import { api, readJson } from "../api";
@@ -248,7 +251,7 @@ export function MemoriesPage({ token, onBack }: Props) {
       .finally(() => setBusy(false));
   };
 
-  const promote = (id: string, target: "user" | "project", projectId?: string) => {
+  const promote = (id: string, target: MemoryPromoteTarget, projectId?: string) => {
     if (busy || !token) return;
     setBusy(true);
     void (async () => {
@@ -399,7 +402,7 @@ export function MemoriesPage({ token, onBack }: Props) {
                     [
                       memoryKindLabel(memoryKind(item)),
                       isPinnedMemory(item) ? "钉住" : "",
-                      item.metadata?.status === "candidate" ? "候选" : "",
+                      item.metadata?.status === MEMORY_STATUS.candidate ? "候选" : "",
                       memoryEdited(item) ? "改过" : "",
                     ]
                       .filter(Boolean)
@@ -421,7 +424,7 @@ export function MemoriesPage({ token, onBack }: Props) {
                       >
                         {isPinnedMemory(item) ? "取消钉住" : "钉住"}
                       </button>
-                      <button type="button" className="ghost" disabled={busy} onClick={() => promote(item.id, "user")}>
+                      <button type="button" className="ghost" disabled={busy} onClick={() => promote(item.id, MEMORY_PROMOTE_TARGET.user)}>
                         提升为规则
                       </button>
                       {projects[0] ? (
@@ -429,7 +432,7 @@ export function MemoriesPage({ token, onBack }: Props) {
                           type="button"
                           className="ghost"
                           disabled={busy}
-                          onClick={() => promote(item.id, "project", projects[0]?.id)}
+                          onClick={() => promote(item.id, MEMORY_PROMOTE_TARGET.project, projects[0]?.id)}
                         >
                           挪到项目
                         </button>

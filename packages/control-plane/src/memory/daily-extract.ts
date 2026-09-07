@@ -31,6 +31,7 @@ export type DailyExtractRun = {
 type StampMap = Record<string, string>;
 type ExtractMessage = { role?: string; text?: string; createdAt?: string };
 
+/** Guards overlapping sweep calls (tests and accidental re-entry). The timeout loop itself awaits sweep before arming. */
 let sweepInFlight = false;
 let beforeWorkForTests: (() => Promise<void>) | null = null;
 
@@ -93,18 +94,8 @@ export function userExtractOffsetMs(userId: string): number {
   return fnv1a32(userId) % MEMORY_EXTRACT_SPREAD_MS;
 }
 
-export function isUserExtractDue(input: {
-  userId: string;
-  now: Date;
-  lastTargetDate?: string;
-}): boolean {
-  const today = shanghaiDate(input.now);
-  const targetDate = addCalendarDays(today, -1);
-  if (!today || !targetDate || input.lastTargetDate === targetDate) {
-    return false;
-  }
-  const windowStart = shanghaiDateAtHour(today, MEMORY_EXTRACT_HOUR);
-  return input.now.getTime() >= windowStart + userExtractOffsetMs(input.userId);
+function userExtractSlotMs(userId: string, yyyyMmDd: string): number {
+  return shanghaiDateAtHour(yyyyMmDd, MEMORY_EXTRACT_HOUR) + userExtractOffsetMs(userId);
 }
 
 function userNextExtractAtMs(input: {
@@ -115,12 +106,23 @@ function userNextExtractAtMs(input: {
   const today = shanghaiDate(input.now);
   const yesterday = addCalendarDays(today, -1);
   const tomorrow = addCalendarDays(today, 1);
-  const offsetMs = userExtractOffsetMs(input.userId);
   if (input.lastTargetDate === yesterday) {
-    return shanghaiDateAtHour(tomorrow, MEMORY_EXTRACT_HOUR) + offsetMs;
+    return userExtractSlotMs(input.userId, tomorrow);
   }
-  const todaySlot = shanghaiDateAtHour(today, MEMORY_EXTRACT_HOUR) + offsetMs;
+  const todaySlot = userExtractSlotMs(input.userId, today);
   return input.now.getTime() >= todaySlot ? input.now.getTime() : todaySlot;
+}
+
+/**
+ * Due iff this user's next wake is now.
+ * Same clock as `nextDailyExtractDelayMs({ now, userIds: [userId], stamps }) === 0`.
+ */
+export function isUserExtractDue(input: {
+  userId: string;
+  now: Date;
+  lastTargetDate?: string;
+}): boolean {
+  return userNextExtractAtMs(input) <= input.now.getTime();
 }
 
 function nextOpenAtMs(now: Date): number {

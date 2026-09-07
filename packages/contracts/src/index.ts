@@ -329,7 +329,6 @@ export {
   formatUserMemory,
   formatUserRules,
   isPinnedMemory,
-  isSoftMemoryKind,
   memoryEdited,
   memoryErrorMessage,
   memoryHint,
@@ -342,7 +341,6 @@ export {
   readMemoryError,
   rejectExtractedMemoryText,
   selectRecalledMemories,
-  sessionMemoryLines,
   wrapPromptWithSessionMemory,
 } from "./memory.js";
 export type { ArtifactKind, ArtifactPreviewKind } from "./artifact.js";

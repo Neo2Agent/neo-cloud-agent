@@ -7,7 +7,7 @@ import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { transcriptBodyNeeded } from "@neo-cloud-agent/contracts/transcript";
-import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
+import { MEMORY_PROMOTE_TARGET, type MemoryItem } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
@@ -682,7 +682,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         onPromote={async (id) => {
           setPageError("");
           try {
-            await client.promoteMemory(id, "user");
+            await client.promoteMemory(id, MEMORY_PROMOTE_TARGET.user);
             setMemories((prev) => prev.filter((item) => item.id !== id));
             setMemorySettings(await client.memorySettings());
           } catch (error) {

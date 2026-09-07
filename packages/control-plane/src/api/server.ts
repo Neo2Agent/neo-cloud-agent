@@ -24,6 +24,7 @@ import type {
   RunEvent,
   UpdateExpertRequest,
   UpdateProjectRequest,
+  MemoryPromoteTarget,
 } from "@neo-cloud-agent/contracts";
 import {
   BUNDLED_EXPERT_TEAMS,
@@ -42,6 +43,9 @@ import {
   writeLlmSettings,
   MEMORY_ACTION,
   MEMORY_ERROR_CODE,
+  MEMORY_KIND,
+  MEMORY_PROMOTE_TARGET,
+  MEMORY_STATUS,
   memoryErrorMessage,
 } from "@neo-cloud-agent/contracts";
 import { eventsForRun, lastEventIdForRun } from "../events/bus.js";
@@ -1289,8 +1293,8 @@ export function createApiServer() {
             send(res, 201, {
               memories: await addUserMemory(actor.userId, body.text ?? "", {
                 source: "manual",
-                kind: "coding",
-                status: "confirmed",
+                kind: MEMORY_KIND.coding,
+                status: MEMORY_STATUS.confirmed,
               }),
             });
           } catch (error) {
@@ -1328,11 +1332,11 @@ export function createApiServer() {
               return;
             }
             const body = (await readJson(req)) as {
-              target?: "user" | "project";
+              target?: MemoryPromoteTarget;
               mode?: "move" | "copy";
               projectId?: string;
             };
-            if (body.target !== "user" && body.target !== "project") {
+            if (body.target !== MEMORY_PROMOTE_TARGET.user && body.target !== MEMORY_PROMOTE_TARGET.project) {
               send(res, 400, { error: "target 只能是 user 或 project" });
               return;
             }
@@ -1985,7 +1989,7 @@ export function createApiServer() {
           if (action === MEMORY_ACTION.add) {
             const memories = await addUserMemory(run.userId, body.text ?? "", {
               source: "agent",
-              status: "confirmed",
+              status: MEMORY_STATUS.confirmed,
               runId,
             });
             appendRunSessionMemory(run.id, body.text ?? "");

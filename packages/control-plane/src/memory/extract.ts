@@ -1,4 +1,5 @@
 import {
+  MEMORY_STATUS,
   mintRunToken,
   parseExtractedMemories,
   type MemoryItem,
@@ -97,7 +98,7 @@ export async function extractUserMemories(input: {
       const added = await addUserMemory(input.userId, item.text, {
         source: "agent",
         kind: item.kind,
-        status: "candidate",
+        status: MEMORY_STATUS.candidate,
         runId: input.runId,
       });
       if (added[0]) {

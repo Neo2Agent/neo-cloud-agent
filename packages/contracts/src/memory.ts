@@ -137,11 +137,13 @@ export function memoryKindLabel(kind?: string): string {
 }
 
 export function parseMemoryKind(value: unknown): MemoryKind | undefined {
-  return value === "style" || value === "habit" || value === "coding" ? value : undefined;
+  return value === MEMORY_KIND.style || value === MEMORY_KIND.habit || value === MEMORY_KIND.coding
+    ? value
+    : undefined;
 }
 
 export function parseMemoryStatus(value: unknown): MemoryStatus | undefined {
-  return value === "candidate" || value === "confirmed" ? value : undefined;
+  return value === MEMORY_STATUS.candidate || value === MEMORY_STATUS.confirmed ? value : undefined;
 }
 
 export function parseMemorySource(value: unknown): MemorySource | undefined {
@@ -152,8 +154,8 @@ export function memoryKind(item: Pick<MemoryItem, "metadata">): MemoryKind | und
   return parseMemoryKind(item.metadata?.kind);
 }
 
-export function isSoftMemoryKind(kind?: string): boolean {
-  return kind === "style" || kind === "habit";
+function isSoftMemoryKind(kind?: string): boolean {
+  return kind === MEMORY_KIND.style || kind === MEMORY_KIND.habit;
 }
 
 export function isPinnedMemory(item: Pick<MemoryItem, "metadata">): boolean {
@@ -261,7 +263,7 @@ export function appendSessionMemoryLine(existing: string, text: string): string 
   return next.startsWith(header) ? next : `${header}\n\n${next}`;
 }
 
-export function sessionMemoryLines(existing: string): string[] {
+function sessionMemoryLines(existing: string): string[] {
   return existing
     .split("\n")
     .map((line) => line.replace(/^\s*-\s*/, "").trim())

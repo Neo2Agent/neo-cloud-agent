@@ -5,7 +5,7 @@ import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { RunEvent, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { CreateExpertRequest, Expert, ExpertTeam, UpdateExpertRequest } from "@neo-cloud-agent/contracts/expert";
-import type { MemoryItem, MemoryListResponse } from "@neo-cloud-agent/contracts/memory";
+import type { MemoryItem, MemoryListResponse, MemoryPromoteTarget } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem, PluginInstall, PluginInstallScope } from "@neo-cloud-agent/contracts/plugin";
 import type {
   CreateProjectRequest,
@@ -277,7 +277,7 @@ export class MobileClient {
     return this.request("POST", `/v1/memories/${encodeURIComponent(id)}/pin`, { pinned });
   }
 
-  promoteMemory(id: string, target: "user" | "project", projectId?: string): Promise<{ ok?: boolean }> {
+  promoteMemory(id: string, target: MemoryPromoteTarget, projectId?: string): Promise<{ ok?: boolean }> {
     return this.request("POST", `/v1/memories/${encodeURIComponent(id)}/promote`, {
       target,
       mode: "move",

@@ -1,6 +1,7 @@
 import {
   canManageProject,
   MEMORY_ERROR_CODE,
+  MEMORY_PROMOTE_TARGET,
   memoryErrorMessage,
   type MemoryItem,
   type MemoryPromoteTarget,
@@ -19,9 +20,9 @@ export async function promoteUserMemory(input: {
 }): Promise<{ memory: MemoryItem; target: MemoryPromoteTarget; mode: "move" | "copy" }> {
   const item = await findUserMemory(input.userId, input.id);
   const mode = input.mode === "copy" ? "copy" : "move";
-  if (input.target === "user") {
+  if (input.target === MEMORY_PROMOTE_TARGET.user) {
     await appendUserRuleLine(input.userId, item.text);
-  } else if (input.target === "project") {
+  } else if (input.target === MEMORY_PROMOTE_TARGET.project) {
     const projectId = (input.projectId ?? "").trim();
     if (!projectId) {
       throw new MemoryServiceError(

@@ -4,6 +4,7 @@ import {
   MEMORY_LIST_LIMIT_MAX,
   MEMORY_SEARCH_LIMIT_DEFAULT,
   MEMORY_SEARCH_LIMIT_MAX,
+  MEMORY_STATUS,
   MEMORY_TEXT_MAX_LENGTH,
   memoryErrorMessage,
   type MemoryErrorCode,
@@ -225,13 +226,13 @@ export async function findUserMemory(userId: string, id: string): Promise<Memory
 
 export async function pinUserMemory(userId: string, id: string, pinned: boolean): Promise<MemoryItem> {
   const item = await findUserMemory(userId, id);
-  mergeMemoryFlags(userId, id, { pinned, status: "confirmed" });
+  mergeMemoryFlags(userId, id, { pinned, status: MEMORY_STATUS.confirmed });
   try {
     await updateMemory({
       id,
       userId,
       text: item.text,
-      metadata: { ...item.metadata, pinned, status: "confirmed" },
+      metadata: { ...item.metadata, pinned, status: MEMORY_STATUS.confirmed },
     });
   } catch {
     // Overlay is authoritative if the sidecar cannot store metadata yet.

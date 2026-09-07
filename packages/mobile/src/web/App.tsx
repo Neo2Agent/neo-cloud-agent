@@ -10,7 +10,7 @@ import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
-import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
+import { MEMORY_PROMOTE_TARGET, type MemoryItem } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
@@ -723,7 +723,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
         onPromote={async (id) => {
           setPageError("");
           try {
-            await client.promoteMemory(id, "user");
+            await client.promoteMemory(id, MEMORY_PROMOTE_TARGET.user);
             setMemories((prev) => prev.filter((item) => item.id !== id));
             setMemorySettings(await client.memorySettings());
           } catch (error) {
