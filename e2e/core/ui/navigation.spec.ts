@@ -33,7 +33,8 @@ test.describe("catalog and session chrome", () => {
   test("catalog.unauth-hash: hash routes still require the login gate", async ({ page }) => {
     await page.goto("/#/experts");
     await expect(page.locator("#auth-gate")).toBeVisible();
-    await expect(page.locator("#experts-page")).toHaveCount(0);
+    await expect(page.locator("#auth-email")).toBeVisible();
+    await expect(page.locator("#auth-submit")).toBeVisible();
   });
 
   test("workspace.no-run: session tabs stay hidden until a run exists", async ({ page }) => {

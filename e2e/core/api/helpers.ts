@@ -22,6 +22,7 @@ process.env.DEFAULT_ADMIN = "1";
 process.env.RATE_LIMIT = "0";
 process.env.BUILD_CAPTURE = "0";
 process.env.OBJECT_STORE = "memory";
+process.env.LLM_GATEWAY_URL = process.env.CORE_E2E_GATEWAY_URL ?? "http://127.0.0.1:9";
 process.env.RUNS_DIR = process.env.CORE_E2E_RUNS_DIR ?? mkdtempSync(path.join(tmpdir(), "neo-core-e2e-"));
 process.env.HOST_RUNS_DIR = process.env.RUNS_DIR;
 delete process.env.CONTROL_PLANE_TOKEN;

@@ -1,0 +1,5 @@
+{
+  "name": "@neo-cloud-agent/e2e-core",
+  "private": true,
+  "type": "module"
+}

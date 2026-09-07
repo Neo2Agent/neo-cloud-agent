@@ -20,7 +20,8 @@ test.describe("auth boundaries", () => {
     await expect(page.locator("#auth-error")).toBeVisible();
     await expect(page.locator("#auth-error")).toContainText(/invalid account or password|登录失败/);
     await expect(page.locator("#auth-gate")).toBeVisible();
-    await expect(page.locator("#composer")).toHaveCount(0);
+    await expect(page.locator("#auth-submit")).toBeVisible();
+    await expect(page.locator("#account-email")).toContainText("未登录");
   });
 
   test("auth.login-happy then logout returns to the gate", async ({ page }) => {

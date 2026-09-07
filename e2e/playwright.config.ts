@@ -1,8 +1,10 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
 const live = (process.env.E2E_WEB_URL || process.env.WEB_BASE_URL || "").replace(/\/$/, "");
 const localPort = Number(process.env.E2E_UI_PORT ?? 18080);
 const baseURL = live || `http://127.0.0.1:${localPort}`;
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 export default defineConfig({
   testDir: "./core/ui",
@@ -25,6 +27,7 @@ export default defineConfig({
     ? undefined
     : {
         command: "tsx e2e/core/ui/dev-server.ts",
+        cwd: repoRoot,
         url: `${baseURL}/health`,
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,

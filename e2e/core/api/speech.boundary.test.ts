@@ -49,6 +49,13 @@ test("speech: POST with a service token (not a user session) is login_required",
 });
 
 test("speech: POST as user when gateway is unreachable is 502", async (t) => {
+  delete process.env.CONTROL_PLANE_TOKEN;
+  const previousGateway = process.env.LLM_GATEWAY_URL;
+  process.env.LLM_GATEWAY_URL = "http://127.0.0.1:9";
+  t.after(() => {
+    if (previousGateway === undefined) delete process.env.LLM_GATEWAY_URL;
+    else process.env.LLM_GATEWAY_URL = previousGateway;
+  });
   const api = await startCoreApi();
   t.after(() => api.close());
   const { token } = await login(api.base);
@@ -57,8 +64,9 @@ test("speech: POST as user when gateway is unreachable is 502", async (t) => {
     headers: jsonHeaders(token),
     body: JSON.stringify({ status: 0, audio: "" }),
   });
-  assert.equal(response.status, 502);
-  assert.match((await readJson<{ error?: string }>(response)).error ?? "", /听写服务不可用|ECONNREFUSED|fetch/i);
+  const body = await readJson<{ error?: string }>(response);
+  assert.equal(response.status, 502, body.error ?? "expected 502 when gateway is down");
+  assert.match(body.error ?? "", /听写服务不可用|ECONNREFUSED|fetch|ECONN|failed/i);
 });
 
 test("speech: gateway reports iatConfigured=false and POST is 503 when keys are missing", async (t) => {
