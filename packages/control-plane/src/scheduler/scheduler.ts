@@ -1,7 +1,7 @@
 import { fireDueAutomations } from "../automations/runner.js";
 import { findActiveBuild, listBuilds } from "../env/builds.js";
 import { refillWarmPool, warmPoolSize } from "../env/warm-pool.js";
-import { MEMORY_EXTRACT_TICK_MS, sweepDailyExtracts } from "../memory/daily-extract.js";
+import { startDailyExtractLoop } from "../memory/daily-extract.js";
 
 const WARM_POOL_TICK_MS = 30_000;
 
@@ -34,18 +34,12 @@ export function startScheduler(): { stop: () => void } {
       void fireDueAutomations().catch((error) => console.error("automation tick failed", error));
     }
   }, WARM_POOL_TICK_MS);
-  const memoryTimer = setInterval(() => {
-    if (isTestProcess()) {
-      return;
-    }
-    void sweepDailyExtracts().catch((error) => console.error("memory daily extract failed", error));
-  }, MEMORY_EXTRACT_TICK_MS);
   warmTimer.unref();
-  memoryTimer.unref();
+  const memory = isTestProcess() ? { stop() {} } : startDailyExtractLoop();
   return {
     stop: () => {
       clearInterval(warmTimer);
-      clearInterval(memoryTimer);
+      memory.stop();
     },
   };
 }

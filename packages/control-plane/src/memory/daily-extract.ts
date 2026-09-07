@@ -11,9 +11,10 @@ import { extractUserMemories } from "./extract.js";
 const MEMORY_EXTRACT_TIME_ZONE = "Asia/Shanghai";
 export const MEMORY_EXTRACT_HOUR = 2;
 export const MEMORY_EXTRACT_SPREAD_MS = 4 * 60 * 60 * 1000;
-export const MEMORY_EXTRACT_TICK_MS = 60 * 1000;
 export const MEMORY_EXTRACT_USER_CONCURRENCY = 2;
 export const MEMORY_EXTRACT_RUNS_PER_USER = 8;
+/** setTimeout argument cap; tomorrow 02:00 is far below this. */
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 /** Shanghai is UTC+8 with no DST; used only to turn a local wall time into epoch. */
 const SHANGHAI_OFFSET_HOURS = 8;
@@ -104,6 +105,103 @@ export function isUserExtractDue(input: {
   }
   const windowStart = shanghaiDateAtHour(today, MEMORY_EXTRACT_HOUR);
   return input.now.getTime() >= windowStart + userExtractOffsetMs(input.userId);
+}
+
+function userNextExtractAtMs(input: {
+  userId: string;
+  now: Date;
+  lastTargetDate?: string;
+}): number {
+  const today = shanghaiDate(input.now);
+  const yesterday = addCalendarDays(today, -1);
+  const tomorrow = addCalendarDays(today, 1);
+  const offsetMs = userExtractOffsetMs(input.userId);
+  if (input.lastTargetDate === yesterday) {
+    return shanghaiDateAtHour(tomorrow, MEMORY_EXTRACT_HOUR) + offsetMs;
+  }
+  const todaySlot = shanghaiDateAtHour(today, MEMORY_EXTRACT_HOUR) + offsetMs;
+  return input.now.getTime() >= todaySlot ? input.now.getTime() : todaySlot;
+}
+
+function nextOpenAtMs(now: Date): number {
+  const today = shanghaiDate(now);
+  const todayOpen = shanghaiDateAtHour(today, MEMORY_EXTRACT_HOUR);
+  if (now.getTime() < todayOpen) {
+    return todayOpen;
+  }
+  return shanghaiDateAtHour(addCalendarDays(today, 1), MEMORY_EXTRACT_HOUR);
+}
+
+export function nextDailyExtractDelayMs(input: {
+  now: Date;
+  userIds: string[];
+  stamps?: Record<string, string>;
+}): number {
+  const stamps = input.stamps ?? {};
+  let wakeAt = input.userIds.length === 0 ? nextOpenAtMs(input.now) : Number.POSITIVE_INFINITY;
+  for (const userId of input.userIds) {
+    wakeAt = Math.min(wakeAt, userNextExtractAtMs({ userId, now: input.now, lastTargetDate: stamps[userId] }));
+  }
+  return Math.min(MAX_TIMEOUT_MS, Math.max(0, wakeAt - input.now.getTime()));
+}
+
+async function delayUntilNextExtract(now = new Date()): Promise<number> {
+  if (!readMem0Info().configured) {
+    return nextDailyExtractDelayMs({ now, userIds: [] });
+  }
+  const userIds = (await getAccountStore().listUsers()).filter((user) => userMemoryEnabled(user)).map((user) => user.id);
+  return nextDailyExtractDelayMs({ now, userIds, stamps: readDailyExtractStamps() });
+}
+
+export function startDailyExtractLoop(): { stop: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+
+  const arm = (delayMs: number) => {
+    if (stopped) {
+      return;
+    }
+    timer = setTimeout(() => {
+      void runThenArm();
+    }, delayMs);
+    timer.unref();
+  };
+
+  const runThenArm = async () => {
+    if (stopped) {
+      return;
+    }
+    try {
+      await sweepDailyExtracts();
+    } catch (error) {
+      console.error("memory daily extract failed", error);
+    }
+    if (stopped) {
+      return;
+    }
+    try {
+      arm(await delayUntilNextExtract());
+    } catch (error) {
+      console.error("memory daily extract schedule failed", error);
+      arm(nextDailyExtractDelayMs({ now: new Date(), userIds: [] }));
+    }
+  };
+
+  void delayUntilNextExtract()
+    .then((delayMs) => arm(delayMs))
+    .catch((error) => {
+      console.error("memory daily extract schedule failed", error);
+      arm(nextDailyExtractDelayMs({ now: new Date(), userIds: [] }));
+    });
+
+  return {
+    stop: () => {
+      stopped = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+    },
+  };
 }
 
 /**

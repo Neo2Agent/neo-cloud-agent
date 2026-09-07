@@ -8,10 +8,10 @@ import { setAccountStore } from "../accounts/store.js";
 import {
   MEMORY_EXTRACT_HOUR,
   MEMORY_EXTRACT_SPREAD_MS,
-  MEMORY_EXTRACT_TICK_MS,
   MEMORY_EXTRACT_USER_CONCURRENCY,
   isDailyExtractRunning,
   isUserExtractDue,
+  nextDailyExtractDelayMs,
   readDailyExtractStamps,
   resetDailyExtractForTests,
   runMayContainShanghaiDate,
@@ -29,8 +29,7 @@ import { readMem0Info, setMem0FetchForTests } from "./client.js";
 const SHANGHAI_SEPT7_0200 = new Date("2026-09-06T18:00:00.000Z");
 const USER_ID = "user_daily";
 
-test("daily extract ticks every minute after a 02:00 Shanghai start", () => {
-  assert.equal(MEMORY_EXTRACT_TICK_MS, 60 * 1000);
+test("daily extract uses Shanghai 02:00 and a four-hour user stagger", () => {
   assert.equal(MEMORY_EXTRACT_HOUR, 2);
   assert.equal(MEMORY_EXTRACT_USER_CONCURRENCY, 2);
   assert.equal(shanghaiDate(SHANGHAI_SEPT7_0200), "2026-09-07");
@@ -59,6 +58,24 @@ test("user is due only after 02:00 Shanghai plus the hashed offset", () => {
   assert.equal(isUserExtractDue({ userId: USER_ID, now: after }), true);
   assert.equal(isUserExtractDue({ userId: USER_ID, now: after, lastTargetDate: "2026-09-06" }), false);
   assert.equal(isUserExtractDue({ userId: USER_ID, now: after, lastTargetDate: "2026-09-05" }), true);
+});
+
+test("next wake is the due slot, zero if already due, tomorrow after stamp", () => {
+  const offset = userExtractOffsetMs(USER_ID);
+  const windowStart = shanghaiDateAtHour("2026-09-07", MEMORY_EXTRACT_HOUR);
+  const before = new Date(windowStart + offset - 1_000);
+  const after = new Date(windowStart + offset + 1_000);
+  assert.equal(nextDailyExtractDelayMs({ now: before, userIds: [USER_ID] }), 1_000);
+  assert.equal(nextDailyExtractDelayMs({ now: after, userIds: [USER_ID] }), 0);
+  const afterStamp = nextDailyExtractDelayMs({
+    now: after,
+    userIds: [USER_ID],
+    stamps: { [USER_ID]: "2026-09-06" },
+  });
+  const tomorrowSlot = shanghaiDateAtHour("2026-09-08", MEMORY_EXTRACT_HOUR) + offset;
+  assert.equal(afterStamp, tomorrowSlot - after.getTime());
+  const beforeOpen = new Date(shanghaiDateAtHour("2026-09-07", MEMORY_EXTRACT_HOUR) - 5_000);
+  assert.equal(nextDailyExtractDelayMs({ now: beforeOpen, userIds: [] }), 5_000);
 });
 
 test("yesterday activity is the message Shanghai date, not updatedAt equality", () => {
