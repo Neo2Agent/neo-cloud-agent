@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import http from "node:http";
 import type { Server } from "node:http";
 
 export function listen(server: Server, host = "127.0.0.1"): Promise<number> {
@@ -84,7 +85,7 @@ export async function waitForRun(
     status = latest.status;
     errorMessage = latest.errorMessage;
     const ends = kinds.filter((kind) => kind === "agent.end").length;
-    if (status === "ERROR" || ends >= minAgentEnds || (minAgentEnds <= 1 && status === "IDLE")) {
+    if (status === "ERROR" || ends >= minAgentEnds) {
       return { kinds, status, errorMessage };
     }
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -97,24 +98,11 @@ export function attachSse(base: string, runId: string): {
   close(): void;
 } {
   const events: RunEventLite[] = [];
-  const abort = new AbortController();
-  void (async () => {
-    const response = await fetch(`${base}/v1/runs/${runId}/events`, {
-      headers: { accept: "text/event-stream" },
-      signal: abort.signal,
-    });
-    if (!response.body) {
-      return;
-    }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      buffer += decoder.decode(value, { stream: true });
+  let buffer = "";
+  const url = new URL(`/v1/runs/${runId}/events`, base);
+  const request = http.get(url, { headers: { accept: "text/event-stream" } }, (response) => {
+    response.on("data", (chunk) => {
+      buffer += String(chunk);
       const parts = buffer.split("\n\n");
       buffer = parts.pop() ?? "";
       for (const part of parts) {
@@ -128,14 +116,15 @@ export function attachSse(base: string, runId: string): {
           // ignore malformed SSE frames
         }
       }
-    }
-  })().catch(() => {
-    // aborted or server closed
+    });
+  });
+  request.on("error", () => {
+    // closed by test teardown
   });
   return {
     events,
     close() {
-      abort.abort();
+      request.destroy();
     },
   };
 }

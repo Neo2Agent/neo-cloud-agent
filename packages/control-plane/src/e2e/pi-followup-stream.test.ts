@@ -23,7 +23,6 @@ test("default pi kernel: live SSE deltas and a follow-up turn", { timeout: 120_0
   delete process.env.OPENAI_API_KEY;
   delete process.env.LLM_UPSTREAM_API_KEY;
   process.env.LLM_UPSTREAM = "mock";
-  process.env.MOCK_STREAM_DELAY_MS = "25";
   process.env.LLM_GATEWAY_JWT_SECRET = "e2e-pi-stream-secret";
   process.env.RUNS_DIR = runsDir;
   process.env.HOST_RUNS_DIR = runsDir;
@@ -46,15 +45,7 @@ test("default pi kernel: live SSE deltas and a follow-up turn", { timeout: 120_0
   process.env.CONTROL_PLANE_PORT = String(apiPort);
   const apiBase = `http://127.0.0.1:${apiPort}`;
   let runId = "";
-  t.after(async () => {
-    if (runId) {
-      await archiveRun(apiBase, runId);
-    }
-    await close(api);
-    await close(gateway);
-    process.env.WORKER_RUNTIME = "none";
-    delete process.env.MOCK_STREAM_DELAY_MS;
-  });
+  let live: ReturnType<typeof attachSse> | undefined;
 
   const health = (await (await fetch(`${apiBase}/health`)).json()) as { agentKernel?: string };
   assert.equal(health.agentKernel, "pi");
@@ -79,22 +70,25 @@ test("default pi kernel: live SSE deltas and a follow-up turn", { timeout: 120_0
   assert.equal(run.kernel, "pi");
   assert.equal(run.status, "RUNNING", run.errorMessage ?? "");
 
-  const live = attachSse(apiBase, run.id);
-  t.after(() => live.close());
+  live = attachSse(apiBase, run.id);
+  t.after(async () => {
+    live?.close();
+    if (runId) {
+      await fetch(`${apiBase}/v1/runs/${runId}/abort`, { method: "POST" }).catch(() => undefined);
+      await archiveRun(apiBase, runId);
+    }
+    await close(api);
+    await close(gateway);
+    process.env.WORKER_RUNTIME = "none";
+  });
 
   await waitUntil(
     () => live.events.some((item) => item.kind === "message.delta"),
-    60_000,
+    45_000,
     `no live message.delta; saw ${live.events.map((item) => item.kind).join(",")}`,
   );
-  const mid = await fetchRunTranscript(apiBase, run.id);
-  const streamingAssistant = mid.messages.find((item) => item.role === "assistant" && item.streaming);
-  assert.ok(
-    streamingAssistant || live.events.some((item) => item.kind === "message.delta"),
-    "expected a streaming assistant bubble or live deltas during the first turn",
-  );
 
-  const first = await waitForRun(apiBase, run.id, 60_000);
+  const first = await waitForRun(apiBase, run.id, 45_000);
   assert.notEqual(first.status, "ERROR", first.errorMessage ?? first.kinds.join(","));
   assert.equal(first.status, "IDLE");
   assert.ok(first.kinds.includes("agent.start"), first.kinds.join(","));
@@ -122,11 +116,11 @@ test("default pi kernel: live SSE deltas and a follow-up turn", { timeout: 120_0
 
   await waitUntil(
     () => live.events.filter((item) => item.kind === "message.delta").length > deltasBeforeFollow,
-    60_000,
+    45_000,
     "follow-up did not stream new message.delta events",
   );
 
-  const second = await waitForRun(apiBase, run.id, 60_000, { minAgentEnds: 2 });
+  const second = await waitForRun(apiBase, run.id, 45_000, { minAgentEnds: 2 });
   assert.notEqual(second.status, "ERROR", second.errorMessage ?? second.kinds.join(","));
   assert.equal(second.status, "IDLE");
   assert.ok(second.kinds.filter((kind) => kind === "agent.end").length >= 2, second.kinds.join(","));
