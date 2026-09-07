@@ -2,21 +2,21 @@
 
 本文是**现在仓库里实际长什么样**的完整地图：包怎么拆、进程怎么跑、一次 Run 怎么走、现网怎么叠。设计原则、分阶段蓝图、以及「为什么这样拆」仍以 [architecture.md](./architecture.md) 为准。本文不重复那份蓝图的每一条落地笔记，只把**核心架构**和**当前实现边界**摊开。
 
-对照 `origin/main`（2026-09-04 起现网默认 `agentscope`）。锁死的分层没变。相对 2026-08-28 那版，main 上多了 Java `neo-loop`（`AGENT_KERNEL=agentscope`）、`WORKER_ROLE=tools`、tools WebSocket 帧。现网启 `neo-loop`，不传 `kernel` 走 Java。
+对照 `origin/main`（现网默认已切回 `pi`）。锁死的分层没变。相对 2026-08-28 那版，main 上仍有 Java `neo-loop`（`AGENT_KERNEL=agentscope`）、`WORKER_ROLE=tools`、tools WebSocket 帧，但现网不启 `neo-loop`，不传 `kernel` 走 pi。
 
-对标对象：[Cursor Cloud Agent](https://cursor.com/docs/cloud-agent)。默认内核是 AgentScope Java `HarnessAgent`，住在独立进程，不嵌控制面。pi-agent 仍可显式选用。
+对标对象：[Cursor Cloud Agent](https://cursor.com/docs/cloud-agent)。默认内核是槽里的 pi-agent。AgentScope Java `HarnessAgent` 仍可显式选用，住在独立进程，不嵌控制面。
 
 ---
 
 ## 1. 一句话
 
-**客户端只打 `/v1` → 控制面编排 Run 和机器 → 推理只在 Gateway → Agent 循环默认在独立 Java `neo-loop`，也可显式走槽里的 pi → 工具必须在仓库旁边执行。**
+**客户端只打 `/v1` → 控制面编排 Run 和机器 → 推理只在 Gateway → Agent 循环默认在槽里的 pi，也可显式走独立 Java `neo-loop` → 工具必须在仓库旁边执行。**
 
 锁死的原则：
 
-> **推理在 Gateway。Loop 在 `neo-loop`（或显式 `kernel=pi` 时在 worker 内）。工具在执行面。不要把 Harness 嵌进控制面。**
+> **推理在 Gateway。Loop 默认在 worker / 槽里的 pi；`kernel=agentscope` 时在 `neo-loop`。工具在执行面。不要把 Harness 嵌进控制面。**
 
-现网默认 `AGENT_KERNEL=agentscope`：Java `neo-loop` 跑 turn，worker 只做 tools 通道。`kernel=pi` 时 loop 和工具同址。把 loop 放控制面会丢掉沙箱边界，也会把消息和编排揉进同一个进程。
+现网默认 `AGENT_KERNEL=pi`：loop 和工具同址。`kernel=agentscope` 时 Java `neo-loop` 跑 turn，worker 只做 tools 通道。把 loop 放控制面会丢掉沙箱边界，也会把消息和编排揉进同一个进程。
 
 ### 完整架构图
 
@@ -197,13 +197,13 @@ flowchart LR
     CP["neo-control-plane :8080"]
     GW["neo-llm-gateway :8081"]
     Admin["admin-api :8090"]
-    Loop["neo-loop :8082\n现网默认"]
+    Loop["neo-loop :8082\n可选"]
     Slots["2 × loop ext4 槽\nWORKER_RUNTIME=vm"]
     Caddy -->|"/"| CP
     Caddy -->|"/admin/"| Admin
     CP --> Slots
     Slots --> GW
-    CP -->|"默认 AGENT_KERNEL=agentscope"| Loop
+    CP -->|"显式 AGENT_KERNEL=agentscope"| Loop
     Loop -.-> Slots
   end
 
@@ -229,7 +229,7 @@ flowchart LR
 | 直播事件 | 库机 Redis Pub/Sub + Stream |
 | 模型渠道 | 库机 New API `:3000`；Gateway 打 `http://101.42.105.230:3000/v1` |
 | 对象存储 | 应用机 `RUNS_DIR/.objects`，现网不切 S3 |
-| systemd | 必开：`neo-control-plane`、`neo-llm-gateway`、`neo-admin-api`、`neo-loop`、Caddy。Caddy 不反代 `:8082` |
+| systemd | 必开：`neo-control-plane`、`neo-llm-gateway`、`neo-admin-api`、Caddy。`neo-loop` 可选。Caddy 不反代 `:8082` |
 
 操作手册：[.cursor/skills/tencent-lighthouse-deploy/SKILL.md](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)、[.cursor/skills/tencent-lighthouse-db/SKILL.md](../.cursor/skills/tencent-lighthouse-db/SKILL.md)、[production-domain.md](./production-domain.md)。
 
@@ -239,9 +239,9 @@ flowchart LR
 
 ## 5. 一次 Run 的主路径
 
-开关在 `Run.kernel`：请求字段 → `AGENT_KERNEL` → 默认 `agentscope`。对外 `/v1` 不变。
+开关在 `Run.kernel`：请求字段 → `AGENT_KERNEL` → 默认 `pi`。对外 `/v1` 不变。
 
-### 5.1 `kernel=pi`（显式回退）
+### 5.1 `kernel=pi`（现网默认）
 
 ```mermaid
 sequenceDiagram
@@ -274,7 +274,7 @@ sequenceDiagram
   end
 ```
 
-### 5.2 `kernel=agentscope`（现网默认）
+### 5.2 `kernel=agentscope`（可选）
 
 控制面不把 prompt 塞 inbox，记 `pendingLoopStarts`。worker `WORKER_ROLE=tools`，出向连 `ws://127.0.0.1:8082/internal/tools/{runId}`。槽 ready 后 `POST /internal/loop/turns`。
 
@@ -907,7 +907,7 @@ pnpm test:loop           # mvn test + agentscope toy-repo e2e
 
 ## 21. 现在有、明确没有
 
-**已经落地、文档必须对得上的：** P0 主路径（创建 Run → Java `neo-loop` + tools worker → Gateway → SSE → IDLE → 跟进；也可显式 `kernel=pi`）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；**Java `neo-loop` + `WORKER_ROLE=tools` + 默认 `kernel=agentscope`（现网 `enable --now`，Caddy 仍不反代 `:8082`）**。
+**已经落地、文档必须对得上的：** P0 主路径（创建 Run → 默认 pi worker → Gateway → SSE → IDLE → 跟进；也可显式 `kernel=agentscope`）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；**默认 `kernel=pi`（现网 `neo-loop` disabled，Caddy 仍不反代 `:8082`）**。
 
 **代码在 main、现网故意关掉的：** Caddy / 防火墙放行 `:8082`。操作见 [tencent-lighthouse-deploy SKILL](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)。
 

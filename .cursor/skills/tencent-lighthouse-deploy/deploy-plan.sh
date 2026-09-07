@@ -144,8 +144,8 @@ if [[ "${1:-}" == "--full" ]]; then
   restart_control_plane=1
   restart_admin_api=1
   build_loop=1
-  # Default kernel is agentscope; --full must restart the Java loop too.
-  restart_loop=1
+  # Default kernel is pi; neo-loop is optional and stays disabled unless already enabled.
+  restart_loop=0
   update_units=1
   shift
 fi

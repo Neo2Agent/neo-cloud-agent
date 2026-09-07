@@ -30,7 +30,7 @@ description: Deploy and operate neo-cloud-agent on the Beijing Lighthouse app ho
 | 入口 | https://neorun.cloud/ 对话（Caddy → `:8080`）；https://neorun.cloud/admin/ 管理台（→ `:8090`）。IP 同样可用 `/` 与 `/admin/` |
 | Node | 已装 **v22.23.1**（满足 `>=22.19`） |
 | Docker / KVM | **都没有**。`WORKER_RUNTIME=vm` 用 2 个 loop 挂载的 ext4 槽，不是 Firecracker |
-| 运行时栈 | **官方系统镜像** Ubuntu Server 24.04 LTS + Node 22 + pnpm + Caddy + systemd（`neo-llm-gateway` / `neo-control-plane` / `neo-admin-api` / `neo-loop`）。`neo-loop` 是 Java `:8082`，仅 127.0.0.1，现网默认 `AGENT_KERNEL=agentscope`。2026-08-22 已从爱马仕/Halo 应用镜像重装，不是应用模板 |
+| 运行时栈 | **官方系统镜像** Ubuntu Server 24.04 LTS + Node 22 + pnpm + Caddy + systemd（`neo-llm-gateway` / `neo-control-plane` / `neo-admin-api`；`neo-loop` 可选）。`neo-loop` 是 Java `:8082`，仅 127.0.0.1，现网默认 `AGENT_KERNEL=pi`。2026-08-22 已从爱马仕/Halo 应用镜像重装，不是应用模板 |
 
 SSH 别名（本机 `~/.ssh/config`）：
 
@@ -151,7 +151,7 @@ WARM_POOL_SIZE=0
 LLM_UPSTREAM=mock
 ```
 
-6. 安装 [units/](units/) 四个 **必开** systemd unit（gateway / control-plane / admin-api / neo-loop），先装 Java 21（`openjdk-21-jre-headless`），再 `daemon-reload && enable --now`。`.env` 写 `AGENT_KERNEL=agentscope` 和 `NEO_LOOP_URL=http://127.0.0.1:8082`。
+6. 安装 [units/](units/) 三个 **必开** systemd unit（gateway / control-plane / admin-api）。`neo-loop` 可选；只有要 `AGENT_KERNEL=agentscope` 时才装 Java 21 并 `enable --now`。`.env` 写 `AGENT_KERNEL=pi`。
 7. 现网 Caddy 用 domain skill 的 HTTPS 模板：`/` → `:8080`，`/admin/` → `:8090`，`flush_interval -1`（SSE）。**不要**把 `:8082` 写进 Caddy 或轻量防火墙。
 8. 打开 https://neorun.cloud/ ，手输 `admin` / `123456` 登录（页面不预填、不能跳过），在页上保存 API Key，**不要把 Key 发到聊天里**。管理台是 https://neorun.cloud/admin/ 。绑域名与 HTTPS 见 domain skill。
 
@@ -159,31 +159,28 @@ LLM_UPSTREAM=mock
 
 | 项 | 现状 |
 | --- | --- |
-| 进程 | `neo-llm-gateway` `:8081`，`neo-control-plane` `:8080`，`neo-admin-api` `:8090`（本机），`neo-loop` `:8082` 仅 127.0.0.1，Caddy `:80` + `:443` |
+| 进程 | `neo-llm-gateway` `:8081`，`neo-control-plane` `:8080`，`neo-admin-api` `:8090`（本机），可选 `neo-loop` `:8082` 仅 127.0.0.1，Caddy `:80` + `:443` |
 | 工作目录 | `/home/ubuntu/neo-cloud-agent`（unit 的 `WorkingDirectory`） |
 | 密钥 | 根目录 `.env` + `.neo/llm-upstream.env` + `.neo/scm-push.env`（gitignore） |
 | Worker | `WORKER_RUNTIME=vm`，2×4GiB ext4 在 `.neo/vms/`，无 KVM 则 loop 挂载。`WORKER_MEMORY_MIB` 会限制 heap；unit 需 `Delegate=` 才有 cgroup RSS。agentscope 时 worker 只做 `WORKER_ROLE=tools` |
-| 对话 | 必须手输 `admin` / `123456`；默认 `ACCOUNTS_REQUIRED=1`。不传 `kernel` 则走 Java `neo-loop` |
+| 对话 | 必须手输 `admin` / `123456`；默认 `ACCOUNTS_REQUIRED=1`。不传 `kernel` 则走 pi（worker 内 loop） |
 | 栈 | 官方 Ubuntu 24.04 系统镜像 + systemd + Caddy + Node 22 + Java 21 JRE。`neo-loop` `MemoryMax=768M` |
 
 改 `.env` 键值用脚本替换，不要 `cat` 整个文件。改完必须 `sudo systemctl restart neo-llm-gateway neo-control-plane`。只改 API Key 走页面即可，**不用重启**。接库机 New API 用 [../tencent-lighthouse-db/wire-new-api.sh](../tencent-lighthouse-db/wire-new-api.sh)，不要手改 `.neo/llm-upstream.env`。接上后 `/health` 还应有 `newApi.consoleUrl`，对话页不再收 Provider Key。
 
-## neo-loop（现网默认内核）
+## neo-loop（可选 Java 内核）
 
-`services/neo-loop` 是 Java AgentScope turn 引擎。现网默认 `AGENT_KERNEL=agentscope`：Web / CLI 不传 `kernel` 就走这条路径。worker 只做 `WORKER_ROLE=tools`。Caddy 和轻量防火墙都不要碰 `8082`。浏览器继续只打 `/v1`。
+`services/neo-loop` 是 Java AgentScope turn 引擎。现网默认 `AGENT_KERNEL=pi`：Web / CLI 不传 `kernel` 就走 worker 内 pi loop。要走 Java 才 `enable --now neo-loop` 并设 `AGENT_KERNEL=agentscope`。Caddy 和轻量防火墙都不要碰 `8082`。浏览器继续只打 `/v1`。
 
 `deploy.sh` 会：
 
-1. 本机 `mvn -f services/neo-loop -DskipTests package`（有 Maven 时），把 `neo-loop-0.1.0.jar` 拷到主机
-2. 主机缺 Java 就装 `openjdk-21-jre-headless`
-3. 安装 [units/neo-loop.service](units/neo-loop.service)（`WorkingDirectory=/home/ubuntu/neo-cloud-agent`，`MemoryMax=768M`，`UnsetEnvironment` 掉 Provider Key）
-4. 只改 `.env` 里的 `AGENT_KERNEL=agentscope` 和 `NEO_LOOP_URL=http://127.0.0.1:8082`，不要 `cat` 整个文件
-5. `enable --now neo-loop`，等 `:8082/health` 再重启控制面
-6. 健康检查要求 `neo-loop` 和三个 Node unit 一样 `ok=true`
+1. 本机 `mvn -f services/neo-loop -DskipTests package`（有 Maven 且计划要打 jar 时），把 `neo-loop-0.1.0.jar` 拷到主机
+2. 安装 [units/neo-loop.service](units/neo-loop.service)，但**不会** `enable --now`
+3. 只改 `.env` 里的 `AGENT_KERNEL=pi`，不要 `cat` 整个文件
+4. 若主机上 `neo-loop` 已 enable / active，则 `disable --now`
+5. 健康检查只要求三个 Node unit `ok=true`；`:8082/health` 可以失败
 
-不要把 Provider Key 写进 loop 的环境。临时回 pi：请求带 `kernel:"pi"`，或 `.env` 写 `AGENT_KERNEL=pi` 后重启控制面（`neo-loop` 可以继续挂着）。
-
-关 loop 进程：`sudo systemctl disable --now neo-loop`，同时把 `AGENT_KERNEL` 改回 `pi`，再重启控制面。否则新对话会打到已停的 `:8082`。
+不要把 Provider Key 写进 loop 的环境。临时走 Java：请求带 `kernel:"agentscope"`，或 `.env` 写 `AGENT_KERNEL=agentscope` 后 `enable --now neo-loop` 并重启控制面。下一次 `deploy.sh` 会再切回 pi。
 
 ## 排障
 
@@ -208,5 +205,5 @@ ssh lighthouse 'journalctl -u neo-control-plane -u neo-llm-gateway -u neo-admin-
 - 连不上先看 Secret 是否注入；公钥不在就 TAT 追加，不要重启、不要绑密钥。
 - 同步代码用 [deploy.sh](deploy.sh)，不要假设轻量能拉 GitHub，也不要手搓全量 tar。
 - 验收只报 `ok` / `configured` / `workerRuntime` / `agentKernel` / 槽位数字，不报密钥。
-- 改完代码照常 commit、push，再 `bash .cursor/skills/tencent-lighthouse-deploy/deploy.sh`。脚本自己决定重启哪个 unit，并保证 `neo-loop` 在控制面之前就绪。**不要**把 `:8082` 写进 Caddy。
+- 改完代码照常 commit、push，再 `bash .cursor/skills/tencent-lighthouse-deploy/deploy.sh`。脚本自己决定重启哪个 unit，并保证现网 `AGENT_KERNEL=pi`。**不要**把 `:8082` 写进 Caddy。
 - 官方 `tccli` / SDK 只管云资源（实例、防火墙、TAT、DNS）。发版仍是 SSH + systemd，见上文「日常更新」。

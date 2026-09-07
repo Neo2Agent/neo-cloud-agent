@@ -1,7 +1,7 @@
 [Unit]
 Description=neo-loop (AgentScope Java turn engine)
 After=network.target
-# Required on the app host. Default kernel is agentscope.
+# Optional. Default kernel is pi. Enable only for AGENT_KERNEL=agentscope.
 # Caddy and the Lighthouse firewall must not expose :8082.
 
 [Service]

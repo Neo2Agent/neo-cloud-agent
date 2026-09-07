@@ -56,12 +56,31 @@ const { eventsForRun, listEvents } = await import("../events/bus.js");
 const { resolveEventImageData } = await import("../store/event-images.js");
 const { isObjectImageRef } = await import("../store/run-record.js");
 
+test("createRun defaults to pi when AGENT_KERNEL is unset", async () => {
+  const previous = process.env.AGENT_KERNEL;
+  delete process.env.AGENT_KERNEL;
+  try {
+    const run = await createRun({
+      prompt: "default kernel",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    assert.equal(run.kernel, "pi");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.AGENT_KERNEL;
+    } else {
+      process.env.AGENT_KERNEL = previous;
+    }
+  }
+});
+
 test("createRun mints a bootstrap JWT, copies the local repo, and queues the first prompt", async () => {
   const run = await createRun({
     prompt: "list files",
     repoUrls: ["fixtures/toy-repo"],
   });
   assert.equal(run.status, "RUNNING");
+  assert.equal(run.kernel, "pi");
   const bootstrap = getBootstrap(run.id);
   assert.ok(bootstrap.jwt.split(".").length === 3);
   assert.equal(bootstrap.run.id, run.id);
