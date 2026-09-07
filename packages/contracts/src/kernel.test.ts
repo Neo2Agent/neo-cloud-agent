@@ -8,10 +8,10 @@ test("parseAgentKernel only accepts pi or agentscope", () => {
   assert.equal(parseAgentKernel("java"), undefined);
 });
 
-test("default kernel is agentscope unless AGENT_KERNEL is pi", () => {
-  assert.equal(defaultAgentKernel({}), "agentscope");
-  assert.equal(defaultAgentKernel({ AGENT_KERNEL: "pi" }), "pi");
-  assert.equal(resolveAgentKernel(undefined, {}), "agentscope");
+test("default kernel is pi unless AGENT_KERNEL is agentscope", () => {
+  assert.equal(defaultAgentKernel({}), "pi");
+  assert.equal(defaultAgentKernel({ AGENT_KERNEL: "agentscope" }), "agentscope");
+  assert.equal(resolveAgentKernel(undefined, {}), "pi");
   assert.equal(resolveAgentKernel("pi", { AGENT_KERNEL: "agentscope" }), "pi");
   assert.equal(resolveAgentKernel("agentscope", { AGENT_KERNEL: "pi" }), "agentscope");
 });

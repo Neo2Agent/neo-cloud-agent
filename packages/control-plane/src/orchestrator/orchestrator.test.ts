@@ -62,6 +62,7 @@ test("createRun mints a bootstrap JWT, copies the local repo, and queues the fir
     repoUrls: ["fixtures/toy-repo"],
   });
   assert.equal(run.status, "RUNNING");
+  assert.equal(run.kernel, "pi");
   const bootstrap = getBootstrap(run.id);
   assert.ok(bootstrap.jwt.split(".").length === 3);
   assert.equal(bootstrap.run.id, run.id);

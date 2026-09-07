@@ -107,26 +107,28 @@ expect full "$OUT" "build_admin=1"
 expect full "$OUT" "restart_control_plane=1"
 expect full "$OUT" "update_units=1"
 expect full "$OUT" "build_loop=1"
-expect full "$OUT" "restart_loop=1"
-pass "--full restarts every production unit including neo-loop"
+expect full "$OUT" "restart_loop=0"
+pass "--full rebuilds the optional neo-loop jar but does not restart it"
 
 HEALTH="$ROOT/.cursor/skills/tencent-lighthouse-deploy/deploy-health.py"
-SAMPLE="$(printf '%s\n' "active" "active" "active" "active" "---" \
-  '{"ok":true,"service":"control-plane","workerRuntime":"vm","agentKernel":"agentscope","vmSlots":{"total":2},"metadataStore":"mysql","eventBus":"redis","llmConfigured":true}' \
+SAMPLE="$(printf '%s\n' "active" "active" "active" "---" \
+  '{"ok":true,"service":"control-plane","workerRuntime":"vm","agentKernel":"pi","vmSlots":{"total":2},"metadataStore":"mysql","eventBus":"redis","llmConfigured":true}' \
   '{"ok":true,"service":"llm-gateway","upstream":"deepseek","configured":true}' \
-  '{"ok":true,"service":"admin-api"}' \
-  '{"ok":true,"service":"neo-loop"}')"
+  '{"ok":true,"service":"admin-api"}')"
 OUT="$(printf '%s\n' "$SAMPLE" | python3 "$HEALTH")"
-expect health "$OUT" "units active active active active"
+expect health "$OUT" "units active active active"
 expect health "$OUT" "service=control-plane"
 expect health "$OUT" "runtime=vm"
-expect health "$OUT" "kernel=agentscope"
+expect health "$OUT" "kernel=pi"
 expect health "$OUT" "slots=2"
 expect health "$OUT" "service=llm-gateway"
 expect health "$OUT" "service=admin-api"
-expect health "$OUT" "service=neo-loop"
 printf '%s\n' "$SAMPLE" | python3 "$HEALTH" >/dev/null
-pass "health summarizer accepts a full probe"
+pass "health summarizer accepts a pi-kernel probe without neo-loop"
+
+WITH_LOOP="$(printf '%s\n' "$SAMPLE" '{"ok":true,"service":"neo-loop"}')"
+printf '%s\n' "$WITH_LOOP" | python3 "$HEALTH" >/dev/null
+pass "health summarizer still accepts an optional neo-loop probe"
 
 if printf '%s\n' "active" "---" '{"ok":true,"service":"admin-api"}' | python3 "$HEALTH" >/dev/null; then
   fail "partial health should fail"

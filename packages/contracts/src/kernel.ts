@@ -13,9 +13,9 @@ export function parseAgentKernel(value: unknown): AgentKernel | undefined {
   return value === "pi" || value === "agentscope" ? value : undefined;
 }
 
-/** Product default is the Java neo-loop. Pass kernel:"pi" or AGENT_KERNEL=pi to keep the colocated worker. */
+/** Product default is the colocated pi worker. Pass kernel:"agentscope" or AGENT_KERNEL=agentscope for Java neo-loop. */
 export function defaultAgentKernel(env: KernelEnv = {}): AgentKernel {
-  return parseAgentKernel(env.AGENT_KERNEL) ?? "agentscope";
+  return parseAgentKernel(env.AGENT_KERNEL) ?? "pi";
 }
 
 export function resolveAgentKernel(value?: unknown, env: KernelEnv = {}): AgentKernel {

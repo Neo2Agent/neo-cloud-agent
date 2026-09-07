@@ -32,7 +32,7 @@ Ship this git checkout to ssh host `lighthouse` (62.234.211.200).
   --from-rev SHA    Diff against this revision instead of the host .deploy-revision
   --restart         Restart gateway + control-plane + admin-api even if the plan
                     says they are unchanged. neo-loop restarts only if already
-                    enabled. Default kernel is agentscope; neo-loop is required.
+                    enabled. Default kernel is pi; neo-loop stays disabled.
   --no-restart      Never restart units
   --remote-build    Build web/admin on the host instead of this machine.
                     neo-loop jar is always built on this machine (needs mvn)
@@ -128,56 +128,18 @@ print(f"{key}=set")
 PY
 }
 
-ensure_remote_java() {
-  if ssh_h 'command -v java >/dev/null 2>&1'; then
-    log "java: present"
-    return 0
-  fi
-  log "java: installing openjdk-21-jre-headless"
-  ssh_h 'sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-21-jre-headless'
-}
-
-wait_loop_health() {
-  local ok=0
-  for _ in $(seq 1 45); do
-    if ssh_h 'curl -sS --max-time 3 http://127.0.0.1:8082/health 2>/dev/null' | grep -q '"service":"neo-loop"'; then
-      ok=1
-      break
-    fi
-    sleep 2
-  done
-  [[ "$ok" -eq 1 ]] || die "neo-loop /health did not become ready"
-  log "loop: healthy on :8082"
-}
-
-ensure_production_loop() {
-  ensure_remote_java
-  upsert_remote_env AGENT_KERNEL agentscope
+ensure_production_kernel() {
+  upsert_remote_env AGENT_KERNEL pi
   upsert_remote_env NEO_LOOP_URL "http://127.0.0.1:8082"
-  ssh_h "sudo systemctl enable neo-loop >/dev/null"
   if [[ "$no_restart" -eq 1 ]]; then
-    log "loop: enabled; --no-restart skips start"
+    log "kernel: AGENT_KERNEL=pi; --no-restart skips neo-loop disable"
     return 0
   fi
-  if ! ssh_h "test -f ${REMOTE_DIR}/services/neo-loop/target/neo-loop-0.1.0.jar"; then
-    die "neo-loop jar missing on host; need mvn package before enable"
-  fi
-  local need_start=0
-  if ! ssh_h 'systemctl is-active neo-loop >/dev/null 2>&1'; then
-    need_start=1
-  fi
-  if [[ "$(plan_get restart_loop)" == "1" ]]; then
-    need_start=1
-  fi
-  if [[ "$(plan_get restart_control_plane)" == "1" ]] && ! ssh_h 'curl -sS --max-time 2 http://127.0.0.1:8082/health 2>/dev/null' | grep -q '"service":"neo-loop"'; then
-    need_start=1
-  fi
-  if [[ "$need_start" -eq 1 ]]; then
-    log "loop: restart neo-loop"
-    ssh_h "sudo systemctl restart neo-loop"
-    wait_loop_health
+  if ssh_h 'systemctl is-enabled neo-loop >/dev/null 2>&1 || systemctl is-active neo-loop >/dev/null 2>&1'; then
+    log "loop: disable neo-loop (default kernel is pi)"
+    ssh_h "sudo systemctl disable --now neo-loop"
   else
-    log "loop: already active"
+    log "loop: already disabled"
   fi
 }
 
@@ -470,7 +432,7 @@ fi
 
 ssh_h "printf '%s\n' '$LOCAL_REV' > ${REMOTE_DIR}/.deploy-revision"
 
-ensure_production_loop
+ensure_production_kernel
 
 UNITS_TO_RESTART=()
 [[ "$(plan_get restart_gateway)" == "1" ]] && UNITS_TO_RESTART+=("neo-llm-gateway")
@@ -490,7 +452,7 @@ if [[ "$skip_health" -eq 0 ]]; then
   log "health: waiting"
   ok=0
   for _ in $(seq 1 45); do
-    health="$(ssh_h 'systemctl is-active neo-llm-gateway neo-control-plane neo-admin-api neo-loop; echo ---; curl -sS --max-time 4 http://127.0.0.1:8080/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8081/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8090/health 2>/dev/null; echo; curl -sS --max-time 2 http://127.0.0.1:8082/health 2>/dev/null || true; echo' || true)"
+    health="$(ssh_h 'systemctl is-active neo-llm-gateway neo-control-plane neo-admin-api; echo ---; curl -sS --max-time 4 http://127.0.0.1:8080/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8081/health 2>/dev/null; echo; curl -sS --max-time 4 http://127.0.0.1:8090/health 2>/dev/null; echo; curl -sS --max-time 2 http://127.0.0.1:8082/health 2>/dev/null || true; echo' || true)"
     if printf '%s\n' "$health" | python3 "$HERE/deploy-health.py"; then
       ok=1
       break
@@ -498,7 +460,7 @@ if [[ "$skip_health" -eq 0 ]]; then
     sleep 2
   done
   [[ "$ok" -eq 1 ]] || die "health check timed out after restart"
-  log "health: neo-loop required on :8082"
+  log "health: default kernel is pi; neo-loop is optional"
 fi
 
 log "done local=$LOCAL_REV total=$((SECONDS - started_at))s"

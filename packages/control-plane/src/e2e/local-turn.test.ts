@@ -55,8 +55,14 @@ test("in-process mock turn: clone toy repo, worker reaches IDLE", async (t) => {
     }),
   });
   assert.equal(created.status, 201);
-  const run = (await created.json()) as { id: string; status: string; errorMessage: string | null };
+  const run = (await created.json()) as {
+    id: string;
+    status: string;
+    errorMessage: string | null;
+    kernel?: string;
+  };
   runId = run.id;
+  assert.equal(run.kernel, "pi");
   assert.equal(run.status, "RUNNING", run.errorMessage ?? "");
   assert.ok(existsSync(path.join(runsDir, run.id, "hello.txt")));
   assert.ok(existsSync(path.join(runsDir, run.id, ".neo-installed")));
