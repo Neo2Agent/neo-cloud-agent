@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { Run } from "@neo-cloud-agent/contracts/run";
+import { useRef, useState } from "react";
+import type { PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
+import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 import { formatRunTime, runListTitle, slotLabel, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
 import { IconAutomations, IconClose, IconExperts, IconPlus, IconProjects, IconSkills, IconStar, IconTrash } from "../icons";
@@ -27,6 +28,7 @@ type Props = {
   projectNames?: Record<string, string>;
   onNewChat: () => void;
   onOpenRun: (id: string) => void;
+  onPatchTitle?: (id: string, body: PatchRunRequest) => Promise<void>;
   onPin?: (id: string) => void;
   onArchiveMany?: (ids: string[]) => void;
   onDeleteRun?: (id: string) => void;
@@ -53,6 +55,7 @@ export function Sidebar({
   projectNames = {},
   onNewChat,
   onOpenRun,
+  onPatchTitle,
   onPin,
   onArchiveMany,
   onDeleteRun,
@@ -68,6 +71,11 @@ export function Sidebar({
   const [query, setQuery] = useState("");
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [titleBusy, setTitleBusy] = useState(false);
+  const [titleError, setTitleError] = useState("");
+  const skipTitleBlur = useRef(false);
   const items = [...runs].sort((left, right) => {
     const leftAt = left.updatedAt || left.createdAt;
     const rightAt = right.updatedAt || right.createdAt;
@@ -81,10 +89,52 @@ export function Sidebar({
     setSelected((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   };
 
+  const startEdit = (run: Run) => {
+    if (!onPatchTitle) return;
+    const seed = ((run.title ?? "").trim() || runDisplayTitle(run)).split(/\r?\n/, 1)[0] ?? "";
+    setEditingId(run.id);
+    setDraft(seed.replace(/\s+/g, " ").trim());
+    setTitleError("");
+  };
+
+  const cancelEdit = () => {
+    if (titleBusy) return;
+    skipTitleBlur.current = true;
+    setEditingId(null);
+    setDraft("");
+    setTitleError("");
+  };
+
+  const saveTitle = async (run: Run, body: PatchRunRequest) => {
+    if (!onPatchTitle) return;
+    setTitleBusy(true);
+    setTitleError("");
+    try {
+      await onPatchTitle(run.id, body);
+      setEditingId(null);
+      setDraft("");
+    } catch (error) {
+      setTitleError(error instanceof Error ? error.message : "重命名失败");
+    } finally {
+      setTitleBusy(false);
+    }
+  };
+
+  const commitDraft = (run: Run) => {
+    const next = draft.trim();
+    const current = (run.title ?? "").trim();
+    if (next === current) {
+      cancelEdit();
+      return;
+    }
+    void saveTitle(run, { title: next || null });
+  };
+
   const renderRun = (run: Run) => {
     const running = isActiveRunStatus(run.status);
     const pinned = pinnedIds.includes(run.id);
     const canSelect = selecting && !isShelvedRun(run.status);
+    const editing = editingId === run.id;
     return (
       <div
         key={run.id}
@@ -94,8 +144,13 @@ export function Sidebar({
         role="button"
         tabIndex={0}
         aria-current={run.id === currentRunId ? "true" : undefined}
-        onClick={() => (canSelect ? toggle(run.id) : onOpenRun(run.id))}
+        onClick={() => {
+          if (editing) return;
+          if (canSelect) toggle(run.id);
+          else onOpenRun(run.id);
+        }}
         onKeyDown={(event) => {
+          if (editing) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             if (canSelect) toggle(run.id);
@@ -114,10 +169,64 @@ export function Sidebar({
           />
         ) : null}
         <div className="run-main">
-          <span className="run-title">
-            {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
-            {runListTitle(run)}
-          </span>
+          {editing ? (
+            <div
+              className="run-title-edit"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <input
+                className="run-title-input"
+                value={draft}
+                maxLength={80}
+                disabled={titleBusy}
+                autoFocus
+                aria-label="对话标题"
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitDraft(run);
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelEdit();
+                  }
+                }}
+                onBlur={() => {
+                  if (skipTitleBlur.current) {
+                    skipTitleBlur.current = false;
+                    return;
+                  }
+                  if (!titleBusy) commitDraft(run);
+                }}
+              />
+              <button
+                type="button"
+                className="title-generate"
+                disabled={titleBusy}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void saveTitle(run, { generate: true })}
+              >
+                {titleBusy ? "生成中" : "生成"}
+              </button>
+              {titleError ? <small className="run-title-error">{titleError}</small> : null}
+            </div>
+          ) : (
+            <span
+              className="run-title"
+              title={onPatchTitle ? "双击重命名" : undefined}
+              onDoubleClick={(event) => {
+                if (canSelect) return;
+                event.preventDefault();
+                event.stopPropagation();
+                startEdit(run);
+              }}
+            >
+              {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
+              {runListTitle(run)}
+            </span>
+          )}
           <small>
             {STATUS_LABELS[run.status] ?? run.status}
             {run.executionTarget?.loop === "desk" ? " · 本机" : run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}

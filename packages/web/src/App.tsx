@@ -1833,6 +1833,15 @@ export function App() {
               return false;
             });
           }}
+          onPatchTitle={async (id, body) => {
+            const response = await api(token, `/v1/runs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+            const updated = await readJson<Run & { error?: string }>(response);
+            if (!response.ok || updated.error) {
+              throw new Error(updated.error || "重命名失败");
+            }
+            setCurrentRun((run) => (run && run.id === updated.id ? { ...run, ...updated } : run));
+            setRuns((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
+          }}
           onOpenRun={(id) => {
             setMainTab("chat");
             setSidebarOpen((open) => {
