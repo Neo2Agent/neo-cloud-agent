@@ -1,5 +1,6 @@
 import {
   canonicalizeLlmModel,
+  DEEPSEEK_FLASH_41_MODEL,
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
   DEEPSEEK_VISION_MODEL,
@@ -27,9 +28,13 @@ export function resolveUpstreamModel(requested: string, fallback: string): strin
     "deepseek-flash-vision": DEEPSEEK_VISION_MODEL,
     "deepseek-v4-flash-vision": DEEPSEEK_VISION_MODEL,
     "deepseek-v4-flash-vision-exp": DEEPSEEK_VISION_MODEL,
+    "deepseek-v4.1-flash": DEEPSEEK_FLASH_41_MODEL,
+    "deepseek-v4.1-flash-expires-on-0910": DEEPSEEK_FLASH_41_MODEL,
+    "deepseek-v4-1-flash": DEEPSEEK_FLASH_41_MODEL,
+    "deepseek-flash-4.1": DEEPSEEK_FLASH_41_MODEL,
     "neo/gpt": process.env.LLM_UPSTREAM_GPT_MODEL ?? "gpt-4o",
   };
-  const mapped = routes[requested] ?? fallback;
+  const mapped = routes[requested] ?? (/^deepseek[-/]/i.test(requested) ? requested : fallback);
   const upstream = /^gpt-|^o[1-9]|^chatgpt/i.test(mapped) ? "openai" : "deepseek";
   return canonicalizeLlmModel(upstream, mapped);
 }

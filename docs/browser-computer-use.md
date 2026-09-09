@@ -39,7 +39,7 @@ Neo 已经有对位零件：`neo_subagent`、`neo_artifact_upload`、SSE transcr
 | 对话预览 | 图片 artifact 可 inline；工具卡只渲染文本 | `packages/web/src/components/Transcript.tsx` |
 | 用户贴图 | 存到 `.neo/inbox-images/`，**只在 prompt 里写路径**，不进模型视觉 | `packages/worker/src/images.ts` |
 | 模型声明 | pi 注册 `input: ["text", "image"]` | `packages/worker/src/session.ts` |
-| 默认模型 | `deepseek-v4-flash` / `deepseek-v4-pro`，**文本模型** | `packages/contracts/src/llm-ids.ts` |
+| 默认模型 | `deepseek-v4-flash` / `deepseek-v4-pro` 为文本；`deepseek-v4.1-flash-expires-on-0910` 预览原生多模态 | `packages/contracts/src/llm-ids.ts` |
 | MCP | HTTP/stdio，结果抽成文本；图片 content 被丢掉 | `packages/extensions/src/neo-mcp.ts` |
 | 工具回传 | `CloudToolResult` 只有 `content: string`；事件再裁到 8KB | `packages/extensions/src/types.ts`、`packages/worker/src/events.ts` |
 | Worker 镜像 | `node:22-bookworm-slim` + bash/git，**无 Chromium / X11 / VNC** | `infra/Dockerfile.worker` |
@@ -327,7 +327,7 @@ Cookie / storage 跟 browser context 走，随 Run 销毁。不要把登录态�
 2. **Worker session**：把截图/用户图变成 OpenAI `image_url` part，而不是路径字符串。pi 的 `defineTool` 结果需确认是否支持 image content；不行就在 `session.prompt` 前由 worker 注入。
 3. **路由**：`browser` / `computer` 子代理默认走视觉模型；主 Agent 仍可用 Flash 写代码。
 
-2026-08-21 DeepSeek 发布了 `deepseek-v4-flash-vision-exp`（图按最多 384 token 计费）。适合当便宜视觉环，但标了 Exp，目录里要能关。
+2026-08-21 DeepSeek 发布了 `deepseek-v4-flash-vision-exp`（图按最多 384 token 计费）。适合当便宜视觉环，但标了 Exp，目录里要能关。2026-09-08 起另有中间版本 `deepseek-v4.1-flash-expires-on-0910`（原生多模态，计费同 Flash，账号并发 20，9 月 10 日过期）。
 
 ### 7.3 录屏
 

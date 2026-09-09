@@ -138,7 +138,7 @@ if not has_deepseek:
                     "name": "DeepSeek",
                     "key": key,
                     "base_url": "https://api.deepseek.com",
-                    "models": "deepseek-v4-flash,deepseek-v4-pro,deepseek-v4-flash-vision-exp",
+                    "models": "deepseek-v4-flash,deepseek-v4-pro,deepseek-v4-flash-vision-exp,deepseek-v4.1-flash-expires-on-0910,deepseek-v4.1-flash",
                     "groups": ["default"],
                     "group": "default",
                     "priority": 0,

@@ -12,7 +12,9 @@ export function mergeSpokenText(current: string, spoken: string): string {
 }
 
 export function modelShortLabel(model: string): string {
-  return /pro/i.test(model) && !/vision/i.test(model) ? "Pro" : "Flash";
+  if (/v4\.1/i.test(model)) return "4.1";
+  if (/pro/i.test(model) && !/vision/i.test(model)) return "Pro";
+  return "Flash";
 }
 
 export function holdPadLabel(input: {

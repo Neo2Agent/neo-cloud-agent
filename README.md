@@ -107,7 +107,7 @@ DEFAULT_MODEL=neo/deepseek
 DEEPSEEK_API_KEY=sk-...
 ```
 
-`neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` 都会路由到便宜的 `deepseek-v4-flash`。要更强的模型把设置里的型号改成 `deepseek-v4-pro`，或直接请求 `deepseek-v4-pro`。
+`neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` 都会路由到便宜的 `deepseek-v4-flash`。要更强的模型把设置里的型号改成 `deepseek-v4-pro`，或直接请求 `deepseek-v4-pro`。对话页也可选预览型号 `deepseek-v4.1-flash-expires-on-0910`（原生多模态，官方文档尚未列入，2026-09-10 过期）。
 
 4C/4G 轻量机（现网）用 loop 槽，不要开 Docker / Firecracker。`WORKER_MEMORY_MIB` 会打进 loop/local worker 的 V8 堆上限；control-plane unit 开了 cgroup `Delegate=` 时再套 RSS。归档后控制面丢掉内存里的事件，对话从 MySQL / `.control` 再读。对象存储默认仍是本机 `RUNS_DIR/.objects`，不要为了现网去切 S3。
 

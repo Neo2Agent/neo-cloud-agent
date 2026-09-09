@@ -46,6 +46,14 @@ test("maps DeepSeek public ids and retired aliases to v4-flash", () => {
   assert.equal(resolveUpstreamModel("deepseek-reasoner", "deepseek-chat"), "deepseek-v4-flash");
   assert.equal(resolveUpstreamModel("deepseek-v4-pro", "deepseek-v4-flash"), "deepseek-v4-pro");
   assert.equal(resolveUpstreamModel("deepseek-v4-flash-vision-exp", "deepseek-v4-flash"), "deepseek-v4-flash-vision-exp");
+  assert.equal(
+    resolveUpstreamModel("deepseek-v4.1-flash", "deepseek-v4-flash"),
+    "deepseek-v4.1-flash-expires-on-0910",
+  );
+  assert.equal(
+    resolveUpstreamModel("deepseek-v4.1-flash-expires-on-0910", "deepseek-v4-flash"),
+    "deepseek-v4.1-flash-expires-on-0910",
+  );
 });
 
 test("rewriteBody upgrades text Flash to vision when messages carry images", () => {
@@ -67,6 +75,22 @@ test("rewriteBody upgrades text Flash to vision when messages carry images", () 
     "deepseek-v4-flash",
   );
   assert.equal(withImage.model, "deepseek-v4-flash-vision-exp");
+  const flash41WithImage = rewriteBody(
+    {
+      model: "deepseek-v4.1-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "see" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,xx" } },
+          ],
+        },
+      ],
+    },
+    "deepseek-v4-flash",
+  );
+  assert.equal(flash41WithImage.model, "deepseek-v4.1-flash-expires-on-0910");
   assert.equal(
     messagesHaveImages([{ role: "user", content: [{ type: "image", data: "xx" }] }]),
     true,

@@ -1,8 +1,8 @@
+import { resolveDeepseekChatModel } from "@neo-cloud-agent/contracts";
+
 export function resolveChatModel(upstream?: string | null, model?: string | null, hasImages = false): string {
   if (upstream === "openai") return "gpt-4o-mini";
-  if (/pro/i.test(model ?? "") && !/vision/i.test(model ?? "")) return "deepseek-v4-pro";
-  if (hasImages || /vision/i.test(model ?? "")) return "deepseek-v4-flash-vision-exp";
-  return "deepseek-v4-flash";
+  return resolveDeepseekChatModel(model, hasImages);
 }
 
 export function formatDuration(start: string, end?: string | null, now = new Date()): string {

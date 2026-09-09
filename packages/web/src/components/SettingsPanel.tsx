@@ -1,4 +1,5 @@
 import { Select } from "@neo-cloud-agent/ui";
+import { DEEPSEEK_SETTINGS_MODELS, deepseekModelLabel, selectDeepseekModelOption } from "@neo-cloud-agent/contracts";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
 import { toast } from "../feedback";
@@ -193,7 +194,7 @@ export function SettingsPanel({
             {newApiManaged
               ? "渠道在 New API。这里只选型号；贴图时会自动走视觉模型。"
               : llm.configured
-                ? `已配置 ${deepseek ? (/vision/i.test(llm.model ?? "") ? "DeepSeek Flash Vision" : /pro/i.test(llm.model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash") : "OpenAI"}，对话走真实模型。`
+                ? `已配置 ${deepseek ? deepseekModelLabel(llm.model) : "OpenAI"}，对话走真实模型。`
                 : "未配置 API Key，当前是 mock 回复。"}
           </p>
         </header>
@@ -216,19 +217,9 @@ export function SettingsPanel({
             <Select
               id="llm-model"
               name="llm-model"
-              value={
-                /vision/i.test(llm.model ?? "")
-                  ? "deepseek-v4-flash-vision-exp"
-                  : /pro/i.test(llm.model ?? "")
-                    ? "deepseek-v4-pro"
-                    : "deepseek-v4-flash"
-              }
+              value={selectDeepseekModelOption(llm.model)}
               onValueChange={onLlmModel}
-              options={[
-                { value: "deepseek-v4-flash", label: "Flash（便宜）" },
-                { value: "deepseek-v4-flash-vision-exp", label: "Flash Vision（看图）" },
-                { value: "deepseek-v4-pro", label: "Pro" },
-              ]}
+              options={DEEPSEEK_SETTINGS_MODELS.map((item) => ({ value: item.id, label: item.label }))}
             />
           </label>
           {newApiManaged ? (

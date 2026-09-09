@@ -1,4 +1,4 @@
-import { isDeepseekVisionModel, resolveModelLimits, resolveRequestMaxTokens } from "@neo-cloud-agent/contracts";
+import { isDeepseekFlash41Model, isDeepseekVisionModel, resolveModelLimits, resolveRequestMaxTokens } from "@neo-cloud-agent/contracts";
 
 export function publicModelId(modelId: string): string {
   return modelId.includes("/") ? modelId.split("/")[1]! : modelId;
@@ -7,7 +7,7 @@ export function publicModelId(modelId: string): string {
 /** Limits we register with pi. Unknown models get no invented window. */
 export function supportsVision(modelId: string): boolean {
   const id = publicModelId(modelId);
-  return isDeepseekVisionModel(id) || /^gpt-4o|^gpt-4\.1|^chatgpt-4o|^o[1-9]/i.test(id);
+  return isDeepseekVisionModel(id) || isDeepseekFlash41Model(id) || /^gpt-4o|^gpt-4\.1|^chatgpt-4o|^o[1-9]/i.test(id);
 }
 
 export function gatewayModelSpec(modelId: string) {

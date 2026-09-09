@@ -12,6 +12,10 @@ test("formatDuration prints seconds then minutes", () => {
 test("resolveChatModel switches to vision when images are attached", () => {
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-v4-flash-vision-exp");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-pro", false), "deepseek-v4-pro");
+  assert.equal(
+    resolveChatModel("deepseek", "deepseek-v4.1-flash", true),
+    "deepseek-v4.1-flash-expires-on-0910",
+  );
   assert.equal(resolveChatModel("openai", "gpt-4o", true), "gpt-4o-mini");
 });
 

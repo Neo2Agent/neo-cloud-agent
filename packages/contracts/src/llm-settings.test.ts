@@ -5,10 +5,16 @@ import path from "node:path";
 import test from "node:test";
 import {
   canonicalizeLlmModel,
+  deepseekModelLabel,
+  isDeepseekFlash41Model,
+  isDeepseekVisionModel,
   llmSettingsFile,
   parseLlmSettingsRequest,
   publicLlmSettings,
   readLlmSettings,
+  resolveDeepseekChatModel,
+  selectDeepseekModelOption,
+  visionModelFor,
   writeLlmSettings,
 } from "./llm-settings.js";
 
@@ -65,7 +71,21 @@ test("canonicalizeLlmModel remaps retired DeepSeek aliases to v4-flash", () => {
   assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-pro"), "deepseek-v4-pro");
   assert.equal(canonicalizeLlmModel("deepseek", "deepseek-vision"), "deepseek-v4-flash-vision-exp");
   assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-flash-vision-exp"), "deepseek-v4-flash-vision-exp");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4.1-flash"), "deepseek-v4.1-flash-expires-on-0910");
+  assert.equal(
+    canonicalizeLlmModel("deepseek", "deepseek-v4.1-flash-expires-on-0910"),
+    "deepseek-v4.1-flash-expires-on-0910",
+  );
 });
+
+test("Flash 4.1 is native multimodal and is not remapped to vision-exp", () => {
+  assert.equal(isDeepseekFlash41Model("deepseek-v4.1-flash"), true);
+  assert.equal(isDeepseekVisionModel("deepseek-v4.1-flash"), false);
+  assert.equal(visionModelFor("deepseek-v4.1-flash"), "deepseek-v4.1-flash-expires-on-0910");
+  assert.equal(resolveDeepseekChatModel("deepseek-v4.1-flash", true), "deepseek-v4.1-flash-expires-on-0910");
+  assert.equal(resolveDeepseekChatModel("deepseek-v4-flash", true), "deepseek-v4-flash-vision-exp");
+  assert.equal(selectDeepseekModelOption("deepseek-v4.1-flash"), "deepseek-v4.1-flash-expires-on-0910");
+  assert.equal(deepseekModelLabel("deepseek-v4.1-flash-expires-on-0910"), "DeepSeek Flash 4.1");
 
 test("readLlmSettings remaps a saved deepseek-chat id", () => {
   const root = mkdtempSync(path.join(tmpdir(), "neo-llm-alias-"));
