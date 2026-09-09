@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { formatRunTime, runListTitle, slotLabel, STATUS_LABELS } from "../format";
+import { formatRunTime, runListPlaceSuffix, runListTitle, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
 import { IconAutomations, IconClose, IconExperts, IconPlus, IconProjects, IconSkills, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
@@ -120,7 +120,7 @@ export function Sidebar({
           </span>
           <small>
             {STATUS_LABELS[run.status] ?? run.status}
-            {run.executionTarget?.loop === "desk" ? " · 本机" : run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : ""}
+            {runListPlaceSuffix(run)}
           </small>
           <time className="run-time" dateTime={run.updatedAt || run.createdAt}>
             {formatRunTime(run.createdAt, run.updatedAt)}

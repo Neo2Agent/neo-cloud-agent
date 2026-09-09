@@ -25,6 +25,7 @@ import { cloudFollowUp, cloudRunRequest } from "../create-run";
 import { acceptImages, imageHint, overImageBudget } from "../images";
 import { filesToImageRefs } from "./pick-images";
 import { avatarLetter, chatModelShort, resolveChatModel, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
+import { runPlaceLabel } from "../place";
 import { chatStatusText, composerGate } from "../session";
 import {
   appendPendingUser,
@@ -863,7 +864,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
         <header className="topbar">
           <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
           <span className={turnBusy ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
-          {current ? <IslandTag>{current.executionTarget?.remoteControl ? "remote" : "cloud"}</IslandTag> : null}
+          {current ? <IslandTag>{runPlaceLabel(current)}</IslandTag> : null}
         </header>
         {current ? (
           <div className="chat-actions">

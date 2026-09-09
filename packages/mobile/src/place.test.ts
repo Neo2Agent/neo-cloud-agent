@@ -19,6 +19,10 @@ test("runPlace marks only Desk Remote Control as remote", () => {
   assert.equal(runPlace({ executionTarget: { loop: "desk", tools: "desk" } }), "cloud");
   assert.equal(
     runPlace({ executionTarget: { loop: "desk", tools: "desk", deskId: "desk_1", remoteControl: true } }),
+    "cloud",
+  );
+  assert.equal(
+    runPlace({ executionTarget: { loop: "cloud", tools: "desk", deskId: "desk_1", remoteControl: true } }),
     "remote",
   );
   assert.equal(runPlaceLabel({ executionTarget: CLOUD_TARGET }), "cloud");
