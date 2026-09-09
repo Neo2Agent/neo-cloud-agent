@@ -3,8 +3,7 @@ import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-us
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
-import { DEEPSEEK_CHAT_MODELS } from "@neo-cloud-agent/contracts/llm-ids";
-import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
+import { DEEPSEEK_CHAT_MODELS } from "@neo-cloud-agent/contracts";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import { pageAllowsLiveMic, type VoiceSession } from "@neo-cloud-agent/ui/speech";
 import { BuddyVoiceFileSheet, Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";

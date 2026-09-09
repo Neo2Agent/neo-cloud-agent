@@ -1,5 +1,5 @@
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { deepseekModelLabel, resolveDeepseekChatModel } from "@neo-cloud-agent/contracts/llm-ids";
+import { deepseekModelLabel, resolveDeepseekChatModel } from "@neo-cloud-agent/contracts";
 import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 
 export const STATUS_LABELS: Record<string, string> = {

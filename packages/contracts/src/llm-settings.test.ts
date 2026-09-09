@@ -86,7 +86,6 @@ test("Flash 4.1 is native multimodal and is not remapped to vision-exp", () => {
   assert.equal(resolveDeepseekChatModel("deepseek-v4-flash", true), "deepseek-v4-flash-vision-exp");
   assert.equal(selectDeepseekModelOption("deepseek-v4.1-flash"), "deepseek-v4.1-flash-expires-on-0910");
   assert.equal(deepseekModelLabel("deepseek-v4.1-flash-expires-on-0910"), "DeepSeek Flash 4.1");
-});
 
 test("readLlmSettings remaps a saved deepseek-chat id", () => {
   const root = mkdtempSync(path.join(tmpdir(), "neo-llm-alias-"));
