@@ -10,7 +10,13 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class ControlPlaneClient {
-  private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+  // Node's control-plane is HTTP/1.1. The default Java client speaks HTTP/2 first
+  // and the first heartbeat then fails, leaving the Desk UI stuck on 正在思考.
+  private final HttpClient http =
+      HttpClient.newBuilder()
+          .version(HttpClient.Version.HTTP_1_1)
+          .connectTimeout(Duration.ofSeconds(10))
+          .build();
   private final ObjectMapper mapper = new ObjectMapper();
   private final String baseUrl;
   private final String jwt;
