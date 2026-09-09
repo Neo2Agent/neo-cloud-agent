@@ -1,12 +1,3 @@
-import {
-  DEEPSEEK_CHAT_MODELS,
-  DEEPSEEK_FLASH_41_MODEL,
-  DEEPSEEK_FLASH_MODEL,
-  DEEPSEEK_PRO_MODEL,
-  DEEPSEEK_VISION_MODEL,
-  deepseekModelLabel,
-  resolveDeepseekChatModel,
-} from "@neo-cloud-agent/contracts";
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 
@@ -56,25 +47,22 @@ export function toolDisplayName(tool: TranscriptTool): string {
   return tool.name === "neo_subagent" ? "subagent" : tool.name;
 }
 
-export const CHAT_MODELS = DEEPSEEK_CHAT_MODELS.map((item) => ({
-  id: item.id,
-  label: item.label,
-  short: item.id === DEEPSEEK_PRO_MODEL ? "Pro" : item.id === DEEPSEEK_FLASH_41_MODEL ? "4.1" : "Flash",
-}));
+export const CHAT_MODELS = [
+  { id: "deepseek-v4-flash", label: "DeepSeek Flash", short: "Flash" },
+  { id: "deepseek-v4-pro", label: "DeepSeek Pro", short: "Pro" },
+] as const;
 
 export function resolveChatModel(model?: string | null): string {
-  const id = resolveDeepseekChatModel(model, false);
-  return id === DEEPSEEK_VISION_MODEL ? DEEPSEEK_FLASH_MODEL : id;
+  if (/pro/i.test(model ?? "") && !/vision/i.test(model ?? "")) return "deepseek-v4-pro";
+  return "deepseek-v4-flash";
 }
 
 export function chatModelLabel(model?: string | null): string {
-  return deepseekModelLabel(resolveChatModel(model));
+  return resolveChatModel(model) === "deepseek-v4-pro" ? "DeepSeek Pro" : "DeepSeek Flash";
 }
 
 export function chatModelShort(model?: string | null): string {
-  const id = resolveChatModel(model);
-  if (id === DEEPSEEK_FLASH_41_MODEL) return "4.1";
-  return id === DEEPSEEK_PRO_MODEL ? "Pro" : "Flash";
+  return resolveChatModel(model) === "deepseek-v4-pro" ? "Pro" : "Flash";
 }
 
 export function avatarLetter(email: string, fallback = "我"): string {

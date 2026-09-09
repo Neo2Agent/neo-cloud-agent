@@ -2,18 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { avatarLetter, CHAT_MODELS, chatModelLabel, chatModelShort, resolveChatModel, toolBodyText } from "./format.js";
 
-test("mobile chat models are DeepSeek Flash, Flash 4.1, and Pro", () => {
+test("mobile chat models are DeepSeek Flash and Pro", () => {
   assert.deepEqual(
     CHAT_MODELS.map((item) => item.id),
-    ["deepseek-v4-flash", "deepseek-v4.1-flash-expires-on-0910", "deepseek-v4-pro"],
+    ["deepseek-v4-flash", "deepseek-v4-pro"],
   );
   assert.equal(chatModelLabel("deepseek-v4-flash"), "DeepSeek Flash");
   assert.equal(chatModelLabel("deepseek-v4-pro"), "DeepSeek Pro");
-  assert.equal(chatModelLabel("deepseek-v4.1-flash"), "DeepSeek Flash 4.1");
   assert.equal(chatModelShort("deepseek-v4-pro"), "Pro");
-  assert.equal(chatModelShort("deepseek-v4.1-flash"), "4.1");
   assert.equal(resolveChatModel("deepseek-v4-flash-vision-exp"), "deepseek-v4-flash");
-  assert.equal(resolveChatModel("deepseek-v4.1-flash"), "deepseek-v4.1-flash-expires-on-0910");
 });
 
 test("avatarLetter uses the account initial", () => {

@@ -6,7 +6,6 @@ import {
   settleTranscriptMessages,
   transcriptBodyNeeded,
 } from "@neo-cloud-agent/contracts/transcript";
-import { DEEPSEEK_CHAT_MODELS } from "@neo-cloud-agent/contracts";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
@@ -1404,10 +1403,7 @@ export function App() {
       }
       if (action === "cycle-model") {
         setLlm((prev) => {
-          const next = cycle(
-            DEEPSEEK_CHAT_MODELS.map((item) => item.id),
-            prev.model || "deepseek-v4-flash",
-          );
+          const next = cycle(["deepseek-v4-flash", "deepseek-v4-pro"], prev.model || "deepseek-v4-flash");
           return { ...prev, model: next, upstream: "deepseek" };
         });
         return;

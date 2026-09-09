@@ -1,4 +1,3 @@
-import { DEEPSEEK_SETTINGS_MODELS, selectDeepseekModelOption } from "@neo-cloud-agent/contracts";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
@@ -375,7 +374,11 @@ export function SettingsPage({
   };
   const consoleUrl = newApi?.consoleUrl || newApi?.url || "";
   const managed = Boolean(consoleUrl);
-  const selectedModel = selectDeepseekModelOption(name);
+  const selectedModel = /vision/i.test(name)
+    ? "deepseek-v4-flash-vision-exp"
+    : /pro/i.test(name)
+      ? "deepseek-v4-pro"
+      : "deepseek-v4-flash";
   const current = SETTINGS_SECTIONS.find((item) => item.id === section) ?? SETTINGS_SECTIONS[0];
   return (
     <Page>
@@ -453,7 +456,11 @@ export function SettingsPage({
                     <Select
                       value={selectedModel}
                       onValueChange={setName}
-                      options={DEEPSEEK_SETTINGS_MODELS.map((item) => ({ value: item.id, label: item.label }))}
+                      options={[
+                        { value: "deepseek-v4-flash", label: "Flash（便宜）" },
+                        { value: "deepseek-v4-flash-vision-exp", label: "Flash Vision（看图）" },
+                        { value: "deepseek-v4-pro", label: "Pro" },
+                      ]}
                     />
                   </label>
                   <p className="hint">对话走控制面 Gateway，再打 New API。不要在 Desk 里贴上游 Key。</p>

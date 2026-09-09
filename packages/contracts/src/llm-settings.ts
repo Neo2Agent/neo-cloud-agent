@@ -9,19 +9,12 @@ import {
 export type { LlmUpstreamMode } from "./llm-ids.js";
 export {
   canonicalizeLlmModel,
-  DEEPSEEK_CHAT_MODELS,
-  DEEPSEEK_FLASH_41_MODEL,
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
-  DEEPSEEK_SETTINGS_MODELS,
   DEEPSEEK_VISION_MODEL,
-  deepseekModelLabel,
   defaultLlmModel,
-  isDeepseekFlash41Model,
   isDeepseekProModel,
   isDeepseekVisionModel,
-  resolveDeepseekChatModel,
-  selectDeepseekModelOption,
   visionModelFor,
 } from "./llm-ids.js";
 

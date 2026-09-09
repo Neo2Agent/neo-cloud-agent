@@ -13,17 +13,12 @@ import {
   toolArgPreview,
 } from "./format.js";
 
-test("modelLabel distinguishes DeepSeek Flash, Flash 4.1, Vision, and Pro", () => {
+test("modelLabel distinguishes DeepSeek Flash, Vision, and Pro", () => {
   assert.equal(modelLabel("deepseek", "deepseek-v4-flash"), "DeepSeek Flash");
   assert.equal(modelLabel("deepseek", "deepseek-v4-pro"), "DeepSeek Pro");
   assert.equal(modelLabel("deepseek", "deepseek-v4-flash-vision-exp"), "DeepSeek Flash Vision");
-  assert.equal(modelLabel("deepseek", "deepseek-v4.1-flash"), "DeepSeek Flash 4.1");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash"), "deepseek-v4-flash");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-v4-flash-vision-exp");
-  assert.equal(
-    resolveChatModel("deepseek", "deepseek-v4.1-flash", true),
-    "deepseek-v4.1-flash-expires-on-0910",
-  );
 });
 
 test("formatUsage prints total tokens", () => {

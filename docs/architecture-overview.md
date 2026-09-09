@@ -507,7 +507,7 @@ pi-ai streamSimple
 | 能力 | 现状 |
 | --- | --- |
 | Run-scoped JWT | `runId` / `orgId` / `model` / 过期；VM 重启轮换 |
-| 模型目录 | 对外 `neo/deepseek`、`ds` 等；对内默认 `deepseek-v4-flash`；设置里可切 Pro / Flash 4.1 预览 / Vision；退役的 `deepseek-chat` / `deepseek-reasoner` 改写成 flash |
+| 模型目录 | 对外 `neo/deepseek`、`ds` 等；对内默认 `deepseek-v4-flash`；设置里可切 Pro；退役的 `deepseek-chat` / `deepseek-reasoner` 改写成 flash |
 | 用量 | input / output 按 Run 聚合；对话页另有 context window 填充 |
 | 上游 | `.env` / `.neo/llm-upstream.env`；现网 `LLM_UPSTREAM_BASE_URL` 指向库机 New API；没 key 且没上游则 `upstream=mock` |
 | 输出封顶 | `MAX_REQUEST_OUTPUT_TOKENS = 16384`（`packages/contracts/src/models.ts`）；`capUpstreamMaxTokens()` 在打上游前截断，避免 New API 钱包预扣爆掉 |
