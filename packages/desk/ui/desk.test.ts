@@ -39,13 +39,11 @@ test("mergeDeskTarget keeps the live desk id when the picker only changes folder
     loop: "desk",
     tools: "desk",
     deskId: "desk_live",
-    deskWorkspaceId: "dws_local_abc",
   });
   assert.deepEqual(localRunTarget({ kind: "remote", workspaceId: "dws_local_abc" }, "desk_live"), {
     loop: "cloud",
     tools: "desk",
     deskId: "desk_live",
-    deskWorkspaceId: "dws_local_abc",
     remoteControl: true,
   });
   assert.equal(isLocalDeskKind("desk"), true);

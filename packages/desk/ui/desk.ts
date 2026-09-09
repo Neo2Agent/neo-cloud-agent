@@ -54,6 +54,9 @@ export function mergeDeskTarget(target: DeskTarget, deskId?: string): DeskTarget
 /**
  * This Computer keeps the loop on this laptop (Cursor local).
  * Remote puts the loop in neo-loop and only the tools on this disk.
+ * Inline create must not send `deskWorkspaceId`: the control plane looks that
+ * id up in its catalog and fails with 「这台电脑没有这个本机工作区」 when the
+ * catalog is empty. The folder stays in `repoUrls`; Desk already knows the path.
  */
 export function localRunTarget(
   target: DeskTarget,
@@ -71,7 +74,6 @@ export function localRunTarget(
       loop: "cloud",
       tools: "desk",
       deskId: merged.deskId,
-      deskWorkspaceId: merged.workspaceId,
       remoteControl: true,
     };
   }
@@ -79,7 +81,6 @@ export function localRunTarget(
     loop: "desk",
     tools: "desk",
     deskId: merged.deskId,
-    deskWorkspaceId: merged.workspaceId,
   };
 }
 
