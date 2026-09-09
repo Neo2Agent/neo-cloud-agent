@@ -154,7 +154,9 @@ export function isCloudLoopTarget(target?: ExecutionTarget | null): boolean {
  * This Computer is `{loop:desk, tools:desk}` and is not Remote, even if an
  * older run set `remoteControl` so the web could list it.
  */
-export function isRemoteControlTarget(target?: ExecutionTarget | null): boolean {
+export function isRemoteControlTarget(
+  target?: ExecutionTarget | null,
+): target is ExecutionTarget & { loop: "cloud"; tools: "desk"; deskId: string; remoteControl: true } {
   return Boolean(
     target?.remoteControl && target.loop === "cloud" && target.tools === "desk" && target.deskId,
   );

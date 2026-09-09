@@ -33,26 +33,33 @@ test("evaluateDeskToolsProxy fail-closes unless desk token, claim, and run JWT a
     runJwtOk: true,
   };
   assert.deepEqual(evaluateDeskToolsProxy(ok), { ok: true });
-  assert.equal(evaluateDeskToolsProxy({ ...ok, deskMatches: false }).status, 401);
-  assert.equal(evaluateDeskToolsProxy({ ...ok, deskOnline: false }).status, 409);
-  assert.equal(evaluateDeskToolsProxy({ ...ok, run: undefined }).status, 404);
-  assert.equal(evaluateDeskToolsProxy({ ...ok, run: { ...run, kernel: "pi" } }).status, 400);
-  assert.equal(
-    evaluateDeskToolsProxy({
+  const denied = (input: Parameters<typeof evaluateDeskToolsProxy>[0], status: number) => {
+    const result = evaluateDeskToolsProxy(input);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, status);
+    }
+  };
+  denied({ ...ok, deskMatches: false }, 401);
+  denied({ ...ok, deskOnline: false }, 409);
+  denied({ ...ok, run: undefined }, 404);
+  denied({ ...ok, run: { ...run, kernel: "pi" } }, 400);
+  denied(
+    {
       ...ok,
       run: { ...run, executionTarget: { loop: "desk", tools: "desk", deskId: "desk_1" } },
-    }).status,
+    },
     400,
   );
-  assert.equal(
-    evaluateDeskToolsProxy({
+  denied(
+    {
       ...ok,
       run: { ...run, executionTarget: { ...run.executionTarget, deskId: "desk_other" } },
-    }).status,
+    },
     403,
   );
-  assert.equal(evaluateDeskToolsProxy({ ...ok, claimed: false }).status, 409);
-  assert.equal(evaluateDeskToolsProxy({ ...ok, runJwtOk: false }).status, 401);
+  denied({ ...ok, claimed: false }, 409);
+  denied({ ...ok, runJwtOk: false }, 401);
 });
 
 test("websocket accept key matches RFC 6455", () => {

@@ -19,9 +19,9 @@ export function isLocalDeskKind(kind?: DeskTargetKind | null): boolean {
 }
 
 /** This Computer or Remote: files live on a desk. Cloud-only runs are neither. */
-export function isDeskBoundRun(
-  run?: { executionTarget?: { loop?: string; tools?: string } | null } | null,
-): boolean {
+export function isDeskBoundRun<T extends { executionTarget?: { loop?: string; tools?: string } | null }>(
+  run?: T | null,
+): run is T {
   return run?.executionTarget?.tools === "desk" || run?.executionTarget?.loop === "desk";
 }
 

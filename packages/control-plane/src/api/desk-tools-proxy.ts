@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { IncomingMessage } from "node:http";
-import type { Socket } from "node:net";
+import type { Duplex } from "node:stream";
 import { verifyRunToken } from "@neo-cloud-agent/contracts";
 import type { Run } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
@@ -84,7 +84,7 @@ function verifyRunJwt(token: string, runId: string): boolean {
   }
 }
 
-function reject(socket: Socket, status: number, message: string): void {
+function reject(socket: Duplex, status: number, message: string): void {
   socket.write(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
   socket.destroy();
 }
@@ -112,7 +112,7 @@ function loopToolsUrl(runId: string): URL {
   return url;
 }
 
-export function handleDeskToolsUpgrade(req: IncomingMessage, socket: Socket, head: Buffer): void {
+export function handleDeskToolsUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
   const url = new URL(req.url ?? "/", "http://control-plane.local");
   const parsed = parseDeskToolsUpgradePath(url.pathname);
   if (!parsed) {

@@ -113,9 +113,9 @@ export type RemoteControlSendLockOptions = {
 };
 
 /** Tools or loop live on a laptop. Offline desk must fail closed — including cloud-loop Remote. */
-export function isDeskHostedTarget(
-  target?: { loop?: string; tools?: string; remoteControl?: boolean } | null,
-): boolean {
+export function isDeskHostedTarget<T extends { loop?: string; tools?: string }>(
+  target?: T | null,
+): target is T {
   return target?.tools === "desk" || target?.loop === "desk";
 }
 
