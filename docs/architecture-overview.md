@@ -164,7 +164,7 @@ neo-cloud-agent/
 | `contracts` | 类型与协议 | 无进程 |
 | `control-plane` | 对外 `/v1` + 内部 `/internal` + 托管 Web | `:8080` |
 | `llm-gateway` | OpenAI-compatible 代理 | `:8081` |
-| `neo-loop` | Java AgentScope turn 引擎；现网默认内核 | `:8082` 仅内网 |
+| `neo-loop` | Java AgentScope turn 引擎；现网默认关，Remote / 显式 `kernel=agentscope` 才用 | `:8082` 仅内网 |
 | `worker` | 嵌入 pi 的执行进程 | 每 Run 一份 |
 | `extensions` | `neo_*` 云工具 | 打进 worker |
 | `ui` | 共享 Radix 控件 | 无进程；只被四个前端 import |
@@ -310,7 +310,7 @@ sequenceDiagram
 | `harness`（默认） | AgentScope `HarnessAgent` + `ReActAgent`，关掉宿主机 shell / filesystem | 目标形态 |
 | `react` | 自研 Activity ReAct | 本机 / e2e 更稳（mock Gateway 下 harness 更脆） |
 
-Desk：`{loop:desk, tools:desk}` 仍是本机 pi。`{loop:cloud, tools:desk}` 合约已允许，产品第 4 期。禁止 desk loop + cloud tools。
+Desk：`{loop:desk, tools:desk}` 仍是本机 pi（This Computer）。`{loop:cloud, tools:desk, remoteControl}` + `kernel=agentscope` 是 Remote：loop 在 neo-loop，工具经控制面 WSS。禁止 desk loop + cloud tools。
 
 多端是**订阅制**：事件只生产一次。浏览器多个标签、CLI、Desk、手机都订控制面同一条 SSE。晚到的端先拉 `GET /v1/runs/:id/transcript` 压缩快照，再带 `after` / `Last-Event-ID` 跟直播。`agentscope` 重试会发 `turn.rewind`；`foldRewoundEvents` 只切 rewind **之前**、同 `replyId` 且 `workerSeq >= fromSeq` 的事件，重播 delta 保留。
 
@@ -359,7 +359,7 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 
 `source` 区分来源：`web | cli | slack | github | api | automation | telegram | wechat | desk | ios | android`。
 
-`ExecutionTarget` 两轴分开：`{ loop, tools }`。P0–P2 **只允许同址**（都是 `cloud` 或都是 `desk`）。跨址「云 loop + 本机工具」还没做。
+`ExecutionTarget` 两轴分开：`{ loop, tools }`。`kernel=pi` 继续同址。`kernel=agentscope` 允许 Remote：`{loop:cloud, tools:desk, remoteControl}`。禁止 `{loop:desk, tools:cloud}`。
 
 ---
 
@@ -605,7 +605,7 @@ GitHub PR 评论和 Actions 经 `POST /webhooks/github`（HMAC）进跟进队列
 | --- | --- | --- | --- |
 | 对话页 | `packages/web` | 云端 | 登录、流式、Markdown、Diff、文件树、粘贴图片、产物预览、项目、专家 / 技能目录、自动化、Flash/Pro |
 | 管理台 | `admin-web` + `admin-api` | 无 | 总览 / 用户 / Run / 内置专家配置与下发 / 限流；仅平台管理员 |
-| Desk | `packages/desk` | 云或本机 | Electron + 独立 UI；This Computer（默认）vs Remote control；inline 直接带 assignment，dispatch 走 inbox SSE |
+| Desk | `packages/desk` | 云、本机 pi、或 Remote | Electron + 独立 UI；This Computer = 本机 pi；Remote = 云 loop + 本机工具（WSS）；inline 带 assignment，dispatch 走 inbox SSE |
 | CLI | `packages/cli` | 云端 | `pnpm neo`：创建、SSE、跟进、归档、diff、PR；headless |
 | Mobile | `packages/mobile` | 云端 + Desk Remote | Expo 壳：新开只 cloud；列表 / 跟进含 Desk Remote；`source` ios/android；推送 `/v1/devices`；记忆 / Inbox / 产物 / 诊断 / 技能启停 / Recipe 与对话页同一套 `/v1` |
 | Telegram / 微信 | `ingress/` | 云端 | 发一句开新对话；做完 / 开 PR 可推回来 |
@@ -616,16 +616,17 @@ Desk 本机路径（已落地）。`start` 分开「谁起这个 worker」：
 **A `inline`（你就在这台 Desk 前面）**
 
 1. 登录后 `POST /v1/desks`，拿 `deskId` + desk token；绑定的文件夹上报机器名 + repoKey，绝对路径留本机。
-2. `POST /v1/runs { source:"desk", start:"inline", target:{ loop:"desk", tools:"desk", deskId } }`，**响应直接带 assignment**。
-3. Desk 用**用户选的那个文件夹本身**当工作区（不开 worktree），把 bootstrap 写进 `userData`，fork `packages/worker`，再 `claim`。
+2. This Computer：`POST /v1/runs { start:"inline", target:{ loop:"desk", tools:"desk", deskId }, kernel 省略 }`。**不要传 `deskWorkspaceId`**。
+3. Remote：同一条 inline，但 `target:{ loop:"cloud", tools:"desk", deskId, remoteControl:true }` + `kernel:"agentscope"`。assignment 带 `toolsChannelUrl`，不带公网 `:8082`。
+4. Desk 用**用户选的那个文件夹本身**当工作区（不开 worktree），fork worker，再 `claim`。This Computer 是 `WORKER_ROLE` 默认（pi loop）；Remote 是 `WORKER_ROLE=tools`。
 
-**B `dispatch`（缺省：Web / handoff / 控制面恢复）**
+**B `dispatch`（缺省：Web 跟进 / handoff / 控制面恢复）**
 
 1. Desk 常驻 `GET /v1/desks/:id/inbox`（SSE，出向）。控制面打不进 NAT 后面的笔记本。
 2. 控制面严格匹配 user + 机器在线且允许远程 + 仓库对得上，然后往 inbox 推 assignment；对不上就明确报错，不回落云端。
-3. Desk 用已绑定的工作区 spawn，再 `claim`。
+3. Desk 用已绑定的工作区 spawn，再 `claim`。Remote 再出向 `wss://…/v1/desks/:id/tools/:runId`。
 
-两条路径之后完全一样。共同约束：`online` 就是「正握着 inbox」；控制面**不**杀笔记本 pid（取消走 inbox，活着靠 worker 心跳）；本机 Run 的文件工具和 bash 写操作锁在工作区根内；掉线走 `detachOrQueue`，不标 ERROR；handoff 到云要可 clone 的远端，切回本机要求该仓库已有绑定，未提交改动都不跟随。Desk 本机 worker 默认 `WORKER_EXIT_AFTER_TURN=1`（一轮退出，跟进再起进程）。每轮划痕在 `<workspace>/.neo/runs/<runId>/`。打包产物是 `pnpm pack:desk` → `packages/desk/release/*.zip`，没有 `/v1/downloads`。跨址「云 loop + 本机工具」见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)，**还没做**。
+共同约束：`online` 就是「正握着 inbox」；控制面**不**杀笔记本 pid；文件工具锁在工作区根内；掉线走 `detachOrQueue`，不标 ERROR。This Computer worker `WORKER_EXIT_AFTER_TURN=1`；Remote tools worker `=0`。每轮划痕在 `<workspace>/.neo/runs/<runId>/`。规格见 [server-side-agent-loop.md](./server-side-agent-loop.md)、[desk.md](./desk.md)。
 
 设计细节：[cli.md](./cli.md)、[desk.md](./desk.md)、[mobile.md](./mobile.md)。
 
@@ -823,6 +824,7 @@ POST   /v1/plugins/:id/enable
 CRUD   /v1/environments  /v1/builds  /v1/builds/:id/logs
 CRUD   /v1/desks
 GET    /v1/desks/:id/inbox               Desk token SSE
+GET    /v1/desks/:id/tools/:runId        Desk Remote 工具 WSS（desk token + claim + run JWT）
 POST   /v1/desks/:id/lease|claim|reject|release|workspaces
 DELETE /v1/desks/:id/workspaces/:wsId
 CRUD   /v1/devices
@@ -907,16 +909,15 @@ pnpm test:loop           # mvn test + agentscope toy-repo e2e
 
 ## 21. 现在有、明确没有
 
-**已经落地、文档必须对得上的：** P0 主路径（创建 Run → 默认 pi worker → Gateway → SSE → IDLE → 跟进；也可显式 `kernel=agentscope`）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer / Remote（inline assignment + inbox dispatch）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；**默认 `kernel=pi`（现网 `neo-loop` disabled，Caddy 仍不反代 `:8082`）**。
+**已经落地、文档必须对得上的：** P0 主路径（创建 Run → 默认 pi worker → Gateway → SSE → IDLE → 跟进；也可显式 `kernel=agentscope`）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer（本机 pi）与 Remote（云 loop + 本机工具 WSS）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；Gateway `X-Neo-Step-Id` 非流式回放；**默认 `kernel=pi`（现网 `neo-loop` disabled，Caddy 仍不反代 `:8082`，只反代 `/v1/desks/*/tools/*` 到 `:8080`）**。
 
-**代码在 main、现网故意关掉的：** Caddy / 防火墙放行 `:8082`。操作见 [tencent-lighthouse-deploy SKILL](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)。
+**代码在仓库、现网故意关掉的：** `neo-loop.service`、Caddy / 防火墙放行 `:8082`。操作见 [tencent-lighthouse-deploy SKILL](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)。生产 Remote 要本机 `neo-loop` 在跑；日常 `deploy.sh` 会再关掉。
 
 **还没有、不要假装有的：**
 
 - 把 `HarnessAgent` 嵌进控制面，或 CLI / 手机在本机跑 pi。loop 拆出槽必须是 `neo-loop`，见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)
-- Temporal、Gateway `X-Neo-Step-Id` 幂等缓存、直播 SSE 页上的 rewind 覆盖（快照 fold 已做）
+- Temporal、`loop_` Redis/MySQL 表、直播 SSE 页上的 rewind 覆盖（快照 fold 与 step-cache 已做）
 - 把 `:8082` 暴露到公网
-- 云 loop + 本机工具作为产品入口（`{loop:cloud, tools:desk}` 合约已允许，产品第 4 期），见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
 - 插件 git marketplace、zip 上传、插件自带 MCP / hooks
 - `GET /v1/search`、`GET /v1/recipes`（配方只在客户端）
 - Firecracker live-fork、headed browser / computer-use（分期见 [browser-computer-use.md](./browser-computer-use.md)）
@@ -935,11 +936,11 @@ pnpm test:loop           # mvn test + agentscope toy-repo e2e
 | [architecture.md](./architecture.md) | 设计蓝图、原则、分阶段、与 Cursor 对照 |
 | [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md) | 对照 Cursor 现行「loop 与机器拆开」，用 AgentScope Java 做独立 loop 进程的路径选择 |
 | [agentscope-java-loop-design.md](./agentscope-java-loop-design.md) | 工程设计：三态、Turn 工作流、内外接口、Java 包、tools WS。实现落在 `services/neo-loop` + `WORKER_ROLE=tools` |
-| [server-side-agent-loop.md](./server-side-agent-loop.md) | 从今天代码出发的落地规格：已做成什么、第 3 / 4 期还缺什么、Desk Remote 必须经控制面 WSS 反代 |
+| [server-side-agent-loop.md](./server-side-agent-loop.md) | 已落地规格：三态、WSS 反代、Remote 入口；还缺 Redis/MySQL session 与 Temporal |
 | 本文 | 现状总览：包、进程、双内核、现网（`pi` 默认 / `neo-loop` 已装未启）、数据流 |
 | [cli.md](./cli.md) | `neo` 命令面；明确不做本机 Agent |
 | [desk.md](./desk.md) / [desk-this-computer.md](./desk-this-computer.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为、This Computer 工作区一期、项目工作台 |
-| [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) | 云 loop + 本机工具；合约已允许，产品第 4 期 |
+| [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) | 调研底稿。产品入口已落地，以 [server-side-agent-loop.md](./server-side-agent-loop.md) 为准 |
 | [workspace-persistence.md](./workspace-persistence.md) | 空闲槽写回、预算、TTL |
 | [mobile.md](./mobile.md) | 手机端蓝图与 P0 |
 | [admin-platform-research.md](./admin-platform-research.md) | 后管 vs New API 怎么拆 |

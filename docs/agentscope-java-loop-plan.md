@@ -2,9 +2,11 @@
 
 调研 + 路径选择。2026-09-04。基线 `main` `0bd20a1`。
 
-**工程设计（进程、接口、工作流、Java 包、控制面钩子）见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)。** 实现以那份为准。
+> **状态（2026-09-09）：** 路径 C 的产品入口（Remote WSS + `kernel=agentscope`）已落地。施工单改看 [server-side-agent-loop.md](./server-side-agent-loop.md)。本文只保留「为什么选 Java 独立进程」。
 
-对照：[architecture.md](./architecture.md)（一期锁死的原则）、[architecture-overview.md](./architecture-overview.md)（现状）、[desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)（云 loop + 本机工具，尚未做）。
+**工程设计见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)。**
+
+对照：[architecture.md](./architecture.md)、[architecture-overview.md](./architecture-overview.md)、[desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)。
 
 Cursor 公开材料：[Cloud Agents](https://cursor.com/docs/cloud-agent)、[What we’ve learned building cloud agents](https://cursor.com/blog/cloud-agent-lessons)、[Self-Hosted Machines](https://cursor.com/blog/self-hosted-machines)。
 

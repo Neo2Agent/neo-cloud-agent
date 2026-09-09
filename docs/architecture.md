@@ -2,7 +2,7 @@
 
 对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离执行单元；**LLM 推理走云端网关**；**工具在执行面**；**Agent 循环现网仍在 worker 内 pi，目标态在独立 Java `neo-loop`**。默认内核是 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
 
-本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（package、三个必开进程 + 可选 `neo-loop`、双内核、现网、专家 / 插件、数据流）见 [architecture-overview.md](./architecture-overview.md)。**从今天代码出发、把 loop 做成 Cursor 现行三态（含 Desk Remote）的落地规格**见 [server-side-agent-loop.md](./server-side-agent-loop.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)，现网 `https://neorun.cloud/architecture`。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
+本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（package、三个必开进程 + 可选 `neo-loop`、双内核、现网、专家 / 插件、数据流）见 [architecture-overview.md](./architecture-overview.md)。**三态已落地规格（含 Desk Remote WSS）**见 [server-side-agent-loop.md](./server-side-agent-loop.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)，现网 `https://neorun.cloud/architecture`。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
 
 ---
 
@@ -23,7 +23,7 @@
 
 - 复刻 Cursor 的 IDE、Tab、本地 sandbox，或把 pi 再嵌进一份本机 TUI
 - 多租户计费的完整账务系统（先打点，后对账）
-- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）——二期重新评估见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
+- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）。Remote 走控制面 **字节管道** WSS，不在 orchestrator 里解析 command，见 [server-side-agent-loop.md](./server-side-agent-loop.md)
 - 让 VM 直连 Anthropic / OpenAI / 自建 GPU（密钥与配额会泄漏到不可信环境）
 - 让 CLI 在开发者机器上执行工具来「加速」——CLI 只打 `/v1`，见 [cli.md](./cli.md)
 

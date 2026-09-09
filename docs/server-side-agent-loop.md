@@ -1,8 +1,8 @@
-# 云端 Agent Loop 技术方案（对标 Cursor 三态）
+# 云端 Agent Loop（对标 Cursor 三态）
 
-实现基线：`main`（2026-09-09，默认 `AGENT_KERNEL=pi`）。选型理由仍看 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。`neo-loop` 进程、Turn 接口、tools 帧以 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md) 为准。Desk 权限与爆炸半径以 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) 为准。
+实现基线：本分支（2026-09-09）。现网默认仍是 `AGENT_KERNEL=pi`，`deploy.sh` **不会** `enable` `neo-loop`。选型理由仍看 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。`neo-loop` 进程、Turn 接口、tools 帧以 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md) 为准。Desk 权限与爆炸半径以 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) 为准。
 
-本文是**从今天代码出发的落地规格**：已经做成了什么、还缺什么、Desk Remote 必须先补哪条通道、未决问题怎么锁。按本文开实现 PR，不要再写第三份「要不要做」的调研。
+本文是**已落地规格 + 剩余缺口**。第 4b / 4c（控制面 WSS 反代 + Desk Remote 产品入口）已经在代码里。不要再按「通道未做」写实现 PR。
 
 ---
 
@@ -14,9 +14,9 @@
 
 | 模式 | loop | 工具 | 推理 | 本仓库目标 |
 | --- | --- | --- | --- | --- |
-| Web / CLI / 手机 / Desk · Cloud | 云端 `neo-loop` | 云端槽 / 容器 | Gateway | **A。** 第 1–2 期骨架已在；第 3 期把会话从槽上解绑 |
+| Web / CLI / 手机 / Desk · Cloud | 云端（默认同址 pi；`kernel=agentscope` 时 `neo-loop`） | 云端槽 / 容器 | Gateway | **A。** 已落地。默认 pi；agentscope 卸槽后的 Redis/MySQL session 仍缺 |
 | Desk · This Computer | 本机 pi | 本机盘 | Gateway | **B。** 已落地，**永久保留** |
-| Desk · Remote Control | 云端 `neo-loop` | 本机盘（RPC） | Gateway | **C。** 合约已允许，通道和权限未做 |
+| Desk · Remote Control | 云端 `neo-loop` | 本机盘（经控制面 WSS） | Gateway | **C。** 已落地。现网要本机 `neo-loop` 在跑，且请求带 `kernel=agentscope` |
 
 Cursor 桌面端**不是**一律云端 loop，本仓库也不要做成一律云端 loop：
 
@@ -36,7 +36,7 @@ Web / CLI / 手机 / Desk · Cloud / Desk · Remote 只打 `/v1` + SSE，那些�
 | --- | --- | --- | --- |
 | 产品 | 浏览器 / 手机发任务，本机不跑 Agent | Web / CLI / Mobile / IM **已经是** | 不用为这个再引入 Java |
 | 一期架构 | loop 和工具同址，都在隔离单元 | 现网默认 `kernel=pi`：槽里的 `createAgentSession` | 现网 4C/4G 两槽靠这个活着，**不要拆掉** |
-| Cursor 现行 | loop 在可恢复工作流，工具在机器上 | `kernel=agentscope` 骨架已在；会话仍是文件、Desk Remote 未通 | **本文要做的** |
+| Cursor 现行 | loop 在可恢复工作流，工具在机器上 | `kernel=agentscope` + Desk Remote WSS 已通；session 仍先写盘 | Redis/MySQL `loop_` 表、Temporal 仍缺 |
 
 Cursor 桌面端**不是**一律云端 loop：
 
@@ -44,7 +44,7 @@ Cursor 桌面端**不是**一律云端 loop：
 - Cloud：loop 在 Temporal，工具在托管 VM。官方：*"Because the agent loop lives in Temporal rather than on the VM itself, we can manage pod lifecycles independently."*
 - Remote / Self-Hosted：loop + 推理 + planning 在 Cursor 云，你的 worker 只做文件和终端。机器**出向**拨长连接。*"Cursor never connects into your network."*
 
-本仓库 Desk 一期抄的是出向 inbox + 严格匹配，**loop 仍在 Desk**。这和 Cursor Remote 不是同一个东西。
+本仓库 Desk · This Computer 仍是出向 inbox + 本机 pi loop。Desk · Remote 已改成 Cursor 那条：loop 在 `neo-loop`，工具在笔记本，过网只走出向 WSS。
 
 ---
 
@@ -82,31 +82,33 @@ Cursor 桌面端**不是**一律云端 loop：
 | Java `neo-loop`：`LocalTurnEngine`、Harness / `LOOP_ENGINE=react` 回退、tools hub、文件 session / step log | `services/neo-loop` |
 | `dispatchTurn` / `signalTurn` / `turn-complete` / `turn-heartbeat` | `packages/control-plane/src/loop/client.ts`、`orchestrator.ts`、`api/server.ts` |
 | agentscope 不把 prompt 塞 pi inbox，worker ready / Desk `claim` 后 `startPendingLoopTurn` | `pendingLoopStarts` |
-| Desk assignment 已带 `kernel` / `neoLoopUrl` / `neoLoopToken`；`kernel=agentscope` 时 fork `WORKER_ROLE=tools` | `packages/desk/app/host.ts` |
+| Desk assignment 带 `kernel` / `toolsChannelUrl`；公网 Desk **不**收 `neoLoopUrl=:8082` | `assignmentLoopFields`、`packages/desk/app/host.ts` |
+| 控制面 `GET /v1/desks/:id/tools/:runId` WSS 反代 | `packages/control-plane/src/api/desk-tools-proxy.ts` |
+| Caddy 只把 `/v1/desks/*/tools/*` 指到 `:8080` | `docs/production-domain.md`、domain skill Caddyfile |
+| Remote 产品入口：`{loop:cloud, tools:desk, remoteControl}` + `kernel=agentscope` | Desk composer、`localRunTarget` |
+| Remote tools worker 常驻（`WORKER_EXIT_AFTER_TURN=0`）；This Computer 仍 `=1` | `packages/desk/src/spawn.ts` |
+| `isRemoteControlTarget` / `isDeskHostedTarget`；Web / Mobile 标 Remote 不是本机 | `packages/contracts`、`packages/web/src/format.ts`、`packages/mobile/src/place.ts` |
+| Gateway `X-Neo-Step-Id` 成功非流式回放 | `packages/llm-gateway/src/step-cache.ts` |
+| neo-loop 对控制面强制 HTTP/1.1 | `ControlPlaneClient.java`（Java 默认 HTTP/2 会打死心跳） |
 | 编排单测 + `packages/control-plane/src/e2e/agentscope-turn.test.ts` | 本地 mock 可 IDLE |
 
-### 3.2 明确还没做（本文剩余工作）
+### 3.2 还没做
 
-| 缺口 | 为什么挡 Cursor 形态 |
+| 缺口 | 影响 |
 | --- | --- |
-| `AgentStateStore` 仍是 `.neo/runs/.loop/` 文件 | JVM 换机 / 卸槽后会话不在 Redis/MySQL，跟进会丢上下文 |
-| 没有 `turn.rewind`，Gateway 没有 `X-Neo-Step-Id` 幂等缓存 | 推理闪断会把半截 delta 和重试叠在 transcript 上 |
-| IDLE 卸槽与 loop session 未验收「同一 `sessionId` 恢复」 | 槽一卸，agentscope 路径和 pi 一样要靠工作区写回碰运气 |
-| **Desk 拿到的 `neoLoopUrl` 是 `http://127.0.0.1:8082`** | 笔记本连的是自己，不是应用机。这是 Remote 的第一块挡路石 |
-| 没有 `GET /v1/desks/:id/tools/:runId` WSS 反代 | `:8082` 不能暴露；现有 inbox SSE 单向、无 `callId`、不能流式 |
-| Desk 侧还没有独立于「整份 worker」的长期执行器生命周期策略 | Remote 若仍 `WORKER_EXIT_AFTER_TURN=1`，每轮都要重拨 WS |
-| 沙箱 / hooks 仍主要挂在 worker 进程；Remote 的鉴权仍是 run JWT + loop token | 泄漏 JWT ≈ 笔记本任意 `bash`。见 desk-phase2 §4.3 |
-| 产品 UI 没有「云端大脑 + 本机手脚」模式 | 合约允许，composer 还没开门 |
-| `isDeskTarget` 仍有编排残留 | 拆轴时最容易改错的 20 处语义点，部分已改 `isDeskToolsTarget`，handoff 等仍要逐个重判 |
+| `AgentStateStore` 仍是 `.neo/runs/.loop/` 文件 | JVM 换机 / 卸槽后会话不在 Redis/MySQL |
+| IDLE 卸槽后再 follow-up、同一 `sessionId` 的 e2e 未作为现网验收 | agentscope 云端路径仍靠工作区写回 |
+| 直播 SSE 页上的 rewind 覆盖 | 快照 `foldRewoundEvents` 已有；页上叠字覆盖未做 |
+| Desk 侧 egress 重述 | 笔记本 `bash curl` 仍绕过云端 allowlist |
 | Temporal | 第 5 期可选。现网单机不要上 |
 
-### 3.3 半成品陷阱
+### 3.3 不要再踩的坑
 
-Desk 在 `kernel=agentscope` 且 `{loop:desk, tools:desk}` 时**已经**会起 `WORKER_ROLE=tools` 并连 `assignment.neoLoopUrl`。这只在「Desk 和 neo-loop 同机」（`pnpm dev:desk`）碰巧能通。把它当成 Remote 已做成，是错的：
-
-- `loop: "desk"` 语义是「loop 在这台电脑」，和实际「loop 在 neo-loop」打架。
-- 真 Remote 必须是 `{ loop:"cloud", tools:"desk", deskId, remoteControl:true }` + `kernel:"agentscope"`。
-- 过网 URL 必须是控制面源，不是 `127.0.0.1:8082`。
+- **This Computer 不是 Remote。** `{loop:desk, tools:desk}` + `kernel=pi`。不要给它 `neoLoopUrl` / `toolsChannelUrl`。
+- **真 Remote** 必须是 `{ loop:"cloud", tools:"desk", deskId, remoteControl:true }` + `kernel:"agentscope"`。`isRemoteControlTarget` 四件套缺一不可。旧的 `{loop:desk, remoteControl:true}` 只是可见性，不是 Remote。
+- **过网 URL** 是控制面 `toolsChannelUrl`（`/v1/desks/:id/tools/:runId`），desk token 作 query `token`，run JWT 作 `jwt`。只有 `controlPlaneUrl` 是 loopback 时才允许 assignment 带 `neoLoopUrl`。
+- **Desk 内联创建不要传 `deskWorkspaceId`。** 控制面会去空清单里查，报「这台电脑没有这个本机工作区」。文件夹留在 `repoUrls[0]`。
+- **neo-loop → 控制面必须 HTTP/1.1。** 否则第一下 `turn-heartbeat` 失败，Desk 卡在「正在思考」，Run 停在 RUNNING。
 
 ---
 
@@ -161,7 +163,7 @@ POST /v1/runs { kernel:"agentscope" }
 
 同机 Unix / loopback WS，RTT 可忽略。第 3 期要保证：**卸槽只丢机器，不丢 `sessionId=runId` 的 loop 会话。**
 
-### 4.4 一次 Desk Remote 回合（要新做）
+### 4.4 一次 Desk Remote 回合（已落地）
 
 ```
 Web/手机/另一台 Desk
@@ -205,7 +207,7 @@ Web/手机/另一台 Desk
 
 ---
 
-## 6. Desk Remote 的第一块挡路石：WSS 反代
+## 6. Desk Remote 工具通道：控制面 WSS 反代（已落地）
 
 ### 6.1 为什么现有通道全不够
 
@@ -345,14 +347,13 @@ NOT_YET_STARTED → PROVISIONING → INSTALLING → RUNNING ⇄ IDLE
 
 ## 10. Durable Turn 与 rewind（第 3 期）
 
-`TurnWorkflowEngine` 接口已在。`LocalTurnEngine` 已按步写 `FileStepLog`，但：
+`TurnWorkflowEngine` 接口已在。`LocalTurnEngine` 已按步写 `FileStepLog`。Gateway 已按 `X-Neo-Step-Id` 回放成功的非流式补全。Infer 失败可发 `turn.rewind`。仍缺：
 
-- 重试不会发 `turn.rewind`。
-- Gateway 不认 `X-Neo-Step-Id`。
-- session 不在 Redis/MySQL。
-- JVM 被杀后扫描 `RUNNING` step 重入**未验收**。
+- session 不在 Redis/MySQL（继续文件）。
+- JVM 被杀后扫描 `RUNNING` step 重入**未当现网验收**。
+- 直播页 rewind 覆盖未做（快照 fold 已有）。
 
-第 3 期补齐，仍不上 Temporal：
+第 3 期剩余，仍不上 Temporal：
 
 1. `loop_sessions` / `loop_turn_steps` 进控制面同一 `DATABASE_URL`，前缀 `loop_`。没库则继续文件。
 2. Redis：`loop:session:{runId}`、`loop:tools:{runId}`、`loop:turn:{turnId}` 短锁。
@@ -421,9 +422,9 @@ Desk Remote 本地：`pnpm dev:desk` + 第二条控制面 URL 指 `127.0.0.1:808
 
 ## 13. 分期（从今天往后排，不重做第 1–2 期）
 
-第 0–2 期（协议、`neo-loop` 最小闭环、`WORKER_ROLE=tools`）**已经在 main**。下面只排剩余。
+第 0–2 期（协议、`neo-loop` 最小闭环、`WORKER_ROLE=tools`）已在 main。第 4b / 4c（WSS 反代 + Remote 产品入口）已在本分支。下面只排剩余。
 
-### 第 3 期 — 云端 loop 可恢复（先做，Desk 才能共用）
+### 第 3 期 — 云端 loop 可恢复（部分已做）
 
 目标：`{loop:cloud, tools:cloud}` 卸槽、重启、闪断之后对话还在。
 
@@ -433,7 +434,7 @@ Desk Remote 本地：`pnpm dev:desk` + 第二条控制面 URL 指 `127.0.0.1:808
 | `services/neo-loop/.../LocalTurnEngine.java` | 失败发 `turn.rewind`；扫描未完成 step 重入 |
 | `packages/contracts` | `RunEventKind` 增加 / 对齐 `turn.rewind` |
 | `packages/control-plane` 事件折叠 | snapshot 丢掉 `replyId` + `fromSeq` 之后的 delta |
-| `packages/llm-gateway` | 可选 `X-Neo-Step-Id` 成功回放 |
+| `packages/llm-gateway` | **已做** `X-Neo-Step-Id` 成功非流式回放 |
 | e2e | 卸槽后再 follow-up；杀 JVM 再 dispatch 同一 `sessionId` |
 
 验收：
@@ -455,38 +456,15 @@ Desk Remote 本地：`pnpm dev:desk` + 第二条控制面 URL 指 `127.0.0.1:808
 
 验收：`pnpm test` + 本机 Desk 改文件仍锁在授权根。**不**解 `assertColocatedTarget`。
 
-### 第 4b 期 — 控制面 WSS 反代
+### 第 4b / 4c 期 — 已落地（WSS 反代 + Remote 产品入口）
 
-| 文件 | 做什么 |
-| --- | --- |
-| `packages/control-plane/src/api/desk-tools-proxy.ts`（新） | §6.2 握手 + 字节管道 + 限流 |
-| `packages/control-plane/src/api/server.ts` | 挂路由 |
-| `packages/contracts/src/desk.ts` | assignment **不再**向非 loopback Desk 发 `neoLoopUrl` |
-| `packages/desk/app/host.ts` / `src/spawn.ts` | Remote 拨 `/v1/desks/:id/tools/:runId` |
-| `packages/worker/src/tools-ws.ts` | 支持 desk token 头；URL 可指向控制面 |
-| Caddy / `docs/production-domain.md` | 只加这一条 WS，不放行 `:8082` |
-| 单测 | 无 desk token / 错 run / 未 claim → 拒绝；帧原样到达假 neo-loop |
+代码与 Caddy 模板已按 §6 / §4.4 落地。验收要点（本地 computer-use 已过）：
 
-验收：NAT 拓扑用「两个 loopback 端口模拟」（Desk 进程只知道 `:8080`，`:8082` 对它不可达）跑通 `exec` + 流式 stdout。
-
-### 第 4c 期 — 解开产品入口
-
-| 文件 | 做什么 |
-| --- | --- |
-| `packages/control-plane/src/orchestrator/orchestrator.ts` | 创建 `{loop:cloud, tools:desk}` 时 **不** provision 云槽；`claim` 后 `dispatchTurn`（claim 钩子已在） |
-| 逐个 `isDeskTarget` 残留 | 问「这里要的是 loop 轴、tools 轴，还是 desk 生命周期」 |
-| `packages/web` composer | Remote 目标选择；匹配失败四种文案，**不**回落云盘 |
-| `packages/mobile` | 列表已有 Desk Remote；新开仍默认 cloud。跟进走同一 Run |
-| Desk 执行器寿命 | Remote 不 `WORKER_EXIT_AFTER_TURN`；This Computer pi 不变 |
-| 文档 | `architecture.md` §2 / §17.5、overview、`desk.md` 反转 |
-
-验收：
-
-- 网页开 Remote → 笔记本只出向 WSS → 改的是授权文件夹 → transcript 工具在答复上面。
-- loop 升级（只发 `neo-loop` jar）不重打 `pnpm pack:desk`。
-- 匹配失败 fail closed。
-- 泄漏 run JWT、没有 desk token，执行器不跑命令。
-- This Computer 回归：行为与现在一致。
+- Desk 只出向 `…/v1/desks/:id/tools/:runId`；`:8082` 对 Desk 不可达仍能完成 Remote 回合。
+- 无 desk token / 未 claim / 错 kernel：零 exec。
+- This Computer 仍是本机 pi，侧栏 `local`；Remote 侧栏 `remote`，Web 列表「空闲 · Remote」。
+- 多端订同一条 SSE：Cloud 路径字符级直播；Remote 跟进 Desk ↔ Web 实时同步。
+- `deploy.sh` 现网仍写 `AGENT_KERNEL=pi` 并 disable `neo-loop`。生产 Remote 要另开 loop，且下次日常部署会再关掉。
 
 ### 第 5 期 — Temporal（可选）
 
@@ -543,45 +521,44 @@ Desk Remote 本地：`pnpm dev:desk` + 第二条控制面 URL 指 `127.0.0.1:808
 
 | 文档 | 关系 |
 | --- | --- |
-| [architecture.md](./architecture.md) §2 / §17.5 | 一期锁。第 4c 落地时改写成本文 §2 那句 |
-| [architecture-overview.md](./architecture-overview.md) | 现状地图。第 3 / 4 期落地后再改主路径时序 |
+| [architecture.md](./architecture.md) §2 / §17.5 | 原则已按本文 §2 改写 |
+| [architecture-overview.md](./architecture-overview.md) | 现状地图。Remote / WSS 已写入主路径 |
 | [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md) | 为什么选路径 C。不重复 |
 | [agentscope-java-loop-design.md](./agentscope-java-loop-design.md) | Turn / Java 包 / 内网接口的权威。本文不改那些名字 |
 | [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) | 调研与爆炸半径。§6 未决由本文 §8 锁定；传输方案由本文 §6 定为「控制面 WSS 反代」 |
-| [desk.md](./desk.md) | This Computer / 一期 Remote 行为。第 4c 后改「Remote 的 loop 在云端」 |
+| [desk.md](./desk.md) | This Computer 本机 pi；Remote 云端 loop + 本机工具 |
 | [workspace-persistence.md](./workspace-persistence.md) | 机器生命周期仍归 Runtime |
 
 接口名冲突时：先改 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md) 和本文，再改代码。Desk 过网 URL 以本文 §6 为准（design 里「Desk 直连 neo-loop + `X-Neo-Desk-Token`」在现网不可行）。
 
 ---
 
-## 17. 给决策用的验收清单
+## 17. 验收清单
 
 **第 3 期（云端可恢复）**
 
-- [ ] agentscope + 卸槽 + 跟进：session 与 transcript 都在
-- [ ] `turn.rewind` 后 snapshot 不出现叠字
-- [ ] Gateway 无 Provider Key
-- [ ] 现网默认 pi
+- [x] Gateway 无 Provider Key
+- [x] 现网默认 pi
+- [x] `X-Neo-Step-Id` 非流式回放
+- [ ] agentscope + 卸槽 + 跟进：session 在 Redis/MySQL
+- [ ] 直播页 `turn.rewind` 覆盖（快照 fold 已有）
 
 **第 4 期（真 Remote）**
 
-- [ ] Desk 在 NAT 后只出向 `wss://…/v1/desks/:id/tools/:runId`
-- [ ] `:8082` 对 Desk 不可达仍能跑完一轮
-- [ ] 无 desk token 或未 claim：零 exec
-- [ ] 事件由 loop 盖章，`workerSeq` 不乱
-- [ ] 匹配失败不回落云盘
-- [ ] This Computer 无回归
-- [ ] 升级 `neo-loop` 不重打 Desk 包
+- [x] Desk 出向 `…/v1/desks/:id/tools/:runId`
+- [x] `:8082` 对 Desk 不可达仍能跑完一轮（本地 e2e）
+- [x] 无 desk token 或未 claim：零 exec
+- [x] 匹配失败不回落云盘
+- [x] This Computer 无回归（省略 `deskWorkspaceId`）
+- [x] 升级 `neo-loop` 不重打 Desk 包
+- [x] Web / Mobile 把 Remote 标成 Remote，不标本机
 
 ---
 
-## 18. 建议的开工顺序（实现 PR）
+## 18. 还剩什么
 
-1. 第 3 期 store + rewind + 卸槽 e2e（云端先稳，Remote 才能共用 session）。
-2. 第 4a 沙箱模块（安全底座，产品入口仍关）。
-3. 第 4b WSS 反代 + assignment 去掉公网 `127.0.0.1:8082`。
-4. 第 4c 解开 `{loop:cloud, tools:desk}` 产品入口、UI、文档反转。
-5. 现网 Enable `neo-loop` 只在加内存或减槽之后，且只金丝雀 `kernel=agentscope`。
+1. 第 3 期 store 迁 Redis/MySQL + 卸槽 e2e。
+2. 第 4a 沙箱模块抽成 Desk / tools worker 共用（行为已靠现有 path-guard）。
+3. 现网 Enable `neo-loop` 只在加内存或减槽之后，且只金丝雀 `kernel=agentscope`。`deploy.sh` 默认保持关掉。
 
 选型「为什么不嵌控制面」仍看 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md) §5 路径 B。

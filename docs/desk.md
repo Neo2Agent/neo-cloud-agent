@@ -72,17 +72,19 @@
 | P1 | Agents Window 壳：侧栏对话/空间、composer 上的 Cloud / This Computer / 模型、`Cmd+W` |
 | P2 | `/v1/desks` 登记；inline 本地起 + dispatch 远程派；`DeskRuntime`；`POST /v1/runs` 的 `target`；双向 handoff（干净 clone，未提交改动不跟随）；右侧栏 Files / Terminal |
 
-未做（刻意）：隔离 worktree、P3 并排窗格 / SSH 远程机、云 loop + 本机工具 RPC、栏内编辑器。云端终端已是工作区 PTY，不是打进 VM 里的交互式登录 tty。
+未做（刻意）：隔离 worktree、P3 并排窗格 / SSH 远程机、栏内编辑器。云端终端已是工作区 PTY，不是打进 VM 里的交互式登录 tty。Remote（云 loop + 本机工具）见 [server-side-agent-loop.md](./server-side-agent-loop.md)，已经落地。
 
 ## This Computer 和 Remote control 是两个东西
 
 一期口径见 [desk-this-computer.md](./desk-this-computer.md)。登记一台机器不等于同意被派活，也不等于上报文件夹。
 
-| | This Computer | Remote Control（同一套本机执行） | 二期：网页新开派活 |
+| | This Computer | Remote Control | 以后：网页新开派活 |
 | --- | --- | --- | --- |
-| 谁能发起 | 只有你，在这台 Desk 前面 | 这台 Desk 开场 | 网页新开一条派到这台电脑 |
-| 控制面知道什么 | `deskId` + 本机路径 | 同上 + `remoteControl: true` | 再加机器名 + 仓库名（**不含绝对路径**） |
-| 网页 | 看不见、不能跟进 | 看得见；Desk 在线可跟进同一条 | 「目标 → 本机」可选到具体工作区 |
+| loop | 本机 pi | 云端 `neo-loop`（`kernel=agentscope`） | 同 Remote |
+| 工具 | 本机 worker（一回合退） | 本机 tools worker（常驻） | 同 Remote |
+| 谁能发起 | 只有你，在这台 Desk 前面 | 这台 Desk 开场；Web / 手机可跟进 | 网页新开一条派到这台电脑 |
+| 控制面知道什么 | `{loop:desk, tools:desk, deskId}` | `{loop:cloud, tools:desk, deskId, remoteControl}` | 再加机器名 + 仓库名（**不含绝对路径**） |
+| 网页 / 手机 | 看不见、不能跟进 | 看得见；Desk 在线可跟进同一条 | 「目标 → 本机」可选到具体工作区 |
 | 工作区记在哪 | **这条 run**，不进 desk 清单 | 同左 | `desk.allowRemote` 打开后报到 `desk.workspaces` |
 
 `dws_local_*` 只留在 Desk 本机。两种本机开场都不传 `deskWorkspaceId`。`bindWorkspace` 只写本机记录。可见性按对话上的 `remoteControl`，不在设置里开整机开关。文件夹仍在 composer 上选。
@@ -125,7 +127,7 @@
 
 ### worker 逐回合，不常驻
 
-本机 worker **一回合跑完就退**（`WORKER_EXIT_AFTER_TURN=1`，`spawnDeskWorker` 里写死，不给开关——曾经有个 `exitAfterTurn` 参数从没人传，却让这个不变量看起来可配）。`session.prompt` 是 await 的，所以 inbox 再拉一次为空就说明这轮结束、后面也没排队，此时上传 session 备份并退出。
+This Computer（pi）worker **一回合跑完就退**（`WORKER_EXIT_AFTER_TURN=1`）。Remote 的 tools worker **留下**（`=0`），好让 neo-loop 下一跳还能 exec。`deskWorkerExitAfterTurn` 按 `workerRole` 写死，不给开关。
 
 进程寿命比对话回合长会带来三种真故障，都不值得为了省一次冷启去承担：
 
@@ -137,29 +139,32 @@
 
 退出后 Desk 调 `POST /v1/desks/:id/release`，控制面丢掉 handle。下一条跟进走 `resumeRun` → `dispatchToDesk`，**同一台机器**收到新的 assignment，新进程 `downloadSession` 恢复上下文再跑。
 
-常驻的只有 **Desk 主进程的 inbox / lease 长连接**——remote control 必须靠它，否则控制面找不到这台笔记本。云端 run 不受影响：`WORKER_EXIT_AFTER_TURN` 只有 Desk 会设。
+常驻的是 **Desk 主进程的 inbox / lease**。Remote 另外常驻 tools worker。云端 Cloud run 不设这两个变量。
 
-### B Remote control
+### B Remote Control
 
-对标 Cursor 的 **My Machines**（[docs](https://cursor.com/docs/cloud-agent/my-machines)）。控制面打不进 NAT 后面的笔记本，所以派活走 Desk 自己开的连接。
+对标 Cursor 的 **My Machines / Remote Control**（[docs](https://cursor.com/docs/cloud-agent/my-machines)）。loop 在应用机 `neo-loop`，工具在这台电脑。控制面打不进 NAT，所以 Desk **只出向**：inbox SSE + 工具 WSS。
 
 ```text
-Desk 主进程        GET /v1/desks/:id/inbox（SSE，出向长连接）
-Web / handoff  →   POST /v1/runs（缺省 dispatch）
-控制面             严格匹配 user + 机器在线且允许远程 + 仓库对得上
-控制面         →   inbox 推 assignment
-Desk 主进程        用已绑定的工作区 spawn，然后 claim
-Desk 主进程    →   POST /v1/desks/:id/release（worker 跑完退出）
-Web 再发一条   →   控制面重新派单，同一台机器起新进程
+Desk 开场
+  POST /v1/runs { start:inline, kernel:agentscope,
+    target:{ loop:cloud, tools:desk, deskId, remoteControl:true } }
+  → assignment.toolsChannelUrl = /v1/desks/:id/tools/:runId
+  → fork WORKER_ROLE=tools（WORKER_EXIT_AFTER_TURN=0）
+  → claim
+  → 出向 wss://<控制面>/v1/desks/:id/tools/:runId?token=<desk>&jwt=<run>
+  → 控制面验 desk token + claim + run JWT，反代到 127.0.0.1:8082
+  → dispatchTurn
+
+Web / 手机跟进（Desk 必须在线）
+  POST /v1/runs/:id/follow-ups
+  → tools worker 还在就直接 startPendingLoopTurn
+  → 否则 inbox 再派，Desk 再 claim
 ```
 
-Web 端在 composer 的「目标 → 本机」里选 `机器名 · 仓库名`，选的是**已绑定的工作区**，不是路径。浏览器里没有绑定就没有可选项。
+公网 assignment **不**带 `neoLoopUrl=http://127.0.0.1:8082`。`:8082` 不进 Caddy。匹配失败 fail closed，不回落云盘。规格见 [server-side-agent-loop.md](./server-side-agent-loop.md)。
 
-抄了：出向长连接、长驻、机器命名、**注册绑定到仓库**、严格匹配、失败不回落、绑定即预授权。
-
-**没抄** 它的云端 loop + 本机工具 RPC：[`assertColocatedTarget`](../packages/contracts/src/run.ts) 明确 P0–P2 只允许 `loop === tools`，[architecture.md §2](./architecture.md) 也写了不要把每个 `read` / `edit` / `bash` 做成跨网 RPC。B 只做派单，loop 仍在本机。流式和跟进不受影响：worker 本来就是出向推事件、主动拉 inbox。
-
-二期若要拆开这两轴，先读 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)：那里核过 Cursor 的实际形态、pi 自带的远程工具接缝，以及沙箱必须先从 worker 搬到 Desk 侧这件事。
+网页 composer 上的「远程机（P3）」仍禁用。Remote 开场在 Desk；Web / 手机只跟进已有 Remote 对话。
 
 匹配失败一律**明确报错**，不回落云端、不留一条永远排队的 Run：
 
