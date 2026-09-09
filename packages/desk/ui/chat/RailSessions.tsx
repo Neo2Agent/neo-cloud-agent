@@ -1,5 +1,5 @@
 import { runDisplayTitle, type Run } from "@neo-cloud-agent/contracts/run";
-import { isRemoteControlRun } from "../desk";
+import { isDeskBoundRun, isRemoteControlRun } from "../desk";
 import type { RailSpaceGroup } from "../../src/rail";
 import { IconChevron, IconCloud, IconComputer, IconProjects } from "../icons";
 import { IslandTag } from "../island";
@@ -143,7 +143,7 @@ function ChatRow({
   formatRel: (iso?: string | null) => string;
   onOpen: (id: string) => void;
 }) {
-  const cloud = run.executionTarget?.loop !== "desk";
+  const cloud = !isDeskBoundRun(run);
   return (
     <button
       type="button"

@@ -6,19 +6,23 @@
 
 ## 0. 结论先行
 
-1. **This Computer 和 Remote Control 是 composer 上两个本机目标，按对话记。** 执行都是本机文件夹 + 同一套 Desk worker（一回合起、一回合退）。差别只在这条 run 谁看得见。
-2. **This Computer**：只留在这台 Desk。网页 / 手机列表、打开、跟进都当不存在。
-3. **Remote Control**：同一套本机执行，但 `executionTarget.remoteControl === true`。网页 / 手机看得到；**Desk 在线**时可在别处续聊。不做「网页新开一条派到这台电脑」，也不上报文件夹清单。
-4. **工作区记在这条 run 上**：`deskId` + `repoUrls[0]`。不记在 `desk.workspaces`。不传 `deskWorkspaceId` / `dws_local_*`。
-5. 没有字段的旧本机 run 一律当 This Computer（默认私聊）。
+1. **This Computer 和 Remote Control 是 composer 上两个目标，按对话记。** 文件夹都在本机，但 loop 不在同一处。
+2. **This Computer**：`{loop:desk, tools:desk}` + 本机 pi。只留在这台 Desk。网页 / 手机列表、打开、跟进都当不存在。worker 一回合退。
+3. **Remote Control**：`{loop:cloud, tools:desk, remoteControl:true}` + `kernel=agentscope`。loop 在 `neo-loop`，工具在本机。网页 / 手机看得到；**Desk 在线**时可在别处续聊。tools worker 常驻。不做「网页新开一条派到这台电脑」。
+4. **工作区记在这条 run 上**：`deskId` + `repoUrls[0]`。不记在 `desk.workspaces`。**不传 `deskWorkspaceId` / `dws_local_*`**，否则控制面报「这台电脑没有这个本机工作区」。
+5. 没有 `remoteControl` 的旧本机 run 一律当 This Computer（默认私聊）。旧的 `{loop:desk, remoteControl:true}` 只影响可见性，**不是** Remote。
 
 ```text
-Desk 选 This Computer 或 Remote Control
-  → POST /v1/runs { start: inline, deskId, repoUrls: [本机路径]
-                    Remote Control 另带 target.remoteControl: true }
-控制面        → 登记机器 + 对话；可见性看这条 run 的 remoteControl
-Desk          → 用 run 上的路径起 worker，回合结束 release
-Web / 手机    → 只见 remoteControl 的本机对话；Desk 在线则续聊派回同一台
+Desk 选 This Computer
+  → POST /v1/runs { start:inline, target:{loop:desk, tools:desk, deskId}, repoUrls:[路径] }
+Desk 选 Remote Control
+  → POST /v1/runs { start:inline, kernel:agentscope,
+                    target:{loop:cloud, tools:desk, deskId, remoteControl:true}, repoUrls:[路径] }
+  都不要传 deskWorkspaceId
+控制面        → 登记机器 + 对话；列表可见性看 isRemoteControlTarget
+Desk          → This Computer：pi worker，回合结束 release
+              → Remote：tools worker + 出向 WSS，回合结束后进程留下
+Web / 手机    → 只见 Remote；Desk 在线则跟进同一条
 ```
 
 常驻的是 Desk 主进程的 inbox，不是某条对话的 worker。
@@ -66,8 +70,8 @@ Web / 手机    → 只见 remoteControl 的本机对话；Desk 在线则续聊�
 POST /v1/runs
   start: "inline"
   source: "desk"
-  target: { loop: "desk", tools: "desk", deskId
-            // Remote Control 再加 remoteControl: true }
+  target: { loop: "desk", tools: "desk", deskId }
+            // Remote：loop:cloud, tools:desk, remoteControl:true, kernel:agentscope
   repoUrls: [ "C:\\Users\\…\\测试" ]
   // 不传 deskWorkspaceId
 ```
@@ -76,7 +80,7 @@ POST /v1/runs
 
 ### 3.2 同一条对话续聊
 
-worker 一回合就退。跟进时：
+This Computer worker 一回合就退。Remote tools worker 留下。跟进时：
 
 1. `POST /v1/runs/:id/follow-ups`（网页只能跟进 `remoteControl` 的 run）
 2. Desk 在线：`desk-start` / `startRun(folder)` / `takeAssignment`，**folder 来自 `run.repoUrls[0]`**

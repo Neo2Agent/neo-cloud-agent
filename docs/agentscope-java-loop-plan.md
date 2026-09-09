@@ -2,9 +2,11 @@
 
 调研 + 路径选择。2026-09-04。基线 `main` `0bd20a1`。
 
-**工程设计（进程、接口、工作流、Java 包、控制面钩子）见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)。** 实现以那份为准。
+> **状态（2026-09-09）：** 路径 C 的产品入口（Remote WSS + `kernel=agentscope`）已落地。施工单改看 [server-side-agent-loop.md](./server-side-agent-loop.md)。本文只保留「为什么选 Java 独立进程」。
 
-对照：[architecture.md](./architecture.md)（一期锁死的原则）、[architecture-overview.md](./architecture-overview.md)（现状）、[desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)（云 loop + 本机工具，尚未做）。
+**工程设计见 [agentscope-java-loop-design.md](./agentscope-java-loop-design.md)。**
+
+对照：[architecture.md](./architecture.md)、[architecture-overview.md](./architecture-overview.md)、[desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)。
 
 Cursor 公开材料：[Cloud Agents](https://cursor.com/docs/cloud-agent)、[What we’ve learned building cloud agents](https://cursor.com/blog/cloud-agent-lessons)、[Self-Hosted Machines](https://cursor.com/blog/self-hosted-machines)。
 
@@ -522,6 +524,7 @@ WORKER_ROLE=tools          # 只当沙箱
 | [architecture.md](./architecture.md) §2 / §17.5 | 一期锁。采纳路径 C 后改写成「loop 独立进程，工具在执行面」 |
 | [architecture-overview.md](./architecture-overview.md) | 实现落地后再改包地图、进程数、主路径时序 |
 | [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) | 第 4 期的权限和协议工作仍有效。AgentScope 不替代那份报告 |
+| [server-side-agent-loop.md](./server-side-agent-loop.md) | 从今天代码出发的落地规格。Desk 过网以控制面 WSS 反代为准，不要让笔记本直连 `:8082` |
 | [workspace-persistence.md](./workspace-persistence.md) | 机器生命周期仍归 Runtime。不要改成 AgentScope 每 turn 打 tar |
 | [agent-memory-research.md](./agent-memory-research.md) | 跨 Run 记忆仍是控制面旁路 + Mem0。Harness 的 `MEMORY.md` 只做本 Run 工作区记忆，不要两套用户记忆 |
 | [browser-computer-use.md](./browser-computer-use.md) | computer-use 仍是专职子代理 + 环境里的浏览器，不摊到主 Toolkit |

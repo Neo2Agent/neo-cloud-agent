@@ -19,6 +19,7 @@ public class AgentEventMapper {
   private final EmitEventsActivity emit;
   private final String replyId;
   private boolean messageOpen;
+  private int firstDeltaSeq;
 
   public AgentEventMapper(EmitEventsActivity emit, String replyId) {
     this.emit = emit;
@@ -37,7 +38,11 @@ public class AgentEventMapper {
       emit.emit("message.start", "Assistant message started", Map.of("replyId", replyId));
       messageOpen = true;
     }
-    emit.emit("message.delta", "Assistant text", Map.of("delta", delta, "replyId", replyId));
+    Map<String, Object> event = emit.emit("message.delta", "Assistant text", Map.of("delta", delta, "replyId", replyId));
+    if (firstDeltaSeq <= 0) {
+      Object seq = event.get("data") instanceof Map<?, ?> data ? data.get("workerSeq") : null;
+      firstDeltaSeq = seq instanceof Number number ? number.intValue() : emit.seq();
+    }
   }
 
   public void textEnd() {
@@ -99,6 +104,17 @@ public class AgentEventMapper {
 
   public String replyId() {
     return replyId;
+  }
+
+  /** Drop tokens already streamed for this reply. Returns true when a rewind event was emitted. */
+  public boolean rewindStreamed() {
+    if (firstDeltaSeq <= 0) {
+      return false;
+    }
+    emit.rewind(replyId, firstDeltaSeq);
+    messageOpen = false;
+    firstDeltaSeq = 0;
+    return true;
   }
 
   public void accept(AgentEvent event) {

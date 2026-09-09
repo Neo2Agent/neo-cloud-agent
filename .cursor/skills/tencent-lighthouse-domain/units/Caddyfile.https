@@ -32,6 +32,12 @@
 		root * /opt/neo
 		file_server browse
 	}
+	# Desk Remote tools WSS. Never reverse_proxy :8082.
+	handle /v1/desks/*/tools/* {
+		reverse_proxy 127.0.0.1:8080 {
+			flush_interval -1
+		}
+	}
 	handle {
 		reverse_proxy 127.0.0.1:8080 {
 			flush_interval -1

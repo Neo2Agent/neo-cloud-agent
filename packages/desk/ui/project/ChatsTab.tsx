@@ -1,6 +1,6 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { IconCloud, IconComputer } from "../icons";
-import { isRemoteControlRun } from "../desk";
+import { isDeskBoundRun, isRemoteControlRun } from "../desk";
 import { IslandButton, IslandTag } from "../island";
 import { formatRel } from "./helpers";
 
@@ -36,7 +36,7 @@ export function ChatsTab({
       ) : (
         <ul className="task-list">
           {runs.map((item) => {
-            const cloud = item.executionTarget?.loop !== "desk";
+            const cloud = !isDeskBoundRun(item);
             return (
               <li key={item.id}>
                 <button type="button" className="task-row" onClick={() => onOpenRun(item.id)}>

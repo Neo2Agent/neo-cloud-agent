@@ -1,8 +1,10 @@
-# 二期：云端 loop + 本机工具 RPC
+# 二期：云端 loop + 本机工具 RPC（调研底稿）
 
-调研报告 + 影响范围评估。2026-08-27，代码基线 `main` `4d35d9e`。
+> **状态（2026-09-09）：** 产品入口已落地。权威规格改看 [server-side-agent-loop.md](./server-side-agent-loop.md)。本文保留 Cursor 对照和爆炸半径，不再当「还没做」的施工单。
 
-对照文档：[desk.md](./desk.md)（现状）、[architecture.md §2](./architecture.md)（一期锁死的原则）、[desk-project-design.md](./desk-project-design.md)、[agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)（若用 AgentScope 做云端 loop，第 4 期才解 `loop !== tools`；本报告的协议和权限工作不因此作废）。
+调研报告 + 影响范围评估。原文基线 2026-08-27 `main` `4d35d9e`。
+
+对照文档：[desk.md](./desk.md)、[architecture.md §2](./architecture.md)、[desk-project-design.md](./desk-project-design.md)、[agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。§6 未决与过网传输的拍板见 [server-side-agent-loop.md](./server-side-agent-loop.md) §6–§8。
 
 ---
 

@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.stereotype.Component;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import cloud.neorun.loop.agent.AgentEventMapper;
 import cloud.neorun.loop.agent.NeoHarnessFactory;
 import cloud.neorun.loop.cloud.ControlPlaneClient;
@@ -20,6 +21,7 @@ import cloud.neorun.loop.sandbox.NeoSandbox;
 import cloud.neorun.loop.sandbox.ToolsHub;
 import cloud.neorun.loop.store.FileAgentStateStore;
 import cloud.neorun.loop.store.FileStepLog;
+import jakarta.annotation.PostConstruct;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -31,6 +33,7 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
   private final LoopProperties properties;
   private final FileStepLog stepLog;
   private final FileAgentStateStore sessions;
+  private final ObjectMapper json = new ObjectMapper();
   private final ExecutorService workers = Executors.newCachedThreadPool();
   private final ConcurrentHashMap<String, LiveTurn> live = new ConcurrentHashMap<>();
 
@@ -49,11 +52,26 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
     this.sessions = new FileAgentStateStore(root);
   }
 
+  @PostConstruct
+  void recoverIncompleteTurns() {
+    for (StartTurnCommand cmd : stepLog.listIncompleteTurns()) {
+      if (!live.containsKey(cmd.turnId())) {
+        start(cmd);
+      }
+    }
+  }
+
   @Override
   public TurnHandle start(StartTurnCommand cmd) {
     live.put(
         cmd.turnId(),
         new LiveTurn(cmd, new AtomicBoolean(false), null, "ensure", Instant.now()));
+    try {
+      stepLog.append(
+          cmd.runId(), cmd.turnId(), 0, "turn_started", "started", json.writeValueAsString(cmd), "");
+    } catch (Exception ignored) {
+      stepLog.append(cmd.runId(), cmd.turnId(), 0, "turn_started", "started", cmd.text(), "");
+    }
     workers.execute(() -> runTurn(cmd));
     return new TurnHandle(cmd.turnId(), cmd.runId(), true);
   }
@@ -103,7 +121,7 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
 
       stepLog.append(cmd.runId(), cmd.turnId(), ++step, "restore", "started", "", "");
       updatePhase(cmd.turnId(), "restore");
-      Map<String, Object> session = sessions.load(cmd.runId());
+      Map<String, Object> session = restoreSession(cmd, cloud);
       stepLog.append(cmd.runId(), cmd.turnId(), ++step, "restore", "done", "", "");
 
       mapper.agentStart();
@@ -122,6 +140,7 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
       }
 
       if (liveTurn != null && liveTurn.aborted.get()) {
+        stepLog.append(cmd.runId(), cmd.turnId(), ++step, "turn_completed", "done", "", "cancelled");
         cloud.complete(cmd.runId(), cmd.turnId(), "idle", "cancelled", true);
         return;
       }
@@ -131,14 +150,26 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
       session.put("lastTurnId", cmd.turnId());
       session.put("lastDelivery", cmd.delivery());
       sessions.save(cmd.runId(), session);
+      try {
+        cloud.saveSession(cmd.runId(), session);
+      } catch (RuntimeException ignored) {
+        // file store is enough for a single loop host
+      }
       stepLog.append(cmd.runId(), cmd.turnId(), ++step, "persist", "done", "", "");
+      stepLog.append(cmd.runId(), cmd.turnId(), ++step, "turn_completed", "done", "", "idle");
       updatePhase(cmd.turnId(), "done");
       cloud.complete(cmd.runId(), cmd.turnId(), "idle", null, false);
     } catch (Exception error) {
       try {
+        mapper.rewindStreamed();
         mapper.error(error.getMessage());
       } catch (RuntimeException ignored) {
         // best-effort; turn-complete is the source of truth
+      }
+      try {
+        stepLog.append(cmd.runId(), cmd.turnId(), ++step, "turn_completed", "error", "", error.getMessage());
+      } catch (RuntimeException ignored) {
+        // recovery must not replay a turn that already failed in-process
       }
       try {
         cloud.complete(cmd.runId(), cmd.turnId(), "error", error.getMessage(), false);
@@ -156,14 +187,21 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
     HarnessAgent harness = built.harness();
     ReActAgent agent = built.react();
     RuntimeContext ctx = RuntimeContext.builder().userId(cmd.userId()).sessionId(cmd.runId()).build();
-    Flux<?> stream = harness != null ? harness.streamEvents(userText, ctx) : agent.streamEvents(userText, ctx);
-    stream.doOnNext(event -> {
-          if (event instanceof io.agentscope.core.event.AgentEvent agentEvent) {
-            mapper.accept(agentEvent);
-          }
-        })
-        .blockLast();
-    return true;
+    try {
+      Flux<?> stream = harness != null ? harness.streamEvents(userText, ctx) : agent.streamEvents(userText, ctx);
+      stream
+          .doOnNext(
+              event -> {
+                if (event instanceof io.agentscope.core.event.AgentEvent agentEvent) {
+                  mapper.accept(agentEvent);
+                }
+              })
+          .blockLast();
+      return true;
+    } catch (RuntimeException error) {
+      mapper.rewindStreamed();
+      throw error;
+    }
   }
 
   private void runActivityLoop(
@@ -192,8 +230,15 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
             new LiveTurn(liveTurn.cmd, liveTurn.aborted, null, "infer", liveTurn.startedAt));
       }
       updatePhase(cmd.turnId(), "infer");
+      String stepId = cmd.turnId() + ":infer:" + hop;
       stepLog.append(cmd.runId(), cmd.turnId(), hop * 2 + 10, "infer_started", "started", userText, "");
-      InferActivity.InferResult result = infer.run(cmd.llmGatewayUrl(), cmd.jwt(), cmd.model(), messages, toolSchemas);
+      InferActivity.InferResult result;
+      try {
+        result = infer.run(cmd.llmGatewayUrl(), cmd.jwt(), cmd.model(), messages, toolSchemas, stepId);
+      } catch (RuntimeException error) {
+        mapper.rewindStreamed();
+        throw error;
+      }
       stepLog.append(cmd.runId(), cmd.turnId(), hop * 2 + 11, "infer_done", "done", "", result.raw());
       mapper.usage(result.promptTokens(), result.completionTokens());
       if (result.content() != null && !result.content().isBlank()) {
@@ -235,6 +280,21 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
       }
       messages.addAll(toolMessages);
     }
+  }
+
+  private Map<String, Object> restoreSession(StartTurnCommand cmd, ControlPlaneClient cloud) {
+    Map<String, Object> session = sessions.load(cmd.runId());
+    Object messages = session.get("messages");
+    boolean empty = !(messages instanceof List<?> list) || list.isEmpty();
+    if (!empty) {
+      return session;
+    }
+    Map<String, Object> remote = cloud.loadSession(cmd.runId());
+    if (remote != null && !remote.isEmpty()) {
+      sessions.save(cmd.runId(), remote);
+      return remote;
+    }
+    return session;
   }
 
   private void updatePhase(String turnId, String phase) {

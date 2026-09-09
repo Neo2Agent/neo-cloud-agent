@@ -1,6 +1,6 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { isActiveRunStatus } from "../../src/stream";
-import { localRunFolder, type DeskRunStatus } from "../desk";
+import { isDeskBoundRun, localRunFolder, type DeskRunStatus } from "../desk";
 
 /** Statuses reported by the main process, keyed by run id. */
 export type LocalRunStatuses = Record<string, DeskRunStatus>;
@@ -37,7 +37,7 @@ const NO_LOCAL_RUN: LocalRunView = {
 };
 
 export function localRunView(run: Run | null | undefined, statuses: LocalRunStatuses): LocalRunView {
-  if (!run || run.executionTarget?.loop !== "desk") {
+  if (!run || !isDeskBoundRun(run)) {
     return NO_LOCAL_RUN;
   }
   const status = statuses[run.id];

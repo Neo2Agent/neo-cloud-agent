@@ -40,6 +40,10 @@ export function deskWorkerLaunch(input: {
   };
 }
 
+export function deskWorkerExitAfterTurn(workerRole?: "all" | "tools"): "0" | "1" {
+  return workerRole === "tools" ? "0" : "1";
+}
+
 export function spawnDeskWorker(input: {
   runId: string;
   jwt: string;
@@ -74,7 +78,9 @@ export function spawnDeskWorker(input: {
     WORKER_POLL_MS: process.env.WORKER_POLL_MS ?? DEFAULT_WORKER_POLL_MS,
     // Not configurable: a resident worker on a laptop dies on an expired run
     // JWT and holds a concurrency slot it is no longer using. See docs/desk.md.
-    WORKER_EXIT_AFTER_TURN: "1",
+    // This Computer (pi) exits after the turn. Remote tools workers stay up
+    // so neo-loop can call exec on the next hop without respawning.
+    WORKER_EXIT_AFTER_TURN: deskWorkerExitAfterTurn(input.workerRole),
     ELECTRON_RUN_AS_NODE: "1",
     ...(input.workerRole ? { WORKER_ROLE: input.workerRole } : {}),
     ...(input.neoLoopUrl ? { NEO_LOOP_URL: input.neoLoopUrl } : {}),

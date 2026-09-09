@@ -41,7 +41,7 @@ test("mergeDeskTarget keeps the live desk id when the picker only changes folder
     deskId: "desk_live",
   });
   assert.deepEqual(localRunTarget({ kind: "remote", workspaceId: "dws_local_abc" }, "desk_live"), {
-    loop: "desk",
+    loop: "cloud",
     tools: "desk",
     deskId: "desk_live",
     remoteControl: true,
@@ -51,6 +51,10 @@ test("mergeDeskTarget keeps the live desk id when the picker only changes folder
   assert.equal(isLocalDeskKind("cloud"), false);
   assert.equal(localRunLabel({ executionTarget: { loop: "desk", remoteControl: true } }), "Remote Control");
   assert.equal(localRunLabel({ executionTarget: { loop: "desk" } }), "This Computer");
+  assert.equal(
+    localRunLabel({ executionTarget: { loop: "cloud", tools: "desk", remoteControl: true } }),
+    "Remote Control",
+  );
 });
 
 test("withDeskClient marks Desk traffic without a custom header", () => {

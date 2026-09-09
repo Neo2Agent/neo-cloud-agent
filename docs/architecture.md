@@ -2,7 +2,7 @@
 
 对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离执行单元；**LLM 推理走云端网关**；**工具在执行面**；**Agent 循环现网仍在 worker 内 pi，目标态在独立 Java `neo-loop`**。默认内核是 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
 
-本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（package、三个必开进程 + 可选 `neo-loop`、双内核、现网、专家 / 插件、数据流）见 [architecture-overview.md](./architecture-overview.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)，现网 `https://neorun.cloud/architecture`。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
+本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（package、三个必开进程 + 可选 `neo-loop`、双内核、现网、专家 / 插件、数据流）见 [architecture-overview.md](./architecture-overview.md)。**三态已落地规格（含 Desk Remote WSS）**见 [server-side-agent-loop.md](./server-side-agent-loop.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)，现网 `https://neorun.cloud/architecture`。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
 
 ---
 
@@ -23,7 +23,7 @@
 
 - 复刻 Cursor 的 IDE、Tab、本地 sandbox，或把 pi 再嵌进一份本机 TUI
 - 多租户计费的完整账务系统（先打点，后对账）
-- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）——二期重新评估见 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md)
+- 在控制面远程 RPC 每一个 `read` / `edit` / `bash`（延迟和带宽都会毁掉 coding agent）。Remote 走控制面 **字节管道** WSS，不在 orchestrator 里解析 command，见 [server-side-agent-loop.md](./server-side-agent-loop.md)
 - 让 VM 直连 Anthropic / OpenAI / 自建 GPU（密钥与配额会泄漏到不可信环境）
 - 让 CLI 在开发者机器上执行工具来「加速」——CLI 只打 `/v1`，见 [cli.md](./cli.md)
 
@@ -31,7 +31,9 @@
 
 ## 2. 一条必须先锁死的原则
 
-**推理在 Gateway。Loop 默认在 worker / 槽里的 pi；`kernel=agentscope` 时在 `neo-loop`。工具在执行面。不要把 Harness 嵌进控制面。**
+**推理在 Gateway。This Computer 的 loop 在 Desk 本机 pi。Cloud / Remote 的 loop 在 `neo-loop`（或现网默认的同址 pi）。工具在执行面。不要把 Harness 嵌进控制面。**
+
+Desk · This Computer 永久是本机 loop，和 Cursor 官方 *"Local describes where the agent loop and filesystem access run, not where the model runs."* 对齐。只有 Cloud 和 Remote 把 loop 放服务器；Remote 的工具通道是 `GET /v1/desks/:id/tools/:runId`，控制面鉴权后反代到本机 `neo-loop`，assignment 不得把公网 Desk 指向 `:8082`。
 
 现网默认是 `AGENT_KERNEL=pi`：loop 和工具同址，都在 worker / 槽里。`AGENT_KERNEL=agentscope` 时 loop 在独立的 Java 进程 `neo-loop`（AgentScope `HarnessAgent` + `LocalTurnEngine`），worker 只做 `ToolsServer`。不要把 `HarnessAgent` 嵌进 `control-plane`，也不要在 loop 宿主机上跑 `LocalFilesystemSpec` / `sh -c`。
 

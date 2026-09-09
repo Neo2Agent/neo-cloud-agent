@@ -21,6 +21,34 @@ public class InferActivity {
   private final ObjectMapper mapper = new ObjectMapper();
 
   public InferResult run(String gatewayUrl, String jwt, String model, List<Map<String, Object>> messages, List<Map<String, Object>> tools) {
+    return run(gatewayUrl, jwt, model, messages, tools, null);
+  }
+
+  public InferResult run(
+      String gatewayUrl,
+      String jwt,
+      String model,
+      List<Map<String, Object>> messages,
+      List<Map<String, Object>> tools,
+      String stepId) {
+    Exception last = null;
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        return runOnce(gatewayUrl, jwt, model, messages, tools, stepId);
+      } catch (RuntimeException error) {
+        last = error;
+      }
+    }
+    throw last instanceof RuntimeException runtime ? runtime : new IllegalStateException("infer failed", last);
+  }
+
+  private InferResult runOnce(
+      String gatewayUrl,
+      String jwt,
+      String model,
+      List<Map<String, Object>> messages,
+      List<Map<String, Object>> tools,
+      String stepId) {
     try {
       Map<String, Object> body = new LinkedHashMap<>();
       body.put("model", model);
@@ -29,13 +57,15 @@ public class InferActivity {
       if (tools != null && !tools.isEmpty()) {
         body.put("tools", tools);
       }
-      HttpRequest request =
+      HttpRequest.Builder builder =
           HttpRequest.newBuilder(URI.create(trimSlash(gatewayUrl) + "/v1/chat/completions"))
               .timeout(Duration.ofMinutes(3))
               .header("content-type", "application/json")
-              .header("authorization", "Bearer " + jwt)
-              .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
-              .build();
+              .header("authorization", "Bearer " + jwt);
+      if (stepId != null && !stepId.isBlank()) {
+        builder.header("X-Neo-Step-Id", stepId);
+      }
+      HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
       HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
       if (response.statusCode() >= 400) {
         throw new IllegalStateException("gateway " + response.statusCode() + " " + response.body());

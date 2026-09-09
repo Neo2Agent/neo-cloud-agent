@@ -70,8 +70,11 @@ export interface DeskAssignment {
   pluginSkills?: Array<{ slug: string; files: Array<{ relativePath: string; content: string }> }>;
   pluginSnapshot?: string;
   kernel?: "pi" | "agentscope";
+  /** Loopback-only. Packaged Desk must use `toolsChannelUrl` instead of `:8082`. */
   neoLoopUrl?: string;
   neoLoopToken?: string;
+  /** Control-plane WSS proxy: `/v1/desks/:id/tools/:runId`. */
+  toolsChannelUrl?: string;
 }
 
 export interface DeskLeaseResponse {
@@ -109,16 +112,26 @@ export type RemoteControlSendLockOptions = {
   thisDeskId?: string | null;
 };
 
+/** Tools or loop live on a laptop. Offline desk must fail closed — including cloud-loop Remote. */
+export function isDeskHostedTarget<T extends { loop?: string; tools?: string }>(
+  target?: T | null,
+): target is T {
+  return target?.tools === "desk" || target?.loop === "desk";
+}
+
 /** Other clients may send only while the desk that started this run still holds its inbox. */
 export function remoteControlSendLock(
-  run: { executionTarget?: { loop?: string; deskId?: string | null } | null } | null | undefined,
+  run: {
+    executionTarget?: { loop?: string; tools?: string; deskId?: string | null; remoteControl?: boolean } | null;
+  } | null | undefined,
   desks: Array<Pick<Desk, "id" | "online">>,
   options?: RemoteControlSendLockOptions,
 ): { locked: boolean; hint: string } {
-  if (run?.executionTarget?.loop !== "desk") {
+  const target = run?.executionTarget;
+  if (!isDeskHostedTarget(target)) {
     return { locked: false, hint: "" };
   }
-  const deskId = run.executionTarget.deskId?.trim();
+  const deskId = target.deskId?.trim();
   if (!deskId) {
     return { locked: true, hint: DESK_HOST_UNBOUND_MESSAGE };
   }

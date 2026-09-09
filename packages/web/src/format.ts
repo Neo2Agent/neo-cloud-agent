@@ -1,5 +1,6 @@
+import { isDeskHostedTarget } from "@neo-cloud-agent/contracts/desk";
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
+import { isRemoteControlTarget, runDisplayTitle, type ExecutionTarget } from "@neo-cloud-agent/contracts/run";
 
 export const STATUS_LABELS: Record<string, string> = {
   idle: "就绪",
@@ -54,6 +55,15 @@ export function slotLabel(id?: string | null): string {
   const match = /^slot-(\d+)$/.exec(raw);
   if (match) return `VM ${Number(match[1]) + 1}`;
   return raw || "未分配";
+}
+
+export function runListPlaceSuffix(run: {
+  executionTarget?: ExecutionTarget | null;
+  vmSlotId?: string | null;
+}): string {
+  if (isRemoteControlTarget(run.executionTarget)) return " · Remote";
+  if (isDeskHostedTarget(run.executionTarget)) return " · 本机";
+  return run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : "";
 }
 
 const SHANGHAI = "Asia/Shanghai";

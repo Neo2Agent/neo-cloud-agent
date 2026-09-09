@@ -8,7 +8,7 @@ const remote: Run = {
   id: "r1",
   prompt: "follow desk",
   status: "IDLE",
-  executionTarget: { loop: "desk", tools: "desk", deskId: "desk_1", remoteControl: true },
+  executionTarget: { loop: "cloud", tools: "desk", deskId: "desk_1", remoteControl: true },
 } as Run;
 
 test("composerGate locks Remote follow-up when the host is offline", () => {
@@ -20,6 +20,13 @@ test("composerGate locks Remote follow-up when the host is offline", () => {
 test("composerGate stays open for cloud runs", () => {
   const gate = composerGate({ ...remote, executionTarget: { loop: "cloud", tools: "cloud" } }, []);
   assert.equal(gate.locked, false);
+});
+
+test("composerGate locks This Computer follow-up when the host is offline", () => {
+  const local = { ...remote, executionTarget: { loop: "desk" as const, tools: "desk" as const, deskId: "desk_1" } };
+  const gate = composerGate(local, [{ id: "desk_1", online: false }]);
+  assert.equal(gate.locked, true);
+  assert.equal(gate.hint, DESK_HOST_OFFLINE_MESSAGE);
 });
 
 test("runRowMeta labels cloud vs remote without a color pill", () => {

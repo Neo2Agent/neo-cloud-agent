@@ -8,8 +8,8 @@ import {
 } from "@neo-cloud-agent/contracts/transcript";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
-import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";
-import type { Desk, DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
+import { isRemoteControlTarget, type AgentMode, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
+import { isDeskHostedTarget, type Desk, type DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
 import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
@@ -750,7 +750,7 @@ export function App() {
       lastSseAtRef.current = Date.now();
       listen(run.id, lastEventIdRef.current);
       void refreshVms();
-      if (run.executionTarget?.loop === "desk") {
+      if (isDeskHostedTarget(run.executionTarget)) {
         void refreshDesks();
       }
       return true;
@@ -2065,7 +2065,7 @@ export function App() {
                   ))}
                 </nav>
               ) : null}
-              {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
+              {runId && currentRun?.executionTarget?.tools !== "desk" && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
                 <button
                   className="ghost"
                   type="button"
@@ -2486,9 +2486,9 @@ export function App() {
               canRunLocal={Boolean(deskBridge()?.canRunLocal)}
               folder={deskFolder}
               desks={desks}
-              targetLocked={currentRun?.executionTarget?.loop === "desk"}
+              targetLocked={isDeskHostedTarget(currentRun?.executionTarget)}
               targetLockLabel={
-                currentRun?.executionTarget?.remoteControl === true ? "Remote Control" : "This Computer"
+                isRemoteControlTarget(currentRun?.executionTarget) ? "Remote Control" : "This Computer"
               }
               blocked={hostLock.locked}
               blockedHint={hostLock.hint}

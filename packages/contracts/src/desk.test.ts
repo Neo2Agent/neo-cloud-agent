@@ -22,4 +22,20 @@ test("a Remote Control chat sends only while that desk's inbox is live", () => {
     locked: true,
     hint: DESK_HOST_UNBOUND_MESSAGE,
   });
+  const cloudLoopRemote = {
+    executionTarget: {
+      loop: "cloud" as const,
+      tools: "desk" as const,
+      deskId: "desk_1",
+      remoteControl: true,
+    },
+  };
+  assert.deepEqual(remoteControlSendLock(cloudLoopRemote, [{ id: "desk_1", online: false }]), {
+    locked: true,
+    hint: DESK_HOST_OFFLINE_MESSAGE,
+  });
+  assert.deepEqual(remoteControlSendLock(cloudLoopRemote, [{ id: "desk_1", online: true }]), {
+    locked: false,
+    hint: "",
+  });
 });

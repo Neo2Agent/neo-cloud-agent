@@ -10,8 +10,26 @@ import {
   modelLabel,
   parseUnifiedDiff,
   resolveChatModel,
+  runListPlaceSuffix,
   toolArgPreview,
 } from "./format.js";
+
+test("runListPlaceSuffix labels Remote separately from This Computer", () => {
+  assert.equal(
+    runListPlaceSuffix({
+      executionTarget: { loop: "cloud", tools: "desk", deskId: "desk_1", remoteControl: true },
+    }),
+    " · Remote",
+  );
+  assert.equal(runListPlaceSuffix({ executionTarget: { loop: "desk", tools: "desk", deskId: "desk_1" } }), " · 本机");
+  assert.equal(
+    runListPlaceSuffix({
+      executionTarget: { loop: "desk", tools: "desk", deskId: "desk_1", remoteControl: true },
+    }),
+    " · 本机",
+  );
+  assert.equal(runListPlaceSuffix({ executionTarget: { loop: "cloud", tools: "cloud" }, vmSlotId: "slot-0" }), " · VM 1");
+});
 
 test("modelLabel distinguishes DeepSeek Flash, Vision, and Pro", () => {
   assert.equal(modelLabel("deepseek", "deepseek-v4-flash"), "DeepSeek Flash");

@@ -30,7 +30,7 @@
 1. **loop 在 VM，不在手机。** 手机不跑 pi，不 `read` / `edit` / `bash`，不持有 Provider Key。
 2. **会话权威在控制面。** 手机不做本地会话库；列表、transcript、状态都以 `/v1` 为准。
 3. **多端是订阅制。** Worker 只生产一次。手机和浏览器、CLI 一样先拉 `GET /v1/runs/:id/transcript`，再订 `GET /v1/runs/:id/events`（`after` / `Last-Event-ID`）。
-4. **不做 Desk 目标。** `ExecutionTarget` 的 `loop === "desk"` 需要本机 git 目录和 Electron worker。手机没有这个执行面。P0–P2 只发云端目标 `{ loop: "cloud", tools: "cloud" }`。
+4. **新开只发 Cloud。** `{ loop: "cloud", tools: "cloud" }`。手机没有 Desk 执行面，不能开 This Computer。已有 Remote（`isRemoteControlTarget`）可以跟进，Desk 必须在线；列表标 `remote`，不要标成本机。
 5. **IM 入口继续独立。** Telegram / 微信 webhook 仍是公开 ingress，不改成要登录，也不冒充 App。
 
 ```

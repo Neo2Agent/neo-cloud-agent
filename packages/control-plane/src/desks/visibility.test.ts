@@ -48,6 +48,17 @@ test("a desk follow-up waits for the host inbox, like Cursor My Machines", () =>
     deskFollowUpBlockReason({ userId: "user_ada", executionTarget: { loop: "desk" } }, () => true) ?? "",
     /绑定电脑/,
   );
+  const remote = {
+    userId: "user_ada",
+    executionTarget: {
+      loop: "cloud" as const,
+      tools: "desk" as const,
+      deskId: "desk_1",
+      remoteControl: true,
+    },
+  };
+  assert.match(deskFollowUpBlockReason(remote, () => false) ?? "", /离线/);
+  assert.equal(deskFollowUpBlockReason(remote, () => true), null);
 });
 
 test("Desk identifies itself with a header or a query", () => {

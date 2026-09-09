@@ -1,6 +1,6 @@
 # Neo Loop 详细设计：Java + Cursor 三态
 
-工程设计，不是再做一次选型。路径选择见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。实现已在 `main`：`services/neo-loop` + `WORKER_ROLE=tools`。现网默认 `AGENT_KERNEL=pi`，`neo-loop` 可选。现状地图见 [architecture-overview.md](./architecture-overview.md)。
+工程设计，不是再做一次选型。路径选择见 [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md)。实现已在 `main`：`services/neo-loop` + `WORKER_ROLE=tools`。现网默认 `AGENT_KERNEL=pi`，`neo-loop` 可选。现状地图见 [architecture-overview.md](./architecture-overview.md)。第 3 / 4 期剩余工作与 Desk Remote 过网通道见 [server-side-agent-loop.md](./server-side-agent-loop.md)。
 
 对标 Cursor 现行形态：loop 在可恢复工作流里，机器单独租约，对话是 append-only 事件流。实现栈：AgentScope Java 2.0 `HarnessAgent` + 自建 `NeoSandbox` + 现有 TypeScript 控制面 / Gateway / 槽。
 
@@ -18,7 +18,7 @@
 3. **控制面不跑 loop，loop 不碰磁盘，Gateway 不执行工具。**
 4. **事件只由 loop 盖章。** 执行器可以推流式碎片，最终 `RunEvent` + `workerSeq` 由 `neo-loop` 写 `/internal/runs/:id/events`。
 5. **现网默认 `AGENT_KERNEL=pi`。** Java 路径用显式 `kernel:"agentscope"` 或 `AGENT_KERNEL=agentscope`。Caddy / 防火墙不要放行 `:8082`。
-6. **Desk This Computer 本期不动。** `{ loop:"desk", tools:"desk" }` 继续本机 pi。`{ loop:"cloud", tools:"desk" }` 留第 4 期。
+6. **Desk This Computer 继续本机 pi。** `{ loop:"desk", tools:"desk" }`。Remote `{ loop:"cloud", tools:"desk", remoteControl }` 已落地；过网通道以 [server-side-agent-loop.md](./server-side-agent-loop.md) §6 为准（控制面 WSS 反代，Desk 不直连 `:8082`）。
 
 新原则（取代 `architecture.md` §2 那句「loop 必须在 VM 里」）：
 
@@ -72,7 +72,7 @@ Caddy **不**把 `:8082` 暴露到公网。浏览器继续只打 `/v1`。
 | append-only conversation + rewind | 现有 `RunEvent` + `workerSeq`；重试时 loop 发 `turn.rewind` 再播新事件 |
 | 机器租约独立于 loop | `Runtime.provision` / 空闲写回 / 卸槽，loop 只持 `toolsChannelUrl` |
 | This Computer | 不变，`loop=desk` |
-| Remote Control | 第 4 期，同一 `NeoSandbox`，执行器换 Desk |
+| Remote Control | 已落地：同一 tools 帧，执行器在 Desk，过网走控制面 WSS |
 
 ### 1.3 一次 Run 的主路径（`AGENT_KERNEL=agentscope`）
 
@@ -378,7 +378,7 @@ Authorization: Bearer <run JWT>
 - stdout 建议 ≥50ms 或 ≥4KiB 刷一帧，对上现在的 `tool.update`。
 - 单帧文本上限 256KiB；更大走 `fs.upload` / `fs.download`。
 
-第 4 期 Desk 用同一套帧。多一个鉴权头：`X-Neo-Desk-Token`。run JWT 单独不够。
+第 4 期 Desk 用同一套帧，但**不直连** `:8082`。过网走控制面 `GET /v1/desks/:id/tools/:runId` WSS 反代（desk token + claim lease + run JWT），见 [server-side-agent-loop.md](./server-side-agent-loop.md) §6。run JWT 单独不够。
 
 ---
 
@@ -634,6 +634,7 @@ pnpm typecheck && pnpm test
 | `packages/control-plane/src/loop/client.ts` | `dispatchTurn` / `signalTurn` |
 | `packages/control-plane/src/orchestrator/orchestrator.ts` | `createRun` / `enqueueFollowUp` / ready 回调分支 |
 | `packages/control-plane/src/api/server.ts` | `turn-complete` / `turn-heartbeat` |
+| `ControlPlaneClient.java` | **必须 HTTP/1.1**。Java 默认 HTTP/2，Node 控制面第一下心跳会失败，Desk Remote 卡在「正在思考」 |
 | `packages/worker/src/index.ts` | `WORKER_ROLE=tools` 跳过 pi |
 | `infra/neo-loop.service` | unit 文件，现网必开 |
 | `package.json` | `dev:loop` / `test:loop` |
@@ -654,11 +655,11 @@ pnpm typecheck && pnpm test
 - 心跳拆 `loop` / `tools` 两路
 - transcript 消费 `turn.rewind`
 
-### 第 4 期 — Desk Remote = 真云 loop
+### 第 4 期 — Desk Remote = 真云 loop（已落地）
 
-- 解开 `assertColocatedTarget`
-- Desk 执行器讲同一套 WS 帧
-- 权限按 [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) §4.3
+- `kernel=agentscope` 允许 `{loop:cloud, tools:desk}`；pi 仍同址
+- Desk 执行器讲同一套 WS 帧，过网走控制面 WSS
+- 权限与剩余缺口见 [server-side-agent-loop.md](./server-side-agent-loop.md)
 
 ### 第 5 期 — Temporal（可选）
 
