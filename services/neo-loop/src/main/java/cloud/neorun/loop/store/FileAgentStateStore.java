@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-public class FileAgentStateStore {
+public class FileAgentStateStore implements AgentStateStore {
   private final Path root;
   private final ObjectMapper mapper = new ObjectMapper();
 

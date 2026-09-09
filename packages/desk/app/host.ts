@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import type { DeskAssignment, DeskInboxEvent } from "@neo-cloud-agent/contracts";
+import { isDeskToolsProxyUrl } from "@neo-cloud-agent/contracts";
 import { admitLocalRun, normalizeMaxLocalRuns, type ActiveLocalRun } from "../src/admission.js";
 import { localFolderFromRepoUrls } from "../src/rail.js";
 import {
@@ -685,8 +686,10 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
       scratchDir: launch.scratchDir,
       model: assignment.model,
       workerRole: assignment.kernel === "agentscope" ? "tools" : "all",
-      neoLoopUrl: assignment.neoLoopUrl,
-      neoLoopToken: assignment.neoLoopToken,
+      neoLoopUrl: assignment.toolsChannelUrl ?? assignment.neoLoopUrl,
+      neoLoopToken: isDeskToolsProxyUrl(assignment.toolsChannelUrl ?? assignment.neoLoopUrl)
+        ? deskToken
+        : assignment.neoLoopToken,
     });
     localRuns.set(runId, { folder: workspaceDir, child });
     runLog.info("worker spawned", { runId, pid: child.pid, folder: workspaceDir });

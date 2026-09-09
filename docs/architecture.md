@@ -31,7 +31,9 @@
 
 ## 2. 一条必须先锁死的原则
 
-**推理在 Gateway。Loop 默认在 worker / 槽里的 pi；`kernel=agentscope` 时在 `neo-loop`。工具在执行面。不要把 Harness 嵌进控制面。**
+**推理在 Gateway。This Computer 的 loop 在 Desk 本机 pi。Cloud / Remote 的 loop 在 `neo-loop`（或现网默认的同址 pi）。工具在执行面。不要把 Harness 嵌进控制面。**
+
+Desk · This Computer 永久是本机 loop，和 Cursor 官方 *"Local describes where the agent loop and filesystem access run, not where the model runs."* 对齐。只有 Cloud 和 Remote 把 loop 放服务器；Remote 的工具通道是 `GET /v1/desks/:id/tools/:runId`，控制面鉴权后反代到本机 `neo-loop`，assignment 不得把公网 Desk 指向 `:8082`。
 
 现网默认是 `AGENT_KERNEL=pi`：loop 和工具同址，都在 worker / 槽里。`AGENT_KERNEL=agentscope` 时 loop 在独立的 Java 进程 `neo-loop`（AgentScope `HarnessAgent` + `LocalTurnEngine`），worker 只做 `ToolsServer`。不要把 `HarnessAgent` 嵌进 `control-plane`，也不要在 loop 宿主机上跑 `LocalFilesystemSpec` / `sh -c`。
 

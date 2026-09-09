@@ -31,6 +31,7 @@ import {
   canManageProject,
   evaluateEgress,
   isDeskToolsTarget,
+  verifyRunToken,
   pageTranscriptSnapshot,
   slimTranscriptSnapshotImages,
   rawTranscriptImageData,
@@ -236,6 +237,8 @@ import {
 } from "../notify/settings.js";
 import { registerTelegramWebhook } from "../notify/telegram.js";
 import { serveWebFile } from "./static.js";
+import { handleDeskToolsUpgrade } from "./desk-tools-proxy.js";
+import { loadLoopSession, saveLoopSession } from "../loop/session-store.js";
 import { readMem0Info } from "../memory/client.js";
 import { MemoryServiceError } from "../memory/service.js";
 import {
@@ -471,7 +474,7 @@ export function createApiServer() {
       console.error("vm slots init failed", error);
     });
   }
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://control-plane.local");
     const path = url.pathname;
     const method = req.method ?? "GET";
@@ -2344,6 +2347,41 @@ export function createApiServer() {
         return;
       }
 
+      const loopSessionMatch = /^\/internal\/runs\/([^/]+)\/loop-session$/.exec(path);
+      if (loopSessionMatch && (method === "GET" || method === "POST")) {
+        const runId = loopSessionMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!run) {
+          notFound(res);
+          return;
+        }
+        const bearer = readBearer(req);
+        let jwtOk = false;
+        if (bearer) {
+          try {
+            jwtOk = verifyRunToken(getConfig().jwtSecret, bearer).runId === runId;
+          } catch {
+            jwtOk = false;
+          }
+        }
+        if (!jwtOk) {
+          send(res, 401, { error: "unauthorized" });
+          return;
+        }
+        if (method === "GET") {
+          send(res, 200, { state: loadLoopSession(runId) ?? null });
+          return;
+        }
+        const body = (await readJson(req)) as { state?: Record<string, unknown> };
+        if (!body?.state || typeof body.state !== "object" || Array.isArray(body.state)) {
+          send(res, 400, { error: "state is required" });
+          return;
+        }
+        saveLoopSession(runId, body.state);
+        send(res, 202, { ok: true });
+        return;
+      }
+
       const transcriptImageMatch = /^\/v1\/runs\/([^/]+)\/transcript\/images\/([^/]+)\/(\d+)$/.exec(path);
       if (transcriptImageMatch && method === "GET") {
         const runId = transcriptImageMatch[1] ?? "";
@@ -2809,4 +2847,8 @@ export function createApiServer() {
       send(res, status, { error: message });
     }
   });
+  server.on("upgrade", (req, socket, head) => {
+    handleDeskToolsUpgrade(req, socket, head);
+  });
+  return server;
 }

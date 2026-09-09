@@ -46,10 +46,21 @@ test("parseExecutionTarget accepts the two-axis shape", () => {
   );
 });
 
-test("isRemoteControlTarget is only a desk run that opted in", () => {
-  assert.equal(isRemoteControlTarget({ loop: "desk", tools: "desk", deskId: "desk_1", remoteControl: true }), true);
+test("isRemoteControlTarget is cloud-loop + desk-tools, not This Computer", () => {
+  assert.equal(isRemoteControlTarget({ loop: "desk", tools: "desk", deskId: "desk_1", remoteControl: true }), false);
   assert.equal(isRemoteControlTarget({ loop: "desk", tools: "desk", deskId: "desk_1" }), false);
   assert.equal(isRemoteControlTarget({ loop: "cloud", tools: "cloud" }), false);
+  assert.equal(
+    isRemoteControlTarget({ loop: "cloud", tools: "desk", deskId: "desk_1", remoteControl: true }),
+    true,
+  );
+  assert.deepEqual(parseExecutionTarget({ loop: "cloud", tools: "desk", deskId: "desk_1", remoteControl: true }), {
+    loop: "cloud",
+    tools: "desk",
+    deskId: "desk_1",
+    deskWorkspaceId: undefined,
+    remoteControl: true,
+  });
 });
 
 test("parseRunStart only accepts the two start modes", () => {

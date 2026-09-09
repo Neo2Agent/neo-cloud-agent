@@ -5,6 +5,7 @@ import { Checkbox, Select } from "@neo-cloud-agent/ui";
 import { useEffect, useState } from "react";
 import { api, readJson } from "../api";
 import { IslandButton } from "../island";
+import { isDeskBoundRun, isRemoteControlRun } from "../desk";
 import { hostHint } from "./helpers";
 
 export function RunChrome({
@@ -27,7 +28,7 @@ export function RunChrome({
   refreshKey?: number;
   onQueuedChange?: (items: FollowUp[]) => void;
 }) {
-  const cloud = run.executionTarget?.loop !== "desk";
+  const shared = !isDeskBoundRun(run) || isRemoteControlRun(run);
   const members = project?.members ?? [];
   const [transferTo, setTransferTo] = useState("");
   const [note, setNote] = useState("");
@@ -73,7 +74,7 @@ export function RunChrome({
         body: JSON.stringify({
           toUserId: transferTo,
           note,
-          mode: cloud ? "reassign" : "fork",
+          mode: shared ? "reassign" : "fork",
         }),
       });
       const body = await readJson<Run & { error?: string }>(response);
@@ -91,7 +92,7 @@ export function RunChrome({
   return (
     <div className="run-chrome">
       <p className="hint run-host-hint">
-        {cloud ? "云端" : "本机"} · {hostHint(run, members)}
+        {shared ? (isRemoteControlRun(run) ? "Remote Control" : "云端") : "本机"} · {hostHint(run, members)}
       </p>
       {toolsOpen && run.projectId ? (
         <div className="run-chrome-actions">
@@ -173,7 +174,7 @@ export function RunChrome({
           </IslandButton>
         </div>
       ) : null}
-      {toolsOpen && run.projectId && cloud ? (
+      {toolsOpen && run.projectId && shared ? (
         <div className="run-chrome-actions">
           <label>
             <span>把房主交给</span>

@@ -1,5 +1,9 @@
 import type { IncomingMessage } from "node:http";
-import { DESK_HOST_OFFLINE_MESSAGE, DESK_HOST_UNBOUND_MESSAGE } from "@neo-cloud-agent/contracts/desk";
+import {
+  DESK_HOST_OFFLINE_MESSAGE,
+  DESK_HOST_UNBOUND_MESSAGE,
+  isDeskHostedTarget,
+} from "@neo-cloud-agent/contracts/desk";
 import { actorCanAccessRun, type Actor, type RunAccessShape } from "../security/actor.js";
 
 export { DESK_HOST_OFFLINE_MESSAGE, DESK_HOST_UNBOUND_MESSAGE };
@@ -9,7 +13,7 @@ export const DESK_CLIENT_QUERY = "client";
 export const DESK_CLIENT_VALUE = "desk";
 
 export type DeskVisibilityRun = RunAccessShape & {
-  executionTarget?: { loop?: string; deskId?: string | null; remoteControl?: boolean } | null;
+  executionTarget?: { loop?: string; tools?: string; deskId?: string | null; remoteControl?: boolean } | null;
 };
 
 /** EventSource cannot set headers, so Desk also passes `?client=desk`. */
@@ -35,7 +39,7 @@ export function deskFollowUpBlockReason(
   run: DeskVisibilityRun,
   online: (deskId: string) => boolean,
 ): string | null {
-  if (run.executionTarget?.loop !== "desk") {
+  if (!isDeskHostedTarget(run.executionTarget)) {
     return null;
   }
   const deskId = run.executionTarget.deskId?.trim();

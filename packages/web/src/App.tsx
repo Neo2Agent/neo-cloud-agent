@@ -2065,7 +2065,7 @@ export function App() {
                   ))}
                 </nav>
               ) : null}
-              {runId && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
+              {runId && currentRun?.executionTarget?.tools !== "desk" && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
                 <button
                   className="ghost"
                   type="button"

@@ -746,6 +746,10 @@ test("agentscope cloud-loop desk-tools assignment carries the loop URL", async (
     assert.equal(run.executionTarget?.tools, "desk");
     const assignment = deskAssignmentForRun(run.id);
     assert.equal(assignment.kernel, "agentscope");
+    assert.match(
+      assignment.toolsChannelUrl ?? "",
+      new RegExp(`/v1/desks/${registered.desk.id}/tools/${run.id}$`),
+    );
     assert.equal(assignment.neoLoopUrl, "http://127.0.0.1:8082");
     assert.equal(takeInbound(run.id).length, 0);
   } finally {
@@ -755,6 +759,61 @@ test("agentscope cloud-loop desk-tools assignment carries the loop URL", async (
       process.env.NEO_LOOP_URL = previous;
     }
   }
+});
+
+test("This Computer assignment does not carry a neo-loop URL", async () => {
+  const registered = newDesk("this-computer");
+  const run = await createRun({
+    prompt: "edit locally",
+    repoUrls: ["/tmp/desk-ws"],
+    source: "desk",
+    start: "inline",
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  const assignment = deskAssignmentForRun(run.id);
+  assert.equal(assignment.kernel, "pi");
+  assert.equal(assignment.neoLoopUrl, undefined);
+  assert.equal(assignment.toolsChannelUrl, undefined);
+});
+
+test("one RUNNING Remote per workspace", async () => {
+  const registered = newDesk("busy-remote", true);
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  const detach = openDeskInbox(registered.desk.id, () => undefined);
+  const first = await createRun({
+    prompt: "first remote",
+    repoUrls: ["/tmp/busy-ws"],
+    source: "desk",
+    start: "inline",
+    kernel: "agentscope",
+    deskWorkspaceId: bound.id,
+    target: {
+      loop: "cloud",
+      tools: "desk",
+      deskId: registered.desk.id,
+      remoteControl: true,
+    },
+  });
+  await claimDeskRun(registered.desk.id, { runId: first.id, workspaceDir: "/tmp/busy-ws", pid: process.pid });
+  await assert.rejects(
+    () =>
+      createRun({
+        prompt: "second remote",
+        repoUrls: ["/tmp/busy-ws"],
+        source: "desk",
+        start: "inline",
+        kernel: "agentscope",
+        deskWorkspaceId: bound.id,
+        target: {
+          loop: "cloud",
+          tools: "desk",
+          deskId: registered.desk.id,
+          remoteControl: true,
+        },
+      }),
+    /正在改这个仓库/,
+  );
+  detach();
 });
 
 test("an inline desk run is handed its assignment instead of queueing for a claim", async () => {

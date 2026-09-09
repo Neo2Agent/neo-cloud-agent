@@ -32,8 +32,11 @@ import {
   conversationReplayFromMessages,
   deskRepoKey,
   evaluateEgress,
+  deskToolsProxyUrl,
   isDeskTarget,
   isDeskToolsTarget,
+  isLoopbackHttpUrl,
+  isRemoteControlTarget,
   resolveAgentKernel,
   MAX_SUBSCRIPTION_WAKES,
   mintRunToken,
@@ -1162,6 +1165,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     );
     target.deskWorkspaceId = resolved.deskWorkspaceId;
   }
+  assertRemoteCapacity(target);
   if (input.expertId && input.expertTeamId) {
     throw new Error("一次对话只能选专家或专家团");
   }
@@ -1507,6 +1511,10 @@ export function getRun(id: string): Run | undefined {
   return runs.get(id);
 }
 
+export function isDeskRunClaimed(runId: string): boolean {
+  return deskWorkspaces.has(runId) && handles.has(runId);
+}
+
 export function adoptRun(runId: string, userId: string, orgId?: string): Run | undefined {
   const run = runs.get(runId);
   if (!run || !userId) {
@@ -1636,6 +1644,50 @@ export function listRuns(): Run[] {
   return [...runs.values()].filter((run) => !run.deletedAt);
 }
 
+function assignmentLoopFields(run: Run): Pick<DeskAssignment, "neoLoopUrl" | "neoLoopToken" | "toolsChannelUrl"> {
+  const config = getConfig();
+  // This Computer is pi on the laptop. Never hand it a neo-loop URL.
+  if ((run.kernel ?? "pi") !== "agentscope") {
+    return {};
+  }
+  const target = run.executionTarget;
+  const deskId = target?.deskId;
+  const remote = target?.loop === "cloud" && target.tools === "desk" && Boolean(deskId);
+  const toolsChannelUrl =
+    remote && deskId ? deskToolsProxyUrl(config.controlPlaneUrl, deskId, run.id) : undefined;
+  // Same-machine agentscope + desk loop, or Remote against a loopback control plane.
+  const exposeNeoLoop =
+    target?.loop === "desk" || (remote && isLoopbackHttpUrl(config.controlPlaneUrl));
+  return {
+    ...(toolsChannelUrl ? { toolsChannelUrl } : {}),
+    ...(exposeNeoLoop
+      ? {
+          neoLoopUrl: config.neoLoopUrl,
+          ...(config.neoLoopToken ? { neoLoopToken: config.neoLoopToken } : {}),
+        }
+      : {}),
+  };
+}
+
+function assertRemoteCapacity(target?: ExecutionTarget | null): void {
+  if (!isRemoteControlTarget(target)) {
+    return;
+  }
+  const running = [...runs.values()].filter(
+    (run) =>
+      !run.deletedAt &&
+      run.status === "RUNNING" &&
+      isRemoteControlTarget(run.executionTarget) &&
+      run.executionTarget.deskId === target.deskId,
+  );
+  if (target.deskWorkspaceId && running.some((run) => run.executionTarget?.deskWorkspaceId === target.deskWorkspaceId)) {
+    throw new Error("这台电脑正在改这个仓库");
+  }
+  if (running.length >= 2) {
+    throw new Error("这台电脑同时只能改两个仓库");
+  }
+}
+
 function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
   const config = getConfig();
   const files = expertFilesForRun(run);
@@ -1655,8 +1707,7 @@ function assignmentFor(run: Run, requestedBy?: string | null): DeskAssignment {
     ...assignmentExpertFields(files),
     ...assignmentPluginFields(pluginFilesForRun(run)),
     kernel: run.kernel ?? "pi",
-    neoLoopUrl: run.kernel === "agentscope" ? config.neoLoopUrl : undefined,
-    neoLoopToken: run.kernel === "agentscope" ? config.neoLoopToken : undefined,
+    ...assignmentLoopFields(run),
   };
 }
 

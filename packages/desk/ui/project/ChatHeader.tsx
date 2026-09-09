@@ -1,5 +1,6 @@
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
+import { isDeskBoundRun, isRemoteControlRun } from "../desk";
 import { Select } from "@neo-cloud-agent/ui";
 import { useState, type ReactNode } from "react";
 import { api, readJson } from "../api";
@@ -35,8 +36,7 @@ export function ChatHeader({
   meta?: ReactNode;
   end?: ReactNode;
 }) {
-  const cloud = run.executionTarget?.loop !== "desk";
-  const canInvite = cloud;
+  const canInvite = !isDeskBoundRun(run) || isRemoteControlRun(run);
   const members = project?.members ?? [];
   const others = members.filter(
     (item) => item.userId !== userId && !(run.collaborators ?? []).some((row) => row.userId === item.userId),

@@ -101,7 +101,7 @@ export function parseExecutionTarget(value: unknown): ExecutionTarget | undefine
   const deskId = typeof record.deskId === "string" && record.deskId.trim() ? record.deskId.trim() : undefined;
   const deskWorkspaceId =
     typeof record.deskWorkspaceId === "string" && record.deskWorkspaceId.trim() ? record.deskWorkspaceId.trim() : undefined;
-  const remoteControl = loop === "desk" && record.remoteControl === true;
+  const remoteControl = tools === "desk" && record.remoteControl === true;
   return { loop, tools, deskId, deskWorkspaceId, ...(remoteControl ? { remoteControl: true } : {}) };
 }
 
@@ -149,8 +149,15 @@ export function isCloudLoopTarget(target?: ExecutionTarget | null): boolean {
   return (target?.loop ?? "cloud") === "cloud";
 }
 
+/**
+ * Cursor Remote / My Machines: cloud loop + desk tools.
+ * This Computer is `{loop:desk, tools:desk}` and is not Remote, even if an
+ * older run set `remoteControl` so the web could list it.
+ */
 export function isRemoteControlTarget(target?: ExecutionTarget | null): boolean {
-  return isDeskTarget(target) && target.remoteControl === true;
+  return Boolean(
+    target?.remoteControl && target.loop === "cloud" && target.tools === "desk" && target.deskId,
+  );
 }
 
 export interface Run {

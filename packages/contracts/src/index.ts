@@ -57,6 +57,7 @@ export type {
   ToolsOkFrame,
 } from "./tools-channel.js";
 export { TOOLS_CHANNEL_VERSION, isToolsChannelFrame } from "./tools-channel.js";
+export { deskToolsProxyUrl, isDeskToolsProxyUrl, isLoopbackHttpUrl } from "./urls.js";
 export type {
   LoopDelivery,
   LoopToolsBinding,
@@ -85,6 +86,7 @@ export type {
   HandoffRequest,
   UpdateDeskRequest,
 } from "./desk.js";
+export { isDeskHostedTarget, remoteControlSendLock } from "./desk.js";
 export { deskRepoKey, deskWorkspaceShortName } from "./desk-workspace.js";
 
 export type {

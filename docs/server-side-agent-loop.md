@@ -18,7 +18,15 @@
 | Desk · This Computer | 本机 pi | 本机盘 | Gateway | **B。** 已落地，**永久保留** |
 | Desk · Remote Control | 云端 `neo-loop` | 本机盘（RPC） | Gateway | **C。** 合约已允许，通道和权限未做 |
 
-客户端（含 Cursor 桌面里的 Cloud 下拉）只打 `/v1` + SSE。人这边不跑 loop。
+Cursor 桌面端**不是**一律云端 loop，本仓库也不要做成一律云端 loop：
+
+| Desk 下拉 | loop | 工具 | 本仓库 |
+| --- | --- | --- | --- |
+| This Computer | **本机**（桌面进程 / pi） | 本机盘 | 已落地，禁止改成 `neo-loop` |
+| Cloud | 服务器 | 云端槽 | `kernel=agentscope` 时 `neo-loop`；默认 pi 仍同址 |
+| Remote Control | 服务器 | 本机盘 | `{loop:cloud, tools:desk, remoteControl}` + `kernel=agentscope` |
+
+Web / CLI / 手机 / Desk · Cloud / Desk · Remote 只打 `/v1` + SSE，那些客户端不跑 loop。This Computer 例外：人坐在这台电脑前面，loop 就在这台电脑上。推理一律走 Gateway。
 
 ---
 

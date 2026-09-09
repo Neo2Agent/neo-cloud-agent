@@ -53,6 +53,39 @@ public class ControlPlaneClient {
     return post(path, body);
   }
 
+  public void saveSession(String runId, Map<String, Object> state) {
+    post("/internal/runs/" + runId + "/loop-session", Map.of("state", state == null ? Map.of() : state));
+  }
+
+  public Map<String, Object> loadSession(String runId) {
+    try {
+      HttpRequest request =
+          HttpRequest.newBuilder(URI.create(baseUrl + "/internal/runs/" + runId + "/loop-session"))
+              .timeout(Duration.ofSeconds(15))
+              .header("authorization", "Bearer " + jwt)
+              .GET()
+              .build();
+      HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() == 404) {
+        return Map.of();
+      }
+      if (response.statusCode() >= 400) {
+        return Map.of();
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> parsed = mapper.readValue(response.body(), Map.class);
+      Object state = parsed.get("state");
+      if (state instanceof Map<?, ?> map) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> typed = (Map<String, Object>) map;
+        return typed;
+      }
+      return Map.of();
+    } catch (Exception error) {
+      return Map.of();
+    }
+  }
+
   private Map<String, Object> post(String path, Map<String, Object> body) {
     try {
       HttpRequest request =

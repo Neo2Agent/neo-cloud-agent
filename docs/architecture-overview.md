@@ -276,7 +276,7 @@ sequenceDiagram
 
 ### 5.2 `kernel=agentscope`（可选）
 
-控制面不把 prompt 塞 inbox，记 `pendingLoopStarts`。worker `WORKER_ROLE=tools`，出向连 `ws://127.0.0.1:8082/internal/tools/{runId}`。槽 ready 后 `POST /internal/loop/turns`。
+控制面不把 prompt 塞 inbox，记 `pendingLoopStarts`。云端 tools worker 出向连 `ws://127.0.0.1:8082/internal/tools/{runId}`。Desk Remote 走 `wss://…/v1/desks/:id/tools/:runId`，由控制面反代到 neo-loop，Desk 不直连 `:8082`。This Computer 仍是本机 pi loop。槽 ready 后 `POST /internal/loop/turns`。
 
 ```mermaid
 sequenceDiagram

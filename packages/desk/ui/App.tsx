@@ -14,6 +14,7 @@ import { api, persistSessionToken, readJson } from "./api";
 import {
   asWorkspaceRef,
   deskBridge,
+  isDeskBoundRun,
   isLocalDeskKind,
   localRunFolder,
   localRunLabel,
@@ -188,7 +189,7 @@ function formatRelShort(iso?: string | null): string {
 }
 
 function isCloudRun(run?: Run | null): boolean {
-  return run?.executionTarget?.loop !== "desk";
+  return !isDeskBoundRun(run);
 }
 
 const TURN_IDLE_GRACE_MS = 600;
@@ -541,7 +542,7 @@ export function App() {
         setMessages((prev) => (previousId === id ? mergeUnresolvedPending([], prev) : []));
         lastEventIdRef.current = null;
       }
-      if (run.executionTarget?.loop === "desk") {
+      if (isDeskBoundRun(run)) {
         // The files live on this machine, so the control plane has nothing to
         // diff. It has to be this run's own folder: reading the picker would
         // count changes in whatever folder is selected right now, which is the
@@ -766,7 +767,7 @@ export function App() {
 
   const stopCurrentTurn = () => {
     if (!current) return;
-    if (current.executionTarget?.loop === "desk") {
+    if (isDeskBoundRun(current)) {
       void deskBridge()?.stopRun?.(current.id);
     }
     void api(token, `/v1/runs/${current.id}/abort`, { method: "POST" });
@@ -848,6 +849,7 @@ export function App() {
               // This window is the desk, so it starts the worker itself instead
               // of waiting to be handed its own run back.
               start: local ? "inline" : undefined,
+              kernel: target.kind === TARGET_REMOTE ? "agentscope" : undefined,
               repoUrls: local
                 ? folder
                   ? [folder]
@@ -887,7 +889,7 @@ export function App() {
         throw new Error(followBody.error || "发送失败");
       }
       setQueueEpoch((cur) => cur + 1);
-      if (current?.executionTarget?.loop === "desk" && localStatuses[runId]?.state !== "running") {
+      if (isDeskBoundRun(current) && localStatuses[runId]?.state !== "running") {
         await resumeLocalRun(runId, current?.executionTarget, localRunFolder(current));
       }
     } catch (error) {

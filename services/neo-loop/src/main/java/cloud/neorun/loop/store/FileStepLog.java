@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import cloud.neorun.loop.turn.StartTurnCommand;
 
 public class FileStepLog {
   private final Path root;
@@ -43,6 +44,51 @@ public class FileStepLog {
     } catch (IOException error) {
       throw new IllegalStateException("loop step log failed", error);
     }
+  }
+
+  public List<StartTurnCommand> listIncompleteTurns() {
+    Path dir = root.resolve("turns");
+    if (!Files.isDirectory(dir)) {
+      return List.of();
+    }
+    try {
+      List<StartTurnCommand> incomplete = new ArrayList<>();
+      try (var stream = Files.list(dir)) {
+        for (Path file : stream.filter(path -> path.getFileName().toString().endsWith(".jsonl")).toList()) {
+          String turnId = file.getFileName().toString().replaceFirst("\\.jsonl$", "");
+          List<Map<String, Object>> rows = read(turnId);
+          boolean completed = rows.stream().anyMatch(row -> "turn_completed".equals(String.valueOf(row.get("kind"))));
+          if (completed) {
+            continue;
+          }
+          StartTurnCommand cmd = commandFrom(rows);
+          if (cmd != null) {
+            incomplete.add(cmd);
+          }
+        }
+      }
+      return incomplete;
+    } catch (IOException error) {
+      throw new IllegalStateException("loop step scan failed", error);
+    }
+  }
+
+  public StartTurnCommand commandFrom(List<Map<String, Object>> rows) {
+    for (Map<String, Object> row : rows) {
+      if (!"turn_started".equals(String.valueOf(row.get("kind")))) {
+        continue;
+      }
+      Object raw = row.get("requestJson");
+      if (!(raw instanceof String text) || text.isBlank()) {
+        continue;
+      }
+      try {
+        return mapper.readValue(text, StartTurnCommand.class);
+      } catch (IOException ignored) {
+        return null;
+      }
+    }
+    return null;
   }
 
   public List<Map<String, Object>> read(String turnId) {

@@ -10,7 +10,14 @@ test("cloud chats are never locked by desk presence", () => {
 });
 
 test("a Remote Control chat sends only while that desk's inbox is live", () => {
-  const run = { executionTarget: { loop: "desk" as const, deskId: "desk_1", remoteControl: true } };
+  const run = {
+    executionTarget: {
+      loop: "cloud" as const,
+      tools: "desk" as const,
+      deskId: "desk_1",
+      remoteControl: true,
+    },
+  };
   assert.deepEqual(remoteControlSendLock(run, [{ id: "desk_1", online: true }]), { locked: false, hint: "" });
   assert.deepEqual(remoteControlSendLock(run, [{ id: "desk_1", online: false }]), {
     locked: true,

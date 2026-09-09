@@ -31,6 +31,20 @@ function statuses(...items: DeskRunStatus[]): LocalRunStatuses {
   return Object.fromEntries(items.map((item) => [item.runId, item]));
 }
 
+test("a Remote run still has a local tools view", () => {
+  const view = localRunView(
+    {
+      id: "run-remote",
+      status: "RUNNING",
+      repoUrls: ["/home/me/api"],
+      executionTarget: { loop: "cloud", tools: "desk", remoteControl: true },
+    } as unknown as Run,
+    {},
+  );
+  assert.equal(view.isLocal, true);
+  assert.equal(view.folder, "/home/me/api");
+});
+
 test("a cloud run has no local view at all", () => {
   const view = localRunView(cloudRun("run-a"), {});
   assert.equal(view.isLocal, false);

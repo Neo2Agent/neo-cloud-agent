@@ -3,6 +3,7 @@ import { verifyRunToken } from "./auth.js";
 import { getConfig } from "./config.js";
 import { handleIatRequest, iatConfigured, type SpeechIatRequest } from "./iat.js";
 import { proxyChatCompletions, type ChatCompletionBody } from "./proxy.js";
+import { rememberSuccessfulStep, replaySuccessfulStep } from "./step-cache.js";
 import {
   acquireGatewayConcurrency,
   consumeGatewayRateLimit,
@@ -139,7 +140,15 @@ export function createGatewayServer() {
         }
         try {
           const body = (await readJson(req)) as ChatCompletionBody;
+          const stepHeader = req.headers["x-neo-step-id"];
+          const stepId = Array.isArray(stepHeader) ? stepHeader[0] : stepHeader;
+          const replay = replaySuccessfulStep(stepId);
+          if (replay) {
+            await writePayload(res, replay.status, replay.headers, replay.payload);
+            return;
+          }
           const result = await proxyChatCompletions(body);
+          rememberSuccessfulStep(stepId, result);
           await writePayload(res, result.status, result.headers, result.payload);
         } finally {
           runLease.release();
