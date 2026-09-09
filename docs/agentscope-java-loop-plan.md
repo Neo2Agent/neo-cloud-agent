@@ -522,6 +522,7 @@ WORKER_ROLE=tools          # 只当沙箱
 | [architecture.md](./architecture.md) §2 / §17.5 | 一期锁。采纳路径 C 后改写成「loop 独立进程，工具在执行面」 |
 | [architecture-overview.md](./architecture-overview.md) | 实现落地后再改包地图、进程数、主路径时序 |
 | [desk-phase2-tool-rpc.md](./desk-phase2-tool-rpc.md) | 第 4 期的权限和协议工作仍有效。AgentScope 不替代那份报告 |
+| [server-side-agent-loop.md](./server-side-agent-loop.md) | 从今天代码出发的落地规格。Desk 过网以控制面 WSS 反代为准，不要让笔记本直连 `:8082` |
 | [workspace-persistence.md](./workspace-persistence.md) | 机器生命周期仍归 Runtime。不要改成 AgentScope 每 turn 打 tar |
 | [agent-memory-research.md](./agent-memory-research.md) | 跨 Run 记忆仍是控制面旁路 + Mem0。Harness 的 `MEMORY.md` 只做本 Run 工作区记忆，不要两套用户记忆 |
 | [browser-computer-use.md](./browser-computer-use.md) | computer-use 仍是专职子代理 + 环境里的浏览器，不摊到主 Toolkit |

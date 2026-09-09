@@ -2,7 +2,7 @@
 
 对标 Cursor Cloud Agent：用户从 Web / CLI / Slack / GitHub 发起任务，控制面在云端编排一次隔离执行单元；**LLM 推理走云端网关**；**工具在执行面**；**Agent 循环现网仍在 worker 内 pi，目标态在独立 Java `neo-loop`**。默认内核是 [pi-agent](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent` + `@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）。
 
-本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（package、三个必开进程 + 可选 `neo-loop`、双内核、现网、专家 / 插件、数据流）见 [architecture-overview.md](./architecture-overview.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)，现网 `https://neorun.cloud/architecture`。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
+本文是实现蓝图，不是产品文案。**现在仓库里实际长什么样**（package、三个必开进程 + 可选 `neo-loop`、双内核、现网、专家 / 插件、数据流）见 [architecture-overview.md](./architecture-overview.md)。**从今天代码出发、把 loop 做成 Cursor 现行三态（含 Desk Remote）的落地规格**见 [server-side-agent-loop.md](./server-side-agent-loop.md)。**完整架构图**见 [diagrams/architecture-complete.png](./diagrams/architecture-complete.png)，现网 `https://neorun.cloud/architecture`。合约类型见 [`packages/contracts`](../packages/contracts)。终端客户端见 [`docs/cli.md`](./cli.md)。
 
 ---
 

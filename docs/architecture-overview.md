@@ -935,6 +935,7 @@ pnpm test:loop           # mvn test + agentscope toy-repo e2e
 | [architecture.md](./architecture.md) | 设计蓝图、原则、分阶段、与 Cursor 对照 |
 | [agentscope-java-loop-plan.md](./agentscope-java-loop-plan.md) | 对照 Cursor 现行「loop 与机器拆开」，用 AgentScope Java 做独立 loop 进程的路径选择 |
 | [agentscope-java-loop-design.md](./agentscope-java-loop-design.md) | 工程设计：三态、Turn 工作流、内外接口、Java 包、tools WS。实现落在 `services/neo-loop` + `WORKER_ROLE=tools` |
+| [server-side-agent-loop.md](./server-side-agent-loop.md) | 从今天代码出发的落地规格：已做成什么、第 3 / 4 期还缺什么、Desk Remote 必须经控制面 WSS 反代 |
 | 本文 | 现状总览：包、进程、双内核、现网（`pi` 默认 / `neo-loop` 已装未启）、数据流 |
 | [cli.md](./cli.md) | `neo` 命令面；明确不做本机 Agent |
 | [desk.md](./desk.md) / [desk-this-computer.md](./desk-this-computer.md) / [desk-project-design.md](./desk-project-design.md) | Desk 已落地行为、This Computer 工作区一期、项目工作台 |
