@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./llm-ids": "./src/llm-ids.ts",
     "./transcript": "./src/transcript.ts",
     "./subagent": "./src/subagent.ts",
     "./events": "./src/events.ts",

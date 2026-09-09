@@ -1,4 +1,4 @@
-import { DEEPSEEK_SETTINGS_MODELS, selectDeepseekModelOption } from "@neo-cloud-agent/contracts";
+import { DEEPSEEK_SETTINGS_MODELS, selectDeepseekModelOption } from "@neo-cloud-agent/contracts/llm-ids";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contracts/recipe";

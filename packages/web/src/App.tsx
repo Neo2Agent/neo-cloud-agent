@@ -6,7 +6,7 @@ import {
   settleTranscriptMessages,
   transcriptBodyNeeded,
 } from "@neo-cloud-agent/contracts/transcript";
-import { DEEPSEEK_CHAT_MODELS } from "@neo-cloud-agent/contracts";
+import { DEEPSEEK_CHAT_MODELS } from "@neo-cloud-agent/contracts/llm-ids";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { AgentMode, ImageRef, Run } from "@neo-cloud-agent/contracts/run";

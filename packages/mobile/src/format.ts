@@ -6,7 +6,7 @@ import {
   DEEPSEEK_VISION_MODEL,
   deepseekModelLabel,
   resolveDeepseekChatModel,
-} from "@neo-cloud-agent/contracts";
+} from "@neo-cloud-agent/contracts/llm-ids";
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 

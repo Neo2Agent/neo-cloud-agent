@@ -1,5 +1,5 @@
 import { Select } from "@neo-cloud-agent/ui";
-import { DEEPSEEK_SETTINGS_MODELS, deepseekModelLabel, selectDeepseekModelOption } from "@neo-cloud-agent/contracts";
+import { DEEPSEEK_SETTINGS_MODELS, deepseekModelLabel, selectDeepseekModelOption } from "@neo-cloud-agent/contracts/llm-ids";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
 import { toast } from "../feedback";
