@@ -37,7 +37,7 @@ import {
   isDeskToolsTarget,
   isLoopbackHttpUrl,
   isRemoteControlTarget,
-  resolveAgentKernel,
+  resolveRunKernel,
   MAX_SUBSCRIPTION_WAKES,
   mintRunToken,
   verifyRunToken,
@@ -120,6 +120,7 @@ import {
   signalTurn,
   takeQueuedLoopFollowUp,
 } from "../loop/client.js";
+import { isNeoLoopAvailable } from "../loop/health.js";
 import type { TurnCompleteRequest, TurnHeartbeatRequest } from "@neo-cloud-agent/contracts";
 import { assignmentExpertFields, buildExpertFiles, resolveTeam, writeExpertFiles } from "../experts/materialize.js";
 import { assignmentPluginFields, buildPluginFiles, writePluginFiles } from "../plugins/materialize.js";
@@ -1141,7 +1142,11 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     repoUrls = [...(getEnvironment(input.envId)?.config.repos ?? [])];
   }
   const target = parseExecutionTarget(input.target);
-  const kernel = resolveAgentKernel(input.kernel, process.env);
+  const loopAvailable = isDeskTarget(target) ? false : await isNeoLoopAvailable();
+  const kernel = resolveRunKernel(
+    { kernel: input.kernel, target },
+    { ...process.env, NEO_LOOP_AVAILABLE: loopAvailable ? "1" : "0" },
+  );
   if (target) {
     assertExecutionTarget(target, kernel);
   }

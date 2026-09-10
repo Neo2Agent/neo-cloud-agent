@@ -119,7 +119,7 @@ flowchart TB
 | 状态 | 存哪 | 谁写 | IDLE 卸槽 |
 | --- | --- | --- | --- |
 | Conversation（用户看见的 transcript） | 控制面 `RunEvent`（Redis 热，MySQL / 对象存储冷） | `pi`：worker；`agentscope`：loop 盖章 `workerSeq` | 保留 |
-| Loop（想到哪、session、compaction） | `pi`：槽里 session JSONL；`agentscope`：`neo-loop` 的 `AgentStateStore`（现先写盘） | 对应内核 | **不丢** |
+| Loop（想到哪、session、compaction） | `pi`：槽里 session JSONL；`agentscope`：控制面 `loop:session:{runId}` / `loop_sessions`（文件兜底） | 对应内核 | **不丢** |
 | Machine（磁盘、进程、tmux） | Runtime 槽 / `RUNS_DIR/<runId>` | worker | 可卸；跟进再 provision |
 
 ---
@@ -239,7 +239,7 @@ flowchart LR
 
 ## 5. 一次 Run 的主路径
 
-开关在 `Run.kernel`：请求字段 → `AGENT_KERNEL` → 默认 `pi`。对外 `/v1` 不变。
+开关在 `Run.kernel`：请求显式值优先；This Computer 永远 `pi`；Remote 永远 `agentscope`；Cloud 在 neo-loop 健康时走 `agentscope`，否则 `AGENT_KERNEL` / `pi`。对外 `/v1` 不变。会话：`loop:session:{runId}` Redis 热、`loop_sessions` MySQL 冷，没库则文件。
 
 ### 5.1 `kernel=pi`（现网默认）
 

@@ -238,7 +238,8 @@ import {
 import { registerTelegramWebhook } from "../notify/telegram.js";
 import { serveWebFile } from "./static.js";
 import { handleDeskToolsUpgrade } from "./desk-tools-proxy.js";
-import { loadLoopSession, saveLoopSession } from "../loop/session-store.js";
+import { isNeoLoopAvailable } from "../loop/health.js";
+import { loadLoopSession, loopSessionStoreKind, saveLoopSession } from "../loop/session-store.js";
 import { readMem0Info } from "../memory/client.js";
 import { MemoryServiceError } from "../memory/service.js";
 import {
@@ -519,6 +520,8 @@ export function createApiServer() {
           defaultAdmin: bootstrapEmail() === "admin",
           warmPoolReady: readyWarmCount(),
           builds: listBuilds().filter((item) => item.status === "SUCCEEDED" && !item.draft).length,
+          neoLoop: { available: (await isNeoLoopAvailable()) || false },
+          loopSessionStore: loopSessionStoreKind(),
           ...platformInfo(),
           githubWebhook: publicGitHubWebhookInfo(),
           notify: publicNotifySettings(),
@@ -2369,7 +2372,7 @@ export function createApiServer() {
           return;
         }
         if (method === "GET") {
-          send(res, 200, { state: loadLoopSession(runId) ?? null });
+          send(res, 200, { state: (await loadLoopSession(runId)) ?? null });
           return;
         }
         const body = (await readJson(req)) as { state?: Record<string, unknown> };
@@ -2377,7 +2380,7 @@ export function createApiServer() {
           send(res, 400, { error: "state is required" });
           return;
         }
-        saveLoopSession(runId, body.state);
+        await saveLoopSession(runId, body.state, { userId: run.userId });
         send(res, 202, { ok: true });
         return;
       }
