@@ -103,7 +103,7 @@ def upsert(path: Path, updates: dict[str, str], create_comment: str | None = Non
 existing = parse_env(upstream_path.read_text()) if upstream_path.exists() else {}
 upstream_updates = {
     "LLM_UPSTREAM": existing.get("LLM_UPSTREAM") or "deepseek",
-    "LLM_UPSTREAM_MODEL": existing.get("LLM_UPSTREAM_MODEL") or "deepseek-v4-flash",
+    "LLM_UPSTREAM_MODEL": existing.get("LLM_UPSTREAM_MODEL") or "deepseek-flash",
     "LLM_UPSTREAM_BASE_URL": base_url,
     "DEEPSEEK_API_KEY": key,
 }

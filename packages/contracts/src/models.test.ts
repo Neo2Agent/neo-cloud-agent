@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MAX_REQUEST_OUTPUT_TOKENS, resolveModelLimits, resolveRequestMaxTokens } from "./models.js";
 
-test("DeepSeek V4 flash and pro both advertise a 1M window", () => {
+test("DeepSeek Flash 4.1 and retired aliases advertise a 1M window", () => {
+  assert.deepEqual(resolveModelLimits("deepseek-flash"), {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
+  });
   assert.deepEqual(resolveModelLimits("deepseek-v4-flash"), {
     contextWindow: 1_000_000,
     maxOutputTokens: 384_000,

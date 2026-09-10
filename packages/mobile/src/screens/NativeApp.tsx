@@ -81,7 +81,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [screen, setScreen] = useState<Screen>("home");
   const [runs, setRuns] = useState<Run[]>([]);
   const [envId, setEnvId] = useState("");
-  const [model, setModel] = useState("deepseek-v4-flash");
+  const [model, setModel] = useState("deepseek-flash");
   const [current, setCurrent] = useState<Run | null>(null);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [experts, setExperts] = useState<Expert[]>([]);

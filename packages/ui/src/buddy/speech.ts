@@ -11,8 +11,8 @@ export function mergeSpokenText(current: string, spoken: string): string {
   return base ? `${base} ${next}` : next;
 }
 
-export function modelShortLabel(model: string): string {
-  return /pro/i.test(model) && !/vision/i.test(model) ? "Pro" : "Flash";
+export function modelShortLabel(_model: string): string {
+  return "Flash";
 }
 
 export function holdPadLabel(input: {

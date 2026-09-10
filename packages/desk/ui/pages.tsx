@@ -1,3 +1,4 @@
+import { DEEPSEEK_FLASH_MODEL } from "@neo-cloud-agent/contracts/llm-ids";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
@@ -374,11 +375,7 @@ export function SettingsPage({
   };
   const consoleUrl = newApi?.consoleUrl || newApi?.url || "";
   const managed = Boolean(consoleUrl);
-  const selectedModel = /vision/i.test(name)
-    ? "deepseek-v4-flash-vision-exp"
-    : /pro/i.test(name)
-      ? "deepseek-v4-pro"
-      : "deepseek-v4-flash";
+  const selectedModel = DEEPSEEK_FLASH_MODEL;
   const current = SETTINGS_SECTIONS.find((item) => item.id === section) ?? SETTINGS_SECTIONS[0];
   return (
     <Page>
@@ -451,19 +448,9 @@ export function SettingsPage({
               <h2>{managed ? "New API" : "OpenAI compatible"}</h2>
               {managed ? (
                 <>
-                  <label>
-                    <span>型号</span>
-                    <Select
-                      value={selectedModel}
-                      onValueChange={setName}
-                      options={[
-                        { value: "deepseek-v4-flash", label: "Flash（便宜）" },
-                        { value: "deepseek-v4-flash-vision-exp", label: "Flash Vision（看图）" },
-                        { value: "deepseek-v4-pro", label: "Pro" },
-                      ]}
-                    />
-                  </label>
-                  <p className="hint">对话走控制面 Gateway，再打 New API。不要在 Desk 里贴上游 Key。</p>
+                  <p className="hint">
+                    DeepSeek 只走 Flash 4.1（{selectedModel}，原生看图）。Pro 已下线。对话走控制面 Gateway，再打 New API。不要在 Desk 里贴上游 Key。
+                  </p>
                   <a className="link-btn" href={consoleUrl} target="_blank" rel="noreferrer">
                     打开 New API 控制台
                   </a>

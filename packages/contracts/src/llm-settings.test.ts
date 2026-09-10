@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   canonicalizeLlmModel,
+  visionModelFor,
   llmSettingsFile,
   parseLlmSettingsRequest,
   publicLlmSettings,
@@ -17,7 +18,7 @@ test("writeLlmSettings persists the key and public view never returns it", () =>
   const published = writeLlmSettings({ upstream: "deepseek", apiKey: "sk-secret-key" }, root);
   assert.equal(published.configured, true);
   assert.equal(published.upstream, "deepseek");
-  assert.equal(published.model, "deepseek-v4-flash");
+  assert.equal(published.model, "deepseek-flash");
   assert.doesNotMatch(JSON.stringify(published), /sk-secret-key/);
   const stored = readFileSync(path.join(root, ".neo", "llm-upstream.env"), "utf8");
   assert.match(stored, /DEEPSEEK_API_KEY=sk-secret-key/);
@@ -58,13 +59,16 @@ test("readLlmSettings walks up from a package cwd to the workspace root", () => 
   }
 });
 
-test("canonicalizeLlmModel remaps retired DeepSeek aliases to v4-flash", () => {
-  assert.equal(canonicalizeLlmModel("deepseek"), "deepseek-v4-flash");
-  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-chat"), "deepseek-v4-flash");
-  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-reasoner"), "deepseek-v4-flash");
-  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-pro"), "deepseek-v4-pro");
-  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-vision"), "deepseek-v4-flash-vision-exp");
-  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-flash-vision-exp"), "deepseek-v4-flash-vision-exp");
+test("canonicalizeLlmModel remaps retired DeepSeek aliases to V4.1 Flash", () => {
+  assert.equal(canonicalizeLlmModel("deepseek"), "deepseek-flash");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-chat"), "deepseek-flash");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-reasoner"), "deepseek-flash");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-flash"), "deepseek-flash");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-pro"), "deepseek-flash");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-vision"), "deepseek-flash");
+  assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-flash-vision-exp"), "deepseek-flash");
+  assert.equal(visionModelFor("deepseek-v4-flash"), "deepseek-flash");
+  assert.equal(visionModelFor("deepseek-v4-pro"), "deepseek-flash");
 });
 
 test("readLlmSettings remaps a saved deepseek-chat id", () => {
@@ -75,8 +79,8 @@ test("readLlmSettings remaps a saved deepseek-chat id", () => {
     "LLM_UPSTREAM=deepseek\nLLM_UPSTREAM_MODEL=deepseek-chat\nDEEPSEEK_API_KEY=sk-old\n",
   );
   const read = readLlmSettings(root);
-  assert.equal(read?.model, "deepseek-v4-flash");
-  assert.equal(publicLlmSettings(read).model, "deepseek-v4-flash");
+  assert.equal(read?.model, "deepseek-flash");
+  assert.equal(publicLlmSettings(read).model, "deepseek-flash");
 });
 
 test("parseLlmSettingsRequest rejects a missing upstream and multiline keys", () => {

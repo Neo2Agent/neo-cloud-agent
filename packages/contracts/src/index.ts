@@ -187,13 +187,17 @@ export type {
   PublicLlmSettings,
 } from "./llm-settings.js";
 export {
+  DEEPSEEK_CHAT_MODELS,
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
   DEEPSEEK_VISION_MODEL,
   canonicalizeLlmModel,
+  deepseekModelLabel,
   defaultLlmModel,
+  isDeepseekFlashModel,
   isDeepseekProModel,
   isDeepseekVisionModel,
+  resolveDeepseekChatModel,
   visionModelFor,
   llmSettingsFile,
   parseLlmSettingsRequest,

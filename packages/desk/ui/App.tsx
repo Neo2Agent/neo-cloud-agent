@@ -1,4 +1,5 @@
 import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
+import { DEEPSEEK_FLASH_MODEL } from "@neo-cloud-agent/contracts/llm-ids";
 import { decodeExpertPick, encodeExpertPick, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
@@ -1339,8 +1340,9 @@ export function App() {
   };
 
   const saveModel = async () => {
-    if (!modelName.trim() || modelBusy) return;
     const newApiManaged = Boolean(llm.newApi?.consoleUrl || llm.newApi?.url);
+    const name = newApiManaged ? DEEPSEEK_FLASH_MODEL : modelName.trim();
+    if (!name || modelBusy) return;
     if (!newApiManaged && !llm.configured && !modelKey.trim()) return;
     setModelBusy(true);
     setModelError("");
@@ -1349,10 +1351,10 @@ export function App() {
         method: "POST",
         body: JSON.stringify(
           newApiManaged
-            ? { upstream: "deepseek", model: modelName.trim() }
+            ? { upstream: "deepseek", model: name }
             : {
                 upstream: "openai",
-                model: modelName.trim(),
+                model: name,
                 baseUrl: (modelBaseUrl.trim() || OPENAI_BASE_URL).replace(/\/$/, ""),
                 ...(modelKey.trim() ? { apiKey: modelKey.trim() } : {}),
               },
@@ -1363,11 +1365,11 @@ export function App() {
       setModelKey("");
       setSavedModels(
         rememberSavedModel({
-          name: modelName.trim(),
+          name,
           baseUrl: (modelBaseUrl.trim() || OPENAI_BASE_URL).replace(/\/$/, ""),
         }),
       );
-      setSelectedModel(modelName.trim());
+      setSelectedModel(name);
       await refreshLlm();
     } catch (error) {
       setModelError(error instanceof Error ? error.message : "保存失败");

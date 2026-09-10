@@ -1,4 +1,5 @@
 import { Select } from "@neo-cloud-agent/ui";
+import { deepseekModelLabel } from "@neo-cloud-agent/contracts/llm-ids";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
 import { toast } from "../feedback";
@@ -56,7 +57,7 @@ export function SettingsPanel({
   onEnv,
   onBuild,
   onLlmUpstream,
-  onLlmModel,
+  onLlmModel: _onLlmModel,
   onLlmKey,
   onSaveLlm,
   onScmToken,
@@ -191,9 +192,9 @@ export function SettingsPanel({
           <h3>模型</h3>
           <p className="hint" id="llm-status">
             {newApiManaged
-              ? "渠道在 New API。这里只选型号；贴图时会自动走视觉模型。"
+              ? "渠道在 New API。DeepSeek 只走 Flash 4.1（原生看图）。"
               : llm.configured
-                ? `已配置 ${deepseek ? (/vision/i.test(llm.model ?? "") ? "DeepSeek Flash Vision" : /pro/i.test(llm.model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash") : "OpenAI"}，对话走真实模型。`
+                ? `已配置 ${deepseek ? deepseekModelLabel(llm.model) : "OpenAI"}，对话走真实模型。`
                 : "未配置 API Key，当前是 mock 回复。"}
           </p>
         </header>
@@ -213,23 +214,9 @@ export function SettingsPanel({
           </label>
           <label hidden={!deepseek}>
             <span>DeepSeek 型号</span>
-            <Select
-              id="llm-model"
-              name="llm-model"
-              value={
-                /vision/i.test(llm.model ?? "")
-                  ? "deepseek-v4-flash-vision-exp"
-                  : /pro/i.test(llm.model ?? "")
-                    ? "deepseek-v4-pro"
-                    : "deepseek-v4-flash"
-              }
-              onValueChange={onLlmModel}
-              options={[
-                { value: "deepseek-v4-flash", label: "Flash（便宜）" },
-                { value: "deepseek-v4-flash-vision-exp", label: "Flash Vision（看图）" },
-                { value: "deepseek-v4-pro", label: "Pro" },
-              ]}
-            />
+            <p className="hint" id="llm-model">
+              Flash 4.1（原生看图）。Pro 已下线。
+            </p>
           </label>
           {newApiManaged ? (
             <a className="ghost llm-console-link" href={newApiConsole} target="_blank" rel="noreferrer">
