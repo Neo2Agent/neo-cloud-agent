@@ -74,7 +74,8 @@ test("gateway model spec uses each model's advertised window", () => {
   assert.equal(gatewayModelSpec("mystery-local").contextWindow, 0);
   assert.equal(gatewayModelSpec("mystery-local").compactionEnabled, false);
   assert.notEqual(gatewayModelSpec("deepseek-v4-flash").contextWindow, gatewayModelSpec("gpt-4o-mini").contextWindow);
-  assert.equal(supportsVision("deepseek-v4-flash"), false);
+  assert.equal(supportsVision("deepseek-flash"), true);
+  assert.equal(supportsVision("deepseek-v4-flash"), true);
   assert.equal(supportsVision("deepseek-v4-flash-vision-exp"), true);
   assert.equal(supportsVision("gpt-4o-mini"), true);
   assert.equal(gatewayModelSpec("deepseek-v4-flash").maxTokens, 16_384);

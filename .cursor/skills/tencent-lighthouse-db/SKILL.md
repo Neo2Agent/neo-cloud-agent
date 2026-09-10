@@ -214,7 +214,7 @@ ssh lighthouse-db 'cd /home/ubuntu/db && docker compose logs --tail=80 mysql red
 | 端口 | 听 `0.0.0.0:8888`，轻量防火墙只放行应用机 `62.234.211.200/32`。Postgres **不**映射公网 |
 | Dashboard | 无 |
 | 向量 | 镜像内 `fastembed` + `BAAI/bge-small-zh-v1.5`（512 维）。New API 现网没有 embedding 渠道 |
-| 抽取 LLM | `http://new-api:3000/v1` + `deepseek-v4-flash`（同机 `dbnet`） |
+| 抽取 LLM | `http://new-api:3000/v1` + `deepseek-flash`（同机 `dbnet`） |
 | 密钥 | `/home/ubuntu/mem0/.env`（`chmod 600`）。`OPENAI_API_KEY` 从 `/home/ubuntu/db/.new-api-token` 拷，不要打印 |
 
 默认在库机 `docker build`（腾讯 Debian / PyPI 镜像）。Cloud Agent 往库机 `docker save` 只有十几 KB/s，传不动。`MEM0_REMOTE_BUILD=0` 才改本机构建再 load：

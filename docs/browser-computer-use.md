@@ -39,7 +39,7 @@ Neo 已经有对位零件：`neo_subagent`、`neo_artifact_upload`、SSE transcr
 | 对话预览 | 图片 artifact 可 inline；工具卡只渲染文本 | `packages/web/src/components/Transcript.tsx` |
 | 用户贴图 | 存到 `.neo/inbox-images/`，**只在 prompt 里写路径**，不进模型视觉 | `packages/worker/src/images.ts` |
 | 模型声明 | pi 注册 `input: ["text", "image"]` | `packages/worker/src/session.ts` |
-| 默认模型 | `deepseek-v4-flash` / `deepseek-v4-pro`，**文本模型** | `packages/contracts/src/llm-ids.ts` |
+| 默认模型 | `deepseek-flash`（V4.1 Flash，原生多模态） | `packages/contracts/src/llm-ids.ts` |
 | MCP | HTTP/stdio，结果抽成文本；图片 content 被丢掉 | `packages/extensions/src/neo-mcp.ts` |
 | 工具回传 | `CloudToolResult` 只有 `content: string`；事件再裁到 8KB | `packages/extensions/src/types.ts`、`packages/worker/src/events.ts` |
 | Worker 镜像 | `node:22-bookworm-slim` + bash/git，**无 Chromium / X11 / VNC** | `infra/Dockerfile.worker` |
@@ -64,7 +64,7 @@ Neo 已经有对位零件：`neo_subagent`、`neo_artifact_upload`、SSE transcr
 | Artifact 1.5MB | 压缩 JPEG 截图勉强；**录屏必须另做分块/直传** |
 | 工具事件 8KB | 截图不能走 `tool.end` 文本；要走 artifact URL 或单独视觉 part |
 | Egress 只拦 fetch | Playwright/Chrome 必须走代理或 `page.route`，否则 allowlist 被绕过 |
-| 默认 Flash 无视觉 | 像素点选依赖视觉模型；2026-08-21 DeepSeek 才出实验模型 `deepseek-v4-flash-vision-exp` |
+| 默认 Flash 已有视觉 | 2026-09-10 官方 `deepseek-flash`（V4.1 Flash）原生多模态；旧 Vision Exp / v4-flash id 改写成它 |
 
 因此：**一期必须能在「无视觉模型 + 无桌面 + 有限内存」下工作。** 这正好是 Playwright MCP 的 a11y snapshot 路线，不是 Anthropic computer-use 的截图+坐标路线。
 
@@ -323,11 +323,11 @@ Cookie / storage 跟 browser context 走，随 Run 销毁。不要把登录态�
 
 现在即使用户贴图，worker 也只写「图片在 `.neo/inbox-images/paste-1.png`」。像素 computer-use 必须先修：
 
-1. **Gateway**：`rewriteBody` 已透传 `messages`，一般不用改协议；要加视觉模型目录项（例如实验 id `deepseek-v4-flash-vision-exp`，或 GPT-4o）。默认 Flash **不要**假装能看图。
+1. **Gateway**：`rewriteBody` 已透传 `messages`；官方 `deepseek-flash` 原生看图，贴图时不要再改写成已退役的 Vision Exp。
 2. **Worker session**：把截图/用户图变成 OpenAI `image_url` part，而不是路径字符串。pi 的 `defineTool` 结果需确认是否支持 image content；不行就在 `session.prompt` 前由 worker 注入。
-3. **路由**：`browser` / `computer` 子代理默认走视觉模型；主 Agent 仍可用 Flash 写代码。
+3. **路由**：`browser` / `computer` 子代理和主 Agent 都可以走 Flash 4.1。
 
-2026-08-21 DeepSeek 发布了 `deepseek-v4-flash-vision-exp`（图按最多 384 token 计费）。适合当便宜视觉环，但标了 Exp，目录里要能关。
+2026-09-10 DeepSeek 发布了 `deepseek-flash`（V4.1 Flash，原生多模态）。旧 id `deepseek-v4-flash-vision-exp` 仍被上游临时转发，本仓库读写时改写成 `deepseek-flash`。
 
 ### 7.3 录屏
 

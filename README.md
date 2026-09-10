@@ -102,12 +102,12 @@ pnpm neo log <runId>
 # .env
 LLM_UPSTREAM=deepseek
 LLM_UPSTREAM_BASE_URL=https://api.deepseek.com/v1
-LLM_UPSTREAM_MODEL=deepseek-v4-flash
+LLM_UPSTREAM_MODEL=deepseek-flash
 DEFAULT_MODEL=neo/deepseek
 DEEPSEEK_API_KEY=sk-...
 ```
 
-`neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` 都会路由到便宜的 `deepseek-v4-flash`。要更强的模型把设置里的型号改成 `deepseek-v4-pro`，或直接请求 `deepseek-v4-pro`。
+`neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` / `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-v4-flash-vision-exp` 都会路由到官方 `deepseek-flash`（DeepSeek-V4.1-Flash，原生看图）。Pro 已下线。
 
 4C/4G 轻量机（现网）用 loop 槽，不要开 Docker / Firecracker。`WORKER_MEMORY_MIB` 会打进 loop/local worker 的 V8 堆上限；control-plane unit 开了 cgroup `Delegate=` 时再套 RSS。归档后控制面丢掉内存里的事件，对话从 MySQL / `.control` 再读。对象存储默认仍是本机 `RUNS_DIR/.objects`，不要为了现网去切 S3。
 

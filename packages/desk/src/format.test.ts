@@ -9,9 +9,9 @@ test("formatDuration prints seconds then minutes", () => {
   assert.equal(formatDuration("nope", "2026-09-01T00:00:12Z"), "");
 });
 
-test("resolveChatModel switches to vision when images are attached", () => {
-  assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-v4-flash-vision-exp");
-  assert.equal(resolveChatModel("deepseek", "deepseek-v4-pro", false), "deepseek-v4-pro");
+test("resolveChatModel pins DeepSeek to Flash 4.1 including image turns", () => {
+  assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-flash");
+  assert.equal(resolveChatModel("deepseek", "deepseek-v4-pro", false), "deepseek-flash");
   assert.equal(resolveChatModel("openai", "gpt-4o", true), "gpt-4o-mini");
 });
 

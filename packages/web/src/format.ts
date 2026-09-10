@@ -1,3 +1,4 @@
+import { deepseekModelLabel, resolveDeepseekChatModel } from "@neo-cloud-agent/contracts/llm-ids";
 import { isDeskHostedTarget } from "@neo-cloud-agent/contracts/desk";
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { isRemoteControlTarget, runDisplayTitle, type ExecutionTarget } from "@neo-cloud-agent/contracts/run";
@@ -15,18 +16,15 @@ export const STATUS_LABELS: Record<string, string> = {
   EXPIRED: "已过期",
 };
 
-export function resolveChatModel(upstream?: string | null, model?: string | null, hasImages = false): string {
+export function resolveChatModel(upstream?: string | null, model?: string | null, _hasImages = false): string {
   if (upstream === "openai") return "gpt-4o-mini";
-  if (/pro/i.test(model ?? "") && !/vision/i.test(model ?? "")) return "deepseek-v4-pro";
-  if (hasImages || /vision/i.test(model ?? "")) return "deepseek-v4-flash-vision-exp";
-  return "deepseek-v4-flash";
+  return resolveDeepseekChatModel(model);
 }
 
 export function modelLabel(upstream?: string | null, model?: string | null): string {
   if (upstream === "openai") return "OpenAI";
   if (upstream === "deepseek" || /deepseek/i.test(model ?? "")) {
-    if (/vision/i.test(model ?? "")) return "DeepSeek Flash Vision";
-    return /pro/i.test(model ?? "") ? "DeepSeek Pro" : "DeepSeek Flash";
+    return deepseekModelLabel(model);
   }
   return upstream || "LLM";
 }
