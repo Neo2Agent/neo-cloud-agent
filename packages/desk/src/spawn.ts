@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SECRET_ENV_KEYS } from "@neo-cloud-agent/contracts";
+import { skillsNeoDir } from "./home.js";
 import { isDeskPackaged } from "./ports.js";
 
 /** How often the worker polls its inbox for the next turn. */
@@ -54,6 +55,8 @@ export function spawnDeskWorker(input: {
   stateDir: string;
   /** Per-run scratch inside the workspace, so folder-mates never collide. */
   scratchDir: string;
+  /** Host system skills (`~/.neo/skills-neo`). Empty uses the default home path. */
+  hostSkillDirs?: string;
   model: string;
   nodePath?: string;
   workerRole?: "all" | "tools";
@@ -71,6 +74,7 @@ export function spawnDeskWorker(input: {
     SESSION_DIR: path.join(input.stateDir, "sessions"),
     NEO_RUN_BOOTSTRAP: path.join(input.stateDir, "run-bootstrap.json"),
     NEO_RUN_SCRATCH_DIR: input.scratchDir,
+    NEO_HOST_SKILL_DIRS: input.hostSkillDirs || process.env.NEO_HOST_SKILL_DIRS || skillsNeoDir(),
     // The workspace is one folder inside the user's real filesystem, so the
     // worker has to refuse anything outside it.
     NEO_SANDBOX_ROOT: input.workspaceDir,

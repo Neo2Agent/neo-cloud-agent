@@ -22,6 +22,13 @@ pnpm pack:desk   # mac / Windows / Linux zip，默认连现网
 
 产物在 `packages/desk/release/`。打开后手输现网账号。Cloud 对话走线上控制面；This Computer 需要包里的 `worker.cjs`。未签名的 macOS zip 要右键「打开」。
 
+本机目录和 Cursor 一样走用户主目录，不放 Electron Application Support：
+
+- `~/.neo/desk/` — 登录、偏好、desk 登记（旧的 `userData/neo-desk` 会在第一次启动时迁过来）
+- `~/.neo/skills-neo/` — 系统技能，形状同 `~/.cursor/skills-cursor`（每个 skill 一个文件夹 + `.sync-manifest.json`）
+
+This Computer 会扫 `skills-neo`，也会扫你选中的项目里的 `.neo/skills` / `.cursor/skills`。
+
 覆盖地址：`NEO_CONTROL_PLANE_URL=http://host pnpm dev:desk:prod`。`.env` 里的本地 `CONTROL_PLANE_URL` 不会把 prod 模式拽回 8080。
 
 锁定设计里「对齐 Cursor」指 Agents Window 的交互（This Computer / Cloud / Remote），不是复用 Web 那套浅色壳。
