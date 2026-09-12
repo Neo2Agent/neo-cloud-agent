@@ -66,7 +66,7 @@ vals["POSTGRES_COLLECTION_NAME"] = vals.get("POSTGRES_COLLECTION_NAME") or "memo
 vals["MEM0_TELEMETRY"] = "false"
 vals["OPENAI_API_KEY"] = token
 vals["OPENAI_BASE_URL"] = vals.get("OPENAI_BASE_URL") or "http://new-api:3000/v1"
-vals["LLM_MODEL"] = vals.get("LLM_MODEL") or "deepseek-v4-flash"
+vals["LLM_MODEL"] = vals.get("LLM_MODEL") or "deepseek-flash"
 vals["EMBEDDER_MODEL"] = vals.get("EMBEDDER_MODEL") or "BAAI/bge-small-zh-v1.5"
 vals["EMBEDDING_DIMS"] = vals.get("EMBEDDING_DIMS") or "512"
 

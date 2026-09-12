@@ -35,7 +35,7 @@ neo-cloud-agent/
 | --- | --- |
 | 对话页 | React。工具调研和模型答复按时间拆行（工具在最终答复上面）。Markdown、Diff、文件树、沙箱终端（可打字）、粘贴图片、token 用量、归档。`#/experts` / `#/skills` / `#/projects` 目录。配方和 `@` 只预填 `POST /v1/runs` |
 | 管理台 | 独立应用：本地 `pnpm dev:admin`（API `:8090` + UI `:5176`）。现网 `https://neorun.cloud/admin/`，对话页仍是 `https://neorun.cloud/`。不和对话页共用。仅平台管理员。可配置 / 下发内置专家 |
-| 模型 | 默认 DeepSeek **v4-flash**；设置里可切 Pro。退役的 `deepseek-chat` / `deepseek-reasoner` 会改写成 flash。Gateway 把 `max_tokens` 封在 16384。现网上游是库机 New API，不是第四个进程 |
+| 模型 | 默认且仅用官方 DeepSeek **V4.1 Flash**（`deepseek-flash`）。退役的 `deepseek-v4-flash` / `deepseek-v4-pro` / Vision Exp / `deepseek-chat` / `deepseek-reasoner` 读写时改写成 flash。Gateway 把 `max_tokens` 封在 16384。现网上游是库机 New API，不是第四个进程 |
 | 轻量机 | `WORKER_RUNTIME=vm`：无 KVM 则 2 个 loop ext4 槽。空闲 15 分钟写回工作区再卸槽（`WORKER_IDLE_RELEASE_MS`，`0` 关闭）。槽满新对话排队，不报错。现网默认 `AGENT_KERNEL=pi`，`neo-loop` 可选 |
 | 双内核 | `Run.kernel`：`pi`（默认，loop+工具同址）或 `agentscope`（Java `neo-loop` + `WORKER_ROLE=tools`）。对外 `/v1` 不变。见 [architecture-overview.md](docs/architecture-overview.md) §5 |
 | 专家 / 技能 | `POST /v1/runs` 可带 `expertId` 或 `expertTeamId`。已安装插件物化进 `.neo/skills`。没有 `/v1/search`、没有插件 git 市场 |
@@ -102,12 +102,12 @@ pnpm neo log <runId>
 # .env
 LLM_UPSTREAM=deepseek
 LLM_UPSTREAM_BASE_URL=https://api.deepseek.com/v1
-LLM_UPSTREAM_MODEL=deepseek-v4-flash
+LLM_UPSTREAM_MODEL=deepseek-flash
 DEFAULT_MODEL=neo/deepseek
 DEEPSEEK_API_KEY=sk-...
 ```
 
-`neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` 都会路由到便宜的 `deepseek-v4-flash`。要更强的模型把设置里的型号改成 `deepseek-v4-pro`，或直接请求 `deepseek-v4-pro`。
+`neo/deepseek`、`neo/ds`、`ds` 以及已停用的 `deepseek-chat` / `deepseek-reasoner` / `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-v4-flash-vision-exp` 都会路由到官方 `deepseek-flash`（DeepSeek-V4.1-Flash，原生看图）。Pro 已下线。
 
 4C/4G 轻量机（现网）用 loop 槽，不要开 Docker / Firecracker。`WORKER_MEMORY_MIB` 会打进 loop/local worker 的 V8 堆上限；control-plane unit 开了 cgroup `Delegate=` 时再套 RSS。归档后控制面丢掉内存里的事件，对话从 MySQL / `.control` 再读。对象存储默认仍是本机 `RUNS_DIR/.objects`，不要为了现网去切 S3。
 

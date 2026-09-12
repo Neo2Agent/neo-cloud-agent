@@ -473,7 +473,7 @@ worker 在 `message_end` / `tool_execution_end` / `agent_end` 时把规范化事
 
 `GET /v1/runs/:id/transcript` 用 `buildTranscriptSnapshot` 把事件收成消息。同一轮里：`message.end` 之后的工具单独成组，下一句模型文字再开一条气泡。对话页按 `transcriptGroups` 渲染——**工具调研在最终答复上面**，不再整段回复底下挂一排工具卡。worker 给每条事件打 `data.workerSeq` 并串行 POST；快照按 `workerSeq` / `createdAt` 还原顺序，避免 HTTP 乱序把工具挤到回复后面。
 
-对话页（`packages/web`，React）还提供：Markdown 流式渲染、文件 diff、工作区文件树（`GET /v1/runs/:id/fs`）、沙箱终端（`/v1/runs/:id/term`，`script` PTY，按键直送、Tab 补全路径）、粘贴图片（最多 4 张，worker 落到 `.neo/inbox-images/`）、token 用量、归档、DeepSeek Flash / Pro 选择。不要从浏览器 import `@neo-cloud-agent/contracts` 主桶，只用 `./transcript`、`./events`、`./run`。
+对话页（`packages/web`，React）还提供：Markdown 流式渲染、文件 diff、工作区文件树（`GET /v1/runs/:id/fs`）、沙箱终端（`/v1/runs/:id/term`，`script` PTY，按键直送、Tab 补全路径）、粘贴图片（最多 4 张，worker 落到 `.neo/inbox-images/`）、token 用量、归档。DeepSeek 只走官方 `deepseek-flash`（V4.1 Flash）。不要从浏览器 import `@neo-cloud-agent/contracts` 主桶，只用 `./transcript`、`./events`、`./run`。
 
 ---
 
@@ -831,6 +831,6 @@ P0 主路径已经通了。Firecracker Runtime、Redis 热流、MySQL / Postgres
 - Egress：`environment.json` 的 `egress.mode` 会进 worker（`NEO_EGRESS_*`）。`allowlist_only` 拦 clone 和不在名单里的 `fetch`；Gateway / GitHub 仍放行。
 - Worker 把 `neo_git_commit` / `neo_pr_open` / `neo_diag` / `neo_browse` / `neo_mcp_*` / `neo_artifact_upload` 注册成 pi `customTools`。Agent 用它们走控制面 commit / 开草稿 PR / 看 setup 与 egress / 抓网页 / 调 MCP / 上传产物；不要让 bash 拿长期 git token。`GET /v1/runs/:id/diagnostics` 给 UI，worker 走 `/internal`。
 - `packages/cli` 是 `/v1` 的 headless 宿主：创建 Run（`source: "cli"`）、订 SSE、跟进 / 归档 / diff / PR。不在终端里跑 pi，不持有 Provider Key。
-- DeepSeek：`deepseek-v4-flash` 是默认便宜模型；`deepseek-chat` / `deepseek-reasoner` 已退役，读写设置时改写成 flash。`deepseek-v4-pro` 显式保留。对话页可以切 Flash / Pro。
+- DeepSeek：默认官方 id 是 `deepseek-flash`（V4.1 Flash，原生多模态）。`deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` / `deepseek-v4-pro` / `deepseek-chat` / `deepseek-reasoner` 读写时都改写成 flash。对话页不再提供 Pro。
 - `WORKER_RUNTIME=vm`：无 KVM 时用 loop ext4 槽。空闲超时先把工作区写回 `hostRunsDir/<runId>` 再 `releaseVmSlot`（卸槽会擦盘）。写回失败则留下槽。工作区有全站预算和 TTL 回收，见 [workspace-persistence.md](./workspace-persistence.md)。两槽都忙则新对话 `run.queued`。loop/local worker 套 `WORKER_MEMORY_MIB` 堆上限；control-plane 有 cgroup `Delegate=` 时再套 RSS。归档 / 过期 run 不把事件树留在控制面内存里，补播从 persist 读并折叠 `message.delta`。
 - 对话页 React 包在 `packages/web`；control-plane 托管 `dist/`。工具卡和模型文字按时间拆行，见 §9.3。

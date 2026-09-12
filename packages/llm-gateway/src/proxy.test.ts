@@ -37,20 +37,20 @@ test("explains New API pre-deduct 403s without echoing the raw wallet line", () 
   assert.match(explainUpstreamChatError(429, "slow down"), /过于频繁/);
 });
 
-test("maps DeepSeek public ids and retired aliases to v4-flash", () => {
-  assert.equal(resolveUpstreamModel("neo/deepseek", "deepseek-v4-flash"), "deepseek-v4-flash");
-  assert.equal(resolveUpstreamModel("neo/ds", "deepseek-chat"), "deepseek-v4-flash");
-  assert.equal(resolveUpstreamModel("ds", "deepseek-chat"), "deepseek-v4-flash");
-  assert.equal(resolveUpstreamModel("deepseek", "deepseek-chat"), "deepseek-v4-flash");
-  assert.equal(resolveUpstreamModel("deepseek-chat", "gpt-4o-mini"), "deepseek-v4-flash");
-  assert.equal(resolveUpstreamModel("deepseek-reasoner", "deepseek-chat"), "deepseek-v4-flash");
-  assert.equal(resolveUpstreamModel("deepseek-v4-pro", "deepseek-v4-flash"), "deepseek-v4-pro");
-  assert.equal(resolveUpstreamModel("deepseek-v4-flash-vision-exp", "deepseek-v4-flash"), "deepseek-v4-flash-vision-exp");
+test("maps DeepSeek public ids and retired aliases to V4.1 Flash", () => {
+  assert.equal(resolveUpstreamModel("neo/deepseek", "deepseek-flash"), "deepseek-flash");
+  assert.equal(resolveUpstreamModel("neo/ds", "deepseek-chat"), "deepseek-flash");
+  assert.equal(resolveUpstreamModel("ds", "deepseek-chat"), "deepseek-flash");
+  assert.equal(resolveUpstreamModel("deepseek", "deepseek-chat"), "deepseek-flash");
+  assert.equal(resolveUpstreamModel("deepseek-chat", "gpt-4o-mini"), "deepseek-flash");
+  assert.equal(resolveUpstreamModel("deepseek-reasoner", "deepseek-chat"), "deepseek-flash");
+  assert.equal(resolveUpstreamModel("deepseek-v4-pro", "deepseek-flash"), "deepseek-flash");
+  assert.equal(resolveUpstreamModel("deepseek-v4-flash-vision-exp", "deepseek-flash"), "deepseek-flash");
 });
 
-test("rewriteBody upgrades text Flash to vision when messages carry images", () => {
-  const textOnly = rewriteBody({ model: "deepseek-v4-flash", messages: [{ role: "user", content: "hi" }] }, "deepseek-v4-flash");
-  assert.equal(textOnly.model, "deepseek-v4-flash");
+test("rewriteBody keeps V4.1 Flash when messages carry images", () => {
+  const textOnly = rewriteBody({ model: "deepseek-flash", messages: [{ role: "user", content: "hi" }] }, "deepseek-flash");
+  assert.equal(textOnly.model, "deepseek-flash");
   const withImage = rewriteBody(
     {
       model: "deepseek-v4-flash",
@@ -64,9 +64,9 @@ test("rewriteBody upgrades text Flash to vision when messages carry images", () 
         },
       ],
     },
-    "deepseek-v4-flash",
+    "deepseek-flash",
   );
-  assert.equal(withImage.model, "deepseek-v4-flash-vision-exp");
+  assert.equal(withImage.model, "deepseek-flash");
   assert.equal(
     messagesHaveImages([{ role: "user", content: [{ type: "image", data: "xx" }] }]),
     true,

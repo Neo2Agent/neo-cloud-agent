@@ -507,7 +507,7 @@ pi-ai streamSimple
 | 能力 | 现状 |
 | --- | --- |
 | Run-scoped JWT | `runId` / `orgId` / `model` / 过期；VM 重启轮换 |
-| 模型目录 | 对外 `neo/deepseek`、`ds` 等；对内默认 `deepseek-v4-flash`；设置里可切 Pro；退役的 `deepseek-chat` / `deepseek-reasoner` 改写成 flash |
+| 模型目录 | 对外 `neo/deepseek`、`ds` 等；对内默认 `deepseek-flash`（V4.1 Flash）；退役的 `deepseek-v4-flash` / `deepseek-v4-pro` / Vision Exp / `deepseek-chat` / `deepseek-reasoner` 都改写成 flash |
 | 用量 | input / output 按 Run 聚合；对话页另有 context window 填充 |
 | 上游 | `.env` / `.neo/llm-upstream.env`；现网 `LLM_UPSTREAM_BASE_URL` 指向库机 New API；没 key 且没上游则 `upstream=mock` |
 | 输出封顶 | `MAX_REQUEST_OUTPUT_TOKENS = 16384`（`packages/contracts/src/models.ts`）；`capUpstreamMaxTokens()` 在打上游前截断，避免 New API 钱包预扣爆掉 |
@@ -603,7 +603,7 @@ GitHub PR 评论和 Actions 经 `POST /webhooks/github`（HMAC）进跟进队列
 
 | 宿主 | Package | 执行面 | 现状 |
 | --- | --- | --- | --- |
-| 对话页 | `packages/web` | 云端 | 登录、流式、Markdown、Diff、文件树、粘贴图片、产物预览、项目、专家 / 技能目录、自动化、Flash/Pro |
+| 对话页 | `packages/web` | 云端 | 登录、流式、Markdown、Diff、文件树、粘贴图片、产物预览、项目、专家 / 技能目录、自动化、DeepSeek Flash 4.1 |
 | 管理台 | `admin-web` + `admin-api` | 无 | 总览 / 用户 / Run / 内置专家配置与下发 / 限流；仅平台管理员 |
 | Desk | `packages/desk` | 云、本机 pi、或 Remote | Electron + 独立 UI；This Computer = 本机 pi；Remote = 云 loop + 本机工具（WSS）；inline 带 assignment，dispatch 走 inbox SSE |
 | CLI | `packages/cli` | 云端 | `pnpm neo`：创建、SSE、跟进、归档、diff、PR；headless |

@@ -6,6 +6,7 @@ import {
   settleTranscriptMessages,
   transcriptBodyNeeded,
 } from "@neo-cloud-agent/contracts/transcript";
+import { DEEPSEEK_FLASH_MODEL } from "@neo-cloud-agent/contracts/llm-ids";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { isRemoteControlTarget, type AgentMode, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
@@ -17,7 +18,7 @@ import { remoteControlSendLock } from "./desk-live";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
 import { cloudSafeRepoUrls, isLocalFolderRef } from "./repo";
-import { cycle, shortcutAction } from "./shortcuts";
+import { shortcutAction } from "./shortcuts";
 import { applyLiveEvents, parseSseData } from "./stream-apply";
 import { AuthGate, type AuthMode } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
@@ -1402,10 +1403,7 @@ export function App() {
         return;
       }
       if (action === "cycle-model") {
-        setLlm((prev) => {
-          const next = cycle(["deepseek-v4-flash", "deepseek-v4-pro"], prev.model || "deepseek-v4-flash");
-          return { ...prev, model: next, upstream: "deepseek" };
-        });
+        setLlm((prev) => ({ ...prev, model: DEEPSEEK_FLASH_MODEL, upstream: "deepseek" }));
         return;
       }
       const ordered = [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
