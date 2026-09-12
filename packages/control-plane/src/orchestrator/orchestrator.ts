@@ -562,7 +562,7 @@ function queueRun(run: Run, title = "两台云端电脑都在忙，已排队，�
 }
 
 /** Cloud VM queue only — desk / remote-tools runs wait on a machine, not a loop slot. */
-function isWaitingForCloudVm(run: Run): boolean {
+export function isWaitingForCloudVm(run: Run): boolean {
   return (
     !isDeskToolsTarget(run.executionTarget) &&
     !handles.has(run.id) &&

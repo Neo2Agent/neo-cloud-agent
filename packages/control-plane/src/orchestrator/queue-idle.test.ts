@@ -15,7 +15,17 @@ process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-queue-"));
 process.env.WORKER_IDLE_RELEASE_MS = "1";
 delete process.env.WORKER_WORKSPACE_MOUNT;
 
-const { createRun, expireIdleWorkers, getRun, ingestEvents, takeInbound, tryStartQueued } = await import("./orchestrator.js");
+const {
+  archiveRun,
+  createRun,
+  expireIdleWorkers,
+  getRun,
+  ingestEvents,
+  isWaitingForCloudVm,
+  listRuns,
+  takeInbound,
+  tryStartQueued,
+} = await import("./orchestrator.js");
 const { setRuntimeForTests } = await import("../runtime/factory.js");
 const { listEvents } = await import("../events/bus.js");
 const { setPersistRunWorkspaceForTests } = await import("../runtime/persist-workspace.js");
@@ -176,7 +186,19 @@ test("a stuck desk NOT_YET_STARTED does not force early idle VM release", async 
     assert.equal(getRun(cloud.id)?.status, "IDLE");
     assert.ok(getRun(cloud.id)?.workerHandle);
 
-    const released = await expireIdleWorkers(Date.now());
+    // Full-suite leftovers: other files leave cloud VM waiters in the shared
+    // orchestrator map, which would still be a legitimate early-yield.
+    for (const leftover of listRuns()) {
+      if (leftover.id === desk.id || leftover.id === cloud.id) {
+        continue;
+      }
+      if (isWaitingForCloudVm(leftover)) {
+        await archiveRun(leftover.id);
+      }
+    }
+
+    // File TTL is 1ms; use idleAt so this is an early-yield check, not an age-out.
+    const released = await expireIdleWorkers(Date.parse(getRun(cloud.id)!.idleAt!));
     assert.equal(released.includes(cloud.id), false);
     assert.ok(getRun(cloud.id)?.workerHandle);
     assert.equal(getRun(desk.id)?.status, "NOT_YET_STARTED");
