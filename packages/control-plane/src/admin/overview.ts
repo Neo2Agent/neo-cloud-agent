@@ -1,6 +1,6 @@
 import { readNewApiInfo, type PublicLlmSettings } from "@neo-cloud-agent/contracts";
 import type { Run } from "@neo-cloud-agent/contracts";
-import { listPublicUsers } from "../accounts/accounts.js";
+import { findPublicUserById, listPublicUsers } from "../accounts/accounts.js";
 import type { PublicUser } from "../accounts/types.js";
 import { listAutomations } from "../automations/store.js";
 import { getConfig } from "../config.js";
@@ -36,14 +36,26 @@ export type AdminRunRow = {
   prompt: string;
   title?: string | null;
   userId: string;
+  userEmail?: string | null;
   orgId: string;
   model: string;
   source: Run["source"];
   projectId: string | null;
   vmSlotId: string | null;
+  expertId?: string | null;
   createdAt: string;
   updatedAt: string;
+  errorMessage?: string | null;
   usage: Run["usage"];
+};
+
+export type AdminRunDetail = AdminRunRow & {
+  setupStatus: Run["setupStatus"];
+  expertTeamId: string | null;
+  kernel: string | null;
+  repoUrls: string[];
+  branchName: string | null;
+  pullRequests: Array<{ url: string; title: string; draft: boolean }>;
 };
 
 export type AdminOverview = {
@@ -63,6 +75,8 @@ export type AdminOverview = {
     environments: number;
     desks: number;
   };
+  /** Newest live conversations so the homepage does not also fetch /runs. */
+  liveRuns: AdminRunRow[];
 };
 
 export function newApiInfo(): { url: string | null; consoleUrl: string | null } {
@@ -75,6 +89,22 @@ export function adminRunsLimit(raw: string | null): number {
     return 100;
   }
   return Math.min(500, Math.max(1, Math.floor(parsed)));
+}
+
+export function isLiveRunStatus(status: string): boolean {
+  return LIVE.has(status as Run["status"]);
+}
+
+export function userEmailMap(users: PublicUser[]): Map<string, string> {
+  return new Map(users.map((user) => [user.id, user.email]));
+}
+
+export function filterRunsForAdmin(runs: Run[], userId?: string | null): Run[] {
+  const id = userId?.trim();
+  if (!id) {
+    return runs;
+  }
+  return runs.filter((run) => run.userId === id);
 }
 
 export function buildAdminUserRows(users: PublicUser[], runs: Run[], now = new Date()): AdminUserRow[] {
@@ -125,25 +155,48 @@ export function buildAdminUserRows(users: PublicUser[], runs: Run[], now = new D
     );
 }
 
-export function buildAdminRunRows(runs: Run[], limit = 100): AdminRunRow[] {
+function toAdminRunRow(run: Run, emails?: Map<string, string>): AdminRunRow {
+  return {
+    id: run.id,
+    status: run.status,
+    prompt: run.prompt,
+    title: run.title ?? null,
+    userId: run.userId,
+    userEmail: emails?.get(run.userId) ?? null,
+    orgId: run.orgId,
+    model: run.model,
+    source: run.source,
+    projectId: run.projectId ?? null,
+    vmSlotId: run.vmSlotId ?? null,
+    expertId: run.expertId ?? null,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    errorMessage: run.errorMessage ?? null,
+    usage: run.usage ?? null,
+  };
+}
+
+export function buildAdminRunRows(runs: Run[], limit = 100, emails?: Map<string, string>): AdminRunRow[] {
   return [...runs]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))
     .slice(0, limit)
-    .map((run) => ({
-      id: run.id,
-      status: run.status,
-      prompt: run.prompt,
-      title: run.title ?? null,
-      userId: run.userId,
-      orgId: run.orgId,
-      model: run.model,
-      source: run.source,
-      projectId: run.projectId ?? null,
-      vmSlotId: run.vmSlotId ?? null,
-      createdAt: run.createdAt,
-      updatedAt: run.updatedAt,
-      usage: run.usage ?? null,
-    }));
+    .map((run) => toAdminRunRow(run, emails));
+}
+
+export function buildAdminRunDetail(run: Run, emails?: Map<string, string>): AdminRunDetail {
+  return {
+    ...toAdminRunRow(run, emails),
+    setupStatus: run.setupStatus ?? null,
+    expertTeamId: run.expertTeamId ?? null,
+    kernel: run.kernel ?? null,
+    repoUrls: run.repoUrls ?? [],
+    branchName: run.branchName ?? null,
+    pullRequests: (run.pullRequests ?? []).map((item) => ({
+      url: item.url,
+      title: item.title,
+      draft: Boolean(item.draft),
+    })),
+  };
 }
 
 export function buildAdminOverview(input: {
@@ -169,6 +222,7 @@ export function buildAdminOverview(input: {
     }
   }
   const admins = input.users.filter((user) => isAdminLogin(user.email)).length;
+  const emails = userEmailMap(input.users);
   return {
     users: { total: input.users.length, admins },
     runs: { total: input.runs.length, live, byStatus },
@@ -186,6 +240,11 @@ export function buildAdminOverview(input: {
       environments: listEnvironments().length,
       desks: listDesks().length,
     },
+    liveRuns: buildAdminRunRows(
+      input.runs.filter((run) => LIVE.has(run.status)),
+      8,
+      emails,
+    ),
   };
 }
 
@@ -210,6 +269,38 @@ export async function adminOverviewPayload(
   });
 }
 
-export function adminRunsPayload(runs: Run[], limit: number): { runs: AdminRunRow[]; total: number } {
-  return { runs: buildAdminRunRows(runs, limit), total: runs.length };
+export function adminRunsPayload(
+  runs: Run[],
+  limit: number,
+  options?: { userId?: string | null; users?: PublicUser[] },
+): { runs: AdminRunRow[]; total: number } {
+  const scoped = filterRunsForAdmin(runs, options?.userId);
+  return {
+    runs: buildAdminRunRows(scoped, limit, options?.users ? userEmailMap(options.users) : undefined),
+    total: scoped.length,
+  };
+}
+
+export async function adminRunDetailPayload(run: Run): Promise<{ run: AdminRunDetail }> {
+  const owner = await findPublicUserById(run.userId);
+  const emails = owner ? new Map([[owner.id, owner.email]]) : undefined;
+  return { run: buildAdminRunDetail(run, emails) };
+}
+
+export async function adminUserDetailPayload(
+  user: PublicUser,
+  runs: Run[],
+): Promise<{ user: AdminUserRow; runs: AdminRunRow[] }> {
+  const row = buildAdminUserRows([user], runs)[0];
+  if (!row) {
+    throw new Error("user_row_missing");
+  }
+  return {
+    user: row,
+    runs: buildAdminRunRows(
+      filterRunsForAdmin(runs, user.id),
+      50,
+      new Map([[user.id, user.email]]),
+    ),
+  };
 }

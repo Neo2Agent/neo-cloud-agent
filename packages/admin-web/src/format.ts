@@ -30,10 +30,15 @@ const SOURCE_LABELS: Record<string, string> = {
   web: "对话页",
   automation: "定时任务",
   cli: "命令行",
+  slack: "Slack",
+  github: "GitHub",
+  api: "API",
   telegram: "Telegram",
   wechat: "微信",
   desk: "Desk",
   mobile: "手机",
+  ios: "iOS",
+  android: "Android",
 };
 
 const POLICY_LABELS: Record<string, string> = {

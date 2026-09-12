@@ -9,6 +9,10 @@ import {
   pageCount,
   paginate,
   snippet,
+  defaultUserTab,
+  filterExpertsByTab,
+  filterRunsByTab,
+  filterUsersByTab,
 } from "./catalog.js";
 
 test("filterByQuery is case-insensitive and ignores empty query", () => {
@@ -37,4 +41,28 @@ test("initials and snippet keep catalog cards short", () => {
   assert.equal(snippet("用中文回复，改代码先跑测试", 8), "用中文回复，改代…");
   assert.equal(snippet("  short  "), "short");
   assert.ok(avatarTone("官网") >= 0 && avatarTone("官网") < 5);
+});
+
+test("type tabs scope users, runs, and experts", () => {
+  const users = [{ status: "pending" as const }, { status: "active" as const }, { status: "disabled" as const }];
+  assert.equal(filterUsersByTab(users, "pending").length, 1);
+  assert.equal(filterUsersByTab(users, "active").length, 1);
+  assert.equal(filterUsersByTab(users, "all").length, 3);
+  assert.equal(defaultUserTab(users), "pending");
+  assert.equal(defaultUserTab([{ status: "active" }]), "all");
+
+  const runs = [
+    { status: "RUNNING" },
+    { status: "IDLE" },
+    { status: "ERROR" },
+    { status: "ARCHIVED" },
+  ];
+  assert.equal(filterRunsByTab(runs, "live").length, 1);
+  assert.equal(filterRunsByTab(runs, "idle")[0]?.status, "IDLE");
+  assert.equal(filterRunsByTab(runs, "error").length, 1);
+  assert.equal(filterRunsByTab(runs, "archived").length, 1);
+
+  const experts = [{ enabled: true }, { enabled: false }];
+  assert.equal(filterExpertsByTab(experts, "enabled").length, 1);
+  assert.equal(filterExpertsByTab(experts, "disabled").length, 1);
 });

@@ -14,6 +14,7 @@ export type AdminOverview = {
   newApi: { url: string | null; consoleUrl: string | null };
   platform: { metadataStore: string; eventBus: string; workerRuntime: string };
   counts: { automations: number; projects: number; builds: number; environments: number; desks: number };
+  liveRuns?: AdminRun[];
 };
 
 export type AdminUser = {
@@ -36,13 +37,29 @@ export type AdminRun = {
   prompt: string;
   title?: string | null;
   userId: string;
+  userEmail?: string | null;
   orgId?: string;
   model: string;
   source?: string;
+  projectId?: string | null;
+  vmSlotId?: string | null;
+  expertId?: string | null;
   createdAt?: string;
   updatedAt: string;
+  errorMessage?: string | null;
   usage?: { totalTokens?: number } | null;
 };
+
+export type AdminRunDetail = AdminRun & {
+  setupStatus?: string | null;
+  expertTeamId?: string | null;
+  kernel?: string | null;
+  repoUrls?: string[];
+  branchName?: string | null;
+  pullRequests?: Array<{ url: string; title: string; draft: boolean }>;
+};
+
+export type { TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 
 export type RateLimitSnapshot = {
   enabled: boolean;

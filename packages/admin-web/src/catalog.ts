@@ -40,3 +40,40 @@ export function avatarTone(name: string): number {
   for (const ch of name) n = (n + ch.charCodeAt(0)) % 5;
   return n;
 }
+
+const LIVE_STATUSES = new Set([
+  "NOT_YET_STARTED",
+  "PROVISIONING",
+  "INSTALLING",
+  "RUNNING",
+  "WAITING_FOR_BACKGROUND_WORK",
+]);
+
+export function isLiveStatus(status: string): boolean {
+  return LIVE_STATUSES.has(status);
+}
+
+export function filterUsersByTab<T extends { status?: string }>(users: T[], tab: string): T[] {
+  if (tab === "pending") return users.filter((user) => user.status === "pending");
+  if (tab === "active") return users.filter((user) => (user.status ?? "active") === "active");
+  if (tab === "disabled") return users.filter((user) => user.status === "disabled");
+  return users;
+}
+
+export function filterRunsByTab<T extends { status: string }>(runs: T[], tab: string): T[] {
+  if (tab === "live") return runs.filter((run) => isLiveStatus(run.status));
+  if (tab === "idle") return runs.filter((run) => run.status === "IDLE");
+  if (tab === "error") return runs.filter((run) => run.status === "ERROR");
+  if (tab === "archived") return runs.filter((run) => run.status === "ARCHIVED" || run.status === "EXPIRED");
+  return runs;
+}
+
+export function filterExpertsByTab<T extends { enabled: boolean }>(experts: T[], tab: string): T[] {
+  if (tab === "enabled") return experts.filter((item) => item.enabled);
+  if (tab === "disabled") return experts.filter((item) => !item.enabled);
+  return experts;
+}
+
+export function defaultUserTab(users: Array<{ status?: string }>): "pending" | "all" {
+  return users.some((user) => user.status === "pending") ? "pending" : "all";
+}

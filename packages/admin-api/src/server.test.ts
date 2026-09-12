@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { Run } from "@neo-cloud-agent/contracts";
-import { persistRunRecord } from "../../control-plane/src/store/persist.js";
+import { persistEvent, persistRunRecord } from "../../control-plane/src/store/persist.js";
 
 process.env.WORKER_RUNTIME = "none";
 process.env.SPAWN_LOCAL_WORKER = "0";
@@ -138,9 +138,66 @@ test("admin-api is a separate app and only platform admins can use it", async (t
   assert.equal(session.user.status, "active");
   assert.equal(session.user.creditFen, 500);
 
+  persistEvent({
+    id: "evt-mate-user",
+    runId: "run-mate-1",
+    createdAt: "2026-08-25T09:00:01.000Z",
+    category: "agent_run",
+    level: "info",
+    kind: "user.message",
+    title: "user.message",
+    data: { text: "mate 的演示对话" },
+  });
+  persistEvent({
+    id: "evt-mate-delta",
+    runId: "run-mate-1",
+    createdAt: "2026-08-25T09:00:02.000Z",
+    category: "agent_run",
+    level: "info",
+    kind: "message.delta",
+    title: "message.delta",
+    seq: 2,
+    data: { delta: "好的，开始看。" },
+  });
+
   const runs = await fetch(`${base}/v1/admin/runs`, { headers: auth(admin.body.token!) });
-  const runsBody = (await runs.json()) as { runs: Array<{ prompt: string }> };
-  assert.equal(runsBody.runs.some((row) => row.prompt === "mate 的演示对话"), true);
+  const runsBody = (await runs.json()) as { runs: Array<{ prompt: string; userEmail?: string | null }> };
+  assert.equal(runsBody.runs.some((row) => row.prompt === "mate 的演示对话" && row.userEmail === "mate"), true);
+
+  const scoped = await fetch(`${base}/v1/admin/runs?userId=${encodeURIComponent(mateUser.id)}`, {
+    headers: auth(admin.body.token!),
+  });
+  const scopedBody = (await scoped.json()) as { runs: Array<{ id: string }>; total: number };
+  assert.equal(scopedBody.total >= 1, true);
+  assert.equal(scopedBody.runs.every((row) => row.id === "run-mate-1"), true);
+
+  const runDetail = await fetch(`${base}/v1/admin/runs/run-mate-1`, { headers: auth(admin.body.token!) });
+  assert.equal(runDetail.status, 200);
+  const runDetailBody = (await runDetail.json()) as { run: { id: string; userEmail?: string | null } };
+  assert.equal(runDetailBody.run.id, "run-mate-1");
+  assert.equal(runDetailBody.run.userEmail, "mate");
+
+  const missingRun = await fetch(`${base}/v1/admin/runs/no-such-run`, { headers: auth(admin.body.token!) });
+  assert.equal(missingRun.status, 404);
+
+  const transcript = await fetch(`${base}/v1/admin/runs/run-mate-1/transcript`, { headers: auth(admin.body.token!) });
+  assert.equal(transcript.status, 200);
+  const transcriptBody = (await transcript.json()) as {
+    snapshot: { messages: Array<{ role: string; text: string }> };
+  };
+  assert.equal(transcriptBody.snapshot.messages.some((item) => item.role === "user" && item.text.includes("演示")), true);
+  assert.equal(transcriptBody.snapshot.messages.some((item) => item.text.includes("开始看")), true);
+
+  const userDetail = await fetch(`${base}/v1/admin/users/${encodeURIComponent(mateUser.id)}`, {
+    headers: auth(admin.body.token!),
+  });
+  assert.equal(userDetail.status, 200);
+  const userDetailBody = (await userDetail.json()) as {
+    user: { email: string; runCount: number };
+    runs: Array<{ id: string }>;
+  };
+  assert.equal(userDetailBody.user.email, "mate");
+  assert.equal(userDetailBody.runs.some((row) => row.id === "run-mate-1"), true);
 
   const service = await fetch(`${base}/v1/admin/overview`, { headers: SERVICE });
   assert.equal(service.status, 200);
