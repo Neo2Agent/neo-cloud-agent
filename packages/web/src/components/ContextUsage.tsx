@@ -4,7 +4,11 @@ import type {
   ContextUsageBucketId,
   ContextUsageSnapshot,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatTokenCount, layoutContextBar } from "@neo-cloud-agent/contracts/context-usage";
+import {
+  formatContextPercent,
+  formatTokenCount,
+  layoutContextBar,
+} from "@neo-cloud-agent/contracts/context-usage";
 import { IconBack, IconExpand, IconX } from "../icons";
 
 const COLORS: Record<ContextUsageBucketId, string> = {
@@ -35,7 +39,8 @@ function bucketColor(id: string): string {
 }
 
 function percentLabel(usage: ContextUsageSnapshot): string {
-  return usage.percent == null ? "窗口未知" : `${Math.max(0, Math.round(usage.percent))}% 已用`;
+  const percent = formatContextPercent(usage.percent);
+  return percent == null ? "窗口未知" : `${percent} 已用`;
 }
 
 function totalLabel(usage: ContextUsageSnapshot): string {
@@ -45,11 +50,7 @@ function totalLabel(usage: ContextUsageSnapshot): string {
 }
 
 function share(tokens: number, total: number): string {
-  if (total <= 0) {
-    return "";
-  }
-  const value = (tokens / total) * 100;
-  return value >= 1 ? `${Math.round(value)}%` : "<1%";
+  return total > 0 ? (formatContextPercent((tokens / total) * 100) ?? "") : "";
 }
 
 /** Widths come from the shared layout so a 0.3% fill still shows a sliver. */
@@ -77,7 +78,7 @@ function UsageBar({ usage, className }: { usage: ContextUsageSnapshot; className
 }
 
 export function ContextUsageControl({ usage, open, onToggle, onOpenDetail }: Props) {
-  const chip = usage.percent == null ? "用量" : `${Math.max(0, Math.round(usage.percent))}%`;
+  const chip = formatContextPercent(usage.percent) ?? "用量";
 
   return (
     <div className="context-usage">

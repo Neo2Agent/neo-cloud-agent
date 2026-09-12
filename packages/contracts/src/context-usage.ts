@@ -100,6 +100,20 @@ export function formatTokenCount(tokens: number): string {
 }
 
 /**
+ * A 1M window makes an early chat round to `0%`, which reads as "nothing is
+ * counted". Anything above zero is reported as at least `<1%`.
+ */
+export function formatContextPercent(percent: number | null | undefined): string | null {
+  if (percent == null || !Number.isFinite(percent)) {
+    return null;
+  }
+  if (percent <= 0) {
+    return "0%";
+  }
+  return percent < 1 ? "<1%" : `${Math.round(percent)}%`;
+}
+
+/**
  * Scales every bucket by the same factor so the parts add up to the tokens the
  * provider actually reported. The previous behaviour left the system and tool
  * buckets at their raw estimate and made `conversation` absorb the whole error,
