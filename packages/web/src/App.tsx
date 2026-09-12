@@ -16,7 +16,7 @@ import { hasSavedSession } from "./session";
 import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
 import { remoteControlSendLock } from "./desk-live";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
-import { readLastRunId, readLastTarget, writeLastRunId, writeLastTarget } from "./prefs";
+import { readLastRunId, readLastTarget, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs";
 import { cloudSafeRepoUrls, isLocalFolderRef } from "./repo";
 import { shortcutAction } from "./shortcuts";
 import { applyLiveEvents, parseSseData } from "./stream-apply";
@@ -909,7 +909,11 @@ export function App() {
       await Promise.all(refreshShell);
       return;
     }
-    const match = hashRunId() || readLastRunId();
+    const match = resolveStartupRunId({
+      hashRunId: hashRunId(),
+      lastRunId: readLastRunId(),
+      narrow: isNarrowViewport(),
+    });
     await Promise.all([
       refreshRuns(),
       match ? openRun(match) : Promise.resolve(),
@@ -1324,6 +1328,13 @@ export function App() {
 
   useEffect(() => () => closeStream(), [closeStream]);
 
+  const resetComposerRef = useRef(resetComposer);
+  const openRunRef = useRef(openRun);
+  const runIdRef = useRef(runId);
+  resetComposerRef.current = resetComposer;
+  openRunRef.current = openRun;
+  runIdRef.current = runId;
+
   useEffect(() => {
     const syncHash = () => {
       const invite = hashInviteToken();
@@ -1365,6 +1376,12 @@ export function App() {
       }
       setMainTab("chat");
       setInviteToken(null);
+      const id = hashRunId();
+      if (id) {
+        if (runIdRef.current !== id) void openRunRef.current(id);
+        return;
+      }
+      if (isNarrowViewport() && runIdRef.current) resetComposerRef.current();
     };
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
