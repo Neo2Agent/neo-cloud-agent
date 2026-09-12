@@ -91,13 +91,15 @@ Cursor 桌面端**不是**一律云端 loop：
 | Gateway `X-Neo-Step-Id` 成功非流式回放 | `packages/llm-gateway/src/step-cache.ts` |
 | neo-loop 对控制面强制 HTTP/1.1 | `ControlPlaneClient.java`（Java 默认 HTTP/2 会打死心跳） |
 | 编排单测 + `packages/control-plane/src/e2e/agentscope-turn.test.ts` | 本地 mock 可 IDLE |
+| `resolveRunKernel`：This Computer 永远 pi；Remote 永远 agentscope；Cloud 在 neo-loop `/health` 通时走 agentscope | `packages/contracts/src/run.ts` |
+| `loop_sessions` Redis 热 + MySQL/Postgres 冷，文件兜底 | `packages/control-plane/src/loop/session-store.ts` |
+| neo-loop 恢复会话时取「消息更多 / 更新」的一侧（控制面优先于过期本地文件） | `SessionRestore.java` |
 
 ### 3.2 还没做
 
 | 缺口 | 影响 |
 | --- | --- |
-| `AgentStateStore` 仍是 `.neo/runs/.loop/` 文件 | JVM 换机 / 卸槽后会话不在 Redis/MySQL |
-| IDLE 卸槽后再 follow-up、同一 `sessionId` 的 e2e 未作为现网验收 | agentscope 云端路径仍靠工作区写回 |
+| `loop_turn_steps` 表与 JVM 被杀后扫描 RUNNING 重入 | 现网验收仍靠 turn-complete；闪断重入未当现网门槛 |
 | 直播 SSE 页上的 rewind 覆盖 | 快照 `foldRewoundEvents` 已有；页上叠字覆盖未做 |
 | Desk 侧 egress 重述 | 笔记本 `bash curl` 仍绕过云端 allowlist |
 | Temporal | 第 5 期可选。现网单机不要上 |
@@ -349,14 +351,14 @@ NOT_YET_STARTED → PROVISIONING → INSTALLING → RUNNING ⇄ IDLE
 
 `TurnWorkflowEngine` 接口已在。`LocalTurnEngine` 已按步写 `FileStepLog`。Gateway 已按 `X-Neo-Step-Id` 回放成功的非流式补全。Infer 失败可发 `turn.rewind`。仍缺：
 
-- session 不在 Redis/MySQL（继续文件）。
+- `loop_sessions` / Redis `loop:session:{runId}` 已接；`loop_turn_steps` 与 turn 短锁仍缺。
 - JVM 被杀后扫描 `RUNNING` step 重入**未当现网验收**。
 - 直播页 rewind 覆盖未做（快照 fold 已有）。
 
 第 3 期剩余，仍不上 Temporal：
 
-1. `loop_sessions` / `loop_turn_steps` 进控制面同一 `DATABASE_URL`，前缀 `loop_`。没库则继续文件。
-2. Redis：`loop:session:{runId}`、`loop:tools:{runId}`、`loop:turn:{turnId}` 短锁。
+1. `loop_turn_steps` 进控制面同一 `DATABASE_URL`。session 已落 Redis/MySQL/文件。
+2. Redis：`loop:tools:{runId}`、`loop:turn:{turnId}` 短锁。
 3. Infer 失败且已经推过 `message.delta`：先发
 
 ```json

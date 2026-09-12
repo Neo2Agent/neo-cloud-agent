@@ -9,6 +9,7 @@ import {
   isDeskToolsTarget,
   isRemoteControlTarget,
   parseExecutionTarget,
+  resolveRunKernel,
   parseRunSource,
   parseRunStart,
 } from "./run.js";
@@ -94,5 +95,35 @@ test("agentscope kernel allows cloud loop + desk tools", () => {
   assert.throws(
     () => assertExecutionTarget({ loop: "desk", tools: "cloud" }, "agentscope"),
     /本机 loop/,
+  );
+});
+
+test("resolveRunKernel follows Cursor: This Computer stays pi, Cloud/Remote prefer agentscope", () => {
+  assert.equal(resolveRunKernel({ kernel: "pi", target: { loop: "cloud", tools: "cloud" } }), "pi");
+  assert.equal(
+    resolveRunKernel({
+      kernel: "agentscope",
+      target: { loop: "desk", tools: "desk", deskId: "desk_1" },
+    }),
+    "agentscope",
+  );
+  assert.equal(
+    resolveRunKernel({ target: { loop: "desk", tools: "desk", deskId: "desk_1" } }, { AGENT_KERNEL: "agentscope" }),
+    "pi",
+  );
+  assert.equal(
+    resolveRunKernel({
+      target: { loop: "cloud", tools: "desk", deskId: "desk_1", remoteControl: true },
+    }),
+    "agentscope",
+  );
+  assert.equal(resolveRunKernel({ target: { loop: "cloud", tools: "cloud" } }), "pi");
+  assert.equal(
+    resolveRunKernel({ target: { loop: "cloud", tools: "cloud" } }, { NEO_LOOP_AVAILABLE: "1" }),
+    "agentscope",
+  );
+  assert.equal(
+    resolveRunKernel({ target: { loop: "cloud", tools: "cloud" } }, { AGENT_KERNEL: "agentscope" }),
+    "agentscope",
   );
 });

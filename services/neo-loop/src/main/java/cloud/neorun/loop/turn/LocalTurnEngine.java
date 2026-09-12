@@ -20,6 +20,7 @@ import cloud.neorun.loop.config.LoopProperties;
 import cloud.neorun.loop.sandbox.NeoSandbox;
 import cloud.neorun.loop.sandbox.ToolsHub;
 import cloud.neorun.loop.store.FileAgentStateStore;
+import cloud.neorun.loop.store.SessionRestore;
 import cloud.neorun.loop.store.FileStepLog;
 import jakarta.annotation.PostConstruct;
 import io.agentscope.core.ReActAgent;
@@ -283,18 +284,21 @@ public class LocalTurnEngine implements TurnWorkflowEngine {
   }
 
   private Map<String, Object> restoreSession(StartTurnCommand cmd, ControlPlaneClient cloud) {
-    Map<String, Object> session = sessions.load(cmd.runId());
-    Object messages = session.get("messages");
-    boolean empty = !(messages instanceof List<?> list) || list.isEmpty();
-    if (!empty) {
-      return session;
+    Map<String, Object> local = sessions.load(cmd.runId());
+    Map<String, Object> remote = Map.of();
+    try {
+      Map<String, Object> loaded = cloud.loadSession(cmd.runId());
+      if (loaded != null) {
+        remote = loaded;
+      }
+    } catch (RuntimeException ignored) {
+      // control-plane session is the durability path; file cache still works
     }
-    Map<String, Object> remote = cloud.loadSession(cmd.runId());
-    if (remote != null && !remote.isEmpty()) {
-      sessions.save(cmd.runId(), remote);
-      return remote;
+    Map<String, Object> chosen = SessionRestore.choose(local, remote);
+    if (chosen != local && !chosen.isEmpty()) {
+      sessions.save(cmd.runId(), chosen);
     }
-    return session;
+    return chosen;
   }
 
   private void updatePhase(String turnId, String phase) {

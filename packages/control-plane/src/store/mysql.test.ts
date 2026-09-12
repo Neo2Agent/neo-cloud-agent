@@ -66,6 +66,11 @@ test("mysql store upserts run JSON, events, and users", async () => {
   assert.match(calls[0]?.text ?? "", /INSERT INTO run_queues/);
   assert.match(calls[1]?.text ?? "", /INSERT INTO runs/);
   assert.match(calls[1]?.text ?? "", /ON DUPLICATE KEY UPDATE/);
+
+  await store.saveLoopSession("run-mysql-1", "user_ada", { messages: [{ role: "user", content: "hi" }] });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO loop_sessions/);
+  rowsByQuery.other = [{ state_json: { messages: [{ role: "user", content: "hi" }] } }];
+  assert.deepEqual(await store.loadLoopSession("run-mysql-1"), { messages: [{ role: "user", content: "hi" }] });
   assert.equal(calls[1]?.values[0], "run-mysql-1");
   assert.equal(calls[1]?.values[1], "user_ada");
   assert.equal(calls[1]?.values[3], "hello mysql");

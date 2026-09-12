@@ -38,6 +38,7 @@ export {
   parseExecutionTarget,
   parseRunSource,
   parseRunStart,
+  resolveRunKernel,
   runDisplayTitle,
 } from "./run.js";
 export type { AgentKernel as AgentKernelName, KernelEnv, WorkerRole } from "./kernel.js";
