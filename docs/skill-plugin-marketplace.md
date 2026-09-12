@@ -356,7 +356,7 @@ Frontmatter 扩展（**Neo 第一期不要全吃**）：`allowed-tools`、`disab
 
 ### 6.1 工作区 Skill：按仓库加载，不按用户
 
-`createWorkspaceLoader` 设了 `noSkills: true`，只把 `existingWorkspaceSkillPaths(cwd)` 塞进 `additionalSkillPaths`。宿主机 `~/.pi` / `~/.cursor` / `~/.codex` **故意不读**。这是云端正确行为，市场方案不能推翻。
+`createWorkspaceLoader` 设了 `noSkills: true`，只把 `existingWorkspaceSkillPaths(cwd)` 塞进 `additionalSkillPaths`。宿主机 `~/.pi` / `~/.cursor` / `~/.codex` **故意不读**。这是云端正确行为，市场方案不能推翻。Desk This Computer 的例外只读 `~/.neo/skills-neo`（`NEO_HOST_SKILL_DIRS`），云端 / Web worker 不设这个变量。
 
 ### 6.2 专家引用了一张空表
 

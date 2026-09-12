@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("neoDesk", {
   stopRun: (runId) => ipcRenderer.invoke("desk:stopRun", runId),
   openPath: (filePath) => ipcRenderer.invoke("desk:openPath", filePath),
   listDir: (input) => ipcRenderer.invoke("desk:listDir", input),
+  listSkills: (input) => ipcRenderer.invoke("desk:listSkills", input),
   writeFile: (input) => ipcRenderer.invoke("desk:writeFile", input),
   diffStat: (folder) => ipcRenderer.invoke("desk:diffStat", folder),
   termOpen: (folder) => ipcRenderer.invoke("desk:termOpen", folder),
