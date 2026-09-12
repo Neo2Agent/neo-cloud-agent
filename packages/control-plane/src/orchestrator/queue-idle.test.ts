@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { RuntimeHandle, RuntimeSpec } from "@neo-cloud-agent/contracts";
+import { isDeskToolsTarget } from "@neo-cloud-agent/contracts";
 import type { AgentRuntime } from "../runtime/factory.js";
 
 process.env.WORKER_RUNTIME = "none";
@@ -18,6 +19,7 @@ const { createRun, expireIdleWorkers, getRun, ingestEvents, takeInbound, tryStar
 const { setRuntimeForTests } = await import("../runtime/factory.js");
 const { listEvents } = await import("../events/bus.js");
 const { setPersistRunWorkspaceForTests } = await import("../runtime/persist-workspace.js");
+const { createDesk } = await import("../desks/store.js");
 
 function fakeRuntime(opts: { busy?: boolean } = {}): AgentRuntime & { destroyed: string[]; busy: boolean } {
   const state = { busy: Boolean(opts.busy), destroyed: [] as string[] };
@@ -128,6 +130,56 @@ test("a queued chat frees an idle VM instead of waiting out the hold", async () 
     const released = await expireIdleWorkers(Date.now());
     assert.ok(released.includes(idle.id));
     assert.equal(getRun(waiting.id)?.status, "RUNNING");
+  } finally {
+    setRuntimeForTests();
+  }
+});
+
+test("a stuck desk NOT_YET_STARTED does not force early idle VM release", async () => {
+  const runtime = fakeRuntime();
+  setRuntimeForTests(runtime);
+  try {
+    const registered = createDesk(
+      { name: "idle-box", hostname: "idle-box", platform: "linux" },
+      {
+        userId: process.env.DEFAULT_USER_ID ?? "user_local",
+        orgId: process.env.DEFAULT_ORG_ID ?? "org_local",
+      },
+    );
+    const desk = await createRun({
+      prompt: "wait on this computer",
+      repoUrls: [],
+      source: "desk",
+      start: "inline",
+      target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+    });
+    assert.equal(desk.status, "NOT_YET_STARTED");
+    assert.equal(desk.source, "desk");
+    assert.equal(isDeskToolsTarget(desk.executionTarget), true);
+
+    const cloud = await createRun({
+      prompt: "keep my cloud slot",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    takeInbound(cloud.id);
+    ingestEvents(cloud.id, [
+      {
+        id: "agent-end-keep-slot",
+        runId: cloud.id,
+        createdAt: new Date().toISOString(),
+        category: "agent_run",
+        level: "info",
+        kind: "agent.end",
+        title: "done",
+      },
+    ]);
+    assert.equal(getRun(cloud.id)?.status, "IDLE");
+    assert.ok(getRun(cloud.id)?.workerHandle);
+
+    const released = await expireIdleWorkers(Date.now());
+    assert.equal(released.includes(cloud.id), false);
+    assert.ok(getRun(cloud.id)?.workerHandle);
+    assert.equal(getRun(desk.id)?.status, "NOT_YET_STARTED");
   } finally {
     setRuntimeForTests();
   }
