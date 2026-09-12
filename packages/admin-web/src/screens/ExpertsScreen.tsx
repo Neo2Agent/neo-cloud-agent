@@ -2,8 +2,8 @@ import { ADMIN_EXPERT_TOOL_CHOICES } from "@neo-cloud-agent/contracts/expert";
 import { Checkbox, RadioGroup, Switch } from "@neo-cloud-agent/ui";
 import { useEffect, useMemo, useState } from "react";
 import { api, readJson } from "../api";
-import { clampPage, filterByQuery, paginate, snippet } from "../catalog";
-import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogPager, CatalogToolbar } from "../components/Catalog";
+import { clampPage, filterByQuery, filterExpertsByTab, paginate, snippet } from "../catalog";
+import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogPager, CatalogTabs, CatalogToolbar } from "../components/Catalog";
 import { IconBack } from "../icons";
 import type { AdminBundledExpert, AdminExpertsCatalog } from "../types";
 
@@ -24,6 +24,11 @@ type Draft = {
 type Props = {
   token: string;
   catalog: AdminExpertsCatalog | null;
+  selectedId: string;
+  tab: string;
+  onOpen: (id: string) => void;
+  onBack: () => void;
+  onTab: (tab: string) => void;
   onChanged: () => Promise<void>;
 };
 
@@ -49,11 +54,11 @@ function audienceLabel(item: AdminBundledExpert): string {
   return "全部用户";
 }
 
-export function ExpertsScreen({ token, catalog, onChanged }: Props) {
+export function ExpertsScreen({ token, catalog, selectedId, tab, onOpen, onBack, onTab, onChanged }: Props) {
   const experts = catalog?.experts ?? [];
   const users = catalog?.users ?? [];
-  const [selectedId, setSelectedId] = useState("");
   const selected = useMemo(() => experts.find((item) => item.id === selectedId) ?? null, [experts, selectedId]);
+  const activeTab = tab || "all";
   const [draft, setDraft] = useState<Draft | null>(null);
   const [audience, setAudience] = useState<"all" | "allowlist">("all");
   const [userIds, setUserIds] = useState<string[]>([]);
@@ -76,9 +81,10 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
     setError("");
   }, [selected?.id, selected?.updatedAt, selected?.publishedAt]);
 
+  const scoped = filterExpertsByTab(experts, activeTab);
   const filtered = useMemo(
     () =>
-      filterByQuery(experts, query, (item) => [
+      filterByQuery(scoped, query, (item) => [
         item.live.name,
         item.live.title,
         item.live.description,
@@ -86,14 +92,14 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
         item.slug,
         audienceLabel(item),
       ]),
-    [experts, query],
+    [query, scoped],
   );
   const listPage = clampPage(page, filtered.length);
   const visible = paginate(filtered, listPage);
 
   useEffect(() => {
     setPage(1);
-  }, [query]);
+  }, [activeTab, query]);
 
   const visibleUsers = useMemo(() => {
     const needle = userQuery.trim().toLowerCase();
@@ -187,7 +193,7 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
       <section className="page catalog-page">
         <header className="page-head">
           <div>
-            <button type="button" className="catalog-back" onClick={() => setSelectedId("")}>
+            <button type="button" className="catalog-back" onClick={onBack}>
               <IconBack />
               全部专家
             </button>
@@ -357,6 +363,15 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
         <p className="count-pill">{filtered.length} 个</p>
       </header>
 
+      <CatalogTabs
+        tabs={[
+          { id: "enabled", label: "已启用", count: experts.filter((item) => item.enabled).length },
+          { id: "disabled", label: "已停用", count: experts.filter((item) => !item.enabled).length },
+          { id: "all", label: "全部", count: experts.length },
+        ]}
+        active={activeTab}
+        onChange={onTab}
+      />
       <CatalogToolbar search={query} onSearch={setQuery} placeholder="搜索专家" />
 
       {filtered.length === 0 ? (
@@ -375,9 +390,9 @@ export function ExpertsScreen({ token, catalog, onChanged }: Props) {
                 description={snippet(item.live.description, 90)}
                 meta={item.live.title || item.live.industry || item.slug}
                 example={item.live.examplePrompts?.[0] ? snippet(item.live.examplePrompts[0], 36) : undefined}
-                onOpen={() => setSelectedId(item.id)}
+                onOpen={() => onOpen(item.id)}
                 actions={
-                  <button type="button" className="ghost" onClick={() => setSelectedId(item.id)}>
+                  <button type="button" className="ghost" onClick={() => onOpen(item.id)}>
                     配置
                   </button>
                 }

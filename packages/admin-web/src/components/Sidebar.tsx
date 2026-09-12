@@ -8,11 +8,11 @@ type Props = {
   health: string;
   overview: AdminOverview | null;
   liveRuns: AdminRun[];
-  onOpenRuns: () => void;
+  onOpenRun: (id: string) => void;
   onClose?: () => void;
 };
 
-export function Sidebar({ userEmail, health, overview, liveRuns, onOpenRuns, onClose }: Props) {
+export function Sidebar({ userEmail, health, overview, liveRuns, onOpenRun, onClose }: Props) {
   const slots = overview?.capacity.slots ?? [];
   return (
     <aside className="sidebar" aria-label="管理台侧栏">
@@ -75,11 +75,11 @@ export function Sidebar({ userEmail, health, overview, liveRuns, onOpenRuns, onC
                 data-busy="true"
                 role="button"
                 tabIndex={0}
-                onClick={onOpenRuns}
+                onClick={() => onOpenRun(run.id)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    onOpenRuns();
+                    onOpenRun(run.id);
                   }
                 }}
               >

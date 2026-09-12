@@ -705,7 +705,7 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 | UI | `admin-web` `:5176` | 由 admin-api 托管 dist |
 | 登录 | 仍是 `admin` / `123456` 或 `ADMIN_EMAILS` | 只认平台管理员 / 服务令牌 |
 
-接口：`/v1/auth/login|logout`、`/v1/me`、`/v1/admin/overview`、`/v1/admin/users`、`/v1/admin/runs`、`/v1/admin/experts`（配置 / 下发 / 恢复默认）、`/v1/rate-limits`。复用 control-plane 的账号与聚合函数，**不**另建用户表。内置专家覆盖写在 `expert_policies`。
+接口：`/v1/auth/login|logout`、`/v1/me`、`/v1/admin/overview`（含 `liveRuns`）、`/v1/admin/users`、`GET /v1/admin/users/:id`、`/v1/admin/runs`、`GET /v1/admin/runs/:id`、`GET /v1/admin/runs/:id/transcript`、`/v1/admin/experts`（配置 / 下发 / 恢复默认）、`/v1/rate-limits`。复用 control-plane 的账号与聚合函数，**不**另建用户表。内置专家覆盖写在 `expert_policies`。前端按页拉取，hash 路由是 `#/users/:id`、`#/runs/:id`、`#/experts/:id`，类型切换走 `?tab=`。
 
 ---
 

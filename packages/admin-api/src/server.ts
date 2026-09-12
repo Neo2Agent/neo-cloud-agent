@@ -9,10 +9,13 @@ import {
   sessionCookieHeader,
   clearSessionCookieHeader,
 } from "../../control-plane/src/accounts/accounts.js";
+import { findPublicUserById, listPublicUsers } from "../../control-plane/src/accounts/accounts.js";
 import {
   adminOverviewPayload,
+  adminRunDetailPayload,
   adminRunsLimit,
   adminRunsPayload,
+  adminUserDetailPayload,
   adminUsersPayload,
 } from "../../control-plane/src/admin/overview.js";
 import type { ConfigureBundledExpertRequest } from "@neo-cloud-agent/contracts";
@@ -25,7 +28,15 @@ import {
 import { actorIsPlatformAdmin, isAdminLogin } from "../../control-plane/src/security/actor.js";
 import { readApiCredential, readBearer, resolveActor } from "../../control-plane/src/security/auth.js";
 import { clientIp, rateLimitSnapshot } from "../../control-plane/src/security/rate-limit-http.js";
-import { adminPlatformInfo, loadAdminCounts, loadAdminRuns, startAdminData } from "./data.js";
+import {
+  adminPlatformInfo,
+  loadAdminCounts,
+  loadAdminRun,
+  loadAdminRuns,
+  loadAdminTranscript,
+  pageAdminTranscript,
+  startAdminData,
+} from "./data.js";
 import { serveAdminWeb } from "./static.js";
 
 const CORS = {
@@ -130,12 +141,13 @@ export function createAdminApiServer() {
         return;
       }
       if (method === "GET" && path === "/v1/admin/overview") {
+        const [runs, counts] = await Promise.all([loadAdminRuns(), loadAdminCounts()]);
         send(
           res,
           200,
-          await adminOverviewPayload(await loadAdminRuns(), publicLlmSettings(readLlmSettings()), {
+          await adminOverviewPayload(runs, publicLlmSettings(readLlmSettings()), {
             platform: adminPlatformInfo(),
-            counts: await loadAdminCounts(),
+            counts,
           }),
         );
         return;
@@ -158,7 +170,50 @@ export function createAdminApiServer() {
         return;
       }
       if (method === "GET" && path === "/v1/admin/runs") {
-        send(res, 200, adminRunsPayload(await loadAdminRuns(), adminRunsLimit(url.searchParams.get("limit"))));
+        const [runs, users] = await Promise.all([loadAdminRuns(), listPublicUsers()]);
+        send(
+          res,
+          200,
+          adminRunsPayload(runs, adminRunsLimit(url.searchParams.get("limit")), {
+            userId: url.searchParams.get("userId"),
+            users,
+          }),
+        );
+        return;
+      }
+      const runTranscript = /^\/v1\/admin\/runs\/([^/]+)\/transcript$/.exec(path);
+      if (runTranscript && method === "GET") {
+        const snapshot = await loadAdminTranscript(runTranscript[1] ?? "");
+        if (!snapshot) {
+          send(res, 404, { error: "not_found" });
+          return;
+        }
+        send(res, 200, {
+          snapshot: pageAdminTranscript(snapshot, {
+            before: url.searchParams.get("before"),
+            limit: url.searchParams.get("limit"),
+          }),
+        });
+        return;
+      }
+      const runDetail = /^\/v1\/admin\/runs\/([^/]+)$/.exec(path);
+      if (runDetail && method === "GET") {
+        const run = await loadAdminRun(runDetail[1] ?? "");
+        if (!run) {
+          send(res, 404, { error: "not_found" });
+          return;
+        }
+        send(res, 200, await adminRunDetailPayload(run));
+        return;
+      }
+      const userDetail = /^\/v1\/admin\/users\/([^/]+)$/.exec(path);
+      if (userDetail && method === "GET") {
+        const user = await findPublicUserById(userDetail[1] ?? "");
+        if (!user) {
+          send(res, 404, { error: "not_found" });
+          return;
+        }
+        send(res, 200, await adminUserDetailPayload(user, await loadAdminRuns()));
         return;
       }
       if (method === "GET" && path === "/v1/rate-limits") {

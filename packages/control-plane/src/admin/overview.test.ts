@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Run } from "@neo-cloud-agent/contracts";
 import { actorIsPlatformAdmin, isAdminLogin } from "../security/actor.js";
-import { adminRunsLimit, buildAdminRunRows, buildAdminUserRows } from "./overview.js";
+import {
+  adminRunsLimit,
+  adminRunsPayload,
+  buildAdminRunDetail,
+  buildAdminRunRows,
+  buildAdminUserRows,
+  filterRunsForAdmin,
+  isLiveRunStatus,
+} from "./overview.js";
 
 function run(partial: Partial<Run> & Pick<Run, "id" | "userId">): Run {
   const createdAt = partial.createdAt ?? "2026-08-20T00:00:00.000Z";
@@ -27,7 +35,8 @@ function run(partial: Partial<Run> & Pick<Run, "id" | "userId">): Run {
     updatedAt: partial.updatedAt ?? createdAt,
     idleAt: createdAt,
     expiresAt: null,
-    errorMessage: null,
+    errorMessage: partial.errorMessage ?? null,
+    expertId: partial.expertId ?? null,
     usage: partial.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
   };
 }
@@ -110,4 +119,37 @@ test("admin run rows are newest first and honor the limit cap", () => {
   assert.equal(adminRunsLimit("12"), 12);
   assert.equal(adminRunsLimit("9999"), 500);
   assert.equal(adminRunsLimit("nope"), 100);
+});
+
+test("admin run rows carry owner email and can scope by user", () => {
+  const emails = new Map([
+    ["u1", "ada@example.com"],
+    ["u2", "mate@example.com"],
+  ]);
+  const rows = buildAdminRunRows(
+    [
+      run({ id: "r1", userId: "u1", errorMessage: "boom", expertId: "exp_reviewer" }),
+      run({ id: "r2", userId: "u2" }),
+    ],
+    10,
+    emails,
+  );
+  assert.equal(rows[0]?.userEmail, "ada@example.com");
+  assert.equal(rows[0]?.errorMessage, "boom");
+  assert.equal(rows[0]?.expertId, "exp_reviewer");
+  const scoped = adminRunsPayload(
+    [run({ id: "r1", userId: "u1" }), run({ id: "r2", userId: "u2" })],
+    10,
+    { userId: "u2", users: [{ id: "u2", email: "mate@example.com", phone: null, orgId: "org_local", createdAt: "2026-08-01T00:00:00.000Z", status: "active", creditFen: 0, avatar: null, neoAvatar: null }] },
+  );
+  assert.equal(scoped.total, 1);
+  assert.equal(scoped.runs[0]?.id, "r2");
+  assert.equal(scoped.runs[0]?.userEmail, "mate@example.com");
+  assert.equal(filterRunsForAdmin([run({ id: "r1", userId: "u1" })], "missing").length, 0);
+  assert.equal(isLiveRunStatus("RUNNING"), true);
+  assert.equal(isLiveRunStatus("IDLE"), false);
+  const detail = buildAdminRunDetail(run({ id: "r3", userId: "u1", errorMessage: "no slot" }), emails);
+  assert.equal(detail.errorMessage, "no slot");
+  assert.equal(detail.userEmail, "ada@example.com");
+  assert.deepEqual(detail.repoUrls, []);
 });

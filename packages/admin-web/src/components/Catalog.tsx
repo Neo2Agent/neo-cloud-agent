@@ -102,6 +102,48 @@ export function CatalogGrid(props: { children: ReactNode }) {
   return <ul className="catalog-grid">{props.children}</ul>;
 }
 
+export function CatalogRow(props: {
+  title: string;
+  description?: string;
+  badge?: string;
+  badgeTone?: string;
+  meta?: string;
+  initial?: string;
+  onOpen?: () => void;
+  actions?: ReactNode;
+}) {
+  const tone = avatarTone(props.title);
+  const body = (
+    <>
+      <span className={`catalog-avatar tone-${tone}`}>{props.initial ?? initials(props.title)}</span>
+      <span className="catalog-row-copy">
+        <span className="catalog-card-top">
+          <strong>{props.title}</strong>
+          {props.badge ? <em className={`catalog-badge${props.badgeTone ? ` tone-${props.badgeTone}` : ""}`}>{props.badge}</em> : null}
+        </span>
+        {props.description ? <p>{props.description}</p> : null}
+        {props.meta ? <em className="catalog-card-meta">{props.meta}</em> : null}
+      </span>
+    </>
+  );
+  return (
+    <li className="catalog-row">
+      {props.onOpen ? (
+        <button type="button" className="catalog-row-main" onClick={props.onOpen}>
+          {body}
+        </button>
+      ) : (
+        <div className="catalog-row-main">{body}</div>
+      )}
+      {props.actions ? <div className="catalog-card-actions">{props.actions}</div> : null}
+    </li>
+  );
+}
+
+export function CatalogList(props: { children: ReactNode }) {
+  return <ul className="catalog-list">{props.children}</ul>;
+}
+
 export function CatalogCard(props: {
   title: string;
   description?: string;

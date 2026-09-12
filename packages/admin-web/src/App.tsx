@@ -1,9 +1,10 @@
 import { Tooltip } from "@neo-cloud-agent/ui";
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson, readToken, writeToken } from "./api";
+import { isLiveStatus } from "./catalog";
 import { Sidebar } from "./components/Sidebar";
 import { IconExperts, IconLogout, IconMenu, IconOverview, IconRefresh, IconRuns, IconSidebarClose, IconSystem, IconUsers } from "./icons";
-import { PAGE_META, pageHref, readPage } from "./nav";
+import { PAGE_META, type AdminRoute, readRoute, routeHref } from "./nav";
 import { ExpertsScreen } from "./screens/ExpertsScreen";
 import { LoginScreen } from "./screens/LoginScreen";
 import { OverviewScreen } from "./screens/OverviewScreen";
@@ -33,16 +34,17 @@ function useNarrow() {
 
 export function App() {
   const [token, setToken] = useState(readToken);
-  const [page, setPage] = useState<AdminPage>(readPage);
+  const [route, setRoute] = useState<AdminRoute>(readRoute);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [authError, setAuthError] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [tick, setTick] = useState(0);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [runs, setRuns] = useState<AdminRun[]>([]);
+  const [users, setUsers] = useState<AdminUser[] | null>(null);
+  const [runs, setRuns] = useState<AdminRun[] | null>(null);
   const [limits, setLimits] = useState<RateLimitSnapshot | null>(null);
   const [experts, setExperts] = useState<AdminExpertsCatalog | null>(null);
   const [error, setError] = useState("");
@@ -67,14 +69,22 @@ export function App() {
     });
   };
 
-  const refresh = useCallback(async (session: string) => {
-    const [overviewRes, usersRes, runsRes, limitsRes, meRes, expertsRes] = await Promise.all([
+  const closeMobileSidebar = () => {
+    if (narrow && sidebarOpen) {
+      window.localStorage.setItem("neo.admin.sidebar", "0");
+      setSidebarOpen(false);
+    }
+  };
+
+  const openRoute = (next: { page: AdminPage; id?: string; tab?: string }) => {
+    location.hash = routeHref(next.page, { id: next.id, tab: next.tab });
+    closeMobileSidebar();
+  };
+
+  const loadShell = useCallback(async (session: string) => {
+    const [overviewRes, meRes] = await Promise.all([
       api(session, "/v1/admin/overview"),
-      api(session, "/v1/admin/users"),
-      api(session, "/v1/admin/runs?limit=50"),
-      api(session, "/v1/rate-limits"),
       api(session, "/v1/me"),
-      api(session, "/v1/admin/experts"),
     ]);
     if (meRes.status === 401 || overviewRes.status === 401) {
       persist("");
@@ -88,23 +98,53 @@ export function App() {
     const me = await readJson<{ user?: { email?: string } }>(meRes);
     setUserEmail(me.user?.email ?? "服务令牌");
     setOverview(await readJson<AdminOverview>(overviewRes));
-    setUsers((await readJson<{ users?: AdminUser[] }>(usersRes)).users ?? []);
-    setRuns((await readJson<{ runs?: AdminRun[] }>(runsRes)).runs ?? []);
-    if (limitsRes.ok) setLimits(await readJson<RateLimitSnapshot>(limitsRes));
-    if (expertsRes.ok) setExperts(await readJson<AdminExpertsCatalog>(expertsRes));
-    setError("");
   }, []);
 
   useEffect(() => {
-    const onHash = () => setPage(readPage());
+    const onHash = () => setRoute(readRoute());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
     setRefreshing(true);
-    void refresh(token)
+    void (async () => {
+      const extras = async (): Promise<{
+        users?: AdminUser[];
+        runs?: AdminRun[];
+        experts?: AdminExpertsCatalog;
+        limits?: RateLimitSnapshot;
+      }> => {
+        if (route.page === "users") {
+          const response = await api(token, "/v1/admin/users");
+          if (!response.ok) throw new Error("读取用户失败");
+          return { users: (await readJson<{ users?: AdminUser[] }>(response)).users ?? [] };
+        }
+        if (route.page === "runs") {
+          const response = await api(token, "/v1/admin/runs?limit=100");
+          if (!response.ok) throw new Error("读取对话失败");
+          return { runs: (await readJson<{ runs?: AdminRun[] }>(response)).runs ?? [] };
+        }
+        if (route.page === "experts") {
+          const response = await api(token, "/v1/admin/experts");
+          if (response.ok) return { experts: await readJson<AdminExpertsCatalog>(response) };
+        }
+        if (route.page === "system") {
+          const response = await api(token, "/v1/rate-limits");
+          if (response.ok) return { limits: await readJson<RateLimitSnapshot>(response) };
+        }
+        return {};
+      };
+      const [extra] = await Promise.all([extras(), loadShell(token)]);
+      if (cancelled) return;
+      if (extra.users) setUsers(extra.users);
+      if (extra.runs) setRuns(extra.runs);
+      if (extra.experts) setExperts(extra.experts);
+      if (extra.limits) setLimits(extra.limits);
+      if (!cancelled) setError("");
+    })()
       .catch((err) => {
         const message = err instanceof Error ? err.message : "读取失败";
         if (message === "请重新登录" || message === "需要平台管理员") {
@@ -112,10 +152,15 @@ export function App() {
           persist("");
           return;
         }
-        setError(message);
+        if (!cancelled) setError(message);
       })
-      .finally(() => setRefreshing(false));
-  }, [refresh, token]);
+      .finally(() => {
+        if (!cancelled) setRefreshing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadShell, route.page, tick, token]);
 
   if (!token) {
     return (
@@ -148,10 +193,11 @@ export function App() {
     );
   }
 
+  const page = route.page;
   const meta = PAGE_META[page];
-  const liveRuns = runs
-    .filter((item) => item.status === "RUNNING" || item.status === "PROVISIONING" || item.status === "INSTALLING" || item.status === "WAITING_FOR_BACKGROUND_WORK")
-    .slice(0, 8);
+  const liveRuns =
+    overview?.liveRuns ??
+    (runs ?? []).filter((item) => isLiveStatus(item.status)).slice(0, 8);
   const health = overview
     ? `${overview.platform.workerRuntime}${overview.capacity.total ? ` · VM ${overview.capacity.busy}/${overview.capacity.total}` : ""}`
     : "读取中…";
@@ -160,20 +206,14 @@ export function App() {
     void api(token, "/v1/auth/logout", { method: "POST" });
     persist("");
     setOverview(null);
-    setUsers([]);
-    setRuns([]);
+    setUsers(null);
+    setRuns(null);
     setLimits(null);
     setExperts(null);
     setError("");
   };
 
-  const openPage = (id: AdminPage) => {
-    location.hash = pageHref(id);
-    if (narrow && sidebarOpen) {
-      window.localStorage.setItem("neo.admin.sidebar", "0");
-      setSidebarOpen(false);
-    }
-  };
+  const showPageSkeleton = page === "overview" && !overview;
 
   return (
     <div className={sidebarOpen ? "app" : "app sidebar-closed"}>
@@ -183,7 +223,7 @@ export function App() {
         health={health}
         overview={overview}
         liveRuns={liveRuns}
-        onOpenRuns={() => openPage("runs")}
+        onOpenRun={(id) => openRoute({ page: "runs", id })}
         onClose={narrow ? toggleSidebar : undefined}
       />
 
@@ -206,16 +246,11 @@ export function App() {
                 return (
                   <Tooltip key={item.id} content={PAGE_META[item.id].label} side="bottom">
                     <a
-                      href={pageHref(item.id)}
+                      href={routeHref(item.id)}
                       className={page === item.id ? "active" : ""}
                       aria-label={PAGE_META[item.id].label}
                       aria-current={page === item.id ? "page" : undefined}
-                      onClick={() => {
-                        if (narrow && sidebarOpen) {
-                          window.localStorage.setItem("neo.admin.sidebar", "0");
-                          setSidebarOpen(false);
-                        }
-                      }}
+                      onClick={closeMobileSidebar}
                     >
                       <Icon size={16} />
                       <span className="tab-label">{PAGE_META[item.id].label}</span>
@@ -226,7 +261,7 @@ export function App() {
             </nav>
             <div className="topbar-heading">
               <p className="eyebrow">{meta.label}</p>
-              <h1>{meta.title}</h1>
+              <h1>{route.id ? "详情" : meta.title}</h1>
             </div>
           </div>
           <div className="top-actions">
@@ -236,12 +271,7 @@ export function App() {
                 className="icon-btn"
                 aria-label="刷新"
                 disabled={refreshing}
-                onClick={() => {
-                  setRefreshing(true);
-                  void refresh(token)
-                    .catch((err) => setError(err instanceof Error ? err.message : "刷新失败"))
-                    .finally(() => setRefreshing(false));
-                }}
+                onClick={() => setTick((value) => value + 1)}
               >
                 <IconRefresh className={refreshing ? "spin" : undefined} />
               </button>
@@ -256,7 +286,7 @@ export function App() {
 
         {error ? <p className="banner">{error}</p> : null}
 
-        {!overview ? (
+        {showPageSkeleton ? (
           <section className="page catalog-page">
             <div className="skeleton metric-grid">
               <div />
@@ -267,11 +297,26 @@ export function App() {
             <div className="skeleton panel" />
           </section>
         ) : null}
-        {overview && page === "overview" ? <OverviewScreen overview={overview} runs={runs} /> : null}
-        {overview && page === "users" ? (
+        {overview && page === "overview" ? (
+          <OverviewScreen
+            overview={overview}
+            runs={runs ?? []}
+            onOpenRun={(id) => openRoute({ page: "runs", id })}
+            onOpenUsers={() => openRoute({ page: "users" })}
+            onOpenRuns={() => openRoute({ page: "runs", tab: "live" })}
+          />
+        ) : null}
+        {page === "users" ? (
           <UsersScreen
+            token={token}
             users={users}
+            selectedId={route.id}
+            tab={route.tab}
             approvingId={approvingId}
+            onTab={(tab) => openRoute({ page: "users", tab })}
+            onOpen={(id) => openRoute({ page: "users", id, tab: route.tab })}
+            onBack={() => openRoute({ page: "users", tab: route.tab })}
+            onOpenRun={(id) => openRoute({ page: "runs", id })}
             onApprove={(id) => {
               setApprovingId(id);
               void (async () => {
@@ -280,16 +325,63 @@ export function App() {
                   const body = await readJson<{ error?: string }>(response);
                   throw new Error(body.error || "审核失败");
                 }
-                await refresh(token);
+                setTick((value) => value + 1);
               })()
                 .catch((err) => setError(err instanceof Error ? err.message : "审核失败"))
                 .finally(() => setApprovingId(""));
             }}
           />
         ) : null}
-        {overview && page === "runs" ? <RunsScreen runs={runs} /> : null}
-        {overview && page === "experts" ? <ExpertsScreen token={token} catalog={experts} onChanged={() => refresh(token)} /> : null}
-        {overview && page === "system" ? <SystemScreen overview={overview} limits={limits} /> : null}
+        {page === "runs" ? (
+          <RunsScreen
+            token={token}
+            runs={runs}
+            selectedId={route.id}
+            tab={route.tab}
+            onTab={(tab) => openRoute({ page: "runs", tab })}
+            onOpen={(id) => openRoute({ page: "runs", id, tab: route.tab })}
+            onBack={() => openRoute({ page: "runs", tab: route.tab })}
+          />
+        ) : null}
+        {page === "experts" ? (
+          <ExpertsScreen
+            token={token}
+            catalog={experts}
+            selectedId={route.id}
+            tab={route.tab}
+            onTab={(tab) => openRoute({ page: "experts", tab })}
+            onOpen={(id) => openRoute({ page: "experts", id, tab: route.tab })}
+            onBack={() => openRoute({ page: "experts", tab: route.tab })}
+            onChanged={async () => {
+              const response = await api(token, "/v1/admin/experts");
+              if (response.ok) setExperts(await readJson<AdminExpertsCatalog>(response));
+            }}
+          />
+        ) : null}
+        {page === "system" && overview ? <SystemScreen overview={overview} limits={limits} /> : null}
+        {page === "system" && !overview ? (
+          <section className="page catalog-page">
+            <div className="skeleton panel" />
+          </section>
+        ) : null}
+
+        <nav className="bottom-nav" aria-label="管理台导航">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            return (
+              <a
+                key={item.id}
+                href={routeHref(item.id)}
+                className={page === item.id ? "active" : ""}
+                aria-current={page === item.id ? "page" : undefined}
+                onClick={closeMobileSidebar}
+              >
+                <Icon size={18} />
+                <span>{PAGE_META[item.id].label}</span>
+              </a>
+            );
+          })}
+        </nav>
       </div>
     </div>
   );

@@ -1,29 +1,52 @@
-import { formatCount, formatTokens, formatWhen, quotaPercent, slotBusy, slotLabel, statusLabel } from "../format";
-import { snippet } from "../catalog";
-import { CatalogCard, CatalogEmpty, CatalogGrid } from "../components/Catalog";
+import { formatCount, formatTokens, formatWhen, quotaPercent, slotBusy, slotLabel, statusLabel, statusTone } from "../format";
+import { isLiveStatus, snippet } from "../catalog";
+import { CatalogEmpty, CatalogList, CatalogRow } from "../components/Catalog";
 import type { AdminOverview, AdminRun } from "../types";
 
 type Props = {
   overview: AdminOverview;
   runs: AdminRun[];
+  onOpenRun: (id: string) => void;
+  onOpenUsers: () => void;
+  onOpenRuns: () => void;
 };
 
-function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <article className="metric">
+function Metric({
+  label,
+  value,
+  hint,
+  onOpen,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  onOpen?: () => void;
+}) {
+  const inner = (
+    <>
       <p className="eyebrow">{label}</p>
       <p className="value">{value}</p>
       {hint ? <p className="hint">{hint}</p> : null}
-    </article>
+    </>
   );
+  if (onOpen) {
+    return (
+      <button type="button" className="metric metric-btn" onClick={onOpen}>
+        {inner}
+      </button>
+    );
+  }
+  return <article className="metric">{inner}</article>;
 }
 
-export function OverviewScreen({ overview, runs }: Props) {
+export function OverviewScreen({ overview, runs, onOpenRun, onOpenUsers, onOpenRuns }: Props) {
   const quota = overview.quota;
   const used = quota.usedTokensMonth || overview.tokens.usedMonth;
   const max = quota.maxTokensMonth;
   const percent = quotaPercent(used, max);
-  const liveRuns = runs.filter((item) => item.status === "RUNNING" || item.status === "PROVISIONING" || item.status === "INSTALLING" || item.status === "WAITING_FOR_BACKGROUND_WORK").slice(0, 6);
+  const liveRuns =
+    overview.liveRuns ??
+    runs.filter((item) => isLiveStatus(item.status)).slice(0, 6);
 
   return (
     <section className="page catalog-page">
@@ -31,13 +54,13 @@ export function OverviewScreen({ overview, runs }: Props) {
         <div>
           <p className="eyebrow">总览</p>
           <h2>用量和容量</h2>
-          <p className="hint">看谁在用、槽忙不忙、本月 token 到哪了。</p>
+          <p className="hint">指标能点进去。进行中的对话直接打开详情。</p>
         </div>
       </header>
 
       <section className="metric-grid">
-        <Metric label="用户" value={formatCount(overview.users.total)} hint={`${overview.users.admins} 名管理员`} />
-        <Metric label="对话" value={formatCount(overview.runs.total)} hint={`${overview.runs.live} 个进行中`} />
+        <Metric label="用户" value={formatCount(overview.users.total)} hint={`${overview.users.admins} 名管理员`} onOpen={onOpenUsers} />
+        <Metric label="对话" value={formatCount(overview.runs.total)} hint={`${overview.runs.live} 个进行中`} onOpen={onOpenRuns} />
         <Metric
           label="本月 token"
           value={formatTokens(overview.tokens.usedMonth)}
@@ -119,21 +142,23 @@ export function OverviewScreen({ overview, runs }: Props) {
         <header className="panel-head">
           <div>
             <h3>进行中的对话</h3>
-            <p className="hint">{liveRuns.length ? "只看还在跑的" : "现在没有进行中的对话"}</p>
+            <p className="hint">{liveRuns.length ? "点进去看内容和占用" : "现在没有进行中的对话"}</p>
           </div>
         </header>
         {liveRuns.length ? (
-          <CatalogGrid>
+          <CatalogList>
             {liveRuns.map((item) => (
-              <CatalogCard
+              <CatalogRow
                 key={item.id}
-                title={snippet(item.prompt, 48) || "未命名任务"}
+                title={snippet(item.title || item.prompt, 48) || "未命名任务"}
                 badge={statusLabel(item.status)}
-                description={item.model || "默认模型"}
+                badgeTone={statusTone(item.status)}
+                description={[item.userEmail || item.userId, item.model].filter(Boolean).join(" · ")}
                 meta={`${item.usage?.totalTokens ? `${formatTokens(item.usage.totalTokens)} tok · ` : ""}${formatWhen(item.updatedAt)}`}
+                onOpen={() => onOpenRun(item.id)}
               />
             ))}
-          </CatalogGrid>
+          </CatalogList>
         ) : (
           <CatalogEmpty title="现在没有进行中的对话" hint="新开的任务会先出现在这里。" />
         )}
