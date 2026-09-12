@@ -63,6 +63,8 @@ flowchart LR
 pnpm install
 pnpm typecheck
 pnpm test
+pnpm test:e2e:core       # 核心功能 API 边界（docs/core-features.md + e2e/）
+pnpm test:e2e:ui         # Playwright UI 边界；需 pnpm build:web 与 Chromium
 pnpm dev                 # 只起后端：control-plane :8080 + llm-gateway :8081
 pnpm dev:loop            # Java neo-loop :8082（可选；AGENT_KERNEL=agentscope 才走这条）
 pnpm test:loop           # mvn test + agentscope toy-repo e2e

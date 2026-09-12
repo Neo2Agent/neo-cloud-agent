@@ -1,0 +1,524 @@
+version: 1
+product: neo-cloud-agent
+source: docs/core-features.md
+purpose: machine-readable computer-use steps against a live Neo chat UI
+updated: 2026-09-07
+
+urls:
+  localVite: http://127.0.0.1:5173
+  localApi: http://127.0.0.1:8080
+  localHostedWeb: http://127.0.0.1:8080
+  playwrightFixture: http://127.0.0.1:18080
+  production: https://neorun.cloud/
+  productionAdmin: https://neorun.cloud/admin/
+  architecture: https://neorun.cloud/architecture
+webBase: "${E2E_WEB_URL:-http://127.0.0.1:5173}"
+apiBase: "${E2E_BASE_URL:-http://127.0.0.1:8080}"
+
+howToStart:
+  local:
+    - export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"
+    - pnpm install
+    - pnpm dev
+    - pnpm dev:web
+  hostedBuild:
+    - pnpm build:web
+    - pnpm dev
+    - open http://127.0.0.1:8080
+  production: Caddy on 62.234.211.200 terminates HTTPS for neorun.cloud and proxies / to :8080
+
+auth:
+  defaultEmail: admin
+  defaultPassword: "123456"
+  tokenStorageKey: neo.apiToken.v2
+  sessionCookie: neo_session
+  notes:
+    - Login form is empty and cannot be skipped.
+    - ACCOUNTS_REQUIRED=0 is the only way to skip accounts.
+    - Cross-user reads return 404, not 403.
+
+selectors:
+  authGate: "#auth-gate"
+  authEmail: "#auth-email"
+  authPassword: "#auth-password"
+  authUsername: "#auth-username"
+  authPhone: "#auth-phone"
+  authToken: "#auth-token"
+  authSubmit: "#auth-submit"
+  authError: "#auth-error"
+  authTabs: "#auth-tabs"
+  composer: "#composer"
+  prompt: "#prompt"
+  send: "#send"
+  abort: "#abort"
+  transcript: "#transcript"
+  status: "#status"
+  newChat: "#new-chat"
+  runList: "#run-list"
+  logout: "#logout"
+  login: "#login"
+  accountEmail: "#account-email"
+  health: "#health"
+  appTabs: "#app-tabs"
+  expertsPage: "#experts-page"
+  skillsPage: "#skills-page"
+  memoriesPage: "#memories-page"
+  settingsPage: "#settings-page"
+  settingsToggle: "#toggle-settings"
+  repo: "#repo"
+  fileTree: "#file-tree"
+  terminal: "#run-terminal"
+  diff: "#run-diff"
+  artifacts: "#run-artifacts"
+  archive: "#archive-run"
+  deleteRun: "#delete-run"
+  voiceMic: "#composer button.composer-mic, #composer button[aria-label='点一下开始说话']"
+  voiceHint: "#vm-status"
+  termInput: "textarea[aria-label='终端输入']"
+  sidebarToggle: "#sidebar-toggle"
+
+env:
+  requiredForChat: []
+  mockLlm: LLM_UPSTREAM=mock is enough for local runs
+  voiceKeys:
+    - IFLYTEK_APP_ID
+    - IFLYTEK_API_KEY
+    - IFLYTEK_API_SECRET
+  httpsRequiredForLiveMic: true
+  insecureMicCopy: 当前是 HTTP，浏览器不给实时麦克风
+  voiceUnconfiguredCopy: 听写未配置。把讯飞 APPID / APIKey / APISecret 写到服务器后再试。
+
+features:
+  - id: auth
+    name: 账号登录与会话隔离
+    cases:
+      - id: auth.login-happy
+        type: happy
+        steps:
+          - { action: goto, url: "{webBase}/" }
+          - { action: assertVisible, selector: "#auth-gate" }
+          - { action: fill, selector: "#auth-email", value: "admin" }
+          - { action: fill, selector: "#auth-password", value: "123456" }
+          - { action: click, selector: "#auth-submit" }
+        expected:
+          - "#auth-gate is hidden"
+          - "#composer is visible"
+          - "#account-email contains admin"
+        fail:
+          - gate still visible after 10s
+          - JS exception overlay
+
+      - id: auth.empty
+        type: boundary
+        steps:
+          - { action: goto, url: "{webBase}/" }
+          - { action: assertDisabled, selector: "#auth-submit" }
+          - { action: fill, selector: "#auth-email", value: "admin" }
+          - { action: assertDisabled, selector: "#auth-submit" }
+        expected:
+          - submit stays disabled until password is non-empty
+        fail:
+          - submit enabled with an empty password
+
+      - id: auth.wrong-password
+        type: boundary
+        steps:
+          - { action: goto, url: "{webBase}/" }
+          - { action: fill, selector: "#auth-email", value: "admin" }
+          - { action: fill, selector: "#auth-password", value: "wrong-password" }
+          - { action: click, selector: "#auth-submit" }
+        expected:
+          - "#auth-error visible"
+          - error text matches invalid account or password
+          - "#auth-gate still visible"
+        fail:
+          - composer appears
+          - error names whether the user exists
+
+      - id: auth.register-invalid-phone
+        type: boundary
+        steps:
+          - { action: goto, url: "{webBase}/" }
+          - { action: click, selector: "#auth-tabs button[data-mode='register']" }
+          - { action: fill, selector: "#auth-username", value: "tester" }
+          - { action: fill, selector: "#auth-phone", value: "123" }
+          - { action: fill, selector: "#auth-password", value: "password1" }
+          - { action: click, selector: "#auth-submit" }
+        expected:
+          - "#auth-error contains 请填写有效的手机号"
+        fail:
+          - registration 201
+
+      - id: auth.narrow-no-token-tab
+        type: boundary
+        viewport: { width: 390, height: 844 }
+        steps:
+          - { action: goto, url: "{webBase}/" }
+          - { action: assertVisible, selector: "#auth-tabs button[data-mode='login']" }
+          - { action: assertVisible, selector: "#auth-tabs button[data-mode='register']" }
+        expected:
+          - no button[data-mode='token']
+          - copy 先登录，再下任务
+        fail:
+          - service-token tab visible on a phone-width viewport
+
+      - id: auth.reload
+        type: boundary
+        steps:
+          - { action: login, email: "admin", password: "123456" }
+          - { action: reload }
+        expected:
+          - still logged in, "#composer" visible
+        fail:
+          - bounced to "#auth-gate"
+
+      - id: auth.expired
+        type: boundary
+        steps:
+          - { action: login, email: "admin", password: "123456" }
+          - { action: clearStorage, key: "neo.apiToken.v2" }
+          - { action: reload }
+        expected:
+          - "#auth-gate" visible
+        fail:
+          - composer usable without a session
+
+      - id: auth.isolation
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi, email: "admin", password: "123456" }
+          - { action: createRun, prompt: "owner only", repoUrls: [] }
+          - { action: loginAsOtherUser }
+          - { action: get, path: "/v1/runs/{runId}" }
+        expected:
+          - HTTP 404
+        fail:
+          - 200 or 403
+
+  - id: runs
+    name: 新建对话 / 跟进 / 归档
+    cases:
+      - id: runs.empty-ui
+        type: boundary
+        steps:
+          - { action: login, email: "admin", password: "123456" }
+          - { action: assertVisible, selector: "#prompt" }
+        expected:
+          - "#send[disabled]"
+        fail:
+          - send enabled with empty prompt and no images
+
+      - id: runs.create-happy
+        type: happy
+        skipWhen: "WORKER_RUNTIME=none fixture (no agent turn). Use local mock + pnpm dev, or production."
+        steps:
+          - { action: login, email: "admin", password: "123456" }
+          - { action: click, selector: "#new-chat" }
+          - { action: fill, selector: "#prompt", value: "只回复一个词：pong。不要调用工具。" }
+          - { action: click, selector: "#send" }
+        expected:
+          - hash becomes #/runs/<id>
+          - "#transcript" shows the user line
+          - "#status" eventually IDLE or 在线 / 空闲
+        fail:
+          - send stays disabled after typing
+          - uncaught exception
+          - status ERROR with a setup failure
+
+      - id: runs.missing-prompt
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi }
+          - { action: post, path: "/v1/runs", body: { repoUrls: [] } }
+        expected:
+          - HTTP 400, error prompt is required
+        fail:
+          - 201
+
+      - id: runs.unauth
+        type: boundary
+        api: true
+        steps:
+          - { action: post, path: "/v1/runs", body: { prompt: "x", repoUrls: [] } }
+        expected:
+          - HTTP 401 unauthorized
+        fail:
+          - 201
+
+      - id: runs.follow-archived
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi }
+          - { action: createRun, prompt: "archive me", repoUrls: [] }
+          - { action: post, path: "/v1/runs/{runId}/archive" }
+          - { action: post, path: "/v1/runs/{runId}/follow-ups", body: { text: "nope" } }
+        expected:
+          - HTTP 400, error contains archived
+          - UI: "#prompt" disabled, hint 对话已归档
+        fail:
+          - follow-up 201
+
+      - id: runs.delete-before-archive
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi }
+          - { action: createRun, prompt: "alive", repoUrls: [] }
+          - { action: delete, path: "/v1/runs/{runId}" }
+        expected:
+          - HTTP 409
+        fail:
+          - 200
+
+      - id: runs.network-failure
+        type: boundary
+        steps:
+          - { action: login }
+          - { action: block, url: "**/v1/runs", methods: ["POST"] }
+          - { action: fill, selector: "#prompt", value: "offline send" }
+          - { action: click, selector: "#send" }
+        expected:
+          - transcript shows 发送失败 or a fetch error
+          - "#prompt" still contains offline send
+        fail:
+          - prompt wiped with no error
+
+      - id: runs.concurrent
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi }
+          - { action: parallelPost, path: "/v1/runs", bodies: [{ prompt: "a", repoUrls: [] }, { prompt: "b", repoUrls: [] }] }
+        expected:
+          - both 201 with different ids
+        fail:
+          - one request 5xx
+
+  - id: transcript
+    name: 实时 Transcript / SSE
+    cases:
+      - id: transcript.unauth
+        type: boundary
+        api: true
+        steps:
+          - { action: get, path: "/v1/runs/run_x/transcript" }
+        expected:
+          - HTTP 401
+        fail:
+          - 200
+
+      - id: transcript.reload
+        type: boundary
+        skipWhen: no live run on the page
+        steps:
+          - { action: openExistingRun }
+          - { action: reload }
+        expected:
+          - same "#transcript" messages come back
+          - no second login
+        fail:
+          - empty transcript on a run that had messages
+          - thrown ChatErrorBoundary
+
+  - id: workspace
+    name: 工作区文件 / Diff / 产物
+    cases:
+      - id: workspace.no-run
+        type: boundary
+        steps:
+          - { action: login }
+          - { action: click, selector: "#new-chat" }
+        expected:
+          - no 会话标签 navigation
+          - "#run-terminal" absent
+          - "#file-tree" absent (tree only mounts in settings after a run exists)
+        fail:
+          - terminal panel open on a blank chat
+
+      - id: workspace.escape
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi }
+          - { action: createRun, repoUrls: [] }
+          - { action: get, path: "/v1/runs/{runId}/fs?path=../" }
+        expected:
+          - HTTP 400 path escapes workspace
+        fail:
+          - 200 with host files
+
+      - id: workspace.artifact-too-large
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi }
+          - { action: createRun, repoUrls: [] }
+          - { action: post, path: "/v1/runs/{runId}/artifacts", body: { name: "huge.bin", content: "<1_500_001 x>" } }
+        expected:
+          - HTTP 400 artifact too large
+        fail:
+          - 201
+
+      - id: workspace.bad-sign
+        type: boundary
+        api: true
+        steps:
+          - { action: get, path: "/v1/runs/{runId}/artifacts/out.log?token=nope" }
+        expected:
+          - HTTP 401
+        fail:
+          - file body returned
+
+  - id: term
+    name: 沙箱终端
+    cases:
+      - id: term.open-happy
+        type: happy
+        skipWhen: no runId on the page
+        steps:
+          - { action: openExistingCloudRun }
+          - { action: click, role: "button", name: "终端" }
+          - { action: click, text: "新终端" }
+        expected:
+          - "#run-terminal" visible
+          - textarea[aria-label=终端输入] enabled
+          - hint mentions 工作区 / zsh|bash
+        fail:
+          - 本机对话请在 Desk
+          - setup 日志被当成终端
+
+      - id: term.unauth
+        type: boundary
+        api: true
+        steps:
+          - { action: post, path: "/v1/runs/{runId}/term" }
+        expected:
+          - HTTP 401
+        fail:
+          - 201
+
+      - id: term.too-long
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi }
+          - { action: createRun, repoUrls: [] }
+          - { action: post, path: "/v1/runs/{runId}/term" }
+          - { action: post, path: "/v1/runs/{runId}/term/{termId}", body: { data: "<16385 chars>" } }
+        expected:
+          - HTTP 400 input too long
+        fail:
+          - 200
+
+      - id: term.max-sessions
+        type: boundary
+        api: true
+        steps:
+          - { action: loginApi }
+          - { action: createRun, repoUrls: [] }
+          - { action: postN, path: "/v1/runs/{runId}/term", n: 5 }
+        expected:
+          - first four 201, fifth 409 每个对话最多开 4 个终端
+        fail:
+          - fifth 201
+
+      - id: term.desk-denied
+        type: boundary
+        skipWhen: current run is cloud (loop=cloud)
+        steps:
+          - { action: openDeskRun }
+          - { action: click, role: "button", name: "终端" }
+        expected:
+          - API/UI 409 本机对话请在 Desk 右侧栏用终端
+        fail:
+          - a host shell opens in the browser
+
+  - id: speech
+    name: 讯飞听写
+    cases:
+      - id: speech.not-configured
+        type: boundary
+        skipWhen: IFLYTEK_* all set and gateway healthy
+        steps:
+          - { action: login }
+          - { action: click, selector: "#composer button.composer-mic, #composer button[aria-label='点一下开始说话']" }
+        expected:
+          - "#vm-status" or .voice-error contains 听写未配置 or 听写服务不可用
+          - "#prompt" unchanged
+          - message is NOT sent
+        fail:
+          - browser permission prompt with no server keys
+          - composer auto-sends
+
+      - id: speech.http-insecure
+        type: boundary
+        skipWhen: page is a secure context (https or localhost)
+        urlHint: http://62.234.211.200/ is insecure; https://neorun.cloud/ is secure
+        steps:
+          - { action: login }
+          - { action: click, selector: "#composer button.composer-mic, #composer button[aria-label='选录音文件']" }
+        expected:
+          - dialog 选一段录音 or hint 当前是 HTTP，浏览器不给实时麦克风
+        fail:
+          - getUserMedia thrown to the user as a raw DOM exception
+
+      - id: speech.login-required
+        type: boundary
+        api: true
+        steps:
+          - { action: post, path: "/v1/speech/iat", headers: { authorization: "Bearer ${CONTROL_PLANE_TOKEN}" }, body: { status: 0 } }
+        expected:
+          - HTTP 401 login_required when the token is a service token
+        fail:
+          - 200
+
+      - id: speech.configured-true
+        type: happy
+        skipWhen: IFLYTEK_APP_ID or IFLYTEK_API_KEY or IFLYTEK_API_SECRET missing
+        steps:
+          - { action: loginApi }
+          - { action: get, path: "/v1/speech/iat" }
+        expected:
+          - HTTP 200 { configured: true }
+        fail:
+          - configured false while the three env vars are present and gateway is up
+
+  - id: catalog
+    name: 专家与技能
+    cases:
+      - id: catalog.experts-happy
+        type: happy
+        steps:
+          - { action: login }
+          - { action: goto, url: "{webBase}/#/experts" }
+        expected:
+          - "#experts-page" visible
+          - title 换角色干活
+        fail:
+          - login gate still open
+          - empty page with a fetch error and no bundled experts (after network idle)
+
+      - id: catalog.unauth-hash
+        type: boundary
+        steps:
+          - { action: goto, url: "{webBase}/#/experts" }
+        expected:
+          - "#auth-gate" visible
+          - "#experts-page" absent
+        fail:
+          - experts catalog readable while logged out
+
+      - id: catalog.memory-unwired
+        type: boundary
+        skipWhen: MEM0_URL and MEM0_API_KEY are set
+        steps:
+          - { action: login }
+          - { action: goto, url: "{webBase}/#/memories" }
+        expected:
+          - "#memories-page" visible
+          - copy 记忆还没接上 (or configured=false via GET /v1/memories)
+        fail:
+          - page claims memories exist when Mem0 is off
