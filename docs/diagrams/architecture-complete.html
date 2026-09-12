@@ -198,7 +198,7 @@
     <section class="col">
       <h2>⑤⑦ 推理 + 外部</h2>
       <div class="box llm"><strong>llm-gateway :8081</strong><small>唯一持有 Provider Key<br>验 run JWT · 模型别名 · 限流</small></div>
-      <div class="box llm"><strong>上游</strong><small>默认 deepseek-v4-flash · 可切 Pro<br>max_tokens 封顶 16384 · 无 key 则 mock</small></div>
+      <div class="box llm"><strong>上游</strong><small>默认 deepseek-flash（V4.1 Flash）<br>max_tokens 封顶 16384 · 无 key 则 mock</small></div>
       <div class="box ext"><strong>New API :3000</strong><small>库机 Docker · Gateway 上游，不是 Neo 进程<br>渠道和 Provider Key 在 New API 控制台</small></div>
       <div class="box ext"><strong>GitHub App</strong><small>clone / push / draft PR / webhook<br>长期凭证不过 VM</small></div>
       <div class="box ext"><strong>推送</strong><small>Expo · 企业微信 · Telegram · SMTP</small></div>

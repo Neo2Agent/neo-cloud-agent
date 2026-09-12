@@ -115,7 +115,7 @@ iOS / Android / PWA
 - 打开一条：`GET /v1/runs/:id` + `GET /v1/runs/:id/transcript`，按 `transcriptGroups` 渲染（工具在最终答复上面，和对话页一样）
 - 直播：前台订 SSE；断线带 `after` 重连；再短轮询 Run 状态兜底（CLI 已经这么做）
 - 跟进 / 停止 / 归档：现有 follow-ups / abort / archive
-- 选模型：Flash / Pro，读 `GET /v1/settings/llm`，**不要在手机上存 Provider Key**
+- 模型固定 DeepSeek Flash 4.1，读 `GET /v1/settings/llm`，**不要在手机上存 Provider Key**
 - 推送：idle / error / PR 打开系统通知，点进去深链到该 Run
 
 可以没有：文件树、终端面板、Desk 本机文件夹、设置里写 DeepSeek Key、项目协作完整页、定时任务编辑器。

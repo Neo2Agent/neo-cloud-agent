@@ -603,7 +603,7 @@ GitHub PR 评论和 Actions 经 `POST /webhooks/github`（HMAC）进跟进队列
 
 | 宿主 | Package | 执行面 | 现状 |
 | --- | --- | --- | --- |
-| 对话页 | `packages/web` | 云端 | 登录、流式、Markdown、Diff、文件树、粘贴图片、产物预览、项目、专家 / 技能目录、自动化、Flash/Pro |
+| 对话页 | `packages/web` | 云端 | 登录、流式、Markdown、Diff、文件树、粘贴图片、产物预览、项目、专家 / 技能目录、自动化、DeepSeek Flash 4.1 |
 | 管理台 | `admin-web` + `admin-api` | 无 | 总览 / 用户 / Run / 内置专家配置与下发 / 限流；仅平台管理员 |
 | Desk | `packages/desk` | 云、本机 pi、或 Remote | Electron + 独立 UI；This Computer = 本机 pi；Remote = 云 loop + 本机工具（WSS）；inline 带 assignment，dispatch 走 inbox SSE |
 | CLI | `packages/cli` | 云端 | `pnpm neo`：创建、SSE、跟进、归档、diff、PR；headless |

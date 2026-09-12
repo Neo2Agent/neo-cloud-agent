@@ -40,7 +40,7 @@ def memory_config() -> dict[str, Any]:
         "llm": {
             "provider": "openai",
             "config": {
-                "model": _env("LLM_MODEL", "deepseek-v4-flash"),
+                "model": _env("LLM_MODEL", "deepseek-flash"),
                 "temperature": 0.1,
                 "max_tokens": 800,
                 "api_key": _env("OPENAI_API_KEY"),
