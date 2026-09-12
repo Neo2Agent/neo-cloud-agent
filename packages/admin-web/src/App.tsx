@@ -303,7 +303,7 @@ export function App() {
             runs={runs ?? []}
             onOpenRun={(id) => openRoute({ page: "runs", id })}
             onOpenUsers={() => openRoute({ page: "users" })}
-            onOpenRuns={() => openRoute({ page: "runs", tab: "live" })}
+            onOpenRuns={() => openRoute({ page: "runs", tab: overview.runs.live > 0 ? "live" : "all" })}
           />
         ) : null}
         {page === "users" ? (

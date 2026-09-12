@@ -19,6 +19,8 @@ type Props = {
   onOpenRun: (id: string) => void;
 };
 
+const EMPTY_USERS: AdminUser[] = [];
+
 function yuan(fen: number): string {
   return `¥${(Math.max(0, fen) / 100).toFixed(2)}`;
 }
@@ -48,7 +50,7 @@ export function UsersScreen({
   const [detailError, setDetailError] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const list = users ?? [];
+  const list = users ?? EMPTY_USERS;
   const pendingCount = list.filter((user) => user.status === "pending").length;
   const activeTab = tab || defaultUserTab(list);
   const scoped = filterUsersByTab(list, activeTab);
@@ -90,7 +92,7 @@ export function UsersScreen({
     })()
       .catch((err) => setDetailError(err instanceof Error ? err.message : "读取用户失败"))
       .finally(() => setDetailLoading(false));
-  }, [list, selectedId, token]);
+  }, [selectedId, token, users]);
 
   if (selectedId) {
     const user = detail;

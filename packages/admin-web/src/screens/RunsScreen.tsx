@@ -17,6 +17,8 @@ type Props = {
   onBack: () => void;
 };
 
+const EMPTY_RUNS: AdminRun[] = [];
+
 function runTitle(item: Pick<AdminRun, "title" | "prompt">): string {
   return snippet(item.title || item.prompt, 56) || "未命名任务";
 }
@@ -31,7 +33,7 @@ export function RunsScreen({ token, runs, selectedId, tab, onTab, onOpen, onBack
   const [detailLoading, setDetailLoading] = useState(false);
   const [olderLoading, setOlderLoading] = useState(false);
 
-  const list = runs ?? [];
+  const list = runs ?? EMPTY_RUNS;
   const activeTab = tab || "all";
   const scoped = filterRunsByTab(list, activeTab);
   const filtered = useMemo(
@@ -87,7 +89,7 @@ export function RunsScreen({ token, runs, selectedId, tab, onTab, onOpen, onBack
     })()
       .catch((err) => setDetailError(err instanceof Error ? err.message : "读取对话失败"))
       .finally(() => setDetailLoading(false));
-  }, [list, selectedId, token]);
+  }, [runs, selectedId, token]);
 
   const loadOlder = () => {
     if (!selectedId || !snapshot?.nextBefore || olderLoading) return;
