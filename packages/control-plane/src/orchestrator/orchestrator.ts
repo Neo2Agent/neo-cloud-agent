@@ -561,6 +561,16 @@ function queueRun(run: Run, title = "两台云端电脑都在忙，已排队，�
   flushRun(run.id);
 }
 
+/** Cloud VM queue only — desk / remote-tools runs wait on a machine, not a loop slot. */
+export function isWaitingForCloudVm(run: Run): boolean {
+  return (
+    !isDeskToolsTarget(run.executionTarget) &&
+    !handles.has(run.id) &&
+    (run.status === "NOT_YET_STARTED" ||
+      ((run.status === "IDLE" || run.status === "ERROR") && hasPendingUserInbound(run.id)))
+  );
+}
+
 export async function tryStartQueued(): Promise<string | null> {
   if (startingQueued) {
     return null;
@@ -568,13 +578,7 @@ export async function tryStartQueued(): Promise<string | null> {
   startingQueued = true;
   try {
     const waiting = [...runs.values()]
-      .filter(
-        (run) =>
-          !isDeskToolsTarget(run.executionTarget) &&
-          !handles.has(run.id) &&
-          (run.status === "NOT_YET_STARTED" ||
-            ((run.status === "IDLE" || run.status === "ERROR") && hasPendingUserInbound(run.id))),
-      )
+      .filter(isWaitingForCloudVm)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     let started: string | null = null;
     for (const run of waiting) {
@@ -696,7 +700,9 @@ export async function expireIdleWorkers(at = Date.now()): Promise<string[]> {
     await reconcileDetachedVmSlots();
     return [];
   }
-  const queuedWaiting = [...runs.values()].some((run) => run.status === "NOT_YET_STARTED");
+  // Early yield only for cloud VM waiters (same filter as tryStartQueued). A stuck
+  // desk NOT_YET_STARTED must not kick every idle cloud slot within ~2s.
+  const queuedWaiting = [...runs.values()].some(isWaitingForCloudVm);
   const released: string[] = [];
   for (const run of runs.values()) {
     if (run.status !== "IDLE" || !handles.has(run.id) || !run.idleAt) {

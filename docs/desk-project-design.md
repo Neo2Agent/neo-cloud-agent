@@ -853,7 +853,7 @@ Desk 的 D1–D5 冻结后，Web 再做：
 
 ### A.1 槽到时间会不会自动释放？会不会有上一任文件干扰？
 
-会自动释放，默认 **15 分钟**空闲。`WORKER_IDLE_RELEASE_MS` 没设就是 `15 * 60_000`；设成 `0` 则不卸槽。控制面每 2 秒扫一次 `expireIdleWorkers`：Run 已是 `IDLE`、还挂着 worker、且 `now - idleAt >= ttl` 才释放。释放时 **不标 ERROR**，只发 `Released idle VM slot`。
+会自动释放，默认 **15 分钟**空闲。`WORKER_IDLE_RELEASE_MS` 没设就是 `15 * 60_000`；设成 `0` 则不卸槽。控制面每 2 秒扫一次 `expireIdleWorkers`：Run 已是 `IDLE`、还挂着 worker、且 `now - idleAt >= ttl` 才释放。另有一条捷径：若有**等云端 VM 槽**的排队（与 `tryStartQueued` 同过滤：非 desk tools、无 handle 的 `NOT_YET_STARTED` / 带跟进的 IDLE·ERROR），可提前让位；**Desk 本机排队不能触发这条捷径**。释放时 **不标 ERROR**，只发 `Released idle VM slot`。
 
 释放顺序（细则见 [workspace-persistence.md](./workspace-persistence.md)）：
 
