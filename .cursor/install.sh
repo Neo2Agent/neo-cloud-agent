@@ -49,4 +49,4 @@ pnpm install --frozen-lockfile
 #    the Vite dev server is not running.
 pnpm build:web
 
-echo "install: node $(node -v), pnpm $(pnpm -v), java $(java -version 2>&1 | awk -F'\"' 'NR==1{print $2; exit}'), mvn $(mvn -v 2>/dev/null | awk '/Apache Maven/{print $3; exit}'); workspace ready"
+echo "install: node $(node -v), pnpm $(pnpm -v), java $(java -version 2>&1 | awk -F'\"' 'NR==1{print $2; exit}'), mvn $(mvn -B -v 2>/dev/null | awk '/Apache Maven/{print $3; exit}'); workspace ready"
