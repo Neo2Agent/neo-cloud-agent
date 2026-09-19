@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { BUNDLED_SKILL_RAW } from "./bundled-skill-raw.js";
 import { BUNDLED_PLUGINS, bundledPluginById, pluginDigest } from "./bundled-plugins.js";
 import {
   assertSafeRelativePath,
@@ -11,6 +15,14 @@ import {
   sortPluginsForCatalog,
   type PluginInstall,
 } from "./plugin.js";
+
+test("inlined bundled skills match packages/contracts/skills", () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../skills");
+  assert.deepEqual(Object.keys(BUNDLED_SKILL_RAW).sort(), ["incident-brief", "pr-review", "release-notes", "repo-scout"]);
+  for (const [name, raw] of Object.entries(BUNDLED_SKILL_RAW)) {
+    assert.equal(raw, readFileSync(path.join(root, name, "SKILL.md"), "utf8"));
+  }
+});
 
 test("bundled plugins have stable slugs and valid SKILL.md", () => {
   assert.deepEqual(

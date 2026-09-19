@@ -15,7 +15,7 @@ import type {
 } from "@neo-cloud-agent/contracts/project";
 import type { CreateProjectAssetRequest, ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
-import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, Run } from "@neo-cloud-agent/contracts/run";
+import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
 import { DEFAULT_TRANSCRIPT_PAGE } from "@neo-cloud-agent/contracts/transcript";
 
 import { readSseEvents, shouldUseXhrSse, streamSseWithXhr } from "./sse.js";
@@ -188,6 +188,10 @@ export class MobileClient {
 
   getRun(id: string): Promise<Run> {
     return this.request("GET", `/v1/runs/${id}`);
+  }
+
+  patchRun(id: string, input: PatchRunRequest): Promise<Run> {
+    return this.request("PATCH", `/v1/runs/${id}`, input);
   }
 
   createRun(input: CreateRunRequest): Promise<Run> {
