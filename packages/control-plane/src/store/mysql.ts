@@ -164,6 +164,12 @@ CREATE TABLE IF NOT EXISTS plugin_installs (
   body JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL
 );
+CREATE TABLE IF NOT EXISTS loop_sessions (
+  run_id VARCHAR(191) PRIMARY KEY,
+  user_id VARCHAR(191) NOT NULL,
+  state_json JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL
+);
 `;
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -261,6 +267,21 @@ function asAutomation(value: unknown): Automation | null {
   }
   const item = value as Automation;
   return item.id && item.prompt && item.schedule ? item : null;
+}
+
+function asLoopState(value: unknown): Record<string, unknown> | null {
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -724,6 +745,19 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     },
     async deleteSession(id) {
       await query(`DELETE FROM sessions WHERE id = ?`, [id]);
+    },
+    async saveLoopSession(runId, userId, state) {
+      const updatedAt = mysqlDateTime(new Date().toISOString());
+      await query(
+        `INSERT INTO loop_sessions (run_id, user_id, state_json, updated_at)
+         VALUES (?, ?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE user_id = incoming.user_id, state_json = incoming.state_json, updated_at = incoming.updated_at`,
+        [runId, userId, JSON.stringify(state), updatedAt],
+      );
+    },
+    async loadLoopSession(runId) {
+      const result = await query(`SELECT state_json FROM loop_sessions WHERE run_id = ?`, [runId]);
+      return asLoopState(result.rows[0]?.state_json);
     },
   };
 }

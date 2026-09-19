@@ -8,6 +8,7 @@ import test from "node:test";
 process.env.WORKER_RUNTIME = "none";
 process.env.SPAWN_LOCAL_WORKER = "0";
 process.env.AGENT_KERNEL = "pi";
+process.env.NEO_LOOP_URL = "http://127.0.0.1:9";
 process.env.LLM_GATEWAY_JWT_SECRET = "test-secret";
 process.env.RUNS_DIR = mkdtempSync(path.join(tmpdir(), "neo-orch-"));
 process.env.WORKER_IDLE_RELEASE_MS = "0";
@@ -1445,3 +1446,45 @@ test("agentscope abort signals the live turn", async () => {
   }
 });
 });
+
+test("Cloud prefers agentscope when neo-loop is healthy; This Computer stays pi", async () => {
+  const { resetNeoLoopHealthForTest, setNeoLoopHealthForTest } = await import("../loop/health.js");
+  setNeoLoopHealthForTest(true);
+  try {
+    const cloud = await createRun({
+      prompt: "cloud loop when healthy",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    assert.equal(cloud.kernel, "agentscope");
+    assert.equal(takeInbound(cloud.id).length, 0);
+
+    const registered = newDesk("still-this-computer");
+    const local = await createRun({
+      prompt: "stay on this computer",
+      repoUrls: ["/tmp/desk-ws"],
+      source: "desk",
+      start: "inline",
+      target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+    });
+    assert.equal(local.kernel, "pi");
+    assert.equal(deskAssignmentForRun(local.id).neoLoopUrl, undefined);
+
+    const remoteDesk = newDesk("auto-remote");
+    const remote = await createRun({
+      prompt: "remote without explicit kernel",
+      repoUrls: ["/tmp/desk-ws"],
+      source: "desk",
+      start: "inline",
+      target: {
+        loop: "cloud",
+        tools: "desk",
+        deskId: remoteDesk.desk.id,
+        remoteControl: true,
+      },
+    });
+    assert.equal(remote.kernel, "agentscope");
+  } finally {
+    resetNeoLoopHealthForTest();
+  }
+});
+

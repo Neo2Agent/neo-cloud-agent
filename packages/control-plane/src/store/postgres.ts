@@ -161,6 +161,12 @@ CREATE TABLE IF NOT EXISTS plugin_installs (
   body JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS loop_sessions (
+  run_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  state_json JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 `;
 
 export interface PostgresMetadataStore extends AccountStore {
@@ -201,6 +207,8 @@ export interface PostgresMetadataStore extends AccountStore {
   saveDevice(item: Device): Promise<void>;
   loadDevices(): Promise<Device[]>;
   deleteDevice(id: string): Promise<void>;
+  saveLoopSession(runId: string, userId: string, state: Record<string, unknown>): Promise<void>;
+  loadLoopSession(runId: string): Promise<Record<string, unknown> | null>;
 }
 
 function asRecord(value: unknown): PersistedRun | null {
@@ -298,6 +306,21 @@ function asExpertPolicy(value: unknown): BundledExpertPolicyDocument | null {
   }
   const item = value as BundledExpertPolicyDocument;
   return item.version === 1 && item.experts && typeof item.experts === "object" ? item : null;
+}
+
+function asLoopState(value: unknown): Record<string, unknown> | null {
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return null;
 }
 
 function parseJson<T>(value: unknown, map: (item: unknown) => T | null): T | null {
@@ -744,6 +767,22 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     },
     async deleteSession(id) {
       await query(`DELETE FROM sessions WHERE id = $1`, [id]);
+    },
+    async saveLoopSession(runId, userId, state) {
+      const updatedAt = new Date().toISOString();
+      await query(
+        `INSERT INTO loop_sessions (run_id, user_id, state_json, updated_at)
+         VALUES ($1, $2, $3::jsonb, $4::timestamptz)
+         ON CONFLICT (run_id) DO UPDATE SET
+           user_id = EXCLUDED.user_id,
+           state_json = EXCLUDED.state_json,
+           updated_at = EXCLUDED.updated_at`,
+        [runId, userId, JSON.stringify(state), updatedAt],
+      );
+    },
+    async loadLoopSession(runId) {
+      const result = await query(`SELECT state_json FROM loop_sessions WHERE run_id = $1`, [runId]);
+      return asLoopState(result.rows[0]?.state_json);
     },
   };
 }

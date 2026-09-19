@@ -1,4 +1,4 @@
-import type { AgentKernel } from "./kernel.js";
+import { defaultAgentKernel, parseAgentKernel, type AgentKernel, type KernelEnv } from "./kernel.js";
 
 /** Lifecycle of one cloud-agent execution. */
 export type RunStatus =
@@ -160,6 +160,31 @@ export function isRemoteControlTarget(
   return Boolean(
     target?.remoteControl && target.loop === "cloud" && target.tools === "desk" && target.deskId,
   );
+}
+
+/**
+ * Cursor-shaped kernel pick. Explicit `kernel` always wins.
+ * This Computer stays colocated pi. Remote needs agentscope.
+ * Cloud uses agentscope when neo-loop is healthy, else AGENT_KERNEL / pi.
+ */
+export function resolveRunKernel(
+  input: { kernel?: unknown; target?: ExecutionTarget | null },
+  env: KernelEnv = {},
+): AgentKernel {
+  const requested = parseAgentKernel(input.kernel);
+  if (requested) {
+    return requested;
+  }
+  if (isDeskTarget(input.target)) {
+    return "pi";
+  }
+  if (isRemoteControlTarget(input.target)) {
+    return "agentscope";
+  }
+  if (env.NEO_LOOP_AVAILABLE === "1" || env.NEO_LOOP_AVAILABLE === "true") {
+    return "agentscope";
+  }
+  return defaultAgentKernel(env);
 }
 
 export interface Run {

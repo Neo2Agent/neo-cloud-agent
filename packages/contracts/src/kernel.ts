@@ -7,6 +7,8 @@ export const AGENT_KERNELS: readonly AgentKernel[] = ["pi", "agentscope"];
 export type KernelEnv = {
   AGENT_KERNEL?: string;
   WORKER_ROLE?: string;
+  /** Set by the control plane after probing neo-loop /health. Cloud prefers agentscope when "1". */
+  NEO_LOOP_AVAILABLE?: string;
 };
 
 export function parseAgentKernel(value: unknown): AgentKernel | undefined {

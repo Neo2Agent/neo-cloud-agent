@@ -20,6 +20,7 @@ no_restart=0
 remote_build=0
 from_rev="${DEPLOY_FROM_REV:-}"
 skip_health=0
+enable_loop=0
 
 usage() {
   cat <<'EOF'
@@ -37,6 +38,8 @@ Ship this git checkout to ssh host `lighthouse` (62.234.211.200).
   --remote-build    Build web/admin on the host instead of this machine.
                     neo-loop jar is always built on this machine (needs mvn)
   --skip-health     Do not wait for /health after restart
+  --enable-loop     Enable and start neo-loop. AGENT_KERNEL stays pi (fallback).
+                    Cloud/Remote use agentscope when :8082 /health is ok.
   -h, --help        Show this help
 
 Env: DEPLOY_HOST, DEPLOY_REMOTE_DIR, DEPLOY_FROM_REV
@@ -55,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     --no-restart) no_restart=1 ;;
     --remote-build) remote_build=1 ;;
     --skip-health) skip_health=1 ;;
+    --enable-loop) enable_loop=1 ;;
     -h|--help)
       usage
       exit 0
@@ -132,7 +136,12 @@ ensure_production_kernel() {
   upsert_remote_env AGENT_KERNEL pi
   upsert_remote_env NEO_LOOP_URL "http://127.0.0.1:8082"
   if [[ "$no_restart" -eq 1 ]]; then
-    log "kernel: AGENT_KERNEL=pi; --no-restart skips neo-loop disable"
+    log "kernel: AGENT_KERNEL=pi; --no-restart skips neo-loop enable/disable"
+    return 0
+  fi
+  if [[ "$enable_loop" -eq 1 ]]; then
+    log "loop: enable neo-loop (Cloud prefers agentscope when healthy; AGENT_KERNEL=pi fallback)"
+    ssh_h "sudo systemctl enable --now neo-loop"
     return 0
   fi
   if ssh_h 'systemctl is-enabled neo-loop >/dev/null 2>&1 || systemctl is-active neo-loop >/dev/null 2>&1'; then
@@ -446,6 +455,11 @@ if [[ "${#UNITS_TO_RESTART[@]}" -gt 0 ]]; then
   log "restart: $((SECONDS - restart_started))s"
 else
   log "restart: skip"
+fi
+
+if [[ "$enable_loop" -eq 1 && "$no_restart" -eq 0 ]]; then
+  log "restart: neo-loop"
+  ssh_h "sudo systemctl restart neo-loop"
 fi
 
 if [[ "$skip_health" -eq 0 ]]; then

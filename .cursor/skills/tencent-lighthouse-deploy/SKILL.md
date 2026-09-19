@@ -170,17 +170,18 @@ LLM_UPSTREAM=mock
 
 ## neo-loop（可选 Java 内核）
 
-`services/neo-loop` 是 Java AgentScope turn 引擎。现网默认 `AGENT_KERNEL=pi`：Web / CLI 不传 `kernel` 就走 worker 内 pi loop。要走 Java 才 `enable --now neo-loop` 并设 `AGENT_KERNEL=agentscope`。Caddy 和轻量防火墙都不要碰 `8082`。浏览器继续只打 `/v1`。
+`services/neo-loop` 是 Java AgentScope turn 引擎。`AGENT_KERNEL=pi` 仍是 Cloud 在 neo-loop 不健康时的回退。This Computer 永远 pi。Remote 以及 neo-loop `/health` 通时的 Cloud 走 agentscope。Caddy 和轻量防火墙都不要碰 `8082`。浏览器继续只打 `/v1`。
 
 `deploy.sh` 会：
 
 1. 本机 `mvn -f services/neo-loop -DskipTests package`（有 Maven 且计划要打 jar 时），把 `neo-loop-0.1.0.jar` 拷到主机
-2. 安装 [units/neo-loop.service](units/neo-loop.service)，但**不会** `enable --now`
+2. 安装 [units/neo-loop.service](units/neo-loop.service)
 3. 只改 `.env` 里的 `AGENT_KERNEL=pi`，不要 `cat` 整个文件
-4. 若主机上 `neo-loop` 已 enable / active，则 `disable --now`
-5. 健康检查只要求三个 Node unit `ok=true`；`:8082/health` 可以失败
+4. 默认若主机上 `neo-loop` 已 enable / active，则 `disable --now`
+5. `--enable-loop` 时 `enable --now` 并重启 `neo-loop`。健康检查仍只硬要求三个 Node unit；`:8082/health` 通了之后新 Cloud Run 会走 agentscope
+6. 健康检查只要求三个 Node unit `ok=true`；没加 `--enable-loop` 时 `:8082/health` 可以失败
 
-不要把 Provider Key 写进 loop 的环境。临时走 Java：请求带 `kernel:"agentscope"`，或 `.env` 写 `AGENT_KERNEL=agentscope` 后 `enable --now neo-loop` 并重启控制面。下一次 `deploy.sh` 会再切回 pi。
+不要把 Provider Key 写进 loop 的环境。不要把全局 `AGENT_KERNEL` 改成 agentscope（会误伤回退路径）。开 Cloud 对齐用 `--enable-loop`。下一次不带该旗标的 `deploy.sh` 仍会关掉 neo-loop。
 
 ## 排障
 

@@ -650,8 +650,8 @@ pnpm typecheck && pnpm test
 ### 第 3 期 — 跟进、卸槽、恢复
 
 - steer / follow_up / abort 按 §5.3
-- `AgentStateStore` 接 Redis/MySQL
-- IDLE 卸槽后跟进：重新 provision + 同一 sessionId
+- `AgentStateStore` 经控制面 Redis/MySQL（`loop_sessions`）+ 文件兜底；`loop_turn_steps` 仍缺
+- IDLE 卸槽后跟进：重新 provision + 同一 sessionId（编排单测已覆盖）
 - 心跳拆 `loop` / `tools` 两路
 - transcript 消费 `turn.rewind`
 

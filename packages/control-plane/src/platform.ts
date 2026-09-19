@@ -23,6 +23,7 @@ import { connectRedis, parseHotEvent, runChannel, runStreamKey, type RedisHotCli
 import { attachRateLimitRedis, resetRateLimitStore } from "./security/rate-limit.js";
 import { reloadPersistedState } from "./orchestrator/orchestrator.js";
 import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
+import { attachLoopSessionBackends, resetLoopSessionBackends } from "./loop/session-store.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
 import { persistRunRecord, persistWorkerLease, setPersistHooks } from "./store/persist.js";
 import { mergeStoredRun } from "./store/run-record.js";
@@ -74,6 +75,7 @@ export function resetPlatformForTests(): void {
   attachHotBus(null);
   attachRateLimitRedis(null);
   resetRateLimitStore();
+  resetLoopSessionBackends();
 }
 
 async function attachRedisBus(redisUrl: string): Promise<void> {
@@ -104,10 +106,12 @@ async function doStart(): Promise<void> {
   if (redisUrl) {
     await attachRedisBus(redisUrl);
   }
+  attachLoopSessionBackends({ redis, sql: null });
   if (databaseUrl) {
     const connected = await connectDatabase(databaseUrl);
     metadata = connected.store;
     metadataKind = connected.kind;
+    attachLoopSessionBackends({ redis, sql: metadata });
     setAccountStore(metadata, connected.kind);
     setPersistHooks({
       onRun: (record) => {

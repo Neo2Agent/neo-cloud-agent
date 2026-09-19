@@ -58,6 +58,11 @@ test("postgres store upserts run JSON, events, and users", async () => {
   assert.equal(calls[1]?.values[1], "user_ada");
   assert.equal(calls[1]?.values[3], "hello postgres");
 
+  await store.saveLoopSession("run-pg-1", "user_ada", { messages: [{ role: "user", content: "hi" }] });
+  assert.match(calls.at(-1)?.text ?? "", /INSERT INTO loop_sessions/);
+  rowsByQuery.other = [{ state_json: { messages: [{ role: "user", content: "hi" }] } }];
+  assert.deepEqual(await store.loadLoopSession("run-pg-1"), { messages: [{ role: "user", content: "hi" }] });
+
   const event = {
     id: "evt-1",
     runId: "run-pg-1",

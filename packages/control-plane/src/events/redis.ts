@@ -7,6 +7,7 @@ export type RedisHotClient = {
   xRange(key: string): Promise<string[]>;
   incrWithTtl(key: string, ttlMs: number): Promise<number>;
   get(key: string): Promise<string | null>;
+  set(key: string, value: string, ttlMs?: number): Promise<void>;
 };
 
 export function runChannel(runId: string): string {
@@ -20,6 +21,7 @@ export function runStreamKey(runId: string): string {
 export function createMemoryRedis(): RedisHotClient {
   const streams = new Map<string, string[]>();
   const counters = new Map<string, { value: number; expireAt: number }>();
+  const kv = new Map<string, { value: string; expireAt: number | null }>();
   const patterns: Array<{ pattern: RegExp; fn: (message: string, channel: string) => void }> = [];
 
   function liveCounter(key: string): { value: number; expireAt: number } | undefined {
@@ -68,8 +70,22 @@ export function createMemoryRedis(): RedisHotClient {
       return existing.value;
     },
     async get(key) {
+      const row = kv.get(key);
+      if (row) {
+        if (row.expireAt != null && row.expireAt <= Date.now()) {
+          kv.delete(key);
+        } else {
+          return row.value;
+        }
+      }
       const existing = liveCounter(key);
       return existing ? String(existing.value) : null;
+    },
+    async set(key, value, ttlMs) {
+      kv.set(key, {
+        value,
+        expireAt: ttlMs && ttlMs > 0 ? Date.now() + ttlMs : null,
+      });
     },
   };
 }
@@ -117,6 +133,13 @@ export async function connectRedis(url: string): Promise<RedisHotClient> {
     },
     async get(key) {
       return limiter.get(key);
+    },
+    async set(key, value, ttlMs) {
+      if (ttlMs && ttlMs > 0) {
+        await client.set(key, value, { PX: Math.max(1, Math.floor(ttlMs)) });
+        return;
+      }
+      await client.set(key, value);
     },
   };
 }
