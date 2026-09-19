@@ -23,6 +23,7 @@ Cloud agent service (control plane + LLM gateway + in-VM worker running pi-agent
 
 ### Testing
 - `pnpm typecheck` and `pnpm test` (unit + in-process mock e2e, including `packages/cli`) are the reliable checks.
+- `pnpm test:loop` / `mvn -f services/neo-loop test` needs JDK 21 + Maven. `bash .cursor/install.sh` installs both if they are missing.
 - `pnpm test:e2e` needs an already-running control-plane on `:8080`. Prefer `pnpm test` or `pnpm neo` against that server.
 - Production-shaped hosts use `WORKER_RUNTIME=vm` (loop slots, no Docker/KVM). Idle slots persist the workspace then unmount after `WORKER_IDLE_RELEASE_MS`.
 
