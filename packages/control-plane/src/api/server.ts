@@ -39,8 +39,6 @@ import {
   parseAutomationSchedule,
   parseLlmSettingsRequest,
   parsePatchRunRequest,
-  publicLlmSettings,
-  readLlmSettings,
   readNewApiInfo,
   resolveModelLimits,
   writeLlmSettings,
@@ -51,6 +49,7 @@ import {
   MEMORY_STATUS,
   memoryErrorMessage,
 } from "@neo-cloud-agent/contracts";
+import { publishedLlmSettings } from "../llm/catalog.js";
 import { eventsForRun, lastEventIdForRun } from "../events/bus.js";
 import { snapshotForRun } from "../events/snapshot.js";
 import {
@@ -497,7 +496,7 @@ export function createApiServer() {
 
       if (method === "GET" && path === "/health") {
         const config = getConfig();
-        const llm = publicLlmSettings(readLlmSettings());
+        const llm = await publishedLlmSettings();
         send(res, 200, {
           ok: true,
           service: "control-plane",
@@ -505,6 +504,8 @@ export function createApiServer() {
           defaultModel: config.defaultModel,
           llmUpstream: llm.configured ? llm.upstream : (config.llmUpstream ?? "mock"),
           llmModel: llm.model,
+          llmModels: llm.models,
+          llmModelsSource: llm.modelsSource,
           llmContextWindow: resolveModelLimits(llm.model)?.contextWindow ?? null,
           llmConfigured: llm.configured,
           newApi: readNewApiInfo(),
@@ -895,7 +896,7 @@ export function createApiServer() {
           return;
         }
         if (method === "GET" && path === "/v1/settings/llm") {
-          send(res, 200, publicLlmSettings(readLlmSettings()));
+          send(res, 200, await publishedLlmSettings());
           return;
         }
         if (method === "POST" && path === "/v1/settings/llm") {
@@ -904,7 +905,8 @@ export function createApiServer() {
             return;
           }
           try {
-            send(res, 200, writeLlmSettings(parseLlmSettingsRequest(await readJson(req))));
+            writeLlmSettings(parseLlmSettingsRequest(await readJson(req)));
+            send(res, 200, await publishedLlmSettings());
           } catch (error) {
             const message = error instanceof Error ? error.message : "invalid_llm_settings";
             send(res, 400, { error: message });
