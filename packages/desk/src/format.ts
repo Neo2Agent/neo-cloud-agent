@@ -1,8 +1,7 @@
-import { resolveDeepseekChatModel } from "@neo-cloud-agent/contracts/llm-ids";
+import { resolvePublicChatModel } from "@neo-cloud-agent/contracts/llm-ids";
 
 export function resolveChatModel(upstream?: string | null, model?: string | null, _hasImages = false): string {
-  if (upstream === "openai") return "gpt-4o-mini";
-  return resolveDeepseekChatModel(model);
+  return resolvePublicChatModel(upstream, model);
 }
 
 export function formatDuration(start: string, end?: string | null, now = new Date()): string {

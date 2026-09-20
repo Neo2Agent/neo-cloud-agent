@@ -12,7 +12,8 @@ test("formatDuration prints seconds then minutes", () => {
 test("resolveChatModel pins DeepSeek to Flash 4.1 including image turns", () => {
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-flash");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-pro", false), "deepseek-flash");
-  assert.equal(resolveChatModel("openai", "gpt-4o", true), "gpt-4o-mini");
+  assert.equal(resolveChatModel("openai", "gpt-4o", true), "gpt-4o");
+  assert.equal(resolveChatModel("deepseek", "neo/step"), "step-5-preview");
 });
 
 test("toolArgPreview prefers bash command and path", () => {

@@ -1,5 +1,5 @@
 import type { PublicLlmSettings } from "@neo-cloud-agent/contracts";
-import { DEEPSEEK_FLASH_MODEL } from "@neo-cloud-agent/contracts/llm-ids";
+import { CHAT_MODELS } from "@neo-cloud-agent/contracts/llm-ids";
 import { decodeExpertPick, encodeExpertPick, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
@@ -272,7 +272,14 @@ export function App() {
   const [target, setTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [folder, setFolder] = useState("");
   const [mode] = useState<"agent" | "ask">("agent");
-  const [llm, setLlm] = useState<PublicLlmSettings>({ configured: false, upstream: "mock", model: null, baseUrl: null });
+  const [llm, setLlm] = useState<PublicLlmSettings>({
+    configured: false,
+    upstream: "mock",
+    model: null,
+    baseUrl: null,
+    models: CHAT_MODELS.map((item) => ({ ...item })),
+    modelsSource: "static",
+  });
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [modelMenu, setModelMenu] = useState(false);
@@ -405,11 +412,17 @@ export function App() {
       model: settings.model ?? null,
       baseUrl: settings.baseUrl ?? null,
       newApi: settings.newApi ?? { url: null, consoleUrl: null },
+      models: settings.models?.length ? settings.models : CHAT_MODELS.map((item) => ({ ...item })),
+      modelsSource: settings.modelsSource ?? "static",
     };
     setLlm(next);
     const stored = loadSavedModels();
     setSavedModels(stored);
-    const names = [next.model, ...stored.map((item) => item.name)].filter((item): item is string => Boolean(item));
+    const names = [
+      ...next.models.map((item) => item.id),
+      next.model,
+      ...stored.map((item) => item.name),
+    ].filter((item): item is string => Boolean(item));
     setSelectedModel((cur) => (cur && names.includes(cur) ? cur : names[0] || ""));
     if (next.model) setModelName(next.model);
     if (next.baseUrl) setModelBaseUrl(next.baseUrl);
@@ -1341,7 +1354,7 @@ export function App() {
 
   const saveModel = async () => {
     const newApiManaged = Boolean(llm.newApi?.consoleUrl || llm.newApi?.url);
-    const name = newApiManaged ? DEEPSEEK_FLASH_MODEL : modelName.trim();
+    const name = newApiManaged ? selectedModel || llm.model || CHAT_MODELS[0]!.id : modelName.trim();
     if (!name || modelBusy) return;
     if (!newApiManaged && !llm.configured && !modelKey.trim()) return;
     setModelBusy(true);
@@ -1475,11 +1488,14 @@ export function App() {
   };
 
   const modelNames = useMemo(() => {
-    const names = [llm.model, selectedModel, ...savedModels.map((item) => item.name)].filter(
-      (item): item is string => Boolean(item),
-    );
+    const names = [
+      ...llm.models.map((item) => item.id),
+      llm.model,
+      selectedModel,
+      ...savedModels.map((item) => item.name),
+    ].filter((item): item is string => Boolean(item));
     return [...new Set(names)];
-  }, [llm.model, savedModels, selectedModel]);
+  }, [llm.model, llm.models, savedModels, selectedModel]);
 
   const branch = current?.branchName || "";
 

@@ -23,6 +23,7 @@ test("mergeSpokenText appends without doubling spaces", () => {
 test("modelShortLabel maps DeepSeek ids", () => {
   assert.equal(modelShortLabel("deepseek-flash"), "Flash");
   assert.equal(modelShortLabel("deepseek-v4-pro"), "Flash");
+  assert.equal(modelShortLabel("step-5-preview"), "Step 5");
 });
 
 test("holdPadLabel is click-to-talk when the engine exists", () => {

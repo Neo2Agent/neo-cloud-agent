@@ -21,7 +21,7 @@ import { schedulePreset } from "../automations";
 import { cloudFollowUp, cloudRunRequest } from "../create-run";
 import { acceptImages, imageHint, overImageBudget } from "../images";
 import { ImagePickError, pickImagesFromLibrary } from "../native/pick-images";
-import { chatModelShort, resolveChatModel } from "../format";
+import { CHAT_MODELS, chatModelShort, resolveChatModel } from "../format";
 import { listenNeoDeepLinks } from "../native/linking";
 import { attachForegroundPushPolicy, listenNotificationOpen, registerExpoPushDevice } from "../native/push";
 import { DEFAULT_API_URL } from "../place";
@@ -82,6 +82,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [envId, setEnvId] = useState("");
   const [model, setModel] = useState("deepseek-flash");
+  const [chatModels, setChatModels] = useState(CHAT_MODELS);
   const [current, setCurrent] = useState<Run | null>(null);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [experts, setExperts] = useState<Expert[]>([]);
@@ -181,6 +182,9 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       setNeoAvatar(me.user.neoAvatar ?? null);
     }
     if (settings?.model) setModel(resolveChatModel(settings.model));
+    if (settings?.models?.length) {
+      setChatModels(settings.models.map((item) => ({ ...item, short: chatModelShort(item.id) })));
+    }
     setEnvId((current) => nextEnvId(current, environments.environments));
   }, [client, token]);
 
@@ -774,6 +778,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       sending={sending}
       canStop={Boolean(current) && gate.running}
       model={model}
+      models={chatModels}
       images={images}
       imageHint={imageHint(images)}
       onModel={setModel}

@@ -283,6 +283,7 @@ export function IslandComposer(props: {
   model: string;
   images?: ImageRef[];
   imageHint?: string;
+  models?: Array<{ id: string; label: string }>;
   onModel: (value: string) => void;
   onPrompt: (value: string) => void;
   onPickImages?: (files: FileList | null) => void;
@@ -440,7 +441,7 @@ export function IslandComposer(props: {
             </button>
             {menuOpen ? (
               <div className="composer-model-menu" role="listbox" aria-label="模型">
-                {CHAT_MODELS.map((item) => (
+                {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
                   <button
                     key={item.id}
                     type="button"

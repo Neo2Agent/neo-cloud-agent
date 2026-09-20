@@ -11,8 +11,12 @@ export function mergeSpokenText(current: string, spoken: string): string {
   return base ? `${base} ${next}` : next;
 }
 
-export function modelShortLabel(_model: string): string {
-  return "Flash";
+export function modelShortLabel(model: string): string {
+  const id = model.trim();
+  if (/step-5|neo\/step|stepfun|^step5$|^step$/i.test(id)) return "Step 5";
+  if (/^gpt-|^o[1-9]|^chatgpt/i.test(id)) return "GPT";
+  if (!id || /deepseek|^ds$|neo\/ds/i.test(id)) return "Flash";
+  return id.length > 16 ? id.slice(0, 16) : id;
 }
 
 export function holdPadLabel(input: {
