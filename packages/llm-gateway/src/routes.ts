@@ -1,31 +1,36 @@
-import { canonicalizeLlmModel, DEEPSEEK_FLASH_MODEL, visionModelFor } from "@neo-cloud-agent/contracts";
+import {
+  canonicalizeLlmModel,
+  DEEPSEEK_FLASH_MODEL,
+  isDeepseekAlias,
+  isStepfunModel,
+  STEP_5_PREVIEW_MODEL,
+  visionModelFor,
+} from "@neo-cloud-agent/contracts";
 
 /** Map the public model id (what the Run stores) to an upstream model id. */
 export function resolveUpstreamModel(requested: string, fallback: string): string {
-  const routes: Record<string, string> = {
+  const id = requested.trim();
+  if (isStepfunModel(id)) {
+    return STEP_5_PREVIEW_MODEL;
+  }
+  if (isDeepseekAlias(id)) {
+    return DEEPSEEK_FLASH_MODEL;
+  }
+  const legacy: Record<string, string> = {
     "neo/sonnet": fallback,
     "neo-sonnet": fallback,
     sonnet: fallback,
-    "neo/deepseek": fallback,
-    "neo/ds": fallback,
-    "neo-deepseek": fallback,
-    ds: fallback,
-    deepseek: fallback,
-    "deepseek-chat": DEEPSEEK_FLASH_MODEL,
-    "deepseek-reasoner": DEEPSEEK_FLASH_MODEL,
-    "deepseek-flash": DEEPSEEK_FLASH_MODEL,
-    "deepseek-v4-flash": DEEPSEEK_FLASH_MODEL,
-    "deepseek-pro": DEEPSEEK_FLASH_MODEL,
-    "deepseek-v4-pro": DEEPSEEK_FLASH_MODEL,
-    "deepseek-vision": DEEPSEEK_FLASH_MODEL,
-    "deepseek-flash-vision": DEEPSEEK_FLASH_MODEL,
-    "deepseek-v4-flash-vision": DEEPSEEK_FLASH_MODEL,
-    "deepseek-v4-flash-vision-exp": DEEPSEEK_FLASH_MODEL,
     "neo/gpt": process.env.LLM_UPSTREAM_GPT_MODEL ?? "gpt-4o",
   };
-  const mapped = routes[requested] ?? fallback;
-  const upstream = /^gpt-|^o[1-9]|^chatgpt/i.test(mapped) ? "openai" : "deepseek";
-  return canonicalizeLlmModel(upstream, mapped);
+  if (Object.hasOwn(legacy, id)) {
+    const mapped = legacy[id]!;
+    const upstream = /^gpt-|^o[1-9]|^chatgpt/i.test(mapped) ? "openai" : "deepseek";
+    return canonicalizeLlmModel(upstream, mapped);
+  }
+  if (!id) {
+    return canonicalizeLlmModel("deepseek", fallback);
+  }
+  return canonicalizeLlmModel("deepseek", id);
 }
 
 export function messagesHaveImages(messages?: unknown[]): boolean {
