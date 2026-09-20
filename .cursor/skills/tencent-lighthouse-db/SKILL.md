@@ -107,6 +107,8 @@ NEW_API_CRYPTO_SECRET
 
 New API 控制台：`http://101.42.105.230:3000`（它自己的 root 登录）。Gateway 上游：`http://101.42.105.230:3000/v1`。首次拉起用 [provision-new-api.sh](provision-new-api.sh)，再 `docker compose up -d`，再 [bootstrap-new-api.sh](bootstrap-new-api.sh)（DeepSeek 渠道 + `neo-gateway` 令牌）。令牌只写在机上 `/home/ubuntu/db/.new-api-token`，root 口令只写在 `/home/ubuntu/db/.new-api-admin`，都不要回传。
 
+在 DeepSeek 旁边加阶跃 `step-5-preview`（不替换现有渠道）：把单行 Key 写到库机 `/home/ubuntu/db/.stepfun-channel-key`（`chmod 600`），或导出 `STEPFUN_API_KEY` / `STEP_API_KEY`，再跑 [add-stepfun-channel.sh](add-stepfun-channel.sh)。不要把 Key 打进聊天或 git。
+
 把令牌接到应用机 Gateway / 对话页（不打印值）：
 
 ```
