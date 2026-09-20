@@ -25,6 +25,8 @@ export type PublicLlmSettings = {
   upstream: string;
   model: string | null;
   baseUrl: string | null;
+  models?: Array<{ id: string; label: string }>;
+  modelsSource?: "newapi" | "static";
 };
 
 /** `GET /v1/runs/:id/artifacts`. `url` is already signed, so it needs no Bearer. */

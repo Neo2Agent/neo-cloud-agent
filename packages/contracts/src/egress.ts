@@ -3,6 +3,8 @@ import type { EgressMode, EgressPolicy } from "./environment.js";
 /** Package registries and public SCM hosts included in `default_plus_allowlist`. */
 export const DEFAULT_EGRESS_DOMAINS = [
   "api.deepseek.com",
+  "api.stepfun.com",
+  "api.stepfun.ai",
   "api.openai.com",
   "api.anthropic.com",
   "github.com",

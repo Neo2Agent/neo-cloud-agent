@@ -12,7 +12,7 @@ import { createGatewayServer } from "./server.js";
 test("rewrites public model ids to the upstream fallback", () => {
   const rewritten = rewriteBody({ model: "neo/sonnet", messages: [] }, "gpt-4o-mini");
   assert.equal(rewritten.model, "gpt-4o-mini");
-  assert.equal(resolveUpstreamModel("unknown-model", "gpt-4o-mini"), "gpt-4o-mini");
+  assert.equal(resolveUpstreamModel("unknown-model", "gpt-4o-mini"), "unknown-model");
 });
 
 test("caps and always sets max_tokens so New API cannot reserve 384k output", () => {
@@ -46,6 +46,18 @@ test("maps DeepSeek public ids and retired aliases to V4.1 Flash", () => {
   assert.equal(resolveUpstreamModel("deepseek-reasoner", "deepseek-chat"), "deepseek-flash");
   assert.equal(resolveUpstreamModel("deepseek-v4-pro", "deepseek-flash"), "deepseek-flash");
   assert.equal(resolveUpstreamModel("deepseek-v4-flash-vision-exp", "deepseek-flash"), "deepseek-flash");
+});
+
+test("passes Step 5 Preview through and defaults reasoning_effort", () => {
+  assert.equal(resolveUpstreamModel("neo/step", "deepseek-flash"), "step-5-preview");
+  assert.equal(resolveUpstreamModel("step-5-preview", "deepseek-flash"), "step-5-preview");
+  const rewritten = rewriteBody({ model: "neo/step", messages: [] }, "deepseek-flash");
+  assert.equal(rewritten.model, "step-5-preview");
+  assert.equal(rewritten.reasoning_effort, "medium");
+  const kept = rewriteBody({ model: "step-5-preview", reasoning_effort: "high", messages: [] }, "deepseek-flash");
+  assert.equal(kept.reasoning_effort, "high");
+  const flash = rewriteBody({ model: "deepseek-flash", messages: [] }, "deepseek-flash");
+  assert.equal(flash.reasoning_effort, undefined);
 });
 
 test("rewriteBody keeps V4.1 Flash when messages carry images", () => {

@@ -1,4 +1,3 @@
-import { DEEPSEEK_FLASH_MODEL } from "@neo-cloud-agent/contracts/llm-ids";
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
@@ -375,7 +374,6 @@ export function SettingsPage({
   };
   const consoleUrl = newApi?.consoleUrl || newApi?.url || "";
   const managed = Boolean(consoleUrl);
-  const selectedModel = DEEPSEEK_FLASH_MODEL;
   const current = SETTINGS_SECTIONS.find((item) => item.id === section) ?? SETTINGS_SECTIONS[0];
   return (
     <Page>
@@ -449,7 +447,7 @@ export function SettingsPage({
               {managed ? (
                 <>
                   <p className="hint">
-                    DeepSeek 只走 Flash 4.1（{selectedModel}，原生看图）。Pro 已下线。对话走控制面 Gateway，再打 New API。不要在 Desk 里贴上游 Key。
+                    渠道在 New API。对话里选模型（默认 Flash 4.1，也可选 Step 5 Preview）。不要在 Desk 里贴上游 Key。
                   </p>
                   <a className="link-btn" href={consoleUrl} target="_blank" rel="noreferrer">
                     打开 New API 控制台

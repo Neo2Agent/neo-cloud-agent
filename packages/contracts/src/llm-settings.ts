@@ -3,22 +3,38 @@ import path from "node:path";
 import {
   canonicalizeLlmModel,
   defaultLlmModel,
+  staticChatCatalog,
+  type ChatModelOption,
+  type LlmModelsSource,
   type LlmUpstreamMode,
 } from "./llm-ids.js";
 
-export type { LlmUpstreamMode } from "./llm-ids.js";
+export type { ChatModelOption, LlmModelsSource, LlmUpstreamMode } from "./llm-ids.js";
 export {
   canonicalizeLlmModel,
+  chatModelLabel,
+  chatModelShortLabel,
+  CHAT_MODELS,
+  decorateCatalogIds,
   DEEPSEEK_CHAT_MODELS,
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
   DEEPSEEK_VISION_MODEL,
   deepseekModelLabel,
   defaultLlmModel,
+  isChatCatalogModel,
+  isDeepseekAlias,
   isDeepseekFlashModel,
   isDeepseekProModel,
   isDeepseekVisionModel,
+  isStepfunModel,
   resolveDeepseekChatModel,
+  resolveCatalogSelection,
+  resolvePublicChatModel,
+  staticChatCatalog,
+  STEP_5_PREVIEW_LABEL,
+  STEP_5_PREVIEW_MODEL,
+  stepfunModelLabel,
   visionModelFor,
 } from "./llm-ids.js";
 
@@ -37,6 +53,8 @@ export interface PublicLlmSettings {
   model: string | null;
   baseUrl: string | null;
   newApi?: NewApiPublicInfo;
+  models: ChatModelOption[];
+  modelsSource: LlmModelsSource;
 }
 
 export function readNewApiInfo(env: NodeJS.ProcessEnv = process.env): NewApiPublicInfo {
@@ -185,8 +203,9 @@ export function writeLlmSettings(settings: LlmSettingsRequest, root?: string): P
 
 export function publicLlmSettings(settings: LlmSettings | null): PublicLlmSettings {
   const newApi = readNewApiInfo();
+  const catalog = staticChatCatalog();
   if (!settings) {
-    return { configured: false, upstream: "mock", model: null, baseUrl: null, newApi };
+    return { configured: false, upstream: "mock", model: null, baseUrl: null, newApi, ...catalog };
   }
   return {
     configured: Boolean(settings.apiKey) && settings.upstream !== "mock",
@@ -198,5 +217,6 @@ export function publicLlmSettings(settings: LlmSettings | null): PublicLlmSettin
         : null,
     baseUrl: settings.baseUrl ?? null,
     newApi,
+    ...catalog,
   };
 }

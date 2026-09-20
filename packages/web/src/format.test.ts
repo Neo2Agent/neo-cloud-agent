@@ -8,6 +8,7 @@ import {
   formatUsage,
   formatWhen,
   modelLabel,
+  nextChatModel,
   parseUnifiedDiff,
   resolveChatModel,
   runListPlaceSuffix,
@@ -35,9 +36,15 @@ test("modelLabel and resolveChatModel pin DeepSeek to Flash 4.1", () => {
   assert.equal(modelLabel("deepseek", "deepseek-flash"), "DeepSeek Flash 4.1");
   assert.equal(modelLabel("deepseek", "deepseek-v4-pro"), "DeepSeek Flash 4.1");
   assert.equal(modelLabel("deepseek", "deepseek-v4-flash-vision-exp"), "DeepSeek Flash 4.1");
+  assert.equal(modelLabel("deepseek", "step-5-preview"), "Step 5 Preview");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash"), "deepseek-flash");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-flash");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-pro"), "deepseek-flash");
+  assert.equal(resolveChatModel("deepseek", "neo/step"), "step-5-preview");
+  assert.equal(resolveChatModel("mock", null), "deepseek-flash");
+  assert.equal(resolveChatModel("mock", "mock"), "deepseek-flash");
+  assert.equal(nextChatModel("deepseek-flash"), "step-5-preview");
+  assert.equal(nextChatModel("step-5-preview"), "deepseek-flash");
 });
 
 test("formatUsage prints total tokens", () => {

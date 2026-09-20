@@ -16,6 +16,7 @@ type Props = {
   model: string;
   images?: ImageRef[];
   imageHint?: string;
+  models?: Array<{ id: string; label: string }>;
   onModel: (value: string) => void;
   onPrompt: (value: string) => void;
   onPickImages?: () => void;
@@ -153,7 +154,7 @@ export function Composer(props: Props) {
           <View style={styles.modelWrap}>
             {menuOpen ? (
               <View style={styles.modelMenu} accessibilityRole="menu">
-                {CHAT_MODELS.map((item) => (
+                {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
                   <Pressable
                     key={item.id}
                     onPress={() => {

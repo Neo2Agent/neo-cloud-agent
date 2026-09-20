@@ -20,6 +20,7 @@ test("hostMatches treats a domain as itself and its subdomains", () => {
 
 test("default_plus_allowlist includes registries plus the user list", () => {
   const policy = mergeEgressPolicy({ mode: "default_plus_allowlist", domains: ["example.com"] }, ["llm.internal"]);
+  assert.equal(evaluateEgress(policy, "https://api.stepfun.com/v1").allow, true);
   assert.equal(evaluateEgress(policy, "https://registry.npmjs.org/leftpad").allow, true);
   assert.equal(evaluateEgress(policy, "https://example.com/x").allow, true);
   assert.equal(evaluateEgress(policy, "https://llm.internal/v1").allow, true);

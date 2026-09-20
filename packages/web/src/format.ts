@@ -1,4 +1,4 @@
-import { deepseekModelLabel, resolveDeepseekChatModel } from "@neo-cloud-agent/contracts/llm-ids";
+import { CHAT_MODELS, chatModelLabel, resolvePublicChatModel } from "@neo-cloud-agent/contracts/llm-ids";
 import { isDeskHostedTarget } from "@neo-cloud-agent/contracts/desk";
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { isRemoteControlTarget, runDisplayTitle, type ExecutionTarget } from "@neo-cloud-agent/contracts/run";
@@ -17,16 +17,25 @@ export const STATUS_LABELS: Record<string, string> = {
 };
 
 export function resolveChatModel(upstream?: string | null, model?: string | null, _hasImages = false): string {
-  if (upstream === "openai") return "gpt-4o-mini";
-  return resolveDeepseekChatModel(model);
+  return resolvePublicChatModel(upstream, model);
 }
 
-export function modelLabel(upstream?: string | null, model?: string | null): string {
-  if (upstream === "openai") return "OpenAI";
-  if (upstream === "deepseek" || /deepseek/i.test(model ?? "")) {
-    return deepseekModelLabel(model);
-  }
-  return upstream || "LLM";
+export function modelLabel(_upstream?: string | null, model?: string | null): string {
+  return chatModelLabel(model);
+}
+
+export function nextChatModel(
+  current?: string | null,
+  models: Array<{ id: string }> = CHAT_MODELS,
+): string {
+  const list = models.length > 0 ? models : CHAT_MODELS;
+  const index = list.findIndex((item) => item.id === current);
+  return list[(index + 1 + list.length) % list.length]!.id;
+}
+
+export function upstreamForChatModel(model: string, fallback = "deepseek"): string {
+  if (/^gpt-|^o[1-9]|^chatgpt/i.test(model)) return "openai";
+  return fallback === "openai" ? "deepseek" : fallback || "deepseek";
 }
 
 export function formatUsage(usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null): string {

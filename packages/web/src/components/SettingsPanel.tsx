@@ -1,5 +1,5 @@
 import { Select } from "@neo-cloud-agent/ui";
-import { deepseekModelLabel } from "@neo-cloud-agent/contracts/llm-ids";
+import { chatModelLabel } from "@neo-cloud-agent/contracts/llm-ids";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
 import { toast } from "../feedback";
@@ -9,6 +9,8 @@ export type LlmSettings = {
   upstream: string;
   model: string | null;
   newApi?: { url: string | null; consoleUrl: string | null };
+  models?: Array<{ id: string; label: string }>;
+  modelsSource?: "newapi" | "static";
 };
 
 export type ScmSettings = {
@@ -192,9 +194,9 @@ export function SettingsPanel({
           <h3>模型</h3>
           <p className="hint" id="llm-status">
             {newApiManaged
-              ? "渠道在 New API。DeepSeek 只走 Flash 4.1（原生看图）。"
+              ? "渠道在 New API。对话里选模型；DeepSeek 别名仍收成 Flash 4.1。"
               : llm.configured
-                ? `已配置 ${deepseek ? deepseekModelLabel(llm.model) : "OpenAI"}，对话走真实模型。`
+                ? `已配置 ${chatModelLabel(llm.model)}，对话走真实模型。`
                 : "未配置 API Key，当前是 mock 回复。"}
           </p>
         </header>
@@ -213,9 +215,11 @@ export function SettingsPanel({
             />
           </label>
           <label hidden={!deepseek}>
-            <span>DeepSeek 型号</span>
+            <span>可选模型</span>
             <p className="hint" id="llm-model">
-              Flash 4.1（原生看图）。Pro 已下线。
+              {llm.models?.length
+                ? llm.models.map((item) => item.label).join("、")
+                : "Flash 4.1 与 Step 5 Preview。对话里切换。"}
             </p>
           </label>
           {newApiManaged ? (

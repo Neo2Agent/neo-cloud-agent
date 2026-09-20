@@ -31,6 +31,18 @@ test("OpenAI 4o family uses 128k, not DeepSeek's 1M", () => {
   assert.notEqual(resolveModelLimits("gpt-4o-mini")?.contextWindow, resolveModelLimits("deepseek-v4-flash")?.contextWindow);
 });
 
+test("Step 5 Preview advertises a 1M window and still caps request tokens", () => {
+  assert.deepEqual(resolveModelLimits("step-5-preview"), {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 1_000_000,
+  });
+  assert.deepEqual(resolveModelLimits("neo/step"), {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 1_000_000,
+  });
+  assert.equal(resolveRequestMaxTokens("step-5-preview"), MAX_REQUEST_OUTPUT_TOKENS);
+});
+
 test("unknown models have no invented window", () => {
   assert.equal(resolveModelLimits("some-local-70b"), null);
   assert.equal(resolveModelLimits(""), null);

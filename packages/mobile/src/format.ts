@@ -1,4 +1,9 @@
-import { DEEPSEEK_CHAT_MODELS, deepseekModelLabel, resolveDeepseekChatModel } from "@neo-cloud-agent/contracts/llm-ids";
+import {
+  CHAT_MODELS as CONTRACT_CHAT_MODELS,
+  chatModelLabel as contractChatModelLabel,
+  chatModelShortLabel,
+  resolvePublicChatModel,
+} from "@neo-cloud-agent/contracts/llm-ids";
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 
@@ -48,22 +53,22 @@ export function toolDisplayName(tool: TranscriptTool): string {
   return tool.name === "neo_subagent" ? "subagent" : tool.name;
 }
 
-export const CHAT_MODELS = DEEPSEEK_CHAT_MODELS.map((item) => ({
+export const CHAT_MODELS = CONTRACT_CHAT_MODELS.map((item) => ({
   id: item.id,
   label: item.label,
-  short: "Flash",
+  short: chatModelShortLabel(item.id),
 }));
 
 export function resolveChatModel(model?: string | null): string {
-  return resolveDeepseekChatModel(model);
+  return resolvePublicChatModel("deepseek", model);
 }
 
 export function chatModelLabel(model?: string | null): string {
-  return deepseekModelLabel(resolveChatModel(model));
+  return contractChatModelLabel(resolveChatModel(model));
 }
 
-export function chatModelShort(_model?: string | null): string {
-  return "Flash";
+export function chatModelShort(model?: string | null): string {
+  return chatModelShortLabel(resolveChatModel(model));
 }
 
 export function avatarLetter(email: string, fallback = "我"): string {

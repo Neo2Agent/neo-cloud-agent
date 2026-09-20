@@ -6,7 +6,7 @@ import {
   settleTranscriptMessages,
   transcriptBodyNeeded,
 } from "@neo-cloud-agent/contracts/transcript";
-import { DEEPSEEK_FLASH_MODEL } from "@neo-cloud-agent/contracts/llm-ids";
+import { CHAT_MODELS, resolveCatalogSelection } from "@neo-cloud-agent/contracts/llm-ids";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { isRemoteControlTarget, type AgentMode, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
@@ -53,7 +53,7 @@ import {
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatRunTime, formatUsage, modelLabel, preview, resolveChatModel, shortId, slotLabel } from "./format";
+import { formatRunTime, formatUsage, modelLabel, nextChatModel, preview, resolveChatModel, shortId, slotLabel, upstreamForChatModel } from "./format";
 import {
   activityLabel,
   isActiveRunStatus,
@@ -331,7 +331,10 @@ export function App() {
   projectNamesRef.current = projectNames;
   const confirm = useConfirm();
 
-  const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
+  const selectedModel = resolveCatalogSelection(
+    currentRun?.model || llm.model,
+    llm.models?.length ? llm.models : CHAT_MODELS,
+  );
   const contextUsage = useMemo(() => {
     const reported = parseContextUsage(currentRun?.contextUsage ?? null);
     const base = reported ?? baselineContextUsage(selectedModel);
@@ -627,6 +630,8 @@ export function App() {
           upstream: settings.upstream || "deepseek",
           model: settings.model,
           newApi: settings.newApi,
+          models: settings.models,
+          modelsSource: settings.modelsSource,
         });
         setLlmKey("");
       }
@@ -1420,7 +1425,10 @@ export function App() {
         return;
       }
       if (action === "cycle-model") {
-        setLlm((prev) => ({ ...prev, model: DEEPSEEK_FLASH_MODEL, upstream: "deepseek" }));
+        setLlm((prev) => {
+          const model = nextChatModel(prev.model, prev.models);
+          return { ...prev, model, upstream: upstreamForChatModel(model, prev.upstream) };
+        });
         return;
       }
       const ordered = [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -2226,6 +2234,8 @@ export function App() {
                   upstream: saved.upstream,
                   model: saved.model,
                   newApi: saved.newApi ?? llm.newApi,
+                  models: saved.models ?? llm.models,
+                  modelsSource: saved.modelsSource ?? llm.modelsSource,
                 });
                 setLlmKey("");
                 const nextHealth = await readJson<Health>(await fetch("/health"));
@@ -2543,11 +2553,12 @@ export function App() {
               }}
               onMode={setAgentMode}
               onExpert={(value) => setExpertPick(decodeExpertPick(value))}
+              models={llm.models?.length ? llm.models : CHAT_MODELS}
               onModel={(value) =>
                 setLlm((prev) => ({
                   ...prev,
                   model: value,
-                  upstream: /gpt/i.test(value) ? "openai" : "deepseek",
+                  upstream: upstreamForChatModel(value, prev.upstream),
                 }))
               }
               onPrompt={setPrompt}
@@ -2560,7 +2571,7 @@ export function App() {
               onOpenPlus={() => setPlusOpen(true)}
             />
           ) : null}
-          {narrow && mainTab === "chat" ? <p className="buddy-footer">内容由 AI 生成 · DeepSeek</p> : null}
+          {narrow && mainTab === "chat" ? <p className="buddy-footer">内容由 AI 生成</p> : null}
         </main>
       </div>
       <input

@@ -77,6 +77,8 @@ test("gateway model spec uses each model's advertised window", () => {
   assert.equal(supportsVision("deepseek-flash"), true);
   assert.equal(supportsVision("deepseek-v4-flash"), true);
   assert.equal(supportsVision("deepseek-v4-flash-vision-exp"), true);
+  assert.equal(supportsVision("step-5-preview"), true);
+  assert.equal(gatewayModelSpec("step-5-preview").contextWindow, 1_000_000);
   assert.equal(supportsVision("gpt-4o-mini"), true);
   assert.equal(gatewayModelSpec("deepseek-v4-flash").maxTokens, 16_384);
   assert.ok(gatewayModelSpec("deepseek-v4-flash").maxTokens < 384_000);

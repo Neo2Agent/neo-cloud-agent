@@ -24,7 +24,7 @@ import { schedulePreset, type ScheduleKind } from "../automations";
 import { cloudFollowUp, cloudRunRequest } from "../create-run";
 import { acceptImages, imageHint, overImageBudget } from "../images";
 import { filesToImageRefs } from "./pick-images";
-import { avatarLetter, chatModelShort, resolveChatModel, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
+import { avatarLetter, CHAT_MODELS, chatModelShort, resolveChatModel, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { runPlaceLabel } from "../place";
 import { chatStatusText, composerGate } from "../session";
 import {
@@ -96,6 +96,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [runs, setRuns] = useState<Run[]>([]);
   const [envId, setEnvId] = useState("");
   const [model, setModel] = useState("deepseek-flash");
+  const [chatModels, setChatModels] = useState(CHAT_MODELS);
   const [current, setCurrent] = useState<Run | null>(null);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [experts, setExperts] = useState<Expert[]>([]);
@@ -206,6 +207,9 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       setNeoAvatar(me.user.neoAvatar ?? null);
     }
     if (settings?.model) setModel(resolveChatModel(settings.model));
+    if (settings?.models?.length) {
+      setChatModels(settings.models.map((item) => ({ ...item, short: chatModelShort(item.id) })));
+    }
     setEnvId((current) => nextEnvId(current, environments.environments));
   }, [client, token]);
 
@@ -802,6 +806,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       sending={sending}
       canStop={Boolean(current) && gate.running}
       model={model}
+      models={chatModels}
       images={images}
       imageHint={imageHint(images)}
       onModel={setModel}

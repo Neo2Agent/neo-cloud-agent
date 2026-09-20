@@ -1,4 +1,4 @@
-import { MAX_REQUEST_OUTPUT_TOKENS } from "@neo-cloud-agent/contracts";
+import { isStepfunModel, MAX_REQUEST_OUTPUT_TOKENS } from "@neo-cloud-agent/contracts";
 import { getConfig } from "./config.js";
 import { messagesHaveImages, resolveUpstreamModel, visionModelFor } from "./routes.js";
 
@@ -27,13 +27,28 @@ export function capUpstreamMaxTokens(body: ChatCompletionBody): ChatCompletionBo
   return next;
 }
 
+function defaultStepfunReasoningEffort(): string {
+  const effort = (process.env.STEPFUN_REASONING_EFFORT ?? "medium").trim().toLowerCase();
+  if (effort === "low" || effort === "medium" || effort === "high") {
+    return effort;
+  }
+  return "medium";
+}
+
+export function applyStepfunReasoningEffort(body: ChatCompletionBody, model: string): ChatCompletionBody {
+  if (!isStepfunModel(model) || body.reasoning_effort) {
+    return body;
+  }
+  return { ...body, reasoning_effort: defaultStepfunReasoningEffort() };
+}
+
 export function rewriteBody(body: ChatCompletionBody, fallbackModel: string): ChatCompletionBody {
   const requested = typeof body.model === "string" ? body.model : fallbackModel;
   let model = resolveUpstreamModel(requested, fallbackModel);
   if (messagesHaveImages(body.messages)) {
     model = visionModelFor(model);
   }
-  return capUpstreamMaxTokens({ ...body, model });
+  return capUpstreamMaxTokens(applyStepfunReasoningEffort({ ...body, model }, model));
 }
 
 export function explainUpstreamChatError(status: number, body: string): string {
