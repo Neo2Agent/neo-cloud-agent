@@ -69,13 +69,10 @@ export function isStepfunModel(model?: string | null): boolean {
 }
 
 export function defaultLlmModel(upstream: LlmUpstreamMode): string {
-  if (upstream === "deepseek") {
-    return DEEPSEEK_FLASH_MODEL;
-  }
   if (upstream === "openai") {
     return "gpt-4o-mini";
   }
-  return "mock";
+  return DEEPSEEK_FLASH_MODEL;
 }
 
 /** Map public aliases onto official upstream ids. Unknown ids pass through. */
@@ -158,12 +155,28 @@ export function resolvePublicChatModel(upstream?: string | null, model?: string 
     return DEEPSEEK_FLASH_MODEL;
   }
   if (upstream === "openai") {
-    return requested || "gpt-4o-mini";
+    return requested && requested !== "mock" ? requested : "gpt-4o-mini";
   }
-  if (upstream === "mock") {
-    return requested || "mock";
+  if (requested && requested !== "mock") {
+    return canonicalizeLlmModel("deepseek", requested);
   }
-  return canonicalizeLlmModel("deepseek", requested);
+  return DEEPSEEK_FLASH_MODEL;
+}
+
+/** Picker value: catalog hit, else official id, else first catalog row. Never `mock`. */
+export function resolveCatalogSelection(
+  current?: string | null,
+  models: ChatModelOption[] = CHAT_MODELS,
+): string {
+  const list = models.length > 0 ? models : CHAT_MODELS;
+  const resolved = resolvePublicChatModel("deepseek", current);
+  if (list.some((item) => item.id === resolved)) {
+    return resolved;
+  }
+  if (resolved && resolved !== "mock") {
+    return resolved;
+  }
+  return list[0]!.id;
 }
 
 export function isChatCatalogModel(model?: string | null): boolean {

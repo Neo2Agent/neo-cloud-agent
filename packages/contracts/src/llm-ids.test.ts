@@ -9,6 +9,7 @@ import {
   isChatCatalogModel,
   isDeepseekFlashModel,
   isStepfunModel,
+  resolveCatalogSelection,
   resolvePublicChatModel,
   STEP_5_PREVIEW_MODEL,
   visionModelFor,
@@ -45,6 +46,12 @@ test("resolvePublicChatModel keeps Step 5 and remaps DeepSeek aliases", () => {
   assert.equal(resolvePublicChatModel("deepseek", "neo/step"), "step-5-preview");
   assert.equal(resolvePublicChatModel("openai", "step-5-preview"), "step-5-preview");
   assert.equal(resolvePublicChatModel("openai", "gpt-4o"), "gpt-4o");
+  assert.equal(resolvePublicChatModel("mock", null), "deepseek-flash");
+  assert.equal(resolvePublicChatModel("mock", "mock"), "deepseek-flash");
+  assert.equal(resolvePublicChatModel("mock", "step-5-preview"), "step-5-preview");
+  assert.equal(resolveCatalogSelection(null), "deepseek-flash");
+  assert.equal(resolveCatalogSelection("mock"), "deepseek-flash");
+  assert.equal(resolveCatalogSelection("neo/step"), "step-5-preview");
 });
 
 test("decorateCatalogIds drops non-chat models and aliases to official ids", () => {

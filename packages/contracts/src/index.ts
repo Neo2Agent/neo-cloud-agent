@@ -211,6 +211,7 @@ export {
   isDeepseekProModel,
   isDeepseekVisionModel,
   isStepfunModel,
+  resolveCatalogSelection,
   resolveDeepseekChatModel,
   resolvePublicChatModel,
   staticChatCatalog,

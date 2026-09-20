@@ -29,6 +29,7 @@ export {
   isDeepseekVisionModel,
   isStepfunModel,
   resolveDeepseekChatModel,
+  resolveCatalogSelection,
   resolvePublicChatModel,
   staticChatCatalog,
   STEP_5_PREVIEW_LABEL,

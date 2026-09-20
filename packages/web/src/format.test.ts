@@ -41,6 +41,8 @@ test("modelLabel and resolveChatModel pin DeepSeek to Flash 4.1", () => {
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-flash", true), "deepseek-flash");
   assert.equal(resolveChatModel("deepseek", "deepseek-v4-pro"), "deepseek-flash");
   assert.equal(resolveChatModel("deepseek", "neo/step"), "step-5-preview");
+  assert.equal(resolveChatModel("mock", null), "deepseek-flash");
+  assert.equal(resolveChatModel("mock", "mock"), "deepseek-flash");
   assert.equal(nextChatModel("deepseek-flash"), "step-5-preview");
   assert.equal(nextChatModel("step-5-preview"), "deepseek-flash");
 });

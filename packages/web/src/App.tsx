@@ -6,7 +6,7 @@ import {
   settleTranscriptMessages,
   transcriptBodyNeeded,
 } from "@neo-cloud-agent/contracts/transcript";
-import { CHAT_MODELS } from "@neo-cloud-agent/contracts/llm-ids";
+import { CHAT_MODELS, resolveCatalogSelection } from "@neo-cloud-agent/contracts/llm-ids";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { isRemoteControlTarget, type AgentMode, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
@@ -331,7 +331,10 @@ export function App() {
   projectNamesRef.current = projectNames;
   const confirm = useConfirm();
 
-  const selectedModel = currentRun?.model || resolveChatModel(llm.upstream, llm.model);
+  const selectedModel = resolveCatalogSelection(
+    currentRun?.model || llm.model,
+    llm.models?.length ? llm.models : CHAT_MODELS,
+  );
   const contextUsage = useMemo(() => {
     const reported = parseContextUsage(currentRun?.contextUsage ?? null);
     const base = reported ?? baselineContextUsage(selectedModel);
