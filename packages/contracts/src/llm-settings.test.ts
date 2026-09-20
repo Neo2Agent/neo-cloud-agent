@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   canonicalizeLlmModel,
+  CHAT_MODELS,
   visionModelFor,
   llmSettingsFile,
   parseLlmSettingsRequest,
@@ -69,6 +70,8 @@ test("canonicalizeLlmModel remaps retired DeepSeek aliases to V4.1 Flash", () =>
   assert.equal(canonicalizeLlmModel("deepseek", "deepseek-v4-flash-vision-exp"), "deepseek-flash");
   assert.equal(visionModelFor("deepseek-v4-flash"), "deepseek-flash");
   assert.equal(visionModelFor("deepseek-v4-pro"), "deepseek-flash");
+  assert.equal(canonicalizeLlmModel("deepseek", "neo/step"), "step-5-preview");
+  assert.equal(visionModelFor("step-5-preview"), "step-5-preview");
 });
 
 test("readLlmSettings remaps a saved deepseek-chat id", () => {
@@ -102,6 +105,11 @@ test("publicLlmSettings includes New API console info from the environment", () 
     const published = publicLlmSettings(null);
     assert.equal(published.newApi?.url, "http://127.0.0.1:3000");
     assert.equal(published.newApi?.consoleUrl, "http://127.0.0.1:3000");
+    assert.equal(published.modelsSource, "static");
+    assert.deepEqual(
+      published.models.map((item) => item.id),
+      CHAT_MODELS.map((item) => item.id),
+    );
   } finally {
     if (previousUrl === undefined) delete process.env.NEW_API_URL;
     else process.env.NEW_API_URL = previousUrl;

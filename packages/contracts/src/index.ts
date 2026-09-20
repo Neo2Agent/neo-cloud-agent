@@ -183,6 +183,8 @@ export { deliveryForPi } from "./worker.js";
 export type { LlmRunTokenClaims, ModelRoute, Usage } from "./llm.js";
 export { mintRunToken, verifyRunToken } from "./jwt.js";
 export type {
+  ChatModelOption,
+  LlmModelsSource,
   LlmSettings,
   LlmSettingsRequest,
   LlmUpstreamMode,
@@ -190,17 +192,29 @@ export type {
   PublicLlmSettings,
 } from "./llm-settings.js";
 export {
+  CHAT_MODELS,
   DEEPSEEK_CHAT_MODELS,
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
   DEEPSEEK_VISION_MODEL,
+  STEP_5_PREVIEW_LABEL,
+  STEP_5_PREVIEW_MODEL,
   canonicalizeLlmModel,
+  chatModelLabel,
+  chatModelShortLabel,
+  decorateCatalogIds,
   deepseekModelLabel,
   defaultLlmModel,
+  isChatCatalogModel,
+  isDeepseekAlias,
   isDeepseekFlashModel,
   isDeepseekProModel,
   isDeepseekVisionModel,
+  isStepfunModel,
   resolveDeepseekChatModel,
+  resolvePublicChatModel,
+  staticChatCatalog,
+  stepfunModelLabel,
   visionModelFor,
   llmSettingsFile,
   parseLlmSettingsRequest,

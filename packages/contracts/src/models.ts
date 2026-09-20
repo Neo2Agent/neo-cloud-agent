@@ -1,4 +1,4 @@
-import { canonicalizeLlmModel, type LlmUpstreamMode } from "./llm-ids.js";
+import { canonicalizeLlmModel, isStepfunModel, type LlmUpstreamMode } from "./llm-ids.js";
 
 /** Official context / output limits. Only listed models have a known window. */
 export interface ModelLimits {
@@ -24,11 +24,17 @@ const GPT_4O: ModelLimits = {
   maxOutputTokens: 16_384,
 };
 
+const STEP_5: ModelLimits = {
+  contextWindow: 1_000_000,
+  maxOutputTokens: 1_000_000,
+};
+
 const LIMITS_BY_ID: Record<string, ModelLimits> = {
   "deepseek-flash": DEEPSEEK_V4,
   "deepseek-v4-flash": DEEPSEEK_V4,
   "deepseek-v4-pro": DEEPSEEK_V4,
   "deepseek-v4-flash-vision-exp": DEEPSEEK_V4,
+  "step-5-preview": STEP_5,
   "gpt-4o-mini": GPT_4O,
   "gpt-4o": GPT_4O,
 };
@@ -44,7 +50,7 @@ function guessUpstream(modelId: string): LlmUpstreamMode {
   if (/^gpt-|^o[1-9]|^chatgpt/i.test(id) || /^neo\/gpt/i.test(id)) {
     return "openai";
   }
-  if (/deepseek|^ds$|^neo\/ds/i.test(id)) {
+  if (isStepfunModel(id) || /deepseek|^ds$|^neo\/ds/i.test(id)) {
     return "deepseek";
   }
   return "mock";
