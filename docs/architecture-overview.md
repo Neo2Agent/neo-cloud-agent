@@ -782,7 +782,8 @@ GET    /v1/rate-limits
 GET    /v1/quota
 GET|POST /v1/settings/llm|scm|notify|quota|mcp
 GET|POST /v1/speech/iat                  讯飞听写代理；GET 只回 `{ configured }`
-GET|POST /v1/memories                    记忆页看/记；PATCH|DELETE /v1/memories/:id；POST /v1/memories/search
+GET|PATCH /v1/settings/memory            开聊召回开关（`enabled`）；不再有用户规则 / 钉住 / 提升
+GET|POST /v1/memories                    全局个人记忆看/记；PATCH|DELETE /v1/memories/:id；POST /v1/memories/search。开聊用第一句检索写入 `.neo/MEMORY.md`
 ```
 
 ### Run
@@ -922,7 +923,7 @@ pnpm test:loop           # mvn test + agentscope toy-repo e2e
 - `GET /v1/search`、`GET /v1/recipes`（配方只在客户端）
 - Firecracker live-fork、headed browser / computer-use（分期见 [browser-computer-use.md](./browser-computer-use.md)）
 - Egress 从应用层升到 iptables / 出站代理
-- 跨 Run 的用户 / 项目语义记忆（选型见 [agent-memory-research.md](./agent-memory-research.md)）
+- 独立的项目记忆库、记忆钉住 / 提升、日常 `USER.md` 规则层（记忆页只做全局可检索个人事实；项目指令是 `PROJECT.md`，见 [agent-memory-research.md](./agent-memory-research.md)）
 - 完整多租户账务（只有配额打点）；专家团积分倍率
 - Slack 宿主
 - 免审即用的开放注册、第二套用户表；New API 不是 Neo 进程，也不接管用户表
@@ -949,7 +950,7 @@ pnpm test:loop           # mvn test + agentscope toy-repo e2e
 | [workbuddy-experts.md](./workbuddy-experts.md) | WorkBuddy 专家 / 专家团调研与落地顺序 |
 | [skill-plugin-marketplace.md](./skill-plugin-marketplace.md) | Codex / WorkBuddy 技能与插件市场调研与复刻顺序 |
 | [workbuddy-feature-gap-2026-08.md](./workbuddy-feature-gap-2026-08.md) | 2026-08-28 再对标：骨架已齐之后还值得跟什么 |
-| [agent-memory-research.md](./agent-memory-research.md) | 跨 Run 记忆：第 0 期文件，第 1 期 Mem0，不换 pi |
+| [agent-memory-research.md](./agent-memory-research.md) | 跨 Run 记忆：Mem0 全局个人记忆 + 项目 `PROJECT.md`，不换 pi |
 | [memory-edit-analysis.md](./memory-edit-analysis.md) | 记忆现在怎么跑、要不要让用户改、先补归属校验 |
 | [memory-edit-plan.md](./memory-edit-plan.md) | 记忆编辑技术方案：归属校验、PATCH、Service 层、Web / Desk / mobile 适配 |
 | [browser-computer-use.md](./browser-computer-use.md) | 先做 Playwright a11y browser-use；桌面和远程接管后置 |

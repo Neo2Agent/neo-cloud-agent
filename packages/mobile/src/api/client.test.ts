@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MEMORY_PROMOTE_TARGET } from "@neo-cloud-agent/contracts/memory";
 import { describeNetworkError, MobileApiError, MobileClient } from "./client.js";
 import { memoryCredentials } from "./credentials.js";
 
@@ -104,8 +103,6 @@ test("memory and inbox go to the same cloud routes the web page uses", async () 
   await client.deleteMemory("m1");
   await client.memorySettings();
   await client.patchMemorySettings({ enabled: false });
-  await client.pinMemory("m1", true);
-  await client.promoteMemory("m1", MEMORY_PROMOTE_TARGET.user);
   await client.listInbox();
   await client.markInboxRead("inb_1");
   assert.deepEqual(
@@ -118,8 +115,6 @@ test("memory and inbox go to the same cloud routes the web page uses", async () 
       "DELETE /v1/memories/m1",
       "GET /v1/settings/memory",
       "PATCH /v1/settings/memory",
-      "POST /v1/memories/m1/pin",
-      "POST /v1/memories/m1/promote",
       "GET /v1/inbox",
       "POST /v1/inbox/inb_1/read",
     ],

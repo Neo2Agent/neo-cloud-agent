@@ -25,7 +25,6 @@ import type {
   RunEvent,
   UpdateExpertRequest,
   UpdateProjectRequest,
-  MemoryPromoteTarget,
 } from "@neo-cloud-agent/contracts";
 import {
   BUNDLED_EXPERT_TEAMS,
@@ -45,7 +44,6 @@ import {
   MEMORY_ACTION,
   MEMORY_ERROR_CODE,
   MEMORY_KIND,
-  MEMORY_PROMOTE_TARGET,
   MEMORY_STATUS,
   memoryErrorMessage,
 } from "@neo-cloud-agent/contracts";
@@ -248,12 +246,10 @@ import { MemoryServiceError } from "../memory/service.js";
 import {
   addUserMemory,
   listUserMemories,
-  pinUserMemory,
   removeUserMemory,
   searchUserMemories,
   updateUserMemory,
 } from "../memory/service.js";
-import { promoteUserMemory } from "../memory/promote.js";
 import { appendRunSessionMemory } from "../memory/session-file.js";
 import { guestFacingBootstrap } from "../runtime/firecracker.js";
 import { ensureVmSlots, kvmAvailable, summarizeVmSlots } from "../runtime/vm-slots.js";
@@ -880,7 +876,7 @@ export function createApiServer() {
             return;
           }
           try {
-            const body = (await readJson(req)) as { enabled?: boolean; userRules?: string };
+            const body = (await readJson(req)) as { enabled?: boolean };
             const settings = await patchUserMemorySettings(actor.userId, body);
             send(res, 200, { ...settings, configured: readMem0Info().configured });
           } catch (error) {
@@ -1325,50 +1321,6 @@ export function createApiServer() {
               memories: await searchUserMemories(actor.userId, body.query ?? "", body.limit),
             });
           } catch (error) {
-            sendMemoryError(res, error);
-          }
-          return;
-        }
-        const memoryAction = /^\/v1\/memories\/([^/]+)\/(pin|promote)$/.exec(path);
-        if (memoryAction && method === "POST") {
-          if (actor.kind !== "user") {
-            sendMemoryLoginRequired(res);
-            return;
-          }
-          const memoryId = memoryAction[1] ?? "";
-          const action = memoryAction[2] ?? "";
-          try {
-            if (action === "pin") {
-              const body = (await readJson(req)) as { pinned?: boolean };
-              send(res, 200, { memory: await pinUserMemory(actor.userId, memoryId, body.pinned !== false) });
-              return;
-            }
-            const body = (await readJson(req)) as {
-              target?: MemoryPromoteTarget;
-              mode?: "move" | "copy";
-              projectId?: string;
-            };
-            if (body.target !== MEMORY_PROMOTE_TARGET.user && body.target !== MEMORY_PROMOTE_TARGET.project) {
-              send(res, 400, { error: "target 只能是 user 或 project" });
-              return;
-            }
-            send(
-              res,
-              200,
-              await promoteUserMemory({
-                userId: actor.userId,
-                email: actor.email,
-                id: memoryId,
-                target: body.target,
-                mode: body.mode,
-                projectId: body.projectId,
-              }),
-            );
-          } catch (error) {
-            if (error instanceof AccountError) {
-              sendAccountError(res, error);
-              return;
-            }
             sendMemoryError(res, error);
           }
           return;

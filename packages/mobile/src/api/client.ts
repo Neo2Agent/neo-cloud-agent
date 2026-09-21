@@ -5,7 +5,7 @@ import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { RunEvent, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { CreateExpertRequest, Expert, ExpertTeam, UpdateExpertRequest } from "@neo-cloud-agent/contracts/expert";
-import type { MemoryItem, MemoryListResponse, MemoryPromoteTarget } from "@neo-cloud-agent/contracts/memory";
+import type { MemoryItem, MemoryListResponse, MemorySettings } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem, PluginInstall, PluginInstallScope } from "@neo-cloud-agent/contracts/plugin";
 import type {
   CreateProjectRequest,
@@ -267,28 +267,12 @@ export class MobileClient {
     });
   }
 
-  memorySettings(): Promise<{ enabled: boolean; userRules: string; configured: boolean }> {
+  memorySettings(): Promise<MemorySettings> {
     return this.request("GET", "/v1/settings/memory");
   }
 
-  patchMemorySettings(input: { enabled?: boolean; userRules?: string }): Promise<{
-    enabled: boolean;
-    userRules: string;
-    configured: boolean;
-  }> {
+  patchMemorySettings(input: { enabled?: boolean }): Promise<MemorySettings> {
     return this.request("PATCH", "/v1/settings/memory", input);
-  }
-
-  pinMemory(id: string, pinned = true): Promise<{ memory: MemoryItem }> {
-    return this.request("POST", `/v1/memories/${encodeURIComponent(id)}/pin`, { pinned });
-  }
-
-  promoteMemory(id: string, target: MemoryPromoteTarget, projectId?: string): Promise<{ ok?: boolean }> {
-    return this.request("POST", `/v1/memories/${encodeURIComponent(id)}/promote`, {
-      target,
-      mode: "move",
-      ...(projectId ? { projectId } : {}),
-    });
   }
 
   listInbox(): Promise<{ items: InboxItem[]; unread: number }> {

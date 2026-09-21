@@ -2,10 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   appendUserMemory,
-  appendUserRules,
   filterMemories,
   formatUserMemory,
-  formatUserRules,
   MEMORY_INJECT_FILE_PREAMBLE,
   MEMORY_INJECT_SYSTEM_PREAMBLE,
   MEMORY_LIST_LIMIT_DEFAULT,
@@ -97,39 +95,19 @@ test("inject copy is tendency not hard obedience", () => {
   assert.equal(system.includes(MEMORY_INJECT_SYSTEM_PREAMBLE), true);
 });
 
-test("user rules stay weaker than the current message and project files", () => {
-  const file = formatUserRules("用中文回复");
-  const system = appendUserRules("base", file);
-  assert.match(file, /lose to the current user message/);
-  assert.match(system, /PROJECT.md \/ AGENTS.md/);
-});
-
-test("selectRecalledMemories pins manual coding and caps soft kinds", () => {
-  const selected = selectRecalledMemories({
-    pinned: [
-      {
-        id: "p1",
-        text: "通常用 pnpm",
-        metadata: { source: "manual", kind: "coding" },
-      },
-    ],
-    candidates: [
-      { id: "p1", text: "通常用 pnpm", score: 0.9, metadata: { source: "manual", kind: "coding" } },
-      { id: "s1", text: "倾向最小 diff", score: 0.8, metadata: { kind: "style" } },
-      { id: "s2", text: "倾向 draft PR", score: 0.79, metadata: { kind: "style" } },
-      { id: "s3", text: "倾向少改 contracts", score: 0.78, metadata: { kind: "style" } },
-      { id: "h1", text: "先结论", score: 0.77, metadata: { kind: "habit" } },
-      { id: "low", text: "低分", score: 0.1, metadata: { kind: "coding" } },
-      { id: "c1", text: "不要 force push", score: 0.7, metadata: { kind: "coding" } },
-    ],
-  });
+test("selectRecalledMemories ranks search hits and caps soft kinds", () => {
+  const selected = selectRecalledMemories([
+    { id: "p1", text: "通常用 pnpm", score: 0.9, metadata: { source: "manual", kind: "coding" } },
+    { id: "s1", text: "倾向最小 diff", score: 0.8, metadata: { kind: "style" } },
+    { id: "s2", text: "倾向 draft PR", score: 0.79, metadata: { kind: "style" } },
+    { id: "s3", text: "倾向少改 contracts", score: 0.78, metadata: { kind: "style" } },
+    { id: "h1", text: "先结论", score: 0.77, metadata: { kind: "habit" } },
+    { id: "low", text: "低分", score: 0.1, metadata: { kind: "coding" } },
+    { id: "c1", text: "不要 force push", score: 0.7, metadata: { kind: "coding" } },
+  ]);
   assert.deepEqual(
-    selected.pinned.map((item) => item.id),
-    ["p1"],
-  );
-  assert.deepEqual(
-    selected.relevant.map((item) => item.id),
-    ["s1", "s2", "h1", "c1"],
+    selected.map((item) => item.id),
+    ["p1", "s1", "s2", "h1", "c1"],
   );
 });
 
@@ -160,7 +138,6 @@ test("session memory wrap is a user prefix not a system rewrite", () => {
   assert.equal(wrapPromptWithSessionMemory("继续改", ""), "继续改");
 });
 
-test("memoryErrorMessage covers disabled and promote codes", () => {
+test("memoryErrorMessage covers disabled writes", () => {
   assert.equal(memoryErrorMessage("MEMORY_DISABLED"), "记忆已关闭，这条不会写入");
-  assert.equal(memoryErrorMessage("MEMORY_PROJECT_REQUIRED"), "提升到项目需要指定当前项目");
 });

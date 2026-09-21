@@ -425,7 +425,7 @@ test("POST /v1/memories requires a session", async (t) => {
   assert.equal(response.status, 401);
 });
 
-test("memory settings pin promote and disabled add", async (t) => {
+test("memory settings toggle and disabled add", async (t) => {
   withMem0Env(t);
   const server = createApiServer();
   const port = await listen(server);
@@ -464,14 +464,7 @@ test("memory settings pin promote and disabled add", async (t) => {
   const initial = (await settings.json()) as { enabled?: boolean; userRules?: string; configured?: boolean };
   assert.equal(initial.enabled, true);
   assert.equal(initial.configured, true);
-
-  const patched = await fetch(`${base}/v1/settings/memory`, {
-    method: "PATCH",
-    headers,
-    body: JSON.stringify({ userRules: "用中文回复" }),
-  });
-  assert.equal(patched.status, 200);
-  assert.equal(((await patched.json()) as { userRules?: string }).userRules, "用中文回复");
+  assert.equal(initial.userRules, undefined);
 
   const added = await fetch(`${base}/v1/memories`, {
     method: "POST",
@@ -480,22 +473,19 @@ test("memory settings pin promote and disabled add", async (t) => {
   });
   assert.equal(added.status, 201);
 
-  const pinned = await fetch(`${base}/v1/memories/m1/pin`, {
+  const gonePin = await fetch(`${base}/v1/memories/m1/pin`, {
     method: "POST",
     headers,
     body: JSON.stringify({ pinned: true }),
   });
-  assert.equal(pinned.status, 200);
-  assert.equal(((await pinned.json()) as { memory?: { metadata?: { pinned?: boolean } } }).memory?.metadata?.pinned, true);
+  assert.equal(gonePin.status, 404);
 
-  const promoted = await fetch(`${base}/v1/memories/m1/promote`, {
+  const gonePromote = await fetch(`${base}/v1/memories/m1/promote`, {
     method: "POST",
     headers,
     body: JSON.stringify({ target: "user", mode: "move" }),
   });
-  assert.equal(promoted.status, 200);
-  const afterPromote = await fetch(`${base}/v1/settings/memory`, { headers });
-  assert.match(((await afterPromote.json()) as { userRules?: string }).userRules ?? "", /通常用 pnpm/);
+  assert.equal(gonePromote.status, 404);
 
   await fetch(`${base}/v1/memories`, { method: "POST", headers, body: JSON.stringify({ text: "不要 force push" }) });
   const disabled = await fetch(`${base}/v1/settings/memory`, {
@@ -504,6 +494,7 @@ test("memory settings pin promote and disabled add", async (t) => {
     body: JSON.stringify({ enabled: false }),
   });
   assert.equal(disabled.status, 200);
+  assert.equal(((await disabled.json()) as { userRules?: string }).userRules, undefined);
   const blocked = await fetch(`${base}/v1/memories`, {
     method: "POST",
     headers,

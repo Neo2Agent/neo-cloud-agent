@@ -2,7 +2,7 @@
 
 配套分析见 [memory-edit-analysis.md](./memory-edit-analysis.md)。规约按《阿里巴巴 Java 开发手册（嵩山版）》七维意图等价落到 TypeScript / Python，只落约定，不引入 eslint / prettier。
 
-基线：手机云端面对齐已在 [PR #138](https://github.com/Neo2Agent/neo-cloud-agent/pull/138) 合上（源 PR [#129](https://github.com/Neo2Agent/neo-cloud-agent/pull/129)）。合入后 Web / Desk / mobile 都有同一套看 / 记 / 删。本文只谈怎么加「改」。
+基线：手机云端面对齐已在 [PR #138](https://github.com/Neo2Agent/neo-cloud-agent/pull/138) 合上（源 PR [#129](https://github.com/Neo2Agent/neo-cloud-agent/pull/129)）。合入后 Web / Desk / mobile 都有同一套看 / 记 / 删。本文只谈怎么加「改」。钉住、提升为规则、挪到项目、日常 `USER.md` 规则层后来已删；记忆页只做全局可检索个人事实。
 
 一句话范围：给用户记忆加原地编辑，把「改」和「删」都补上归属校验，并把已经核实的合规缺口收在同一条产品路径里。不做自动抽取、不做项目级作用域、不做编辑历史 UI、不给 Agent 编辑工具、不引入新工具链。
 

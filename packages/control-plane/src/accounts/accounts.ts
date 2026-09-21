@@ -4,9 +4,6 @@ import { hashPassword, verifyPassword } from "./password.js";
 import { accountStoreKind, getAccountStore } from "./store.js";
 import { AvatarError, parseAvatarInput } from "./avatars.js";
 import {
-  USER_RULES_MAX_LENGTH,
-} from "@neo-cloud-agent/contracts";
-import {
   accountStatus,
   isActiveAccount,
   isValidLogin,
@@ -253,49 +250,28 @@ export async function listPublicUsers(): Promise<PublicUser[]> {
   return users.map(toPublicUser);
 }
 
-export async function getUserMemorySettings(userId: string): Promise<{ enabled: boolean; userRules: string }> {
+export async function getUserMemorySettings(userId: string): Promise<{ enabled: boolean }> {
   const user = await getAccountStore().findUserById(userId);
-  if (!user) {
-    return { enabled: true, userRules: "" };
-  }
-  return {
-    enabled: userMemoryEnabled(user),
-    userRules: user.userRules ?? "",
-  };
+  return { enabled: userMemoryEnabled(user) };
 }
 
 export async function patchUserMemorySettings(
   userId: string,
-  input: { enabled?: boolean; userRules?: string },
-): Promise<{ enabled: boolean; userRules: string }> {
-  const patch: { memoryEnabled?: boolean; userRules?: string } = {};
+  input: { enabled?: boolean },
+): Promise<{ enabled: boolean }> {
+  const patch: { memoryEnabled?: boolean } = {};
   if (input.enabled !== undefined) {
     patch.memoryEnabled = input.enabled;
   }
-  if (input.userRules !== undefined) {
-    if (input.userRules.length > USER_RULES_MAX_LENGTH) {
-      throw new AccountError("用户规则不能超过 4000 字", 400);
-    }
-    patch.userRules = input.userRules;
-  }
   try {
     const user = await getAccountStore().updateUserMemorySettings(userId, patch);
-    return { enabled: userMemoryEnabled(user), userRules: user.userRules ?? "" };
+    return { enabled: userMemoryEnabled(user) };
   } catch (error) {
     if (error instanceof Error && error.message === "user not found") {
       throw new AccountError("unauthorized", 401);
     }
     throw error;
   }
-}
-
-export async function appendUserRuleLine(userId: string, line: string): Promise<void> {
-  const settings = await getUserMemorySettings(userId);
-  const next = [settings.userRules.trim(), line.trim()].filter(Boolean).join("\n");
-  if (next.length > USER_RULES_MAX_LENGTH) {
-    throw new AccountError("用户规则不能超过 4000 字", 400);
-  }
-  await patchUserMemorySettings(userId, { userRules: next });
 }
 
 export async function patchUserAvatars(

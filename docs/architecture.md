@@ -338,7 +338,7 @@ pi-ai                        ← 多 Provider 流式、用量、自定义 baseUr
 - 环境 Builds
 - 客户端与 transcript 存储
 - Egress、密钥分级、审计
-- 跨 Run 的用户 / 项目语义记忆（旁路服务，不进 VM；选型见 [agent-memory-research.md](./agent-memory-research.md)）
+- 跨 Run 的用户语义记忆（Mem0 旁路，不进 VM；项目指令走 `PROJECT.md`，不另建项目记忆库。选型见 [agent-memory-research.md](./agent-memory-research.md)）
 
 ### 6.3 云扩展（pi Package，装在 VM 镜像里）
 
@@ -779,7 +779,7 @@ Orchestrator 创建 Run 时写下 `workerImageDigest`。不要让「控制面最
 | Cloud MCP | `neo-diag` extension | 动态工具，不必改 pi |
 | MCP / Hooks | 工作区 skills / `AGENTS.md` + `.cursor/hooks.json` command hooks | 不加载宿主机 `~/.pi` extensions |
 | GitHub PR / CI 订阅 | `neo_subscribe` + `/webhooks/github` | 开 PR 自动订阅；CI 失败 autofix 到绿 |
-| 用户记忆 | `neo_memory_add` / `neo_memory_search` + `/v1/memories` | 控制面代理 Mem0；独立记忆页看/记/改/删；密钥不上 VM |
+| 用户记忆 | `neo_memory_add` / `neo_memory_search` + `/v1/memories` | 控制面代理 Mem0；记忆页看/记/改/删；开聊按第一句检索写入 `.neo/MEMORY.md`；无钉住 / 提升 / 日常规则层；密钥不上 VM |
 | Artifacts / 远程桌面 | 签名 `/v1/runs/:id/artifacts/:name?token=` | 桌面可后置；分期见 [browser-computer-use.md](./browser-computer-use.md) |
 | GitHub / Slack / API | `api` + `scm` + 适配器 | GitHub webhook 已落地；Telegram / 微信公众号可开对话 |
 | Cursor CLI / `-p` / Cloud API | `packages/cli`（`neo`） | 只做 Cloud 客户端，不复刻本机 `agent` |

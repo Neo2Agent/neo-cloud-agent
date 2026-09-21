@@ -1,11 +1,8 @@
 import {
   MEMORY_LIST_LIMIT_DEFAULT,
-  MEMORY_PROMOTE_TARGET,
   MEMORY_SEARCH_DEBOUNCE_MS,
   MEMORY_SNIPPET_LENGTH,
   MEMORY_TEXT_MAX_LENGTH,
-  USER_RULES_MAX_LENGTH,
-  isPinnedMemory,
   memoryEdited,
   memoryHint,
   memoryKindLabel,
@@ -40,8 +37,7 @@ export function MemoriesPage({ token }: Props) {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [settings, setSettings] = useState<MemorySettings>({ enabled: true, userRules: "", configured: false });
-  const [rulesDraft, setRulesDraft] = useState("");
+  const [settings, setSettings] = useState<MemorySettings>({ enabled: true, configured: false });
   const visibleItems = query.trim() ? (hits ?? []) : items;
   const hint = memoryHint({ configured, count: items.length, error: error || undefined });
 
@@ -57,10 +53,8 @@ export function MemoriesPage({ token }: Props) {
     if (settingsResponse.ok) {
       setSettings({
         enabled: settingsBody.enabled !== false,
-        userRules: settingsBody.userRules ?? "",
         configured: Boolean(settingsBody.configured ?? body.configured),
       });
-      setRulesDraft(settingsBody.userRules ?? "");
     }
     setError("");
   };
@@ -198,7 +192,6 @@ export function MemoriesPage({ token }: Props) {
                 if (response.ok) {
                   setSettings({
                     enabled: body.enabled !== false,
-                    userRules: body.userRules ?? "",
                     configured: Boolean(body.configured),
                   });
                 }
@@ -207,37 +200,6 @@ export function MemoriesPage({ token }: Props) {
           />
           开聊时召回用户记忆
         </label>
-        <textarea
-          value={rulesDraft}
-          rows={3}
-          maxLength={USER_RULES_MAX_LENGTH}
-          placeholder="用户规则"
-          onChange={(event) => setRulesDraft(event.target.value)}
-        />
-        <IslandButton
-          type="default"
-          disabled={busy || rulesDraft === settings.userRules}
-          onClick={() => {
-            setBusy(true);
-            void (async () => {
-              const response = await api(token, "/v1/settings/memory", {
-                method: "PATCH",
-                body: JSON.stringify({ userRules: rulesDraft }),
-              });
-              const body = await readJson<MemorySettings>(response);
-              if (response.ok) {
-                setSettings({
-                  enabled: body.enabled !== false,
-                  userRules: body.userRules ?? "",
-                  configured: Boolean(body.configured),
-                });
-                setRulesDraft(body.userRules ?? "");
-              }
-            })().finally(() => setBusy(false));
-          }}
-        >
-          保存规则
-        </IslandButton>
         <IslandInput
           value={query}
           placeholder="搜索记忆"
@@ -254,7 +216,6 @@ export function MemoriesPage({ token }: Props) {
                   <strong>
                     {memorySnippet(item.text)}
                     {memoryKindLabel(item.metadata?.kind) ? <em> {memoryKindLabel(item.metadata?.kind)}</em> : null}
-                    {isPinnedMemory(item) ? <em> 钉住</em> : null}
                     {memoryEdited(item) ? <em> 改过</em> : null}
                   </strong>
                   {item.text.length > MEMORY_SNIPPET_LENGTH ? <p>{item.text}</p> : null}
@@ -269,38 +230,6 @@ export function MemoriesPage({ token }: Props) {
                     }}
                   >
                     编辑
-                  </IslandButton>
-                  <IslandButton
-                    type="default"
-                    disabled={busy}
-                    onClick={() => {
-                      setBusy(true);
-                      void (async () => {
-                        await api(token, `/v1/memories/${encodeURIComponent(item.id)}/pin`, {
-                          method: "POST",
-                          body: JSON.stringify({ pinned: !isPinnedMemory(item) }),
-                        });
-                        await refresh();
-                      })().finally(() => setBusy(false));
-                    }}
-                  >
-                    {isPinnedMemory(item) ? "取消钉住" : "钉住"}
-                  </IslandButton>
-                  <IslandButton
-                    type="default"
-                    disabled={busy}
-                    onClick={() => {
-                      setBusy(true);
-                      void (async () => {
-                        await api(token, `/v1/memories/${encodeURIComponent(item.id)}/promote`, {
-                          method: "POST",
-                          body: JSON.stringify({ target: MEMORY_PROMOTE_TARGET.user, mode: "move" }),
-                        });
-                        await refresh();
-                      })().finally(() => setBusy(false));
-                    }}
-                  >
-                    提升为规则
                   </IslandButton>
                   <IslandButton type="default" danger disabled={busy} onClick={() => remove(item.id)}>
                     删除

@@ -50,7 +50,7 @@ import {
 export type SqlQuery = (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
 
 const USER_COLUMNS =
-  "id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled";
+  "id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, memory_enabled";
 
 export const POSTGRES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -733,8 +733,7 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
         throw new Error("user not found");
       }
       const next = applyMemorySettingsPatch(user, patch);
-      await query(`UPDATE users SET user_rules = $1, memory_enabled = $2 WHERE id = $3`, [
-        next.userRules ?? "",
+      await query(`UPDATE users SET memory_enabled = $1 WHERE id = $2`, [
         next.memoryEnabled !== false,
         userId,
       ]);
@@ -805,7 +804,6 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
     creditFen: Number.isFinite(creditFen) ? Math.max(0, Math.floor(creditFen)) : 0,
     avatar: parseStoredAvatar(row.avatar_json),
     neoAvatar: parseStoredAvatar(row.neo_avatar_json),
-    userRules: typeof row.user_rules === "string" ? row.user_rules : undefined,
     memoryEnabled: row.memory_enabled === false || row.memory_enabled === 0 || row.memory_enabled === "f" ? false : true,
   };
 }

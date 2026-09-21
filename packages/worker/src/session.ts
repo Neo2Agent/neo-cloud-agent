@@ -11,13 +11,11 @@ import {
   appendExpertRole,
   appendProjectInstruction,
   appendUserMemory,
-  appendUserRules,
   deliveryForPi,
   intersectSessionTools,
   MEMORY_FILE,
   NEO_DIR,
   SESSION_MEMORY_FILE,
-  USER_RULES_FILE,
   wrapPromptWithConversationReplay,
   wrapPromptWithSessionMemory,
   type WorkerInbound,
@@ -55,7 +53,6 @@ export interface PromptLayers {
   base: string;
   boundary: string;
   expertRole: string;
-  userRules: string;
   projectInstruction: string;
   userMemory: string;
 }
@@ -80,15 +77,13 @@ function composeSystemPrompt(input: {
   base: string;
   sandboxRoot: string;
   expertRole: string;
-  userRules: string;
   projectInstruction: string;
   userMemory: string;
 }): { text: string; layers: PromptLayers } {
   const { base } = input;
   const withBoundary = appendWorkspaceBoundary(base, input.sandboxRoot);
   const withExpert = appendExpertRole(withBoundary, input.expertRole);
-  const withRules = appendUserRules(withExpert, input.userRules);
-  const withProject = appendProjectInstruction(withRules, input.projectInstruction);
+  const withProject = appendProjectInstruction(withExpert, input.projectInstruction);
   const withMemory = appendUserMemory(withProject, input.userMemory);
   return {
     text: withMemory,
@@ -96,8 +91,7 @@ function composeSystemPrompt(input: {
       base,
       boundary: withBoundary.slice(base.length),
       expertRole: withExpert.slice(withBoundary.length),
-      userRules: withRules.slice(withExpert.length),
-      projectInstruction: withProject.slice(withRules.length),
+      projectInstruction: withProject.slice(withExpert.length),
       userMemory: withMemory.slice(withProject.length),
     },
   };
@@ -186,7 +180,6 @@ export async function openPiSession(input: OpenSessionInput): Promise<OpenedSess
     base: input.systemPrompt ?? CLOUD_SYSTEM_PROMPT,
     sandboxRoot: config.sandboxRoot,
     expertRole: expert.role,
-    userRules: readUserRules(input.cwd),
     projectInstruction: readProjectInstruction(input.cwd),
     userMemory: readUserMemory(input.cwd),
   });
@@ -272,10 +265,6 @@ function readNeoFile(cwd: string, fileName: string): string {
     warnWorkspaceRead(fileName, error);
     return "";
   }
-}
-
-export function readUserRules(cwd: string): string {
-  return readNeoFile(cwd, USER_RULES_FILE);
 }
 
 export function readSessionMemory(cwd: string): string {
