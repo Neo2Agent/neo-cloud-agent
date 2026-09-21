@@ -6,7 +6,6 @@ import {
   MEMORY_SEARCH_FETCH,
   NEO_DIR,
   selectRecalledMemories,
-  USER_RULES_FILE,
   type Run,
 } from "@neo-cloud-agent/contracts";
 import { getUserMemorySettings } from "../accounts/accounts.js";
@@ -24,10 +23,12 @@ function isEnoent(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT");
 }
 
-/** Drop leftover `.neo/USER.md` so persisted slots do not keep injecting daily rules. */
-function clearLegacyUserRules(runId: string): void {
+const LEGACY_USER_MD_FILE = "USER.md";
+
+/** Persisted slots may still have `.neo/USER.md` from the removed rules layer. */
+function clearLegacyUserMd(runId: string): void {
   try {
-    unlinkSync(path.join(workspaceFor(runId), NEO_DIR, USER_RULES_FILE));
+    unlinkSync(path.join(workspaceFor(runId), NEO_DIR, LEGACY_USER_MD_FILE));
   } catch (error) {
     if (isEnoent(error)) {
       return;
@@ -41,7 +42,7 @@ export async function writeRecalledMemory(run: Run): Promise<void> {
   if (!run.userId) {
     return;
   }
-  clearLegacyUserRules(run.id);
+  clearLegacyUserMd(run.id);
   try {
     const settings = await getUserMemorySettings(run.userId);
     if (!settings.enabled || !readMem0Info().configured) {

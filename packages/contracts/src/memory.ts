@@ -14,14 +14,13 @@ export const MEMORY_SNIPPET_LENGTH = 72;
 export const MEMORY_TEXT_MAX_LENGTH = 500;
 export const MEMORY_SEARCH_DEBOUNCE_MS = 300;
 export const MEMORY_FILE = "MEMORY.md";
-/** Leftover filename from the removed daily-rules layer. Inject deletes it. */
-export const USER_RULES_FILE = "USER.md";
 export const SESSION_MEMORY_FILE = "SESSION_MEMORY.md";
 export const NEO_DIR = ".neo";
 
 export const MEMORY_ACTION = { add: "add", search: "search", list: "list" } as const;
 export type MemoryAction = (typeof MEMORY_ACTION)[keyof typeof MEMORY_ACTION];
-export type MemorySource = "manual" | "agent";
+export const MEMORY_SOURCE = { manual: "manual", agent: "agent" } as const;
+export type MemorySource = (typeof MEMORY_SOURCE)[keyof typeof MEMORY_SOURCE];
 
 export const MEMORY_KIND = { style: "style", habit: "habit", coding: "coding" } as const;
 export type MemoryKind = (typeof MEMORY_KIND)[keyof typeof MEMORY_KIND];
@@ -117,9 +116,9 @@ export function memoryEdited(item: Pick<MemoryItem, "createdAt" | "updatedAt">):
 }
 
 export function memoryKindLabel(kind?: string): string {
-  if (kind === "style") return "风格";
-  if (kind === "habit") return "习惯";
-  if (kind === "coding") return "工具";
+  if (kind === MEMORY_KIND.style) return "风格";
+  if (kind === MEMORY_KIND.habit) return "习惯";
+  if (kind === MEMORY_KIND.coding) return "工具";
   return "";
 }
 
@@ -134,7 +133,7 @@ export function parseMemoryStatus(value: unknown): MemoryStatus | undefined {
 }
 
 export function parseMemorySource(value: unknown): MemorySource | undefined {
-  return value === "manual" || value === "agent" ? value : undefined;
+  return value === MEMORY_SOURCE.manual || value === MEMORY_SOURCE.agent ? value : undefined;
 }
 
 export function memoryKind(item: Pick<MemoryItem, "metadata">): MemoryKind | undefined {

@@ -2170,11 +2170,6 @@ button.send:disabled {
   border-radius: 14px;
 }
 
-#memories-page .memory-settings textarea {
-  width: 100%;
-  min-height: 88px;
-}
-
 #memories-page .memory-enabled {
   display: flex;
   gap: 8px;
