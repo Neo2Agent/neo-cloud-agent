@@ -50,7 +50,7 @@ import {
 export type MysqlMetadataStore = PostgresMetadataStore;
 
 const USER_COLUMNS =
-  "id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, user_rules, memory_enabled";
+  "id, email, phone, password_hash, org_id, created_at, status, credit_fen, avatar_json, neo_avatar_json, memory_enabled";
 
 export const MYSQL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -711,8 +711,7 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
         throw new Error("user not found");
       }
       const next = applyMemorySettingsPatch(user, patch);
-      await query(`UPDATE users SET user_rules = ?, memory_enabled = ? WHERE id = ?`, [
-        next.userRules ?? "",
+      await query(`UPDATE users SET memory_enabled = ? WHERE id = ?`, [
         next.memoryEnabled === false ? 0 : 1,
         userId,
       ]);
@@ -780,7 +779,6 @@ function mapUser(row?: Record<string, unknown>): UserRecord | null {
     creditFen: Number.isFinite(creditFen) ? Math.max(0, Math.floor(creditFen)) : 0,
     avatar: parseStoredAvatar(row.avatar_json),
     neoAvatar: parseStoredAvatar(row.neo_avatar_json),
-    userRules: typeof row.user_rules === "string" ? row.user_rules : undefined,
     memoryEnabled: row.memory_enabled === 0 || row.memory_enabled === "0" || row.memory_enabled === false ? false : true,
   };
 }

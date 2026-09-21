@@ -58,6 +58,7 @@ createRun
 worker 开 session                        worker/src/session.ts
   └─ readUserMemory(cwd)
      composeSystemPrompt(base → boundary → expert → PROJECT.md → MEMORY.md)
+     （日常对话不注入 USER.md）
      └─ appendUserMemory() 拼出 "# Recalled user memory"
 
 对话进行中

@@ -4,7 +4,6 @@ import {
   MEMORY_LIST_LIMIT_MAX,
   MEMORY_SEARCH_LIMIT_DEFAULT,
   MEMORY_SEARCH_LIMIT_MAX,
-  MEMORY_STATUS,
   MEMORY_TEXT_MAX_LENGTH,
   memoryErrorMessage,
   type MemoryErrorCode,
@@ -171,7 +170,6 @@ export async function addUserMemory(
     mergeMemoryFlags(userId, flagged[0].id, {
       kind: metadata.kind,
       status: metadata.status,
-      pinned: metadata.pinned,
     });
     return applyMemoryFlags(userId, flagged);
   }
@@ -211,31 +209,3 @@ export async function removeUserMemory(userId: string, id: string): Promise<void
   deleteMemoryFlags(userId, id);
 }
 
-export async function findUserMemory(userId: string, id: string): Promise<MemoryItem> {
-  const items = await listUserMemories(userId);
-  const item = items.find((entry) => entry.id === id);
-  if (!item) {
-    throw new MemoryServiceError(
-      MEMORY_ERROR_CODE.NOT_FOUND,
-      404,
-      memoryErrorMessage(MEMORY_ERROR_CODE.NOT_FOUND),
-    );
-  }
-  return item;
-}
-
-export async function pinUserMemory(userId: string, id: string, pinned: boolean): Promise<MemoryItem> {
-  const item = await findUserMemory(userId, id);
-  mergeMemoryFlags(userId, id, { pinned, status: MEMORY_STATUS.confirmed });
-  try {
-    await updateMemory({
-      id,
-      userId,
-      text: item.text,
-      metadata: { ...item.metadata, pinned, status: MEMORY_STATUS.confirmed },
-    });
-  } catch {
-    // Overlay is authoritative if the sidecar cannot store metadata yet.
-  }
-  return findUserMemory(userId, id);
-}

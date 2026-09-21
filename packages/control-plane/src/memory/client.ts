@@ -68,8 +68,7 @@ function readMetadata(raw: unknown): MemoryMetadata | undefined {
   const runId = typeof meta.runId === "string" ? meta.runId : undefined;
   const kind = parseMemoryKind(meta.kind);
   const status = parseMemoryStatus(meta.status);
-  const pinned = typeof meta.pinned === "boolean" ? meta.pinned : undefined;
-  if (!source && !runId && !kind && !status && pinned === undefined) {
+  if (!source && !runId && !kind && !status) {
     return undefined;
   }
   return {
@@ -77,7 +76,6 @@ function readMetadata(raw: unknown): MemoryMetadata | undefined {
     ...(runId ? { runId } : {}),
     ...(kind ? { kind } : {}),
     ...(status ? { status } : {}),
-    ...(pinned !== undefined ? { pinned } : {}),
   };
 }
 

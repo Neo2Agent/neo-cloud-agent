@@ -6,8 +6,6 @@ import { artifactKindLabel, prettyBytes } from "@neo-cloud-agent/contracts/artif
 import {
   MEMORY_SEARCH_DEBOUNCE_MS,
   MEMORY_TEXT_MAX_LENGTH,
-  USER_RULES_MAX_LENGTH,
-  isPinnedMemory,
   memoryEdited,
   memoryKindLabel,
   type MemoryItem,
@@ -37,9 +35,7 @@ export function MemoriesPage(props: {
   onUpdate: (id: string, text: string, updatedAt?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onSearch: (query: string) => Promise<MemoryItem[]>;
-  onSettings?: (patch: { enabled?: boolean; userRules?: string }) => Promise<void>;
-  onPin?: (id: string, pinned: boolean) => Promise<void>;
-  onPromote?: (id: string) => Promise<void>;
+  onSettings?: (patch: { enabled?: boolean }) => Promise<void>;
 }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
@@ -47,7 +43,6 @@ export function MemoriesPage(props: {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<{ id: string; original: string; updatedAt?: string } | null>(null);
   const [editDraft, setEditDraft] = useState("");
-  const [rulesDraft, setRulesDraft] = useState(props.settings?.userRules ?? "");
   const visible = query.trim() ? (hits ?? []) : filterMemories(props.items, "");
 
   useEffect(() => {
@@ -79,21 +74,6 @@ export function MemoriesPage(props: {
             />
             开聊时召回用户记忆
           </label>
-          <IslandInput
-            value={rulesDraft}
-            placeholder="用户规则"
-            maxLength={USER_RULES_MAX_LENGTH}
-            onChange={(event) => setRulesDraft(event.target.value)}
-          />
-          <IslandButton
-            disabled={busy || rulesDraft === (props.settings.userRules ?? "")}
-            onClick={() => {
-              setBusy(true);
-              void props.onSettings?.({ userRules: rulesDraft }).finally(() => setBusy(false));
-            }}
-          >
-            保存规则
-          </IslandButton>
         </>
       ) : null}
       {props.configured ? (
@@ -159,31 +139,9 @@ export function MemoriesPage(props: {
           >
             <strong>{item.text}</strong>
             <p>
-              {[memoryKindLabel(item.metadata?.kind), isPinnedMemory(item) ? "钉住" : "", memoryEdited(item) ? "改过" : ""]
-                .filter(Boolean)
-                .join(" · ")}
+              {[memoryKindLabel(item.metadata?.kind), memoryEdited(item) ? "改过" : ""].filter(Boolean).join(" · ")}
             </p>
           </button>
-          {props.onPin ? (
-            <IslandButton
-              onClick={() => {
-                setBusy(true);
-                void props.onPin?.(item.id, !isPinnedMemory(item)).finally(() => setBusy(false));
-              }}
-            >
-              {isPinnedMemory(item) ? "取消钉住" : "钉住"}
-            </IslandButton>
-          ) : null}
-          {props.onPromote ? (
-            <IslandButton
-              onClick={() => {
-                setBusy(true);
-                void props.onPromote?.(item.id).finally(() => setBusy(false));
-              }}
-            >
-              提升为规则
-            </IslandButton>
-          ) : null}
           <IslandButton
             onClick={() => {
               if (window.confirm("删除这条记忆？")) void props.onDelete(item.id);

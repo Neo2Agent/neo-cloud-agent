@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { Run } from "@neo-cloud-agent/contracts";
 import { setMem0FetchForTests } from "./client.js";
-import { writeRecalledMemory, writeUserRules } from "./inject.js";
+import { writeRecalledMemory } from "./inject.js";
 import { createFileAccountStore } from "../accounts/file.js";
 import { setAccountStore } from "../accounts/store.js";
 
@@ -96,7 +96,7 @@ test("writeRecalledMemory no-ops when Mem0 is not configured", async () => {
   }
 });
 
-test("writeUserRules writes USER.md and disabled memory skips MEMORY.md", async () => {
+test("writeRecalledMemory clears leftover USER.md and skips MEMORY.md when disabled", async () => {
   const previousDir = process.env.RUNS_DIR;
   const previousUrl = process.env.MEM0_URL;
   const previousKey = process.env.MEM0_API_KEY;
@@ -112,20 +112,19 @@ test("writeUserRules writes USER.md and disabled memory skips MEMORY.md", async 
     passwordHash: "x",
     orgId: "org_local",
     createdAt: "2026-08-31T00:00:00.000Z",
-    userRules: "用中文回复",
     memoryEnabled: false,
   });
   setAccountStore(store, "file");
   setMem0FetchForTests(
     async () => new Response(JSON.stringify({ results: [{ id: "m1", memory: "用 pnpm" }] }), { status: 200 }),
   );
+  const neoDir = path.join(process.env.RUNS_DIR, "run_rules", ".neo");
+  mkdirSync(neoDir, { recursive: true });
+  writeFileSync(path.join(neoDir, "USER.md"), "# leftover rules\n");
   try {
-    const run = sampleRun("run_rules", "包管理器是什么");
-    await writeUserRules(run);
-    await writeRecalledMemory(run);
-    const rules = readFileSync(path.join(process.env.RUNS_DIR!, "run_rules", ".neo", "USER.md"), "utf8");
-    assert.match(rules, /用中文回复/);
-    assert.throws(() => readFileSync(path.join(process.env.RUNS_DIR!, "run_rules", ".neo", "MEMORY.md"), "utf8"));
+    await writeRecalledMemory(sampleRun("run_rules", "包管理器是什么"));
+    assert.throws(() => readFileSync(path.join(neoDir, "USER.md"), "utf8"));
+    assert.throws(() => readFileSync(path.join(neoDir, "MEMORY.md"), "utf8"));
   } finally {
     setMem0FetchForTests(null);
     setAccountStore(null, "file");

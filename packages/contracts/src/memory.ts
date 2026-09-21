@@ -5,7 +5,6 @@ export const MEMORY_LIST_LIMIT_DEFAULT = 50;
 export const MEMORY_LIST_LIMIT_MAX = 100;
 export const MEMORY_SEARCH_LIMIT_DEFAULT = 8;
 export const MEMORY_SEARCH_LIMIT_MAX = 32;
-export const MEMORY_PINNED_LIMIT = 12;
 export const MEMORY_RELEVANT_LIMIT = 12;
 export const MEMORY_SEARCH_FETCH = 24;
 export const MEMORY_SCORE_MIN = 0.35;
@@ -14,8 +13,8 @@ export const MEMORY_SOFT_KIND_LIMIT = 2;
 export const MEMORY_SNIPPET_LENGTH = 72;
 export const MEMORY_TEXT_MAX_LENGTH = 500;
 export const MEMORY_SEARCH_DEBOUNCE_MS = 300;
-export const USER_RULES_MAX_LENGTH = 4000;
 export const MEMORY_FILE = "MEMORY.md";
+/** Leftover filename from the removed daily-rules layer. Inject deletes it. */
 export const USER_RULES_FILE = "USER.md";
 export const SESSION_MEMORY_FILE = "SESSION_MEMORY.md";
 export const NEO_DIR = ".neo";
@@ -30,9 +29,6 @@ export type MemoryKind = (typeof MEMORY_KIND)[keyof typeof MEMORY_KIND];
 export const MEMORY_STATUS = { candidate: "candidate", confirmed: "confirmed" } as const;
 export type MemoryStatus = (typeof MEMORY_STATUS)[keyof typeof MEMORY_STATUS];
 
-export const MEMORY_PROMOTE_TARGET = { user: "user", project: "project" } as const;
-export type MemoryPromoteTarget = (typeof MEMORY_PROMOTE_TARGET)[keyof typeof MEMORY_PROMOTE_TARGET];
-
 export const MEMORY_ERROR_CODE = {
   LOGIN_REQUIRED: "MEMORY_LOGIN_REQUIRED",
   TEXT_REQUIRED: "MEMORY_TEXT_REQUIRED",
@@ -43,8 +39,6 @@ export const MEMORY_ERROR_CODE = {
   STORE_UNAVAILABLE: "MEMORY_STORE_UNAVAILABLE",
   STORE_FAILED: "MEMORY_STORE_FAILED",
   DISABLED: "MEMORY_DISABLED",
-  RULES_TOO_LONG: "MEMORY_RULES_TOO_LONG",
-  PROJECT_REQUIRED: "MEMORY_PROJECT_REQUIRED",
 } as const;
 
 export type MemoryErrorCode = (typeof MEMORY_ERROR_CODE)[keyof typeof MEMORY_ERROR_CODE];
@@ -59,15 +53,12 @@ const MEMORY_ERROR_MESSAGE: Record<MemoryErrorCode, string> = {
   MEMORY_STORE_UNAVAILABLE: "记忆还没接上",
   MEMORY_STORE_FAILED: "记忆服务暂时不可用",
   MEMORY_DISABLED: "记忆已关闭，这条不会写入",
-  MEMORY_RULES_TOO_LONG: "用户规则不能超过 4000 字",
-  MEMORY_PROJECT_REQUIRED: "提升到项目需要指定当前项目",
 };
 
 export type MemoryMetadata = {
   source?: MemorySource;
   status?: MemoryStatus;
   kind?: MemoryKind;
-  pinned?: boolean;
   runId?: string;
 };
 
@@ -88,7 +79,6 @@ export type MemoryListResponse = {
 
 export type MemorySettings = {
   enabled: boolean;
-  userRules: string;
   configured: boolean;
 };
 
@@ -96,9 +86,6 @@ export const MEMORY_INJECT_FILE_PREAMBLE =
   "These are tendencies recalled about this user. Use them to ask one fewer question. They are not veto power. The current task, repo, PROJECT.md, AGENTS.md, and test evidence win. Soft summaries (style / habit) can be ignored. Do not refuse a reasonable approach because memory prefers another.";
 
 export const MEMORY_INJECT_SYSTEM_PREAMBLE = `Tendencies from the user's memory store. Use them to guess less, not to override the current task. Repo files, tests, PROJECT.md, AGENTS.md, and the current user message win if they conflict. Soft summaries can be ignored. Persist new facts with ${MEMORY_ADD_TOOL_NAME} and look them up with ${MEMORY_SEARCH_TOOL_NAME}.`;
-
-export const USER_RULES_SYSTEM_PREAMBLE =
-  "Hand-written rules from this user. Follow them carefully. They still lose to the current user message and to project instructions (PROJECT.md / AGENTS.md).";
 
 export function memoryErrorMessage(code: MemoryErrorCode): string {
   return MEMORY_ERROR_MESSAGE[code];
@@ -158,33 +145,15 @@ function isSoftMemoryKind(kind?: string): boolean {
   return kind === MEMORY_KIND.style || kind === MEMORY_KIND.habit;
 }
 
-export function isPinnedMemory(item: Pick<MemoryItem, "metadata">): boolean {
-  if (item.metadata?.pinned === true) {
-    return true;
-  }
-  return item.metadata?.source === "manual" && item.metadata?.kind === "coding";
-}
-
-export function selectRecalledMemories(input: {
-  candidates: MemoryItem[];
-  pinned?: MemoryItem[];
-}): { pinned: MemoryItem[]; relevant: MemoryItem[] } {
-  const pinnedSeen = new Set<string>();
-  const pinned: MemoryItem[] = [];
-  for (const item of [...(input.pinned ?? []), ...input.candidates]) {
-    if (!isPinnedMemory(item) || pinnedSeen.has(item.id) || pinned.length >= MEMORY_PINNED_LIMIT) {
-      continue;
-    }
-    pinned.push(item);
-    pinnedSeen.add(item.id);
-  }
+/**
+ * Pick recalled memories from search hits only. Low scores drop; soft kinds are capped.
+ * @returns items to write into MEMORY.md, already ordered by search rank
+ */
+export function selectRecalledMemories(candidates: MemoryItem[]): MemoryItem[] {
   const relevant: MemoryItem[] = [];
   const softCounts: Partial<Record<MemoryKind, number>> = {};
   let softTotal = 0;
-  for (const item of input.candidates) {
-    if (pinnedSeen.has(item.id)) {
-      continue;
-    }
+  for (const item of candidates) {
     if (typeof item.score === "number" && item.score < MEMORY_SCORE_MIN) {
       continue;
     }
@@ -204,7 +173,7 @@ export function selectRecalledMemories(input: {
       break;
     }
   }
-  return { pinned, relevant };
+  return relevant;
 }
 
 export function formatUserMemory(items: Array<{ text: string }>): string {
@@ -213,14 +182,6 @@ export function formatUserMemory(items: Array<{ text: string }>): string {
     return "";
   }
   return ["# User memory", "", MEMORY_INJECT_FILE_PREAMBLE, "", ...lines.map((line) => `- ${line}`), ""].join("\n");
-}
-
-export function formatUserRules(rules: string): string {
-  const text = rules.trim();
-  if (!text) {
-    return "";
-  }
-  return ["# User rules", "", USER_RULES_SYSTEM_PREAMBLE, "", text, ""].join("\n");
 }
 
 export function filterMemories<T extends { id: string; text: string }>(items: T[], query: string): T[] {
@@ -242,14 +203,6 @@ export function appendUserMemory(systemPrompt: string, memory: string): string {
     return systemPrompt;
   }
   return `${systemPrompt}\n\n# Recalled user memory\n${MEMORY_INJECT_SYSTEM_PREAMBLE}\n\n${text}`;
-}
-
-export function appendUserRules(systemPrompt: string, rules: string): string {
-  const text = rules.trim();
-  if (!text) {
-    return systemPrompt;
-  }
-  return `${systemPrompt}\n\n# User rules\n${USER_RULES_SYSTEM_PREAMBLE}\n\n${text}`;
 }
 
 export function appendSessionMemoryLine(existing: string, text: string): string {

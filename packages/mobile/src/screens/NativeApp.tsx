@@ -7,7 +7,7 @@ import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { transcriptBodyNeeded } from "@neo-cloud-agent/contracts/transcript";
-import { MEMORY_PROMOTE_TARGET, type MemoryItem } from "@neo-cloud-agent/contracts/memory";
+import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
@@ -93,9 +93,8 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [memoryConfigured, setMemoryConfigured] = useState(false);
-  const [memorySettings, setMemorySettings] = useState<{ enabled: boolean; userRules: string; configured: boolean }>({
+  const [memorySettings, setMemorySettings] = useState<{ enabled: boolean; configured: boolean }>({
     enabled: true,
-    userRules: "",
     configured: false,
   });
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
@@ -162,7 +161,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         client.listInbox().catch(() => ({ items: [], unread: 0 })),
         // Mem0 is optional; an unconfigured control plane answers `configured: false`.
         client.listMemories().catch(() => ({ configured: false, memories: [] })),
-        client.memorySettings().catch(() => ({ enabled: true, userRules: "", configured: false })),
+        client.memorySettings().catch(() => ({ enabled: true, configured: false })),
       ]);
     setRuns(listed.runs);
     setDesks(deskList.desks);
@@ -672,25 +671,6 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             setMemorySettings(await client.patchMemorySettings(patch));
           } catch (error) {
             setPageError(error instanceof Error ? error.message : "保存设置失败");
-          }
-        }}
-        onPin={async (id, pinned) => {
-          setPageError("");
-          try {
-            const next = await client.pinMemory(id, pinned);
-            setMemories((prev) => prev.map((item) => (item.id === id ? { ...item, ...next.memory } : item)));
-          } catch (error) {
-            setPageError(error instanceof Error ? error.message : "钉住失败");
-          }
-        }}
-        onPromote={async (id) => {
-          setPageError("");
-          try {
-            await client.promoteMemory(id, MEMORY_PROMOTE_TARGET.user);
-            setMemories((prev) => prev.filter((item) => item.id !== id));
-            setMemorySettings(await client.memorySettings());
-          } catch (error) {
-            setPageError(error instanceof Error ? error.message : "提升失败");
           }
         }}
       />

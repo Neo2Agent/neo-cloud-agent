@@ -5,7 +5,6 @@ import { parseMemoryKind, parseMemoryStatus } from "@neo-cloud-agent/contracts";
 import { controlStateDir } from "../store/persist.js";
 
 export type MemoryFlags = {
-  pinned?: boolean;
   kind?: MemoryKind;
   status?: MemoryStatus;
 };
@@ -36,9 +35,12 @@ function writeSnapshot(snapshot: Snapshot): void {
 export function mergeMemoryFlags(userId: string, id: string, patch: MemoryFlags): MemoryFlags {
   const snapshot = readSnapshot();
   const current = snapshot[userId]?.[id] ?? {};
-  const next: MemoryFlags = { ...current };
-  if (patch.pinned !== undefined) {
-    next.pinned = patch.pinned;
+  const next: MemoryFlags = {};
+  if (current.kind !== undefined) {
+    next.kind = current.kind;
+  }
+  if (current.status !== undefined) {
+    next.status = current.status;
   }
   if (patch.kind !== undefined) {
     next.kind = patch.kind;
@@ -72,8 +74,7 @@ export function applyMemoryFlags(userId: string, items: MemoryItem[]): MemoryIte
     const overlay = flags[item.id];
     const kind = overlay?.kind ?? parseMemoryKind(item.metadata?.kind);
     const status = overlay?.status ?? parseMemoryStatus(item.metadata?.status);
-    const pinned = overlay?.pinned ?? item.metadata?.pinned;
-    if (!kind && !status && pinned === undefined && !item.metadata) {
+    if (!kind && !status && !item.metadata) {
       return item;
     }
     return {
@@ -82,7 +83,6 @@ export function applyMemoryFlags(userId: string, items: MemoryItem[]): MemoryIte
         ...item.metadata,
         ...(kind ? { kind } : {}),
         ...(status ? { status } : {}),
-        ...(pinned !== undefined ? { pinned } : {}),
       },
     };
   });

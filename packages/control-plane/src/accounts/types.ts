@@ -17,7 +17,6 @@ export type UserRecord = {
   creditFen?: number;
   avatar?: UserAvatar;
   neoAvatar?: UserAvatar;
-  userRules?: string;
   memoryEnabled?: boolean;
 };
 
@@ -52,7 +51,6 @@ export type UserAvatarPatch = {
 };
 
 export type UserMemorySettingsPatch = {
-  userRules?: string;
   memoryEnabled?: boolean;
 };
 
@@ -114,9 +112,6 @@ export function applyAccountPatch(user: UserRecord, patch: UserAccountPatch): Us
 
 export function applyMemorySettingsPatch(user: UserRecord, patch: UserMemorySettingsPatch): UserRecord {
   const next = { ...user };
-  if (patch.userRules !== undefined) {
-    next.userRules = patch.userRules;
-  }
   if (patch.memoryEnabled !== undefined) {
     next.memoryEnabled = patch.memoryEnabled;
   }
