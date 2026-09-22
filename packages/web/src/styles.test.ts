@@ -6,11 +6,11 @@ import test from "node:test";
 
 const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "styles.css"), "utf8");
 
-test("web shell keeps the original cool-gray chrome", () => {
-  assert.match(css, /--bg:\s*#ffffff/);
-  assert.match(css, /--accent:\s*#4d6bfe/);
-  assert.match(css, /font-family:\s*Inter/);
-  assert.doesNotMatch(css, /Geist Sans/);
+test("web shell uses the quiet monochrome workspace", () => {
+  assert.match(css, /--bg:\s*#f4f4f5/);
+  assert.match(css, /--accent:\s*#1c1c1c/);
+  assert.match(css, /font-family:\s*"Geist Sans"/);
+  assert.doesNotMatch(css, /#4d6bfe/);
   assert.match(css, /\.new-chat-plus\s*\{/);
   assert.match(css, /button\.send\s*\{[^}]*padding:\s*8px 16px/);
   assert.match(css, /--ease:\s*140ms ease/);

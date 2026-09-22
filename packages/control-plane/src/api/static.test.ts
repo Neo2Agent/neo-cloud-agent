@@ -62,10 +62,9 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(html, /正在进入/);
   assert.match(html, /boot-splash/);
   const cssText = readBuiltAsset(".css");
-  assert.match(cssText, /--bg:\s*#ffffff/);
-  assert.match(cssText, /--accent:\s*#4d6bfe/);
-  assert.match(cssText, /font-family:\s*Inter/);
-  assert.doesNotMatch(cssText, /Geist Sans/);
+  assert.match(cssText, /--bg:\s*#f4f4f5/);
+  assert.match(cssText, /--accent:\s*#1c1c1c/);
+  assert.match(cssText, /font-family:\s*["']?Geist Sans["']?/);
   assert.match(cssText, /\.new-chat-plus/);
   assert.match(cssText, /color-scheme:\s*light/);
   assert.match(cssText, /\[hidden\]\{[^}]*display:\s*none\s*!important/);
