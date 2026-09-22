@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
+import { ARTIFACT_TEXT_PREVIEW_BYTES, decodeUtf8Preview } from "../artifact-text.js";
 import { api, readJson } from "../api";
 import { artifactKind, artifactKindLabel, previewKind } from "../artifact.js";
 import { IconClose, IconFileKind } from "../icons.js";
+import { MarkdownBody } from "../markdown.js";
 
 type Artifact = { name: string; url?: string; contentType?: string };
 
@@ -16,6 +18,8 @@ type Props = {
   runId?: string | null;
   onOpen?: (item: Artifact) => void;
   onSaved?: (asset: ProjectAsset) => void;
+  onSelect?: (name: string | null) => void;
+  focusName?: string | null;
 };
 
 export function ArtifactsPanel({
@@ -28,12 +32,67 @@ export function ArtifactsPanel({
   runId,
   onOpen,
   onSaved,
+  onSelect,
+  focusName,
 }: Props) {
   const [preview, setPreview] = useState<Artifact | null>(null);
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [textPreview, setTextPreview] = useState("");
+  const [textError, setTextError] = useState("");
+  const [textLoading, setTextLoading] = useState(false);
+  useEffect(() => {
+    if (!focusName) return;
+    const match = artifacts.find((item) => item.name === focusName);
+    if (match) setPreview(match);
+  }, [artifacts, focusName]);
+
+  useEffect(() => {
+    onSelect?.(preview?.name ?? null);
+  }, [preview?.name, onSelect]);
+
+  useEffect(() => {
+    const kind = preview ? previewKind(preview) : null;
+    const textual = kind === "markdown" || kind === "text" || kind === "json";
+    if (!preview?.url || !textual || !token) {
+      setTextPreview("");
+      setTextError("");
+      setTextLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setTextLoading(true);
+    setTextError("");
+    setTextPreview("");
+    void (async () => {
+      const response = await api(token, preview.url!);
+      if (!response.ok) throw new Error("打不开这个文件");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const slice = bytes.subarray(0, ARTIFACT_TEXT_PREVIEW_BYTES);
+      let text = "";
+      try {
+        text = decodeUtf8Preview(slice);
+      } catch {
+        throw new Error("utf8");
+      }
+      if (cancelled) return;
+      setTextPreview(bytes.length > slice.length ? `${text}\n\n…已截断` : text);
+    })()
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setTextError(error instanceof Error && error.message === "utf8" ? "这个文件不是 UTF-8，无法预览。" : "打不开这个文件");
+      })
+      .finally(() => {
+        if (!cancelled) setTextLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [preview, token]);
+
   if (!open) return null;
   const kind = preview ? previewKind(preview) : null;
+  const textual = kind === "markdown" || kind === "text" || kind === "json";
   const canSave = Boolean(projectId && token && runId);
 
   const save = async (item: Artifact) => {
@@ -56,16 +115,16 @@ export function ArtifactsPanel({
   };
 
   return (
-    <section className={`artifacts-panel${preview ? " is-previewing" : ""}`} id="run-artifacts">
-      <div className="artifact-head">
-        <strong>产物</strong>
-        {!canSave && !preview ? <p className="hint">只有项目对话才能保存到项目。</p> : null}
-      </div>
-      {loading ? <p className="hint">正在读取…</p> : null}
-      {error ? <p className="setup err">{error}</p> : null}
-      {saveError ? <p className="setup err">{saveError}</p> : null}
-      {!loading && !error && artifacts.length === 0 ? <p className="hint">还没有产物。</p> : null}
+    <section
+      className={`artifacts-panel is-split${preview ? " is-previewing" : ""}`}
+      id="run-artifacts"
+      title={canSave ? undefined : "只有项目对话才能保存到项目。"}
+    >
       <ul className="artifact-list">
+        {loading ? <li className="hint">正在读取…</li> : null}
+        {error ? <li className="setup err">{error}</li> : null}
+        {saveError ? <li className="setup err">{saveError}</li> : null}
+        {!loading && !error && artifacts.length === 0 ? <li className="hint">还没有产物。</li> : null}
         {artifacts.map((item) => {
           const selected = preview?.name === item.name;
           const thumb = previewKind(item) === "image" && item.url;
@@ -115,6 +174,13 @@ export function ArtifactsPanel({
             </div>
           ) : kind === "html" && preview.url ? (
             <iframe className="artifact-preview-frame" title={preview.name} src={preview.url} sandbox="allow-scripts" />
+          ) : textual ? (
+            <div className="artifact-preview-frame artifact-text">
+              {textLoading ? <p className="hint">正在读取…</p> : null}
+              {textError ? <p className="setup err">{textError}</p> : null}
+              {kind === "markdown" && textPreview ? <MarkdownBody text={textPreview} /> : null}
+              {kind !== "markdown" && textPreview ? <pre>{textPreview}</pre> : null}
+            </div>
           ) : (
             <div className="artifact-preview-empty">
               <IconFileKind kind={artifactKind(preview)} size={28} />

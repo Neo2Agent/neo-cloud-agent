@@ -12,6 +12,8 @@ type Props = {
 };
 
 export function VmSlots({ slots, backend, currentRunId, runs, onOpenRun }: Props) {
+  const held = slots.filter((slot) => slot.status === "busy" || Boolean(slot.runId));
+  if (slots.length > 0 && held.length === 0) return null;
   return (
     <section className="vm-block">
       <p className="eyebrow">虚拟机</p>
@@ -19,7 +21,7 @@ export function VmSlots({ slots, backend, currentRunId, runs, onOpenRun }: Props
         {slots.length === 0 ? (
           <p className="hint">{backend === "none" ? "当前未启用 VM" : "VM 槽还在初始化"}</p>
         ) : (
-          slots.map((slot) => {
+          held.map((slot) => {
             const occupant = runs.find((run) => run.id === slot.runId || run.vmSlotId === slot.id);
             const held = slot.status === "busy" || Boolean(slot.runId);
             const current = Boolean(currentRunId && (slot.runId === currentRunId || occupant?.id === currentRunId));

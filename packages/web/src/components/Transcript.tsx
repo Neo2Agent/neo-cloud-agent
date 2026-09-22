@@ -1,11 +1,12 @@
-import { Fragment, useEffect, useLayoutEffect, useRef } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { BUNDLED_RECIPES } from "@neo-cloud-agent/contracts/recipe";
-import { fileToolDiff, formatDuration, formatMessageTime, formatWhen, toolArgPreview } from "../format";
-import { IconCheck, IconError, IconSpinner, IconTool } from "../icons";
+import { artifactKind } from "../artifact";
+import { fileToolDiff, formatDuration, formatMessageTime, formatWhen, partitionTurn, resolveWorkFoldOpen, toolArgPreview, toolDiffStat, toolVerb } from "../format";
+import { IconCheck, IconError, IconFileKind, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "../markdown";
 import { shouldShowThinking } from "../turn";
 import { transcriptUserImageSrc } from "../user-image";
@@ -23,6 +24,7 @@ type Props = {
   highlightId?: string | null;
   onLoadOlder: () => void;
   onOpenDiagnostics?: () => void;
+  onOpenArtifact?: (name: string) => void;
   onPickRecipe?: (recipe: Recipe) => void;
 };
 
@@ -34,10 +36,23 @@ function ToolStatus({ tool }: { tool: TranscriptTool }) {
 
 function toolDisplayName(tool: TranscriptTool): string {
   const nested = typeof tool.details?.subagent === "string" ? tool.details.subagent : "";
+  const verb = toolVerb(tool.name);
   if (nested && tool.name !== "neo_subagent") {
-    return `${nested} / ${tool.name}`;
+    return `${nested} / ${verb}`;
   }
-  return tool.name === "neo_subagent" ? "subagent" : tool.name;
+  return verb;
+}
+
+function artifactFileName(message: TranscriptMessage): string {
+  const href = message.href ?? "";
+  const path = href.split("?")[0] ?? "";
+  const raw = path.slice(path.lastIndexOf("/") + 1);
+  if (!raw) return message.text.replace(/^已上传\s*/, "").trim() || "产物";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function readSubagentTasks(details?: Record<string, unknown>): SubagentTask[] {
@@ -54,16 +69,22 @@ function readSubagentTasks(details?: Record<string, unknown>): SubagentTask[] {
   });
 }
 
-function ToolCard({ tool }: { tool: TranscriptTool }) {
-  const running = tool.status === "running" && !tool.output;
+function ToolCard({ tool, resetKey }: { tool: TranscriptTool; resetKey: number }) {
+  const running = tool.status === "running";
   const preview = toolArgPreview(tool.args);
   const diff = fileToolDiff(tool);
+  const stat = toolDiffStat(tool);
   const preRef = useRef<HTMLPreElement>(null);
   const parentSubagent = tool.name === "neo_subagent";
   const subagent = parentSubagent || Boolean(tool.details?.subagent);
   const steps = parentSubagent ? readSubagentSteps(tool.details) : [];
   const tasks = parentSubagent ? readSubagentTasks(tool.details) : [];
   const omitted = parentSubagent ? Number(tool.details?.omittedSteps ?? 0) : 0;
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [resetKey]);
 
   useLayoutEffect(() => {
     if (!running || !preRef.current) return;
@@ -73,15 +94,25 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
   return (
     <details
       className={`${tool.isError ? "tool err" : running ? "tool run" : "tool"}${subagent ? " subagent" : ""}`}
-      open={running}
+      open={open}
+      onToggle={(event) => {
+        if (event.currentTarget.open !== open) setOpen(event.currentTarget.open);
+      }}
     >
       <summary>
         <span className="tool-name">
           <ToolStatus tool={tool} />
           <IconTool name={tool.name} size={14} />
           {toolDisplayName(tool)}
+          <span className="sr-only">{running ? "执行中" : tool.isError ? "失败" : "完成"}</span>
         </span>
         {preview ? <span className="cmd">{preview}</span> : null}
+        {stat ? (
+          <span className="tool-stat">
+            <span className="tool-stat-add">+{stat.added}</span>
+            <span className="tool-stat-del">-{stat.removed}</span>
+          </span>
+        ) : null}
       </summary>
       {tasks.length > 0 ? (
         <ul className="subagent-tasks">
@@ -119,10 +150,9 @@ function ToolCard({ tool }: { tool: TranscriptTool }) {
             </span>
           ))}
         </pre>
-      ) : null}
-      {tool.output ? (
+      ) : tool.output ? (
         <pre ref={preRef}>{tool.output}</pre>
-      ) : running && !diff && steps.length === 0 ? (
+      ) : running && steps.length === 0 ? (
         <pre ref={preRef}>执行中…</pre>
       ) : null}
     </details>
@@ -142,19 +172,62 @@ function MessageTime({ message, className = "" }: { message: TranscriptMessage; 
   );
 }
 
-function ArtifactCard({ message }: { message: TranscriptMessage }) {
-  const href = message.href;
-  const image = Boolean(href && message.mediaType?.startsWith("image/"));
+function WorkFold({ message }: { message: TranscriptMessage }) {
+  const groups = transcriptGroups(message);
+  const turn = partitionTurn(groups);
+  const streaming = Boolean(message.streaming);
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const [innerEpoch, setInnerEpoch] = useState(0);
+  const wasStreaming = useRef(streaming);
+  useEffect(() => {
+    if (wasStreaming.current && !streaming) setChoice(null);
+    wasStreaming.current = streaming;
+  }, [streaming]);
+  if (turn.buckets.length === 0 && turn.notes.length === 0) return null;
+  const open = resolveWorkFoldOpen(streaming, choice);
+  const duration = formatDuration(message.createdAt, message.updatedAt);
+  const label = streaming ? "工作中" : duration ? `工作了 ${duration}` : "工作了";
+  return (
+    <details
+      className="work-fold"
+      open={open}
+      onToggle={(event) => {
+        const next = event.currentTarget.open;
+        if (next === open) return;
+        setChoice(next);
+        if (next) setInnerEpoch((epoch) => epoch + 1);
+      }}
+    >
+      <summary>{label}</summary>
+      {turn.notes.length > 0 ? (
+        <details key={`notes-${innerEpoch}`} className="work-group">
+          <summary>过程</summary>
+          {turn.notes.map((text, index) => (
+            <MarkdownBody key={`${message.id}-note-${index}`} text={text} className="work-note" />
+          ))}
+        </details>
+      ) : null}
+      {turn.buckets.map((bucket) => (
+        <details key={`${bucket.id}-${innerEpoch}`} className="work-group">
+          <summary>{bucket.label}</summary>
+          {bucket.tools.map((tool, toolIndex) => (
+            <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} resetKey={innerEpoch} />
+          ))}
+        </details>
+      ))}
+    </details>
+  );
+}
+
+function ArtifactCard({ message, onOpen }: { message: TranscriptMessage; onOpen?: (name: string) => void }) {
+  const name = artifactFileName(message);
+  const kind = artifactKind({ name, contentType: message.mediaType });
   return (
     <article className="artifact">
-      {href ? (
-        <a href={href} target="_blank" rel="noreferrer">
-          {message.text}
-        </a>
-      ) : (
-        <span>{message.text}</span>
-      )}
-      {image && href ? <img src={href} alt="" /> : null}
+      <button type="button" className="artifact-chip" onClick={() => onOpen?.(name)}>
+        <IconFileKind kind={kind} size={16} />
+        <span className="artifact-chip-name">{name}</span>
+      </button>
     </article>
   );
 }
@@ -171,6 +244,7 @@ export function Transcript({
   highlightId,
   onLoadOlder,
   onOpenDiagnostics,
+  onOpenArtifact,
   onPickRecipe,
 }: Props) {
   const scroller = useRef<HTMLElement>(null);
@@ -252,7 +326,7 @@ export function Transcript({
         ) : (
           messages.map((message) => {
             if (message.kind === "artifact.uploaded") {
-              return <ArtifactCard key={message.id} message={message} />;
+              return <ArtifactCard key={message.id} message={message} onOpen={onOpenArtifact} />;
             }
             if (message.role === "setup") {
               const failed = message.level === "error" || String(message.kind).endsWith("_failed") || message.kind === "run.error";
@@ -304,43 +378,25 @@ export function Transcript({
                 </article>
               );
             }
-            const groups = transcriptGroups(message);
-            if (groups.length === 0) {
+            const turn = partitionTurn(transcriptGroups(message));
+            if (turn.buckets.length === 0 && turn.notes.length === 0 && !turn.answer) {
               return null;
             }
             return (
               <Fragment key={message.id}>
-                {groups.map((group, index) => {
-                  const last = index === groups.length - 1;
-                  if (group.type === "tools") {
-                    return (
-                      <Fragment key={`${message.id}-tools-${index}`}>
-                        <div className="tool-stack">
-                          {group.tools.map((tool, toolIndex) => (
-                            <ToolCard key={tool.id ?? `${tool.name}-${toolIndex}`} tool={tool} />
-                          ))}
-                        </div>
-                        {last ? <MessageTime message={message} className="assistant-time" /> : null}
-                      </Fragment>
-                    );
-                  }
-                  const lastText = !groups.slice(index + 1).some((item) => item.type === "text");
-                  return (
-                    <article
-                      key={`${message.id}-text-${index}`}
-                      id={last ? `msg-${message.id}` : undefined}
-                      className="bubble assistant"
-                      data-highlight={highlightId === message.id ? "true" : undefined}
-                    >
-                      <MarkdownBody
-                        text={group.text}
-                        className="body"
-                        streaming={Boolean(message.streaming && lastText)}
-                      />
-                      {last ? <MessageTime message={message} /> : null}
-                    </article>
-                  );
-                })}
+                <WorkFold message={message} />
+                {turn.answer ? (
+                  <article
+                    id={`msg-${message.id}`}
+                    className="bubble assistant"
+                    data-highlight={highlightId === message.id ? "true" : undefined}
+                  >
+                    <MarkdownBody text={turn.answer} className="body" streaming={Boolean(message.streaming)} />
+                    <MessageTime message={message} />
+                  </article>
+                ) : (
+                  <MessageTime message={message} className="assistant-time" />
+                )}
               </Fragment>
             );
           })

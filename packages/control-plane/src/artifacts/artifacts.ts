@@ -18,13 +18,30 @@ export function artifactUrl(runId: string, name: string): string {
   return `/v1/runs/${runId}/artifacts/${encodeURIComponent(name)}`;
 }
 
+const ARTIFACT_NAME_LIMIT = 120;
+
 export function safeArtifactName(name: string): string {
   const base = name.replaceAll("\\", "/").split("/").pop()?.trim() ?? "";
-  const cleaned = base.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const cleaned = base.replace(/[^\p{L}\p{N}._-]+/gu, "_");
   if (!cleaned || cleaned === "." || cleaned === "..") {
     throw new Error("invalid artifact name");
   }
-  return cleaned.slice(0, 120);
+  return cleaned.slice(0, ARTIFACT_NAME_LIMIT);
+}
+
+/** Browsers guess GBK for unlabeled text. Text responses must say UTF-8. */
+export function withUtf8Charset(contentType: string): string {
+  const value = contentType.trim();
+  if (!value || /charset\s*=/i.test(value)) return value;
+  const mime = value.split(";")[0]?.trim().toLowerCase() ?? "";
+  const textual =
+    mime.startsWith("text/") ||
+    mime === "application/json" ||
+    mime === "application/xml" ||
+    mime === "application/javascript" ||
+    mime.endsWith("+json") ||
+    mime.endsWith("+xml");
+  return textual ? `${value}; charset=utf-8` : value;
 }
 
 export function guessContentType(name: string): string {
@@ -80,7 +97,7 @@ export async function putRunArtifact(
   if (body.length > MAX_ARTIFACT_BYTES) {
     throw new Error(`artifact too large (${body.length} > ${MAX_ARTIFACT_BYTES})`);
   }
-  const contentType = input.contentType?.trim() || guessContentType(name);
+  const contentType = withUtf8Charset(input.contentType?.trim() || guessContentType(name));
   const store = getObjectStore();
   await store.put(fileKey(runId, name), body.toString("base64"), contentType);
   const item: StoredArtifact = {

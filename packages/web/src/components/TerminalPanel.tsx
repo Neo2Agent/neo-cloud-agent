@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { IconChevronDown, IconX } from "../icons";
 import { nextHistoryIndex, termKeyAction, termKeyBytes } from "@neo-cloud-agent/ui/term";
 import {
   applyTermChunk,
@@ -42,6 +43,8 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
   const [busy, setBusy] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const menuRef = useRef<HTMLDetailsElement>(null);
   const outRef = useRef<HTMLDivElement | null>(null);
   const ghostRef = useRef<HTMLTextAreaElement | null>(null);
   const composing = useRef(false);
@@ -125,7 +128,10 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
     setBusy(true);
     setError("");
     try {
-      adopt(await openWorkspaceTerm(token, runId));
+      const info = await openWorkspaceTerm(token, runId);
+      adopt(info);
+      setActiveId(info.id);
+      setShowSetup(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "打不开终端");
     } finally {
@@ -224,44 +230,89 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
     return null;
   }
 
-  return (
-    <section className="terminal-panel" id="run-terminal">
-      <header className="term-head">
-        <div>
-          <strong>沙箱终端</strong>
-          <p className="hint">
-            {active
-              ? pty
-                ? `${active.info.shell} · 工作区里可以直接敲命令。Tab 补全路径。`
-                : `${active.info.shell} · 工作区里可以直接敲命令。管道 shell，不是完整 PTY。`
-              : "打开后进的是沙箱工作区，不是 setup 日志。"}
-          </p>
-        </div>
-        <div className="term-actions">
-          {sessions.map((item, index) => (
+  const closeMenu = () => {
+    if (menuRef.current) menuRef.current.open = false;
+  };
+
+  const sessionLabel = active
+    ? `${active.info.shell} ${Math.max(1, sessions.findIndex((item) => item.info.id === active.info.id) + 1)}`
+    : "终端";
+  const menu = (
+    <details className="term-card-head" ref={menuRef}>
+      <summary>
+        {sessionLabel}
+        <IconChevronDown size={14} />
+      </summary>
+      <div className="inspector-more-pop term-menu">
+        {sessions.map((item, index) => (
+          <div key={item.info.id} className={`term-session-row${item.info.id === active?.info.id ? " is-on" : ""}`}>
             <button
-              key={item.info.id}
               type="button"
-              className={item.info.id === activeId ? "ghost is-on" : "ghost"}
-              onClick={() => setActiveId(item.info.id)}
+              onClick={() => {
+                setActiveId(item.info.id);
+                setShowSetup(false);
+                closeMenu();
+              }}
             >
               {item.info.shell} {index + 1}
             </button>
-          ))}
-          <button type="button" className="ghost" disabled={busy || !runId} onClick={() => void create()}>
-            新终端
+            {sessions.length > 1 ? (
+              <button
+                type="button"
+                className="term-session-close"
+                aria-label={`删除 ${item.info.shell} ${index + 1}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void closeSession(item.info.id);
+                }}
+              >
+                <IconX size={14} />
+              </button>
+            ) : null}
+          </div>
+        ))}
+        <div className="term-menu-actions">
+          <button
+            type="button"
+            disabled={busy || !runId}
+            onClick={() => {
+              closeMenu();
+              void create();
+            }}
+          >
+            新建
           </button>
-          {active ? (
-            <button type="button" className="ghost" onClick={() => void closeSession(active.info.id)}>
-              关闭
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setShowSetup((value) => !value);
+              closeMenu();
+            }}
+          >
+            {showSetup ? "回到终端" : "Setup 日志"}
+          </button>
         </div>
-      </header>
+      </div>
+    </details>
+  );
+
+  return (
+    <section className="terminal-panel" id="run-terminal">
+      {menu}
       {error ? <p className="setup err">{error}</p> : null}
-      {!runId ? <p className="hint">先发一条消息，等沙箱工作区起来再敲命令。</p> : null}
-      {busy && sessions.length === 0 ? <p className="hint">正在打开沙箱 shell…</p> : null}
-      {active ? (
+      {showSetup ? (
+        <div className="term-setup-view">
+          {setupLoading ? <p className="hint">正在读取…</p> : null}
+          {setupError ? <p className="setup err">{setupError}</p> : null}
+          {!setupLoading && !setupError && setupLogs.length === 0 ? <p className="pane-empty">还没有 setup 日志。</p> : null}
+          {setupLogs.map((log) => (
+            <article key={log.name}>
+              <p className="eyebrow">{log.name}</p>
+              <pre className="terminal-log">{log.content || "（空）"}</pre>
+            </article>
+          ))}
+        </div>
+      ) : active ? (
         <div
           className={`term-shell${focused ? " is-focused" : ""}`}
           ref={outRef}
@@ -378,19 +429,11 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
             }}
           />
         </div>
-      ) : null}
-      <details className="term-setup">
-        <summary>Setup 日志</summary>
-        {setupLoading ? <p className="hint">正在读取…</p> : null}
-        {setupError ? <p className="setup err">{setupError}</p> : null}
-        {!setupLoading && !setupError && setupLogs.length === 0 ? <p className="hint">还没有 setup 日志。</p> : null}
-        {setupLogs.map((log) => (
-          <article key={log.name}>
-            <p className="eyebrow">{log.name}</p>
-            <pre className="terminal-log">{log.content || "（空）"}</pre>
-          </article>
-        ))}
-      </details>
+      ) : (
+        <p className="pane-empty">
+          {!runId ? "先发一条消息，等沙箱工作区起来再敲命令。" : busy ? "正在打开沙箱 shell…" : "还没有终端。"}
+        </p>
+      )}
     </section>
   );
 }

@@ -6,6 +6,7 @@ import {
   formatMessageTime,
   formatRunTime,
   formatUsage,
+  formatListWhen,
   formatWhen,
   modelLabel,
   nextChatModel,
@@ -13,6 +14,12 @@ import {
   resolveChatModel,
   runListPlaceSuffix,
   toolArgPreview,
+  toolDiffStat,
+  partitionTurn,
+  resolveWorkFoldOpen,
+  slotMenuLines,
+  toolGroupSummary,
+  toolVerb,
 } from "./format.js";
 
 test("runListPlaceSuffix labels Remote separately from This Computer", () => {
@@ -49,6 +56,15 @@ test("modelLabel and resolveChatModel pin DeepSeek to Flash 4.1", () => {
 
 test("formatUsage prints total tokens", () => {
   assert.equal(formatUsage({ promptTokens: 10, completionTokens: 5, totalTokens: 15 }), "15 tok");
+});
+
+test("formatListWhen uses minutes, then hours, then days", () => {
+  const now = new Date("2026-08-24T10:00:00.000Z");
+  assert.equal(formatListWhen("2026-08-24T09:59:30.000Z", now), "刚刚");
+  assert.equal(formatListWhen("2026-08-24T09:55:00.000Z", now), "5分钟");
+  assert.equal(formatListWhen("2026-08-24T08:00:00.000Z", now), "2小时");
+  assert.equal(formatListWhen("2026-08-23T10:00:00.000Z", now), "1天");
+  assert.equal(formatListWhen("2026-08-21T10:00:00.000Z", now), "3天");
 });
 
 test("formatWhen uses Shanghai time and drops the current year", () => {
@@ -91,6 +107,64 @@ test("fileToolDiff renders edit old/new text", () => {
     { type: "del", text: "hello" },
     { type: "add", text: "world" },
   ]);
+});
+
+test("tool rows use a verb and a group summary with diff stats", () => {
+  assert.equal(toolVerb("bash"), "执行");
+  assert.equal(toolVerb("neo_browse"), "浏览");
+  assert.equal(toolVerb("neo_subagent"), "子任务");
+  const edit = {
+    name: "edit",
+    args: { path: "a.ts", edits: [{ oldText: "old", newText: "new" }] },
+  };
+  assert.deepEqual(toolDiffStat(edit), { added: 1, removed: 1 });
+  assert.equal(
+    toolGroupSummary([
+      edit,
+      { name: "read", args: { path: "b.ts" } },
+      { name: "neo_browse", args: { url: "https://example.com" } },
+    ]),
+    "编辑 1 个文件，读取 1 个文件，浏览 1 个页面 +1 -1",
+  );
+});
+
+test("partitionTurn keeps the reply outside the work fold", () => {
+  const turn = partitionTurn([
+    { type: "text", text: "先看一下" },
+    {
+      type: "tools",
+      tools: [
+        { name: "neo_browse", args: { url: "https://example.com" } },
+        { name: "neo_browse", args: { url: "https://news.ycombinator.com" } },
+        { name: "bash", args: { command: "date" } },
+        { name: "neo_subagent", args: { agent: "review", task: "看一下" } },
+      ],
+    },
+    { type: "text", text: "结论在这里" },
+  ]);
+  assert.deepEqual(turn.notes, ["先看一下"]);
+  assert.equal(turn.answer, "结论在这里");
+  assert.equal(turn.buckets.find((bucket) => bucket.id === "explore")?.label, "浏览 2 个页面");
+  assert.equal(turn.buckets.find((bucket) => bucket.id === "exec")?.tools.length, 1);
+  assert.equal(turn.buckets.find((bucket) => bucket.id === "other")?.tools[0]?.name, "neo_subagent");
+  assert.equal(partitionTurn([{ type: "text", text: "只有话" }]).answer, "只有话");
+  assert.equal(resolveWorkFoldOpen(true, null), true);
+  assert.equal(resolveWorkFoldOpen(false, null), false);
+  assert.equal(resolveWorkFoldOpen(false, true), true);
+});
+
+test("slotMenuLines names idle slots once and busy slots by the conversation", () => {
+  const lines = slotMenuLines(
+    [
+      { id: "slot-0", status: "idle", runId: null },
+      { id: "slot-1", status: "busy", runId: "run-2" },
+    ],
+    [{ id: "run-2", prompt: "给我调研最新ai资讯", vmSlotId: "slot-1" }],
+  );
+  assert.equal(lines[0]?.label, "VM 1 · 空闲");
+  assert.equal(lines[0]?.runId, null);
+  assert.match(lines[1]?.label ?? "", /^VM 2 · /);
+  assert.equal(lines[1]?.runId, "run-2");
 });
 
 test("fileToolDiff prefers persisted unified diff details", () => {

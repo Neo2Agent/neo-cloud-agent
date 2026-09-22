@@ -10,7 +10,7 @@ import { pageAllowsLiveMic, type VoiceSession } from "@neo-cloud-agent/ui/speech
 import { BuddyVoiceFileSheet, Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
 import { readToken } from "../api";
 import type { DeskTarget } from "../desk";
-import { IconArrowUp, IconMic, IconPlus, IconStop } from "../icons";
+import { IconArrowUp, IconInfo, IconMic, IconPlus, IconStop } from "../icons";
 import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
 import { applyClickVoice, startWebVoice } from "../speech";
 import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
@@ -143,21 +143,16 @@ export function Composer({
         : busy
           ? (activity ?? "正在进行…")
           : vmHint;
+  const showLiveHint = Boolean(voiceError || archived || blocked || busy || listening || finishing);
   const placeholder = archived
-    ? "对话已归档。"
+    ? "这条对话已归档"
     : blocked
-      ? (blockedHint || "发起这条对话的 Desk 离线。打开 Desk 后才能继续。")
+      ? (blockedHint || "这台电脑离线了")
       : busy
-        ? buddy
-          ? "继续说一句…"
-          : "可以先写下一句，等结束后再发送。点停止可中断当前回合。"
-        : buddy
-          ? followUp
-            ? "继续说一句…"
-            : "说说你要做什么"
-          : isNarrowViewport()
-            ? "描述任务，点发送。可粘贴图片。"
-            : "描述任务。Enter 发送，Shift+Enter 换行。输入 @ 可点专家、技能或资产。";
+        ? "先写下一条…"
+        : followUp
+          ? "跟一句…"
+          : "例如：给这个仓库加一个健康检查…";
   const canStartVoice = !sendLocked && !busy && !finishing;
   const voiceLabel = holdPadLabel({
     supported: true,
@@ -265,7 +260,8 @@ export function Composer({
       <textarea
         id="prompt"
         name="prompt"
-        rows={buddy ? 2 : isNarrowViewport() ? 2 : 3}
+        aria-label="任务"
+        rows={buddy ? 2 : 1}
         placeholder={placeholder}
         required={!busy && !sendLocked && images.length === 0}
         disabled={archived}
@@ -421,10 +417,16 @@ export function Composer({
                 }
               />
             ) : null}
-            <p className="hint" id="vm-status" data-busy={busy || listening || finishing ? "true" : "false"}>
-              {busy || listening || finishing ? <span className="pulse-dot" aria-hidden="true" /> : null}
-              {listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : hint}
-            </p>
+            {showLiveHint ? (
+              <p className="hint" id="vm-status" data-busy={busy || listening || finishing ? "true" : "false"}>
+                {busy || listening || finishing ? <span className="pulse-dot" aria-hidden="true" /> : null}
+                {listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : hint}
+              </p>
+            ) : (
+              <span className="composer-hint" id="vm-status" title={hint} aria-label={hint}>
+                <IconInfo size={14} />
+              </span>
+            )}
             {!sendLocked ? voiceButton("composer-mic") : null}
             {busy && canStop ? (
               <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>

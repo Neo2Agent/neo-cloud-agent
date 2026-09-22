@@ -5,7 +5,6 @@ import {
   MEMORY_STATUS,
   MEMORY_TEXT_MAX_LENGTH,
   memoryEdited,
-  memoryHint,
   memoryKind,
   memoryKindLabel,
   readMemoryError,
@@ -15,7 +14,7 @@ import {
 } from "@neo-cloud-agent/contracts/memory";
 import { api, readJson } from "../api";
 import { clampPage, paginate } from "../catalog.js";
-import { IconBack } from "../icons.js";
+import { IconMemory, IconPlus } from "../icons.js";
 import { useConfirm } from "../feedback.js";
 import { CatalogCard, CatalogEmpty, CatalogForm, CatalogGrid, CatalogModal, CatalogPager, CatalogToolbar } from "./Catalog.js";
 
@@ -23,10 +22,9 @@ type Editor = { mode: "new" } | { mode: "edit"; id: string; original: string; up
 
 type Props = {
   token: string;
-  onBack?: () => void;
 };
 
-export function MemoriesPage({ token, onBack }: Props) {
+export function MemoriesPage({ token }: Props) {
   const [configured, setConfigured] = useState(false);
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [query, setQuery] = useState("");
@@ -211,7 +209,6 @@ export function MemoriesPage({ token, onBack }: Props) {
       .finally(() => setBusy(false));
   };
 
-  const hint = memoryHint({ configured, count: items.length, error: error || undefined });
   const emptyTitle = searching
     ? "正在搜索…"
     : error
@@ -224,35 +221,13 @@ export function MemoriesPage({ token, onBack }: Props) {
   const searchStatus = !needle ? "" : searching ? "正在搜索…" : `找到 ${hits?.length ?? 0} 条`;
   const editingId = editor?.mode === "edit" ? editor.id : "";
 
+  const openNew = () => {
+    setDraft("");
+    setEditor({ mode: "new" });
+  };
+
   return (
     <section className="proj-page catalog-page" id="memories-page">
-      <header className="proj-page-head">
-        <div>
-          {onBack ? (
-            <button className="catalog-back" type="button" onClick={onBack}>
-              <IconBack />
-              返回对话
-            </button>
-          ) : (
-            <p className="eyebrow">记忆</p>
-          )}
-          <h2>跨对话记住的事</h2>
-          <p className="hint">{hint}</p>
-        </div>
-      </header>
-
-      <section className="memory-settings">
-        <label className="memory-enabled">
-          <input
-            type="checkbox"
-            checked={settings.enabled}
-            disabled={busy}
-            onChange={(event) => saveSettings({ enabled: event.target.checked })}
-          />
-          开聊时召回用户记忆
-        </label>
-      </section>
-
       <div className="memory-kind-filters">
         {(["", MEMORY_KIND.coding, MEMORY_KIND.style, MEMORY_KIND.habit] as const).map((kind) => (
           <button
@@ -264,51 +239,25 @@ export function MemoriesPage({ token, onBack }: Props) {
             {kind ? memoryKindLabel(kind) : "全部"}
           </button>
         ))}
+        <button
+          type="button"
+          className={settings.enabled ? "icon-btn memory-recall is-on" : "icon-btn memory-recall"}
+          aria-pressed={settings.enabled}
+          aria-label="开聊时召回用户记忆"
+          title="开聊时召回用户记忆"
+          disabled={busy}
+          onClick={() => saveSettings({ enabled: !settings.enabled })}
+        >
+          <IconMemory size={16} />
+        </button>
       </div>
 
-      <CatalogToolbar
-        search={query}
-        onSearch={setQuery}
-        placeholder="搜索记忆"
-        actionLabel={configured ? "记一条" : undefined}
-        onAction={
-          configured
-            ? () => {
-                setDraft("");
-                setEditor({ mode: "new" });
-              }
-            : undefined
-        }
-      />
+      <CatalogToolbar search={query} onSearch={setQuery} placeholder="搜索记忆" />
+      {error ? <p className="setup err">{error}</p> : null}
       {searchStatus ? <p className="memory-search-status">{searchStatus}</p> : null}
 
       {visibleItems.length === 0 ? (
-        <CatalogEmpty
-          title={emptyTitle}
-          hint={
-            searching
-              ? "正在按你输入的内容检索。"
-              : items.length === 0 && configured && !error
-                ? "对话里说「帮我记住」，或点右上角记一条。"
-                : needle
-                  ? "换个词试试，或清空搜索看全部。"
-                  : hint
-          }
-          action={
-            configured && items.length === 0 && !error && !needle ? (
-              <button
-                className="proj-add"
-                type="button"
-                onClick={() => {
-                  setDraft("");
-                  setEditor({ mode: "new" });
-                }}
-              >
-                记一条
-              </button>
-            ) : null
-          }
-        />
+        <CatalogEmpty title={emptyTitle} />
       ) : (
         <>
           <CatalogGrid className={searching ? "is-searching" : undefined}>
@@ -321,6 +270,7 @@ export function MemoriesPage({ token, onBack }: Props) {
                 <CatalogCard
                   key={item.id}
                   title={item.text}
+                  className="memory-card"
                   badge={
                     [
                       memoryKindLabel(memoryKind(item)),
@@ -330,7 +280,6 @@ export function MemoriesPage({ token, onBack }: Props) {
                       .filter(Boolean)
                       .join(" · ") || undefined
                   }
-                  initial="记"
                   active={item.id === editingId}
                   onOpen={openEditor}
                   actions={
@@ -392,6 +341,9 @@ export function MemoriesPage({ token, onBack }: Props) {
           </p>
         </CatalogForm>
       </CatalogModal>
+      <button type="button" className="memory-fab" aria-label="记一条" title="记一条" onClick={openNew}>
+        <IconPlus size={20} />
+      </button>
     </section>
   );
 }

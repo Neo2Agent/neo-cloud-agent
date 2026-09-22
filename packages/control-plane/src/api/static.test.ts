@@ -99,7 +99,7 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /save-llm/);
   assert.match(appText, /vm-status/);
   assert.match(appText, /toggle-settings/);
-  assert.match(appText, /vm-rail/);
+  assert.match(appText, /status-pop/);
   assert.match(appText, /vm-badge/);
   assert.match(appText, /sidebar-toggle/);
   assert.match(appText, /tool-diff|diff-add/);
@@ -109,7 +109,7 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /deepseek-flash/);
   assert.match(appText, /工作区/);
   assert.match(appText, /置顶/);
-  assert.match(appText, /session-tabs/);
+  assert.match(appText, /inspector-tabs/);
   assert.match(appText, /产物/);
   assert.match(appText, /保存到项目/);
   assert.match(appText, /存入项目/);

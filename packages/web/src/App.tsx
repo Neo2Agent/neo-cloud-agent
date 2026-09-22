@@ -25,6 +25,8 @@ import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { ArtifactsPanel } from "./components/ArtifactsPanel";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileTree } from "./components/FileTree";
+import { InspectorShell, type InspectorTab } from "./components/Inspector";
+import { WorkspaceFiles, type FilesView } from "./components/WorkspaceFiles";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { AutomationsPage } from "./components/AutomationsPage";
 import { ExpertsPage } from "./components/ExpertsPage";
@@ -41,7 +43,7 @@ import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
 import { useConfirm, toast } from "./feedback";
-import { IconBack, IconGear, IconMemory, IconMenu, IconMore, IconSidebarClose } from "./icons";
+import { IconArchive, IconBack, IconComputer, IconGear, IconInfo, IconMemory, IconPanelRight, IconPr, IconTrash } from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { ContextUsagePanel } from "./components/ContextUsage";
 import { Transcript } from "./components/Transcript";
@@ -53,7 +55,7 @@ import {
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatRunTime, formatUsage, modelLabel, nextChatModel, preview, resolveChatModel, shortId, slotLabel, upstreamForChatModel } from "./format";
+import { formatRunTime, formatUsage, modelLabel, nextChatModel, preview, resolveChatModel, shortId, slotLabel, slotMenuLines, upstreamForChatModel } from "./format";
 import {
   activityLabel,
   isActiveRunStatus,
@@ -72,10 +74,10 @@ import {
   type PendingUser,
 } from "./turn";
 import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
+import { clampPane, paneCeiling, paneHalf, paneSnapPhase, SIDEBAR_DEFAULT, type PaneSnap } from "./pane-size";
 
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
 
-type SessionTab = "chat" | "diff" | "terminal" | "artifacts";
 
 function transcriptUrl(id: string, extra?: { before?: string }): string {
   const params = new URLSearchParams({ limit: String(HISTORY_PAGE), images: "href" });
@@ -221,6 +223,12 @@ function runRoleLabel(run: Run | null, experts: Expert[], teams: ExpertTeam[]): 
   return "";
 }
 
+function readRailWidth(): number {
+  if (typeof window === "undefined") return SIDEBAR_DEFAULT;
+  if (window.innerWidth < 860) return 0;
+  return window.localStorage.getItem("neo.sidebar") === "0" ? 48 : SIDEBAR_DEFAULT;
+}
+
 export function App() {
   const [token, setToken] = useState(readToken);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -235,6 +243,16 @@ export function App() {
   const [healthText, setHealthText] = useState("检测服务…");
   const [vms, setVms] = useState<VmSummary>({ total: 0, busy: 0, backend: "none", slots: [] });
   const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+  const [paneWidth, setPaneWidth] = useState(() => paneHalf(typeof window === "undefined" ? 1440 : window.innerWidth, readRailWidth()));
+  const [paneMaxWidth, setPaneMaxWidth] = useState(() =>
+    paneCeiling(typeof window === "undefined" ? 1440 : window.innerWidth, readRailWidth()),
+  );
+  const [paneFull, setPaneFull] = useState(false);
+  const [paneSnap, setPaneSnap] = useState<PaneSnap>("idle");
+  const [filesView, setFilesView] = useState<FilesView>("tree");
   const [userId, setUserId] = useState("");
   const [authOpen, setAuthOpen] = useState(() => !hasSavedSession(readToken()));
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -256,7 +274,9 @@ export function App() {
   const [buildId, setBuildId] = useState("");
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
-  const [sessionTab, setSessionTab] = useState<SessionTab>("chat");
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab | null>(null);
+  const [lastPane, setLastPane] = useState<InspectorTab>("terminal");
+  const [artifactFocus, setArtifactFocus] = useState<string | null>(null);
   const [contextFocusId, setContextFocusId] = useState("");
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
@@ -297,6 +317,9 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [pendingTurn, setPendingTurn] = useState<PendingUser | null>(null);
+  const [sidebarPeek, setSidebarPeek] = useState(false);
+  const [sidebarMotion, setSidebarMotion] = useState(false);
+  const [sidebarShown, setSidebarShown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window === "undefined") return true;
     const saved = window.localStorage.getItem("neo.sidebar");
@@ -670,7 +693,7 @@ export function App() {
     appliedEventIdsRef.current = new Set();
     setPrompt("");
     setImages([]);
-    setSessionTab("chat");
+    setInspectorTab(null);
     setDiffStat("");
     setDiffPatch("");
     setDiffError("");
@@ -698,7 +721,7 @@ export function App() {
       setSending(false);
       if (!keepPendingRef.current) setPendingTurn(null);
       setMainTab("chat");
-      setSessionTab("chat");
+      setInspectorTab(null);
       setHighlightId(null);
       history.replaceState(null, "", `/#/runs/${id}`);
       const [runRes, transcriptRes] = await Promise.all([
@@ -851,7 +874,7 @@ export function App() {
 
   const openChat = useCallback(() => {
     setMainTab("chat");
-    setSessionTab("chat");
+    setInspectorTab(null);
     if (hashCatalog()) {
       history.replaceState(null, "", runId ? `/#/runs/${runId}` : "/");
     }
@@ -932,33 +955,44 @@ export function App() {
   }, [openRun, refreshDesks, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
 
   const applySession = useCallback(
-    async (nextToken: string, user?: { id?: string; email?: string } | null) => {
+    async (nextToken: string, user?: { id?: string; email?: string; username?: string; avatar?: string | null } | null) => {
       if (!nextToken) throw new Error("登录响应缺少会话");
       persistToken(nextToken);
-      if (user?.email) {
-        setUserEmail(user.email);
-        setUserId(user.id ?? "");
-        setAuthOpen(false);
-        setAuthError("");
-        setAuthPassword("");
-        return;
-      }
+      const applyUser = (next: { id?: string; email?: string; username?: string; avatar?: string | null }) => {
+        setUserEmail(next.email ?? "");
+        setUserId(next.id ?? "");
+        setUserName(next.username || next.email || "");
+        setUserAvatar(next.avatar ?? null);
+      };
+      if (user?.email) applyUser(user);
       const me = await api(nextToken, "/v1/me");
       if (!me.ok) {
+        if (user?.email) {
+          setAuthOpen(false);
+          setAuthError("");
+          setAuthPassword("");
+          return;
+        }
         persistToken("");
         setUserEmail("");
         setUserId("");
+        setUserName("");
+        setUserAvatar(null);
         throw new Error("unauthorized");
       }
-      const body = await readJson<{ user?: { id?: string; email?: string } }>(me);
+      const body = await readJson<{ user?: { id?: string; email?: string; username?: string; avatar?: string | null } }>(me);
       if (!body.user) {
-        persistToken("");
-        setUserEmail("");
-        setUserId("");
-        throw new Error("登录未生效，请再试一次");
+        if (!user?.email) {
+          persistToken("");
+          setUserEmail("");
+          setUserId("");
+          setUserName("");
+          setUserAvatar(null);
+          throw new Error("登录未生效，请再试一次");
+        }
+      } else {
+        applyUser(body.user);
       }
-      setUserEmail(body.user.email ?? "");
-      setUserId(body.user.id ?? "");
       setAuthOpen(false);
       setAuthError("");
       setAuthPassword("");
@@ -1463,7 +1497,7 @@ export function App() {
     const onPointer = (event: PointerEvent) => {
       const el = topMoreRef.current;
       if (!el?.open) return;
-      if (!el.contains(event.target as Node)) el.removeAttribute("open");
+      if (!el.contains(event.target as Node)) el.open = false;
     };
     document.addEventListener("pointerdown", onPointer);
     return () => document.removeEventListener("pointerdown", onPointer);
@@ -1550,9 +1584,8 @@ export function App() {
         ? `${Math.max(0, (vms.total || vms.slots.length) - vms.busy)}/${vms.total || vms.slots.length} 个 VM 空闲，发送后占用其中一个（${vms.backend === "loop" ? "loop 挂载" : vms.backend}）。`
         : `${vms.total || vms.slots.length} 个 VM 都在忙。新对话会排队，有空闲槽再自动开始。`;
 
-  const openSessionTab = (id: SessionTab) => {
-    setSessionTab(id);
-    if (id === "chat" || !runId) return;
+  const loadInspector = (id: InspectorTab) => {
+    if (!runId) return;
     if (id === "diff") {
       setDiffLoading(true);
       setDiffError("");
@@ -1578,7 +1611,7 @@ export function App() {
         .catch((error) => setDiagError(error instanceof Error ? error.message : "读取日志失败"))
         .finally(() => setDiagLoading(false));
     }
-    if (id === "artifacts") {
+    if (id === "files") {
       setArtifactsLoading(true);
       setArtifactsError("");
       void (async () => {
@@ -1591,6 +1624,110 @@ export function App() {
         .finally(() => setArtifactsLoading(false));
     }
   };
+
+  const railNow = () => (narrow ? 0 : sidebarOpen ? sidebarWidth : 48);
+  const openInspector = (id: InspectorTab) => {
+    if (!runId) return;
+    setLastPane(id);
+    if (!inspectorTab) {
+      setPaneFull(false);
+      setPaneSnap("idle");
+      setPaneWidth(paneHalf(window.innerWidth, railNow()));
+    }
+    setInspectorTab(id);
+    loadInspector(id);
+  };
+  const onPaneWidth = (next: number) => {
+    setPaneWidth(next);
+    if (narrow) return;
+    setPaneSnap(paneSnapPhase(next, window.innerWidth, railNow()));
+  };
+  const onPaneDragEnd = (next: number) => {
+    if (!narrow && paneSnapPhase(next, window.innerWidth, railNow()) !== "idle") {
+      setPaneSnap("idle");
+      setPaneFull(true);
+      return;
+    }
+    setPaneSnap("idle");
+    setPaneWidth(next);
+  };
+  const motionReduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const sidebarPeekRef = useRef(false);
+  const sidebarShownRef = useRef(false);
+  const sidebarTimer = useRef<number | null>(null);
+  const sidebarFrame = useRef(0);
+  const sidebarOpenRef = useRef(sidebarOpen);
+  const narrowRef = useRef(narrow);
+  const sidebarWidthRef = useRef(sidebarWidth);
+  sidebarOpenRef.current = sidebarOpen;
+  narrowRef.current = narrow;
+  sidebarWidthRef.current = sidebarWidth;
+  const showSidebarPeek = () => {
+    if (narrowRef.current || sidebarOpenRef.current) return;
+    const wasClosing = sidebarTimer.current != null;
+    if (sidebarTimer.current != null) {
+      window.clearTimeout(sidebarTimer.current);
+      sidebarTimer.current = null;
+    }
+    if (sidebarPeekRef.current) {
+      if (sidebarShownRef.current || !wasClosing) return;
+      sidebarShownRef.current = true;
+      setSidebarMotion(true);
+      setSidebarShown(true);
+      return;
+    }
+    sidebarPeekRef.current = true;
+    sidebarShownRef.current = false;
+    setSidebarMotion(false);
+    setSidebarShown(false);
+    setSidebarPeek(true);
+    const frame = ++sidebarFrame.current;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (frame !== sidebarFrame.current || !sidebarPeekRef.current || sidebarOpenRef.current) return;
+        sidebarShownRef.current = true;
+        setSidebarMotion(true);
+        setSidebarShown(true);
+      });
+    });
+  };
+  const hideSidebarPeek = () => {
+    if (sidebarOpenRef.current || !sidebarPeekRef.current || sidebarTimer.current != null) return;
+    sidebarFrame.current += 1;
+    sidebarShownRef.current = false;
+    setSidebarShown(false);
+    const delay = motionReduced() ? 0 : 200;
+    sidebarTimer.current = window.setTimeout(() => {
+      sidebarTimer.current = null;
+      if (sidebarShownRef.current) return;
+      sidebarPeekRef.current = false;
+      setSidebarPeek(false);
+      setSidebarMotion(false);
+    }, delay);
+  };
+  useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      if (!narrowRef.current && !sidebarOpenRef.current) {
+        const edge = sidebarPeekRef.current ? sidebarWidthRef.current + 8 : 48;
+        if (event.clientX <= edge) showSidebarPeek();
+        else hideSidebarPeek();
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    return () => window.removeEventListener("pointermove", onMove);
+  }, []);
+
+  useEffect(() => {
+    const syncPane = () => {
+      const rail = narrow ? 0 : sidebarOpen ? sidebarWidth : 48;
+      const limit = paneCeiling(window.innerWidth, rail);
+      setPaneMaxWidth(limit);
+      setPaneWidth((current) => clampPane(current, window.innerWidth, rail));
+    };
+    syncPane();
+    window.addEventListener("resize", syncPane);
+    return () => window.removeEventListener("resize", syncPane);
+  }, [narrow, sidebarOpen, sidebarWidth]);
 
   const openContextDetail = (bucketId?: string) => {
     setContextFocusId(bucketId ?? "");
@@ -1778,7 +1915,7 @@ export function App() {
 
   const openDiagnostics = () => {
     if (!runId) return;
-    openSessionTab("terminal");
+    openInspector("terminal");
   };
 
   const loadOlder = () => {
@@ -1805,6 +1942,16 @@ export function App() {
   };
 
   const toggleSidebar = () => {
+    sidebarPeekRef.current = false;
+    sidebarShownRef.current = false;
+    sidebarFrame.current += 1;
+    if (sidebarTimer.current != null) {
+      window.clearTimeout(sidebarTimer.current);
+      sidebarTimer.current = null;
+    }
+    setSidebarPeek(false);
+    setSidebarMotion(false);
+    setSidebarShown(false);
     if (narrow) topMoreRef.current?.removeAttribute("open");
     setSidebarOpen((value) => {
       const next = !value;
@@ -1815,7 +1962,10 @@ export function App() {
 
   return (
     <>
-      <div className={`${sidebarOpen ? "app" : "app sidebar-closed"}${narrow ? " is-buddy" : ""}`}>
+      <div
+        className={`${sidebarOpen ? "app" : "app sidebar-closed"}${!sidebarOpen && sidebarPeek ? " is-sidebar-peek" : ""}${sidebarMotion ? " is-sidebar-motion" : ""}${sidebarShown ? " is-sidebar-shown" : ""}${narrow ? " is-buddy" : ""}`}
+        style={{ ["--sidebar-w" as string]: `${sidebarWidth}px`, ["--pane-w" as string]: `${paneWidth}px` }}
+      >
         {sidebarOpen ? <div className="sidebar-backdrop" id="sidebar-backdrop" onClick={toggleSidebar} /> : null}
         <Sidebar
           runs={runs}
@@ -1823,21 +1973,155 @@ export function App() {
           slots={vms.slots}
           backend={vms.backend}
           userEmail={userEmail}
+          displayName={userName}
+          avatarUrl={userAvatar}
           authed={Boolean(userEmail)}
           authBusy={authBusy}
           health={healthText}
+          streamDown={healthText.startsWith("事件流") || healthText === "控制面异常"}
+          sidebarWidth={sidebarWidth}
+          onSidebarWidth={setSidebarWidth}
+          inbox={
+            <InboxBell
+              token={token}
+              authed={Boolean(userEmail)}
+              onOpenRun={(id) => {
+                setMainTab("chat");
+                void openRun(id);
+              }}
+              onOpenProject={(id) => openProjects(id)}
+            />
+          }
+          menuRef={topMoreRef}
+          accountMenu={
+            <>
+              <div className="account-vms">
+                {slotMenuLines(vms.slots, runs).map((line) =>
+                  line.runId ? (
+                    <button key={line.id} type="button" className="account-slot" onClick={() => void openRun(line.runId!)}>
+                      <IconComputer size={16} />
+                      {line.label}
+                    </button>
+                  ) : (
+                    <span key={line.id} className="account-slot">
+                      <IconComputer size={16} />
+                      {line.label}
+                    </span>
+                  ),
+                )}
+                {vms.slots.length === 0 ? (
+                  <span className="account-slot">
+                    <IconComputer size={16} />
+                    当前没有 VM 槽
+                  </span>
+                ) : null}
+              </div>
+              {formatUsage(currentRun?.usage) ? (
+                <span className="account-slot" id="usage-badge">
+                  <IconInfo size={16} />
+                  {formatUsage(currentRun?.usage)}
+                </span>
+              ) : null}
+              {runId && currentRun?.executionTarget?.tools !== "desk" && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
+                <button
+                  className="ghost"
+                  type="button"
+                  title="未提交的改动不会带过去，先 commit 或 stash"
+                  onClick={() => void handoffCurrent("desk")}
+                >
+                  <IconComputer size={16} />
+                  切到本机
+                </button>
+              ) : null}
+              {handoffError ? <span className="setup err">{handoffError}</span> : null}
+              {narrow ? null : <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />}
+              <button
+                className="ghost"
+                id="archive-run"
+                type="button"
+                hidden={!runId || currentRun?.status === "ARCHIVED"}
+                onClick={() => {
+                  if (!runId) return;
+                  void confirm({
+                    title: "归档这条对话？",
+                    message: "归档后会释放 VM。",
+                    confirmLabel: "归档",
+                    danger: true,
+                  }).then((ok) => {
+                    if (!ok) return;
+                    void (async () => {
+                      const archived = await readJson<Run & { error?: string }>(
+                        await api(token, `/v1/runs/${runId}/archive`, { method: "POST" }),
+                      );
+                      if (archived.error) throw new Error(archived.error);
+                      setCurrentRun(archived);
+                      setRuns((prev) => prev.map((item) => (item.id === archived.id ? { ...item, ...archived } : item)));
+                    })().catch((error) => {
+                      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "归档失败")]);
+                    });
+                  });
+                }}
+              >
+                <IconArchive size={16} />
+                归档
+              </button>
+              <button
+                className="ghost danger"
+                id="delete-run"
+                type="button"
+                hidden={!runId || currentRun?.status !== "ARCHIVED"}
+                onClick={() => {
+                  if (!runId) return;
+                  void deleteArchivedRun(runId).catch((error) => {
+                    setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "删除失败")]);
+                  });
+                }}
+              >
+                <IconTrash size={16} />
+                删除
+              </button>
+              <button
+                className="ghost"
+                id="toggle-settings"
+                type="button"
+                aria-current={mainTab === "settings" ? "page" : undefined}
+                onClick={openSettings}
+              >
+                <IconGear size={14} />
+                设置
+              </button>
+              {pr?.url ? (
+                <a className="pr-link" id="pr-link" href={pr.url} target="_blank" rel="noreferrer">
+                  <IconPr size={16} />
+                  {pr.draft === false ? "PR" : "草稿 PR"}
+                </a>
+              ) : null}
+              <button
+                className="ghost"
+                id="open-pr"
+                type="button"
+                hidden={Boolean(pr?.url) || !runId}
+                onClick={() => void openDraftPr()}
+              >
+                <IconPr size={16} />
+                开草稿 PR
+              </button>
+            </>
+          }
           pinnedIds={pinnedIds}
           projectNames={projectNames}
           buddy={narrow}
           target={deskTarget.kind === "desk" ? "desk" : "cloud"}
           deskDisabled={!deskBridge()?.canRunLocal && !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0)}
           onTarget={(value) => applyTarget({ ...deskTarget, kind: value })}
+          nav={mainTab}
           onOpenNav={(id) => {
-            setSidebarOpen(false);
+            if (narrow) setSidebarOpen(false);
             if (id === "automations") openAutomations();
             if (id === "experts") openExperts();
             if (id === "projects") openProjects();
             if (id === "skills") openSkills();
+            if (id === "memories") openMemories();
           }}
           onPin={(id) => setPinnedIds(togglePinnedRun(id))}
           onArchiveMany={(ids) => void archiveMany(ids)}
@@ -1846,7 +2130,8 @@ export function App() {
               setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "删除失败")]);
             });
           }}
-          onClose={narrow ? toggleSidebar : undefined}
+          sidebarOpen={sidebarOpen}
+          onToggle={toggleSidebar}
           onNewChat={() => {
             setActiveProject(null);
             setMainTab("chat");
@@ -1887,6 +2172,8 @@ export function App() {
             void api(token, "/v1/auth/logout", { method: "POST" });
             persistToken("");
             setUserEmail("");
+            setUserName("");
+            setUserAvatar(null);
             setUserId("");
             setActiveProject(null);
             setAuthEmail("");
@@ -1897,40 +2184,17 @@ export function App() {
           }}
         />
         <main className="main">
+          <div
+            className={`workspace-col${mainTab === "chat" && inspectorTab ? " has-inspector" : ""}${paneFull && inspectorTab ? " is-fullscreen" : ""}`}
+          >
+          {paneSnap !== "idle" && !paneFull ? (
+            <div className="pane-snap" role="status">
+              <span className="pane-snap-label">松开进入全屏</span>
+            </div>
+          ) : null}
+          <div className="chat-column">
           <header className="topbar">
             <div className="topbar-lead">
-              <button
-                className="icon-btn sidebar-toggle"
-                id="sidebar-toggle"
-                type="button"
-                aria-label={sidebarOpen ? "收起侧栏" : "打开对话列表"}
-                onClick={toggleSidebar}
-              >
-                {sidebarOpen ? <IconSidebarClose /> : <IconMenu />}
-                <span className="sidebar-toggle-label">{sidebarOpen ? "收起侧栏" : "对话列表"}</span>
-              </button>
-              <nav className="app-tabs" id="app-tabs" aria-label="主导航">
-                {(
-                  [
-                    ["chat", "对话", openChat],
-                    ["projects", "项目", () => openProjects()],
-                    ["experts", "专家", () => openExperts()],
-                    ["skills", "技能", () => openSkills()],
-                    ["memories", "记忆", openMemories],
-                    ["automations", "定时任务", openAutomations],
-                  ] as const
-                ).map(([id, label, onClick]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={mainTab === id ? "active" : ""}
-                    aria-current={mainTab === id ? "page" : undefined}
-                    onClick={onClick}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </nav>
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
                   {mainTab === "projects"
@@ -1975,7 +2239,7 @@ export function App() {
                       : mainTab === "skills"
                       ? "给 Agent 装工作手册"
                       : mainTab === "memories"
-                      ? "跨对话记住的事"
+                      ? "记忆"
                       : mainTab === "automations"
                       ? "到点自动开对话"
                       : mainTab === "settings"
@@ -1997,15 +2261,6 @@ export function App() {
               </div>
             </div>
             <div className="top-actions">
-              <InboxBell
-                token={token}
-                authed={Boolean(userEmail)}
-                onOpenRun={(id) => {
-                  setMainTab("chat");
-                  void openRun(id);
-                }}
-                onOpenProject={(id) => openProjects(id)}
-              />
               {narrow ? (
                 <button
                   type="button"
@@ -2023,165 +2278,56 @@ export function App() {
                   Desk
                 </span>
               ) : null}
-              {narrow && mainTab === "chat" && (busy || currentRun) ? (
-                <span id="status" className={busy ? "buddy-status-pill is-busy" : "buddy-status-pill"} data-state={statusView.state} data-busy={busy ? "true" : "false"}>
-                  {busy ? "跑着" : statusView.label}
-                </span>
-              ) : (
-                <span className="status" id="status" data-state={statusView.state} data-busy={busy ? "true" : "false"}>
-                  {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
-                  {statusView.label}
-                </span>
-              )}
-              {!narrow && runId ? (
-                <nav className="session-tabs" aria-label="会话标签">
-                  {(
-                    [
-                      ["chat", "对话"],
-                      ["diff", "Diff"],
-                      ["terminal", "终端"],
-                      ["artifacts", "产物"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={sessionTab === id ? "active" : ""}
-                      aria-current={sessionTab === id ? "page" : undefined}
-                      onClick={() => openSessionTab(id)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </nav>
-              ) : null}
-              <details className="top-more" ref={topMoreRef}>
-                <summary className="icon-btn top-more-sum" aria-label="更多">
-                  <IconMore />
-                </summary>
-                <div
-                  className="top-more-menu"
-                  onClick={(event) => {
-                    const action = (event.target as HTMLElement | null)?.closest("button, a");
-                    const details = event.currentTarget.closest("details");
-                    if (action && details) details.removeAttribute("open");
+              <div className="status-menu">
+                {narrow && mainTab === "chat" && (busy || currentRun) ? (
+                  <span id="status" className={busy ? "buddy-status-pill is-busy" : "buddy-status-pill"} tabIndex={0} data-state={statusView.state} data-busy={busy ? "true" : "false"}>
+                    {busy ? "跑着" : statusView.label}
+                  </span>
+                ) : (
+                  <span className="status" id="status" tabIndex={0} data-state={statusView.state} data-busy={busy ? "true" : "false"}>
+                    {busy ? <span className="pulse-dot" aria-hidden="true" /> : null}
+                    {statusView.label}
+                  </span>
+                )}
+                <div className="status-pop" role="menu" aria-label="虚拟机槽">
+                  {slotMenuLines(vms.slots, runs).map((line) =>
+                    line.runId ? (
+                      <button key={line.id} type="button" onClick={() => void openRun(line.runId!)}>
+                        {line.label}
+                      </button>
+                    ) : (
+                      <span key={line.id}>{line.label}</span>
+                    ),
+                  )}
+                  {vms.slots.length === 0 ? <span>当前没有 VM 槽</span> : null}
+                </div>
+              </div>
+              {!narrow && mainTab === "chat" && runId ? (
+                <button
+                  type="button"
+                  className="pane-toggle icon-btn"
+                  aria-label={inspectorTab ? "收起侧栏" : "打开侧栏"}
+                  title={inspectorTab ? "收起侧栏" : "打开侧栏"}
+                  onClick={() => {
+                    if (inspectorTab) {
+                      setPaneSnap("idle");
+                      setPaneFull(false);
+                      setInspectorTab(null);
+                      return;
+                    }
+                    openInspector(lastPane);
                   }}
                 >
-              <span className="vm-badge" id="vm-badge" data-busy={currentSlot ? "true" : "false"}>
-                {currentSlot ? `${slotLabel(currentSlot)} · ${currentSlot}` : runId ? "分配 VM 中…" : "未分配 VM"}
-              </span>
-              {formatUsage(currentRun?.usage) ? (
-                <span className="vm-badge" id="usage-badge">
-                  {formatUsage(currentRun?.usage)}
-                </span>
-              ) : null}
-              {narrow && runId ? (
-                <nav className="session-tabs" aria-label="会话标签">
-                  {(
-                    [
-                      ["chat", "对话"],
-                      ["diff", "Diff"],
-                      ["terminal", "终端"],
-                      ["artifacts", "产物"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={sessionTab === id ? "active" : ""}
-                      aria-current={sessionTab === id ? "page" : undefined}
-                      onClick={() => openSessionTab(id)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </nav>
-              ) : null}
-              {runId && currentRun?.executionTarget?.tools !== "desk" && currentRun?.executionTarget?.loop !== "desk" && deskBridge()?.canRunLocal ? (
-                <button
-                  className="ghost"
-                  type="button"
-                  title="未提交的改动不会带过去，先 commit 或 stash"
-                  onClick={() => void handoffCurrent("desk")}
-                >
-                  切到本机
+                  <IconPanelRight size={16} />
+                </button>
+              ) : narrow && mainTab === "chat" && runId && !inspectorTab ? (
+                <button type="button" className="icon-btn" aria-label="打开侧栏" title="打开侧栏" onClick={() => openInspector(lastPane)}>
+                  <IconPanelRight size={16} />
                 </button>
               ) : null}
-              {handoffError ? <span className="setup err">{handoffError}</span> : null}
-              {narrow ? null : <TranscriptSearch messages={displayMessages} onJump={setHighlightId} />}
-              <button
-                className="ghost"
-                id="archive-run"
-                type="button"
-                hidden={!runId || currentRun?.status === "ARCHIVED"}
-                onClick={() => {
-                  if (!runId) return;
-                  void confirm({
-                    title: "归档这条对话？",
-                    message: "归档后会释放 VM。",
-                    confirmLabel: "归档",
-                    danger: true,
-                  }).then((ok) => {
-                    if (!ok) return;
-                    void (async () => {
-                      const archived = await readJson<Run & { error?: string }>(
-                        await api(token, `/v1/runs/${runId}/archive`, { method: "POST" }),
-                      );
-                      if (archived.error) throw new Error(archived.error);
-                      setCurrentRun(archived);
-                      setRuns((prev) => prev.map((item) => (item.id === archived.id ? { ...item, ...archived } : item)));
-                    })().catch((error) => {
-                      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "归档失败")]);
-                    });
-                  });
-                }}
-              >
-                归档
-              </button>
-              <button
-                className="ghost danger"
-                id="delete-run"
-                type="button"
-                hidden={!runId || currentRun?.status !== "ARCHIVED"}
-                onClick={() => {
-                  if (!runId) return;
-                  void deleteArchivedRun(runId).catch((error) => {
-                    setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "删除失败")]);
-                  });
-                }}
-              >
-                删除
-              </button>
-              <button
-                className="ghost"
-                id="toggle-settings"
-                type="button"
-                aria-current={mainTab === "settings" ? "page" : undefined}
-                onClick={openSettings}
-              >
-                <IconGear size={14} />
-                设置
-              </button>
-              {pr?.url ? (
-                <a className="pr-link" id="pr-link" href={pr.url} target="_blank" rel="noreferrer">
-                  {pr.draft === false ? "PR" : "草稿 PR"}
-                </a>
-              ) : null}
-              <button
-                className="ghost"
-                id="open-pr"
-                type="button"
-                hidden={Boolean(pr?.url) || !runId}
-                onClick={() => void openDraftPr()}
-              >
-                开草稿 PR
-              </button>
-                </div>
-              </details>
             </div>
           </header>
-          <div className="workspace-col">
-          <div className="workspace-stage">
+          <div className="workspace-stage" {...(narrow && inspectorTab ? { inert: "" } : {})}>
             {mainTab === "settings" ? (
               <section className="proj-page catalog-page settings-page" id="settings-page">
                 <header className="proj-page-head">
@@ -2308,15 +2454,6 @@ export function App() {
                     });
                   }}
                 />
-                {runId ? (
-                  <section className="settings-group">
-                    <header>
-                      <h3>工作区</h3>
-                      <p className="hint">当前对话占用的云端电脑文件。</p>
-                    </header>
-                    <FileTree token={token} runId={runId} open />
-                  </section>
-                ) : null}
               </section>
             ) : mainTab === "projects" ? (
               <ProjectsPage
@@ -2355,7 +2492,7 @@ export function App() {
                 onUse={(plugin) => void useSkill(plugin)}
               />
             ) : mainTab === "memories" ? (
-              <MemoriesPage token={token} onBack={openChat} />
+              <MemoriesPage token={token} />
             ) : mainTab === "automations" ? (
               <AutomationsPage
                 token={token}
@@ -2369,56 +2506,6 @@ export function App() {
                 usage={contextUsage}
                 focusBucketId={contextFocusId}
                 onBack={openChat}
-              />
-            ) : sessionTab === "diff" ? (
-              <DiffPanel
-                open
-                loading={diffLoading}
-                error={diffError}
-                stat={diffStat}
-                patch={diffPatch}
-                committing={committing}
-                commitError={commitError}
-                onCommit={(message) => void commitWorkspace(message)}
-              />
-            ) : sessionTab === "terminal" ? (
-              <TerminalPanel
-                open
-                token={token}
-                runId={runId}
-                setupLoading={diagLoading}
-                setupError={diagError}
-                setupLogs={diagLogs}
-              />
-            ) : sessionTab === "artifacts" ? (
-              <ArtifactsPanel
-                open
-                loading={artifactsLoading}
-                error={artifactsError}
-                artifacts={artifacts}
-                projectId={currentRun?.projectId ?? activeProject?.id}
-                token={token}
-                runId={runId}
-                onSaved={(asset) => {
-                  const projectId = asset.projectId || currentRun?.projectId || activeProject?.id;
-                  if (projectId && token) {
-                    void api(token, `/v1/projects/${encodeURIComponent(projectId)}/assets`).then(async (response) => {
-                      if (!response.ok) return;
-                      const body = await readJson<{ assets?: ProjectAsset[] }>(response);
-                      setProjectAssets(body.assets ?? []);
-                    });
-                  }
-                  if (projectId && asset.id) {
-                    openProjects(projectId, { assets: true, assetId: asset.id });
-                  }
-                }}
-                onOpen={
-                  deskBridge()?.openPath
-                    ? (item) => {
-                        if (item.url) void deskBridge()?.openPath?.(item.url);
-                      }
-                    : undefined
-                }
               />
             ) : (
               <ChatErrorBoundary onReset={() => (runId ? void openRun(runId) : resetComposer())}>
@@ -2459,12 +2546,16 @@ export function App() {
                     highlightId={highlightId}
                     onLoadOlder={loadOlder}
                     onOpenDiagnostics={openDiagnostics}
+                    onOpenArtifact={(name) => {
+                      setArtifactFocus(name);
+                      setFilesView("artifacts");
+                      openInspector("files");
+                    }}
                     onPickRecipe={applyRecipe}
                   />
                 )}
               </ChatErrorBoundary>
             )}
-          </div>
           </div>
           {mainTab === "chat" && (activeProject || expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
             <div className="proj-chip-bar" id="project-chip">
@@ -2571,6 +2662,96 @@ export function App() {
               onOpenPlus={() => setPlusOpen(true)}
             />
           ) : null}
+          </div>
+          {mainTab === "chat" && runId && !inspectorTab ? (
+            <button type="button" className="pane-edge" aria-label="打开侧栏" onClick={() => openInspector(lastPane)} />
+          ) : null}
+          {mainTab === "chat" && runId && inspectorTab ? (
+            <InspectorShell
+              tab={inspectorTab}
+              width={paneWidth}
+              maxWidth={paneMaxWidth}
+              fullscreen={paneFull}
+              onWidth={onPaneWidth}
+              onDragEnd={onPaneDragEnd}
+              onSelect={openInspector}
+              onToggleFullscreen={() => {
+                setPaneSnap("idle");
+                if (paneFull) {
+                  setPaneWidth(paneHalf(window.innerWidth, railNow()));
+                  setPaneFull(false);
+                  return;
+                }
+                setPaneFull(true);
+              }}
+              onClose={() => {
+                setPaneFull(false);
+                setInspectorTab(null);
+              }}
+            >
+              {inspectorTab === "diff" ? (
+                <DiffPanel
+                  open
+                  loading={diffLoading}
+                  error={diffError}
+                  stat={diffStat}
+                  patch={diffPatch}
+                  committing={committing}
+                  commitError={commitError}
+                  onCommit={(message) => void commitWorkspace(message)}
+                />
+              ) : inspectorTab === "terminal" ? (
+                <TerminalPanel
+                  open
+                  token={token}
+                  runId={runId}
+                  setupLoading={diagLoading}
+                  setupError={diagError}
+                  setupLogs={diagLogs}
+                />
+              ) : (
+                <WorkspaceFiles
+                  view={filesView}
+                  onView={setFilesView}
+                  tree={(onSelect) => <FileTree token={token} runId={runId} open onSelect={onSelect} />}
+                  artifacts={(onSelect) => (
+                    <ArtifactsPanel
+                      open
+                      loading={artifactsLoading}
+                      error={artifactsError}
+                      artifacts={artifacts}
+                      projectId={currentRun?.projectId ?? activeProject?.id}
+                      token={token}
+                      runId={runId}
+                      focusName={artifactFocus}
+                      onSaved={(asset) => {
+                        const projectId = asset.projectId || currentRun?.projectId || activeProject?.id;
+                        if (projectId && token) {
+                          void api(token, `/v1/projects/${encodeURIComponent(projectId)}/assets`).then(async (response) => {
+                            if (!response.ok) return;
+                            const body = await readJson<{ assets?: ProjectAsset[] }>(response);
+                            setProjectAssets(body.assets ?? []);
+                          });
+                        }
+                        if (projectId && asset.id) {
+                          openProjects(projectId, { assets: true, assetId: asset.id });
+                        }
+                      }}
+                      onSelect={onSelect}
+                      onOpen={
+                        deskBridge()?.openPath
+                          ? (item) => {
+                              if (item.url) void deskBridge()?.openPath?.(item.url);
+                            }
+                          : undefined
+                      }
+                    />
+                  )}
+                />
+              )}
+            </InspectorShell>
+          ) : null}
+          </div>
           {narrow && mainTab === "chat" ? <p className="buddy-footer">内容由 AI 生成</p> : null}
         </main>
       </div>

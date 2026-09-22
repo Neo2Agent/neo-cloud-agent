@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createMemoryObjectStore } from "../objects/memory.js";
 import { setObjectStoreForTests } from "../objects/store.js";
-import { listRunArtifacts, putRunArtifact, readRunArtifact, safeArtifactName } from "./artifacts.js";
+import { listRunArtifacts, putRunArtifact, readRunArtifact, safeArtifactName, withUtf8Charset } from "./artifacts.js";
 import { resetHistory } from "../events/bus.js";
 
 test("putRunArtifact stores bytes and lists them", async () => {
@@ -21,6 +21,17 @@ test("putRunArtifact stores bytes and lists them", async () => {
   const file = await readRunArtifact("run_art", "notes.txt");
   assert.equal(file?.body.toString("utf8"), "hello");
   assert.equal(safeArtifactName("../x.png"), "x.png");
+  assert.equal(safeArtifactName("AI资讯-2026-09-22.md"), "AI资讯-2026-09-22.md");
+  assert.equal(withUtf8Charset("text/markdown"), "text/markdown; charset=utf-8");
+  assert.equal(withUtf8Charset("text/plain; charset=utf-8"), "text/plain; charset=utf-8");
+  assert.equal(withUtf8Charset("application/json"), "application/json; charset=utf-8");
+  assert.equal(withUtf8Charset("image/png"), "image/png");
+  const markdown = await putRunArtifact("run_art", {
+    name: "note.md",
+    content: "中文",
+    contentType: "text/markdown",
+  });
+  assert.equal(markdown.contentType, "text/markdown; charset=utf-8");
   setObjectStoreForTests(null);
   resetHistory();
 });

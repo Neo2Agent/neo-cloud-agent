@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import { api, readJson } from "../api";
 import { IconInbox } from "../icons";
@@ -14,6 +14,7 @@ export function InboxBell({ token, authed, onOpenRun, onOpenProject }: Props) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<InboxItem[]>([]);
   const [unread, setUnread] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const refresh = async () => {
     if (!authed || !token) return;
@@ -30,10 +31,19 @@ export function InboxBell({ token, authed, onOpenRun, onOpenProject }: Props) {
     return () => window.clearInterval(timer);
   }, [token, authed]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    return () => document.removeEventListener("pointerdown", onPointer);
+  }, [open]);
+
   if (!authed) return null;
 
   return (
-    <div className="inbox-bell">
+    <div className="inbox-bell" ref={rootRef}>
       <button
         type="button"
         className="icon-btn inbox-btn"
@@ -50,12 +60,6 @@ export function InboxBell({ token, authed, onOpenRun, onOpenProject }: Props) {
       </button>
       {open ? (
         <>
-          <button
-            type="button"
-            className="inbox-backdrop"
-            aria-label="关闭收件箱"
-            onClick={() => setOpen(false)}
-          />
           <div className="inbox-pop" role="menu">
           <p className="eyebrow">收件箱</p>
           {items.length === 0 ? (

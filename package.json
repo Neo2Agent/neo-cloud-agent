@@ -14,6 +14,7 @@
     "dev:gateway": "pnpm --filter @neo-cloud-agent/llm-gateway dev",
     "dev:worker": "pnpm --filter @neo-cloud-agent/worker dev",
     "dev:web": "tsx scripts/dev-web.ts",
+    "dev:web:prod": "tsx scripts/dev-web.ts --prod",
     "dev:admin": "tsx scripts/dev-admin.ts",
     "dev:mobile": "tsx scripts/dev-mobile.ts",
     "dev:desk": "tsx packages/desk/scripts/dev.ts",

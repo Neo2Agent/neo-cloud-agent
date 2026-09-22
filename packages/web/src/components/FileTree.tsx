@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { api, readJson } from "../api";
+import { artifactKind, type ArtifactKind } from "../artifact";
+import { IconFileKind } from "../icons";
 
 export type FsEntry = { name: string; path: string; type: "file" | "dir"; size?: number };
 export type FsListing = {
@@ -15,36 +18,152 @@ type Props = {
   token: string;
   runId: string | null;
   open: boolean;
+  onSelect?: (name: string | null) => void;
 };
 
-export function FileTree({ token, runId, open }: Props) {
-  const [path, setPath] = useState("");
-  const [listing, setListing] = useState<FsListing | null>(null);
+const ROOT = "";
+
+function fileGlyphKind(name: string): ArtifactKind {
+  const kind = artifactKind({ name });
+  if (kind !== "file") return kind;
+  if (/\.(tsx?|jsx?|css|py|go|java|sh|ya?ml|toml)$/i.test(name)) return "html";
+  return "file";
+}
+
+function sourceParts(line: string): Array<{ kind: "text" | "link" | "code"; text: string }> {
+  const parts: Array<{ kind: "text" | "link" | "code"; text: string }> = [];
+  const re = /(`[^`\n]+`)|(\[[^\]]+\]\([^)\s]+\))|(https?:\/\/[^\s)]+)/g;
+  let last = 0;
+  for (const match of line.matchAll(re)) {
+    const index = match.index ?? 0;
+    if (index > last) parts.push({ kind: "text", text: line.slice(last, index) });
+    const token = match[0];
+    parts.push({ kind: token.startsWith("`") ? "code" : "link", text: token });
+    last = index + token.length;
+  }
+  if (last < line.length) parts.push({ kind: "text", text: line.slice(last) });
+  if (parts.length === 0) parts.push({ kind: "text", text: " " });
+  return parts;
+}
+
+function SourceLine({ line }: { line: string }) {
+  const heading = /^#{1,6}\s/.test(line);
+  return (
+    <code className={heading ? "is-heading" : undefined}>
+      {sourceParts(line).map((part, index) =>
+        part.kind === "text" ? (
+          <span key={index}>{part.text}</span>
+        ) : (
+          <span key={index} className={part.kind === "code" ? "file-code" : "file-link"}>
+            {part.text}
+          </span>
+        ),
+      )}
+    </code>
+  );
+}
+
+function SourceView({ text, truncated }: { text: string; truncated?: boolean }) {
+  const lines = text.split("\n");
+  return (
+    <div className="file-source">
+      <ol>
+        {lines.map((line, index) => (
+          <li key={index}>
+            <span className="file-source-gutter">{index + 1}</span>
+            <SourceLine line={line} />
+          </li>
+        ))}
+        {truncated ? (
+          <li>
+            <span className="file-source-gutter" />
+            <code className="file-trunc">已截断</code>
+          </li>
+        ) : null}
+      </ol>
+    </div>
+  );
+}
+
+export function FileTree({ token, runId, open, onSelect }: Props) {
+  const [dirs, setDirs] = useState<Record<string, FsEntry[]>>({});
+  const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({ [ROOT]: true });
+  const [file, setFile] = useState<{ path: string; content: string; truncated?: boolean } | null>(null);
   const [error, setError] = useState("");
+  const [evicted, setEvicted] = useState(false);
+
+  const loadDir = async (dir: string) => {
+    if (!runId) return;
+    const response = await api(token, `/v1/runs/${runId}/fs?path=${encodeURIComponent(dir)}&content=0`);
+    const body = await readJson<FsListing & { error?: string }>(response);
+    if (!response.ok) throw new Error(body.error || "读取工作区失败");
+    setDirs((prev) => ({ ...prev, [dir]: body.entries ?? [] }));
+    setEvicted(body.workspace?.state === "evicted");
+    setError("");
+  };
 
   useEffect(() => {
     if (!open || !runId) {
-      setListing(null);
-      setPath("");
+      setDirs({});
+      setFile(null);
+      onSelect?.(null);
       return;
     }
     let cancelled = false;
-    void (async () => {
-      try {
-        const response = await api(token, `/v1/runs/${runId}/fs?path=${encodeURIComponent(path)}&content=${path ? "1" : "0"}`);
-        const body = await readJson<FsListing & { error?: string }>(response);
-        if (cancelled) return;
-        if (!response.ok) throw new Error(body.error || "读取工作区失败");
-        setListing(body);
-        setError("");
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "读取工作区失败");
-      }
-    })();
+    void loadDir(ROOT).catch((err) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : "读取工作区失败");
+    });
     return () => {
       cancelled = true;
     };
-  }, [open, path, runId, token]);
+  }, [open, runId, token]);
+
+  const toggleDir = (dir: string) => {
+    setOpenDirs((prev) => {
+      const next = !prev[dir];
+      if (next) {
+        void loadDir(dir).catch((err) => setError(err instanceof Error ? err.message : "读取工作区失败"));
+      }
+      return { ...prev, [dir]: next };
+    });
+  };
+
+  const openFile = (path: string) => {
+    if (!runId) return;
+    onSelect?.(path.split("/").pop() ?? path);
+    void (async () => {
+      const response = await api(token, `/v1/runs/${runId}/fs?path=${encodeURIComponent(path)}&content=1`);
+      const body = await readJson<FsListing & { error?: string }>(response);
+      if (!response.ok) throw new Error(body.error || "读取工作区失败");
+      setFile({ path, content: body.content ?? "", truncated: body.truncated });
+      setError("");
+    })().catch((err) => setError(err instanceof Error ? err.message : "读取工作区失败"));
+  };
+
+  const renderDir = (dir: string, depth: number): ReactNode =>
+    (dirs[dir] ?? []).map((entry) => (
+      <li key={entry.path}>
+        <button
+          type="button"
+          className={file?.path === entry.path ? "is-on" : ""}
+          style={{ paddingLeft: 6 + depth * 12 }}
+          onClick={() => (entry.type === "dir" ? toggleDir(entry.path) : openFile(entry.path))}
+        >
+          <span className="file-mark" aria-hidden="true">
+            {entry.type === "dir" ? (
+              openDirs[entry.path] ? (
+                <ChevronDown size={14} strokeWidth={1.75} />
+              ) : (
+                <ChevronRight size={14} strokeWidth={1.75} />
+              )
+            ) : null}
+          </span>
+          {entry.type === "file" ? <IconFileKind kind={fileGlyphKind(entry.name)} size={14} /> : null}
+          <span className="file-name">{entry.name}</span>
+        </button>
+        {entry.type === "dir" && openDirs[entry.path] ? <ul>{renderDir(entry.path, depth + 1)}</ul> : null}
+      </li>
+    ));
 
   if (!open) return null;
   if (!runId) {
@@ -55,41 +174,16 @@ export function FileTree({ token, runId, open }: Props) {
     );
   }
 
-  const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-
   return (
-    <section className="file-tree" id="file-tree">
-      <div className="file-tree-bar">
-        <strong>工作区</strong>
-        <span>{listing?.path || "."}</span>
-        {path ? (
-          <button type="button" className="ghost" onClick={() => setPath(parent)}>
-            上级
-          </button>
-        ) : null}
+    <section className="file-tree file-split" id="file-tree">
+      <div className="file-split-body">
+        <div className="file-tree-list">
+          {error ? <p className="setup err">{error}</p> : null}
+          {evicted ? <p className="hint">工作区已回收。发跟进会按仓库重新检出。</p> : null}
+          <ul>{renderDir(ROOT, 0)}</ul>
+        </div>
+        {file ? <SourceView text={file.content} truncated={file.truncated} /> : <div className="file-source is-empty" />}
       </div>
-      {error ? <p className="setup err">{error}</p> : null}
-      {listing?.workspace?.state === "evicted" ? (
-        <p className="hint">
-          工作区已按磁盘回收清掉。对话还在；发跟进会按仓库重新检出（没有当时的未提交改动）。
-        </p>
-      ) : null}
-      {listing?.type === "dir" ? (
-        <ul>
-          {(listing.entries ?? []).map((entry) => (
-            <li key={entry.path}>
-              <button type="button" onClick={() => setPath(entry.path)}>
-                {entry.type === "dir" ? "📁" : "📄"} {entry.name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : listing?.type === "file" ? (
-        <pre className="file-view">
-          {listing.content}
-          {listing.truncated ? "\n…（已截断）" : ""}
-        </pre>
-      ) : null}
     </section>
   );
 }

@@ -13,7 +13,6 @@ export function DiffPanel({ open, loading, error, stat, patch, committing, commi
   if (!open) return null;
   return (
     <section className="diff-panel" id="run-diff">
-      <strong>本轮 Diff</strong>
       {onCommit ? (
         <form
           className="diff-commit"

@@ -5,6 +5,7 @@ import {
   BookOpen,
   Bot,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -19,7 +20,9 @@ import {
   FolderGit2,
   GitPullRequest,
   Globe,
+  Info,
   LayoutGrid,
+  LogOut,
   LoaderCircle,
   Maximize2,
   Menu,
@@ -128,6 +131,10 @@ export function IconChevronRight(props: IconProps) {
   return icon(ChevronRight, props);
 }
 
+export function IconChevronDown(props: IconProps) {
+  return icon(ChevronDown, props);
+}
+
 export function IconStar(props: IconProps) {
   return icon(Star, props);
 }
@@ -160,6 +167,10 @@ export function IconError(props: IconProps) {
   return icon(CircleAlert, props);
 }
 
+export function IconInfo(props: IconProps) {
+  return icon(Info, props);
+}
+
 export function IconSpinner(props: IconProps) {
   return <LoaderCircle size={props.size ?? 14} className={`spin ${props.className ?? ""}`.trim()} strokeWidth={1.75} aria-hidden="true" />;
 }
@@ -174,6 +185,10 @@ export function IconComputer(props: IconProps) {
 
 export function IconSearch(props: IconProps) {
   return icon(Search, props);
+}
+
+export function IconLogout(props: IconProps) {
+  return icon(LogOut, props);
 }
 
 export function IconArchive(props: IconProps) {

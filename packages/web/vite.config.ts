@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const apiBase = (process.env.NEO_CONTROL_PLANE_URL || "http://127.0.0.1:8080").replace(/\/$/, "");
+
 export default defineConfig({
   plugins: [react()],
   base: "/",
@@ -24,8 +26,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/v1": "http://127.0.0.1:8080",
-      "/health": "http://127.0.0.1:8080",
+      "/v1": { target: apiBase, changeOrigin: true, timeout: 0, proxyTimeout: 0 },
+      "/health": { target: apiBase, changeOrigin: true },
     },
   },
 });

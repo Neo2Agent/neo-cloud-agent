@@ -1,4 +1,4 @@
-export type ArtifactPreviewKind = "html" | "image";
+export type ArtifactPreviewKind = "html" | "image" | "markdown" | "text" | "json";
 export type ArtifactKind = ArtifactPreviewKind | "json" | "markdown" | "text" | "file";
 
 const KIND_LABEL: Record<ArtifactKind, string> = {
@@ -15,6 +15,9 @@ export function previewKind(item: { name: string; contentType?: string }): Artif
   const name = item.name.toLowerCase();
   if (type.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/.test(name)) return "image";
   if (type.includes("html") || name.endsWith(".html")) return "html";
+  if (type.includes("markdown") || name.endsWith(".md")) return "markdown";
+  if (type.includes("json") || name.endsWith(".json")) return "json";
+  if (type.startsWith("text/") || /\.(txt|log)$/.test(name)) return "text";
   return null;
 }
 

@@ -3,12 +3,14 @@ import test from "node:test";
 import { artifactKind, artifactKindLabel, previewKind, prettyBytes } from "./artifact.js";
 import { parseProjectHash, projectHashHref } from "./project-route.js";
 
-test("previewKind maps html and images, ignores text", () => {
+test("previewKind maps html, images, and text", () => {
   assert.equal(previewKind({ name: "board.html" }), "html");
   assert.equal(previewKind({ name: "notes.txt", contentType: "text/html" }), "html");
   assert.equal(previewKind({ name: "shot.PNG" }), "image");
   assert.equal(previewKind({ name: "cover", contentType: "image/webp" }), "image");
-  assert.equal(previewKind({ name: "notes.txt", contentType: "text/plain" }), null);
+  assert.equal(previewKind({ name: "notes.txt", contentType: "text/plain" }), "text");
+  assert.equal(previewKind({ name: "AI资讯.md" }), "markdown");
+  assert.equal(previewKind({ name: "data.json" }), "json");
 });
 
 test("artifactKind maps names and types to a short kind", () => {

@@ -154,7 +154,7 @@ import { createEnvironmentBuild, getBuild, listBuilds, listBuildsForEnv, readBui
 import { createEnvironment, getEnvironment, listEnvironments } from "../env/store.js";
 import { readyWarmCount } from "../env/warm-pool.js";
 import { proxySpeechIat, speechIatConfigured } from "../speech/iat-proxy.js";
-import { listRunArtifacts, putRunArtifact, readRunArtifact } from "../artifacts/artifacts.js";
+import { listRunArtifacts, putRunArtifact, readRunArtifact, withUtf8Charset } from "../artifacts/artifacts.js";
 import { signedArtifactUrl, verifyArtifactAccess } from "../artifacts/signed.js";
 import { beginMcpOAuth, finishMcpOAuth } from "../mcp/oauth.js";
 import { proxyMcpCall, proxyMcpList } from "../mcp/proxy.js";
@@ -367,7 +367,7 @@ async function sendArtifactBody(res: ServerResponse, runId: string, name: string
   }
   res.writeHead(200, {
     ...CORS,
-    "content-type": file.artifact.contentType,
+    "content-type": withUtf8Charset(file.artifact.contentType),
     "content-length": file.body.length,
     "cache-control": "private, max-age=60",
     "content-disposition": `inline; filename="${file.artifact.name}"`,
