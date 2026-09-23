@@ -6,6 +6,7 @@ import {
   groupCommitsByDay,
   mergeFileChanges,
   parseGitLog,
+  parseHunkLines,
   parseNameStatus,
   parseNumstat,
   runGitContext,
@@ -87,4 +88,32 @@ test("splitPatchByFile and capPatch keep per-file bodies and a byte ceiling", ()
   assert.equal(capped.truncated, true);
   assert.ok(capped.patch.length <= 64);
   assert.equal(capPatch("small", 64).truncated, false);
+});
+
+test("parseHunkLines assigns old and new line numbers across ctx, del, and add", () => {
+  const patch = [
+    "diff --git a/src/a.ts b/src/a.ts",
+    "--- a/src/a.ts",
+    "+++ b/src/a.ts",
+    "@@ -1,4 +1,5 @@",
+    " keep",
+    "-old",
+    "+new",
+    "+extra",
+    " tail",
+    "@@ -20,2 +21,2 @@ later",
+    "-gone",
+    "+here",
+  ].join("\n");
+  assert.deepEqual(parseHunkLines(patch), [
+    { type: "hunk", text: "@@ -1,4 +1,5 @@" },
+    { type: "ctx", text: "keep", oldLine: 1, newLine: 1 },
+    { type: "del", text: "old", oldLine: 2 },
+    { type: "add", text: "new", newLine: 2 },
+    { type: "add", text: "extra", newLine: 3 },
+    { type: "ctx", text: "tail", oldLine: 3, newLine: 4 },
+    { type: "hunk", text: "@@ -20,2 +21,2 @@ later" },
+    { type: "del", text: "gone", oldLine: 20 },
+    { type: "add", text: "here", newLine: 21 },
+  ]);
 });

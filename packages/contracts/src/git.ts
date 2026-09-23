@@ -216,6 +216,63 @@ export function parseGitLog(output: string): RunCommitRef[] {
   return commits;
 }
 
+export type HunkLineType = "hunk" | "add" | "del" | "ctx";
+
+export interface HunkLine {
+  type: HunkLineType;
+  text: string;
+  oldLine?: number;
+  newLine?: number;
+}
+
+const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
+/**
+ * Unified-diff body with old/new line numbers, starting at the first `@@`.
+ * File headers (`diff --git`, `---`, `+++`) are skipped. Used by the Git panel, not chat cards.
+ */
+export function parseHunkLines(patch: string): HunkLine[] {
+  const out: HunkLine[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let inHunk = false;
+  for (const raw of patch.replace(/\r\n/g, "\n").split("\n")) {
+    const header = HUNK_HEADER.exec(raw);
+    if (header) {
+      inHunk = true;
+      oldLine = Number(header[1]);
+      newLine = Number(header[2]);
+      out.push({ type: "hunk", text: raw });
+      continue;
+    }
+    if (!inHunk) continue;
+    if (
+      raw.startsWith("\\") ||
+      raw.startsWith("diff --git ") ||
+      raw.startsWith("index ") ||
+      raw.startsWith("---") ||
+      raw.startsWith("+++")
+    ) {
+      continue;
+    }
+    if (raw.startsWith("+")) {
+      out.push({ type: "add", text: raw.slice(1), newLine });
+      newLine += 1;
+      continue;
+    }
+    if (raw.startsWith("-")) {
+      out.push({ type: "del", text: raw.slice(1), oldLine });
+      oldLine += 1;
+      continue;
+    }
+    const text = raw.startsWith(" ") ? raw.slice(1) : raw;
+    out.push({ type: "ctx", text, oldLine, newLine });
+    oldLine += 1;
+    newLine += 1;
+  }
+  return out;
+}
+
 /** Split a unified patch into per-file bodies keyed by the new path. */
 export function splitPatchByFile(patch: string): Array<{ path: string; patch: string }> {
   const out: Array<{ path: string; patch: string }> = [];
