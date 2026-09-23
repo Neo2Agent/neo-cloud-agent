@@ -16,8 +16,11 @@ export type {
   ImageRef,
   PatchRunRequest,
   ProjectRunCard,
+  PullRequestChecks,
   PullRequestRef,
+  PullRequestState,
   Run,
+  RunCommitRef,
   RunCollaborator,
   RunCollaboratorRole,
   TransferRunMode,
@@ -43,6 +46,34 @@ export {
   resolveRunKernel,
   runDisplayTitle,
 } from "./run.js";
+export type {
+  DeskGitSnapshot,
+  GitFileChange,
+  GitFileStatus,
+  PullRequestCheck,
+  PullRequestComment,
+  PullRequestFeedback,
+  PullRequestReview,
+  RunCommitsResponse,
+  RunDiffResponse,
+  RunGitContext,
+  RunGitSource,
+} from "./git.js";
+export {
+  GIT_COMMITS_MAX,
+  GIT_EMPTY_TREE,
+  GIT_LOG_FORMAT,
+  GIT_PATCH_MAX_BYTES,
+  capPatch,
+  feedbackFollowUpText,
+  groupCommitsByDay,
+  mergeFileChanges,
+  parseGitLog,
+  parseNameStatus,
+  parseNumstat,
+  runGitContext,
+  splitPatchByFile,
+} from "./git.js";
 export type { KernelEnv, WorkerRole } from "./kernel.js";
 export {
   AGENT_KERNELS,

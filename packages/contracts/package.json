@@ -33,7 +33,8 @@
     "./desk": "./src/desk.ts",
     "./desk-workspace": "./src/desk-workspace.ts",
     "./device": "./src/device.ts",
-    "./environment": "./src/environment.ts"
+    "./environment": "./src/environment.ts",
+    "./git": "./src/git.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

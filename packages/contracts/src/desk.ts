@@ -96,6 +96,8 @@ export interface DeskRejectRequest {
 export type DeskInboxEvent =
   | { kind: "assignment"; assignment: DeskAssignment }
   | { kind: "cancel"; runId: string; reason?: string }
+  /** The control plane cannot read this laptop's disk; ask the Desk to report the run's git state. */
+  | { kind: "git_snapshot"; runId: string }
   | { kind: "ping" };
 
 export interface HandoffRequest {
