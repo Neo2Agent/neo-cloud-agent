@@ -21,6 +21,42 @@ function sub(partial: Partial<RunSubscription>): RunSubscription {
   };
 }
 
+test("parseGitHubWebhook reads PR lifecycle events for the Git panel, not for subscriptions", () => {
+  const merged = parseGitHubWebhook(
+    "pull_request",
+    {
+      action: "closed",
+      number: 12,
+      pull_request: {
+        number: 12,
+        title: "Web polish",
+        state: "closed",
+        merged: true,
+        merged_at: "2026-09-23T11:35:05Z",
+        draft: false,
+        head: { ref: "neo/feature", sha: "abc123" },
+        base: { ref: "main" },
+      },
+      repository: { full_name: "Acme/App" },
+      sender: { login: "alice" },
+    },
+    "d-1",
+  );
+  assert.equal(merged.kind, "pr_state");
+  assert.deepEqual(merged.prNumbers, [12]);
+  assert.deepEqual(merged.pull, {
+    state: "merged",
+    draft: false,
+    mergedAt: "2026-09-23T11:35:05Z",
+    headSha: "abc123",
+    baseBranch: "main",
+    title: "Web polish",
+  });
+  assert.equal(subscriptionMatchesIngress(sub({ kind: "github_pr", prNumber: 12, repo: "acme/app" }), merged), false);
+  const labeled = parseGitHubWebhook("pull_request", { action: "labeled", number: 12, pull_request: { number: 12 } });
+  assert.equal(labeled.kind, "ignored");
+});
+
 test("parseGitHubWebhook extracts PR comments and ignores bots", () => {
   const comment = parseGitHubWebhook("issue_comment", {
     action: "created",

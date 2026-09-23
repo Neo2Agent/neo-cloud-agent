@@ -1,6 +1,16 @@
 import type { RunSubscription } from "@neo-cloud-agent/contracts";
 
-export type GitHubIngressKind = "pr_activity" | "ci" | "human_push" | "ping" | "ignored";
+export type GitHubIngressKind = "pr_activity" | "pr_state" | "ci" | "human_push" | "ping" | "ignored";
+
+/** A PR's own lifecycle (opened / closed / merged / draft toggles), for the Git panel header. */
+export type GitHubPullState = {
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  mergedAt: string | null;
+  headSha: string | null;
+  baseBranch: string | null;
+  title: string;
+};
 
 export type GitHubIngress = {
   kind: GitHubIngressKind;
@@ -11,7 +21,18 @@ export type GitHubIngress = {
   text: string;
   actor?: string | null;
   conclusion?: string | null;
+  pull?: GitHubPullState;
 };
+
+const PULL_STATE_ACTIONS = new Set([
+  "opened",
+  "closed",
+  "reopened",
+  "ready_for_review",
+  "converted_to_draft",
+  "synchronize",
+  "edited",
+]);
 
 const BOT_LOGINS = new Set([
   "github-actions",
@@ -126,6 +147,34 @@ export function parseGitHubWebhook(eventName: string, payload: unknown, delivery
       ]
         .filter(Boolean)
         .join("\n"),
+    };
+  }
+
+  if (eventName === "pull_request") {
+    const pull = asRecord(body.pull_request);
+    const action = asString(body.action);
+    const number = asNumber(pull?.number ?? body.number);
+    if (number == null || !PULL_STATE_ACTIONS.has(action)) {
+      return ignored(repo, `pull_request:${number ?? delivery}:${action || "unknown"}`);
+    }
+    const mergedAt = asString(pull?.merged_at) || null;
+    const merged = pull?.merged === true || Boolean(mergedAt);
+    return {
+      kind: "pr_state",
+      deliveryKey: `pull_request:${number}:${action}:${delivery}`,
+      repo,
+      prNumbers: [number],
+      branches: [asString(asRecord(pull?.head)?.ref)].filter(Boolean),
+      actor: loginOf(body.sender),
+      text: `[GitHub] PR ${repo ?? "repo"}#${number} ${merged ? "merged" : action}`,
+      pull: {
+        state: merged ? "merged" : asString(pull?.state) === "closed" ? "closed" : "open",
+        draft: pull?.draft === true,
+        mergedAt,
+        headSha: asString(asRecord(pull?.head)?.sha) || null,
+        baseBranch: asString(asRecord(pull?.base)?.ref) || null,
+        title: asString(pull?.title),
+      },
     };
   }
 
@@ -273,7 +322,7 @@ function ignored(repo: string | null, deliveryKey: string): GitHubIngress {
 }
 
 export function subscriptionMatchesIngress(subscription: RunSubscription, ingress: GitHubIngress): boolean {
-  if (ingress.kind === "ping" || ingress.kind === "ignored") {
+  if (ingress.kind === "ping" || ingress.kind === "ignored" || ingress.kind === "pr_state") {
     return false;
   }
   if (!ingress.repo || subscription.repo !== ingress.repo) {

@@ -26,11 +26,14 @@ const {
   enqueueFollowUp,
   getBootstrap,
   getRun,
+  getRunCommits,
   getRunDiff,
   getRunDiagnostics,
   getRunSession,
   handoffRun,
+  ingestDeskGitSnapshot,
   ingestEvents,
+  requestRunReview,
   leaseDesk,
   listFollowUps,
   listRuns,
@@ -51,7 +54,7 @@ const {
   rejectDeskRun,
   releaseDeskRun,
 } = await import("./orchestrator.js");
-const { bindDeskWorkspace, createDesk, openDeskInbox, takeDeskAssignment, updateDesk } = await import(
+const { bindDeskWorkspace, createDesk, deleteDesk, openDeskInbox, takeDeskAssignment, updateDesk } = await import(
   "../desks/store.js"
 );
 const { eventsForRun, listEvents } = await import("../events/bus.js");
@@ -1100,6 +1103,72 @@ test("git on a desk run says the files are elsewhere instead of spawn git ENOENT
   await assert.rejects(() => commitRun(run.id, { message: "wip" }), /控制面看不到/);
   const diff = await getRunDiff(run.id);
   assert.equal(diff.stat, "");
+  assert.equal(diff.source, "none");
+});
+
+test("a desk run's Git panel reads the laptop's snapshot, and only that desk may write it", async () => {
+  const registered = newDesk("snap-box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  const run = await createRun({
+    prompt: "show my changes",
+    repoUrls: [],
+    source: "desk",
+    start: "inline",
+    deskWorkspaceId: bound.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/neo-desk-snapshot-elsewhere", pid: 4245 });
+  const asked: Array<{ kind: string; runId?: string }> = [];
+  const detach = openDeskInbox(registered.desk.id, (item) => asked.push(item as { kind: string; runId?: string }));
+  const first = await getRunDiff(run.id);
+  assert.equal(first.source, "none");
+  assert.deepEqual(asked.filter((item) => item.kind === "git_snapshot").map((item) => item.runId), [run.id]);
+  const snapshot = {
+    branch: "main",
+    baseBranch: "main",
+    stat: " a.ts | 1 +",
+    patch: "diff --git a/a.ts b/a.ts\n+x\n",
+    files: [{ path: "a.ts", status: "modified" as const, added: 1, removed: 0 }],
+    truncated: false,
+    commits: [{ sha: "a".repeat(40), message: "wip", author: "me", authoredAt: "2026-09-23T10:00:00Z", added: 1, removed: 0, files: 1 }],
+  };
+  assert.throws(() => ingestDeskGitSnapshot("desk_someone_else", run.id, snapshot), /不在这台电脑上/);
+  ingestDeskGitSnapshot(registered.desk.id, run.id, snapshot);
+  const diff = await getRunDiff(run.id);
+  assert.equal(diff.source, "desk");
+  assert.equal(diff.files[0]?.path, "a.ts");
+  assert.ok(diff.capturedAt);
+  const commits = await getRunCommits(run.id);
+  assert.equal(commits.source, "desk");
+  assert.equal(commits.commits[0]?.message, "wip");
+  detach();
+  deleteDesk(registered.desk.id);
+});
+
+test("commits made through /commit survive the workspace going away", async () => {
+  const run = await createRun({ prompt: "record commits", repoUrls: ["fixtures/toy-repo"] });
+  writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "RECORDED.md"), "one\ntwo\n");
+  const committed = await commitRun(run.id, { message: "docs: add RECORDED.md" });
+  assert.equal(committed.empty, false);
+  const recorded = getRun(run.id)?.commits ?? [];
+  assert.equal(recorded.at(-1)?.message, "docs: add RECORDED.md");
+  assert.equal(recorded.at(-1)?.added, 2);
+  const live = await getRunCommits(run.id);
+  assert.equal(live.source, "workspace");
+  assert.equal(live.commits[0]?.message, "docs: add RECORDED.md");
+  const diff = await getRunDiff(run.id);
+  assert.equal(diff.source, "workspace");
+  assert.ok(diff.files.some((item) => item.path === "RECORDED.md"));
+});
+
+test("review asks the same run to review its branch as a queued follow-up", async () => {
+  const run = await createRun({ prompt: "review me", repoUrls: ["fixtures/toy-repo"] });
+  takeInbound(run.id);
+  const follow = await requestRunReview(run.id);
+  assert.equal(follow.delivery === "follow_up" || follow.delivery === "prompt", true);
+  assert.match(follow.text, /审查/);
+  const plain = await createRun({ prompt: "just chat", repoUrls: [] });
+  await assert.rejects(() => requestRunReview(plain.id), /没有绑定仓库/);
 });
 
 test("a desk worker that crashes surfaces the exit code instead of going idle", async () => {

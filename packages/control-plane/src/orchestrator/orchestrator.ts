@@ -9,6 +9,10 @@ import type {
   PatchRunRequest,
   CreateSubscriptionRequest,
   DeskAssignment,
+  DeskGitSnapshot,
+  PullRequestFeedback,
+  RunCommitsResponse,
+  RunDiffResponse,
   DeskLeaseResponse,
   DiskCloneMethod,
   RunStart,
@@ -30,6 +34,9 @@ import type {
 import {
   assertExecutionTarget,
   buildTranscriptSnapshot,
+  capPatch,
+  GIT_COMMITS_MAX,
+  runGitContext,
   conversationReplayFromMessages,
   deskRepoKey,
   evaluateEgress,
@@ -86,7 +93,17 @@ import {
   reclaimPersistedWorkspaces,
   workspaceReclaimIntervalMs,
 } from "../runtime/workspace-store.js";
-import { commitRunWorkspace, diffRunWorkspace, issueRunGitToken, openRunPullRequest, prepareRunRepos } from "../scm/scm.js";
+import {
+  commitInfo,
+  commitRunWorkspace,
+  commitsRunWorkspace,
+  diffRunWorkspace,
+  issueRunGitToken,
+  openRunPullRequest,
+  prepareRunRepos,
+  resolveScmPushToken,
+} from "../scm/scm.js";
+import { fetchPullFeedback, fetchPullStatus, githubPullSlug, type GithubFetch } from "../scm/pull-status.js";
 import { materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
@@ -109,7 +126,7 @@ import {
 } from "../store/persist.js";
 import { assertClientImages, runIndexTitle } from "../store/run-record.js";
 import { suggestRunTitle } from "../title/suggest.js";
-import { parseGitHubWebhook, subscriptionMatchesIngress } from "../subscriptions/github.js";
+import { parseGitHubWebhook, subscriptionMatchesIngress, type GitHubIngress } from "../subscriptions/github.js";
 import { publicGitHubWebhookInfo, readGitHubWebhookSecret, verifyGitHubSignature } from "../subscriptions/secret.js";
 import { hostWorkspaceFor, repoRoot, workspaceFor } from "../worker-spawn.js";
 import {
@@ -161,6 +178,13 @@ const runEgress = new Map<string, EgressPolicy>();
 const releasingIdle = new Set<string>();
 const activeTurns = new Map<string, ActiveTurn>();
 const deskWorkspaces = new Map<string, string>();
+/** Latest git state a Desk reported for a run whose files are on that laptop. Memory only; the Desk re-reports. */
+const deskGitSnapshots = new Map<string, DeskGitSnapshot & { capturedAt: string }>();
+const prRefreshedAt = new Map<string, number>();
+const PR_REFRESH_MS = 60_000;
+const DESK_SNAPSHOT_STALE_MS = 30_000;
+const DESK_SNAPSHOT_MAX_FILES = 500;
+const RUN_COMMITS_MAX = 50;
 let startingQueued = false;
 let leaseWatch: ReturnType<typeof setInterval> | null = null;
 let lastWorkspaceReclaimAt = 0;
@@ -265,6 +289,8 @@ export function reloadPersistedState(): void {
   releasingIdle.clear();
   activeTurns.clear();
   deskWorkspaces.clear();
+  deskGitSnapshots.clear();
+  prRefreshedAt.clear();
   startingQueued = false;
   resetHistory();
   hydrateFromDisk();
@@ -2290,6 +2316,14 @@ export async function ingestGitHubWebhook(input: {
   if (ingress.kind === "ignored") {
     return { status: 202, body: { ok: true, ignored: true } };
   }
+  if (ingress.kind === "pr_state") {
+    return { status: 202, body: { ok: true, updated: applyPullStateIngress(ingress) } };
+  }
+  if (ingress.kind === "ci") {
+    for (const [runId, run] of runs) {
+      if (run.pullRequests.some((item) => ingress.prNumbers.includes(item.number ?? -1))) prRefreshedAt.delete(runId);
+    }
+  }
   let delivered = 0;
   for (const [runId, items] of subscriptions) {
     const run = runs.get(runId);
@@ -2598,7 +2632,14 @@ function gitCwdFor(runId: string): string {
 export async function commitRun(runId: string, input: CreateCommitRequest) {
   const run = requireRun(runId);
   try {
-    const result = await commitRunWorkspace(gitCwdFor(runId), input);
+    const cwd = gitCwdFor(runId);
+    const result = await commitRunWorkspace(cwd, input);
+    if (!result.empty) {
+      const info = await commitInfo(cwd, result.sha).catch(() => null);
+      if (info) {
+        run.commits = [...(run.commits ?? []).filter((item) => item.sha !== info.sha), info].slice(-RUN_COMMITS_MAX);
+      }
+    }
     run.updatedAt = now();
     publish(
       event(runId, "scm.commit_succeeded", result.empty ? "Nothing to commit" : "Committed workspace", {
@@ -2718,17 +2759,182 @@ export function getRunSession(runId: string, options?: { includeContent?: boolea
   return { files: listSessionFiles(runId) };
 }
 
-export async function getRunDiff(runId: string) {
+/** A git checkout this host can read: the cloud workspace, or a desk folder on the same machine in dev. */
+function readableGitDir(run: Run): string | null {
+  const cwd = isDeskToolsTarget(run.executionTarget) ? (deskWorkspaces.get(run.id) ?? "") : workspaceFor(run.id);
+  return cwd && existsSync(path.join(cwd, ".git")) ? cwd : null;
+}
+
+/** Ask the laptop for a fresh snapshot. False when that Desk is offline. */
+export function requestDeskGitSnapshot(runId: string): boolean {
   const run = requireRun(runId);
-  // A desk run is diffed by the desk itself; this host has no such folder.
-  const cwd = isDeskToolsTarget(run.executionTarget) ? (deskWorkspaces.get(runId) ?? "") : workspaceFor(runId);
-  const diff = cwd && existsSync(cwd) ? await diffRunWorkspace(cwd, run) : { stat: "", patch: "" };
+  if (!isDeskToolsTarget(run.executionTarget)) return false;
+  return pushDeskInbox(run.executionTarget.deskId, { kind: "git_snapshot", runId });
+}
+
+function staleDeskSnapshot(runId: string): boolean {
+  const snapshot = deskGitSnapshots.get(runId);
+  return !snapshot || Date.now() - Date.parse(snapshot.capturedAt) > DESK_SNAPSHOT_STALE_MS;
+}
+
+export async function getRunDiff(runId: string): Promise<RunDiffResponse> {
+  const run = requireRun(runId);
+  const head = { branch: run.branchName, baseBranch: run.baseBranch, pullRequests: run.pullRequests };
+  const empty = { stat: "", patch: "", files: [], truncated: false };
+  const cwd = readableGitDir(run);
+  if (cwd) {
+    return { ...head, ...(await diffRunWorkspace(cwd, run)), source: "workspace" };
+  }
+  if (runGitContext(run) !== "desk") {
+    return { ...head, ...empty, source: "none" };
+  }
+  if (staleDeskSnapshot(runId)) requestDeskGitSnapshot(runId);
+  const snapshot = deskGitSnapshots.get(runId);
+  if (!snapshot) {
+    return { ...head, ...empty, source: "none", capturedAt: null };
+  }
   return {
-    branch: run.branchName,
-    baseBranch: run.baseBranch,
-    pullRequests: run.pullRequests,
-    ...diff,
+    ...head,
+    branch: snapshot.branch ?? run.branchName,
+    baseBranch: snapshot.baseBranch ?? run.baseBranch,
+    stat: snapshot.stat,
+    patch: snapshot.patch,
+    files: snapshot.files,
+    truncated: snapshot.truncated,
+    source: "desk",
+    capturedAt: snapshot.capturedAt,
   };
+}
+
+export async function getRunCommits(runId: string): Promise<RunCommitsResponse> {
+  const run = requireRun(runId);
+  const cwd = readableGitDir(run);
+  if (cwd) {
+    return { commits: await commitsRunWorkspace(cwd, run), source: "workspace" };
+  }
+  if (runGitContext(run) === "desk") {
+    if (staleDeskSnapshot(runId)) requestDeskGitSnapshot(runId);
+    const snapshot = deskGitSnapshots.get(runId);
+    return snapshot
+      ? { commits: snapshot.commits, source: "desk", capturedAt: snapshot.capturedAt }
+      : { commits: [], source: "none", capturedAt: null };
+  }
+  const recorded = [...(run.commits ?? [])].reverse();
+  return { commits: recorded, source: recorded.length > 0 ? "recorded" : "none" };
+}
+
+/** A Desk reports git state for one of its runs. Only the Desk that holds the run may write it. */
+export function ingestDeskGitSnapshot(deskId: string, runId: string, input: DeskGitSnapshot): { capturedAt: string } {
+  const run = requireRun(runId);
+  if (!isDeskToolsTarget(run.executionTarget) || run.executionTarget.deskId !== deskId) {
+    throw new Error("这条对话不在这台电脑上");
+  }
+  const capped = capPatch(typeof input.patch === "string" ? input.patch : "");
+  const capturedAt = now();
+  deskGitSnapshots.set(runId, {
+    branch: typeof input.branch === "string" ? input.branch : null,
+    baseBranch: typeof input.baseBranch === "string" ? input.baseBranch : null,
+    stat: typeof input.stat === "string" ? input.stat.slice(0, 64 * 1024) : "",
+    patch: capped.patch,
+    files: Array.isArray(input.files) ? input.files.slice(0, DESK_SNAPSHOT_MAX_FILES) : [],
+    truncated: capped.truncated || input.truncated === true,
+    commits: Array.isArray(input.commits) ? input.commits.slice(0, GIT_COMMITS_MAX) : [],
+    capturedAt,
+  });
+  return { capturedAt };
+}
+
+let githubFetch: GithubFetch = (url, init) => fetch(url, init);
+
+export function setGithubFetchForTest(impl: GithubFetch | null): void {
+  githubFetch = impl ?? ((url, init) => fetch(url, init));
+  prRefreshedAt.clear();
+}
+
+/** PR state and check counts from GitHub, at most once a minute unless forced. Failures keep the cached refs. */
+export async function refreshRunPullRequests(runId: string, options: { force?: boolean } = {}) {
+  const run = requireRun(runId);
+  const last = prRefreshedAt.get(runId) ?? 0;
+  if (!options.force && Date.now() - last < PR_REFRESH_MS) {
+    return run.pullRequests;
+  }
+  const github = run.pullRequests.filter((item) => githubPullSlug(item));
+  if (github.length === 0) {
+    return run.pullRequests;
+  }
+  const token = await resolveScmPushToken().catch(() => null);
+  if (!token) {
+    return run.pullRequests;
+  }
+  prRefreshedAt.set(runId, Date.now());
+  const next = await Promise.all(
+    run.pullRequests.map((item) => (githubPullSlug(item) ? fetchPullStatus(item, token, githubFetch).catch(() => item) : item)),
+  );
+  run.pullRequests = next;
+  flushRun(runId);
+  return run.pullRequests;
+}
+
+export async function getRunPullRequestFeedback(runId: string, number: number): Promise<PullRequestFeedback> {
+  const run = requireRun(runId);
+  const pr = run.pullRequests.find((item) => item.number === number);
+  if (!pr || !githubPullSlug(pr)) {
+    return { number, reviews: [], comments: [], checks: [] };
+  }
+  const token = await resolveScmPushToken().catch(() => null);
+  if (!token) {
+    throw new Error("没有配置 GitHub 令牌，读不到 PR 讨论");
+  }
+  return fetchPullFeedback(pr, token, githubFetch);
+}
+
+/** `pull_request` webhook: keep the Git panel header in step without polling. */
+function applyPullStateIngress(ingress: GitHubIngress): number {
+  if (ingress.kind !== "pr_state" || !ingress.pull || !ingress.repo) return 0;
+  let updated = 0;
+  for (const run of runs.values()) {
+    let changed = false;
+    run.pullRequests = run.pullRequests.map((item) => {
+      const slug = githubPullSlug(item);
+      if (!slug || `${slug.owner}/${slug.repo}`.toLowerCase() !== ingress.repo || !ingress.prNumbers.includes(slug.number)) {
+        return item;
+      }
+      changed = true;
+      const pull = ingress.pull!;
+      return {
+        ...item,
+        state: pull.state,
+        draft: pull.draft,
+        mergedAt: pull.mergedAt,
+        headSha: pull.headSha ?? item.headSha ?? null,
+        baseBranch: pull.baseBranch ?? item.baseBranch ?? null,
+        title: pull.title || item.title,
+        updatedAt: now(),
+      };
+    });
+    if (changed) {
+      updated += 1;
+      prRefreshedAt.delete(run.id);
+      flushRun(run.id);
+    }
+  }
+  return updated;
+}
+
+/** "Agent 审查": the review brief goes into the same run as a queued follow-up, so its answer lands in the transcript. */
+export async function requestRunReview(runId: string, actor?: { userId: string; email: string }): Promise<FollowUp> {
+  const run = requireRun(runId);
+  if (runGitContext(run) === "none") {
+    throw new Error("这条对话没有绑定仓库，没有可审查的改动");
+  }
+  const base = run.baseBranch || "main";
+  const text = [
+    `请审查这条对话在分支上的全部改动（相对 ${base}，包括未提交的）。`,
+    "逐个文件检查：逻辑错误、边界情况、错误处理、安全问题、和仓库现有写法不一致、测试缺口。",
+    "每个问题给出 文件:行号、严重程度（高 / 中 / 低）、为什么是问题、建议怎么改。没有问题就明确说没有。",
+    "这一轮只审查，不要修改文件，也不要提交。",
+  ].join("\n");
+  return enqueueFollowUp(runId, { text, delivery: "follow_up", source: "user" }, actor);
 }
 
 const DIAGNOSTIC_EVENT_KINDS = new Set([
