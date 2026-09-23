@@ -4,7 +4,7 @@ import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } fro
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
 import { CHAT_MODELS } from "@neo-cloud-agent/contracts/llm-ids";
-import type { AgentMode, ImageRef } from "@neo-cloud-agent/contracts/run";
+import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import { pageAllowsLiveMic, type VoiceSession } from "@neo-cloud-agent/ui/speech";
 import { BuddyVoiceFileSheet, Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
@@ -38,7 +38,6 @@ type Props = {
   /** Remote Control host is offline; send is blocked until that Desk's inbox is live. */
   blocked?: boolean;
   blockedHint?: string;
-  mode: AgentMode;
   model: string;
   models?: Array<{ id: string; label: string }>;
   experts?: Expert[];
@@ -51,7 +50,6 @@ type Props = {
   onCapsule?: (capsule: IntentCapsule) => void;
   onTarget: (target: DeskTarget) => void;
   onPickFolder?: () => void;
-  onMode: (mode: AgentMode) => void;
   onModel: (model: string) => void;
   onExpert?: (value: string) => void;
   onPrompt: (value: string) => void;
@@ -84,7 +82,6 @@ export function Composer({
   targetLockLabel,
   blocked = false,
   blockedHint,
-  mode,
   model,
   models = CHAT_MODELS.map((item) => ({ ...item })),
   experts = [],
@@ -97,7 +94,6 @@ export function Composer({
   onCapsule,
   onTarget,
   onPickFolder,
-  onMode,
   onModel,
   onExpert,
   onPrompt,
@@ -413,17 +409,6 @@ export function Composer({
                 <IconPlus size={16} />
               </button>
             ) : null}
-            <Select
-              id="agent-mode"
-              size="pill"
-              aria-label="模式"
-              value={mode}
-              onValueChange={(value) => onMode(value as AgentMode)}
-              options={[
-                { value: "agent", label: "Agent" },
-                { value: "ask", label: "Ask" },
-              ]}
-            />
             <Select
               id="agent-model"
               size="pill"

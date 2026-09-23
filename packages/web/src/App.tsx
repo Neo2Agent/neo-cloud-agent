@@ -9,7 +9,7 @@ import {
 import { CHAT_MODELS, resolveCatalogSelection } from "@neo-cloud-agent/contracts/llm-ids";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
-import { isRemoteControlTarget, type AgentMode, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
+import { isRemoteControlTarget, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
 import { isDeskHostedTarget, type Desk, type DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
@@ -275,7 +275,6 @@ export function App() {
   const [lastPane, setLastPane] = useState<InspectorTab>("terminal");
   const [artifactFocus, setArtifactFocus] = useState<string | null>(null);
   const [contextFocusId, setContextFocusId] = useState("");
-  const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [deskFolder, setDeskFolder] = useState("");
   const [desks, setDesks] = useState<Desk[]>([]);
@@ -1028,7 +1027,6 @@ export function App() {
     }
     const attached = images;
     const previousStatus = currentRun?.status;
-    const askPrefix = agentMode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     const pending: PendingUser = {
       id: `pending-${Date.now()}`,
       text: text || "（图片）",
@@ -1051,7 +1049,7 @@ export function App() {
           await api(tokenRef.current, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
-              prompt: `${askPrefix}${text || "（图片）"}`,
+              prompt: text || "（图片）",
               repoUrls,
               source: deskTarget.kind === "desk" ? "desk" : "web",
               envId: envId || undefined,
@@ -1061,7 +1059,6 @@ export function App() {
               expertId: expertPick.expertId,
               expertTeamId: expertPick.expertTeamId,
               pluginIds: pluginPick ? [pluginPick.id] : undefined,
-              mode: agentMode,
               deskWorkspaceId: deskTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
               target:
                 deskTarget.kind === "desk"
@@ -1091,7 +1088,7 @@ export function App() {
         await api(tokenRef.current, `/v1/runs/${runId}/follow-ups`, {
           method: "POST",
           body: JSON.stringify({
-            text: `${askPrefix}${text || "（图片）"}`,
+            text: text || "（图片）",
             images: attached.length ? attached : undefined,
           }),
         }),
@@ -1108,7 +1105,7 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, agentMode, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
 
   const queueMessage = useCallback(async () => {
     const text = prompt.trim();
@@ -1124,7 +1121,6 @@ export function App() {
       return;
     }
     const attached = images;
-    const askPrefix = agentMode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     setPrompt("");
     setImages([]);
     try {
@@ -1132,7 +1128,7 @@ export function App() {
         await api(tokenRef.current, `/v1/runs/${runId}/follow-ups`, {
           method: "POST",
           body: JSON.stringify({
-            text: `${askPrefix}${text || "（图片）"}`,
+            text: text || "（图片）",
             images: attached.length ? attached : undefined,
           }),
         }),
@@ -1143,7 +1139,7 @@ export function App() {
       setImages(attached);
       setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "排队失败")]);
     }
-  }, [agentMode, currentRun, desks, deskTarget.deskId, images, prompt, runId]);
+  }, [currentRun, desks, deskTarget.deskId, images, prompt, runId]);
 
   const stopTurn = useCallback(() => {
     if (!runId) return;
@@ -1449,10 +1445,6 @@ export function App() {
       }
       if (action === "stop") {
         stopTurn();
-        return;
-      }
-      if (action === "cycle-mode" || action === "mode-menu") {
-        setAgentMode((mode) => (mode === "agent" ? "ask" : "agent"));
         return;
       }
       if (action === "cycle-model") {
@@ -2613,7 +2605,6 @@ export function App() {
               }
               blocked={hostLock.locked}
               blockedHint={hostLock.hint}
-              mode={agentMode}
               model={selectedModel}
               experts={experts}
               teams={teams}
@@ -2638,7 +2629,6 @@ export function App() {
                   }
                 });
               }}
-              onMode={setAgentMode}
               onExpert={(value) => setExpertPick(decodeExpertPick(value))}
               models={llm.models?.length ? llm.models : CHAT_MODELS}
               onModel={(value) =>
