@@ -65,7 +65,7 @@
 | 运行列表后台刷新 | ✓ 8s + 聚焦（△ 只在打开对话时） | ✓ 8s + 聚焦（△ 只在聚焦时） | ✓ 8s + 可见（✗ 从不） |
 | 执行模式标签 | Remote / 本机（✗ 无） | 云端 / Remote / 本机（△ 英文小写） | 云端 / Remote（△ 英文小写） |
 | Agent / Ask 模式 | 已删除 | 已删除（△ 前缀代码还在） | 已删除（△ `askPrompt` 还在） |
-| Diff / 提交 / PR | ✓ Git 面板（另一个 PR） | △ 只有 `+N -M` | ✗ |
+| Diff / 提交 / PR | ✓ Git 面板（点选文件、行号、Find Issues） | △ 只有 `+N -M` | ✗ |
 | 文件 / 终端 / 产物 | ✓ | ✓（本机 + 云端） | △ 只有产物 |
 | 会话搜索 | △ 只有手机布局有 | ✓ 搜索面板 | ✗ |
 | 推送 | ✗ | 系统通知（派活） | ✓ Expo 推送 |
@@ -131,7 +131,16 @@
 4. **运行中的发送语义统一成 Cursor 那套**：空闲时 Enter 发送；运行中 Enter 排队（`delivery: "follow_up"`），Cmd/Ctrl+Enter 立即插话（`delivery: "steer"`）；组词中不处理；手机上回车换行，箭头按钮在运行中排队。
 5. **Desk 补齐**：输入法保护、Markdown、工作折叠和转圈、进行中不显示时间、删掉 Ask 残留。
 6. **Mobile 补齐**：消息时间、运行中排队（实验室和原生）、实验室 Markdown、统一「正在思考」、删掉 `askPrompt`。
-7. **Web Git 面板**（单独的 PR）：普通对话不显示 Git；绑了仓库或本机目录的对话显示 PR 头 + Diff / 审查 / 提交记录；本机工作区由 Desk 回传快照。
+7. **Web Git 面板**（单独的 PR）：普通对话不显示 Git；绑了仓库或本机目录的对话显示 PR 头 + Diff / 审查 / 提交记录；本机工作区由 Desk 回传快照。展示对齐 cursor.com/agents：点选文件、hunk 带行号、底栏「提交 / 开草稿 PR」、审查主按钮是 Find Issues。
+
+### 5.1 Cursor 的两套 Git 皮（2026-09-23 补）
+
+官方文档里 Git 有两套界面，Neo Web 对齐的是第一套：
+
+- **cursor.com/agents（Web / iOS）**：右栏 Git。PR 头（标题、`#编号`、Open/Draft/Merged、`branch → base`、checks）+ **Diff / Review / Commits**。Diff 点选文件、中间看这个文件的 hunk（旧/新行号）；底部提交和开 PR；Review 一键 **Find Issues**（只审不改，结果进对话）。
+- **Cursor 3 Agents Window**：改动树、Commit and Push 下拉（建分支 / 只提交 / 提交并开 PR）、可合并。这是桌面编排面。合并 PR、改 reviewer、行内评论回写仍是第三期。
+
+Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、`GET /commits`、`POST /review`、Desk 快照。Diff 是选中文件 + 双 gutter，不再用手风琴。Desk / Mobile 自己的 Git 标签仍是第二期。
 
 ### 第二期
 

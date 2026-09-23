@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   feedbackFollowUpText,
   groupCommitsByDay,
+  parseHunkLines,
   splitPatchByFile,
   type GitFileChange,
   type PullRequestFeedback,
@@ -55,18 +56,9 @@ function prBadge(pr: PullRequestRef): { label: string; tone: string } {
   return { label: PR_BADGE.open!, tone: "open" };
 }
 
-function lineClass(line: string): string {
-  if (line.startsWith("@@")) return "diff-hunk";
-  if (line.startsWith("+") && !line.startsWith("+++")) return "diff-add";
-  if (line.startsWith("-") && !line.startsWith("---")) return "diff-del";
-  return "diff-ctx";
-}
-
-/** Body lines of one file patch, without the `diff --git` / index / --- / +++ headers. */
-function patchBody(patch: string): string[] {
-  const lines = patch.split("\n");
-  const start = lines.findIndex((line) => line.startsWith("@@"));
-  return start >= 0 ? lines.slice(start) : [];
+function fileNameParts(path: string): { dir: string; base: string } {
+  const slash = path.lastIndexOf("/");
+  return slash >= 0 ? { dir: path.slice(0, slash), base: path.slice(slash + 1) } : { dir: "", base: path };
 }
 
 function Stat({ added, removed }: { added: number; removed: number }) {
@@ -83,8 +75,6 @@ function PrHeader({
   branch,
   baseBranch,
   context,
-  opening,
-  onOpenPr,
   onRefresh,
   refreshing,
 }: {
@@ -92,8 +82,6 @@ function PrHeader({
   branch: string | null;
   baseBranch: string | null;
   context: Props["context"];
-  opening: boolean;
-  onOpenPr?: () => void;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
@@ -136,33 +124,46 @@ function PrHeader({
             {pr.checks.pending ? <span className="is-pending">● {pr.checks.pending}</span> : null}
           </span>
         ) : null}
-        {!pr && context === "cloud" && onOpenPr ? (
-          <button type="button" className="quiet-btn git-open-pr" disabled={opening} onClick={onOpenPr}>
-            <IconPr size={14} />
-            {opening ? "正在开…" : "开草稿 PR"}
-          </button>
-        ) : null}
       </div>
     </header>
+  );
+}
+
+function FileLabel({ path, oldPath }: { path: string; oldPath?: string }) {
+  const { dir, base } = fileNameParts(path);
+  return (
+    <span className="git-file-path" title={oldPath ? `${oldPath} → ${path}` : path}>
+      <span className="git-file-base">{base}</span>
+      {dir ? <span className="git-file-dir">{dir}</span> : null}
+    </span>
   );
 }
 
 function DiffView({
   diff,
   context,
+  selectedPath,
+  onSelect,
   committing,
   commitError,
+  opening,
   onCommit,
+  onOpenPr,
 }: {
   diff: RunDiffResponse | null;
   context: Props["context"];
+  selectedPath: string | null;
+  onSelect: (path: string) => void;
   committing: boolean;
   commitError: string;
+  opening: boolean;
   onCommit: (message: string) => void;
+  onOpenPr?: () => void;
 }) {
-  const [open, setOpen] = useState<Record<string, boolean>>({});
   const patches = useMemo(() => new Map(splitPatchByFile(diff?.patch ?? "").map((item) => [item.path, item.patch])), [diff?.patch]);
   const files = diff?.files ?? [];
+  const selected = files.find((item) => item.path === selectedPath) ?? files[0];
+  const lines = useMemo(() => parseHunkLines(patches.get(selected?.path ?? "") ?? ""), [patches, selected?.path]);
   const totals = files.reduce((sum, item) => ({ added: sum.added + item.added, removed: sum.removed + item.removed }), { added: 0, removed: 0 });
   return (
     <div className="git-diff">
@@ -177,44 +178,46 @@ function DiffView({
           <p className="git-summary">
             {files.length} 个文件 <Stat {...totals} />
           </p>
-          <ul className="git-files">
+          <ul className="git-files" role="listbox" aria-label="改动的文件">
             {files.map((file) => {
-              const body = patchBody(patches.get(file.path) ?? "");
-              const expanded = open[file.path] ?? false;
+              const on = file.path === selected?.path;
               return (
-                <li key={file.path} className={expanded ? "is-open" : undefined}>
+                <li key={file.path}>
                   <button
                     type="button"
-                    className="git-file"
-                    aria-expanded={expanded}
-                    onClick={() => setOpen((prev) => ({ ...prev, [file.path]: !expanded }))}
+                    role="option"
+                    aria-selected={on}
+                    className={on ? "git-file is-on" : "git-file"}
+                    onClick={() => onSelect(file.path)}
                   >
                     <span className={`git-file-mark is-${file.status}`} title={file.status}>
                       {STATUS_MARK[file.status]}
                     </span>
-                    <span className="git-file-path" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
-                      {file.path}
-                    </span>
+                    <FileLabel path={file.path} oldPath={file.oldPath} />
                     {file.binary ? <span className="git-file-binary">二进制</span> : <Stat added={file.added} removed={file.removed} />}
                   </button>
-                  {expanded ? (
-                    body.length > 0 ? (
-                      <pre className="git-file-diff">
-                        {body.map((line, index) => (
-                          <span key={index} className={lineClass(line)}>
-                            {line || " "}
-                            {"\n"}
-                          </span>
-                        ))}
-                      </pre>
-                    ) : (
-                      <p className="git-file-none">{file.binary ? "二进制文件不显示内容。" : "这个文件的改动没有进预览（太大被截断）。"}</p>
-                    )
-                  ) : null}
                 </li>
               );
             })}
           </ul>
+          <div className="git-hunks" role="region" aria-label="文件改动">
+            {selected?.binary ? (
+              <p className="git-file-none">二进制文件不显示内容。</p>
+            ) : lines.length > 0 ? (
+              lines.map((line, index) => (
+                <div key={`${line.type}:${line.oldLine ?? ""}:${line.newLine ?? ""}:${index}`} className={`git-hunk-line is-${line.type}`}>
+                  <span className="git-gutter git-gutter-old">{line.oldLine ?? ""}</span>
+                  <span className="git-gutter git-gutter-new">{line.newLine ?? ""}</span>
+                  <span className="git-hunk-sign" aria-hidden="true">
+                    {line.type === "add" ? "+" : line.type === "del" ? "-" : line.type === "hunk" ? "" : " "}
+                  </span>
+                  <span className="git-hunk-text">{line.text || " "}</span>
+                </div>
+              ))
+            ) : (
+              <p className="git-file-none">{diff?.truncated ? "这个文件的改动没有进预览（太大被截断）。" : "没有可预览的改动。"}</p>
+            )}
+          </div>
           {diff?.truncated ? <p className="git-note">改动太大，预览只显示了前一部分。</p> : null}
         </>
       )}
@@ -231,14 +234,22 @@ function DiffView({
             }
           }}
         >
-          <input name="message" placeholder="提交说明" disabled={committing || files.length === 0} />
-          <button type="submit" className="quiet-btn primary" disabled={committing || files.length === 0}>
-            {committing ? "提交中…" : "提交"}
-          </button>
+          <textarea name="message" rows={2} placeholder="提交说明" disabled={committing || files.length === 0} />
+          <div className="git-commit-actions">
+            <button type="submit" className="quiet-btn primary" disabled={committing || files.length === 0}>
+              {committing ? "提交中…" : "提交"}
+            </button>
+            {onOpenPr ? (
+              <button type="button" className="quiet-btn git-open-pr" disabled={opening} onClick={onOpenPr}>
+                <IconPr size={14} />
+                {opening ? "正在开…" : "开草稿 PR"}
+              </button>
+            ) : null}
+          </div>
           {commitError ? <p className="setup err">{commitError}</p> : null}
         </form>
       ) : (
-        <p className="git-note">本机对话的改动在这台电脑上提交，这里只读。</p>
+        <p className="git-note git-commit-note">本机对话的改动在这台电脑上提交，这里只读。</p>
       )}
     </div>
   );
@@ -324,11 +335,11 @@ function ReviewView({
     <div className="git-review">
       <section className="git-review-agent">
         <div>
-          <h4>Agent 审查</h4>
-          <p className="hint">让这条对话逐个文件审一遍分支上的改动，结果会出现在对话里。这一轮只审，不改。</p>
+          <h4>Find Issues</h4>
+          <p className="hint">只审不改，结果会出现在对话里。</p>
         </div>
         <button type="button" className="quiet-btn primary" disabled={reviewState === "sending"} onClick={onReview}>
-          {reviewState === "sending" ? "发送中…" : reviewState === "sent" ? "再审一次" : "开始审查"}
+          {reviewState === "sending" ? "发送中…" : reviewState === "sent" ? "再审一次" : "Find Issues"}
         </button>
       </section>
       {reviewState === "sent" ? <p className="git-note">已发给 Agent，看对话里的回复。</p> : null}
@@ -412,8 +423,11 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onOp
   const [feedbackError, setFeedbackError] = useState("");
   const [subscriptions, setSubscriptions] = useState<RunSubscription[]>([]);
   const [reviewState, setReviewState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const pr = diff?.pullRequests?.[0];
+  const files = diff?.files ?? [];
+  const resolvedPath = files.some((item) => item.path === selectedPath) ? selectedPath : (files[0]?.path ?? null);
 
   const load = useCallback(
     async (refreshPr: boolean) => {
@@ -451,6 +465,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onOp
     setCommits(null);
     setFeedback(null);
     setReviewState("idle");
+    setSelectedPath(null);
   }, [runId]);
 
   useEffect(() => {
@@ -511,19 +526,8 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onOp
         branch={diff?.branch ?? null}
         baseBranch={diff?.baseBranch ?? null}
         context={context}
-        opening={opening}
         refreshing={loading}
         onRefresh={() => void load(true)}
-        onOpenPr={
-          onOpenPr
-            ? () => {
-                setOpening(true);
-                void Promise.resolve(onOpenPr())
-                  .then(() => load(false))
-                  .finally(() => setOpening(false));
-              }
-            : undefined
-        }
       />
       <div className="git-tabs" role="tablist" aria-label="Git">
         {(
@@ -542,7 +546,26 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onOp
       <div className="git-body">
         {error ? <p className="setup err">{error}</p> : null}
         {view === "diff" ? (
-          <DiffView diff={diff} context={context} committing={committing} commitError={commitError} onCommit={(message) => void commit(message)} />
+          <DiffView
+            diff={diff}
+            context={context}
+            selectedPath={resolvedPath}
+            onSelect={setSelectedPath}
+            committing={committing}
+            commitError={commitError}
+            opening={opening}
+            onCommit={(message) => void commit(message)}
+            onOpenPr={
+              onOpenPr
+                ? () => {
+                    setOpening(true);
+                    void Promise.resolve(onOpenPr())
+                      .then(() => load(false))
+                      .finally(() => setOpening(false));
+                  }
+                : undefined
+            }
+          />
         ) : view === "commits" ? (
           <CommitsView commits={commits} />
         ) : (
