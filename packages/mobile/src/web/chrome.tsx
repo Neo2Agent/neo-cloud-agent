@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
+import { composerKeyAction } from "@neo-cloud-agent/contracts/composer-keys";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, resolveChatModel, runListTitle } from "../format";
 import { dayGreeting } from "../island-theme";
@@ -289,6 +290,10 @@ export function IslandComposer(props: {
   onPickImages?: (files: FileList | null) => void;
   onDropImage?: (index: number) => void;
   onSend: () => void;
+  /** While a turn runs, the arrow queues this message for after it. */
+  onQueue?: () => void;
+  /** While a turn runs, Cmd/Ctrl+Enter hands it to the agent at its next tool call. */
+  onSteer?: () => void;
   onStop?: () => void;
   startVoice: (
     onPreview: (text: string) => void,
@@ -425,6 +430,25 @@ export function IslandComposer(props: {
           placeholder={listening ? "松手出字" : props.placeholder}
           rows={2}
           onChange={(event) => props.onPrompt(event.target.value)}
+          onKeyDown={(event) => {
+            const action = composerKeyAction(
+              {
+                key: event.key,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+                isComposing: event.nativeEvent.isComposing,
+                keyCode: event.keyCode,
+              },
+              { busy: props.canStop, narrow: true },
+            );
+            if (!action || props.locked || !canSend) return;
+            event.preventDefault();
+            if (action === "steer") props.onSteer?.();
+            else if (action === "queue") props.onQueue?.();
+            else if (!props.sending) props.onSend();
+          }}
         />
         <div className="composer-tools">
           <div className="composer-model-wrap">
@@ -504,6 +528,20 @@ export function IslandComposer(props: {
                 />
               </svg>
             </button>
+            {props.canStop && props.onQueue && canSend && !props.locked ? (
+              <button type="button" className="composer-send" aria-label="排队发送" title="这轮结束后再发" onClick={props.onQueue}>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 19V5M5 12l7-7 7 7"
+                  />
+                </svg>
+              </button>
+            ) : null}
             {props.canStop ? (
               <button type="button" className="composer-send is-stop" aria-label="停止" onClick={props.onStop}>
                 <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">

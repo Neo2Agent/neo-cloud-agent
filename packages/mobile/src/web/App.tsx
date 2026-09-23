@@ -24,7 +24,9 @@ import { schedulePreset, type ScheduleKind } from "../automations";
 import { cloudFollowUp, cloudRunRequest } from "../create-run";
 import { acceptImages, imageHint, overImageBudget } from "../images";
 import { filesToImageRefs } from "./pick-images";
-import { avatarLetter, CHAT_MODELS, chatModelShort, resolveChatModel, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
+import { avatarLetter, CHAT_MODELS, chatModelShort, resolveChatModel, runListTitle, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
+import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
+import { messageTimeLabel, userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
 import { runPlaceLabel } from "../place";
 import { chatStatusText, composerGate } from "../session";
 import {
@@ -53,6 +55,7 @@ import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome"
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
 import { IslandButton, IslandTag } from "./island";
+import { MarkdownBody } from "@neo-cloud-agent/ui";
 
 function hashScreen() {
   return parseMobileScreen(location.hash || location.href);
@@ -189,7 +192,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
         client.listMemories().catch(() => ({ configured: false, memories: [] })),
         client.memorySettings().catch(() => ({ enabled: true, configured: false })),
       ]);
-    setRuns(listed.runs);
+    setRuns(runsNewestFirst(listed.runs));
     setDesks(deskList.desks);
     setExperts(expertList.experts);
     setTeams(teamList.teams);
@@ -223,6 +226,30 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       if (error instanceof MobileApiError && error.status === 401) void persistTokenRef.current("");
     });
   }, [ready, token, refreshList]);
+
+  useEffect(() => {
+    if (!token) return;
+    const pull = () => {
+      if (document.visibilityState !== "visible") return;
+      void client.listRuns().then((listed) => {
+        setRuns(runsNewestFirst(listed.runs));
+        setCurrent((run) => {
+          const fresh = run ? listed.runs.find((item) => item.id === run.id) : undefined;
+          return run && fresh ? { ...run, title: fresh.title, status: fresh.status, updatedAt: fresh.updatedAt } : run;
+        });
+      }).catch(() => undefined);
+      void client.listInbox().then((inbox) => {
+        setInboxItems(inbox.items);
+        setUnread(inbox.unread);
+      }).catch(() => undefined);
+    };
+    const timer = window.setInterval(pull, RUN_LIST_REFRESH_MS);
+    document.addEventListener("visibilitychange", pull);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", pull);
+    };
+  }, [client, token]);
 
   useEffect(() => {
     if (!token || route.screen !== "invite" || !route.inviteToken) return;
@@ -323,7 +350,10 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
 
   useEffect(() => {
     if (route.screen === "chat" && route.runId && token && current?.id !== route.runId) {
-      void openRun(route.runId).catch(() => go("/"));
+      void openRun(route.runId).catch(() => {
+        setPageError("打不开这条对话：它已删除、不是你的，或是另一台电脑上的本机对话。");
+        go("/");
+      });
     }
     if (route.screen !== "chat") closeStream();
   }, [closeStream, current?.id, openRun, route.runId, route.screen, token]);
@@ -462,7 +492,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     }
   };
 
-  const send = async () => {
+  const send = async (delivery?: "follow_up" | "steer") => {
     const text = prompt.trim();
     if ((!text && images.length === 0) || sending) return;
     if (composerGate(current, desks).locked) return;
@@ -495,7 +525,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
         await openRun(created.id, { keepPending: true });
         return;
       }
-      await client.followUp(current.id, cloudFollowUp({ text, images: attached }));
+      await client.followUp(current.id, cloudFollowUp({ text, images: attached, delivery }));
     } catch (error) {
       setPrompt(text);
       setImages(attached);
@@ -801,6 +831,8 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       }}
       onDropImage={(index) => setImages((prev) => prev.filter((_, item) => item !== index))}
       onSend={() => void send()}
+      onQueue={current ? () => void send("follow_up") : undefined}
+      onSteer={current ? () => void send("steer") : undefined}
       onStop={current ? () => void client.abort(current.id) : undefined}
       startVoice={(onPreview, onError, onEnded) => startAppVoice(client, onPreview, onError, onEnded)}
     />
@@ -838,6 +870,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
 
   const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
   const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
+  const lastUserIndex = visible.map((message) => message.role).lastIndexOf("user");
   const thinking = shouldShowThinking(turnBusy, visible)
     ? thinkingHint({
         status: current?.status,
@@ -850,9 +883,11 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       <div className="app">
         <header className="topbar">
           <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
+          {current ? <span className="chat-title">{runListTitle(current)}</span> : null}
           <span className={turnBusy ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
           {current ? <IslandTag>{runPlaceLabel(current)}</IslandTag> : null}
         </header>
+        {pageError ? <p className="page-error">{pageError}</p> : null}
         {current ? (
           <div className="chat-actions">
             <IslandButton onClick={openArtifacts}>产物</IslandButton>
@@ -866,7 +901,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             </button>
           ) : null}
           {visible.length === 0 ? <p className="empty">还没有消息。</p> : null}
-          {visible.map((message) => {
+          {visible.map((message, messageIndex) => {
             if (isStartupWhisper(message)) {
               if (generationStarted(visible) || thinking) return null;
               return (
@@ -876,18 +911,22 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
               );
             }
             if (!hasVisibleTranscript(message)) return null;
+            const author = message.role === "user" ? userMessageAuthor(message, { id: userId, email }) : null;
+            const live = message.role === "assistant" && turnBusy && messageIndex > lastUserIndex;
+            const when = message.role === "setup" ? null : messageTimeLabel(message, { live });
             return (
             <div key={message.id} className={`msg-row ${message.role}`} data-images={message.images?.length ? "1" : undefined}>
-              {message.role === "user" && userAvatar ? (
+              {message.role === "user" && userAvatar && !author ? (
                 <img className="avatar user" src={userAvatar} alt="" />
               ) : message.role !== "user" && neoAvatar ? (
                 <img className="avatar neo" src={neoAvatar} alt="" />
               ) : (
                 <span className={`avatar ${message.role === "user" ? "user" : "neo"}`} aria-hidden="true">
-                  {message.role === "user" ? avatarLetter(email) : "N"}
+                  {message.role === "user" ? avatarLetter(author ?? email) : "N"}
                 </span>
               )}
               <div className="msg-col">
+                {author ? <span className="msg-author">{author}</span> : null}
                 {message.images?.length ? (
                   <div className="image-row">
                     {message.images.map((image, index) => (
@@ -903,7 +942,11 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
                 {transcriptGroups(message).map((group, index) =>
                   group.type === "text" ? (
                     <article key={`${message.id}-t${index}`} className={`bubble ${message.role}`}>
-                      <p>{group.text}</p>
+                      {message.role === "assistant" ? (
+                        <MarkdownBody text={group.text} streaming={live && Boolean(message.streaming)} />
+                      ) : (
+                        <p>{group.text}</p>
+                      )}
                     </article>
                   ) : (
                     <div key={`${message.id}-g${index}`} className="tool-stack">
@@ -913,6 +956,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
                     </div>
                   ),
                 )}
+                {when ? <time className="msg-time" dateTime={message.updatedAt || message.createdAt}>{when}</time> : null}
               </div>
             </div>
             );
@@ -946,6 +990,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       <header className="topbar">
         <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
       </header>
+      {pageError ? <p className="page-error">{pageError}</p> : null}
       <IslandHome expertName={expertName} onPickRecipe={applyRecipe} />
       {composer}
       {drawer}

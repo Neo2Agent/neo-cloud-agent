@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { askPrompt, cloudRunRequest } from "./create-run.js";
+import { cloudFollowUp, cloudRunRequest } from "./create-run.js";
 import { CLOUD_TARGET } from "./place.js";
 
 test("cloudRunRequest always posts the cloud target", () => {
@@ -41,16 +41,11 @@ test("enabled skills ride along, and an empty list stays undefined", () => {
   assert.equal(cloudRunRequest({ prompt: "hi", source: "ios", pluginIds: [] }).pluginIds, undefined);
 });
 
-test("ask mode prefixes the prompt and keeps the cloud target", () => {
-  const body = cloudRunRequest({ prompt: "这段鉴权怎么走", source: "ios", mode: "ask" });
-  assert.equal(body.mode, "ask");
-  assert.match(body.prompt, /^只阅读和回答/);
-  assert.match(body.prompt, /这段鉴权怎么走$/);
+test("prompts go through untouched and follow-ups carry queue / steer", () => {
+  const body = cloudRunRequest({ prompt: "这段鉴权怎么走", source: "ios" });
+  assert.equal(body.prompt, "这段鉴权怎么走");
   assert.deepEqual(body.target, CLOUD_TARGET);
-});
-
-test("agent mode leaves the prompt alone", () => {
-  assert.equal(askPrompt("改一下", "agent"), "改一下");
-  assert.equal(askPrompt("改一下"), "改一下");
-  assert.equal(cloudRunRequest({ prompt: "改一下", source: "ios" }).mode, undefined);
+  assert.deepEqual(cloudFollowUp({ text: "再看看" }), { text: "再看看", images: undefined });
+  assert.equal(cloudFollowUp({ text: "先停一下", delivery: "steer" }).delivery, "steer");
+  assert.equal(cloudFollowUp({ text: "", delivery: "follow_up" }).text, "（图片）");
 });

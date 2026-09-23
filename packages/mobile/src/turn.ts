@@ -1,6 +1,6 @@
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
-import { currentTurnMessages, QUEUED_SLOT_NOTICE, runningToolName } from "@neo-cloud-agent/contracts/turn-state";
+import { QUEUED_SLOT_NOTICE } from "@neo-cloud-agent/contracts/turn-state";
 
 export function pendingUserMessage(
   text: string,
@@ -43,12 +43,7 @@ export function hasVisibleTranscript(message: TranscriptMessage): boolean {
   );
 }
 
-/** Dots only before this turn has anything to show. Do not come back after the reply lands. */
-export function shouldShowThinking(busy: boolean, messages: TranscriptMessage[]): boolean {
-  if (!busy) return false;
-  if (runningToolName(messages)) return false;
-  return !currentTurnMessages(messages).some((message) => message.role === "assistant" && hasVisibleTranscript(message));
-}
+export { shouldShowThinking } from "@neo-cloud-agent/contracts/turn-view";
 
 export function thinkingHint(input: {
   status?: string | null;

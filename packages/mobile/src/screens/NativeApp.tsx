@@ -443,7 +443,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     }
   };
 
-  const send = async () => {
+  const send = async (delivery?: "follow_up" | "steer") => {
     const text = prompt.trim();
     if ((!text && images.length === 0) || sending) return;
     if (composerGate(current, desks).locked) return;
@@ -477,7 +477,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         await openRun(created.id, { keepPending: true });
         return;
       }
-      await client.followUp(current.id, cloudFollowUp({ text, images: attached }));
+      await client.followUp(current.id, cloudFollowUp({ text, images: attached, delivery }));
     } catch (error) {
       setPrompt(text);
       setImages(attached);
@@ -774,6 +774,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       }}
       onDropImage={(index) => setImages((prev) => prev.filter((_, item) => item !== index))}
       onSend={() => void send()}
+      onQueue={current ? () => void send("follow_up") : undefined}
       onStop={current ? () => void client.abort(current.id) : undefined}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
     />

@@ -22,6 +22,8 @@ type Props = {
   onPickImages?: () => void;
   onDropImage?: (index: number) => void;
   onSend: () => void;
+  /** While a turn runs, the arrow queues this message for after it. */
+  onQueue?: () => void;
   onStop?: () => void;
   startVoice: (
     onPreview: (text: string) => void,
@@ -193,6 +195,11 @@ export function Composer(props: Props) {
             >
               <MicIcon color={listening ? colors.cream : props.locked || props.sending ? colors.muted : colors.ink} />
             </Pressable>
+            {props.canStop && props.onQueue && canSend && !props.locked ? (
+              <Pressable onPress={props.onQueue} style={styles.send} accessibilityLabel="排队发送">
+                <SendIcon color={colors.cream} />
+              </Pressable>
+            ) : null}
             <Pressable
               disabled={!props.canStop && !canSend}
               onPress={props.canStop ? props.onStop : props.onSend}

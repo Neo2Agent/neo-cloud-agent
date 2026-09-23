@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { sharedWebCredentials } from "./api/credentials";
 import { App } from "./web/App";
+import "@neo-cloud-agent/ui/markdown.css";
 import "./island.css";
 
 const store = sharedWebCredentials();
