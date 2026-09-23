@@ -12,6 +12,14 @@ test("shortcutAction maps Cursor-aligned keys", () => {
   assert.equal(shortcutAction({ key: ".", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false }, "other"), "mode-menu");
 });
 
+test("shortcutAction ignores keys while an IME is composing", () => {
+  assert.equal(
+    shortcutAction({ key: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, isComposing: true }),
+    null,
+  );
+  assert.equal(shortcutAction({ key: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, keyCode: 229 }), null);
+});
+
 test("cycle wraps around", () => {
   assert.equal(cycle(["a", "b", "c"], "b"), "c");
   assert.equal(cycle(["a", "b", "c"], "c"), "a");

@@ -13,7 +13,7 @@ import type { DeskTarget } from "../desk";
 import { IconArrowUp, IconInfo, IconMic, IconPlus, IconStop } from "../icons";
 import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
 import { applyClickVoice, startWebVoice } from "../speech";
-import { isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
+import { isImeComposing, isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
 import { ContextUsageControl } from "./ContextUsage";
 import { TargetPicker } from "./TargetPicker";
 
@@ -116,6 +116,7 @@ export function Composer({
   const [voicePickOpen, setVoicePickOpen] = useState(false);
   const voiceRef = useRef<VoiceSession | null>(null);
   const startingRef = useRef(false);
+  const composingRef = useRef(false);
   const promptRef = useRef(prompt);
   promptRef.current = prompt;
   const buddy = layout === "buddy";
@@ -275,7 +276,16 @@ export function Composer({
             onImages([...images, ...next].slice(0, 4));
           });
         }}
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={() => {
+          composingRef.current = false;
+        }}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+          if (composingRef.current || isImeComposing({ isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode })) {
+            return;
+          }
           if (mentionHits[0] && event.key === "Enter" && !event.shiftKey && trigger) {
             event.preventDefault();
             pickMention(mentionHits[0]);

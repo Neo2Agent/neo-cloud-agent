@@ -9,18 +9,25 @@ export function isNarrowViewport(
   return win.innerWidth < 860;
 }
 
+export type ImeKeyState = { isComposing?: boolean; keyCode?: number };
+
+/** Enter that confirms an IME candidate (pinyin etc.) must not submit. Safari reports it only as keyCode 229. */
+export function isImeComposing(event: ImeKeyState): boolean {
+  return event.isComposing === true || event.keyCode === 229;
+}
+
 export function shouldSendOnEnter(
-  event: { key: string; shiftKey: boolean; ctrlKey?: boolean; metaKey?: boolean },
+  event: { key: string; shiftKey: boolean; ctrlKey?: boolean; metaKey?: boolean } & ImeKeyState,
   options?: { narrow?: boolean },
 ): boolean {
-  if (event.ctrlKey || event.metaKey) {
+  if (event.ctrlKey || event.metaKey || isImeComposing(event)) {
     return false;
   }
   return event.key === "Enter" && !event.shiftKey && options?.narrow !== true;
 }
 
-export function shouldQueueOnCtrlEnter(event: { key: string; ctrlKey?: boolean; shiftKey?: boolean }): boolean {
-  return event.key === "Enter" && event.ctrlKey === true && event.shiftKey !== true;
+export function shouldQueueOnCtrlEnter(event: { key: string; ctrlKey?: boolean; shiftKey?: boolean } & ImeKeyState): boolean {
+  return event.key === "Enter" && event.ctrlKey === true && event.shiftKey !== true && !isImeComposing(event);
 }
 
 export function applyVisualViewport(

@@ -1,3 +1,5 @@
+import { isImeComposing, type ImeKeyState } from "./viewport";
+
 export type ShortcutAction =
   | "new-chat"
   | "prev-run"
@@ -10,9 +12,12 @@ export type ShortcutAction =
   | "close";
 
 export function shortcutAction(
-  event: { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean },
+  event: { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean } & ImeKeyState,
   platform: "darwin" | "other" = "other",
 ): ShortcutAction | null {
+  if (isImeComposing(event)) {
+    return null;
+  }
   const mod = platform === "darwin" ? event.metaKey : event.ctrlKey;
   if (event.key === "Enter" && event.ctrlKey && !event.shiftKey) {
     return "queue";
