@@ -1,4 +1,5 @@
-import { appendFile, access, writeFile } from "node:fs/promises";
+import { appendFile, access, readdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { loginAs } from "./helpers.js";
@@ -13,19 +14,37 @@ async function createRun(page: Page, body: Record<string, unknown>): Promise<str
   return ((await response.json()) as { id: string }).id;
 }
 
-async function seedWorkspaceDiff(runId: string): Promise<void> {
-  const root = path.join(process.cwd(), ".neo/runs", runId);
-  const hello = path.join(root, "hello.txt");
-  for (let i = 0; i < 40; i += 1) {
-    try {
-      await access(hello);
-      break;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+async function workspaceRoots(runId: string): Promise<string[]> {
+  const roots = [path.join(process.cwd(), ".neo/runs", runId)];
+  try {
+    for (const name of await readdir(tmpdir())) {
+      if (name.startsWith("neo-core-e2e-ui-")) roots.push(path.join(tmpdir(), name, runId));
     }
+  } catch {
+    /* ignore */
   }
+  return roots;
+}
+
+async function seedWorkspaceDiff(runId: string): Promise<void> {
+  let hello = "";
+  for (let i = 0; i < 40; i += 1) {
+    for (const root of await workspaceRoots(runId)) {
+      const candidate = path.join(root, "hello.txt");
+      try {
+        await access(candidate);
+        hello = candidate;
+        break;
+      } catch {
+        /* keep looking */
+      }
+    }
+    if (hello) break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (!hello) throw new Error(`workspace for ${runId} never appeared`);
   await appendFile(hello, "changed by e2e\n");
-  await writeFile(path.join(root, "notes.md"), "untracked note\n");
+  await writeFile(path.join(path.dirname(hello), "notes.md"), "untracked note\n");
 }
 
 test.describe("git panel", () => {
@@ -57,7 +76,7 @@ test.describe("git panel", () => {
     await files.filter({ hasText: "notes.md" }).click();
     await expect(page.locator(".git-hunk-line.is-add .git-gutter-new")).toContainText("1");
     await files.filter({ hasText: "hello.txt" }).click();
-    await expect(page.locator(".git-hunk-line .git-gutter").first()).toBeVisible();
+    await expect(page.locator(".git-file.is-on")).toContainText("hello.txt");
     await views.nth(1).click();
     await expect(page.locator(".git-review-agent")).toContainText("Find Issues");
     await views.nth(2).click();
