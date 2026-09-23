@@ -1884,7 +1884,7 @@ button.tool-file-more:hover {
   align-items: center;
   gap: 2px;
   min-width: 0;
-  padding: 0 0 6px;
+  padding: 6px 0;
 }
 
 .composer-context .picker {
