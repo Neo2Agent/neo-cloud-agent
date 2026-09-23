@@ -367,27 +367,20 @@ test("abort without a worker leaves the chat idle so it can continue", async () 
 test("a turn that ends after Stop still settles the transcript", async () => {
   const run = await createRun({ prompt: "stop mid tool", repoUrls: ["fixtures/toy-repo"] });
   takeInbound(run.id);
+  const base = () => ({ runId: run.id, category: "agent_run" as const, level: "info" as const, createdAt: new Date().toISOString() });
   ingestEvents(run.id, [
-    { id: "late-1", runId: run.id, kind: "agent.start", title: "start", createdAt: new Date().toISOString() },
-    {
-      id: "late-2",
-      runId: run.id,
-      kind: "tool.start",
-      title: "bash",
-      createdAt: new Date().toISOString(),
-      data: { toolCallId: "t1", toolName: "bash", args: { command: "sleep 9" } },
-    },
+    { ...base(), id: "late-1", kind: "agent.start", title: "start" },
+    { ...base(), id: "late-2", kind: "tool.start", title: "bash", data: { toolCallId: "t1", toolName: "bash", args: { command: "sleep 9" } } },
   ]);
   assert.equal(getRun(run.id)?.status, "RUNNING");
   abortRun(run.id);
   assert.equal(getRun(run.id)?.status, "IDLE");
-  const stamp = () => new Date().toISOString();
   ingestEvents(run.id, [
-    { id: "late-3", runId: run.id, kind: "tool.end", title: "bash", createdAt: stamp(), data: { toolCallId: "t1", toolName: "bash", output: "", isError: true } },
-    { id: "late-4", runId: run.id, kind: "message.start", title: "m", createdAt: stamp() },
-    { id: "late-5", runId: run.id, kind: "message.delta", title: "m", createdAt: stamp(), data: { delta: "stopped" } },
-    { id: "late-6", runId: run.id, kind: "message.end", title: "m", createdAt: stamp() },
-    { id: "late-7", runId: run.id, kind: "agent.end", title: "end", createdAt: stamp() },
+    { ...base(), id: "late-3", kind: "tool.end", title: "bash", data: { toolCallId: "t1", toolName: "bash", output: "", isError: true } },
+    { ...base(), id: "late-4", kind: "message.start", title: "m" },
+    { ...base(), id: "late-5", kind: "message.delta", title: "m", data: { delta: "stopped" } },
+    { ...base(), id: "late-6", kind: "message.end", title: "m" },
+    { ...base(), id: "late-7", kind: "agent.end", title: "end" },
   ]);
   const kinds = listEvents(run.id).map((item) => item.kind);
   assert.equal(kinds.at(-1), "run.idle");
