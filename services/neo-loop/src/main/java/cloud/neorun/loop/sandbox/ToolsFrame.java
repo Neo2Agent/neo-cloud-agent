@@ -1,9 +1,18 @@
 package cloud.neorun.loop.sandbox;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
+import cloud.neorun.loop.support.LinkedMaps;
 
+/**
+ * Frames the loop sends on the tools WebSocket. Must match {@code contracts/src/tools-channel.ts}.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-04
+ */
 public final class ToolsFrame {
+  private static final int PROTOCOL_VERSION = 1;
+  private static final int MAX_FRAME_FIELDS = 6;
+
   private ToolsFrame() {}
 
   public static Map<String, Object> hello(String runId, String sandboxRoot) {
@@ -40,20 +49,6 @@ public final class ToolsFrame {
     return frame;
   }
 
-  public static Map<String, Object> list(String callId, String path) {
-    Map<String, Object> frame = base("fs.list");
-    frame.put("callId", callId);
-    frame.put("path", path);
-    return frame;
-  }
-
-  public static Map<String, Object> exists(String callId, String path) {
-    Map<String, Object> frame = base("fs.exists");
-    frame.put("callId", callId);
-    frame.put("path", path);
-    return frame;
-  }
-
   public static Map<String, Object> abort(String callId) {
     Map<String, Object> frame = base("abort");
     frame.put("callId", callId);
@@ -64,13 +59,9 @@ public final class ToolsFrame {
     return base("abort_all");
   }
 
-  public static Map<String, Object> ping() {
-    return base("ping");
-  }
-
   private static Map<String, Object> base(String type) {
-    Map<String, Object> frame = new LinkedHashMap<>();
-    frame.put("v", 1);
+    Map<String, Object> frame = LinkedMaps.withExpectedSize(MAX_FRAME_FIELDS);
+    frame.put("v", PROTOCOL_VERSION);
     frame.put("type", type);
     return frame;
   }

@@ -9,10 +9,27 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import cloud.neorun.loop.turn.StartTurnCommand;
 
+/**
+ * Append-only JSONL journal per turn under {@code <stateDir>/turns}. A turn without
+ * {@code turn_completed} is replayed from its {@code turn_started} row on restart.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-04
+ */
 public class FileStepLog {
+  private static final Logger LOG = LoggerFactory.getLogger(FileStepLog.class);
+
+  private static final String TURN_STARTED = "turn_started";
+  private static final String TURN_COMPLETED = "turn_completed";
+  private static final String JOURNAL_SUFFIX = ".jsonl";
+  private static final TypeReference<Map<String, Object>> JSON_OBJECT = new TypeReference<>() {};
+
   private final Path root;
   private final ObjectMapper mapper = new ObjectMapper();
 
@@ -35,12 +52,7 @@ public class FileStepLog {
               "requestJson", requestJson == null ? "" : requestJson,
               "resultJson", resultJson == null ? "" : resultJson,
               "createdAt", Instant.now().toString());
-      Files.writeString(
-          file,
-          mapper.writeValueAsString(row) + "\n",
-          StandardCharsets.UTF_8,
-          StandardOpenOption.CREATE,
-          StandardOpenOption.APPEND);
+      Files.writeString(file, mapper.writeValueAsString(row) + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     } catch (IOException error) {
       throw new IllegalStateException("loop step log failed", error);
     }
@@ -54,10 +66,10 @@ public class FileStepLog {
     try {
       List<StartTurnCommand> incomplete = new ArrayList<>();
       try (var stream = Files.list(dir)) {
-        for (Path file : stream.filter(path -> path.getFileName().toString().endsWith(".jsonl")).toList()) {
+        for (Path file : stream.filter(path -> path.getFileName().toString().endsWith(JOURNAL_SUFFIX)).toList()) {
           String turnId = file.getFileName().toString().replaceFirst("\\.jsonl$", "");
           List<Map<String, Object>> rows = read(turnId);
-          boolean completed = rows.stream().anyMatch(row -> "turn_completed".equals(String.valueOf(row.get("kind"))));
+          boolean completed = rows.stream().anyMatch(row -> TURN_COMPLETED.equals(String.valueOf(row.get("kind"))));
           if (completed) {
             continue;
           }
@@ -73,9 +85,10 @@ public class FileStepLog {
     }
   }
 
+  /** The {@code turn_started} command, or null when the journal has none that parses. */
   public StartTurnCommand commandFrom(List<Map<String, Object>> rows) {
     for (Map<String, Object> row : rows) {
-      if (!"turn_started".equals(String.valueOf(row.get("kind")))) {
+      if (!TURN_STARTED.equals(String.valueOf(row.get("kind")))) {
         continue;
       }
       Object raw = row.get("requestJson");
@@ -84,7 +97,8 @@ public class FileStepLog {
       }
       try {
         return mapper.readValue(text, StartTurnCommand.class);
-      } catch (IOException ignored) {
+      } catch (IOException error) {
+        LOG.warn("turn {} start command unreadable; it will not be resumed", row.get("turnId"), error);
         return null;
       }
     }
@@ -99,12 +113,9 @@ public class FileStepLog {
     try {
       List<Map<String, Object>> rows = new ArrayList<>();
       for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
-        if (line.isBlank()) {
-          continue;
+        if (!line.isBlank()) {
+          rows.add(mapper.readValue(line, JSON_OBJECT));
         }
-        @SuppressWarnings("unchecked")
-        Map<String, Object> row = mapper.readValue(line, Map.class);
-        rows.add(row);
       }
       return rows;
     } catch (IOException error) {
@@ -113,6 +124,6 @@ public class FileStepLog {
   }
 
   private Path fileFor(String turnId) {
-    return root.resolve("turns").resolve(turnId + ".jsonl");
+    return root.resolve("turns").resolve(turnId + JOURNAL_SUFFIX);
   }
 }

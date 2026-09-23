@@ -16,7 +16,15 @@ import com.sun.net.httpserver.HttpServer;
 import cloud.neorun.loop.config.LoopProperties;
 import cloud.neorun.loop.sandbox.ToolsHub;
 
+/**
+ * End-to-end ReAct turn against local mock gateway and control plane.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-04
+ */
 class LocalTurnEngineTest {
+  private static final long TURN_COMPLETE_TIMEOUT_SECONDS = 15L;
+
   @TempDir Path temp;
 
   @Test
@@ -64,21 +72,17 @@ class LocalTurnEngineTest {
           new StartTurnCommand(
               "run-1",
               "turn-1",
-              "org",
               "user",
               "prompt",
               "say hello",
-              List.of(),
               "neo/deepseek",
               "jwt",
               "http://127.0.0.1:" + gateway.getAddress().getPort(),
               "http://127.0.0.1:" + control.getAddress().getPort(),
-              new StartTurnCommand.ToolsBinding("skip", "inbound", null, "/workspace"),
-              new StartTurnCommand.WorkspaceContext("# toy", null, List.of(), null),
-              List.of(),
-              null);
+              new StartTurnCommand.ToolsBinding("skip", "/workspace"),
+              new StartTurnCommand.WorkspaceContext("# toy", null, null));
       engine.start(cmd);
-      assertTrue(done.await(15, TimeUnit.SECONDS), "turn-complete was not posted");
+      assertTrue(done.await(TURN_COMPLETE_TIMEOUT_SECONDS, TimeUnit.SECONDS), "turn-complete was not posted");
       assertTrue(completes.getFirst().contains("\"status\":\"idle\""));
       assertTrue(Files.exists(temp.resolve("turns").resolve("turn-1.jsonl")));
       assertTrue(Files.exists(temp.resolve("sessions").resolve("run-1.json")));

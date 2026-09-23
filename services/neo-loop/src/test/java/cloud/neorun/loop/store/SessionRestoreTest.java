@@ -5,6 +5,12 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Choosing between the local file and control-plane session copies.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-10
+ */
 class SessionRestoreTest {
   @Test
   void prefersRemoteWhenItHasMoreMessages() {

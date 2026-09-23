@@ -11,5 +11,4 @@ neo:
     token: ${NEO_LOOP_TOKEN:}
     state-dir: ${NEO_LOOP_STATE_DIR:}
     engine: ${LOOP_ENGINE:harness}
-    java-xmx: ${NEO_LOOP_JAVA_XMX:512m}
     tools-wait-ms: ${NEO_LOOP_TOOLS_WAIT_MS:60000}

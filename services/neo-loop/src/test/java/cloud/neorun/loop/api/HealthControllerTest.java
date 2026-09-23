@@ -9,6 +9,12 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
+/**
+ * {@code /health} stays reachable without the loop token.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-04
+ */
 @SpringBootTest(properties = {"neo.loop.engine=react", "neo.loop.token="})
 @AutoConfigureMockMvc
 class HealthControllerTest {

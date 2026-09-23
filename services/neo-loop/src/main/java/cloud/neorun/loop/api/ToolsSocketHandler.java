@@ -12,8 +12,20 @@ import cloud.neorun.loop.sandbox.ToolsHub;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+/**
+ * Accepts the worker's tools WebSocket at {@code /internal/tools/{runId}} and hands frames to
+ * {@link ToolsHub}.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-04
+ */
 @Component
 public class ToolsSocketHandler extends TextWebSocketHandler {
+  private static final String DEFAULT_SANDBOX_ROOT = "/workspace";
+  private static final String BEARER_PREFIX = "Bearer ";
+  private static final String TOKEN_QUERY = "token=";
+  private static final TypeReference<Map<String, Object>> JSON_OBJECT = new TypeReference<>() {};
+
   private final ToolsHub hub;
   private final LoopProperties properties;
   private final ObjectMapper mapper = new ObjectMapper();
@@ -31,13 +43,12 @@ public class ToolsSocketHandler extends TextWebSocketHandler {
     }
     String runId = runId(session);
     hub.attach(runId, session);
-    session.sendMessage(new TextMessage(mapper.writeValueAsString(ToolsFrame.hello(runId, "/workspace"))));
+    session.sendMessage(new TextMessage(mapper.writeValueAsString(ToolsFrame.hello(runId, DEFAULT_SANDBOX_ROOT))));
   }
 
   @Override
   protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-    Map<String, Object> frame = mapper.readValue(message.getPayload(), new TypeReference<>() {});
-    hub.onFrame(runId(session), frame);
+    hub.onFrame(runId(session), mapper.readValue(message.getPayload(), JSON_OBJECT));
   }
 
   @Override
@@ -46,15 +57,15 @@ public class ToolsSocketHandler extends TextWebSocketHandler {
   }
 
   private boolean authorized(WebSocketSession session) {
-    if (properties.getToken() == null || properties.getToken().isBlank()) {
+    String token = properties.getToken();
+    if (token == null || token.isBlank()) {
       return true;
     }
     String query = session.getUri() == null ? "" : session.getUri().getQuery();
-    if (query != null && query.contains("token=" + properties.getToken())) {
+    if (query != null && query.contains(TOKEN_QUERY + token)) {
       return true;
     }
-    String header = session.getHandshakeHeaders().getFirst("Authorization");
-    return header != null && header.equals("Bearer " + properties.getToken());
+    return (BEARER_PREFIX + token).equals(session.getHandshakeHeaders().getFirst("Authorization"));
   }
 
   private static String runId(WebSocketSession session) {

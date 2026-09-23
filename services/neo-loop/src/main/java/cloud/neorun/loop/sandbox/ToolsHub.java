@@ -6,25 +6,51 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+/**
+ * Request/response bridge over the per-run tools WebSocket. Each call waits on a future keyed by
+ * its call id until the worker answers.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-04
+ */
 @Component
 public class ToolsHub {
+  private static final long READY_POLL_MS = 50L;
+  private static final long MIN_EXEC_WAIT_MS = 1_000L;
+  /** Extra time past the command timeout for the worker to report exec.end. */
+  private static final long EXEC_REPLY_GRACE_MS = 5_000L;
+  private static final long FS_TIMEOUT_SECONDS = 30L;
+  private static final int DEFAULT_EXIT_CODE = 1;
+
+  /**
+   * Collected output of one exec call.
+   *
+   * @author neo-cloud-agent
+   * @date 2026-09-04
+   */
   public record ExecResult(int exitCode, String stdout, String stderr) {}
 
-  public record FsResult(boolean ok, String code, String message, String bytesB64, java.util.List<String> names, Boolean exists) {}
+  /**
+   * Result of one fs call.
+   *
+   * @author neo-cloud-agent
+   * @date 2026-09-04
+   */
+  public record FsResult(boolean ok, String message, String bytesB64) {}
 
   private final ObjectMapper mapper = new ObjectMapper();
   private final ConcurrentHashMap<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, Pending> pending = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, CompletableFuture<Object>> pending = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, StringBuilder> stdout = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, StringBuilder> stderr = new ConcurrentHashMap<>();
-
-  private record Pending(CompletableFuture<Object> future, String kind) {}
 
   public void attach(String runId, WebSocketSession session) {
     sessions.put(runId, session);
@@ -46,7 +72,7 @@ public class ToolsHub {
         return;
       }
       try {
-        Thread.sleep(50);
+        Thread.sleep(READY_POLL_MS);
       } catch (InterruptedException error) {
         Thread.currentThread().interrupt();
         throw new IllegalStateException("interrupted waiting for tools channel", error);
@@ -58,18 +84,22 @@ public class ToolsHub {
   public ExecResult exec(String runId, String command, int timeoutMs, String cwd) {
     String callId = UUID.randomUUID().toString();
     CompletableFuture<Object> future = new CompletableFuture<>();
-    pending.put(callId, new Pending(future, "exec"));
+    pending.put(callId, future);
     stdout.put(callId, new StringBuilder());
     stderr.put(callId, new StringBuilder());
-    send(runId, ToolsFrame.exec(callId, command, timeoutMs, cwd));
     try {
-      Object result = future.get(Math.max(timeoutMs, 1_000) + 5_000L, TimeUnit.MILLISECONDS);
+      send(runId, ToolsFrame.exec(callId, command, timeoutMs, cwd));
+      Object result = future.get(Math.max(timeoutMs, MIN_EXEC_WAIT_MS) + EXEC_REPLY_GRACE_MS, TimeUnit.MILLISECONDS);
       if (result instanceof ExecResult exec) {
         return exec;
       }
       throw new IllegalStateException("unexpected exec result");
-    } catch (Exception error) {
-      send(runId, ToolsFrame.abort(callId));
+    } catch (InterruptedException error) {
+      Thread.currentThread().interrupt();
+      abortQuietly(runId, callId);
+      throw new IllegalStateException("exec interrupted", error);
+    } catch (ExecutionException | TimeoutException error) {
+      abortQuietly(runId, callId);
       throw new IllegalStateException("exec failed", error);
     } finally {
       pending.remove(callId);
@@ -84,14 +114,6 @@ public class ToolsHub {
 
   public FsResult download(String runId, String path) {
     return fs(runId, ToolsFrame.download(UUID.randomUUID().toString(), path));
-  }
-
-  public FsResult list(String runId, String path) {
-    return fs(runId, ToolsFrame.list(UUID.randomUUID().toString(), path));
-  }
-
-  public FsResult exists(String runId, String path) {
-    return fs(runId, ToolsFrame.exists(UUID.randomUUID().toString(), path));
   }
 
   public void abortAll(String runId) {
@@ -112,10 +134,10 @@ public class ToolsHub {
       return;
     }
     if ("exec.end".equals(type)) {
-      Pending wait = pending.remove(callId);
+      CompletableFuture<Object> wait = pending.remove(callId);
       if (wait != null) {
-        int code = ((Number) frame.getOrDefault("exitCode", 1)).intValue();
-        wait.future.complete(
+        int code = ((Number) frame.getOrDefault("exitCode", DEFAULT_EXIT_CODE)).intValue();
+        wait.complete(
             new ExecResult(
                 code,
                 stdout.getOrDefault(callId, new StringBuilder()).toString(),
@@ -124,40 +146,42 @@ public class ToolsHub {
       return;
     }
     if ("ok".equals(type) || "err".equals(type)) {
-      Pending wait = pending.remove(callId);
-      if (wait == null) {
-        return;
+      CompletableFuture<Object> wait = pending.remove(callId);
+      if (wait != null) {
+        wait.complete(
+            new FsResult(
+                "ok".equals(type),
+                String.valueOf(frame.getOrDefault("message", "")),
+                frame.get("bytesB64") == null ? null : String.valueOf(frame.get("bytesB64"))));
       }
-      boolean ok = "ok".equals(type);
-      @SuppressWarnings("unchecked")
-      java.util.List<String> names =
-          frame.get("names") instanceof java.util.List<?> list ? (java.util.List<String>) list : java.util.List.of();
-      wait.future.complete(
-          new FsResult(
-              ok,
-              String.valueOf(frame.getOrDefault("code", ok ? "" : "internal")),
-              String.valueOf(frame.getOrDefault("message", "")),
-              frame.get("bytesB64") == null ? null : String.valueOf(frame.get("bytesB64")),
-              names,
-              frame.get("exists") instanceof Boolean exists ? exists : null));
     }
   }
 
   private FsResult fs(String runId, Map<String, Object> frame) {
     String callId = String.valueOf(frame.get("callId"));
     CompletableFuture<Object> future = new CompletableFuture<>();
-    pending.put(callId, new Pending(future, "fs"));
-    send(runId, frame);
+    pending.put(callId, future);
     try {
-      Object result = future.get(30, TimeUnit.SECONDS);
+      send(runId, frame);
+      Object result = future.get(FS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       if (result instanceof FsResult fs) {
         return fs;
       }
       throw new IllegalStateException("unexpected fs result");
-    } catch (Exception error) {
+    } catch (InterruptedException error) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("fs call interrupted", error);
+    } catch (ExecutionException | TimeoutException error) {
       throw new IllegalStateException("fs call failed", error);
     } finally {
       pending.remove(callId);
+    }
+  }
+
+  /** The channel may already be gone; the original failure is what the caller needs. */
+  private void abortQuietly(String runId, String callId) {
+    if (ready(runId)) {
+      send(runId, ToolsFrame.abort(callId));
     }
   }
 

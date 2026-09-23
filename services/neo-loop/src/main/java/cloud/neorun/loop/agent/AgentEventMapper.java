@@ -14,8 +14,13 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
  * {@code packages/worker/src/events.ts}. Intermediate LLM-round ends are
  * {@code llm.usage} only. {@code agent.end} is emitted by the control plane
  * after {@code turn-complete}.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-04
  */
 public class AgentEventMapper {
+  private static final String UNKNOWN_TOOL = "unknown";
+
   private final EmitEventsActivity emit;
   private final String replyId;
   private boolean messageOpen;
@@ -55,21 +60,21 @@ public class AgentEventMapper {
   public void toolStart(String toolName, String toolCallId, Object args) {
     emit.emit(
         "tool.start",
-        "Tool " + (toolName == null ? "unknown" : toolName),
+        "Tool " + (toolName == null ? UNKNOWN_TOOL : toolName),
         Map.of("toolName", toolName == null ? "" : toolName, "toolCallId", toolCallId == null ? "" : toolCallId, "args", args == null ? Map.of() : args));
   }
 
   public void toolUpdate(String toolName, String toolCallId, String output) {
     emit.emit(
         "tool.update",
-        "Tool " + (toolName == null ? "unknown" : toolName),
+        "Tool " + (toolName == null ? UNKNOWN_TOOL : toolName),
         Map.of("toolName", toolName == null ? "" : toolName, "toolCallId", toolCallId == null ? "" : toolCallId, "output", output == null ? "" : output));
   }
 
   public void toolEnd(String toolName, String toolCallId, String output, boolean error) {
     emit.emit(
         "tool.end",
-        "Tool " + (toolName == null ? "unknown" : toolName) + " finished",
+        "Tool " + (toolName == null ? UNKNOWN_TOOL : toolName) + " finished",
         Map.of(
             "toolName",
             toolName == null ? "" : toolName,
@@ -100,10 +105,6 @@ public class AgentEventMapper {
 
   public void error(String message) {
     emit.emit("llm.error", "模型调用失败", Map.of("error", message == null ? "" : message));
-  }
-
-  public String replyId() {
-    return replyId;
   }
 
   /** Drop tokens already streamed for this reply. Returns true when a rewind event was emitted. */

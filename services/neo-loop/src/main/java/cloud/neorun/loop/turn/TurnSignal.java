@@ -1,11 +1,20 @@
 package cloud.neorun.loop.turn;
 
-public record TurnSignal(String type, String text, String followUpId) {
+/**
+ * Abort or steer request for a live turn.
+ *
+ * @author neo-cloud-agent
+ * @date 2026-09-04
+ */
+public record TurnSignal(String type, String text) {
+  private static final String ABORT = "abort";
+  private static final String STEER = "steer";
+
   public boolean abort() {
-    return "abort".equalsIgnoreCase(type);
+    return ABORT.equalsIgnoreCase(type);
   }
 
   public boolean steer() {
-    return "steer".equalsIgnoreCase(type);
+    return STEER.equalsIgnoreCase(type);
   }
 }
