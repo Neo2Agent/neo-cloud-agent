@@ -9,7 +9,8 @@ import {
 import { CHAT_MODELS, resolveCatalogSelection } from "@neo-cloud-agent/contracts/llm-ids";
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
-import { isRemoteControlTarget, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
+import { isRemoteControlTarget, type ImageRef, type PullRequestRef, type Run } from "@neo-cloud-agent/contracts/run";
+import { runGitContext } from "@neo-cloud-agent/contracts/git";
 import { isDeskHostedTarget, type Desk, type DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
@@ -23,7 +24,7 @@ import { applyLiveEvents, parseSseData, RUN_LIST_REFRESH_MS } from "@neo-cloud-a
 import { AuthGate, type AuthMode } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { ArtifactsPanel } from "./components/ArtifactsPanel";
-import { DiffPanel } from "./components/DiffPanel";
+import { GitPanel } from "./components/GitPanel";
 import { FileTree } from "./components/FileTree";
 import { InspectorShell, type InspectorTab } from "./components/Inspector";
 import { WorkspaceFiles, type FilesView } from "./components/WorkspaceFiles";
@@ -285,10 +286,6 @@ export function App() {
   const [authToken, setAuthToken] = useState("");
   const [prompt, setPrompt] = useState("");
   const [images, setImages] = useState<ImageRef[]>([]);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [diffError, setDiffError] = useState("");
-  const [diffStat, setDiffStat] = useState("");
-  const [diffPatch, setDiffPatch] = useState("");
   const [repo, setRepo] = useState("");
   const [envId, setEnvId] = useState("");
   const [buildId, setBuildId] = useState("");
@@ -308,8 +305,6 @@ export function App() {
   const [artifacts, setArtifacts] = useState<Array<{ name: string; url?: string; contentType?: string }>>([]);
   const [artifactsError, setArtifactsError] = useState("");
   const [artifactsLoading, setArtifactsLoading] = useState(false);
-  const [committing, setCommitting] = useState(false);
-  const [commitError, setCommitError] = useState("");
   const [handoffError, setHandoffError] = useState("");
   const [mainTab, setMainTab] = useState<
     "chat" | "automations" | "projects" | "experts" | "skills" | "memories" | "settings" | "context"
@@ -714,9 +709,6 @@ export function App() {
     setPrompt("");
     setImages([]);
     setInspectorTab(null);
-    setDiffStat("");
-    setDiffPatch("");
-    setDiffError("");
     setSending(false);
     setStopping(false);
     setPendingTurn(null);
@@ -1192,33 +1184,12 @@ export function App() {
     })();
   }, [patchRun, runId]);
 
-  const commitWorkspace = useCallback(
-    async (message: string) => {
-      if (!runId) return;
-      setCommitting(true);
-      setCommitError("");
-      try {
-        const body = await readJson<{ error?: string }>(
-          await api(tokenRef.current, `/v1/runs/${runId}/commit`, {
-            method: "POST",
-            body: JSON.stringify({ message }),
-          }),
-        );
-        if (body.error) throw new Error(body.error);
-        setDiffLoading(true);
-        const response = await api(tokenRef.current, `/v1/runs/${runId}/diff`);
-        const diff = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
-        if (!response.ok) throw new Error(diff.error || "读取 diff 失败");
-        setDiffStat(diff.stat ?? "");
-        setDiffPatch(diff.patch ?? "");
-      } catch (error) {
-        setCommitError(error instanceof Error ? error.message : "提交失败");
-      } finally {
-        setCommitting(false);
-        setDiffLoading(false);
-      }
+  const applyPullRequests = useCallback(
+    (next: PullRequestRef[]) => {
+      if (runId) patchRun(runId, (run) => ({ ...run, pullRequests: next }));
+      setCurrentRun((run) => (run ? { ...run, pullRequests: next } : run));
     },
-    [runId],
+    [patchRun, runId],
   );
 
   /** Cloud → This Computer only. A local conversation stays local; see handoffRun. */
@@ -1607,6 +1578,12 @@ export function App() {
   });
   const statusView = turnStatusLabel({ sending, stopping, status: currentRun?.status });
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
+  const gitContext = currentRun ? runGitContext(currentRun) : "none";
+  const canOpenPr = Boolean(runId) && gitContext === "cloud" && !pr?.url;
+  const gitRefreshKey = `${runId ?? ""}:${busy ? "busy" : "idle"}:${currentRun?.pullRequests?.length ?? 0}`;
+  useEffect(() => {
+    if (inspectorTab === "git" && gitContext === "none") setInspectorTab("terminal");
+  }, [gitContext, inspectorTab]);
   const currentSlot =
     vms.slots.find((slot) => slot.runId === runId && slot.status === "busy")?.id ||
     (isActiveRunStatus(currentRun?.status) ? currentRun?.vmSlotId : null) ||
@@ -1621,19 +1598,6 @@ export function App() {
 
   const loadInspector = (id: InspectorTab) => {
     if (!runId) return;
-    if (id === "diff") {
-      setDiffLoading(true);
-      setDiffError("");
-      void (async () => {
-        const response = await api(token, `/v1/runs/${runId}/diff`);
-        const body = await readJson<{ stat?: string; patch?: string; error?: string }>(response);
-        if (!response.ok) throw new Error(body.error || "读取 diff 失败");
-        setDiffStat(body.stat ?? "");
-        setDiffPatch(body.patch ?? "");
-      })()
-        .catch((error) => setDiffError(error instanceof Error ? error.message : "读取 diff 失败"))
-        .finally(() => setDiffLoading(false));
-    }
     if (id === "terminal") {
       setDiagLoading(true);
       setDiagError("");
@@ -1661,8 +1625,9 @@ export function App() {
   };
 
   const railNow = () => (narrow ? 0 : sidebarOpen ? sidebarWidth : 48);
-  const openInspector = (id: InspectorTab) => {
+  const openInspector = (requested: InspectorTab) => {
     if (!runId) return;
+    const id = requested === "git" && gitContext === "none" ? "terminal" : requested;
     setLastPane(id);
     if (!inspectorTab) {
       setPaneFull(false);
@@ -2135,7 +2100,7 @@ export function App() {
                 className="ghost"
                 id="open-pr"
                 type="button"
-                hidden={Boolean(pr?.url) || !runId}
+                hidden={!canOpenPr}
                 onClick={() => void openDraftPr()}
               >
                 <IconPr size={16} />
@@ -2709,6 +2674,7 @@ export function App() {
           {mainTab === "chat" && runId && inspectorTab ? (
             <InspectorShell
               tab={inspectorTab}
+              hasGit={gitContext !== "none"}
               width={paneWidth}
               maxWidth={paneMaxWidth}
               fullscreen={paneFull}
@@ -2729,15 +2695,15 @@ export function App() {
                 setInspectorTab(null);
               }}
             >
-              {inspectorTab === "diff" ? (
-                <DiffPanel
-                  loading={diffLoading}
-                  error={diffError}
-                  stat={diffStat}
-                  patch={diffPatch}
-                  committing={committing}
-                  commitError={commitError}
-                  onCommit={(message) => void commitWorkspace(message)}
+              {inspectorTab === "git" && gitContext !== "none" ? (
+                <GitPanel
+                  token={token}
+                  runId={runId}
+                  context={gitContext}
+                  refreshKey={gitRefreshKey}
+                  busy={busy}
+                  onOpenPr={canOpenPr ? () => openDraftPr() : undefined}
+                  onPullRequests={applyPullRequests}
                 />
               ) : inspectorTab === "terminal" ? (
                 <TerminalPanel
@@ -2812,7 +2778,7 @@ export function App() {
           event.currentTarget.value = "";
         }}
       />
-      <BuddyPlusSheet open={plusOpen} canOpenPr={Boolean(runId) && !pr?.url} onClose={() => setPlusOpen(false)} onAction={applyBuddyPlus} />
+      <BuddyPlusSheet open={plusOpen} canOpenPr={canOpenPr} onClose={() => setPlusOpen(false)} onAction={applyBuddyPlus} />
       <AuthGate
         open={authOpen}
         mode={authMode}
