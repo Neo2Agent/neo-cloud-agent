@@ -781,7 +781,7 @@ button.account-slot:hover {
   gap: 8px;
   min-width: 0;
   height: 36px;
-  padding: 0 8px 0 12px;
+  padding: 0 8px 0 20px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -5867,6 +5867,24 @@ button.composer-mic.is-listening,
   border: 0;
   background: transparent;
   overflow: auto;
+}
+
+.artifact-preview-frame.artifact-text {
+  padding: 18px 20px 28px;
+  line-height: 1.65;
+}
+
+.artifact-text .md > :first-child {
+  margin-top: 0;
+}
+
+.artifact-text .md-h {
+  margin: 20px 0 10px;
+}
+
+.artifact-text .md-p,
+.artifact-text .md-list {
+  margin-bottom: 12px;
 }
 
 .artifact-text pre {
