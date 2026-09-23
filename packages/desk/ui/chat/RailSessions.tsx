@@ -1,4 +1,4 @@
-import { runDisplayTitle, type Run } from "@neo-cloud-agent/contracts/run";
+import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode, type Run } from "@neo-cloud-agent/contracts/run";
 import { isDeskBoundRun, isRemoteControlRun } from "../desk";
 import type { RailSpaceGroup } from "../../src/rail";
 import { IconChevron, IconCloud, IconComputer, IconProjects } from "../icons";
@@ -157,7 +157,7 @@ function ChatRow({
           title={localRunning ? "正在这台电脑上改文件" : undefined}
         />
         <span className="chat-place">
-          {cloud ? "cloud" : isRemoteControlRun(run) ? "remote" : "local"}
+          {RUN_MODE_SHORT_LABELS[cloud ? "cloud" : isRemoteControlRun(run) ? "remote" : runMode(run.executionTarget)]}
         </span>
         <span className="chat-ago">{formatRel(run.updatedAt)}</span>
       </span>

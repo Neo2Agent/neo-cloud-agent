@@ -1,3 +1,4 @@
+import { isImeComposing } from "@neo-cloud-agent/contracts/composer-keys";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -84,10 +85,11 @@ export function ProjectWorkbench({
   };
 
   const onDraftKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      submitDraft();
+    if (event.key !== "Enter" || event.shiftKey || isImeComposing({ isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode })) {
+      return;
     }
+    event.preventDefault();
+    submitDraft();
   };
 
   return (
