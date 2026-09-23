@@ -191,6 +191,10 @@ test("write file card previews twelve lines and counts the rest", () => {
   assert.equal(card?.lines.length, 12);
   assert.equal(card?.hidden, 8);
   assert.equal(card?.lines[0]?.text, "line 0");
+  const full = fileCardPreview(tool, { full: true });
+  assert.equal(full?.lines.length, 20);
+  assert.equal(full?.hidden, 0);
+  assert.equal(full?.lines[19]?.text, "line 19");
   assert.equal(toolLinkLabel({ name: "neo_browse", args: { url: "https://example.com" } }), "https://example.com");
   assert.equal(
     toolLinkLabel({ name: "neo_browse", args: {}, details: { title: "Example Domain", url: "https://example.com" } }),

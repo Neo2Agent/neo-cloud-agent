@@ -1582,12 +1582,32 @@ h1 {
   color: var(--muted);
 }
 
+.tool-file-diff.is-full {
+  max-height: min(70vh, 720px);
+}
+
 .tool-file-more {
+  display: block;
+  width: 100%;
   margin: 0;
   padding: 6px 10px;
+  border: 0;
   border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: 12px;
+  text-align: left;
+}
+
+button.tool-file-more {
+  cursor: pointer;
+}
+
+button.tool-file-more:hover {
+  background: #f3f3f4;
+  color: var(--text);
 }
 
 .tool-term {

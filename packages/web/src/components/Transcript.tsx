@@ -111,7 +111,8 @@ function useTurnDisclosure(live: boolean, autoOpen = false): [boolean, () => voi
 }
 
 function ToolFileBody({ tool }: { tool: TranscriptTool }) {
-  const card = fileCardPreview(tool);
+  const [full, setFull] = useState(false);
+  const card = fileCardPreview(tool, { full });
   const path = card?.path || toolArgPreview(tool.args);
   if (!card) {
     return (
@@ -124,14 +125,18 @@ function ToolFileBody({ tool }: { tool: TranscriptTool }) {
   return (
     <div className="tool-file">
       {path ? <div className="tool-file-bar">{path}</div> : null}
-      <div className="tool-file-diff">
+      <div className={full ? "tool-file-diff is-full" : "tool-file-diff"}>
         {card.lines.map((line, index) => (
           <div key={index} className={`diff-${line.type}`}>
             {line.text || "\u00a0"}
           </div>
         ))}
       </div>
-      {card.hidden > 0 ? <p className="tool-file-more">还有 {card.hidden} 行</p> : null}
+      {card.hidden > 0 || full ? (
+        <button type="button" className="tool-file-more" aria-expanded={full} onClick={() => setFull((value) => !value)}>
+          {full ? "收起" : `还有 ${card.hidden} 行，展开全部`}
+        </button>
+      ) : null}
     </div>
   );
 }
