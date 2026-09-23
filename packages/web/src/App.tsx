@@ -2705,11 +2705,10 @@ export function App() {
                   setupLogs={diagLogs}
                 />
               ) : (
-                <WorkspaceFiles
-                  view={filesView}
-                  onView={setFilesView}
-                  tree={(onSelect) => <FileTree token={token} runId={runId} onSelect={onSelect} />}
-                  artifacts={(onSelect) => (
+                <WorkspaceFiles view={filesView} onView={setFilesView}>
+                  {filesView === "tree" ? (
+                    <FileTree token={token} runId={runId} />
+                  ) : (
                     <ArtifactsPanel
                       loading={artifactsLoading}
                       error={artifactsError}
@@ -2731,7 +2730,6 @@ export function App() {
                           openProjects(projectId, { assets: true, assetId: asset.id });
                         }
                       }}
-                      onSelect={onSelect}
                       onOpen={
                         deskBridge()?.openPath
                           ? (item) => {
@@ -2741,7 +2739,7 @@ export function App() {
                       }
                     />
                   )}
-                />
+                </WorkspaceFiles>
               )}
             </InspectorShell>
           ) : null}

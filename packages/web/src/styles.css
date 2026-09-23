@@ -710,12 +710,25 @@ button.account-slot:hover {
 }
 
 .artifacts-panel.is-split .artifact-row {
+  gap: 6px;
   min-height: 22px;
   margin: 0 6px;
   width: calc(100% - 12px);
   border-radius: 6px;
   padding: 0 6px;
   font-size: 13px;
+}
+
+.artifacts-panel.is-split .artifact-glyph {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.artifacts-panel.is-split .artifact-name {
+  font-weight: 400;
 }
 
 .artifacts-panel.is-split {
@@ -788,20 +801,15 @@ button.account-slot:hover {
   white-space: nowrap;
 }
 
-.workspace-files-save {
+.workspace-files-head .artifact-preview-actions {
   margin-left: auto;
-  min-height: 24px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
 }
 
-.workspace-files-save:disabled {
-  cursor: default;
+.workspace-files-head .quiet-btn.primary {
+  min-height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 6px;
 }
 
 .workspace-files-tabs {
@@ -5694,36 +5702,11 @@ button.composer-mic.is-listening,
   flex: 1 1 auto;
 }
 
-.artifact-preview-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid var(--line);
-  background: transparent;
-}
-
-.artifact-preview-bar strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .artifact-preview-actions {
   display: flex;
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
-}
-
-.artifact-preview-bar .quiet-btn.primary {
-  min-height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
-  border-radius: 8px;
 }
 
 .artifact-preview-frame {

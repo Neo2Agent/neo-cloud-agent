@@ -17,7 +17,6 @@ type Props = {
   runId?: string | null;
   onOpen?: (item: Artifact) => void;
   onSaved?: (asset: ProjectAsset) => void;
-  onSelect?: (name: string | null) => void;
   focusName?: string | null;
 };
 
@@ -30,7 +29,6 @@ export function ArtifactsPanel({
   runId,
   onOpen,
   onSaved,
-  onSelect,
   focusName,
 }: Props) {
   const [preview, setPreview] = useState<Artifact | null>(null);
@@ -44,10 +42,6 @@ export function ArtifactsPanel({
     const match = artifacts.find((item) => item.name === focusName);
     if (match) setPreview(match);
   }, [artifacts, focusName]);
-
-  useEffect(() => {
-    onSelect?.(preview?.name ?? null);
-  }, [preview?.name, onSelect]);
 
   useEffect(() => {
     const kind = preview ? previewKind(preview) : null;
@@ -117,6 +111,31 @@ export function ArtifactsPanel({
       id="run-artifacts"
       title={canSave ? undefined : "只有项目对话才能保存到项目。"}
     >
+      <header className="workspace-files-head">
+        {preview ? (
+          <>
+            <span className="workspace-files-title">
+              <IconFileKind kind={artifactKind(preview)} size={16} />
+              <strong>{preview.name}</strong>
+            </span>
+            <span className="artifact-preview-actions">
+              {canSave ? (
+                <button
+                  type="button"
+                  className="quiet-btn primary"
+                  disabled={busy}
+                  onClick={() => void save(preview)}
+                >
+                  {busy ? "保存中…" : "存入项目"}
+                </button>
+              ) : null}
+              <button type="button" className="icon-btn" aria-label="关闭预览" onClick={() => setPreview(null)}>
+                <IconClose size={16} />
+              </button>
+            </span>
+          </>
+        ) : null}
+      </header>
       <ul className="artifact-list">
         {loading ? <li className="hint">正在读取…</li> : null}
         {error ? <li className="setup err">{error}</li> : null}
@@ -147,24 +166,6 @@ export function ArtifactsPanel({
       </ul>
       {preview ? (
         <div className="artifact-preview">
-          <div className="artifact-preview-bar">
-            <strong>{preview.name}</strong>
-            <span className="artifact-preview-actions">
-              {canSave ? (
-                <button
-                  type="button"
-                  className="quiet-btn primary"
-                  disabled={busy}
-                  onClick={() => void save(preview)}
-                >
-                  {busy ? "保存中…" : "存入项目"}
-                </button>
-              ) : null}
-              <button type="button" className="icon-btn" aria-label="关闭预览" onClick={() => setPreview(null)}>
-                <IconClose size={16} />
-              </button>
-            </span>
-          </div>
           {kind === "image" && preview.url ? (
             <div className="artifact-preview-frame">
               <img src={preview.url} alt={preview.name} />

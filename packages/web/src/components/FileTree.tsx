@@ -17,7 +17,6 @@ export type FsListing = {
 type Props = {
   token: string;
   runId: string | null;
-  onSelect?: (name: string | null) => void;
 };
 
 const ROOT = "";
@@ -84,7 +83,7 @@ function SourceView({ text, truncated }: { text: string; truncated?: boolean }) 
   );
 }
 
-export function FileTree({ token, runId, onSelect }: Props) {
+export function FileTree({ token, runId }: Props) {
   const [dirs, setDirs] = useState<Record<string, FsEntry[]>>({});
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({ [ROOT]: true });
   const [file, setFile] = useState<{ path: string; content: string; truncated?: boolean } | null>(null);
@@ -105,7 +104,6 @@ export function FileTree({ token, runId, onSelect }: Props) {
     if (!runId) {
       setDirs({});
       setFile(null);
-      onSelect?.(null);
       return;
     }
     let cancelled = false;
@@ -129,7 +127,6 @@ export function FileTree({ token, runId, onSelect }: Props) {
 
   const openFile = (path: string) => {
     if (!runId) return;
-    onSelect?.(path.split("/").pop() ?? path);
     void (async () => {
       const response = await api(token, `/v1/runs/${runId}/fs?path=${encodeURIComponent(path)}&content=1`);
       const body = await readJson<FsListing & { error?: string }>(response);
@@ -172,8 +169,17 @@ export function FileTree({ token, runId, onSelect }: Props) {
     );
   }
 
+  const fileName = file ? (file.path.split("/").pop() ?? file.path) : "";
   return (
     <section className="file-tree file-split" id="file-tree">
+      <header className="workspace-files-head">
+        {file ? (
+          <span className="workspace-files-title" title={file.path}>
+            <IconFileKind kind={fileGlyphKind(fileName)} size={16} />
+            <strong>{fileName}</strong>
+          </span>
+        ) : null}
+      </header>
       <div className="file-split-body">
         <div className="file-tree-list">
           {error ? <p className="setup err">{error}</p> : null}
