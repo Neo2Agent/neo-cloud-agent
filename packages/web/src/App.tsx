@@ -43,7 +43,18 @@ import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
 import { useConfirm, toast } from "./feedback";
-import { IconArchive, IconBack, IconComputer, IconGear, IconInfo, IconMemory, IconPanelRight, IconPr, IconTrash } from "./icons";
+import {
+  IconArchive,
+  IconBack,
+  IconComputer,
+  IconGear,
+  IconInfo,
+  IconMemory,
+  IconPanelRight,
+  IconPr,
+  IconSidebarOpen,
+  IconTrash,
+} from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { ContextUsagePanel } from "./components/ContextUsage";
 import { Transcript } from "./components/Transcript";
@@ -2184,6 +2195,11 @@ export function App() {
           <div className="chat-column">
           <header className="topbar">
             <div className="topbar-lead">
+              {narrow ? (
+                <button type="button" className="icon-btn buddy-menu" aria-label="打开对话列表" title="对话列表" onClick={toggleSidebar}>
+                  <IconSidebarOpen size={16} />
+                </button>
+              ) : null}
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
                   {mainTab === "projects"
