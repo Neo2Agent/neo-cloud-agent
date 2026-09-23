@@ -4,7 +4,7 @@ import { ARTIFACT_TEXT_PREVIEW_BYTES, decodeUtf8Preview } from "../artifact-text
 import { api, readJson } from "../api";
 import { artifactKind, artifactKindLabel, previewKind } from "../artifact.js";
 import { IconClose, IconFileKind } from "../icons.js";
-import { MarkdownBody } from "../markdown.js";
+import { MarkdownBody } from "@neo-cloud-agent/ui";
 
 type Artifact = { name: string; url?: string; contentType?: string };
 

@@ -1189,6 +1189,19 @@ h1 {
   border: 0;
 }
 
+.bubble.user.from-other {
+  align-self: flex-start;
+  background: var(--bg-2);
+}
+
+.bubble-author {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .bubble.assistant {
   align-self: stretch;
   padding: 2px 8px;
@@ -5052,6 +5065,16 @@ button.composer-mic.is-listening,
   flex: none;
   margin: 0;
   grid-area: 1 / 1;
+}
+
+.run-place {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 18px;
 }
 
 .run-item .run-meta {

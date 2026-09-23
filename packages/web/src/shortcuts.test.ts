@@ -5,7 +5,7 @@ import { cycle, shortcutAction } from "./shortcuts.js";
 test("shortcutAction maps Cursor-aligned keys", () => {
   assert.equal(shortcutAction({ key: "t", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false }, "darwin"), "new-chat");
   assert.equal(shortcutAction({ key: "[", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false }, "other"), "prev-run");
-  assert.equal(shortcutAction({ key: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false }), "queue");
+  assert.equal(shortcutAction({ key: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false }), null, "the composer owns Enter");
   assert.equal(shortcutAction({ key: "/", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false }, "darwin"), "cycle-model");
   assert.equal(shortcutAction({ key: "w", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false }, "darwin"), "close");
 });
@@ -17,10 +17,10 @@ test("Shift+Tab and Mod+. fall through to the browser", () => {
 
 test("shortcutAction ignores keys while an IME is composing", () => {
   assert.equal(
-    shortcutAction({ key: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, isComposing: true }),
+    shortcutAction({ key: "t", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, isComposing: true }),
     null,
   );
-  assert.equal(shortcutAction({ key: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, keyCode: 229 }), null);
+  assert.equal(shortcutAction({ key: "t", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, keyCode: 229 }), null);
 });
 
 test("cycle wraps around", () => {

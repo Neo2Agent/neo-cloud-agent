@@ -7,6 +7,7 @@ import { canManageProject, type Project, type ProjectInvite, type ProjectMember 
 import { PROJECT_TEMPLATES, projectTemplateById } from "@neo-cloud-agent/contracts/recipe";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import type { Run } from "@neo-cloud-agent/contracts/run";
+import { RUN_LIST_REFRESH_MS } from "@neo-cloud-agent/contracts/client-stream";
 import { api, readJson } from "../api";
 import { artifactKind, prettyBytes } from "../artifact.js";
 import { clampPage, filterByQuery, formatShortDate, paginate, snippet } from "../catalog.js";
@@ -106,14 +107,24 @@ export function ProjectsPage({
     }
   };
 
-  const loadDetail = async (id: string) => {
+  /** `light` re-reads members, invites, and chats only; the poll must not reset an instruction being edited. */
+  const loadDetail = async (id: string, options: { light?: boolean } = {}) => {
     const [projectRes, runsRes] = await Promise.all([api(token, `/v1/projects/${id}`), api(token, "/v1/runs")]);
     if (projectRes.ok) {
       const project = await readJson<Project>(projectRes);
       setDetail(project);
-      setInstruction(project.instruction);
-      setPinnedIds(project.expertIds ?? []);
-      setPinnedPluginIds(project.pluginIds ?? []);
+      if (!options.light) {
+        setInstruction(project.instruction);
+        setPinnedIds(project.expertIds ?? []);
+        setPinnedPluginIds(project.pluginIds ?? []);
+      }
+    }
+    if (options.light) {
+      if (runsRes.ok) {
+        const body = await readJson<{ runs?: Run[] }>(runsRes);
+        setRuns((body.runs ?? []).filter((item) => item.projectId === id));
+      }
+      return;
     }
     const [expertRes, pluginRes] = await Promise.all([
       api(token, `/v1/experts?projectId=${encodeURIComponent(id)}`),
@@ -140,6 +151,14 @@ export function ProjectsPage({
   useEffect(() => {
     void refresh().catch(() => undefined);
   }, [token]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void (selectedId ? loadDetail(selectedId, { light: true }) : refresh()).catch(() => undefined);
+    }, RUN_LIST_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [selectedId, token]);
 
   useEffect(() => {
     if (selectedId) {
@@ -240,11 +259,15 @@ export function ProjectsPage({
         </header>
         <div className="proj-card">
           <p className="proj-card-title">{inviteInfo?.projectName || "项目邀请"}</p>
-          <p className="hint">加入后能看到这个项目的指令、成员和对话，也可以自己开新对话。</p>
+          <p className="hint">
+            {inviteInfo?.status === "pending"
+              ? "已经申请了，等管理员通过。通过后项目会出现在「项目」里，收件箱也会通知你。"
+              : "加入后能看到这个项目的指令、成员和资产，也可以自己开新对话。别人的对话要对方邀请你才看得到。"}
+          </p>
           <button
             className="proj-add"
             type="button"
-            disabled={busy}
+            disabled={busy || inviteInfo?.status === "pending"}
             onClick={() => {
               setBusy(true);
               setError("");
@@ -252,6 +275,10 @@ export function ProjectsPage({
                 .then(async (res) => {
                   const body = await readJson<Project & { error?: string }>(res);
                   if (!res.ok) throw new Error(body.error || "加入失败");
+                  if (!body.members?.some((item) => item.userId === userId)) {
+                    setInviteInfo((prev) => ({ projectName: prev?.projectName || body.name, status: "pending" }));
+                    return;
+                  }
                   onOpenProject(body.id);
                 })
                 .catch((item) => setError(item instanceof Error ? item.message : "加入失败"))
@@ -320,7 +347,7 @@ export function ProjectsPage({
                       <button type="button" onClick={() => onOpenRun(item.id)}>
                         <strong>{item.prompt}</strong>
                         <small>
-                          {item.assigneeUserId === userId ? "交给我" : "项目对话"}
+                          {item.userId === userId ? "我的对话" : "协作对话"}
                           {item.createdAt ? ` · ${formatShortDate(item.createdAt)}` : ""}
                         </small>
                       </button>

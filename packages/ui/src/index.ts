@@ -1,4 +1,5 @@
 export { BrandMark } from "./brand-mark";
+export { MarkdownBody } from "./markdown";
 export { Checkbox } from "./checkbox";
 export { RadioGroup } from "./radio-group";
 export { Select } from "./select";

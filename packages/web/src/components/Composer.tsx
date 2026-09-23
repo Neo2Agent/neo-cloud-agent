@@ -13,7 +13,8 @@ import type { DeskTarget } from "../desk";
 import { IconArrowUp, IconInfo, IconMic, IconPlus, IconStop } from "../icons";
 import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
 import { applyClickVoice, startWebVoice } from "../speech";
-import { isImeComposing, isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "../viewport";
+import { composerKeyAction, isImeComposing } from "@neo-cloud-agent/contracts/composer-keys";
+import { isNarrowViewport } from "../viewport";
 import { ContextUsageControl } from "./ContextUsage";
 import { TargetPicker } from "./TargetPicker";
 
@@ -55,7 +56,10 @@ type Props = {
   onPrompt: (value: string) => void;
   onImages: (images: ImageRef[]) => void;
   onSend: () => void;
+  /** Running turn: Enter (or the queue button) lines this up for after the turn. */
   onQueue?: () => void;
+  /** Running turn: Cmd/Ctrl+Enter hands this to the agent at its next tool call. */
+  onSteer?: () => void;
   onStop?: () => void;
   layout?: "default" | "buddy";
   followUp?: boolean;
@@ -100,6 +104,7 @@ export function Composer({
   onImages,
   onSend,
   onQueue,
+  onSteer,
   onStop,
   layout = "default",
   followUp = false,
@@ -145,7 +150,9 @@ export function Composer({
     : blocked
       ? (blockedHint || "这台电脑离线了")
       : busy
-        ? "先写下一条…"
+        ? buddy
+          ? "先写下一条，点箭头排队…"
+          : "回车排队，Ctrl/⌘+回车立即插话"
         : followUp
           ? "跟一句…"
           : "例如：给这个仓库加一个健康检查…";
@@ -218,6 +225,12 @@ export function Composer({
     </button>
   );
   const stateClass = busy ? " is-busy" : sendLocked ? " is-locked" : "";
+  const queueButton =
+    busy && onQueue && !empty && !sendLocked ? (
+      <button type="button" id="queue" className="send" aria-label="排队发送" title="排队：这轮结束后再发" onClick={onQueue}>
+        <IconArrowUp size={16} />
+      </button>
+    ) : null;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!busy && !sendLocked) onSend();
@@ -283,17 +296,24 @@ export function Composer({
             pickMention(mentionHits[0]);
             return;
           }
-          if (shouldQueueOnCtrlEnter(event)) {
-            event.preventDefault();
-            if (!sendLocked && onQueue) onQueue();
-            return;
-          }
-          if (shouldSendOnEnter(event, { narrow: isNarrowViewport() })) {
-            event.preventDefault();
-            if (!busy && !sendLocked) {
-              (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
-            }
-          }
+          const action = composerKeyAction(
+            {
+              key: event.key,
+              shiftKey: event.shiftKey,
+              altKey: event.altKey,
+              ctrlKey: event.ctrlKey,
+              metaKey: event.metaKey,
+              isComposing: event.nativeEvent.isComposing,
+              keyCode: event.keyCode,
+            },
+            { busy, narrow: isNarrowViewport() },
+          );
+          if (!action) return;
+          event.preventDefault();
+          if (sendLocked || empty) return;
+          if (action === "queue") onQueue?.();
+          else if (action === "steer") onSteer?.();
+          else if (!busy) (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
         }}
       />
       {trigger ? (
@@ -345,6 +365,7 @@ export function Composer({
             </div>
           </div>
           <div className="buddy-composer-bar-end">
+            {queueButton}
             {busy && canStop ? (
               <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
                 <span className="stop-icon" aria-hidden="true">
@@ -445,6 +466,7 @@ export function Composer({
               </span>
             )}
             {!sendLocked ? voiceButton("composer-mic") : null}
+            {queueButton}
             {busy && canStop ? (
               <button
                 type="button"

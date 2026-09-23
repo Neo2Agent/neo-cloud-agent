@@ -1,11 +1,10 @@
-import { isImeComposing, type ImeKeyState } from "./viewport";
+import { isImeComposing, type ImeKeyState } from "@neo-cloud-agent/contracts/composer-keys";
 
 export type ShortcutAction =
   | "new-chat"
   | "prev-run"
   | "next-run"
   | "cycle-model"
-  | "queue"
   | "stop"
   | "close";
 
@@ -17,9 +16,6 @@ export function shortcutAction(
     return null;
   }
   const mod = platform === "darwin" ? event.metaKey : event.ctrlKey;
-  if (event.key === "Enter" && event.ctrlKey && !event.shiftKey) {
-    return "queue";
-  }
   if (!mod) {
     return null;
   }

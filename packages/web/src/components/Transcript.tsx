@@ -22,7 +22,8 @@ import {
   workGroupLabel,
 } from "../format";
 import { IconCheck, IconChevronRight, IconError, IconFileKind, IconSpinner, IconTool } from "../icons";
-import { MarkdownBody } from "../markdown";
+import { MarkdownBody } from "@neo-cloud-agent/ui";
+import { userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
 import { shouldShowThinking } from "../turn";
 import { transcriptUserImageSrc } from "../user-image";
 import { withApiBase } from "../desk";
@@ -41,6 +42,8 @@ type Props = {
   onOpenDiagnostics?: () => void;
   onOpenArtifact?: (name: string) => void;
   onPickRecipe?: (recipe: Recipe) => void;
+  /** Signed-in user; shared runs label everyone else's messages. */
+  viewer?: { id?: string; email?: string };
 };
 
 function ToolStatus({ tool }: { tool: TranscriptTool }) {
@@ -411,6 +414,7 @@ export function Transcript({
   onOpenDiagnostics,
   onOpenArtifact,
   onPickRecipe,
+  viewer = {},
 }: Props) {
   const scroller = useRef<HTMLElement>(null);
   const stick = useRef(true);
@@ -516,13 +520,15 @@ export function Transcript({
               );
             }
             if (message.role === "user") {
+              const author = userMessageAuthor(message, viewer);
               return (
                 <article
                   key={message.id}
                   id={`msg-${message.id}`}
-                  className="bubble user"
+                  className={author ? "bubble user from-other" : "bubble user"}
                   data-highlight={highlightId === message.id ? "true" : undefined}
                 >
+                  {author ? <span className="bubble-author">{author}</span> : null}
                   {message.text ? <div className="body">{message.text}</div> : null}
                   {message.images?.length ? (
                     <div className="image-row">

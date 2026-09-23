@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import type { PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
-import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
+import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode } from "@neo-cloud-agent/contracts/run";
 import { formatListWhen, runListPlaceSuffix, runListTitle, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
 import { IconArchive, IconAutomations, IconChat, IconExperts, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconStar, IconTrash } from "../icons";
@@ -262,6 +262,9 @@ export function Sidebar({
             </span>
           )}
         </div>
+        {runMode(run.executionTarget) !== "cloud" ? (
+          <span className="run-place">{RUN_MODE_SHORT_LABELS[runMode(run.executionTarget)]}</span>
+        ) : null}
         <div className="run-meta">
           <time className="run-time" dateTime={run.updatedAt || run.createdAt} title={running ? `${STATUS_LABELS[run.status] ?? run.status}${runListPlaceSuffix(run)}` : undefined}>
             {formatListWhen(run.updatedAt || run.createdAt)}
