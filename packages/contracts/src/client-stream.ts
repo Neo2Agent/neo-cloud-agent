@@ -2,6 +2,15 @@ import type { RunEvent } from "./events.js";
 
 export type TurnSignal = "work" | "idle" | "fail";
 
+/** There is no run-list push yet; every client re-reads `GET /v1/runs` this often while visible. */
+export const RUN_LIST_REFRESH_MS = 8000;
+
+/** Newest activity first, the order every client's run list uses. */
+export function runsNewestFirst<T extends { updatedAt?: string; createdAt?: string }>(runs: T[]): T[] {
+  const at = (run: T) => Date.parse(run.updatedAt || run.createdAt || "") || 0;
+  return [...runs].sort((left, right) => at(right) - at(left));
+}
+
 const TURN_WORK_KINDS = new Set([
   "agent.start",
   "user.message",

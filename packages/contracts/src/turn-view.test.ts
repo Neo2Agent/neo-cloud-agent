@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TranscriptMessage } from "./events.js";
-import { activityLabel, isAssistantStreaming, messageTimeLabel, shouldShowThinking } from "./turn-view.js";
+import { activityLabel, isAssistantStreaming, messageTimeLabel, shouldShowThinking, userMessageAuthor } from "./turn-view.js";
 
 function message(partial: Partial<TranscriptMessage> & Pick<TranscriptMessage, "id" | "role">): TranscriptMessage {
   return {
@@ -55,4 +55,12 @@ test("a live assistant message has no time; a settled one shows time and duratio
   assert.equal(messageTimeLabel(long, { withDuration: false, now }), "8/24 17:30 · 完成 8/24 18:05");
   const user = message({ id: "u", role: "user", createdAt: "2026-08-24T09:30:00.000Z" });
   assert.equal(messageTimeLabel(user, { live: true, now }), "8/24 17:30");
+});
+
+test("userMessageAuthor names other people's messages only", () => {
+  const viewer = { id: "u-admin", email: "admin" };
+  assert.equal(userMessageAuthor({ actorUserId: "u-mate", actorEmail: "mate" }, viewer), "mate");
+  assert.equal(userMessageAuthor({ actorUserId: "u-admin", actorEmail: "admin" }, viewer), null);
+  assert.equal(userMessageAuthor({ actorEmail: "Admin" }, viewer), null);
+  assert.equal(userMessageAuthor({}, viewer), null);
 });

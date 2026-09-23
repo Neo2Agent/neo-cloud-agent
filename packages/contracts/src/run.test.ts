@@ -13,7 +13,17 @@ import {
   resolveRunKernel,
   parseRunSource,
   parseRunStart,
+  RUN_MODE_LABELS,
+  runMode,
 } from "./run.js";
+
+test("runMode names the three execution modes the same way everywhere", () => {
+  assert.equal(runMode(null), "cloud");
+  assert.equal(runMode({ loop: "cloud", tools: "cloud" }), "cloud");
+  assert.equal(runMode({ loop: "cloud", tools: "desk", deskId: "d", remoteControl: true }), "remote");
+  assert.equal(runMode({ loop: "desk", tools: "desk", deskId: "d" }), "local");
+  assert.equal(RUN_MODE_LABELS[runMode({ loop: "desk", tools: "desk", deskId: "d" })], "This Computer");
+});
 
 test("parseExecutionTarget accepts the two-axis shape", () => {
   assert.deepEqual(parseExecutionTarget({ loop: "cloud", tools: "cloud" }), {

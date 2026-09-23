@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyLiveEvents, batchTurnSignal, parseSseData, runEventsQuery } from "./client-stream.js";
+import { applyLiveEvents, batchTurnSignal, parseSseData, runEventsQuery, runsNewestFirst } from "./client-stream.js";
 import type { RunEvent } from "./events.js";
 
 function ev(id: string, kind: RunEvent["kind"], delta?: string): RunEvent {
@@ -46,4 +46,14 @@ test("runEventsQuery only carries the parameters it was given", () => {
   assert.equal(runEventsQuery(), "");
   assert.equal(runEventsQuery({ after: "e1" }), "?after=e1");
   assert.equal(runEventsQuery({ after: "e1", accessToken: "t", client: "desk" }), "?after=e1&access_token=t&client=desk");
+});
+
+test("runsNewestFirst orders by last activity", () => {
+  const runs = [
+    { id: "old", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" },
+    { id: "touched", createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-09-23T00:00:00Z" },
+    { id: "new", createdAt: "2026-09-10T00:00:00Z" },
+  ];
+  assert.deepEqual(runsNewestFirst(runs).map((run) => run.id), ["touched", "new", "old"]);
+  assert.equal(runs[0]?.id, "old", "input is not mutated");
 });

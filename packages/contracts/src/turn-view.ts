@@ -17,6 +17,21 @@ export function shouldShowThinking(busy: boolean, messages: TranscriptMessage[])
   );
 }
 
+/**
+ * The sender to print on a user bubble, only when it is someone other than the viewer.
+ * Shared runs mix messages from several people; the viewer's own stay unlabeled.
+ */
+export function userMessageAuthor(
+  message: Pick<TranscriptMessage, "actorUserId" | "actorEmail">,
+  viewer: { id?: string | null; email?: string | null },
+): string | null {
+  const email = message.actorEmail?.trim() ?? "";
+  if (!email) return null;
+  if (viewer.id && message.actorUserId === viewer.id) return null;
+  if (viewer.email && email.toLowerCase() === viewer.email.trim().toLowerCase()) return null;
+  return email;
+}
+
 /** "正在回复" only once reply text is visible. */
 export function isAssistantStreaming(messages: TranscriptMessage[]): boolean {
   return currentTurnMessages(messages).some(
