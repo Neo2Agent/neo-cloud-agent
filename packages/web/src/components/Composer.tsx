@@ -27,7 +27,6 @@ type Props = {
   stopping?: boolean;
   archived?: boolean;
   canStop?: boolean;
-  activity?: string;
   contextUsage?: ContextUsageSnapshot;
   onOpenContextDetail?: (bucketId?: string) => void;
   target: DeskTarget;
@@ -63,6 +62,8 @@ type Props = {
   layout?: "default" | "buddy";
   followUp?: boolean;
   onOpenPlus?: () => void;
+  /** Desktop "+" opens the image picker. */
+  onAttach?: () => void;
 };
 
 export function Composer({
@@ -73,7 +74,6 @@ export function Composer({
   stopping = false,
   archived = false,
   canStop = false,
-  activity,
   contextUsage,
   onOpenContextDetail,
   target,
@@ -108,6 +108,7 @@ export function Composer({
   layout = "default",
   followUp = false,
   onOpenPlus,
+  onAttach,
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
   const [listening, setListening] = useState(false);
@@ -141,10 +142,8 @@ export function Composer({
       ? "对话已归档，无法继续发送。"
       : blocked
         ? (blockedHint || "发起这条对话的 Desk 离线。打开 Desk 后才能继续。")
-        : busy
-          ? (activity ?? "正在进行…")
-          : vmHint;
-  const showLiveHint = Boolean(voiceError || archived || blocked || busy || listening || finishing);
+        : vmHint;
+  const showLiveHint = Boolean(voiceError || archived || blocked || listening || finishing);
   const placeholder = archived
     ? "这条对话已归档"
     : blocked
@@ -222,16 +221,13 @@ export function Composer({
       <IconMic size={18} />
     </button>
   );
-  return (
-    <form
-      className={`${busy ? "composer is-busy" : sendLocked ? "composer is-locked" : "composer"}${buddy ? " buddy-composer" : ""}`}
-      id="composer"
-      aria-busy={busy}
-      onSubmit={(event: FormEvent) => {
-        event.preventDefault();
-        if (!busy && !sendLocked) onSend();
-      }}
-    >
+  const stateClass = busy ? " is-busy" : sendLocked ? " is-locked" : "";
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!busy && !sendLocked) onSend();
+  };
+  const input = (
+    <>
       {images.length > 0 ? (
         <div className="image-row" id="image-previews">
           {images.map((image, index) => (
@@ -329,7 +325,12 @@ export function Composer({
           ))}
         </div>
       ) : null}
-      {buddy ? (
+    </>
+  );
+  if (buddy) {
+    return (
+      <form className={`composer buddy-composer${stateClass}`} id="composer" aria-busy={busy} onSubmit={submit}>
+        {input}
         <div className="buddy-composer-bar">
           <div className="buddy-composer-bar-start">
             <button type="button" className="buddy-plus" aria-label="添加" onClick={onOpenPlus}>
@@ -361,19 +362,57 @@ export function Composer({
             )}
           </div>
         </div>
-      ) : (
+      </form>
+    );
+  }
+  const voiceActive = listening || finishing;
+  return (
+    <form className={`composer has-context${stateClass}`} id="composer" aria-busy={busy} onSubmit={submit}>
+      <div className="composer-context">
+        <TargetPicker
+          target={target}
+          canRunLocal={canRunLocal}
+          folder={folder}
+          desks={desks}
+          locked={targetLocked}
+          lockLabel={targetLockLabel}
+          onTarget={onTarget}
+          onPickFolder={onPickFolder}
+        />
+        <Select
+          id="agent-expert"
+          size="pill"
+          aria-label="专家"
+          value={expertValue}
+          disabled={expertLocked || !onExpert}
+          onValueChange={(value) => onExpert?.(value)}
+          groups={[
+            { label: "默认", options: [{ value: "", label: "Neo" }] },
+            ...(experts.length > 0
+              ? [{ label: "专家", options: experts.map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
+              : []),
+            ...(teams.length > 0
+              ? [{ label: "专家团", options: teams.map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: item.name })) }]
+              : []),
+          ]}
+        />
+      </div>
+      <div className="composer-box">
+        {input}
         <div className="composer-bar">
           <div className="composer-pickers">
-            <TargetPicker
-              target={target}
-              canRunLocal={canRunLocal}
-              folder={folder}
-              desks={desks}
-              locked={targetLocked}
-              lockLabel={targetLockLabel}
-              onTarget={onTarget}
-              onPickFolder={onPickFolder}
-            />
+            {onAttach ? (
+              <button
+                type="button"
+                className="composer-attach"
+                aria-label="添加图片"
+                title="添加图片"
+                disabled={sendLocked || images.length >= 4}
+                onClick={onAttach}
+              >
+                <IconPlus size={16} />
+              </button>
+            ) : null}
             <Select
               id="agent-mode"
               size="pill"
@@ -393,23 +432,6 @@ export function Composer({
               onValueChange={onModel}
               options={models.map((item) => ({ value: item.id, label: item.label }))}
             />
-            <Select
-              id="agent-expert"
-              size="pill"
-              aria-label="专家"
-              value={expertValue}
-              disabled={expertLocked || !onExpert}
-              onValueChange={(value) => onExpert?.(value)}
-              groups={[
-                { label: "默认", options: [{ value: "", label: "Neo" }] },
-                ...(experts.length > 0
-                  ? [{ label: "专家", options: experts.map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
-                  : []),
-                ...(teams.length > 0
-                  ? [{ label: "专家团", options: teams.map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: item.name })) }]
-                  : []),
-              ]}
-            />
           </div>
           <div className="composer-send-group">
             {contextUsage ? (
@@ -428,8 +450,8 @@ export function Composer({
               />
             ) : null}
             {showLiveHint ? (
-              <p className="hint" id="vm-status" data-busy={busy || listening || finishing ? "true" : "false"}>
-                {busy || listening || finishing ? <span className="pulse-dot" aria-hidden="true" /> : null}
+              <p className="hint" id="vm-status" data-busy={voiceActive ? "true" : "false"}>
+                {voiceActive ? <span className="pulse-dot" aria-hidden="true" /> : null}
                 {listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : hint}
               </p>
             ) : (
@@ -439,18 +461,24 @@ export function Composer({
             )}
             {!sendLocked ? voiceButton("composer-mic") : null}
             {busy && canStop ? (
-              <button type="button" id="abort" className="stop" aria-label={stopping ? "停止中" : "停止生成"} onClick={onStop}>
+              <button
+                type="button"
+                id="abort"
+                className="stop"
+                aria-label={stopping ? "停止中" : "停止生成"}
+                title={stopping ? "停止中" : "停止生成"}
+                onClick={onStop}
+              >
                 <span className="stop-icon" aria-hidden="true" />
-                {stopping ? "停止中" : "停止"}
               </button>
             ) : (
-              <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label={busy ? "发送中" : "发送"}>
-                {busy ? "发送中" : "发送"}
+              <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label="发送" title="发送">
+                <IconArrowUp size={16} />
               </button>
             )}
           </div>
         </div>
-      )}
+      </div>
     </form>
   );
 }

@@ -1864,6 +1864,168 @@ button.tool-file-more:hover {
   opacity: 0.86;
 }
 
+/* Desktop: pickers sit above the box, the form itself draws nothing. */
+.composer.has-context,
+.composer.has-context.is-busy {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  max-height: none;
+}
+
+.composer.has-context:has(textarea:focus-visible) {
+  outline: 0;
+}
+
+.composer-context {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 0 6px;
+}
+
+.composer-context .picker {
+  gap: 2px;
+}
+
+.composer-context .neo-select-pill,
+.composer-box .composer-pickers .neo-select-pill {
+  min-height: 28px;
+  padding: 0 6px 0 8px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.composer-context .neo-select-pill:hover:not(:disabled),
+.composer-context .neo-select-pill[data-state="open"],
+.composer-box .composer-pickers .neo-select-pill:hover:not(:disabled),
+.composer-box .composer-pickers .neo-select-pill[data-state="open"] {
+  border-color: transparent;
+  background: #ececee;
+  color: var(--text);
+}
+
+.composer-context .neo-select-pill:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.composer-box {
+  position: relative;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  transition: border-color var(--ease);
+}
+
+.composer-box:has(textarea:focus-visible) {
+  border-color: #c4c4c8;
+}
+
+.composer.has-context .composer-bar {
+  gap: 8px;
+  margin-top: 4px;
+  overflow: visible;
+}
+
+.composer.has-context .composer-pickers {
+  gap: 2px;
+}
+
+.composer-attach {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #f0f0f1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.composer-attach:hover:not(:disabled) {
+  background: #e4e4e7;
+  color: var(--text);
+}
+
+.composer-attach:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer.has-context .composer-send-group {
+  gap: 6px;
+}
+
+.composer.has-context .composer-bar .hint {
+  flex: 0 1 auto;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer.has-context .context-usage-chip {
+  min-width: 0;
+  padding: 4px 6px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.composer.has-context .context-usage-chip:hover,
+.composer.has-context .context-usage-chip[aria-expanded="true"] {
+  background: #ececee;
+  color: var(--text);
+}
+
+.composer.has-context button.composer-mic {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.composer.has-context button.composer-mic:hover:not(:disabled) {
+  background: #f0f0f1;
+}
+
+.composer.has-context button.composer-mic.is-listening {
+  border-color: #1c1c1c;
+  color: #1c1c1c;
+}
+
+.composer.has-context .composer-bar button.send,
+.composer.has-context .composer-bar button.stop {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  gap: 0;
+}
+
+.composer.has-context .composer-bar button.send:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  opacity: 1;
+}
+
 .turn-progress {
   display: inline-flex;
   align-self: flex-start;

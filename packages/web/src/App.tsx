@@ -2601,7 +2601,6 @@ export function App() {
               stopping={stopping}
               archived={archived}
               canStop={Boolean(runId)}
-              activity={activity}
               contextUsage={contextUsage}
               onOpenContextDetail={openContextDetail}
               target={deskTarget}
@@ -2657,6 +2656,7 @@ export function App() {
               layout={narrow ? "buddy" : "default"}
               followUp={Boolean(runId)}
               onOpenPlus={() => setPlusOpen(true)}
+              onAttach={() => imagePickRef.current?.click()}
             />
           ) : null}
           </div>
