@@ -22,6 +22,7 @@ import type {
   HandoffRequest,
   TransitionTodoRequest,
   UpdateTodoRequest,
+  Run,
   RunEvent,
   UpdateExpertRequest,
   UpdateProjectRequest,
@@ -279,6 +280,18 @@ function denyUnless(
 ): boolean {
   if (!run || !runVisibleToActor(run, actor, requestIsDeskClient(req))) {
     notFound(res);
+    return false;
+  }
+  return true;
+}
+
+/** Rename / archive / delete belong to the host (or a project manager), not every collaborator. */
+function denyUnlessHost(run: Run | null | undefined, actor: Actor, res: ServerResponse, req: IncomingMessage, what: string): boolean {
+  if (!denyUnless(run, actor, res, req)) {
+    return false;
+  }
+  if (run && actor.kind === "user" && !canInviteRunCollaborator(run, actor)) {
+    send(res, 403, { error: `只有房主能${what}这条对话` });
     return false;
   }
   return true;
@@ -1817,7 +1830,7 @@ export function createApiServer() {
       if (runMatch && method === "PATCH") {
         const runId = runMatch[1] ?? "";
         const run = await requireRun(runId);
-        if (!actor || !denyUnless(run, actor, res, req)) {
+        if (!actor || !denyUnlessHost(run, actor, res, req, "改名")) {
           return;
         }
         try {
@@ -1835,7 +1848,7 @@ export function createApiServer() {
       }
       if (runMatch && method === "DELETE") {
         const run = await requireRun(runMatch[1] ?? "");
-        if (!actor || !denyUnless(run, actor, res, req)) {
+        if (!actor || !denyUnlessHost(run, actor, res, req, "删除")) {
           return;
         }
         try {
@@ -2105,7 +2118,7 @@ export function createApiServer() {
       const archiveMatch = /^\/v1\/runs\/([^/]+)\/archive$/.exec(path);
       if (archiveMatch && method === "POST") {
         const run = await requireRun(archiveMatch[1] ?? "");
-        if (!actor || !denyUnless(run, actor, res, req)) {
+        if (!actor || !denyUnlessHost(run, actor, res, req, "归档")) {
           return;
         }
         send(res, 200, await archiveRun(archiveMatch[1] ?? ""));

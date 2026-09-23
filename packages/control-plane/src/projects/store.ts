@@ -272,6 +272,13 @@ export function acceptInvite(token: string, actor: { userId: string; email: stri
   if (invite.status === "revoked" || invite.status === "rejected") throw new Error("邀请已失效");
   if (Date.parse(invite.expiresAt) <= Date.now()) throw new Error("邀请已过期");
   if (project.members.some((item) => item.userId === actor.userId)) return project;
+  if (project.invitePolicy === "approve" && invite.status === "pending") {
+    if (invite.requestedBy === actor.userId) return project;
+    throw new Error("这个邀请链接已有人申请，请找管理员要新的链接");
+  }
+  if (project.invitePolicy === "approve" && invite.status === "accepted") {
+    throw new Error("这个邀请链接已经用过了，请找管理员要新的链接");
+  }
   if (project.invitePolicy === "approve" && invite.status === "active") {
     const pending: ProjectInvite = { ...invite, status: "pending", requestedBy: actor.userId, requestedEmail: actor.email };
     const invites = project.invites.map((item) => (item.token === token ? pending : item));

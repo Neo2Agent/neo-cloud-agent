@@ -55,6 +55,7 @@ const { bindDeskWorkspace, createDesk, openDeskInbox, takeDeskAssignment, update
   "../desks/store.js"
 );
 const { eventsForRun, listEvents } = await import("../events/bus.js");
+const { buildTranscriptSnapshot, transcriptHasUnsettledWork } = await import("@neo-cloud-agent/contracts");
 const { resolveEventImageData } = await import("../store/event-images.js");
 const { isObjectImageRef } = await import("../store/run-record.js");
 
@@ -361,6 +362,41 @@ test("abort without a worker leaves the chat idle so it can continue", async () 
   const follow = await enqueueFollowUp(run.id, { text: "try again" });
   assert.equal(follow.text, "try again");
   assert.notEqual(getRun(run.id)?.status, "ERROR");
+});
+
+test("a turn that ends after Stop still settles the transcript", async () => {
+  const run = await createRun({ prompt: "stop mid tool", repoUrls: ["fixtures/toy-repo"] });
+  takeInbound(run.id);
+  ingestEvents(run.id, [
+    { id: "late-1", runId: run.id, kind: "agent.start", title: "start", createdAt: new Date().toISOString() },
+    {
+      id: "late-2",
+      runId: run.id,
+      kind: "tool.start",
+      title: "bash",
+      createdAt: new Date().toISOString(),
+      data: { toolCallId: "t1", toolName: "bash", args: { command: "sleep 9" } },
+    },
+  ]);
+  assert.equal(getRun(run.id)?.status, "RUNNING");
+  abortRun(run.id);
+  assert.equal(getRun(run.id)?.status, "IDLE");
+  const stamp = () => new Date().toISOString();
+  ingestEvents(run.id, [
+    { id: "late-3", runId: run.id, kind: "tool.end", title: "bash", createdAt: stamp(), data: { toolCallId: "t1", toolName: "bash", output: "", isError: true } },
+    { id: "late-4", runId: run.id, kind: "message.start", title: "m", createdAt: stamp() },
+    { id: "late-5", runId: run.id, kind: "message.delta", title: "m", createdAt: stamp(), data: { delta: "stopped" } },
+    { id: "late-6", runId: run.id, kind: "message.end", title: "m", createdAt: stamp() },
+    { id: "late-7", runId: run.id, kind: "agent.end", title: "end", createdAt: stamp() },
+  ]);
+  const kinds = listEvents(run.id).map((item) => item.kind);
+  assert.equal(kinds.at(-1), "run.idle");
+  const snapshot = buildTranscriptSnapshot(run.id, listEvents(run.id));
+  const assistant = snapshot.messages.filter((item) => item.role === "assistant").at(-1);
+  assert.equal(assistant?.text, "stopped");
+  assert.equal(assistant?.streaming, false);
+  assert.equal(transcriptHasUnsettledWork(snapshot.messages), false);
+  assert.equal(getRun(run.id)?.status, "IDLE");
 });
 
 test("recoverLiveWorkers heals chats left in heartbeat ERROR", async () => {
