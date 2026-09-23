@@ -3,7 +3,7 @@ import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, View 
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { runListTitle } from "../format";
 import { runRowMeta } from "../session";
-import { isActiveRunStatus } from "../turn";
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { splitShelvedRuns, toggleSelected } from "../cloud";
 import { SettingsIcon } from "./composer-icons";
 import { IslandButton } from "./island";

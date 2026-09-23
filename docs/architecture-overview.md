@@ -389,7 +389,7 @@ RUNNING / IDLE ──► ARCHIVED（用户结束）
 | `subscriptions/` | GitHub webhook、CI autofix |
 | `ingress/` | Telegram / 微信开对话 |
 | `notify/` | Expo / 企微 / Telegram / SMTP |
-| `mcp/` | HTTP MCP 代理与 OAuth（密钥不进 worker） |
+| `mcp/` | HTTP MCP 代理（密钥不进 worker） |
 | `quota/` | 同时跑的对话、本月 token |
 | `scheduler/` | 每 30s：补 warm pool、触发到期 automation |
 | `admin/` | 给 `admin-api` 用的总览 / 用户 / Run 聚合 |
@@ -767,7 +767,6 @@ GET    /architecture  /architecture.html  /architecture-complete.html
 POST   /webhooks/github
 POST   /webhooks/telegram
 GET|POST /webhooks/wechat
-GET    /oauth/callback/mcp
 GET    /v1/runs/:id/artifacts/:name?token=   签名下载
 ```
 

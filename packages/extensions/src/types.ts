@@ -1,12 +1,3 @@
-export interface CloudExtension {
-  name: string;
-  description: string;
-}
-
-export function defineExtension(extension: CloudExtension): CloudExtension {
-  return extension;
-}
-
 export type CloudToolFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 export interface CloudToolContext {

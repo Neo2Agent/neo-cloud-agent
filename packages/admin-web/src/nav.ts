@@ -2,14 +2,6 @@ import type { AdminPage } from "./types";
 
 const PAGES: AdminPage[] = ["overview", "users", "runs", "experts", "system"];
 
-export const USER_TABS = ["pending", "active", "all"] as const;
-export const RUN_TABS = ["live", "idle", "error", "archived", "all"] as const;
-export const EXPERT_TABS = ["enabled", "disabled", "all"] as const;
-
-export type UserTab = (typeof USER_TABS)[number];
-export type RunTab = (typeof RUN_TABS)[number];
-export type ExpertTab = (typeof EXPERT_TABS)[number];
-
 export type AdminRoute = {
   page: AdminPage;
   id: string;
@@ -38,16 +30,8 @@ export function parseRoute(hash: string): AdminRoute {
   return { page, id, tab };
 }
 
-export function parsePage(hash: string): AdminPage {
-  return parseRoute(hash).page;
-}
-
 export function readRoute(): AdminRoute {
   return parseRoute(typeof location === "undefined" ? "" : location.hash);
-}
-
-export function readPage(): AdminPage {
-  return readRoute().page;
 }
 
 export function routeHref(page: AdminPage, opts?: { id?: string; tab?: string }): string {
@@ -55,20 +39,4 @@ export function routeHref(page: AdminPage, opts?: { id?: string; tab?: string })
   const tab = opts?.tab?.trim();
   const path = id ? `#/${page}/${encodeURIComponent(id)}` : `#/${page}`;
   return tab ? `${path}?tab=${encodeURIComponent(tab)}` : path;
-}
-
-export function pageHref(page: AdminPage): string {
-  return routeHref(page);
-}
-
-export function isUserTab(value: string): value is UserTab {
-  return (USER_TABS as readonly string[]).includes(value);
-}
-
-export function isRunTab(value: string): value is RunTab {
-  return (RUN_TABS as readonly string[]).includes(value);
-}
-
-export function isExpertTab(value: string): value is ExpertTab {
-  return (EXPERT_TABS as readonly string[]).includes(value);
 }

@@ -1,16 +1,17 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { assistantIsLive } from "@neo-cloud-agent/contracts/turn-state";
 import type { Ref } from "react";
 import { formatDuration } from "../../src/format";
-import { messageIsLive, shouldShowAssistantActions, shouldShowThinking } from "../../src/stream";
+import { shouldShowAssistantActions, shouldShowThinking } from "../../src/stream";
 import { Avatar } from "../Avatar";
 import { IconCopy } from "../icons";
 import { IslandCollapse } from "../island";
 import { ToolCard } from "../ToolCard";
 
 function isThought(message: TranscriptMessage): boolean {
-  if (messageIsLive(message) || message.tools?.length || message.blocks?.some((block) => block.type === "tool")) {
+  if (assistantIsLive(message) || message.tools?.length || message.blocks?.some((block) => block.type === "tool")) {
     return false;
   }
   const blob = `${message.kind ?? ""} ${message.text}`.toLowerCase();

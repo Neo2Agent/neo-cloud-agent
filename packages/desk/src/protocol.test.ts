@@ -10,7 +10,6 @@ import {
   inviteTokenFromHash,
   memoriesFromHash,
   parseProjectHash,
-  projectIdFromHash,
   runIdFromDeepLink,
   runIdFromHash,
   skillIdFromHash,
@@ -36,7 +35,7 @@ test("inviteTokenFromDeepLink parses neo://invite/<token>", () => {
 
 test("project hash helpers", () => {
   assert.equal(hashForProject("proj_1"), "#/projects/proj_1");
-  assert.equal(projectIdFromHash("#/projects/proj_1"), "proj_1");
+  assert.equal(parseProjectHash("#/projects/proj_1").projectId, "proj_1");
   assert.equal(hashForProject("proj_1", { assets: true }), "#/projects/proj_1/assets");
   assert.equal(hashForProject("proj_1", { assetId: "asset_9" }), "#/projects/proj_1/assets/asset_9");
   assert.deepEqual(parseProjectHash("#/projects/proj_1/assets/asset_9"), {
@@ -44,7 +43,6 @@ test("project hash helpers", () => {
     assets: true,
     assetId: "asset_9",
   });
-  assert.equal(projectIdFromHash("#/projects/proj_1/assets/asset_9"), "proj_1");
 });
 
 test("skills and memories hash helpers", () => {

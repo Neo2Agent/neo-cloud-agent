@@ -189,9 +189,10 @@ Activity 失败（Gateway 5xx、工具通道闪断）：
 public interface TurnWorkflowEngine {
   TurnHandle start(StartTurnCommand cmd);
   void signal(String turnId, TurnSignal signal);
-  TurnSnapshot query(String turnId);
 }
 ```
+
+进度只走 `turn-heartbeat` / `turn-complete` 回调，没有单独的查询接口。
 
 | 实现 | 何时用 | 怎么持久化 |
 | --- | --- | --- |
@@ -217,7 +218,6 @@ public interface TurnWorkflowEngine {
 ```
 POST /internal/loop/turns
 POST /internal/loop/turns/{turnId}/signal
-GET  /internal/loop/turns/{turnId}
 GET  /health
 ```
 
@@ -636,7 +636,7 @@ pnpm typecheck && pnpm test
 | `packages/control-plane/src/api/server.ts` | `turn-complete` / `turn-heartbeat` |
 | `ControlPlaneClient.java` | **必须 HTTP/1.1**。Java 默认 HTTP/2，Node 控制面第一下心跳会失败，Desk Remote 卡在「正在思考」 |
 | `packages/worker/src/index.ts` | `WORKER_ROLE=tools` 跳过 pi |
-| `infra/neo-loop.service` | unit 文件，现网必开 |
+| `infra/neo-loop.service` | unit 文件。可选：现网 `AGENT_KERNEL=pi`，`deploy.sh` 只有 `--enable-loop` 才启用 |
 | `package.json` | `dev:loop` / `test:loop` |
 
 验收：

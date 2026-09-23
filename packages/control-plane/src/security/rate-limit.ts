@@ -379,9 +379,6 @@ export function isRateLimitExempt(method: string, path: string): boolean {
   if (path.startsWith("/internal/")) {
     return true;
   }
-  if (path === "/oauth/callback/mcp") {
-    return true;
-  }
   return !path.startsWith("/v1/") && !path.startsWith("/webhooks/");
 }
 
@@ -398,7 +395,7 @@ export function publicRateLimitPolicies(method: string, path: string): RateLimit
   }
   if (
     method === "POST" &&
-    (path === "/v1/auth/login" || path === "/v1/auth" || path === "/v1/auth/register" || path === "/v1/auth/bootstrap")
+    (path === "/v1/auth/login" || path === "/v1/auth" || path === "/v1/auth/register")
   ) {
     out.push("login");
   }

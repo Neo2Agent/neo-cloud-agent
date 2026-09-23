@@ -21,18 +21,18 @@ export type ToolsChannelFrame =
   | ToolsPingFrame
   | ToolsPongFrame;
 
-export interface ToolsFrameBase {
+interface ToolsFrameBase {
   v: typeof TOOLS_CHANNEL_VERSION;
 }
 
-export interface ToolsHelloFrame extends ToolsFrameBase {
+interface ToolsHelloFrame extends ToolsFrameBase {
   type: "hello";
   runId: string;
   role: ToolsChannelRole;
   sandboxRoot: string;
 }
 
-export interface ToolsExecFrame extends ToolsFrameBase {
+interface ToolsExecFrame extends ToolsFrameBase {
   type: "exec";
   callId: string;
   command: string;
@@ -40,46 +40,46 @@ export interface ToolsExecFrame extends ToolsFrameBase {
   cwd?: string;
 }
 
-export interface ToolsExecStdoutFrame extends ToolsFrameBase {
+interface ToolsExecStdoutFrame extends ToolsFrameBase {
   type: "exec.stdout";
   callId: string;
   seq: number;
   text: string;
 }
 
-export interface ToolsExecStderrFrame extends ToolsFrameBase {
+interface ToolsExecStderrFrame extends ToolsFrameBase {
   type: "exec.stderr";
   callId: string;
   seq: number;
   text: string;
 }
 
-export interface ToolsExecEndFrame extends ToolsFrameBase {
+interface ToolsExecEndFrame extends ToolsFrameBase {
   type: "exec.end";
   callId: string;
   exitCode: number;
 }
 
-export interface ToolsFsUploadFrame extends ToolsFrameBase {
+interface ToolsFsUploadFrame extends ToolsFrameBase {
   type: "fs.upload";
   callId: string;
   path: string;
   bytesB64: string;
 }
 
-export interface ToolsFsDownloadFrame extends ToolsFrameBase {
+interface ToolsFsDownloadFrame extends ToolsFrameBase {
   type: "fs.download";
   callId: string;
   path: string;
 }
 
-export interface ToolsFsListFrame extends ToolsFrameBase {
+interface ToolsFsListFrame extends ToolsFrameBase {
   type: "fs.list";
   callId: string;
   path: string;
 }
 
-export interface ToolsFsExistsFrame extends ToolsFrameBase {
+interface ToolsFsExistsFrame extends ToolsFrameBase {
   type: "fs.exists";
   callId: string;
   path: string;
@@ -101,20 +101,20 @@ export interface ToolsErrFrame extends ToolsFrameBase {
   message: string;
 }
 
-export interface ToolsAbortFrame extends ToolsFrameBase {
+interface ToolsAbortFrame extends ToolsFrameBase {
   type: "abort";
   callId: string;
 }
 
-export interface ToolsAbortAllFrame extends ToolsFrameBase {
+interface ToolsAbortAllFrame extends ToolsFrameBase {
   type: "abort_all";
 }
 
-export interface ToolsPingFrame extends ToolsFrameBase {
+interface ToolsPingFrame extends ToolsFrameBase {
   type: "ping";
 }
 
-export interface ToolsPongFrame extends ToolsFrameBase {
+interface ToolsPongFrame extends ToolsFrameBase {
   type: "pong";
   diskUsedBytes?: number;
 }

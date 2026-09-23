@@ -1,11 +1,5 @@
 import { asString, asStringList, callControlPlane } from "./client.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
-
-export const neoGit = defineExtension({
-  name: "neo-git",
-  description:
-    "Controlled commit via POST /internal/runs/:id/scm/commit. Push uses a short-lived token from the control plane, never a long-lived git credential in bash.",
-});
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 
 export type CommitToolResponse = {
   sha?: string;

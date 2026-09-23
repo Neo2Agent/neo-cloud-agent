@@ -1,5 +1,6 @@
 import { formatCount, formatTokens, formatWhen, quotaPercent, slotBusy, slotLabel, statusLabel, statusTone } from "../format";
-import { isLiveStatus, snippet } from "../catalog";
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
+import { snippet } from "../catalog";
 import { CatalogEmpty, CatalogList, CatalogRow } from "../components/Catalog";
 import type { AdminOverview, AdminRun } from "../types";
 
@@ -46,7 +47,7 @@ export function OverviewScreen({ overview, runs, onOpenRun, onOpenUsers, onOpenR
   const percent = quotaPercent(used, max);
   const liveRuns =
     overview.liveRuns ??
-    runs.filter((item) => isLiveStatus(item.status)).slice(0, 6);
+    runs.filter((item) => isActiveRunStatus(item.status)).slice(0, 6);
 
   return (
     <section className="page catalog-page">

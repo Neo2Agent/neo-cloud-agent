@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  fileCardPreview,
   fileToolDiff,
   formatDuration,
   formatMessageTime,
@@ -14,12 +15,16 @@ import {
   resolveChatModel,
   runListPlaceSuffix,
   toolArgPreview,
+  toolChromeKind,
   toolDiffStat,
+  toolLinkLabel,
   partitionTurn,
-  resolveWorkFoldOpen,
+  previewWorkTools,
+  resolveFoldOpen,
   slotMenuLines,
   toolGroupSummary,
   toolVerb,
+  workGroupLabel,
 } from "./format.js";
 
 test("runListPlaceSuffix labels Remote separately from This Computer", () => {
@@ -148,9 +153,14 @@ test("partitionTurn keeps the reply outside the work fold", () => {
   assert.equal(turn.buckets.find((bucket) => bucket.id === "exec")?.tools.length, 1);
   assert.equal(turn.buckets.find((bucket) => bucket.id === "other")?.tools[0]?.name, "neo_subagent");
   assert.equal(partitionTurn([{ type: "text", text: "只有话" }]).answer, "只有话");
-  assert.equal(resolveWorkFoldOpen(true, null), true);
-  assert.equal(resolveWorkFoldOpen(false, null), false);
-  assert.equal(resolveWorkFoldOpen(false, true), true);
+  assert.equal(resolveFoldOpen(true, null), true);
+  assert.equal(resolveFoldOpen(false, null), false);
+  assert.equal(resolveFoldOpen(false, true), true);
+  assert.equal(resolveFoldOpen(true, false), false);
+  assert.equal(workGroupLabel("explore", [{ name: "neo_browse", status: "running" }]), "正在浏览…");
+  assert.equal(workGroupLabel("explore", [{ name: "neo_browse" }, { name: "neo_browse" }]), "浏览 2 个页面");
+  assert.equal(previewWorkTools(Array.from({ length: 10 }, (_, i) => i)).hidden, 2);
+  assert.deepEqual(previewWorkTools([1, 2, 3]).shown, [1, 2, 3]);
 });
 
 test("slotMenuLines names idle slots once and busy slots by the conversation", () => {
@@ -165,6 +175,28 @@ test("slotMenuLines names idle slots once and busy slots by the conversation", (
   assert.equal(lines[0]?.runId, null);
   assert.match(lines[1]?.label ?? "", /^VM 2 · /);
   assert.equal(lines[1]?.runId, "run-2");
+});
+
+test("write file card previews twelve lines and counts the rest", () => {
+  const content = Array.from({ length: 20 }, (_, index) => `line ${index}`).join("\n");
+  const tool = { name: "write", args: { path: "brief.md", content } };
+  assert.equal(toolChromeKind("write"), "file");
+  assert.equal(toolChromeKind("bash"), "term");
+  assert.equal(toolChromeKind("neo_browse"), "link");
+  assert.equal(toolChromeKind("grep"), "link");
+  assert.equal(toolChromeKind("read"), "default");
+  assert.deepEqual(toolDiffStat(tool), { added: 20, removed: 0 });
+  const card = fileCardPreview(tool);
+  assert.equal(card?.path, "brief.md");
+  assert.equal(card?.lines.length, 12);
+  assert.equal(card?.hidden, 8);
+  assert.equal(card?.lines[0]?.text, "line 0");
+  assert.equal(toolLinkLabel({ name: "neo_browse", args: { url: "https://example.com" } }), "https://example.com");
+  assert.equal(
+    toolLinkLabel({ name: "neo_browse", args: {}, details: { title: "Example Domain", url: "https://example.com" } }),
+    "Example Domain",
+  );
+  assert.equal(toolLinkLabel({ name: "grep", args: { pattern: "TODO" } }), "TODO");
 });
 
 test("fileToolDiff prefers persisted unified diff details", () => {

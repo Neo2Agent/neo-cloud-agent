@@ -9,7 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  Cloud,
   Download,
   File,
   FileBraces,
@@ -25,7 +24,6 @@ import {
   LogOut,
   LoaderCircle,
   Maximize2,
-  Menu,
   Mic,
   MessageSquare,
   MoreHorizontal,
@@ -39,7 +37,6 @@ import {
   Search,
   Settings,
   Square,
-  SquarePlus,
   Star,
   TerminalSquare,
   Timer,
@@ -57,14 +54,6 @@ const stroke: Pick<LucideProps, "strokeWidth"> = { strokeWidth: 1.75 };
 
 function icon(Icon: typeof Search, props: IconProps) {
   return <Icon {...stroke} size={props.size ?? 16} className={props.className} aria-hidden="true" />;
-}
-
-export function IconNewChat(props: IconProps) {
-  return icon(SquarePlus, props);
-}
-
-export function IconMenu(props: IconProps) {
-  return icon(Menu, props);
 }
 
 export function IconSidebarOpen(props: IconProps) {
@@ -139,22 +128,6 @@ export function IconStar(props: IconProps) {
   return icon(Star, props);
 }
 
-export function IconDiff(props: IconProps) {
-  return icon(FileCode, props);
-}
-
-export function IconTerminal(props: IconProps) {
-  return icon(TerminalSquare, props);
-}
-
-export function IconArtifacts(props: IconProps) {
-  return icon(Package, props);
-}
-
-export function IconFiles(props: IconProps) {
-  return icon(FolderGit2, props);
-}
-
 export function IconPanelRight(props: IconProps) {
   return icon(PanelRight, props);
 }
@@ -173,10 +146,6 @@ export function IconInfo(props: IconProps) {
 
 export function IconSpinner(props: IconProps) {
   return <LoaderCircle size={props.size ?? 14} className={`spin ${props.className ?? ""}`.trim()} strokeWidth={1.75} aria-hidden="true" />;
-}
-
-export function IconCloud(props: IconProps) {
-  return icon(Cloud, props);
 }
 
 export function IconComputer(props: IconProps) {

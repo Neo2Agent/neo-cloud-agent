@@ -57,24 +57,21 @@ import {
 } from "@neo-cloud-agent/contracts/context-usage";
 import { formatRunTime, formatUsage, modelLabel, nextChatModel, preview, resolveChatModel, shortId, slotLabel, slotMenuLines, upstreamForChatModel } from "./format";
 import {
-  activityLabel,
   isActiveRunStatus,
-  isAssistantStreaming,
   isComposerClosed,
   isTerminalTurnEvent,
   isTurnBusy,
   pendingUserArrived,
   runningToolName,
   shouldRefreshTranscript,
-  shouldShowBuddyHome,
   statusFromEventKind,
-  turnStatusLabel,
   withPendingUser,
   withQueuedNotice,
   type PendingUser,
-} from "./turn";
+} from "@neo-cloud-agent/contracts/turn-state";
+import { activityLabel, isAssistantStreaming, shouldShowBuddyHome, turnStatusLabel } from "./turn";
 import { NARROW_MQ, closeMobileSidebar, isNarrowViewport } from "./viewport";
-import { clampPane, paneCeiling, paneHalf, paneSnapPhase, SIDEBAR_DEFAULT, type PaneSnap } from "./pane-size";
+import { clampPane, paneCeiling, paneDefault, paneSnapPhase, SIDEBAR_DEFAULT, type PaneSnap } from "./pane-size";
 
 const HISTORY_PAGE = DEFAULT_TRANSCRIPT_PAGE;
 
@@ -246,7 +243,7 @@ export function App() {
   const [userName, setUserName] = useState("");
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
-  const [paneWidth, setPaneWidth] = useState(() => paneHalf(typeof window === "undefined" ? 1440 : window.innerWidth, readRailWidth()));
+  const [paneWidth, setPaneWidth] = useState(() => paneDefault(typeof window === "undefined" ? 1440 : window.innerWidth, readRailWidth()));
   const [paneMaxWidth, setPaneMaxWidth] = useState(() =>
     paneCeiling(typeof window === "undefined" ? 1440 : window.innerWidth, readRailWidth()),
   );
@@ -1567,8 +1564,8 @@ export function App() {
     sending,
     stopping,
     status: currentRun?.status,
-    streaming: isAssistantStreaming(messages),
-    runningTool: runningToolName(messages),
+    streaming: isAssistantStreaming(viewMessages),
+    runningTool: runningToolName(viewMessages),
   });
   const statusView = turnStatusLabel({ sending, stopping, status: currentRun?.status });
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
@@ -1632,7 +1629,7 @@ export function App() {
     if (!inspectorTab) {
       setPaneFull(false);
       setPaneSnap("idle");
-      setPaneWidth(paneHalf(window.innerWidth, railNow()));
+      setPaneWidth(paneDefault(window.innerWidth, railNow()));
     }
     setInspectorTab(id);
     loadInspector(id);
@@ -2678,7 +2675,7 @@ export function App() {
               onToggleFullscreen={() => {
                 setPaneSnap("idle");
                 if (paneFull) {
-                  setPaneWidth(paneHalf(window.innerWidth, railNow()));
+                  setPaneWidth(paneDefault(window.innerWidth, railNow()));
                   setPaneFull(false);
                   return;
                 }
@@ -2691,7 +2688,6 @@ export function App() {
             >
               {inspectorTab === "diff" ? (
                 <DiffPanel
-                  open
                   loading={diffLoading}
                   error={diffError}
                   stat={diffStat}
@@ -2702,7 +2698,6 @@ export function App() {
                 />
               ) : inspectorTab === "terminal" ? (
                 <TerminalPanel
-                  open
                   token={token}
                   runId={runId}
                   setupLoading={diagLoading}
@@ -2713,10 +2708,9 @@ export function App() {
                 <WorkspaceFiles
                   view={filesView}
                   onView={setFilesView}
-                  tree={(onSelect) => <FileTree token={token} runId={runId} open onSelect={onSelect} />}
+                  tree={(onSelect) => <FileTree token={token} runId={runId} onSelect={onSelect} />}
                   artifacts={(onSelect) => (
                     <ArtifactsPanel
-                      open
                       loading={artifactsLoading}
                       error={artifactsError}
                       artifacts={artifacts}

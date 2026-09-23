@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parsePage, parseRoute, routeHref } from "./nav.js";
+import { parseRoute, routeHref } from "./nav.js";
 
-test("parsePage reads hash routes and falls back to overview", () => {
-  assert.equal(parsePage(""), "overview");
-  assert.equal(parsePage("#/users"), "users");
-  assert.equal(parsePage("#/runs?q=1"), "runs");
-  assert.equal(parsePage("#/system"), "system");
-  assert.equal(parsePage("#/experts"), "experts");
-  assert.equal(parsePage("#/nope"), "overview");
+test("parseRoute reads the page and falls back to overview", () => {
+  assert.equal(parseRoute("").page, "overview");
+  assert.equal(parseRoute("#/users").page, "users");
+  assert.equal(parseRoute("#/runs?q=1").page, "runs");
+  assert.equal(parseRoute("#/system").page, "system");
+  assert.equal(parseRoute("#/experts").page, "experts");
+  assert.equal(parseRoute("#/nope").page, "overview");
 });
 
 test("parseRoute keeps detail ids and type tabs", () => {

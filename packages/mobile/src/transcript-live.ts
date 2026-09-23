@@ -5,7 +5,7 @@ import {
 import type { RunEvent, TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { MobileClient } from "./api/client.js";
 import { applyLiveEvents } from "./stream.js";
-import { dropResolvedPendingUsers, isTerminalTurnEvent, statusFromEventKind } from "./turn.js";
+import { dropResolvedPendingUsers, isTerminalTurnEvent, statusFromEventKind } from "@neo-cloud-agent/contracts/turn-state";
 
 export function attachRunStream(
   client: MobileClient,

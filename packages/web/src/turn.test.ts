@@ -1,23 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
-import {
-  activityLabel,
-  hasLiveAssistantWork,
-  isActiveRunStatus,
-  isComposerClosed,
-  isTerminalTurnEvent,
-  isTurnBusy,
-  pendingUserArrived,
-  QUEUED_SLOT_NOTICE,
-  shouldRefreshTranscript,
-  shouldShowBuddyHome,
-  shouldShowThinking,
-  statusFromEventKind,
-  turnStatusLabel,
-  withPendingUser,
-  withQueuedNotice,
-} from "./turn.js";
+import { activityLabel, isAssistantStreaming, shouldShowBuddyHome, shouldShowThinking, turnStatusLabel } from "./turn.js";
 
 function message(partial: Partial<TranscriptMessage> & Pick<TranscriptMessage, "id" | "role">): TranscriptMessage {
   return {
@@ -27,52 +11,18 @@ function message(partial: Partial<TranscriptMessage> & Pick<TranscriptMessage, "
   };
 }
 
-test("isActiveRunStatus covers in-flight agent states", () => {
-  assert.equal(isActiveRunStatus("RUNNING"), true);
-  assert.equal(isActiveRunStatus("NOT_YET_STARTED"), true);
-  assert.equal(isActiveRunStatus("WAITING_FOR_BACKGROUND_WORK"), true);
-  assert.equal(isActiveRunStatus("IDLE"), false);
-  assert.equal(isActiveRunStatus("ERROR"), false);
-  assert.equal(isComposerClosed("ARCHIVED"), true);
-  assert.equal(isComposerClosed("RUNNING"), false);
-});
-
-test("follow-up events mark an idle run running without clobbering setup", () => {
-  assert.equal(statusFromEventKind("user.message", "IDLE"), "RUNNING");
-  assert.equal(statusFromEventKind("followup.queued", "IDLE"), "RUNNING");
-  assert.equal(statusFromEventKind("agent.start", "IDLE"), "RUNNING");
-  assert.equal(statusFromEventKind("user.message", "PROVISIONING"), null);
-  assert.equal(statusFromEventKind("user.message", "INSTALLING"), null);
-  assert.equal(statusFromEventKind("user.message", "ARCHIVED"), null);
-  assert.equal(statusFromEventKind("agent.end", "RUNNING"), "IDLE");
-  assert.equal(statusFromEventKind("agent.end", "PROVISIONING"), null);
-  assert.equal(isTerminalTurnEvent("run.idle"), true);
-  assert.equal(isTerminalTurnEvent("user.message"), false);
-});
-
-test("turn stays busy while sending, pending, live tools, or active status", () => {
-  const streaming = [message({ id: "a", role: "assistant", text: "hi", streaming: true })];
-  const tool = [message({ id: "a", role: "assistant", tools: [{ name: "bash", status: "running" }] })];
-  assert.equal(isTurnBusy({ sending: true }), true);
-  assert.equal(isTurnBusy({ pending: true, status: "IDLE" }), true);
-  assert.equal(isTurnBusy({ status: "RUNNING" }), true);
-  assert.equal(isTurnBusy({ status: "IDLE", messages: streaming }), true);
-  assert.equal(isTurnBusy({ status: "IDLE", messages: tool }), true);
-  assert.equal(isTurnBusy({ status: "ERROR", messages: streaming }), false);
-  assert.equal(isTurnBusy({ status: "ERROR", messages: tool }), false);
-  assert.equal(isTurnBusy({ status: "IDLE", messages: [message({ id: "u", role: "user", text: "go" })] }), false);
-  assert.equal(hasLiveAssistantWork(tool), true);
-  assert.equal(
-    hasLiveAssistantWork([
-      message({ id: "old", role: "assistant", tools: [{ name: "ls", status: "running" }] }),
-      message({ id: "u", role: "user", text: "继续" }),
-      message({ id: "a", role: "assistant", text: "好的" }),
-    ]),
-    false,
-  );
+test("thinking dots stay until the turn shows text or a tool", () => {
+  const user = message({ id: "u", role: "user", text: "go" });
+  const streaming = [user, message({ id: "a", role: "assistant", text: "hi", streaming: true })];
+  const emptyShell = [user, message({ id: "a", role: "assistant", streaming: true })];
+  const tool = [user, message({ id: "a", role: "assistant", tools: [{ name: "bash", status: "running" }] })];
+  assert.equal(shouldShowThinking(true, [user]), true);
+  assert.equal(shouldShowThinking(false, [user]), false);
+  assert.equal(shouldShowThinking(true, emptyShell), true);
   assert.equal(shouldShowThinking(true, streaming), false);
-  assert.equal(shouldShowThinking(true, [message({ id: "u", role: "user", text: "go" })]), true);
-  assert.equal(shouldShowThinking(true, [message({ id: "a", role: "assistant", text: "done" })]), false);
+  assert.equal(shouldShowThinking(true, tool), false);
+  assert.equal(isAssistantStreaming(streaming), true);
+  assert.equal(isAssistantStreaming(emptyShell), false);
 });
 
 test("activity and status labels match ChatGPT-style turn states", () => {
@@ -86,31 +36,6 @@ test("activity and status labels match ChatGPT-style turn states", () => {
   assert.deepEqual(turnStatusLabel({ sending: true, status: "IDLE" }), { state: "RUNNING", label: "发送中" });
   assert.deepEqual(turnStatusLabel({ status: "RUNNING" }), { state: "RUNNING", label: "运行中" });
   assert.equal(turnStatusLabel({ status: null }).label, "就绪");
-});
-
-test("withPendingUser shows an optimistic bubble until the real event arrives", () => {
-  const pending = { id: "pending-1", text: "继续", createdAt: "2026-08-22T00:00:10.000Z" };
-  const before = withPendingUser([], pending);
-  assert.equal(before.at(-1)?.id, "pending-1");
-  const arrived = [
-    message({ id: "real", role: "user", text: "继续", createdAt: "2026-08-22T00:00:11.000Z" }),
-  ];
-  assert.equal(withPendingUser(arrived, pending).length, 1);
-  assert.equal(pendingUserArrived(arrived, pending), true);
-  assert.equal(pendingUserArrived([], pending), false);
-});
-
-test("shouldRefreshTranscript polls while queued or when SSE is quiet", () => {
-  assert.equal(shouldRefreshTranscript({ lastSseAt: Date.now(), status: "NOT_YET_STARTED" }), true);
-  assert.equal(shouldRefreshTranscript({ lastSseAt: Date.now(), status: "RUNNING" }), false);
-  assert.equal(shouldRefreshTranscript({ lastSseAt: 0, now: 4000, status: "RUNNING" }), true);
-});
-
-test("withQueuedNotice inserts the slot-wait line once", () => {
-  const first = withQueuedNotice([], "NOT_YET_STARTED", "2026-08-29T00:00:00.000Z");
-  assert.equal(first.at(-1)?.text, QUEUED_SLOT_NOTICE);
-  assert.equal(withQueuedNotice(first, "NOT_YET_STARTED").length, 1);
-  assert.equal(withQueuedNotice(first, "RUNNING").length, 1);
 });
 
 test("shouldShowBuddyHome hides the welcome screen after send", () => {

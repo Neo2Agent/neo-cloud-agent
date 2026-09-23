@@ -1,3 +1,5 @@
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
+
 export const CATALOG_PAGE_SIZE = 12;
 
 export function filterByQuery<T>(
@@ -41,18 +43,6 @@ export function avatarTone(name: string): number {
   return n;
 }
 
-const LIVE_STATUSES = new Set([
-  "NOT_YET_STARTED",
-  "PROVISIONING",
-  "INSTALLING",
-  "RUNNING",
-  "WAITING_FOR_BACKGROUND_WORK",
-]);
-
-export function isLiveStatus(status: string): boolean {
-  return LIVE_STATUSES.has(status);
-}
-
 export function filterUsersByTab<T extends { status?: string }>(users: T[], tab: string): T[] {
   if (tab === "pending") return users.filter((user) => user.status === "pending");
   if (tab === "active") return users.filter((user) => (user.status ?? "active") === "active");
@@ -61,7 +51,7 @@ export function filterUsersByTab<T extends { status?: string }>(users: T[], tab:
 }
 
 export function filterRunsByTab<T extends { status: string }>(runs: T[], tab: string): T[] {
-  if (tab === "live") return runs.filter((run) => isLiveStatus(run.status));
+  if (tab === "live") return runs.filter((run) => isActiveRunStatus(run.status));
   if (tab === "idle") return runs.filter((run) => run.status === "IDLE");
   if (tab === "error") return runs.filter((run) => run.status === "ERROR");
   if (tab === "archived") return runs.filter((run) => run.status === "ARCHIVED" || run.status === "EXPIRED");

@@ -1,13 +1,8 @@
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { asString, callControlPlane } from "./client.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 import { resolveWorkspacePath } from "./workspace-path.js";
-
-export const neoArtifact = defineExtension({
-  name: "neo-artifact",
-  description: "Upload workspace files through the control plane so the chat page can show or download them.",
-});
 
 const TEXT_TYPES = new Set([".txt", ".md", ".log", ".json", ".csv", ".html", ".xml", ".yml", ".yaml", ".ts", ".js", ".css"]);
 

@@ -30,7 +30,7 @@ import {
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import { deskAssignmentAlert } from "../src/notify-assignment.js";
-import { isActiveRunStatus } from "../src/stream.js";
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { publicizeWorkerUrls } from "../src/worker-urls.js";
 import {
   ignoreNeoDir,

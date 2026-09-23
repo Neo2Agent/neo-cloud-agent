@@ -107,7 +107,7 @@ export interface HandoffRequest {
 export const DESK_HOST_OFFLINE_MESSAGE = "发起这条对话的 Desk 离线。打开 Desk 后才能继续。";
 export const DESK_HOST_UNBOUND_MESSAGE = "这条本机对话还没有绑定电脑，打开 Desk 后才能继续。";
 
-export type RemoteControlSendLockOptions = {
+type RemoteControlSendLockOptions = {
   /** The Desk window that started this run may send even if the list is stale. */
   thisDeskId?: string | null;
 };

@@ -1,10 +1,5 @@
 import { asString, callControlPlane } from "./client.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
-
-export const neoPr = defineExtension({
-  name: "neo-pr",
-  description: "Ask the control plane to open a draft pull request via POST /internal/runs/:id/scm/pull-request.",
-});
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 
 export type PullRequestToolResponse = {
   pushed?: boolean;

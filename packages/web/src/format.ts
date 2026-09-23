@@ -1,20 +1,18 @@
 import { CHAT_MODELS, chatModelLabel, resolvePublicChatModel } from "@neo-cloud-agent/contracts/llm-ids";
 import { isDeskHostedTarget } from "@neo-cloud-agent/contracts/desk";
+import {
+  formatDuration,
+  formatWhen,
+  RUN_STATUS_LABELS,
+  sameClockMinute,
+  toolArgPreview,
+} from "@neo-cloud-agent/contracts/display";
 import type { TranscriptGroup, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { isRemoteControlTarget, runDisplayTitle, type ExecutionTarget } from "@neo-cloud-agent/contracts/run";
 
-export const STATUS_LABELS: Record<string, string> = {
-  idle: "就绪",
-  NOT_YET_STARTED: "排队中",
-  PROVISIONING: "准备中",
-  INSTALLING: "安装中",
-  RUNNING: "运行中",
-  IDLE: "空闲",
-  WAITING_FOR_BACKGROUND_WORK: "后台任务",
-  ERROR: "出错",
-  ARCHIVED: "已归档",
-  EXPIRED: "已过期",
-};
+export { formatDuration, formatWhen, toolArgPreview };
+
+export const STATUS_LABELS: Record<string, string> = { idle: "就绪", ...RUN_STATUS_LABELS };
 
 export function resolveChatModel(upstream?: string | null, model?: string | null, _hasImages = false): string {
   return resolvePublicChatModel(upstream, model);
@@ -73,19 +71,6 @@ export function runListPlaceSuffix(run: {
   return run.vmSlotId ? ` · ${slotLabel(run.vmSlotId)}` : "";
 }
 
-const SHANGHAI = "Asia/Shanghai";
-
-export function sameClockMinute(left: string, right: string): boolean {
-  const start = Date.parse(left);
-  const end = Date.parse(right);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return left === right;
-  return Math.floor(start / 60_000) === Math.floor(end / 60_000);
-}
-
-function shanghaiYear(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: SHANGHAI, year: "numeric" }).format(date);
-}
-
 /** Compact list age, Cursor-style: minutes, then hours, then days. */
 export function formatListWhen(value: string, now = new Date()): string {
   const date = new Date(value);
@@ -98,22 +83,6 @@ export function formatListWhen(value: string, now = new Date()): string {
   return `${Math.floor(hours / 24)}天`;
 }
 
-/** Asia/Shanghai wall clock, e.g. `8/24 17:30`. Drops the year when it matches `now`. */
-export function formatWhen(value: string, now = new Date()): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const sameYear = shanghaiYear(date) === shanghaiYear(now);
-  return date.toLocaleString("zh-CN", {
-    timeZone: SHANGHAI,
-    year: sameYear ? undefined : "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 export function formatRunTime(createdAt: string, updatedAt?: string | null, now = new Date()): string {
   const created = formatWhen(createdAt, now);
   if (!updatedAt || sameClockMinute(createdAt, updatedAt)) {
@@ -122,68 +91,24 @@ export function formatRunTime(createdAt: string, updatedAt?: string | null, now 
   return `创建 ${created} · 更新 ${formatWhen(updatedAt, now)}`;
 }
 
-export function formatDuration(start: string, end?: string | null, now = new Date()): string {
-  const from = Date.parse(start);
-  const to = end ? Date.parse(end) : now.getTime();
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return "";
-  const sec = Math.max(1, Math.round((to - from) / 1000));
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  const rem = sec % 60;
-  return rem ? `${min}m${rem}s` : `${min}m`;
-}
-
 export function formatMessageTime(
   createdAt: string,
   updatedAt?: string | null,
-  streaming = false,
+  live = false,
   now = new Date(),
 ): string {
   const created = formatWhen(createdAt, now);
-  if (streaming || !updatedAt || sameClockMinute(createdAt, updatedAt)) {
+  if (live || !updatedAt || sameClockMinute(createdAt, updatedAt)) {
     return created;
   }
   return `${created} · 完成 ${formatWhen(updatedAt, now)}`;
 }
 
-export function toolArgPreview(args: unknown): string {
-  if (!args || typeof args !== "object") {
-    return args == null ? "" : String(args);
-  }
-  const record = args as Record<string, unknown>;
-  const agent = typeof record.agent === "string" ? record.agent.trim() : "";
-  const task = typeof record.task === "string" ? record.task.trim() : "";
-  if (agent && task) {
-    return `${agent}: ${task.replace(/\s+/g, " ").trim()}`;
-  }
-  if (Array.isArray(record.tasks) && record.tasks.length > 0) {
-    return `parallel ×${record.tasks.length}`;
-  }
-  if (Array.isArray(record.chain) && record.chain.length > 0) {
-    return `chain ×${record.chain.length}`;
-  }
-  for (const key of ["command", "cmd", "path", "file", "query", "pattern", "url", "message", "title", "task", "agent"]) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.replace(/\s+/g, " ").trim();
-    }
-  }
-  try {
-    return JSON.stringify(args);
-  } catch {
-    return "";
-  }
-}
-
-export function toolTitle(tool: TranscriptTool): string {
-  const mark = tool.status === "running" ? "…" : tool.isError ? "✗" : "✓";
-  const previewText = toolArgPreview(tool.args);
-  return previewText ? `${mark} ${tool.name} · ${previewText}` : `${mark} ${tool.name}`;
-}
-
 export type DiffLine = { type: "add" | "del" | "ctx"; text: string };
+export type ToolChromeKind = "file" | "term" | "link" | "default";
 
 const DIFF_LIMIT = 80;
+export const WRITE_PREVIEW_LINES = 12;
 
 function recordArgs(args: unknown): Record<string, unknown> {
   return args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
@@ -250,6 +175,51 @@ export function fileToolDiff(tool: TranscriptTool): { path: string; lines: DiffL
   return null;
 }
 
+function isUsefulLinkPreview(preview: string): boolean {
+  const text = preview.trim();
+  return Boolean(text) && text !== "{}" && text !== "[]" && !text.startsWith("{") && !text.startsWith("[");
+}
+
+export function toolLinkLabel(tool: TranscriptTool): string {
+  const preview = toolArgPreview(tool.args);
+  if (isUsefulLinkPreview(preview)) return preview;
+  const title = typeof tool.details?.title === "string" ? tool.details.title.trim() : "";
+  if (title) return title;
+  const url = typeof tool.details?.url === "string" ? tool.details.url.trim() : "";
+  if (url) return url;
+  const output = tool.output ?? "";
+  const heading = output.match(/^#\s+(.+)/);
+  if (heading?.[1]?.trim()) return heading[1].trim();
+  const found = output.match(/https?:\/\/\S+/);
+  if (found?.[0]) return found[0];
+  return toolVerb(tool.name);
+}
+
+export function toolChromeKind(name: string): ToolChromeKind {
+  const n = name.toLowerCase();
+  if (n === "edit" || n === "write" || n === "apply_patch") return "file";
+  if (n === "bash" || n === "shell") return "term";
+  if (n === "neo_browse" || n === "browse" || n === "grep" || n === "search" || n === "glob") return "link";
+  return "default";
+}
+
+export function fileCardPreview(tool: TranscriptTool): { path: string; lines: DiffLine[]; hidden: number } | null {
+  const args = recordArgs(tool.args);
+  const path = typeof args.path === "string" ? args.path : "";
+  const detailsDiff = typeof tool.details?.diff === "string" ? tool.details.diff : typeof tool.details?.patch === "string" ? tool.details.patch : "";
+  if (!detailsDiff && tool.name === "write" && typeof args.content === "string") {
+    const all = args.content.split("\n");
+    return {
+      path,
+      lines: all.slice(0, WRITE_PREVIEW_LINES).map((text) => ({ type: "add" as const, text })),
+      hidden: Math.max(0, all.length - WRITE_PREVIEW_LINES),
+    };
+  }
+  const diff = fileToolDiff(tool);
+  if (!diff) return null;
+  return { path: diff.path || path, lines: diff.lines, hidden: 0 };
+}
+
 type ToolBucket = {
   id: string;
   names: readonly string[];
@@ -284,6 +254,12 @@ export function toolVerb(name: string): string {
 }
 
 export function toolDiffStat(tool: TranscriptTool): { added: number; removed: number } | null {
+  const args = recordArgs(tool.args);
+  const detailsDiff = typeof tool.details?.diff === "string" ? tool.details.diff : typeof tool.details?.patch === "string" ? tool.details.patch : "";
+  if (!detailsDiff && tool.name === "write" && typeof args.content === "string") {
+    const added = args.content.split("\n").length;
+    return added > 0 ? { added, removed: 0 } : null;
+  }
   const diff = fileToolDiff(tool);
   if (!diff) return null;
   let added = 0;
@@ -294,6 +270,28 @@ export function toolDiffStat(tool: TranscriptTool): { added: number; removed: nu
   }
   if (added === 0 && removed === 0) return null;
   return { added, removed };
+}
+
+export const WORK_GROUP_PREVIEW = 8;
+
+const WORK_FAMILY_LIVE: Record<string, string> = {
+  explore: "正在浏览…",
+  exec: "正在执行…",
+  edit: "正在编辑…",
+  other: "正在处理…",
+};
+
+export function workGroupLabel(id: string, tools: TranscriptTool[]): string {
+  if (tools.some((tool) => tool.status === "running")) {
+    return WORK_FAMILY_LIVE[id] ?? "正在处理…";
+  }
+  if (id === "other") return `其他 ${tools.length} 步`;
+  return toolGroupSummary(tools);
+}
+
+export function previewWorkTools<T>(tools: readonly T[]): { shown: T[]; hidden: number } {
+  if (tools.length <= WORK_GROUP_PREVIEW) return { shown: [...tools], hidden: 0 };
+  return { shown: tools.slice(-WORK_GROUP_PREVIEW), hidden: tools.length - WORK_GROUP_PREVIEW };
 }
 
 export function toolGroupSummary(tools: TranscriptTool[]): string {
@@ -381,16 +379,14 @@ export function partitionTurn(groups: TranscriptGroup[]): PartitionedTurn {
   const buckets = ["explore", "exec", "edit", "other"].flatMap((id) => {
     const tools = grouped.get(id);
     if (!tools || tools.length === 0) return [];
-    const label = id === "other" ? `其他 ${tools.length} 步` : toolGroupSummary(tools);
-    return [{ id, label, tools }];
+    return [{ id, label: workGroupLabel(id, tools), tools }];
   });
   return { notes, buckets, answer };
 }
 
-/** A live turn stays open. A finished turn stays closed until the user opens it. */
-export function resolveWorkFoldOpen(streaming: boolean, userChoice: boolean | null): boolean {
-  if (userChoice != null) return userChoice;
-  return streaming;
+/** The user's click wins; otherwise a live turn is open and a settled one is closed. */
+export function resolveFoldOpen(live: boolean, userChoice: boolean | null): boolean {
+  return userChoice ?? live;
 }
 
 export type SlotMenuLine = {

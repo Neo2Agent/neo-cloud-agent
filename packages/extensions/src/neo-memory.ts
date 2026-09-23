@@ -5,12 +5,7 @@ import {
   type MemoryItem,
 } from "@neo-cloud-agent/contracts";
 import { asString, callControlPlane } from "./client.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
-
-export const neoMemory = defineExtension({
-  name: "neo-memory",
-  description: "Read and write user facts through the control plane Mem0 proxy. Keys stay off the VM.",
-});
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 
 export type MemoryToolResponse = {
   memories?: MemoryItem[];

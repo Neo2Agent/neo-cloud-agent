@@ -1,5 +1,5 @@
 import type { Run } from "@neo-cloud-agent/contracts/run";
-import { isActiveRunStatus } from "../../src/stream";
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { isDeskBoundRun, localRunFolder, type DeskRunStatus } from "../desk";
 
 /** Statuses reported by the main process, keyed by run id. */

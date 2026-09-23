@@ -45,11 +45,13 @@ test.describe("catalog and session chrome", () => {
     await expect(page.locator("#file-tree")).toHaveCount(0);
   });
 
-  test("nav.app-tabs: top tabs switch without losing the session", async ({ page }) => {
+  test("nav.rail: sidebar nav switches pages without losing the session", async ({ page }) => {
     await loginAs(page);
-    await page.locator("#app-tabs button", { hasText: "专家" }).click();
+    const rail = page.getByRole("navigation", { name: "功能" });
+    await rail.getByRole("button", { name: "更多" }).hover();
+    await page.getByRole("menuitem", { name: "专家" }).click();
     await expect(page.locator("#experts-page")).toBeVisible();
-    await page.locator("#app-tabs button", { hasText: "对话" }).click();
+    await page.locator("#new-chat").click();
     await expect(page.locator("#composer")).toBeVisible();
     await expect(page.locator("#account-email")).toContainText("admin");
   });

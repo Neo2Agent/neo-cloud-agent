@@ -2,15 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 
 type Props = { text: string; className?: string; streaming?: boolean };
 
-export function prepareMarkdown(text: string, streaming?: boolean): string {
-  if (!streaming) {
-    return text;
-  }
-  const fence = "```";
-  const fences = text.match(new RegExp(`^${fence}`, "gm"))?.length ?? 0;
-  return fences % 2 === 1 ? `${text}\n${fence}\n` : text;
-}
-
 export function MarkdownBody({ text, className, streaming }: Props) {
   const [shown, setShown] = useState(text);
   useEffect(() => {

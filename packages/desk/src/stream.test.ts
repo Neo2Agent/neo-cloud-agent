@@ -6,22 +6,14 @@ import {
   buildTranscriptSnapshot,
   transcriptGroups,
 } from "@neo-cloud-agent/contracts/transcript";
+import { assistantIsLive } from "@neo-cloud-agent/contracts/turn-state";
 import {
   batchTurnSignal,
-  isActiveRunStatus,
-  isTerminalTurnEvent,
   liveActivityLabel,
-  messageIsLive,
   parseSse,
   runEventsQuery,
   shouldShowAssistantActions,
   shouldShowThinking,
-  statusFromEventKind,
-  appendPendingUser,
-  dropResolvedPendingUsers,
-  mergeUnresolvedPending,
-  pendingUserArrived,
-  withPendingUser,
 } from "./stream.js";
 
 function ev(partial: Partial<RunEvent> & Pick<RunEvent, "id" | "kind">): RunEvent {
@@ -66,27 +58,10 @@ test("runEventsQuery resumes after the snapshot cursor", () => {
   );
 });
 
-test("parseSse and terminal kinds match the web stream contract", () => {
+test("parseSse rejects malformed frames", () => {
   assert.equal(parseSse("{"), null);
   assert.equal(parseSse(JSON.stringify({ kind: "run.idle" })), null);
   assert.equal(parseSse(JSON.stringify(HISTORY[0]))?.id, "u1");
-  assert.equal(isTerminalTurnEvent("run.idle"), true);
-  assert.equal(isTerminalTurnEvent("agent.end"), false);
-  assert.equal(isTerminalTurnEvent("user.message"), false);
-  assert.equal(isActiveRunStatus("RUNNING"), true);
-  assert.equal(isActiveRunStatus("IDLE"), false);
-});
-
-test("the open run leaves RUNNING when the turn ends", () => {
-  assert.equal(statusFromEventKind("user.message", "IDLE"), "RUNNING");
-  assert.equal(statusFromEventKind("agent.start", "IDLE"), "RUNNING");
-  assert.equal(statusFromEventKind("run.idle", "RUNNING"), "IDLE");
-  assert.equal(statusFromEventKind("agent.end", "RUNNING"), null);
-  assert.equal(statusFromEventKind("run.error", "RUNNING"), "ERROR");
-  assert.equal(statusFromEventKind("tool.start", "RUNNING"), null);
-  // A follow-up queued against a finished run still means work is coming.
-  assert.equal(statusFromEventKind("followup.queued", "IDLE"), "RUNNING");
-  assert.equal(statusFromEventKind("followup.queued", "RUNNING"), "RUNNING");
 });
 
 test("batchTurnSignal treats a trailing run.idle as idle even after tools", () => {
@@ -134,7 +109,7 @@ test("tool.start during a live turn shows a running bash card before idle", () =
   ]);
   const assistant = live.filter((item) => item.role === "assistant");
   assert.equal(liveActivityLabel(live), "正在执行 bash…");
-  assert.equal(assistant.some(messageIsLive), true);
+  assert.equal(assistant.some(assistantIsLive), true);
   const tools = assistant.flatMap((item) => transcriptGroups(item)).flatMap((group) => (group.type === "tools" ? group.tools : []));
   assert.equal(tools[0]?.name, "bash");
   assert.equal(tools[0]?.status, "running");
@@ -201,32 +176,6 @@ test("assistant actions appear once at the bottom after the turn is idle", () =>
   if (first !== last) {
     assert.equal(shouldShowAssistantActions(done, first), false);
   }
-});
-
-test("withPendingUser shows the follow-up as a chat bubble until the event arrives", () => {
-  const pending = { id: "pending-1", text: "继续", createdAt: "2026-08-28T00:00:10.000Z" };
-  const before = withPendingUser([], pending);
-  assert.equal(before.length, 1);
-  assert.equal(before[0]?.role, "user");
-  assert.equal(before[0]?.text, "继续");
-  const earlier = { id: "u0", role: "user" as const, text: "继续", createdAt: "2026-08-28T00:00:00.000Z" };
-  assert.equal(pendingUserArrived([earlier], pending), false);
-  const withHistory = appendPendingUser([earlier], pending);
-  assert.deepEqual(withHistory.map((item) => item.id), ["u0", "pending-1"]);
-  const arrived = withPendingUser(
-    [earlier, { id: "u1", role: "user", text: "继续", createdAt: "2026-08-28T00:00:10.100Z" }],
-    pending,
-  );
-  assert.equal(arrived.at(-1)?.id, "u1");
-  assert.equal(arrived.some((item) => item.id === "pending-1"), false);
-  const snapshot = [earlier];
-  const afterReload = mergeUnresolvedPending(snapshot, withHistory);
-  assert.deepEqual(afterReload.map((item) => item.id), ["u0", "pending-1"]);
-  const resolved = dropResolvedPendingUsers([
-    ...withHistory,
-    { id: "u2", role: "user", text: "继续", createdAt: "2026-08-28T00:00:10.200Z" },
-  ]);
-  assert.deepEqual(resolved.map((item) => item.id), ["u0", "u2"]);
 });
 
 test("shouldShowThinking stays up until text streams or a tool is running", () => {

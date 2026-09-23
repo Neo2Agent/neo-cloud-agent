@@ -2,7 +2,7 @@ import { remoteControlSendLock, type Desk } from "@neo-cloud-agent/contracts/des
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { STATUS_LABELS } from "./format.js";
 import { runPlaceLabel } from "./place.js";
-import { isComposerClosed } from "./turn.js";
+import { isComposerClosed } from "@neo-cloud-agent/contracts/turn-state";
 
 export function composerGate(
   run: Run | null | undefined,

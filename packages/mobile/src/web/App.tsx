@@ -29,20 +29,22 @@ import { runPlaceLabel } from "../place";
 import { chatStatusText, composerGate } from "../session";
 import {
   appendPendingUser,
-  generationStarted,
-  hasVisibleTranscript,
   isActiveRunStatus,
-  isStartupWhisper,
   mergeUnresolvedPending,
   pendingUserArrived,
+  shouldRefreshTranscript,
+  withPendingUser,
+  withQueuedNotice,
+} from "@neo-cloud-agent/contracts/turn-state";
+import {
+  generationStarted,
+  hasVisibleTranscript,
+  isStartupWhisper,
   pendingUserMessage,
   sendFailureMessage,
-  shouldRefreshTranscript,
   shouldReplaceLiveTranscript,
   shouldShowThinking,
   thinkingHint,
-  withPendingUser,
-  withQueuedNotice,
 } from "../turn";
 import { attachRunStream } from "../transcript-live";
 import { AutomationsPage } from "./AutomationsPage";

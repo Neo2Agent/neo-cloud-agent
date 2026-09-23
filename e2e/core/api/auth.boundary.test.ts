@@ -55,14 +55,6 @@ test("auth: unknown account is 401, not 404", async (t) => {
   assert.equal((await readJson<{ error?: string }>(response)).error, "invalid account or password");
 });
 
-test("auth: bootstrap endpoint stays closed", async (t) => {
-  const api = await startCoreApi();
-  t.after(() => api.close());
-  const response = await fetch(`${api.base}/v1/auth/bootstrap`, { method: "POST" });
-  assert.equal(response.status, 403);
-  assert.match((await readJson<{ error?: string }>(response)).error ?? "", /账号登录/);
-});
-
 test("auth: happy path admin session can call /v1/me", async (t) => {
   const api = await startCoreApi();
   t.after(() => api.close());

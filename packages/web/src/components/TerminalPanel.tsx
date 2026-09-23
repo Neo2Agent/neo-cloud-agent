@@ -28,7 +28,6 @@ type SessionState = {
 };
 
 type Props = {
-  open: boolean;
   token: string;
   runId: string | null;
   setupLoading: boolean;
@@ -36,7 +35,7 @@ type Props = {
   setupLogs: Log[];
 };
 
-export function TerminalPanel({ open, token, runId, setupLoading, setupError, setupLogs }: Props) {
+export function TerminalPanel({ token, runId, setupLoading, setupError, setupLogs }: Props) {
   const [sessions, setSessions] = useState<SessionState[]>([]);
   const [activeId, setActiveId] = useState("");
   const [error, setError] = useState("");
@@ -176,12 +175,12 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
   }, [runId, token]);
 
   useEffect(() => {
-    if (!open || !runId || attempted || sessions.length > 0) {
+    if (!runId || attempted || sessions.length > 0) {
       return;
     }
     setAttempted(true);
     void ensure();
-  }, [attempted, ensure, open, runId, sessions.length]);
+  }, [attempted, ensure, runId, sessions.length]);
 
   useEffect(() => {
     if (outRef.current) {
@@ -190,10 +189,8 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
   }, [active?.screen, active?.draft, activeId]);
 
   useEffect(() => {
-    if (open) {
-      ghostRef.current?.focus();
-    }
-  }, [activeId, open]);
+    ghostRef.current?.focus();
+  }, [activeId]);
 
   const patchActive = (fn: (item: SessionState) => SessionState) => {
     setSessions((prev) => prev.map((item) => (item.info.id === activeId ? fn(item) : item)));
@@ -225,10 +222,6 @@ export function TerminalPanel({ open, token, runId, setupLoading, setupError, se
       return remaining;
     });
   };
-
-  if (!open) {
-    return null;
-  }
 
   const closeMenu = () => {
     if (menuRef.current) menuRef.current.open = false;

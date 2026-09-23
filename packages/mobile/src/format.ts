@@ -7,17 +7,7 @@ import {
 import type { TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 
-export const STATUS_LABELS: Record<string, string> = {
-  NOT_YET_STARTED: "排队中",
-  PROVISIONING: "准备中",
-  INSTALLING: "安装中",
-  RUNNING: "运行中",
-  IDLE: "空闲",
-  WAITING_FOR_BACKGROUND_WORK: "后台任务",
-  ERROR: "出错",
-  ARCHIVED: "已归档",
-  EXPIRED: "已过期",
-};
+export { RUN_STATUS_LABELS as STATUS_LABELS, toolArgPreview } from "@neo-cloud-agent/contracts/display";
 
 export function preview(text: string): string {
   return (text || "未命名任务").replace(/\s+/g, " ").slice(0, 48);
@@ -29,15 +19,6 @@ export function runListTitle(run: { title?: string | null; prompt?: string }): s
 
 export function shortId(id: string): string {
   return id.slice(0, 8);
-}
-
-export function toolArgPreview(args: unknown): string {
-  if (!args || typeof args !== "object") {
-    return typeof args === "string" ? args.slice(0, 80) : "";
-  }
-  const record = args as Record<string, unknown>;
-  const command = record.command ?? record.cmd ?? record.path ?? record.url;
-  return typeof command === "string" ? command.replace(/\s+/g, " ").slice(0, 80) : "";
 }
 
 export function toolBodyText(tool: Pick<TranscriptTool, "output" | "status">): string {

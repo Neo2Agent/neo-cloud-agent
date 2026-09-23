@@ -1,5 +1,7 @@
 # Codex / WorkBuddy 技能与插件市场调研，以及 Neo 复刻方案
 
+> **状态：调研 + 部分落地。** 内置插件目录、安装 / 启用、`SKILL.md` / `plugin.json` 解析已在（`packages/contracts/src/plugin.ts`、`bundled-plugins.ts`）。外部市场文件 `marketplace.json`、`.agents/plugins/`、`packages/plugins/<slug>/` 仍是提案，没有实现。
+
 调研日期：2026-08-28。  
 对象：OpenAI Codex 的 **Plugin / Marketplace**，以及腾讯云 WorkBuddy / CodeBuddy 的 **技能市场 + 插件市场**。  
 目的：弄清两边「市场」到底卖什么、包怎么装、运行时怎么吃，再对照 Neo Cloud Agent 现在的工作区 Skill / 专家 `skillNames` / `environment.json` MCP，给出一份能跟着做、又不照抄官方商店审核门户和办公 Skill 的落地顺序。

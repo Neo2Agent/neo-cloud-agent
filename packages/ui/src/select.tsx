@@ -1,7 +1,7 @@
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { IconCheck, IconChevron } from "./icons";
 
-export const EMPTY_SELECT_VALUE = "__empty__";
+const EMPTY_SELECT_VALUE = "__empty__";
 
 export type SelectOption = {
   value: string;

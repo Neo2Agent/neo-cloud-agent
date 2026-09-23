@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, readJson } from "../api";
-import { clampPage, filterByQuery, filterRunsByTab, isLiveStatus, paginate, snippet } from "../catalog";
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
+import { clampPage, filterByQuery, filterRunsByTab, paginate, snippet } from "../catalog";
 import { CatalogEmpty, CatalogList, CatalogPager, CatalogRow, CatalogTabs, CatalogToolbar } from "../components/Catalog";
 import { TranscriptView } from "../components/TranscriptView";
 import { formatTokens, formatWhen, slotLabel, sourceLabel, statusLabel, statusTone } from "../format";
@@ -223,7 +224,7 @@ export function RunsScreen({ token, runs, selectedId, tab, onTab, onOpen, onBack
 
       <CatalogTabs
         tabs={[
-          { id: "live", label: "进行中", count: list.filter((item) => isLiveStatus(item.status)).length },
+          { id: "live", label: "进行中", count: list.filter((item) => isActiveRunStatus(item.status)).length },
           { id: "idle", label: "空闲", count: list.filter((item) => item.status === "IDLE").length },
           { id: "error", label: "出错", count: list.filter((item) => item.status === "ERROR").length },
           { id: "archived", label: "已归档", count: list.filter((item) => item.status === "ARCHIVED" || item.status === "EXPIRED").length },

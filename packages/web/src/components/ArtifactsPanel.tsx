@@ -9,7 +9,6 @@ import { MarkdownBody } from "../markdown.js";
 type Artifact = { name: string; url?: string; contentType?: string };
 
 type Props = {
-  open: boolean;
   loading: boolean;
   error: string;
   artifacts: Artifact[];
@@ -23,7 +22,6 @@ type Props = {
 };
 
 export function ArtifactsPanel({
-  open,
   loading,
   error,
   artifacts,
@@ -90,7 +88,6 @@ export function ArtifactsPanel({
     };
   }, [preview, token]);
 
-  if (!open) return null;
   const kind = preview ? previewKind(preview) : null;
   const textual = kind === "markdown" || kind === "text" || kind === "json";
   const canSave = Boolean(projectId && token && runId);

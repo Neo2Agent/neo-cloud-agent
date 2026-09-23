@@ -28,8 +28,6 @@ import {
   Square,
   SquarePlus,
   SquareTerminal,
-  ThumbsDown,
-  ThumbsUp,
   Users,
   UsersRound,
   X,
@@ -146,14 +144,6 @@ export function IconUnbindFolder(props: IconProps) {
 
 export function IconCopy(props: IconProps) {
   return icon(Copy, props);
-}
-
-export function IconThumbsUp(props: IconProps) {
-  return icon(ThumbsUp, props);
-}
-
-export function IconThumbsDown(props: IconProps) {
-  return icon(ThumbsDown, props);
 }
 
 export function IconChevron({ open, className, ...props }: IconProps & { open?: boolean }) {

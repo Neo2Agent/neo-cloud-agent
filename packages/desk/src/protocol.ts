@@ -71,10 +71,6 @@ export function runIdFromHash(hash: string): string | null {
   return /^#\/runs\/([^/]+)$/.exec(hash)?.[1] ?? null;
 }
 
-export function projectIdFromHash(hash: string): string | null {
-  return parseProjectHash(hash).projectId;
-}
-
 export function parseProjectHash(hash: string): ProjectLocation {
   const raw = (hash.startsWith("#") ? hash.slice(1) : hash).replace(/\/+$/, "") || "/";
   const match = /^\/projects(?:\/([^/]+)(\/assets(?:\/([^/]+))?)?)?$/.exec(raw);

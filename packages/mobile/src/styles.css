@@ -38,7 +38,7 @@ button, textarea, input, select {
   background: var(--bg);
 }
 
-.topbar, .composer, .auth-card, .empty {
+.topbar, .composer, .empty {
   padding-left: max(16px, env(safe-area-inset-left));
   padding-right: max(16px, env(safe-area-inset-right));
 }
@@ -151,14 +151,6 @@ button, textarea, input, select {
 .tool.run { border-color: var(--run); }
 .tool .cmd { color: var(--muted); display: block; margin-top: 4px; }
 
-.composer.buddy-composer {
-  margin: 0 12px 4px;
-  padding: 8px 12px 10px;
-  border-radius: 28px;
-  background: #fff;
-  box-shadow: 0 8px 28px rgba(17, 17, 16, 0.08);
-}
-
 .composer textarea:not(.buddy-prompt-sr) {
   width: 100%;
   min-height: 44px;
@@ -178,7 +170,7 @@ button, textarea, input, select {
 
 .stop { background: #1a1a1a; }
 
-.auth, .buddy-login-page {
+.auth {
   min-height: 100%;
   display: grid;
   place-items: center;
@@ -186,7 +178,7 @@ button, textarea, input, select {
   background: var(--bg);
 }
 
-.auth-card, .settings-card {
+.settings-card {
   width: min(100%, 400px);
   background: var(--panel);
   border-radius: 24px;
@@ -199,65 +191,12 @@ button, textarea, input, select {
 
 .settings-card { margin: 16px; }
 
-.auth-card h1 { margin: 0; font-size: 22px; }
-.auth-card p { margin: 0; color: var(--muted); }
-.auth-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
-.auth-card input {
-  min-height: 46px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: #fff;
-  padding: 0 12px;
-}
-
 .error { color: var(--err); margin: 0; }
 
-.buddy-drawer-root {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-
-.buddy-drawer {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: min(360px, 82vw);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
-  background: #fff;
-  box-shadow: 8px 0 32px rgba(17, 17, 16, 0.08);
-}
-
-.sidebar-head, .brand {
+.brand {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.brand .mark { display: grid; }
-
-.new-chat {
-  border: 0;
-  background: transparent;
-  text-align: left;
-  min-height: 44px;
-  font-weight: 650;
-}
-
-.run-list {
-  flex: 1;
-  overflow: auto;
-}
-
-.sidebar-foot {
-  display: grid;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .buddy-home {

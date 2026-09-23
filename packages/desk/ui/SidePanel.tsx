@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { applyTermChunk, createTermScreen, termScreenText } from "@neo-cloud-agent/ui/term-render";
 import { createTermWriteQueue } from "@neo-cloud-agent/ui/term-write";
 import { fileKind, nextUntitledName, sortFsEntries } from "../src/file-kind";
-import { nextHistoryIndex, termKeyAction, termKeyBytes } from "../src/term-keys";
+import { nextHistoryIndex, termKeyAction, termKeyBytes } from "@neo-cloud-agent/ui/term";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { api, readJson } from "./api";
 import { ArtifactsPane } from "./ArtifactsPane";

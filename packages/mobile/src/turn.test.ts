@@ -1,22 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { appendPendingUser, mergeUnresolvedPending, pendingUserArrived, withPendingUser } from "@neo-cloud-agent/contracts/turn-state";
 import {
-  appendPendingUser,
   DESK_STARTING_NOTICE,
   generationStarted,
   hasVisibleTranscript,
   isStartupWhisper,
-  mergeUnresolvedPending,
-  pendingUserArrived,
   pendingUserMessage,
-  QUEUED_SLOT_NOTICE,
   sendFailureMessage,
-  shouldRefreshTranscript,
   shouldReplaceLiveTranscript,
   shouldShowThinking,
   thinkingHint,
-  withPendingUser,
-  withQueuedNotice,
 } from "./turn.js";
 
 test("pendingUserMessage shows the typed text immediately", () => {
@@ -37,22 +31,10 @@ test("optimistic user bubble stays until the server event arrives", () => {
   assert.equal(mergeUnresolvedPending([], shown)[0]?.id, pending.id);
 });
 
-test("shouldRefreshTranscript polls while queued or when SSE is quiet", () => {
-  assert.equal(shouldRefreshTranscript({ lastSseAt: Date.now(), status: "NOT_YET_STARTED" }), true);
-  assert.equal(shouldRefreshTranscript({ lastSseAt: Date.now(), status: "RUNNING" }), false);
-  assert.equal(shouldRefreshTranscript({ lastSseAt: 0, now: 4000, status: "RUNNING" }), true);
-});
-
 test("live SSE tokens are not replaced by a GET snapshot", () => {
   assert.equal(shouldReplaceLiveTranscript({ liveSse: true, lastSseAt: Date.now() }), false);
   assert.equal(shouldReplaceLiveTranscript({ liveSse: true, lastSseAt: 0, now: 5000 }), true);
   assert.equal(shouldReplaceLiveTranscript({ liveSse: false, lastSseAt: Date.now() }), true);
-});
-
-test("withQueuedNotice inserts the slot-wait line once", () => {
-  const first = withQueuedNotice([], "NOT_YET_STARTED", "2026-08-29T00:00:00.000Z");
-  assert.equal(first.at(-1)?.text, QUEUED_SLOT_NOTICE);
-  assert.equal(withQueuedNotice(first, "NOT_YET_STARTED").length, 1);
 });
 
 test("empty assistant shells stay hidden until tokens or tools arrive", () => {

@@ -77,20 +77,18 @@ import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
 import type { WorkbenchTab } from "./project/types";
+import { batchTurnSignal, liveActivityLabel, parseSse, runEventsQuery } from "../src/stream";
 import {
-  batchTurnSignal,
-  isActiveRunStatus,
-  liveActivityLabel,
-  parseSse,
   appendPendingUser,
   dropResolvedPendingUsers,
+  isActiveRunStatus,
+  isTurnBusy,
   mergeUnresolvedPending,
   pendingUserArrived,
-  runEventsQuery,
   statusFromEventKind,
   withPendingUser,
   type PendingUser,
-} from "../src/stream";
+} from "@neo-cloud-agent/contracts/turn-state";
 import {
   AutomationCreateForm,
   AutomationsPage,
@@ -1057,7 +1055,7 @@ export function App() {
     }),
     pendingTurn,
   );
-  const busy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
+  const busy = isTurnBusy({ sending, pending: Boolean(pendingTurn), status: current?.status, messages: visible });
   const activity = liveActivityLabel(visible);
   const rail = useMemo(() => {
     const names = new Map(projects.map((item) => [item.id, item.name]));

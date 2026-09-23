@@ -36,7 +36,7 @@ export type ContextUsageItemDraft = {
   tokens?: number;
 };
 
-export { hitTestBar, layoutContextBar } from "./context-bar.js";
+export { layoutContextBar } from "./context-bar.js";
 export type { ContextBarBucket, ContextBarLayout, ContextBarSlice } from "./context-bar.js";
 
 export interface ContextUsageSnapshot {

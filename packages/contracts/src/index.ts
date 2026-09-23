@@ -43,7 +43,7 @@ export {
   resolveRunKernel,
   runDisplayTitle,
 } from "./run.js";
-export type { AgentKernel as AgentKernelName, KernelEnv, WorkerRole } from "./kernel.js";
+export type { KernelEnv, WorkerRole } from "./kernel.js";
 export {
   AGENT_KERNELS,
   defaultAgentKernel,
@@ -52,13 +52,7 @@ export {
   resolveAgentKernel,
   resolveWorkerRole,
 } from "./kernel.js";
-export type {
-  ToolsChannelFrame,
-  ToolsChannelRole,
-  ToolsErrFrame,
-  ToolsHelloFrame,
-  ToolsOkFrame,
-} from "./tools-channel.js";
+export type { ToolsChannelFrame, ToolsChannelRole, ToolsErrFrame, ToolsOkFrame } from "./tools-channel.js";
 export { TOOLS_CHANNEL_VERSION, isToolsChannelFrame } from "./tools-channel.js";
 export { deskToolsProxyUrl, isDeskToolsProxyUrl, isLoopbackHttpUrl } from "./urls.js";
 export type {
@@ -282,7 +276,6 @@ export {
   estimateTokensFromText,
   formatContextPercent,
   formatTokenCount,
-  hitTestBar,
   layoutContextBar,
   overlayContextUsage,
   parseContextUsage,
@@ -382,8 +375,6 @@ export type {
 export type {
   BundledPlugin,
   BundledSkill,
-  MarketplaceFile,
-  MarketplacePluginEntry,
   NormalizedPluginManifest,
   Plugin,
   PluginCatalogItem,
@@ -406,7 +397,6 @@ export {
   isSafeRelativePath,
   isValidSkillName,
   overlayCatalogItem,
-  parseMarketplaceFile,
   parsePluginManifest,
   parseSkillMd,
   pluginPickerLabel,

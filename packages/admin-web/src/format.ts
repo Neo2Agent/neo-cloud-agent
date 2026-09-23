@@ -1,18 +1,7 @@
+import { formatWhen as formatShanghaiWhen, RUN_STATUS_LABELS } from "@neo-cloud-agent/contracts/display";
 import { runDisplayTitle } from "@neo-cloud-agent/contracts/run";
 
-const SHANGHAI = "Asia/Shanghai";
-
-export const STATUS_LABELS: Record<string, string> = {
-  NOT_YET_STARTED: "排队中",
-  PROVISIONING: "准备中",
-  INSTALLING: "安装中",
-  RUNNING: "运行中",
-  IDLE: "空闲",
-  WAITING_FOR_BACKGROUND_WORK: "后台任务",
-  ERROR: "出错",
-  ARCHIVED: "已归档",
-  EXPIRED: "已过期",
-};
+export const STATUS_LABELS = RUN_STATUS_LABELS;
 
 export const STATUS_TONE: Record<string, "run" | "ok" | "warn" | "err" | "muted"> = {
   NOT_YET_STARTED: "muted",
@@ -58,25 +47,8 @@ const POLICY_LABELS: Record<string, string> = {
   llm_inflight_org: "在飞推理 / 组织",
 };
 
-function shanghaiYear(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: SHANGHAI, year: "numeric" }).format(date);
-}
-
-/** Asia/Shanghai wall clock, e.g. `8/24 17:30`. Drops the year when it matches `now`. */
 export function formatWhen(value: string | null | undefined, now = new Date()): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const sameYear = shanghaiYear(date) === shanghaiYear(now);
-  return date.toLocaleString("zh-CN", {
-    timeZone: SHANGHAI,
-    year: sameYear ? undefined : "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return value ? formatShanghaiWhen(value, now) : "—";
 }
 
 export function formatCount(value: number): string {

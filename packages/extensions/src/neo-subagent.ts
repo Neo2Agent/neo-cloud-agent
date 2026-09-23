@@ -9,12 +9,7 @@ import {
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { expertAgentDirs } from "./expert-roots.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
-
-export const neoSubagent = defineExtension({
-  name: "neo-subagent",
-  description: "Delegate isolated work to scout/planner/reviewer/worker using pi's subagent contract.",
-});
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 
 export function loadProjectSubagents(workspaceDir: string, scratchDir?: string): SubagentDefinition[] {
   const found: SubagentDefinition[] = [];

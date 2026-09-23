@@ -59,7 +59,7 @@ selectors:
   login: "#login"
   accountEmail: "#account-email"
   health: "#health"
-  appTabs: "#app-tabs"
+  railNav: "nav[aria-label='功能']"
   expertsPage: "#experts-page"
   skillsPage: "#skills-page"
   memoriesPage: "#memories-page"

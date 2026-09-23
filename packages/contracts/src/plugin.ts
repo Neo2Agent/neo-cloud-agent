@@ -10,8 +10,8 @@ export const WORKSPACE_SKILL_DIRS = [
 export const MAX_PLUGIN_BYTES = 5 * 1024 * 1024;
 export const MAX_PLUGIN_FILES = 200;
 export const MAX_ENABLED_PLUGINS = 12;
-export const MAX_SKILL_NAME = 64;
-export const MAX_SKILL_DESCRIPTION = 1024;
+const MAX_SKILL_NAME = 64;
+const MAX_SKILL_DESCRIPTION = 1024;
 
 export type PluginKind = "skill" | "mcp" | "bundle";
 export type PluginVisibility = "bundled" | "user" | "project";
@@ -103,22 +103,6 @@ export type BundledSkill = {
 
 export type BundledPlugin = Plugin & {
   skillContents: BundledSkill[];
-};
-
-export type MarketplaceFile = {
-  name: string;
-  displayName?: string;
-  owner?: { name?: string; email?: string };
-  plugins: MarketplacePluginEntry[];
-};
-
-export type MarketplacePluginEntry = {
-  name: string;
-  description?: string;
-  version?: string;
-  category?: string;
-  source?: unknown;
-  skipped?: string;
 };
 
 export type NormalizedPluginManifest = {
@@ -228,61 +212,6 @@ function normalizeSkillsField(value: unknown): { path: string } | { error: strin
   return { error: "skills 必须是 ./ 开头的路径" };
 }
 
-export function parseMarketplaceFile(raw: unknown): MarketplaceFile | { error: string } {
-  const record = asRecord(raw);
-  if (!record) return { error: "marketplace.json 必须是对象" };
-  const name = typeof record.name === "string" ? record.name.trim() : "";
-  if (!name || !/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(name)) {
-    return { error: "marketplace name 必须是 kebab-case" };
-  }
-  const iface = asRecord(record.interface);
-  const owner = asRecord(record.owner);
-  const plugins = Array.isArray(record.plugins) ? record.plugins : [];
-  const entries: MarketplacePluginEntry[] = [];
-  for (const item of plugins) {
-    const parsed = parseMarketplaceEntry(item);
-    if (parsed) entries.push(parsed);
-  }
-  return {
-    name: name || "marketplace",
-    displayName:
-      (typeof iface?.displayName === "string" && iface.displayName.trim()) ||
-      (typeof record.description === "string" && record.description.trim()) ||
-      undefined,
-    owner: owner
-      ? {
-          name: typeof owner.name === "string" ? owner.name : undefined,
-          email: typeof owner.email === "string" ? owner.email : undefined,
-        }
-      : undefined,
-    plugins: entries,
-  };
-}
-
-function parseMarketplaceEntry(value: unknown): MarketplacePluginEntry | null {
-  const record = asRecord(value);
-  if (!record || typeof record.name !== "string" || !record.name.trim()) {
-    return null;
-  }
-  const source = record.source;
-  let skipped: string | undefined;
-  if (isRecord(source) && source.source === "npm") {
-    skipped = "第一期不支持 npm 源";
-  } else if (typeof source === "string" && !isSafeRelativePath(source)) {
-    skipped = "相对路径必须是 ./ 开头且不能逃出市场根";
-  } else if (isRecord(source) && typeof source.path === "string" && !isSafeRelativePath(source.path)) {
-    skipped = "source.path 必须是 ./ 开头且不能逃出市场根";
-  }
-  return {
-    name: record.name.trim(),
-    description: typeof record.description === "string" ? record.description : undefined,
-    version: typeof record.version === "string" ? record.version : undefined,
-    category: typeof record.category === "string" ? record.category : undefined,
-    source,
-    skipped,
-  };
-}
-
 export function publicPlugin(plugin: BundledPlugin | Plugin): Plugin {
   const { skillContents: _omit, ...rest } = plugin as BundledPlugin;
   return rest;
@@ -320,8 +249,4 @@ export function overlayCatalogItem(
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(asRecord(value));
 }

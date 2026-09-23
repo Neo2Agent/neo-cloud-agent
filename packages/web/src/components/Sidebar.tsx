@@ -6,7 +6,7 @@ import { BuddyMascot } from "@neo-cloud-agent/ui";
 import { IconArchive, IconAutomations, IconChat, IconExperts, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
-import { isActiveRunStatus } from "../turn";
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { initials } from "../catalog";
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "../pane-size";
 import { ResizeHandle } from "./ResizeHandle";

@@ -50,10 +50,6 @@ export function saveArtifactHint(run: { projectId?: string | null } | null | und
   return canSaveArtifact(run) ? "" : "只有项目对话才能保存到项目。";
 }
 
-export function installedPlugins(items: PluginCatalogItem[]): PluginCatalogItem[] {
-  return items.filter((item) => item.installed);
-}
-
 export function pluginActionLabel(item: Pick<PluginCatalogItem, "installed" | "enabled">): string {
   if (!item.installed) return "安装";
   return item.enabled ? "停用" : "启用";
@@ -70,10 +66,6 @@ export function filterPlugins(items: PluginCatalogItem[], query: string): Plugin
 /** The transcript only pages when the control plane says older messages remain. */
 export function canLoadOlder(snapshot: { remaining?: number; nextBefore?: string | null } | null | undefined): boolean {
   return Boolean(snapshot && (snapshot.remaining ?? 0) > 0 && snapshot.nextBefore);
-}
-
-export function diagnosticsHint(logs: Array<{ content: string }>): string {
-  return logs.some((item) => item.content.trim()) ? "" : "还没有日志。";
 }
 
 /** Same set the web sidebar shelves: only these can be deleted. */

@@ -354,7 +354,3 @@ export function parseArgv(argv: string[]): ParsedCli {
   }
   return { command: "run", args: rest, flags };
 }
-
-export function promptFromArgs(args: string[]): string {
-  return args.join(" ").trim();
-}

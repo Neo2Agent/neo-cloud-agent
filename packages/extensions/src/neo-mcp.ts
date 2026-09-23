@@ -3,7 +3,7 @@ import path from "node:path";
 import { parseEnvironmentJson, type McpServerSpec } from "@neo-cloud-agent/contracts";
 import { asString, callControlPlane } from "./client.js";
 import { callMcpHttpTool, listMcpHttpTools, runMcpStdio } from "./mcp-client.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 
 type RemoteMcpList = {
   servers: Array<{
@@ -35,11 +35,6 @@ async function callViaControlPlane(
   });
   return body.result;
 }
-
-export const neoMcp = defineExtension({
-  name: "neo-mcp",
-  description: "Start HTTP/stdio MCP servers from environment.json. Tokens are interpolated from the worker env.",
-});
 
 const CANDIDATES = [".neo/environment.json", ".cursor/environment.json"] as const;
 

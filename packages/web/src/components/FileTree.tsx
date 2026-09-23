@@ -17,7 +17,6 @@ export type FsListing = {
 type Props = {
   token: string;
   runId: string | null;
-  open: boolean;
   onSelect?: (name: string | null) => void;
 };
 
@@ -85,7 +84,7 @@ function SourceView({ text, truncated }: { text: string; truncated?: boolean }) 
   );
 }
 
-export function FileTree({ token, runId, open, onSelect }: Props) {
+export function FileTree({ token, runId, onSelect }: Props) {
   const [dirs, setDirs] = useState<Record<string, FsEntry[]>>({});
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({ [ROOT]: true });
   const [file, setFile] = useState<{ path: string; content: string; truncated?: boolean } | null>(null);
@@ -103,7 +102,7 @@ export function FileTree({ token, runId, open, onSelect }: Props) {
   };
 
   useEffect(() => {
-    if (!open || !runId) {
+    if (!runId) {
       setDirs({});
       setFile(null);
       onSelect?.(null);
@@ -116,7 +115,7 @@ export function FileTree({ token, runId, open, onSelect }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [open, runId, token]);
+  }, [runId, token]);
 
   const toggleDir = (dir: string) => {
     setOpenDirs((prev) => {
@@ -165,7 +164,6 @@ export function FileTree({ token, runId, open, onSelect }: Props) {
       </li>
     ));
 
-  if (!open) return null;
   if (!runId) {
     return (
       <section className="file-tree" id="file-tree">

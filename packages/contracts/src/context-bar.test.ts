@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { allocateWidths, hitTestBar, layoutContextBar } from "./context-bar.js";
+import { allocateWidths, layoutContextBar } from "./context-bar.js";
 
 test("allocateWidths never invents extra pixels", () => {
   const widths = allocateWidths([713, 108, 164, 1289, 1051, 34], 332, 2);
@@ -70,6 +70,5 @@ test("child slices sit inside the parent and add up to it", () => {
   assert.equal(kids.length, 2);
   assert.ok(Math.abs(kids.reduce((acc, slice) => acc + slice.width, 0) - 200) < 1e-6);
   assert.ok((kids[0]?.width ?? 0) > (kids[1]?.width ?? 0));
-  const hit = hitTestBar(layout, 10, true);
-  assert.equal(hit?.child?.id, "read");
+  assert.equal(kids[0]?.id, "read");
 });

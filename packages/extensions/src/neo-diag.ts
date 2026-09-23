@@ -1,12 +1,7 @@
 import type { RunDiagnostics } from "@neo-cloud-agent/contracts";
 import { asString, callControlPlane } from "./client.js";
 import { readWorkspaceLogs } from "./logs.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
-
-export const neoDiag = defineExtension({
-  name: "neo-diag",
-  description: "Let the agent inspect this run's setup logs, egress denials, and environment version.",
-});
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 
 export type DiagSection = "all" | "setup" | "egress" | "environment";
 

@@ -1,7 +1,7 @@
 {
   "name": "neo-cloud-agent",
   "private": true,
-  "description": "Cloud agent control plane and VM worker, with Java neo-loop as the default kernel.",
+  "description": "Cloud agent control plane and VM worker. Default kernel is pi; Java neo-loop (agentscope) is optional.",
   "packageManager": "pnpm@10.33.3",
   "engines": {
     "node": ">=22.19"

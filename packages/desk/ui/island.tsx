@@ -2,7 +2,6 @@ import {
   Button,
   Card,
   Collapse,
-  Footer,
   Input,
   Switch,
   Tag,
@@ -10,7 +9,6 @@ import {
   type ButtonProps,
   type CardProps,
   type CollapseProps,
-  type FooterProps,
   type InputProps,
   type SwitchProps,
   type TagProps,
@@ -43,8 +41,4 @@ export function IslandCollapse(props: CollapseProps) {
 
 export function IslandTitle({ size = "middle", color = "app-teal", ...props }: TitleProps) {
   return <Title size={size} color={color} {...props} />;
-}
-
-export function IslandFooter({ type = "tree", ...props }: FooterProps) {
-  return <Footer type={type} {...props} />;
 }

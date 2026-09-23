@@ -92,9 +92,6 @@ test("phone registration and username/phone login", async (t) => {
   });
   assert.equal(usernameLogin.status, 200);
 
-  const bootstrap = await fetch(`${base}/v1/auth/bootstrap`, { method: "POST" });
-  assert.equal(bootstrap.status, 403);
-
   const wrong = await fetch(`${base}/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },

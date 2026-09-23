@@ -9,7 +9,6 @@ import {
   assertSafeRelativePath,
   isSafeRelativePath,
   overlayCatalogItem,
-  parseMarketplaceFile,
   parsePluginManifest,
   parseSkillMd,
   sortPluginsForCatalog,
@@ -83,24 +82,6 @@ test("plugin and marketplace parsers skip escapes and npm", () => {
   assert.equal(isSafeRelativePath("../etc/passwd"), false);
   assert.equal(isSafeRelativePath("/etc/passwd"), false);
   assert.throws(() => assertSafeRelativePath("./foo/../../etc"), /路径/);
-
-  const market = parseMarketplaceFile({
-    name: "local-repo",
-    interface: { displayName: "Local" },
-    plugins: [
-      { name: "ok", source: { source: "local", path: "./plugins/ok" } },
-      { name: "npm-helper", source: { source: "npm", package: "@x/y" } },
-      { name: "escape", source: "../outside" },
-      { name: "" },
-    ],
-  });
-  assert.equal("error" in market, false);
-  if (!("error" in market)) {
-    assert.equal(market.plugins.length, 3);
-    assert.equal(market.plugins.find((item) => item.name === "ok")?.skipped, undefined);
-    assert.match(market.plugins.find((item) => item.name === "npm-helper")?.skipped ?? "", /npm/);
-    assert.match(market.plugins.find((item) => item.name === "escape")?.skipped ?? "", /相对路径/);
-  }
 });
 
 test("catalog sort pins project plugins and digest is stable", () => {

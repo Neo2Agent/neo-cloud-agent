@@ -1,11 +1,6 @@
 import { parseSubscriptionEvents, SUBSCRIPTION_TOOL_NAME, type RunSubscription } from "@neo-cloud-agent/contracts";
 import { callControlPlane } from "./client.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
-
-export const neoSubscribe = defineExtension({
-  name: "neo-subscribe",
-  description: "Ask the control plane to watch GitHub PR comments or Actions for this run.",
-});
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 
 export type SubscribeToolResponse = {
   subscriptions?: RunSubscription[];

@@ -1,7 +1,7 @@
 import { Tooltip } from "@neo-cloud-agent/ui";
 import { useCallback, useEffect, useState } from "react";
 import { api, readJson, readToken, writeToken } from "./api";
-import { isLiveStatus } from "./catalog";
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { Sidebar } from "./components/Sidebar";
 import { IconExperts, IconLogout, IconMenu, IconOverview, IconRefresh, IconRuns, IconSidebarClose, IconSystem, IconUsers } from "./icons";
 import { PAGE_META, type AdminRoute, readRoute, routeHref } from "./nav";
@@ -197,7 +197,7 @@ export function App() {
   const meta = PAGE_META[page];
   const liveRuns =
     overview?.liveRuns ??
-    (runs ?? []).filter((item) => isLiveStatus(item.status)).slice(0, 8);
+    (runs ?? []).filter((item) => isActiveRunStatus(item.status)).slice(0, 8);
   const health = overview
     ? `${overview.platform.workerRuntime}${overview.capacity.total ? ` · VM ${overview.capacity.busy}/${overview.capacity.total}` : ""}`
     : "读取中…";

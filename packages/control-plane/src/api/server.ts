@@ -156,10 +156,8 @@ import { readyWarmCount } from "../env/warm-pool.js";
 import { proxySpeechIat, speechIatConfigured } from "../speech/iat-proxy.js";
 import { listRunArtifacts, putRunArtifact, readRunArtifact, withUtf8Charset } from "../artifacts/artifacts.js";
 import { signedArtifactUrl, verifyArtifactAccess } from "../artifacts/signed.js";
-import { beginMcpOAuth, finishMcpOAuth } from "../mcp/oauth.js";
 import { proxyMcpCall, proxyMcpList } from "../mcp/proxy.js";
 import { deleteMcpSecret, publicMcpServers, upsertMcpSecret } from "../mcp/secrets.js";
-import { publicAppUrl } from "../notify/settings.js";
 import { quotaSnapshot, QuotaError, writeQuotaLimits } from "../quota/quota.js";
 import {
   acquireSseLease,
@@ -376,16 +374,6 @@ async function sendArtifactBody(res: ServerResponse, runId: string, name: string
   return true;
 }
 
-function requestOrigin(req: IncomingMessage): string {
-  const configured = publicAppUrl();
-  if (configured) {
-    return configured;
-  }
-  const host = headerValue(req.headers.host);
-  const proto = headerValue(req.headers["x-forwarded-proto"]) || "http";
-  return host ? `${proto}://${host}` : getConfig().controlPlaneUrl;
-}
-
 /** A transcript image is keyed by event id, so its bytes never change. */
 const IMMUTABLE_PRIVATE_CACHE = "private, max-age=86400, immutable";
 
@@ -584,21 +572,6 @@ export function createApiServer() {
         return;
       }
 
-      if (method === "GET" && path === "/oauth/callback/mcp") {
-        try {
-          const name = await finishMcpOAuth({
-            code: url.searchParams.get("code") ?? "",
-            state: url.searchParams.get("state") ?? "",
-            origin: requestOrigin(req),
-          });
-          sendPlain(res, 200, `<!doctype html><title>MCP</title><p>已连接 ${name}。可以关掉这个标签。</p>`, "text/html");
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "oauth_failed";
-          sendPlain(res, 400, `<!doctype html><title>MCP</title><p>${message}</p>`, "text/html");
-        }
-        return;
-      }
-
       const signedArtifact = /^\/v1\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
       if (method === "GET" && signedArtifact) {
         const runId = signedArtifact[1] ?? "";
@@ -654,11 +627,6 @@ export function createApiServer() {
         } catch (error) {
           sendAccountError(res, error);
         }
-        return;
-      }
-
-      if (method === "POST" && path === "/v1/auth/bootstrap") {
-        send(res, 403, { error: "请使用账号登录" });
         return;
       }
 
@@ -1031,20 +999,6 @@ export function createApiServer() {
             });
           } catch (error) {
             send(res, 400, { error: error instanceof Error ? error.message : "invalid_mcp_settings" });
-          }
-          return;
-        }
-        const mcpOAuthStart = /^\/v1\/oauth\/mcp\/([^/]+)\/start$/.exec(path);
-        if (mcpOAuthStart && method === "GET") {
-          if (actor.kind === "anonymous") {
-            send(res, 401, { error: "login_required" });
-            return;
-          }
-          try {
-            const started = beginMcpOAuth(decodeURIComponent(mcpOAuthStart[1] ?? ""), requestOrigin(req));
-            send(res, 200, started);
-          } catch (error) {
-            send(res, 400, { error: error instanceof Error ? error.message : "oauth_start_failed" });
           }
           return;
         }

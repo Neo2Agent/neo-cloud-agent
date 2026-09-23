@@ -7,7 +7,7 @@ import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
 import { runRowMeta } from "../session";
 import { splitShelvedRuns, toggleSelected } from "../cloud";
-import { isActiveRunStatus } from "../turn";
+import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { IslandButton, IslandCard, IslandInput, IslandTitle } from "./island";
 
 export function Page({ title, onBack, action, children }: { title: string; onBack: () => void; action?: ReactNode; children: ReactNode }) {

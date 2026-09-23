@@ -5,7 +5,6 @@ import type {
   Environment,
   FollowUp,
   PluginCatalogItem,
-  PublicLlmSettings,
   Run,
   RunDiagnostics,
   RunEvent,
@@ -120,10 +119,6 @@ export class ControlPlaneClient {
     return this.request("POST", "/v1/auth/logout", {});
   }
 
-  llmSettings(): Promise<PublicLlmSettings> {
-    return this.request("GET", "/v1/settings/llm");
-  }
-
   createRun(input: CreateRunRequest): Promise<Run> {
     return this.request<Run>("POST", "/v1/runs", input);
   }
@@ -187,11 +182,6 @@ export class ControlPlaneClient {
   listPlugins(projectId?: string): Promise<{ plugins: PluginCatalogItem[] }> {
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     return this.request("GET", `/v1/plugins${query}`);
-  }
-
-  getPlugin(id: string, projectId?: string): Promise<PluginCatalogItem> {
-    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-    return this.request("GET", `/v1/plugins/${encodeURIComponent(id)}${query}`);
   }
 
   installPlugin(id: string, input: { scope?: "user" | "project"; projectId?: string; enabled?: boolean }): Promise<PluginCatalogItem> {

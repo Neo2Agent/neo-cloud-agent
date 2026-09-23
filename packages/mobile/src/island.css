@@ -46,7 +46,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   background-image: var(--paper-grain);
 }
 
-.topbar, .composer, .auth-card, .empty, .page-body {
+.topbar, .composer, .empty, .page-body {
   padding-left: max(16px, env(safe-area-inset-left));
   padding-right: max(16px, env(safe-area-inset-right));
 }

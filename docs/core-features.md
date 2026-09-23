@@ -38,7 +38,6 @@
 | --- | --- |
 | 账号或密码为空 | 提交按钮 `#auth-submit` 禁用；点了也只在前端提示「请输入用户名或手机号，以及密码」 |
 | 密码错误 / 不存在的账号 | `401`，`error: invalid account or password`；`#auth-error` 显示同一句 |
-| `POST /v1/auth/bootstrap` | 固定 `403`「请使用账号登录」 |
 | 注册缺手机号 / 非法用户名 / 密码短于 6 位 | `400`（「请填写有效的手机号」「用户名不合法」「密码至少 6 位」） |
 | 用户名须 `^[a-z][a-z0-9._-]{1,31}$`，手机号须大陆 11 位 | 不满足即 `400` |
 | 重复手机号 | `409`「手机号已注册」 |
@@ -50,7 +49,7 @@
 | 窄屏（≤860px） | 没有「服务令牌」页签 |
 | 服务令牌模式 | 需要 `CONTROL_PLANE_TOKEN`；错误令牌 `401` |
 
-**依赖。** `ACCOUNTS_REQUIRED`（默认必须登录）、`DEFAULT_ADMIN` / `DEFAULT_ADMIN_PASSWORD`、`BOOTSTRAP_EMAIL`、`ADMIN_EMAILS`、`CONTROL_PLANE_TOKEN`。元数据可走 `DATABASE_URL`，不设则 `.neo/runs/.control` JSON。
+**依赖。** `ACCOUNTS_REQUIRED`（默认必须登录）、`DEFAULT_ADMIN`（默认账号 `admin` / `123456`，密码写在代码里，不读环境变量）、`BOOTSTRAP_EMAIL`、`ADMIN_EMAILS`、`CONTROL_PLANE_TOKEN`。元数据可走 `DATABASE_URL`，不设则 `.neo/runs/.control` JSON。
 
 ---
 

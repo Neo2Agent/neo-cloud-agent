@@ -194,35 +194,6 @@
   position: relative;
 }
 
-.buddy-hold {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 72px;
-  border: 0;
-  background: transparent;
-  color: #2a2a2c;
-  font-size: 20px;
-  font-weight: 550;
-  letter-spacing: 0.04em;
-}
-
-.buddy-hold.is-holding {
-  color: #2f8f86;
-}
-
-.buddy-prompt-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-}
-
 .buddy-composer-bar {
   display: flex;
   align-items: center;

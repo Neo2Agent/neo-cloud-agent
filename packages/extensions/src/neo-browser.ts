@@ -1,11 +1,6 @@
 import { asString, callControlPlane } from "./client.js";
 import { extractPageText } from "./html-text.js";
-import { defineExtension, type CloudToolContext, type CloudToolDefinition, type CloudToolResult } from "./types.js";
-
-export const neoBrowser = defineExtension({
-  name: "neo-browser",
-  description: "Fetch an http(s) page as title plus text. Not a headed browser; egress still applies.",
-});
+import type { CloudToolContext, CloudToolDefinition, CloudToolResult } from "./types.js";
 
 export async function executeBrowse(
   ctx: CloudToolContext,

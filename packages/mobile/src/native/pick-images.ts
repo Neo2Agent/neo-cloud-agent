@@ -65,14 +65,3 @@ export async function pickImagesFromLibrary(current = 0): Promise<ImageRef[]> {
   if (result.canceled) return [];
   return normalize(result.assets, room);
 }
-
-export async function takePhoto(current = 0): Promise<ImageRef[]> {
-  if (MAX_IMAGES - current <= 0) return [];
-  const permission = await ImagePicker.requestCameraPermissionsAsync();
-  if (!permission.granted) {
-    throw new ImagePickError("没有相机权限。到系统设置里允许 Neo 使用相机。");
-  }
-  const result = await ImagePicker.launchCameraAsync({ mediaTypes: "images" });
-  if (result.canceled) return [];
-  return normalize(result.assets, 1);
-}

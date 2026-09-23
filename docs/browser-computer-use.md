@@ -1,5 +1,7 @@
 # Browser-use 与 Computer-use 调研
 
+> **状态：调研，未实现。** 现有能力只有 `neo_browse`（抓取公开页面的标题和正文）。文中的 `neo-browser-live.ts`、`browser-session.ts`、`browser` 子代理都还不存在。
+
 对标 Cursor Cloud Agent 的「自己开浏览器点 UI、自己操作桌面、交出截图/录屏、用户可接管远程桌面」。本文回答：**Neo 现在差什么、不要怎么做、按现网约束该怎么分期落地**。实现蓝图仍以 [architecture.md](./architecture.md) 为准：Agent loop 留在 worker，云功能走 `packages/extensions`，不 fork pi。
 
 **结论先说：** 不要在现网 4C/4G 轻量机上一次性复刻 Cursor 整桌面。先做 **Playwright 无头浏览器 + 无障碍树（a11y snapshot）**，用已有的 `neo_subagent` 挂一个 `browser` 子代理；像素级 computer-use 和用户接管桌面后置。`neo_browse` 继续留给静态文档抓取。

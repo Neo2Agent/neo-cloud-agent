@@ -1,5 +1,4 @@
 type Props = {
-  open: boolean;
   loading: boolean;
   error: string;
   stat: string;
@@ -9,8 +8,7 @@ type Props = {
   onCommit?: (message: string) => void;
 };
 
-export function DiffPanel({ open, loading, error, stat, patch, committing, commitError, onCommit }: Props) {
-  if (!open) return null;
+export function DiffPanel({ loading, error, stat, patch, committing, commitError, onCommit }: Props) {
   return (
     <section className="diff-panel" id="run-diff">
       {onCommit ? (

@@ -136,25 +136,3 @@ export function layoutContextBar(input: {
   }
   return { used, slices, children };
 }
-
-export function hitTestBar(layout: ContextBarLayout, x: number, preferChildren = true): {
-  slice: ContextBarSlice;
-  parentId: string;
-  child?: ContextBarSlice;
-} | null {
-  for (const slice of layout.slices) {
-    if (x < slice.x || x > slice.x + slice.width) {
-      continue;
-    }
-    const kids = layout.children[slice.id] ?? [];
-    if (preferChildren) {
-      for (const child of kids) {
-        if (x >= child.x && x <= child.x + child.width) {
-          return { slice, parentId: slice.id, child };
-        }
-      }
-    }
-    return { slice, parentId: slice.id };
-  }
-  return null;
-}
