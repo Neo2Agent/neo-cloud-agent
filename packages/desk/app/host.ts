@@ -34,6 +34,7 @@ import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { publicizeWorkerUrls } from "../src/worker-urls.js";
 import {
   ignoreNeoDir,
+  localGitSnapshot,
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
   readRepoIdentity,
@@ -788,12 +789,46 @@ async function withStartingHere<T>(runId: string | undefined, work: () => Promis
   }
 }
 
+/** The folder a run works in, even after its worker is gone. Unbound hints still go through folder auth. */
+function gitSnapshotFolder(runId: string, hint: { workspaceId?: string; folder?: string }): string {
+  const live = localRuns.get(runId)?.folder;
+  if (live) {
+    return live;
+  }
+  const bound = hint.workspaceId ? findBound({ workspaceId: hint.workspaceId }) : undefined;
+  if (bound?.folder) {
+    return bound.folder;
+  }
+  const authorized = hint.folder ? resolveAuthorizedFolder(hint.folder) : null;
+  return authorized?.ok ? authorized.path : "";
+}
+
+/** Report a run's git state so the Web Git panel can show a laptop workspace. */
+async function pushGitSnapshot(event: Extract<DeskInboxEvent, { kind: "git_snapshot" }>): Promise<void> {
+  const folder = gitSnapshotFolder(event.runId, event);
+  if (!folder || !deskId || !deskToken) {
+    return;
+  }
+  try {
+    const snapshot = await localGitSnapshot(folder, event.since);
+    if (snapshot) {
+      await leaseClient().uploadGitSnapshot({ deskId, deskToken, runId: event.runId, snapshot });
+    }
+  } catch (error) {
+    runLog.error("git snapshot failed", error, { runId: event.runId, folder });
+  }
+}
+
 async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
   if (event.kind === "ping") {
     return;
   }
   if (event.kind === "cancel") {
     stopRun(event.runId, event.reason);
+    return;
+  }
+  if (event.kind === "git_snapshot") {
+    await pushGitSnapshot(event);
     return;
   }
   const assignment = event.assignment;

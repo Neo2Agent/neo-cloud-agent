@@ -1118,11 +1118,20 @@ test("a desk run's Git panel reads the laptop's snapshot, and only that desk may
     target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
   });
   await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/neo-desk-snapshot-elsewhere", pid: 4245 });
-  const asked: Array<{ kind: string; runId?: string }> = [];
-  const detach = openDeskInbox(registered.desk.id, (item) => asked.push(item as { kind: string; runId?: string }));
+  const asked: Array<{ kind: string; runId?: string; since?: string; workspaceId?: string }> = [];
+  const detach = openDeskInbox(registered.desk.id, (item) => asked.push(item as (typeof asked)[number]));
   const first = await getRunDiff(run.id);
   assert.equal(first.source, "none");
-  assert.deepEqual(asked.filter((item) => item.kind === "git_snapshot").map((item) => item.runId), [run.id]);
+  const requests = () => asked.filter((item) => item.kind === "git_snapshot");
+  assert.deepEqual(requests().map((item) => item.runId), [run.id]);
+  assert.equal(requests()[0]?.since, run.createdAt);
+  assert.equal(requests()[0]?.workspaceId, bound.id);
+  const turn = { runId: run.id, category: "agent_run" as const, level: "info" as const, createdAt: new Date().toISOString() };
+  ingestEvents(run.id, [
+    { ...turn, id: "snap-start", kind: "agent.start", title: "start" },
+    { ...turn, id: "snap-end", kind: "agent.end", title: "end" },
+  ]);
+  assert.equal(requests().length, 2, "a finished turn asks the laptop for a fresh snapshot");
   const snapshot = {
     branch: "main",
     baseBranch: "main",

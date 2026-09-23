@@ -2080,6 +2080,7 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
         run.updatedAt = now();
         publish(event(runId, "run.idle", "Agent turn finished"));
         flushRun(runId);
+        requestDeskGitSnapshot(runId);
         void import("../notify/dispatch.js")
           .then(({ notifyRunFinished }) => notifyRunFinished(run, "idle"))
           .catch(() => undefined);
@@ -2769,7 +2770,13 @@ function readableGitDir(run: Run): string | null {
 export function requestDeskGitSnapshot(runId: string): boolean {
   const run = requireRun(runId);
   if (!isDeskToolsTarget(run.executionTarget)) return false;
-  return pushDeskInbox(run.executionTarget.deskId, { kind: "git_snapshot", runId });
+  return pushDeskInbox(run.executionTarget.deskId, {
+    kind: "git_snapshot",
+    runId,
+    since: run.createdAt,
+    workspaceId: run.executionTarget.deskWorkspaceId,
+    folder: run.repoUrls.find((url) => looksLocalFilesystem(url)),
+  });
 }
 
 function staleDeskSnapshot(runId: string): boolean {

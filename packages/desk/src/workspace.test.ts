@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   ignoreNeoDir,
   isGitRepo,
+  localGitSnapshot,
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
   readRepoIdentity,
@@ -140,4 +141,39 @@ test("diff stat counts uncommitted edits in the user's own folder", async () => 
   const stat = await localWorkspaceDiffStat(dir);
   assert.equal(stat?.added, 1);
   assert.equal(await localWorkspaceDiffStat(mkdtempSync(path.join(tmpdir(), "neo-desk-nogit-"))), null);
+});
+
+test("git snapshot covers the run's commits plus uncommitted and untracked files", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "neo-desk-snap-"));
+  const git = (args: string[], date?: string) =>
+    spawnSync("git", args, {
+      cwd: dir,
+      env: { ...process.env, ...(date ? { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : {}) },
+    });
+  git(["init", "-b", "main"]);
+  git(["config", "user.email", "desk@example.com"]);
+  git(["config", "user.name", "Desk"]);
+  writeFileSync(path.join(dir, "OLD.md"), "before the run\n");
+  git(["add", "."]);
+  git(["commit", "-m", "before"], "2026-01-01T00:00:00Z");
+  writeFileSync(path.join(dir, "FEATURE.md"), "one\ntwo\n");
+  git(["add", "."]);
+  git(["commit", "-m", "feat: add FEATURE.md"], "2026-09-23T10:00:00Z");
+  writeFileSync(path.join(dir, "OLD.md"), "before the run\nedited\n");
+  writeFileSync(path.join(dir, "NEW.md"), "untracked\n");
+
+  const snapshot = await localGitSnapshot(dir, "2026-09-01T00:00:00Z");
+  assert.ok(snapshot);
+  assert.equal(snapshot.branch, "main");
+  assert.deepEqual(snapshot.commits.map((item) => item.message), ["feat: add FEATURE.md"]);
+  const byPath = new Map(snapshot.files.map((item) => [item.path, item.status]));
+  assert.equal(byPath.get("FEATURE.md"), "added");
+  assert.equal(byPath.get("OLD.md"), "modified");
+  assert.equal(byPath.get("NEW.md"), "untracked");
+  assert.match(snapshot.patch, /\+edited/);
+
+  const noRun = await localGitSnapshot(dir);
+  assert.deepEqual(noRun?.commits, []);
+  assert.equal(noRun?.files.some((item) => item.path === "FEATURE.md"), false);
+  assert.equal(await localGitSnapshot(mkdtempSync(path.join(tmpdir(), "neo-desk-nogit-"))), null);
 });

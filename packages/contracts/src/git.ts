@@ -245,6 +245,78 @@ export function capPatch(patch: string, max = GIT_PATCH_MAX_BYTES): { patch: str
   return { patch: newline > 0 ? cut.slice(0, newline) : cut, truncated: true };
 }
 
+/** Runs `git <args>` in the workspace. Hosts inject their own spawn so this module stays free of Node APIs. */
+export type GitRunner = (args: string[]) => Promise<{ code: number; stdout: string }>;
+
+/** Untracked files get a synthetic patch; past this many only the name is listed. */
+const UNTRACKED_PATCH_FILES = 50;
+const UNTRACKED_LIST_FILES = 200;
+
+/** Where this branch forked: merge-base with the base branch, else HEAD, else the empty tree. */
+export async function gitDiffBase(git: GitRunner, baseBranch?: string | null): Promise<string> {
+  const head = await git(["rev-parse", "--verify", "--quiet", "HEAD"]);
+  if (head.code !== 0) return GIT_EMPTY_TREE;
+  if (baseBranch) {
+    const base = await git(["merge-base", baseBranch, "HEAD"]);
+    if (base.code === 0 && base.stdout.trim()) return base.stdout.trim();
+  }
+  return "HEAD";
+}
+
+async function untrackedChanges(git: GitRunner): Promise<{ files: Array<{ path: string; added: number; binary?: boolean }>; patch: string }> {
+  const listed = await git(["ls-files", "--others", "--exclude-standard"]);
+  const paths = listed.stdout
+    .split("\n")
+    .map((item) => item.trim())
+    .filter((item) => item && !item.startsWith(".neo/"))
+    .slice(0, UNTRACKED_LIST_FILES);
+  const files: Array<{ path: string; added: number; binary?: boolean }> = [];
+  const patches: string[] = [];
+  for (const [index, file] of paths.entries()) {
+    if (index >= UNTRACKED_PATCH_FILES) {
+      files.push({ path: file, added: 0 });
+      continue;
+    }
+    const entry = [...parseNumstat((await git(["diff", "--no-index", "--numstat", "--", "/dev/null", file])).stdout).values()][0];
+    files.push({ path: file, added: entry?.added ?? 0, ...(entry?.binary ? { binary: true } : {}) });
+    const body = await git(["diff", "--no-index", "--", "/dev/null", file]);
+    if (body.stdout.trim()) patches.push(body.stdout.replace(/\n$/, ""));
+  }
+  return { files, patch: patches.join("\n") };
+}
+
+/**
+ * Everything changed from `base` to the working tree: committed, staged, unstaged, and untracked.
+ * Stat, patch, and file list share one base.
+ */
+export async function collectWorkspaceDiff(
+  git: GitRunner,
+  base: string,
+): Promise<{ stat: string; patch: string; files: GitFileChange[]; truncated: boolean }> {
+  // One at a time: a plain `git diff` may refresh the index and parallel runs then race on index.lock.
+  const diff = (...args: string[]) => git(["--no-optional-locks", "diff", "-M", ...args, base]);
+  const stat = await diff("--stat");
+  const patch = await diff();
+  const numstat = await diff("--numstat");
+  const names = await diff("--name-status");
+  const untracked = await untrackedChanges(git);
+  const files = mergeFileChanges(parseNameStatus(names.stdout), parseNumstat(numstat.stdout), untracked.files);
+  const capped = capPatch([patch.stdout.replace(/\n$/, ""), untracked.patch].filter(Boolean).join("\n"));
+  const untrackedLine = untracked.files.length > 0 ? `${untracked.files.length} untracked file(s)` : "";
+  return {
+    stat: [stat.stdout.trim(), untrackedLine].filter(Boolean).join("\n"),
+    patch: capped.patch,
+    files,
+    truncated: capped.truncated,
+  };
+}
+
+/** `git log` over `range` (or `--since` filters), newest first, capped. */
+export async function collectCommits(git: GitRunner, range: string[]): Promise<RunCommitRef[]> {
+  const log = await git(["log", "--no-merges", `-n${GIT_COMMITS_MAX}`, `--format=${GIT_LOG_FORMAT}`, "--numstat", ...range]);
+  return log.code === 0 ? parseGitLog(log.stdout) : [];
+}
+
 /** Commits grouped under an Asia/Shanghai calendar day label such as `9月23日`, newest day first. */
 export function groupCommitsByDay(commits: RunCommitRef[]): Array<{ day: string; commits: RunCommitRef[] }> {
   const groups: Array<{ day: string; commits: RunCommitRef[] }> = [];
