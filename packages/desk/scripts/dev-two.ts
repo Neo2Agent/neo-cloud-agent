@@ -14,8 +14,10 @@ function launchDesk(opts: {
   width: number;
   apiBase: string;
   uiUrl: string;
+  cdpPort?: number;
 }): ChildProcess {
-  return spawnPnpm(["exec", "electron", `--user-data-dir=${opts.userData}`, "app/main.cjs"], {
+  const cdp = opts.cdpPort ? [`--remote-debugging-port=${opts.cdpPort}`] : [];
+  return spawnPnpm(["exec", "electron", `--user-data-dir=${opts.userData}`, ...cdp, "app/main.cjs"], {
     cwd: deskRoot,
     stdio: "inherit",
     env: {
@@ -46,6 +48,7 @@ async function main(): Promise<void> {
   });
   await waitForHttp(uiUrl);
   const width = 960;
+  const cdpBase = Number(process.env.NEO_DESK_CDP_PORT || 0);
   const left = launchDesk({
     title: "Neo Desk · A",
     userData: "/tmp/neo-desk-a",
@@ -53,6 +56,7 @@ async function main(): Promise<void> {
     width,
     apiBase,
     uiUrl,
+    cdpPort: cdpBase || undefined,
   });
   const right = launchDesk({
     title: "Neo Desk · B",
@@ -61,6 +65,7 @@ async function main(): Promise<void> {
     width,
     apiBase,
     uiUrl,
+    cdpPort: cdpBase ? cdpBase + 1 : undefined,
   });
   const stop = () => {
     killSpawned(left);
