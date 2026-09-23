@@ -250,20 +250,17 @@ function ToolCard({ tool, live }: { tool: TranscriptTool; live: boolean }) {
 
 function MessageTime({
   message,
-  live = false,
   withDuration = true,
   className = "",
 }: {
   message: TranscriptMessage;
-  live?: boolean;
   withDuration?: boolean;
   className?: string;
 }) {
-  const duration =
-    message.role === "assistant" && !live && withDuration ? formatDuration(message.createdAt, message.updatedAt) : "";
+  const duration = message.role === "assistant" && withDuration ? formatDuration(message.createdAt, message.updatedAt) : "";
   return (
     <time className={`bubble-time ${className}`.trim()} dateTime={message.updatedAt || message.createdAt}>
-      {formatMessageTime(message.createdAt, message.updatedAt, live)}
+      {formatMessageTime(message.createdAt, message.updatedAt)}
       {duration ? ` · ${duration}` : ""}
     </time>
   );
@@ -356,7 +353,10 @@ function WorkFold({ message, live }: { message: TranscriptMessage; live: boolean
   return (
     <div className={`work-fold${open ? " is-open" : ""}`}>
       <button type="button" className="work-sum" aria-expanded={open} onClick={toggle}>
-        <span>{label}</span>
+        <span className="work-sum-label">
+          {label}
+          {live ? <IconSpinner size={12} /> : null}
+        </span>
         <WorkChevron />
       </button>
       <div className="work-fold-body" aria-hidden={!open}>
@@ -560,25 +560,19 @@ export function Transcript({
                     data-highlight={highlightId === message.id ? "true" : undefined}
                   >
                     <MarkdownBody text={turn.answer} className="body" streaming={Boolean(message.streaming)} />
-                    <MessageTime message={message} live={live} withDuration={!hasFold} />
+                    {live ? null : <MessageTime message={message} withDuration={!hasFold} />}
                   </article>
-                ) : (
-                  <MessageTime message={message} live={live} withDuration={!hasFold} className="assistant-time" />
+                ) : live ? null : (
+                  <MessageTime message={message} withDuration={!hasFold} className="assistant-time" />
                 )}
               </Fragment>
             );
           })
         )}
         {shouldShowThinking(busy, messages) && !empty && !loading && !currentTurnHasWorkFold(messages) ? (
-          <div className="turn-progress" id="turn-progress">
-            <div className="think-line">
-              <span className="think-dots" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-              </span>
-              <span>{activity || "正在思考…"}</span>
-            </div>
+          <div className="turn-progress" id="turn-progress" role="status">
+            <span>{activity || "正在思考…"}</span>
+            <IconSpinner size={12} />
           </div>
         ) : null}
       </div>

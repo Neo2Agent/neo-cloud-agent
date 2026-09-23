@@ -1319,6 +1319,13 @@ h1 {
   background: #f3f3f4;
 }
 
+.work-sum-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .work-chevron {
   flex: none;
   display: block;
@@ -1858,55 +1865,16 @@ button.tool-file-more:hover {
 }
 
 .turn-progress {
-  align-self: flex-start;
-  max-width: 100%;
-  border-radius: 0;
-  padding: 4px 4px 8px;
-  background: transparent;
-  border: 0;
-}
-
-.think-line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.think-dots {
   display: inline-flex;
+  align-self: flex-start;
   align-items: center;
-  gap: 4px;
-}
-
-.think-dots i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--run);
-  animation: think-bounce 1.2s ease-in-out infinite;
-}
-
-.think-dots i:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.think-dots i:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes think-bounce {
-  0%,
-  80%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.35;
-  }
-  40% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
+  gap: 6px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 28px;
 }
 
 .pulse-dot {
