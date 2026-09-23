@@ -78,6 +78,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /@container transcript\s*\(max-height:\s*560px\)/);
 
   assert.match(cssText, /\.composer\{[^}]*flex-shrink:\s*0/);
+  assert.match(cssText, /\.composer-box\{/);
+  assert.match(cssText, /\.composer-context\{/);
   assert.match(cssText, /\.context-usage-pop/);
   assert.match(cssText, /\.context-usage-bar/);
   const appText = readBuiltAsset(".js");
@@ -123,6 +125,10 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /turn-progress/);
   assert.match(appText, /正在思考/);
   assert.match(appText, /stop-icon/);
+  assert.match(appText, /composer-attach/);
+  assert.match(appText, /展开全部/);
+  assert.doesNotMatch(appText, /"agent-mode"/);
+  assert.doesNotMatch(appText, /workspace-files-save/);
   assert.match(appText, /停止失败/);
   assert.match(appText, /context-usage/);
   assert.match(appText, /上下文用量/);
@@ -135,7 +141,9 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /云端工具/);
   assert.match(appText, /已压缩对话/);
   assert.match(cssText, /pulse-dot/);
-  assert.match(cssText, /think-bounce/);
+  assert.match(cssText, /\.turn-progress\{[^}]*display:\s*inline-flex/);
+  assert.match(cssText, /\.work-sum-label/);
+  assert.doesNotMatch(cssText, /think-bounce/);
   assert.match(cssText, /\.run-time/);
   assert.match(cssText, /\.bubble-time/);
   assert.match(appText, /创建 /);

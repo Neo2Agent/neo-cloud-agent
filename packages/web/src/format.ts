@@ -203,16 +203,20 @@ export function toolChromeKind(name: string): ToolChromeKind {
   return "default";
 }
 
-export function fileCardPreview(tool: TranscriptTool): { path: string; lines: DiffLine[]; hidden: number } | null {
+export function fileCardPreview(
+  tool: TranscriptTool,
+  options: { full?: boolean } = {},
+): { path: string; lines: DiffLine[]; hidden: number } | null {
   const args = recordArgs(tool.args);
   const path = typeof args.path === "string" ? args.path : "";
   const detailsDiff = typeof tool.details?.diff === "string" ? tool.details.diff : typeof tool.details?.patch === "string" ? tool.details.patch : "";
   if (!detailsDiff && tool.name === "write" && typeof args.content === "string") {
     const all = args.content.split("\n");
+    const shown = options.full ? all : all.slice(0, WRITE_PREVIEW_LINES);
     return {
       path,
-      lines: all.slice(0, WRITE_PREVIEW_LINES).map((text) => ({ type: "add" as const, text })),
-      hidden: Math.max(0, all.length - WRITE_PREVIEW_LINES),
+      lines: shown.map((text) => ({ type: "add" as const, text })),
+      hidden: all.length - shown.length,
     };
   }
   const diff = fileToolDiff(tool);

@@ -1,24 +1,24 @@
+import { isImeComposing, type ImeKeyState } from "./viewport";
+
 export type ShortcutAction =
   | "new-chat"
   | "prev-run"
   | "next-run"
-  | "mode-menu"
   | "cycle-model"
-  | "cycle-mode"
   | "queue"
   | "stop"
   | "close";
 
 export function shortcutAction(
-  event: { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean },
+  event: { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean } & ImeKeyState,
   platform: "darwin" | "other" = "other",
 ): ShortcutAction | null {
+  if (isImeComposing(event)) {
+    return null;
+  }
   const mod = platform === "darwin" ? event.metaKey : event.ctrlKey;
   if (event.key === "Enter" && event.ctrlKey && !event.shiftKey) {
     return "queue";
-  }
-  if (event.key === "Tab" && event.shiftKey && !mod) {
-    return "cycle-mode";
   }
   if (!mod) {
     return null;
@@ -26,7 +26,6 @@ export function shortcutAction(
   if (event.key === "t" || event.key === "T") return "new-chat";
   if (event.key === "[") return "prev-run";
   if (event.key === "]") return "next-run";
-  if (event.key === ".") return "mode-menu";
   if (event.key === "/" && !event.altKey) return "cycle-model";
   if (event.key === "Backspace" && event.shiftKey) return "stop";
   if (event.key === "w" || event.key === "W") return "close";

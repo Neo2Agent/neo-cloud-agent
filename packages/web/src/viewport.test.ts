@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyVisualViewport, closeMobileSidebar, isNarrowViewport, shouldQueueOnCtrlEnter, shouldSendOnEnter } from "./viewport.js";
+import {
+  applyVisualViewport,
+  closeMobileSidebar,
+  isImeComposing,
+  isNarrowViewport,
+  shouldQueueOnCtrlEnter,
+  shouldSendOnEnter,
+} from "./viewport.js";
 
 test("shouldSendOnEnter is off on a phone-sized viewport", () => {
   assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: false }), true);
@@ -9,6 +16,16 @@ test("shouldSendOnEnter is off on a phone-sized viewport", () => {
   assert.equal(shouldSendOnEnter({ key: "a", shiftKey: false }, { narrow: false }), false);
   assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: false, ctrlKey: true }), false);
   assert.equal(shouldQueueOnCtrlEnter({ key: "Enter", ctrlKey: true }), true);
+});
+
+test("Enter that confirms an IME candidate never sends or queues", () => {
+  assert.equal(isImeComposing({ isComposing: true }), true);
+  assert.equal(isImeComposing({ keyCode: 229 }), true);
+  assert.equal(isImeComposing({ isComposing: false, keyCode: 13 }), false);
+  assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: false, isComposing: true }), false);
+  assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: false, keyCode: 229 }), false);
+  assert.equal(shouldSendOnEnter({ key: "Enter", shiftKey: false, isComposing: false, keyCode: 13 }), true);
+  assert.equal(shouldQueueOnCtrlEnter({ key: "Enter", ctrlKey: true, isComposing: true }), false);
 });
 
 test("isNarrowViewport follows the 860px chat breakpoint", () => {

@@ -55,7 +55,7 @@
 
 ## 2. 新建对话（Create Run）
 
-**用户可见行为。** 侧栏「新对话」`#new-chat`，主区标题「和云端 Agent 说话」，`#prompt` 输入，`#send` 发送。可选 Agent/Ask、Flash/Pro、专家、执行目标（云端 / Desk）。可粘贴最多 4 张图片。
+**用户可见行为。** 侧栏「新对话」`#new-chat`，主区标题「和云端 Agent 说话」，`#prompt` 输入，`#send` 发送。桌面布局框外上方是执行目标（云端 / Desk）和专家，框内是 `+`（选图片）、模型、上下文用量、麦克风和圆形发送 / 停止。可粘贴或选最多 4 张图片。输入法组词时按回车只上屏，不发送。
 
 **快乐路径。** 登录后输入非空 prompt → `POST /v1/runs`（`source: "web"`，`repoUrls` 来自设置里的仓库，缺省可 `[]`）→ `201` + Run id → hash 变成 `#/runs/<id>`，`#transcript` 出现用户消息，状态 `#status` 变为进行中。
 
@@ -68,7 +68,6 @@
 | 无 `repoUrls` 且无 `envId` | `400` `{ error: "prompt and repoUrls are required" }`（空数组合法） |
 | 未登录 | `401` |
 | 图片 `data` 以 `obj:` 开头（内部指针） | `400` `invalid image payload` |
-| Ask 模式 | 前端给正文加上「只阅读和回答…」前缀，仍走同一接口 |
 | 选了 Desk 但没选机器 | 不发请求，transcript 出现「先选一台电脑…」 |
 | 发起该对话的 Desk 离线 | composer 锁定，提示「发起这条对话的 Desk 离线…」 |
 | 额度用尽 / 并发配额 | `429` |
