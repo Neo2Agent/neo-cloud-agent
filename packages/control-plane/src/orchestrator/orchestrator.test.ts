@@ -245,19 +245,13 @@ test("maybeDeliverHandoffDraft skips when token, commits, or GitHub are missing"
 
 test("maybeDeliverHandoffDraft skips desk runs", async () => {
   await withHandoffGithub(async (counts) => {
-    const registered = newDesk("handoff-desk");
-    const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
-    const run = await createRun({
-      prompt: "desk handoff",
-      repoUrls: [],
-      source: "desk",
-      start: "inline",
-      deskWorkspaceId: bound.id,
-      target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
-    });
+    const run = await createRun({ prompt: "desk handoff", repoUrls: ["fixtures/toy-repo"] });
     const live = getRun(run.id);
     assert.ok(live);
     live.repoUrls = ["https://github.com/acme/app.git"];
+    writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "DESK.md"), "ok\n");
+    await commitRun(run.id, { message: "docs: desk" });
+    live.executionTarget = { loop: "desk", tools: "desk", deskId: "desk_handoff_skip" };
     await maybeDeliverHandoffDraft(run.id);
     assert.equal(counts.opened, 0);
     assert.equal(counts.pushed, 0);
