@@ -105,6 +105,18 @@ function checkPassed(check: { status: string; conclusion: string | null }): bool
   return check.status === "completed" && (check.conclusion === "success" || check.conclusion === "neutral" || check.conclusion === "skipped");
 }
 
+function checkStatusLabel(check: { status: string; conclusion: string | null }): string {
+  if (check.status !== "completed") {
+    if (check.status === "in_progress" || check.status === "queued" || check.status === "pending") return "进行中";
+    return check.status;
+  }
+  if (check.conclusion === "success") return "通过";
+  if (check.conclusion === "failure") return "失败";
+  if (check.conclusion === "neutral" || check.conclusion === "skipped") return "跳过";
+  if (check.conclusion === "cancelled") return "已取消";
+  return check.conclusion || "完成";
+}
+
 function PrHeader({
   pr,
   branch,
@@ -476,10 +488,14 @@ function ChecksSummary({
               key={`${check.name}-${check.url}`}
               className={`is-${check.status !== "completed" ? "pending" : checkPassed(check) ? "pass" : "fail"}`}
             >
-              <a href={check.url || undefined} target="_blank" rel="noreferrer">
-                {check.name}
-              </a>
-              <span>{check.status !== "completed" ? check.status : check.conclusion}</span>
+              {check.url ? (
+                <a className="git-check-name" href={check.url} target="_blank" rel="noreferrer">
+                  {check.name}
+                </a>
+              ) : (
+                <span className="git-check-name">{check.name}</span>
+              )}
+              <span className="git-check-status">{checkStatusLabel(check)}</span>
             </li>
           ))}
         </ul>
@@ -532,7 +548,7 @@ function ReviewView({
       <section className="git-review-agent">
         <div>
           <h4>查找问题</h4>
-          <p className="hint">只审不改，结果会出现在对话里。</p>
+          <p className="hint">点一下会在当前对话排队一条只审不改的跟进。</p>
         </div>
         <button type="button" className="git-btn is-ghost" disabled={reviewState === "sending"} onClick={onReview}>
           {reviewState === "sending" ? "发送中…" : reviewState === "sent" ? "再审一次" : "查找问题"}

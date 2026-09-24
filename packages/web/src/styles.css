@@ -2558,6 +2558,16 @@ button.send:disabled {
   background: transparent;
 }
 
+.git-panel a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.git-panel a[href]:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .git-panel .git-btn {
   display: inline-flex;
   align-items: center;
@@ -2757,17 +2767,17 @@ a.git-branch:hover code {
 }
 
 .git-checks .is-pass,
-.git-check-list .is-pass span {
+.git-check-list .is-pass .git-check-status {
   color: #1a7f37;
 }
 
 .git-checks .is-fail,
-.git-check-list .is-fail span {
+.git-check-list .is-fail .git-check-status {
   color: #b42318;
 }
 
 .git-checks .is-pending,
-.git-check-list .is-pending span {
+.git-check-list .is-pending .git-check-status {
   color: #9a6700;
 }
 
@@ -3350,9 +3360,29 @@ a.git-branch:hover code {
 
 .git-check-list li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 0;
+  min-height: 28px;
+  padding: 2px 0;
+  font-size: 13px;
+}
+
+.git-check-name {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.git-check-name:hover {
+  color: var(--text);
+}
+
+.git-check-status {
+  flex: none;
+  color: var(--muted);
   font-size: 12px;
 }
 
