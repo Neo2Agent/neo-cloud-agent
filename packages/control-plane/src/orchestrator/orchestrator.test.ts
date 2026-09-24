@@ -45,6 +45,7 @@ const {
   mintRunGitToken,
   projectRunCard,
   subscribeRun,
+  maybeDeliverHandoffDraft,
   openRunDraftPr,
   recoverLiveWorkers,
   reloadPersistedState,
@@ -61,6 +62,7 @@ const { bindDeskWorkspace, createDesk, deleteDesk, openDeskInbox, takeDeskAssign
   "../desks/store.js"
 );
 const { eventsForRun, listEvents } = await import("../events/bus.js");
+const { setDeliverHooksForTest } = await import("../scm/deliver.js");
 const { buildTranscriptSnapshot, transcriptHasUnsettledWork } = await import("@neo-cloud-agent/contracts");
 const { resolveEventImageData } = await import("../store/event-images.js");
 const { isObjectImageRef } = await import("../store/run-record.js");
@@ -130,6 +132,163 @@ test("commit and local draft PR stay on the control plane", async () => {
   const token = mintRunGitToken(run.id, { scope: "push", repoUrl: "fixtures/toy-repo" });
   assert.match(token.token, /^neo\.git\./);
   assert.doesNotMatch(token.token, /GITHUB_TOKEN|ghp-/);
+});
+
+async function withHandoffGithub<T>(fn: (counts: { opened: number; pushed: number }) => Promise<T>): Promise<T> {
+  const previous = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "tok";
+  const counts = { opened: 0, pushed: 0 };
+  setDeliverHooksForTest({
+    push: async (_cwd, _branch, remoteUrl) => {
+      counts.pushed += 1;
+      return { pushed: true, remote: remoteUrl ?? "https://github.com/acme/app.git" };
+    },
+    githubPulls: async (input) => {
+      counts.opened += 1;
+      return { url: `https://github.com/${input.owner}/${input.repo}/pull/7`, number: 7 };
+    },
+  });
+  try {
+    return await fn(counts);
+  } finally {
+    setDeliverHooksForTest(null);
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
+}
+
+test("maybeDeliverHandoffDraft opens a GitHub draft when the branch has commits", async () => {
+  await withHandoffGithub(async (counts) => {
+    const run = await createRun({ prompt: "ship a draft", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(run.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "SHIP.md"), "ok\n");
+    await commitRun(run.id, { message: "docs: ship" });
+    await maybeDeliverHandoffDraft(run.id);
+    assert.equal(counts.opened, 1);
+    assert.equal(counts.pushed, 1);
+    const pr = getRun(run.id)?.pullRequests[0];
+    assert.equal(pr?.url, "https://github.com/acme/app/pull/7");
+    assert.equal(pr?.draft, true);
+    assert.equal(pr?.number, 7);
+    assert.ok(listEvents(run.id).some((item) => item.kind === "scm.pr_opened"));
+  });
+});
+
+test("maybeDeliverHandoffDraft only pushes when a GitHub PR already exists", async () => {
+  await withHandoffGithub(async (counts) => {
+    const run = await createRun({ prompt: "follow up commits", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(run.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    live.pullRequests = [
+      {
+        repoUrl: "https://github.com/acme/app",
+        branch: live.branchName ?? "HEAD",
+        url: "https://github.com/acme/app/pull/12",
+        draft: true,
+        number: 12,
+        title: "Draft",
+      },
+    ];
+    writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "MORE.md"), "ok\n");
+    await commitRun(run.id, { message: "docs: more" });
+    await maybeDeliverHandoffDraft(run.id);
+    assert.equal(counts.opened, 0);
+    assert.equal(counts.pushed, 1);
+    assert.equal(getRun(run.id)?.pullRequests[0]?.number, 12);
+    assert.ok(listEvents(run.id).some((item) => item.kind === "scm.push_succeeded"));
+  });
+});
+
+test("maybeDeliverHandoffDraft skips when token, commits, or GitHub are missing", async () => {
+  const previous = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  setDeliverHooksForTest({
+    push: async () => {
+      throw new Error("should not push");
+    },
+    githubPulls: async () => {
+      throw new Error("should not open");
+    },
+  });
+  try {
+    const noToken = await createRun({ prompt: "no token", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(noToken.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    writeFileSync(path.join(getBootstrap(noToken.id).workspaceDir, "A.md"), "a\n");
+    await commitRun(noToken.id, { message: "docs: a" });
+    await maybeDeliverHandoffDraft(noToken.id);
+    assert.equal(getRun(noToken.id)?.pullRequests.length, 0);
+
+    process.env.GITHUB_TOKEN = "tok";
+    const noCommits = await createRun({ prompt: "no extra commits", repoUrls: ["fixtures/toy-repo"] });
+    const bare = getRun(noCommits.id);
+    assert.ok(bare);
+    bare.repoUrls = ["https://github.com/acme/app.git"];
+    await maybeDeliverHandoffDraft(noCommits.id);
+    assert.equal(getRun(noCommits.id)?.pullRequests.length, 0);
+
+    const localOnly = await createRun({ prompt: "local fixture", repoUrls: ["fixtures/toy-repo"] });
+    writeFileSync(path.join(getBootstrap(localOnly.id).workspaceDir, "B.md"), "b\n");
+    await commitRun(localOnly.id, { message: "docs: b" });
+    await maybeDeliverHandoffDraft(localOnly.id);
+    assert.equal(getRun(localOnly.id)?.pullRequests.length, 0);
+  } finally {
+    setDeliverHooksForTest(null);
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
+});
+
+test("maybeDeliverHandoffDraft skips desk runs", async () => {
+  await withHandoffGithub(async (counts) => {
+    const registered = newDesk("handoff-desk");
+    const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+    const run = await createRun({
+      prompt: "desk handoff",
+      repoUrls: [],
+      source: "desk",
+      start: "inline",
+      deskWorkspaceId: bound.id,
+      target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+    });
+    const live = getRun(run.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    await maybeDeliverHandoffDraft(run.id);
+    assert.equal(counts.opened, 0);
+    assert.equal(counts.pushed, 0);
+    assert.equal(getRun(run.id)?.pullRequests.length, 0);
+  });
+});
+
+test("agent.end idle joins the handoff draft", async () => {
+  await withHandoffGithub(async (counts) => {
+    const run = await createRun({ prompt: "idle handoff", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(run.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "IDLE.md"), "ok\n");
+    await commitRun(run.id, { message: "docs: idle" });
+    ingestEvents(run.id, [
+      {
+        id: "handoff-end-1",
+        runId: run.id,
+        createdAt: new Date().toISOString(),
+        category: "agent_run",
+        level: "info",
+        kind: "agent.end",
+        title: "done",
+      },
+    ]);
+    await maybeDeliverHandoffDraft(run.id);
+    assert.equal(getRun(run.id)?.status, "IDLE");
+    assert.equal(counts.opened, 1);
+    assert.equal(getRun(run.id)?.pullRequests[0]?.number, 7);
+  });
 });
 
 test("createRun fails when environment install exits non-zero", async () => {

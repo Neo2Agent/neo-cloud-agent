@@ -56,6 +56,7 @@ import {
   parseRunStart,
   parseSubscriptionEvents,
   redactText,
+  runDisplayTitle,
   SUBSCRIPTION_COALESCE_MS,
   subscriptionKindForEvent,
   formatProjectMemory,
@@ -101,7 +102,9 @@ import {
   diffRunWorkspace,
   issueRunGitToken,
   openRunPullRequest,
+  parseGithubRepo,
   prepareRunRepos,
+  pushWorkspace,
   resolveScmPushToken,
 } from "../scm/scm.js";
 import {
@@ -189,6 +192,7 @@ const deskWorkspaces = new Map<string, string>();
 /** Latest git state a Desk reported for a run whose files are on that laptop. Memory only; the Desk re-reports. */
 const deskGitSnapshots = new Map<string, DeskGitSnapshot & { capturedAt: string }>();
 const prRefreshedAt = new Map<string, number>();
+const handoffDraftInFlight = new Map<string, Promise<void>>();
 const PR_REFRESH_MS = 60_000;
 const DESK_SNAPSHOT_STALE_MS = 30_000;
 const DESK_SNAPSHOT_MAX_FILES = 500;
@@ -2089,12 +2093,14 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
         publish(event(runId, "run.idle", "Agent turn finished"));
         flushRun(runId);
         requestDeskGitSnapshot(runId);
+        void maybeDeliverHandoffDraft(runId);
         void import("../notify/dispatch.js")
           .then(({ notifyRunFinished }) => notifyRunFinished(run, "idle"))
           .catch(() => undefined);
       } else if (run?.status === "IDLE") {
         // A turn that ends after Stop already went idle: transcripts keep it open until run.idle.
         publish(event(runId, "run.idle", "Late turn events settled"));
+        void maybeDeliverHandoffDraft(runId);
       }
     }
     if (item.kind === "agent.start") {
@@ -2662,6 +2668,65 @@ export async function commitRun(runId: string, input: CreateCommitRequest) {
     publish(event(runId, "scm.commit_failed", "Commit failed", { level: "error", detail: message }));
     flushRun(runId);
     throw error;
+  }
+}
+
+/**
+ * Cursor-style handoff: when a cloud turn goes idle, push the branch and open a
+ * draft PR if the workspace has commits and GitHub is configured. Never invents
+ * a local:// PR. A GitHub PR already on this branch only gets a follow-up push.
+ */
+export function maybeDeliverHandoffDraft(runId: string): Promise<void> {
+  const existing = handoffDraftInFlight.get(runId);
+  if (existing) return existing;
+  const work = deliverHandoffDraft(runId).finally(() => {
+    handoffDraftInFlight.delete(runId);
+  });
+  handoffDraftInFlight.set(runId, work);
+  return work;
+}
+
+async function deliverHandoffDraft(runId: string): Promise<void> {
+  const run = runs.get(runId);
+  if (!run || runGitContext(run) !== "cloud") return;
+  const cwd = readableGitDir(run);
+  if (!cwd) return;
+  const repoUrl = run.repoUrls[0] ?? "";
+  if (!parseGithubRepo(repoUrl)) return;
+  const token = await resolveScmPushToken().catch(() => null);
+  if (!token) return;
+  let commits;
+  try {
+    commits = await commitsRunWorkspace(cwd, run);
+  } catch {
+    return;
+  }
+  if (commits.length === 0) return;
+  const branch = run.branchName;
+  const existing = run.pullRequests.find(
+    (item) => githubPullSlug(item) && (!branch || item.branch === branch || !item.branch),
+  );
+  try {
+    if (existing) {
+      const pushed = await pushWorkspace(cwd, branch ?? existing.branch ?? "HEAD", repoUrl);
+      if (pushed.pushed) {
+        publish(
+          event(runId, "scm.push_succeeded", `Pushed ${branch ?? existing.branch}`, {
+            data: { branch: branch ?? existing.branch, repoUrl },
+          }),
+        );
+        flushRun(runId);
+      }
+      return;
+    }
+    const title = runDisplayTitle(run).split("\n")[0]?.slice(0, 72) || "Agent changes";
+    await openRunDraftPr(runId, { title, remoteUrl: repoUrl });
+  } catch (error) {
+    if (existing) {
+      const message = error instanceof Error ? error.message : "handoff push failed";
+      publish(event(runId, "scm.pr_failed", "Failed to push follow-up commits", { level: "error", detail: message }));
+      flushRun(runId);
+    }
   }
 }
 

@@ -60,4 +60,4 @@ export async function commitsRunWorkspace(cwd: string, run: Run) {
   return workspaceCommits(cwd, run.baseBranch);
 }
 
-export { commitInfo };
+export { commitInfo, pushWorkspace, setDeliverHooksForTest };

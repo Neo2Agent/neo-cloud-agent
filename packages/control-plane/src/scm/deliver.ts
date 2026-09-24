@@ -98,7 +98,28 @@ esac
   }
 }
 
+export type PushWorkspaceFn = (
+  cwd: string,
+  branch: string,
+  remoteUrl?: string,
+) => Promise<{ pushed: boolean; remote: string | null }>;
+
+type DeliverHooks = {
+  githubPulls?: GithubPullsClient;
+  push?: PushWorkspaceFn;
+};
+
+let deliverHooks: DeliverHooks = {};
+
+/** Test-only: stub GitHub pulls / push so handoff does not hit the network. */
+export function setDeliverHooksForTest(hooks: DeliverHooks | null): void {
+  deliverHooks = hooks ?? {};
+}
+
 export async function pushWorkspace(cwd: string, branch: string, remoteUrl?: string): Promise<{ pushed: boolean; remote: string | null }> {
+  if (deliverHooks.push) {
+    return deliverHooks.push(cwd, branch, remoteUrl);
+  }
   const remote = await ensureOrigin(cwd, remoteUrl);
   if (!remote) {
     return { pushed: false, remote: null };
@@ -177,7 +198,7 @@ export async function openDraftPullRequest(
   const github = parseGithubRepo(remote);
   const token = await resolveScmPushToken();
   if (github && token) {
-    const opened = await (input.githubPulls ?? defaultGithubPulls)({
+    const opened = await (input.githubPulls ?? deliverHooks.githubPulls ?? defaultGithubPulls)({
       owner: github.owner,
       repo: github.repo,
       title: input.title,
