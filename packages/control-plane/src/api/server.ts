@@ -451,6 +451,42 @@ function redirect(res: ServerResponse, location: string): void {
   res.end();
 }
 
+/** GitHub's top-level redirect often drops neo_session; signed state is enough to persist. */
+async function handleGithubOAuthCallback(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const origin = resolvePublicOrigin(req);
+  const oauthError = url.searchParams.get("error");
+  if (oauthError) {
+    redirect(res, settingsPageUrl(origin, oauthError));
+    return;
+  }
+  const code = url.searchParams.get("code")?.trim() ?? "";
+  const state = url.searchParams.get("state")?.trim() ?? "";
+  if (!code || !state) {
+    redirect(res, settingsPageUrl(origin, "missing_code"));
+    return;
+  }
+  let userId: string;
+  try {
+    userId = verifyGithubOAuthState(state);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid_state";
+    redirect(res, settingsPageUrl(origin, message));
+    return;
+  }
+  const actor = await resolveActor(req, url);
+  if (actor?.kind === "user" && actor.userId !== userId) {
+    redirect(res, settingsPageUrl(origin, "state_user_mismatch"));
+    return;
+  }
+  try {
+    await completeGithubOAuthCallback({ code, state, userId, origin });
+    redirect(res, settingsPageUrl(origin, "ok"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "oauth_failed";
+    redirect(res, settingsPageUrl(origin, message));
+  }
+}
+
 function notFound(res: ServerResponse): void {
   send(res, 404, { error: "not_found" });
 }
@@ -708,6 +744,11 @@ export function createApiServer() {
         return;
       }
 
+      if (method === "GET" && path === "/v1/integrations/github/callback") {
+        await handleGithubOAuthCallback(req, res, url);
+        return;
+      }
+
       if (path.startsWith("/internal/")) {
         const runId = /^\/internal\/runs\/([^/]+)/.exec(path)?.[1];
         if (runId && !verifyWorkerJwt(req, runId)) {
@@ -957,40 +998,6 @@ export function createApiServer() {
             redirect(res, createGithubAuthorizeUrl(actor.userId, resolvePublicOrigin(req)));
           } catch (error) {
             send(res, 400, { error: error instanceof Error ? error.message : "authorize_failed" });
-          }
-          return;
-        }
-        if (method === "GET" && path === "/v1/integrations/github/callback") {
-          const origin = resolvePublicOrigin(req);
-          const oauthError = url.searchParams.get("error");
-          if (oauthError) {
-            redirect(res, settingsPageUrl(origin, oauthError));
-            return;
-          }
-          const code = url.searchParams.get("code")?.trim() ?? "";
-          const state = url.searchParams.get("state")?.trim() ?? "";
-          if (!code || !state) {
-            redirect(res, settingsPageUrl(origin, "missing_code"));
-            return;
-          }
-          let userId: string;
-          try {
-            userId = verifyGithubOAuthState(state);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "invalid_state";
-            redirect(res, settingsPageUrl(origin, message));
-            return;
-          }
-          if (actor.kind === "user" && actor.userId !== userId) {
-            redirect(res, settingsPageUrl(origin, "state_user_mismatch"));
-            return;
-          }
-          try {
-            await completeGithubOAuthCallback({ code, state, userId, origin });
-            redirect(res, settingsPageUrl(origin, "ok"));
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "oauth_failed";
-            redirect(res, settingsPageUrl(origin, message));
           }
           return;
         }
