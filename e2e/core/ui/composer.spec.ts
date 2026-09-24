@@ -126,7 +126,7 @@ test.describe("composer / run boundaries", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await loginAs(page);
     await page.locator(".buddy-plus").click();
-    await page.getByRole("button", { name: "仓库" }).click();
+    await page.getByRole("dialog", { name: "添加" }).getByRole("button", { name: "仓库" }).click();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
   });
 
