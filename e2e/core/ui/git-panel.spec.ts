@@ -122,15 +122,17 @@ test.describe("git panel", () => {
     await page.getByRole("button", { name: "打开侧栏" }).first().click();
     const tabs = page.getByRole("tablist", { name: "对话侧栏" }).getByRole("tab");
     await expect(tabs).toHaveText(["终端", "文件"]);
-    await expect(page.locator("#open-pr")).toBeHidden();
+    await expect(page.locator("#open-pr")).toHaveCount(0);
   });
 
-  test("git.repo-run: header open-draft, dirty commit box, find issues", async ({ page }) => {
+  test("git.repo-run: no open-draft CTA, dirty commit box, find issues", async ({ page }) => {
     await loginAs(page);
     const runId = await createRun(page, { prompt: "改 toy-repo", repoUrls: ["fixtures/toy-repo"] });
     await seedWorkspaceDiff(runId);
     await openGitPanel(page, runId);
-    await expect(page.locator(".git-head-cta")).toHaveText("开草稿 PR");
+    await expect(page.locator(".git-pr-name")).toContainText("还没有 PR");
+    await expect(page.locator(".git-head-cta")).toHaveCount(0);
+    await expect(page.locator("#open-pr")).toHaveCount(0);
     await expect(page.locator(".git-view-pr")).toHaveCount(0);
     await expect(page.locator(".git-commit textarea")).toBeVisible();
     await expect(page.getByRole("button", { name: "提交" })).toBeVisible();

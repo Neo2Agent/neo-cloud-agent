@@ -91,7 +91,7 @@
 
 1. **Remote Control 在现网跑不起来。** Remote 要 `neo-loop`，而 `deploy.sh` 每次都会把现网 `neo-loop` 关掉（4C/4G 内存的取舍），但 Desk 上仍然能选 Remote。**未改**，放第二期：`/health` 报 `neoLoop.available=false` 时把 Remote 置灰，或加内存后开 loop。
 2. **手机浏览器打开 Web 布局是坏的。** 桌面的「折叠侧栏 = 48px 图标栏」在窄屏也生效，关掉的侧栏被排到第 2 行；窄屏检查器覆盖层的层级低于输入框；对话列表按钮随图标栏一起进了侧栏，关掉后没地方打开。**已修**，见 §6.3。
-3. **Web 普通对话也显示 Diff 和「开草稿 PR」。** 在 Git 面板那个 PR 里修（按 `runGitContext` 显示）。
+3. **Web 普通对话也显示 Diff 和「开草稿 PR」。** 在 Git 面板那个 PR 里修（按 `runGitContext` 显示）。人入口已去掉：绑仓库的对话进 IDLE 且分支有提交时，控制面 handoff 自动开草稿 PR。
 4. **Desk 回车没有输入法保护。** **已修**。
 5. 原先怀疑 `applyLiveEvents` 合并 `message.delta` 时丢 id 会导致重连重复。核对后不成立：三端都在合并前按 id 去重，而且每批都从空数组开始合并。断流重连实测（§6.1 S7b）也没有重复。
 
@@ -137,13 +137,13 @@
 
 官方文档里 Git 有两套界面，Neo Web 对齐的是第一套（cursor.com/agents 右栏，不是桌面 Agents Window）：
 
-- **cursor.com/agents（Web / iOS）**：右栏 Git。同一套头栏：标题 / `查看 PR` 跳绑定仓库；`head → base` 跳 compare；**一个**主按钮按 GitHub 状态切换（文案跟 Neo 其他面板一样用中文，控件用文件栏那套 24px / 6px 圆角）：
-  - 无 PR（cloud）：`开草稿 PR` → `POST /v1/runs/:id/pull-request`
+- **cursor.com/agents（Web / iOS）**：右栏 Git。同一套头栏：标题 / `查看 PR` 跳绑定仓库；`head → base` 跳 compare；**一个**主按钮按 GitHub 状态切换（文案跟 Neo 其他面板一样用中文，控件用文件栏那套 24px / 6px 圆角）。人**不**点「开草稿 PR」：云端轮次 `agent.end` → IDLE 后，控制面 `maybeDeliverHandoffDraft` 在分支有提交且已配 GitHub 时 push 并开 draft（已有 GitHub PR 则只 push）。`neo_pr_open` / `POST /v1/runs/:id/pull-request` / `pnpm neo pr` 仍留给 agent 和运维。
+  - 无 PR（cloud）：头栏只有「还没有 PR」，没有主按钮
   - `draft`：`标为可合并` → `POST /v1/runs/:id/pull-requests/:n/ready`（GitHub `PATCH` `{ draft: false }`）
   - `open` 且未合并：`压缩合并` → `POST /v1/runs/:id/pull-requests/:n/merge`（GitHub `PUT` `{ merge_method: "squash" }`）
   - `merged` / `closed`：禁用，文案 `已合并` / `已关闭`
-  - `local://`、Desk、未配 SCM：写按钮不出现；失败时头栏显示 GitHub 原文，`查看 PR` 仍可打开仓库
-- **改动**：选中文件 + 双 gutter；连续未改行可折成「N 行未改」。提交底栏只在 `GET /diff` 的 `dirty`（工作区相对 HEAD）为真时出现。有 GitHub PR 且工作区干净时，改动页只审 PR，不再露出「开草稿 PR」。
+  - `local://`、Desk、未配 SCM：写按钮不出现；handoff 也不造 `local://` 假 PR。失败时头栏显示 GitHub 原文，`查看 PR` 仍可打开仓库
+- **改动**：选中文件 + 双 gutter；连续未改行可折成「N 行未改」。提交底栏只在 `GET /diff` 的 `dirty`（工作区相对 HEAD）为真时出现。有 GitHub PR 且工作区干净时，改动页只审 PR。
 - **审查**：先 checks 手风琴（`检查已通过` / `N 项失败` / `N 项进行中`），草稿时再出草稿行，查找问题是次要一行（只审不改，结果进对话）。评论折进「评论」小段。内部页签用和文件栏一样的灰底 pill，不用第二套下划线。
 - **Cursor 3 Agents Window**：改动树、Commit and Push 下拉。这是桌面编排面，Neo 不跟。
 
