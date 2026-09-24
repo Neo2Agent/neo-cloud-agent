@@ -17,6 +17,7 @@ import { composerKeyAction, isImeComposing } from "@neo-cloud-agent/contracts/co
 import { isNarrowViewport } from "../viewport";
 import { ContextUsageControl } from "./ContextUsage";
 import { TargetPicker } from "./TargetPicker";
+import { RepoBindControl, type RepoBindMode } from "./RepoBindControl";
 
 export type { BuildOption, EnvOption, LlmSettings, ScmSettings } from "./SettingsPanel";
 
@@ -66,6 +67,15 @@ type Props = {
   onOpenPlus?: () => void;
   /** Desktop "+" opens the image picker. */
   onAttach?: () => void;
+  repoMode?: RepoBindMode;
+  repo?: string;
+  recentRepos?: string[];
+  projectDefaultRepo?: string;
+  repoLocked?: boolean;
+  repoPickerOpen?: boolean;
+  onRepoMode?: (mode: RepoBindMode) => void;
+  onRepo?: (value: string) => void;
+  onRepoPickerOpen?: (open: boolean) => void;
 };
 
 export function Composer({
@@ -110,6 +120,15 @@ export function Composer({
   followUp = false,
   onOpenPlus,
   onAttach,
+  repoMode = "none",
+  repo = "",
+  recentRepos = [],
+  projectDefaultRepo = "",
+  repoLocked = false,
+  repoPickerOpen = false,
+  onRepoMode,
+  onRepo,
+  onRepoPickerOpen,
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
   const [listening, setListening] = useState(false);
@@ -133,6 +152,7 @@ export function Composer({
   const capsules = showCapsules ? matchIntentCapsules(prompt) : [];
   const empty = !prompt.trim() && images.length === 0;
   const sendLocked = archived || blocked;
+  const bindBlocked = !followUp && repoMode === "bind" && !repo.trim();
   const pickMention = (item: ComposerMention) => {
     onPrompt(applyMention(prompt, item));
     onMention?.(item);
@@ -233,8 +253,21 @@ export function Composer({
     ) : null;
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!busy && !sendLocked) onSend();
+    if (!busy && !sendLocked && !bindBlocked) onSend();
   };
+  const repoControl = onRepoMode && onRepo ? (
+    <RepoBindControl
+      mode={repoMode}
+      repo={repo}
+      recent={recentRepos}
+      projectDefault={projectDefaultRepo}
+      locked={repoLocked || followUp}
+      open={repoPickerOpen}
+      onOpen={onRepoPickerOpen}
+      onMode={onRepoMode}
+      onRepo={onRepo}
+    />
+  ) : null;
   const input = (
     <>
       {images.length > 0 ? (
@@ -310,7 +343,7 @@ export function Composer({
           );
           if (!action) return;
           event.preventDefault();
-          if (sendLocked || empty) return;
+          if (sendLocked || empty || bindBlocked) return;
           if (action === "queue") onQueue?.();
           else if (action === "steer") onSteer?.();
           else if (!busy) (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
@@ -353,6 +386,7 @@ export function Composer({
               <IconPlus size={20} />
             </button>
             {!sendLocked ? voiceButton("buddy-icon-btn") : null}
+            {repoControl}
             <div className="buddy-model">
               <Select
                 id="agent-model"
@@ -373,7 +407,7 @@ export function Composer({
                 </span>
               </button>
             ) : (
-              <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label="发送">
+              <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy || bindBlocked} aria-label="发送">
                 <IconArrowUp size={16} />
               </button>
             )}
@@ -396,6 +430,7 @@ export function Composer({
           onTarget={onTarget}
           onPickFolder={onPickFolder}
         />
+        {repoControl}
         <Select
           id="agent-expert"
           size="pill"
@@ -479,7 +514,7 @@ export function Composer({
                 <span className="stop-icon" aria-hidden="true" />
               </button>
             ) : (
-              <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy} aria-label="发送" title="发送">
+              <button type="submit" id="send" className="send" disabled={sendLocked || empty || busy || bindBlocked} aria-label="发送" title="发送">
                 <IconArrowUp size={16} />
               </button>
             )}

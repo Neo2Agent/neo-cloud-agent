@@ -235,6 +235,11 @@
   min-width: 0;
 }
 
+.buddy-composer-bar .repo-bind {
+  min-width: 0;
+  max-width: 42vw;
+}
+
 .buddy-footer {
   margin: 6px 0 0;
   text-align: center;

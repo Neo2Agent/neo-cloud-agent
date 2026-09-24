@@ -65,11 +65,20 @@ export function splitShelvedRuns<T extends { status: string }>(runs: T[]): { liv
   return { live, shelved };
 }
 
+export function runKindLabel(run: { projectId?: string | null; repoUrls?: string[] | null }): "办公" | "代码" | null {
+  if (!run.projectId) return null;
+  return run.repoUrls && run.repoUrls.length > 0 ? "代码" : "办公";
+}
+
 export function groupRunsByProject<T extends { id: string; status: string; createdAt: string; projectId?: string | null }>(
   runs: T[],
   pinned: string[],
   projectNames: Record<string, string>,
-): { pinned: T[]; sections: Array<{ key: string; label: string; active: T[]; recent: T[] }> } {
+): {
+  pinned: T[];
+  folders: Array<{ key: string; label: string; active: T[]; recent: T[] }>;
+  loose: { active: T[]; recent: T[] };
+} {
   const { pinned: pinnedRuns, active, recent } = groupRuns(runs, pinned);
   const rest = [...active, ...recent];
   const keys: string[] = [];
@@ -82,14 +91,24 @@ export function groupRunsByProject<T extends { id: string; status: string; creat
     }
     buckets.get(key)!.push(run);
   }
-  const sections = keys.map((key) => {
-    const items = buckets.get(key) ?? [];
-    return {
-      key: key || "none",
-      label: key ? projectNames[key] || "项目对话" : "未归项目",
-      active: items.filter((run) => ACTIVE.includes(run.status)),
-      recent: items.filter((run) => !ACTIVE.includes(run.status)),
-    };
-  });
-  return { pinned: pinnedRuns, sections };
+  const folders = keys
+    .filter((key) => key)
+    .map((key) => {
+      const items = buckets.get(key) ?? [];
+      return {
+        key,
+        label: projectNames[key] || "项目对话",
+        active: items.filter((run) => ACTIVE.includes(run.status)),
+        recent: items.filter((run) => !ACTIVE.includes(run.status)),
+      };
+    });
+  const looseItems = buckets.get("") ?? [];
+  return {
+    pinned: pinnedRuns,
+    folders,
+    loose: {
+      active: looseItems.filter((run) => ACTIVE.includes(run.status)),
+      recent: looseItems.filter((run) => !ACTIVE.includes(run.status)),
+    },
+  };
 }

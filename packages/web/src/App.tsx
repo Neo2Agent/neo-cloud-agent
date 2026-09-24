@@ -17,8 +17,8 @@ import { hasSavedSession } from "./session";
 import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
 import { remoteControlSendLock } from "./desk-live";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
-import { readLastRunId, readLastTarget, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs";
-import { cloudSafeRepoUrls, isLocalFolderRef } from "./repo";
+import { readLastRunId, readLastTarget, readRecentRepos, rememberRecentRepo, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs";
+import { cloudSafeRepoUrls, isLocalFolderRef, normalizeRepoUrl } from "./repo";
 import { shortcutAction } from "./shortcuts";
 import { applyLiveEvents, parseSseData, RUN_LIST_REFRESH_MS } from "@neo-cloud-agent/contracts/client-stream";
 import { AuthGate, type AuthMode } from "./components/AuthGate";
@@ -43,6 +43,7 @@ import { parseProjectHash, projectHashHref } from "./project-route.js";
 import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
+import type { RepoBindMode } from "./components/RepoBindControl";
 import { useConfirm, toast } from "./feedback";
 import {
   IconArchive,
@@ -287,6 +288,9 @@ export function App() {
   const [prompt, setPrompt] = useState("");
   const [images, setImages] = useState<ImageRef[]>([]);
   const [repo, setRepo] = useState("");
+  const [repoMode, setRepoMode] = useState<RepoBindMode>("none");
+  const [repoPickerOpen, setRepoPickerOpen] = useState(false);
+  const [recentRepos, setRecentRepos] = useState<string[]>(() => (typeof window === "undefined" ? [] : readRecentRepos()));
   const [envId, setEnvId] = useState("");
   const [buildId, setBuildId] = useState("");
   const [environments, setEnvironments] = useState<EnvOption[]>([]);
@@ -313,13 +317,14 @@ export function App() {
   const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
   const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
   const [projectNames, setProjectNames] = useState<Record<string, string>>({});
+  const [projectDefaultRepos, setProjectDefaultRepos] = useState<Record<string, string>>({});
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [selectedExpertId, setSelectedExpertId] = useState<string | null>(hashExpertId);
   const [experts, setExperts] = useState<Expert[]>([]);
   const [teams, setTeams] = useState<ExpertTeam[]>([]);
   const [expertPick, setExpertPick] = useState<ExpertPick>({});
-  const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
+  const [activeProject, setActiveProject] = useState<{ id: string; name: string; defaultRepo?: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
   const [projectAssetsTab, setProjectAssetsTab] = useState(hashProjectAssets);
   const [highlightAssetId, setHighlightAssetId] = useState<string | null>(hashProjectAssetId);
@@ -617,6 +622,9 @@ export function App() {
       if (projectRes.ok) {
         const projects = (await readJson<{ projects?: Project[] }>(projectRes)).projects ?? [];
         setProjectNames(Object.fromEntries(projects.map((item) => [item.id, item.name])));
+        setProjectDefaultRepos(
+          Object.fromEntries(projects.map((item) => [item.id, item.defaultRepoUrls[0] ?? ""])),
+        );
       }
     } catch {
       // optional catalog
@@ -729,6 +737,9 @@ export function App() {
     setPendingTurn(null);
     setEnvId("");
     setBuildId("");
+    setRepo("");
+    setRepoMode("none");
+    setRepoPickerOpen(false);
     setHighlightId(null);
     setMoreOpen(false);
     setPlusOpen(false);
@@ -781,7 +792,10 @@ export function App() {
         setActiveProject(null);
       }
       const firstRepo = run.repoUrls?.[0] ?? "";
-      setRepo(!isDeskApp() && isLocalFolderRef(firstRepo) ? "" : firstRepo);
+      const visibleRepo = !isDeskApp() && isLocalFolderRef(firstRepo) ? "" : firstRepo;
+      setRepo(visibleRepo);
+      setRepoMode(visibleRepo ? "bind" : "none");
+      setRepoPickerOpen(false);
       setEnvId(run.envId ?? "");
       setBuildId(run.buildId ?? "");
       setRuns((prev) => {
@@ -896,10 +910,17 @@ export function App() {
   );
 
   const startProjectChat = useCallback(
-    (project: Project) => {
+    (project: { id: string; name: string; defaultRepoUrls?: string[] }) => {
       resetComposer();
-      setActiveProject({ id: project.id, name: project.name });
-      if (project.defaultRepoUrls[0]) setRepo(project.defaultRepoUrls[0]);
+      const defaultRepo = project.defaultRepoUrls?.[0] ? normalizeRepoUrl(project.defaultRepoUrls[0]) : "";
+      setActiveProject({ id: project.id, name: project.name, defaultRepo: defaultRepo || undefined });
+      setDeskTarget({ kind: "cloud" });
+      writeLastTarget({ kind: "cloud" });
+      void deskBridge()?.setTarget({ kind: "cloud" });
+      if (defaultRepo) {
+        setRepo(defaultRepo);
+        setRepoMode("bind");
+      }
       setMainTab("chat");
     },
     [resetComposer],
@@ -1054,8 +1075,17 @@ export function App() {
     ) {
       return;
     }
+    if (!runId && repoMode === "bind") {
+      const bound = cloudSafeRepoUrls([normalizeRepoUrl(repo)]);
+      if (bound.length === 0) {
+        toast("绑定 Git 前先选出仓库。", "err");
+        return;
+      }
+    }
+    const projectCloud = Boolean(activeProject && !runId);
+    const effectiveTarget = projectCloud ? { kind: "cloud" as const } : deskTarget;
     // A browser cannot pick a folder, so 本机 needs a machine chosen first.
-    if (!runId && deskTarget.kind === "desk" && !deskBridge()?.canRunLocal && !deskTarget.deskId) {
+    if (!runId && effectiveTarget.kind === "desk" && !deskBridge()?.canRunLocal && !deskTarget.deskId) {
       setMessages((prev) => [
         ...prev,
         localErrorMessage(runId, "先选一台电脑。要出现在这里，那台电脑得打开 Desk 并在设置里开启 Remote control。"),
@@ -1077,7 +1107,13 @@ export function App() {
     if (runId && !isActiveRunStatus(currentRun?.status)) {
       patchRun(runId, (run) => ({ ...run, status: "RUNNING" }));
     }
-    const repoUrls = deskTarget.kind === "desk" ? (repo.trim() ? [repo.trim()] : deskFolder ? [deskFolder] : []) : cloudSafeRepoUrls(repo.trim() ? [repo.trim()] : []);
+    const skipRepoDefaults = !runId && repoMode === "none";
+    const repoUrls =
+      skipRepoDefaults
+        ? []
+        : effectiveTarget.kind === "desk"
+          ? (repo.trim() ? [repo.trim()] : deskFolder ? [deskFolder] : [])
+          : cloudSafeRepoUrls(repo.trim() ? [normalizeRepoUrl(repo)] : []);
     const model = resolveChatModel(llm.upstream, llm.model, attached.length > 0);
     const buildPayload = buildId === "cold" ? { reuseBuild: false } : buildId ? { buildId, reuseBuild: true } : { reuseBuild: true };
     try {
@@ -1088,7 +1124,8 @@ export function App() {
             body: JSON.stringify({
               prompt: text || "（图片）",
               repoUrls,
-              source: deskTarget.kind === "desk" ? "desk" : "web",
+              skipRepoDefaults,
+              source: effectiveTarget.kind === "desk" ? "desk" : "web",
               envId: envId || undefined,
               model,
               images: attached.length ? attached : undefined,
@@ -1096,9 +1133,9 @@ export function App() {
               expertId: expertPick.expertId,
               expertTeamId: expertPick.expertTeamId,
               pluginIds: pluginPick ? [pluginPick.id] : undefined,
-              deskWorkspaceId: deskTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
+              deskWorkspaceId: effectiveTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
               target:
-                deskTarget.kind === "desk"
+                effectiveTarget.kind === "desk"
                   ? {
                       loop: "desk",
                       tools: "desk",
@@ -1111,6 +1148,9 @@ export function App() {
           }),
         );
         if (created.error) throw new Error(created.error);
+        if (repoUrls[0] && !isLocalFolderRef(repoUrls[0])) {
+          setRecentRepos(rememberRecentRepo(repoUrls[0]));
+        }
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
         keepPendingRef.current = true;
         try {
@@ -1142,7 +1182,7 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
+  }, [activeProject?.id, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, repoMode, runId, messages, stopping]);
 
   const followUpWhileBusy = useCallback(async (delivery: "follow_up" | "steer") => {
     const text = prompt.trim();
@@ -1579,6 +1619,7 @@ export function App() {
     messages: viewMessages,
   });
   const archived = isComposerClosed(currentRun?.status);
+  const projectCloudLock = Boolean(activeProject) && !isDeskHostedTarget(currentRun?.executionTarget);
   const hostLock = remoteControlSendLock(
     currentRun,
     desks,
@@ -1843,8 +1884,13 @@ export function App() {
       cameraPickRef.current?.click();
       return;
     }
-    if (action === "settings" || action === "repo") {
+    if (action === "settings") {
       openSettings();
+      return;
+    }
+    if (action === "repo") {
+      setRepoMode("bind");
+      setRepoPickerOpen(true);
       return;
     }
     if (action === "memory") {
@@ -2121,6 +2167,17 @@ export function App() {
             setActiveProject(null);
             setMainTab("chat");
             resetComposer();
+            setSidebarOpen((open) => {
+              if (!closeMobileSidebar()) return open;
+              return false;
+            });
+          }}
+          onStartProjectChat={(id) => {
+            startProjectChat({
+              id,
+              name: projectNames[id] || "项目对话",
+              defaultRepoUrls: projectDefaultRepos[id] ? [projectDefaultRepos[id]] : [],
+            });
             setSidebarOpen((open) => {
               if (!closeMobileSidebar()) return open;
               return false;
@@ -2425,14 +2482,15 @@ export function App() {
                   token={token}
                   onWarm={() => {
                     void (async () => {
-                      if (!repo.trim()) {
-                        toast("预热前先填仓库。", "err");
+                      const warmRepo = repo.trim() || activeProject?.defaultRepo || "";
+                      if (!warmRepo) {
+                        toast("预热前先绑定仓库。", "err");
                         return;
                       }
                       const created = await readJson<{ id?: string; status?: string; error?: string; failureMessage?: string }>(
                         await api(token, "/v1/builds", {
                           method: "POST",
-                          body: JSON.stringify({ repoUrls: [repo.trim()], envId: envId || undefined }),
+                          body: JSON.stringify({ repoUrls: [warmRepo], envId: envId || undefined }),
                         }),
                       );
                       if (created.error) throw new Error(created.error);
@@ -2601,9 +2659,15 @@ export function App() {
               canRunLocal={Boolean(deskBridge()?.canRunLocal)}
               folder={deskFolder}
               desks={desks}
-              targetLocked={isDeskHostedTarget(currentRun?.executionTarget)}
+              targetLocked={isDeskHostedTarget(currentRun?.executionTarget) || projectCloudLock}
               targetLockLabel={
-                isRemoteControlTarget(currentRun?.executionTarget) ? "Remote Control" : "This Computer"
+                isDeskHostedTarget(currentRun?.executionTarget)
+                  ? isRemoteControlTarget(currentRun?.executionTarget)
+                    ? "Remote Control"
+                    : "This Computer"
+                  : projectCloudLock
+                    ? "云端"
+                    : undefined
               }
               blocked={hostLock.locked}
               blockedHint={hostLock.hint}
@@ -2650,6 +2714,15 @@ export function App() {
               followUp={Boolean(runId)}
               onOpenPlus={() => setPlusOpen(true)}
               onAttach={() => imagePickRef.current?.click()}
+              repoMode={repoMode}
+              repo={repo}
+              recentRepos={recentRepos}
+              projectDefaultRepo={activeProject?.defaultRepo ?? ""}
+              repoLocked={Boolean(runId)}
+              repoPickerOpen={repoPickerOpen}
+              onRepoMode={setRepoMode}
+              onRepo={setRepo}
+              onRepoPickerOpen={setRepoPickerOpen}
             />
           ) : null}
           </div>

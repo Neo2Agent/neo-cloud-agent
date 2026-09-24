@@ -134,10 +134,10 @@ export function SettingsPanel({
       <section className="settings-group">
         <header>
           <h3>仓库与环境</h3>
-          <p className="hint">新对话会用这里的仓库和快照。</p>
+          <p className="hint">预热环境和快照用。新对话在输入框选「无仓库」或「绑定 Git」，不读这里。</p>
         </header>
         <label className="repo-row">
-          <span>仓库</span>
+          <span>预热仓库</span>
           <input
             id="repo"
             name="repo"

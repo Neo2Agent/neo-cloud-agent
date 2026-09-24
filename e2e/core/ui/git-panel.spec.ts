@@ -127,6 +127,45 @@ async function mockGithubPr(page: Page, initial: MockPr): Promise<{ mergeBodies:
 }
 
 test.describe("git panel", () => {
+  test("git.project-plain: project chat without a repo has no Git tab", async ({ page }) => {
+    await loginAs(page);
+    const token = await page.evaluate(() => localStorage.getItem("neo.apiToken.v2") ?? "");
+    const projectRes = await page.request.post("/v1/projects", {
+      headers: { authorization: `Bearer ${token}` },
+      data: { name: "无仓组", defaultRepoUrls: ["fixtures/toy-repo"] },
+    });
+    expect(projectRes.status()).toBe(201);
+    const project = (await projectRes.json()) as { id: string };
+    const runId = await createRun(page, {
+      prompt: "组内办公，显式无仓",
+      projectId: project.id,
+      repoUrls: [],
+      skipRepoDefaults: true,
+    });
+    await page.goto(`/#/runs/${runId}`);
+    await page.getByRole("button", { name: "打开侧栏" }).first().click();
+    const tabs = page.getByRole("tablist", { name: "对话侧栏" }).getByRole("tab");
+    await expect(tabs).toHaveText(["终端", "文件"]);
+  });
+
+  test("git.project-bound: project chat with a repo shows Git", async ({ page }) => {
+    await loginAs(page);
+    const token = await page.evaluate(() => localStorage.getItem("neo.apiToken.v2") ?? "");
+    const projectRes = await page.request.post("/v1/projects", {
+      headers: { authorization: `Bearer ${token}` },
+      data: { name: "绑仓组" },
+    });
+    expect(projectRes.status()).toBe(201);
+    const project = (await projectRes.json()) as { id: string };
+    const runId = await createRun(page, {
+      prompt: "组内绑仓",
+      projectId: project.id,
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    await openGitPanel(page, runId);
+    await expect(page.locator(".git-pr-name")).toBeVisible();
+  });
+
   test("git.plain-chat: no Git tab and no draft PR button", async ({ page }) => {
     await loginAs(page);
     const runId = await createRun(page, { prompt: "普通聊天，没有仓库" });

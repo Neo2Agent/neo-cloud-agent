@@ -1926,3 +1926,50 @@ test("Cloud prefers agentscope when neo-loop is healthy; This Computer stays pi"
   }
 });
 
+test("empty repoUrls inherit project defaultRepoUrls", async () => {
+  const { createProject } = await import("../projects/store.js");
+  const project = createProject({
+    name: "有默认仓",
+    defaultRepoUrls: ["fixtures/toy-repo"],
+    actor: { userId: "user_local", email: "admin" },
+  });
+  const run = await createRun({ prompt: "use default repo", repoUrls: [], projectId: project.id });
+  assert.deepEqual(run.repoUrls, ["fixtures/toy-repo"]);
+  assert.equal(run.projectId, project.id);
+});
+
+test("skipRepoDefaults keeps a project chat without repos", async () => {
+  const { createProject } = await import("../projects/store.js");
+  const project = createProject({
+    name: "显式无仓",
+    defaultRepoUrls: ["fixtures/toy-repo"],
+    actor: { userId: "user_local", email: "admin" },
+  });
+  const run = await createRun({
+    prompt: "plain office chat",
+    repoUrls: [],
+    projectId: project.id,
+    skipRepoDefaults: true,
+  });
+  assert.deepEqual(run.repoUrls, []);
+  assert.equal(run.projectId, project.id);
+});
+
+test("skipRepoDefaults also skips environment default repos", async () => {
+  const { createEnvironment } = await import("../env/store.js");
+  const env = createEnvironment(
+    {
+      name: "has-repos",
+      repoUrls: ["fixtures/toy-repo"],
+    },
+    "org_local",
+  );
+  const run = await createRun({
+    prompt: "skip env repos",
+    repoUrls: [],
+    envId: env.id,
+    skipRepoDefaults: true,
+  });
+  assert.deepEqual(run.repoUrls, []);
+});
+

@@ -53,3 +53,21 @@ export function readLastTarget(storage: Pick<Storage, "getItem"> = localStorage)
 export function writeLastTarget(target: DeskTarget, storage: Pick<Storage, "setItem"> = localStorage): void {
   storage.setItem(LAST_TARGET_KEY, JSON.stringify(target));
 }
+
+const RECENT_REPOS_KEY = "neo.recentRepos";
+const RECENT_REPOS_MAX = 8;
+
+export function readRecentRepos(storage: Pick<Storage, "getItem"> = localStorage): string[] {
+  try {
+    const parsed = JSON.parse(storage.getItem(RECENT_REPOS_KEY) ?? "[]") as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberRecentRepo(url: string, storage: Pick<Storage, "getItem" | "setItem"> = localStorage): string[] {
+  const next = [url.trim(), ...readRecentRepos(storage).filter((item) => item !== url.trim())].filter(Boolean).slice(0, RECENT_REPOS_MAX);
+  storage.setItem(RECENT_REPOS_KEY, JSON.stringify(next));
+  return next;
+}

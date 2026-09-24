@@ -391,6 +391,8 @@ export interface CreateRunRequest {
   /** Optional sidebar title. Empty/whitespace falls back to the prompt line. */
   title?: string;
   repoUrls: string[];
+  /** When true, do not fill empty repoUrls from the project or environment. */
+  skipRepoDefaults?: boolean;
   ref?: string;
   envId?: string;
   buildId?: string;

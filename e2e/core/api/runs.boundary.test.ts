@@ -222,3 +222,32 @@ test("runs: unknown projectId is 400", async (t) => {
   assert.equal(response.status, 400);
   assert.match((await readJson<{ error?: string }>(response)).error ?? "", /项目不存在/);
 });
+
+test("runs: project defaultRepoUrls fill unless skipRepoDefaults", async (t) => {
+  const api = await startCoreApi();
+  t.after(() => api.close());
+  const { token } = await login(api.base);
+  const created = await fetch(`${api.base}/v1/projects`, {
+    method: "POST",
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ name: "默认仓组", defaultRepoUrls: [TOY_REPO] }),
+  });
+  const project = await readJson<{ id?: string; error?: string }>(created);
+  assert.equal(created.status, 201, project.error ?? "create project failed");
+  assert.ok(project.id);
+
+  const filled = await createRun(api.base, token, { prompt: "inherit default", repoUrls: [], projectId: project.id });
+  const filledBody = await readJson<{ repoUrls?: string[]; error?: string }>(filled);
+  assert.equal(filled.status, 201, filledBody.error ?? "filled run failed");
+  assert.deepEqual(filledBody.repoUrls, [TOY_REPO]);
+
+  const skipped = await createRun(api.base, token, {
+    prompt: "explicit none",
+    repoUrls: [],
+    projectId: project.id,
+    skipRepoDefaults: true,
+  });
+  const skippedBody = await readJson<{ repoUrls?: string[]; error?: string }>(skipped);
+  assert.equal(skipped.status, 201, skippedBody.error ?? "skipped run failed");
+  assert.deepEqual(skippedBody.repoUrls, []);
+});

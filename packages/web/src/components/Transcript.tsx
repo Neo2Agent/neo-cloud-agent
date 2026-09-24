@@ -479,7 +479,7 @@ export function Transcript({
         {empty ? (
           <div className="empty">
             <h2>有什么可以帮你的？</h2>
-            <p>发送后会占用一台云端电脑。也可以先点一张做法再改。仓库和 API Key 在「设置」里。</p>
+            <p>发送后会占用一台云端电脑。也可以先点一张做法再改。默认无仓库；写代码再选「绑定 Git」。</p>
             {onPickRecipe ? (
               <ul className="recipe-grid">
                 {BUNDLED_RECIPES.map((item) => (

@@ -1183,11 +1183,11 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
       throw new Error("不是项目成员");
     }
     projectId = project.id;
-    if (repoUrls.length === 0 && project.defaultRepoUrls.length > 0) {
+    if (!input.skipRepoDefaults && repoUrls.length === 0 && project.defaultRepoUrls.length > 0) {
       repoUrls = [...project.defaultRepoUrls];
     }
   }
-  if (repoUrls.length === 0 && input.envId) {
+  if (!input.skipRepoDefaults && repoUrls.length === 0 && input.envId) {
     repoUrls = [...(getEnvironment(input.envId)?.config.repos ?? [])];
   }
   const target = parseExecutionTarget(input.target);
