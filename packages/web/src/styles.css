@@ -2682,6 +2682,7 @@ button.send:disabled {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
+  box-shadow: 0 8px 24px rgba(15, 15, 15, 0.08);
   list-style: none;
 }
 
@@ -2761,6 +2762,12 @@ button.send:disabled {
   padding: 0 6px;
   border-radius: 0 6px 6px 0;
   border-left: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.git-merge-more .inspector-more-pop {
+  z-index: 7;
+  min-width: 120px;
+  box-shadow: 0 8px 24px rgba(15, 15, 15, 0.08);
 }
 
 .git-more {
