@@ -55,6 +55,8 @@ async function openGitPanel(page: Page, runId: string): Promise<void> {
   await tabs.first().click();
 }
 
+type MockCheck = { name: string; status: string; conclusion: string | null; url: string };
+
 type MockPr = {
   repoUrl: string;
   branch: string;
@@ -65,10 +67,17 @@ type MockPr = {
   title: string;
   state: "open" | "merged" | "closed";
   checks: { passed: number; failed: number; pending: number };
+  feedbackChecks?: MockCheck[];
 };
+
+const PASSING_CHECKS: MockCheck[] = [
+  { name: "typecheck", status: "completed", conclusion: "success", url: "https://github.com/acme/app/actions/1" },
+  { name: "test", status: "completed", conclusion: "success", url: "https://github.com/acme/app/actions/2" },
+];
 
 async function mockGithubPr(page: Page, initial: MockPr): Promise<void> {
   let pr = { ...initial };
+  const feedbackChecks = initial.feedbackChecks ?? PASSING_CHECKS;
   await page.route(/\/v1\/runs\/[^/]+\/diff$/, async (route) => {
     const response = await route.fetch();
     const body = (await response.json()) as Record<string, unknown>;
@@ -87,20 +96,7 @@ async function mockGithubPr(page: Page, initial: MockPr): Promise<void> {
         number: pr.number,
         reviews: [],
         comments: [],
-        checks: [
-          {
-            name: "typecheck",
-            status: "completed",
-            conclusion: "success",
-            url: "https://github.com/acme/app/actions/1",
-          },
-          {
-            name: "test",
-            status: "completed",
-            conclusion: "success",
-            url: "https://github.com/acme/app/actions/2",
-          },
-        ],
+        checks: feedbackChecks,
       },
     });
   });
@@ -146,7 +142,7 @@ test.describe("git panel", () => {
     await expect(views).toHaveText(["改动", "审查", /^提交/]);
     await views.nth(1).click();
     await expect(page.locator(".git-draft-card")).toHaveCount(0);
-    await expect(page.locator(".git-review-agent")).toHaveCount(0);
+    await expect(page.locator(".git-find-issues")).toHaveCount(0);
     await expect(page.locator(".git-review")).toContainText("还没有检查");
     await views.nth(2).click();
     await expect(page.locator(".git-body")).toBeVisible();
@@ -181,14 +177,53 @@ test.describe("git panel", () => {
     const views = page.getByRole("tablist", { name: "Git" }).getByRole("tab");
     await views.nth(1).click();
     await expect(page.locator(".git-checks-card")).toContainText("检查已通过");
+    await expect(page.locator(".git-tab-dot.is-pass")).toBeVisible();
+    await expect(page.locator(".git-find-issues")).toHaveCount(0);
+    await page.locator(".git-checks-card > summary").click();
     await expect(page.locator(".git-check-list")).toContainText("typecheck");
+    await expect(page.locator(".git-check-count")).toContainText("2 项通过");
     await expect(page.locator(".git-draft-card")).toHaveCount(0);
-    await expect(page.locator(".git-review-agent")).toHaveCount(0);
     await page.locator(".git-head-cta").click();
     await expect(page.locator(".git-head-cta")).toHaveText("压缩合并");
     await expect(page.locator(".git-badge")).toHaveText("打开");
     await page.locator(".git-head-cta").click();
     await expect(page.locator(".git-head-cta")).toHaveText("已合并");
     await expect(page.locator(".git-head-cta")).toBeDisabled();
+  });
+
+  test("git.review-fail: find issues only when a check failed", async ({ page }) => {
+    await loginAs(page);
+    const runId = await createRun(page, { prompt: "审失败检查", repoUrls: ["fixtures/toy-repo"] });
+    let reviewed = false;
+    await mockGithubPr(page, {
+      repoUrl: "https://github.com/acme/app",
+      branch: "neo/feature",
+      baseBranch: "main",
+      url: "https://github.com/acme/app/pull/12",
+      draft: true,
+      number: 12,
+      title: "Failing checks",
+      state: "open",
+      checks: { passed: 1, failed: 1, pending: 0 },
+      feedbackChecks: [
+        { name: "typecheck", status: "completed", conclusion: "success", url: "https://github.com/acme/app/actions/1" },
+        { name: "test", status: "completed", conclusion: "failure", url: "https://github.com/acme/app/actions/2" },
+      ],
+    });
+    await page.route(/\/v1\/runs\/[^/]+\/review$/, async (route) => {
+      reviewed = true;
+      await route.fulfill({ json: { id: "follow-1", status: "queued" } });
+    });
+    await openGitPanel(page, runId);
+    const views = page.getByRole("tablist", { name: "Git" }).getByRole("tab");
+    await views.nth(1).click();
+    await expect(page.locator(".git-checks-card")).toContainText("1 项失败");
+    await expect(page.locator(".git-tab-dot.is-fail")).toBeVisible();
+    await expect(page.locator(".git-check-group").filter({ hasText: "1 项失败" })).toContainText("test");
+    await expect(page.locator(".git-check-group").filter({ hasText: "1 项通过" })).toContainText("typecheck");
+    await expect(page.locator(".git-find-issues")).toContainText("查找问题");
+    await page.getByRole("button", { name: "查找问题" }).click();
+    await expect(page.locator(".git-find-issues")).toContainText("再审一次");
+    expect(reviewed).toBe(true);
   });
 });

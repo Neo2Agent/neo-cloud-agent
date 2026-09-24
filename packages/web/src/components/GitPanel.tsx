@@ -14,7 +14,7 @@ import {
 import type { PullRequestRef, RunCommitRef } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
 import { formatListWhen } from "../format";
-import { IconBranch, IconCopy, IconMore } from "../icons";
+import { IconBranch, IconCheck, IconCopy, IconError, IconMore, IconSpinner } from "../icons";
 
 export type GitView = "diff" | "review" | "commits";
 
@@ -99,16 +99,28 @@ function checkPassed(check: { status: string; conclusion: string | null }): bool
   return check.status === "completed" && (check.conclusion === "success" || check.conclusion === "neutral" || check.conclusion === "skipped");
 }
 
-function checkStatusLabel(check: { status: string; conclusion: string | null }): string {
-  if (check.status !== "completed") {
-    if (check.status === "in_progress" || check.status === "queued" || check.status === "pending") return "进行中";
-    return check.status;
+type CheckCounts = { passed: number; failed: number; pending: number };
+
+function checkCounts(pr: PullRequestRef | undefined, checks: PullRequestFeedback["checks"]): CheckCounts {
+  if (checks.length) {
+    return {
+      passed: checks.filter((item) => checkPassed(item)).length,
+      failed: checks.filter((item) => item.status === "completed" && !checkPassed(item)).length,
+      pending: checks.filter((item) => item.status !== "completed").length,
+    };
   }
-  if (check.conclusion === "success") return "通过";
-  if (check.conclusion === "failure") return "失败";
-  if (check.conclusion === "neutral" || check.conclusion === "skipped") return "跳过";
-  if (check.conclusion === "cancelled") return "已取消";
-  return check.conclusion || "完成";
+  return pr?.checks ?? { passed: 0, failed: 0, pending: 0 };
+}
+
+function checkKind(check: PullRequestFeedback["checks"][number]): "pending" | "fail" | "pass" {
+  if (check.status !== "completed") return "pending";
+  return checkPassed(check) ? "pass" : "fail";
+}
+
+function CheckMark({ kind }: { kind: "pending" | "fail" | "pass" }) {
+  if (kind === "pending") return <IconSpinner size={12} />;
+  if (kind === "fail") return <IconError size={12} />;
+  return <IconCheck size={12} />;
 }
 
 function PrHeader({
@@ -441,21 +453,44 @@ function CommitsView({ commits }: { commits: RunCommitsResponse | null }) {
   );
 }
 
+function CheckRows({ checks, kind }: { checks: PullRequestFeedback["checks"]; kind: "pending" | "fail" | "pass" }) {
+  if (checks.length === 0) return null;
+  const label = kind === "pending" ? `${checks.length} 项进行中` : kind === "fail" ? `${checks.length} 项失败` : `${checks.length} 项通过`;
+  return (
+    <div className="git-check-group">
+      <p className="git-check-count">{label}</p>
+      <ul className="git-check-list">
+        {checks.map((check) => (
+          <li key={`${check.name}-${check.url}`} className={`is-${kind}`}>
+            <span className={`git-check-mark is-${kind}`} aria-hidden="true">
+              <CheckMark kind={kind} />
+            </span>
+            {check.url ? (
+              <a className="git-check-name" href={check.url} target="_blank" rel="noreferrer">
+                {check.name}
+              </a>
+            ) : (
+              <span className="git-check-name">{check.name}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ChecksSummary({
   pr,
   checks,
+  reviewState,
+  onReview,
 }: {
   pr: PullRequestRef | undefined;
   checks: PullRequestFeedback["checks"];
+  reviewState: "idle" | "sending" | "sent" | "error";
+  onReview: () => void;
 }) {
-  const counts = pr?.checks ?? { passed: 0, failed: 0, pending: 0 };
-  const fromList = checks.length
-    ? {
-        passed: checks.filter((item) => checkPassed(item)).length,
-        failed: checks.filter((item) => item.status === "completed" && !checkPassed(item)).length,
-        pending: checks.filter((item) => item.status !== "completed").length,
-      }
-    : counts;
+  const fromList = checkCounts(pr, checks);
   const total = fromList.passed + fromList.failed + fromList.pending;
   if (total === 0 && checks.length === 0) return null;
   const title = fromList.failed
@@ -463,32 +498,45 @@ function ChecksSummary({
     : fromList.pending
       ? `${fromList.pending} 项进行中`
       : "检查已通过";
+  const pending = checks.filter((item) => checkKind(item) === "pending");
+  const failed = checks.filter((item) => checkKind(item) === "fail");
+  const passed = checks.filter((item) => checkKind(item) === "pass");
   return (
-    <details className="git-checks-card" open>
+    <details
+      className="git-checks-card"
+      key={`${fromList.failed}-${fromList.pending}-${fromList.passed}`}
+      defaultOpen={fromList.failed > 0 || fromList.pending > 0}
+    >
       <summary>
         <span className={`git-check-dot ${fromList.failed ? "is-fail" : fromList.pending ? "is-pending" : "is-pass"}`} />
         {title}
       </summary>
-      {fromList.passed ? <p className="git-check-count">{fromList.passed} 项通过</p> : null}
       {checks.length > 0 ? (
-        <ul className="git-check-list">
-          {checks.map((check) => (
-            <li
-              key={`${check.name}-${check.url}`}
-              className={`is-${check.status !== "completed" ? "pending" : checkPassed(check) ? "pass" : "fail"}`}
-            >
-              {check.url ? (
-                <a className="git-check-name" href={check.url} target="_blank" rel="noreferrer">
-                  {check.name}
-                </a>
-              ) : (
-                <span className="git-check-name">{check.name}</span>
-              )}
-              <span className="git-check-status">{checkStatusLabel(check)}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <CheckRows checks={pending} kind="pending" />
+          <CheckRows checks={failed} kind="fail" />
+          <CheckRows checks={passed} kind="pass" />
+        </>
+      ) : fromList.passed || fromList.failed || fromList.pending ? (
+        <div className="git-check-group">
+          {fromList.pending ? <p className="git-check-count">{fromList.pending} 项进行中</p> : null}
+          {fromList.failed ? <p className="git-check-count">{fromList.failed} 项失败</p> : null}
+          {fromList.passed ? <p className="git-check-count">{fromList.passed} 项通过</p> : null}
+        </div>
       ) : null}
+      {fromList.failed > 0 ? (
+        <div className="git-find-issues">
+          <div>
+            <h4>查找问题</h4>
+            <p>检查失败了。点一下会在当前对话排队一条只审不改的跟进。</p>
+          </div>
+          <button type="button" className="git-btn is-ghost" disabled={reviewState === "sending"} onClick={onReview}>
+            {reviewState === "sending" ? "发送中…" : reviewState === "sent" ? "再审一次" : "查找问题"}
+          </button>
+        </div>
+      ) : null}
+      {reviewState === "sent" ? <p className="git-note">已发给 Agent，看对话里的回复。</p> : null}
+      {reviewState === "error" ? <p className="setup err">发送审查失败</p> : null}
     </details>
   );
 }
@@ -497,19 +545,23 @@ function ReviewView({
   pr,
   feedback,
   feedbackError,
+  reviewState,
+  onReview,
 }: {
   pr: PullRequestRef | undefined;
   feedback: PullRequestFeedback | null;
   feedbackError: string;
+  reviewState: "idle" | "sending" | "sent" | "error";
+  onReview: () => void;
 }) {
   const checks = feedback?.checks ?? [];
-  const counts = pr?.checks ?? { passed: 0, failed: 0, pending: 0 };
+  const counts = checkCounts(pr, checks);
   const hasChecks = checks.length > 0 || counts.passed + counts.failed + counts.pending > 0;
   return (
     <div className="git-review">
       {feedbackError ? <p className="setup err">{feedbackError}</p> : null}
       {hasChecks ? (
-        <ChecksSummary pr={pr} checks={checks} />
+        <ChecksSummary pr={pr} checks={checks} reviewState={reviewState} onReview={onReview} />
       ) : (
         <div className="git-empty">
           <strong>还没有检查</strong>
@@ -532,12 +584,15 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
   const [actionError, setActionError] = useState("");
   const [feedback, setFeedback] = useState<PullRequestFeedback | null>(null);
   const [feedbackError, setFeedbackError] = useState("");
+  const [reviewState, setReviewState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const pr = diff?.pullRequests?.[0];
   const files = diff?.files ?? [];
   const resolvedPath = files.some((item) => item.path === selectedPath) ? selectedPath : (files[0]?.path ?? null);
-  const reviewDot = Boolean(pr?.checks?.failed);
+  const reviewCounts = checkCounts(pr, feedback?.checks ?? []);
+  const reviewMark =
+    reviewCounts.failed > 0 ? "fail" : reviewCounts.pending > 0 ? "pending" : reviewCounts.passed > 0 ? "pass" : null;
 
   const load = useCallback(
     async (refreshPr: boolean) => {
@@ -574,6 +629,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
     setDiff(null);
     setCommits(null);
     setFeedback(null);
+    setReviewState("idle");
     setSelectedPath(null);
     setActionError("");
   }, [runId]);
@@ -658,7 +714,10 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
         ).map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={view === id} className={view === id ? "is-on" : ""} onClick={() => setView(id)}>
             {label}
-            {id === "review" && reviewDot ? <span className="git-tab-dot" aria-hidden="true" /> : null}
+            {id === "review" && reviewMark === "pending" ? <IconSpinner size={10} /> : null}
+            {id === "review" && reviewMark && reviewMark !== "pending" ? (
+              <span className={`git-tab-dot is-${reviewMark}`} aria-hidden="true" />
+            ) : null}
             {id === "commits" && commits?.commits.length ? <span className="git-tab-count">{commits.commits.length}</span> : null}
           </button>
         ))}
@@ -678,7 +737,18 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
         ) : view === "commits" ? (
           <CommitsView commits={commits} />
         ) : (
-          <ReviewView pr={pr} feedback={feedback} feedbackError={feedbackError} />
+          <ReviewView
+            pr={pr}
+            feedback={feedback}
+            feedbackError={feedbackError}
+            reviewState={reviewState}
+            onReview={() => {
+              setReviewState("sending");
+              void api(token, `/v1/runs/${runId}/review`, { method: "POST", body: "{}" })
+                .then((res) => setReviewState(res.ok ? "sent" : "error"))
+                .catch(() => setReviewState("error"));
+            }}
+          />
         )}
       </div>
     </section>

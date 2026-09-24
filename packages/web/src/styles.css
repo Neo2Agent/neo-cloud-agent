@@ -2832,6 +2832,14 @@ a.git-branch:hover code {
   background: #1a7f37;
 }
 
+.git-tab-dot.is-fail {
+  background: #b42318;
+}
+
+.git-tab-dot.is-pass {
+  background: #1a7f37;
+}
+
 .git-body {
   display: flex;
   flex: 1;
@@ -3258,6 +3266,22 @@ a.git-branch:hover code {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  list-style: none;
+}
+
+.git-checks-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.git-checks-card > summary::after {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 400;
+  content: "›";
+}
+
+.git-checks-card[open] > summary::after {
+  content: "⌄";
 }
 
 .git-check-dot {
@@ -3275,8 +3299,12 @@ a.git-branch:hover code {
   background: #9a6700;
 }
 
+.git-check-group {
+  margin-top: 10px;
+}
+
 .git-check-count {
-  margin: 6px 0 0;
+  margin: 0 0 4px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -3284,11 +3312,27 @@ a.git-branch:hover code {
 .git-check-list li {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   min-height: 28px;
   padding: 2px 0;
   font-size: 13px;
+}
+
+.git-check-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  color: #1a7f37;
+}
+
+.git-check-mark.is-fail {
+  color: #b42318;
+}
+
+.git-check-mark.is-pending {
+  color: #9a6700;
 }
 
 .git-check-name {
@@ -3303,14 +3347,25 @@ a.git-check-name:hover {
   color: var(--text);
 }
 
-.git-check-status {
-  flex: none;
-  color: var(--muted);
-  font-size: 12px;
+.git-find-issues {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
-.git-review-subs li {
-  padding: 2px 0;
+.git-find-issues h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.git-find-issues p {
+  margin: 4px 0 0;
   color: var(--muted);
   font-size: 12px;
 }
