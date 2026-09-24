@@ -1950,21 +1950,23 @@ button.tool-file-more:hover {
   z-index: 80;
   display: grid;
   align-content: start;
+  justify-items: stretch;
   box-sizing: border-box;
   width: min(360px, calc(100vw - 16px));
-  height: auto;
-  max-height: min(280px, calc(100vh - 24px));
-  padding: 6px;
+  height: fit-content;
+  max-height: min(220px, calc(100vh - 24px));
+  padding: 4px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 10px 30px rgba(17, 17, 16, 0.12);
-  gap: 6px;
+  gap: 4px;
+  overflow: hidden;
 }
 
 .repo-bind-menu input {
   width: 100%;
-  min-height: 30px;
+  min-height: 28px;
   padding: 0 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1973,12 +1975,14 @@ button.tool-file-more:hover {
 .repo-bind-menu ul {
   display: grid;
   align-content: start;
+  align-self: start;
   gap: 1px;
   margin: 0;
   padding: 0;
   list-style: none;
+  height: auto;
   min-height: 0;
-  max-height: min(168px, 28vh);
+  max-height: min(120px, 22vh);
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -1992,7 +1996,7 @@ button.tool-file-more:hover {
   min-width: 0;
   box-sizing: border-box;
   text-align: left;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;

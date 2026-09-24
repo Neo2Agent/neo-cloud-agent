@@ -19,7 +19,7 @@ export function placeRepoMenu(input: {
   gap?: number;
   pad?: number;
 }): { top: number; left: number; width: number } {
-  const gap = input.gap ?? 6;
+  const gap = input.gap ?? 4;
   const pad = input.pad ?? 8;
   const maxWidth = Math.max(pad, input.viewport.width - pad * 2);
   const preferred = input.align?.width ?? input.menu.width;

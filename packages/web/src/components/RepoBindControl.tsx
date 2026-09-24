@@ -60,18 +60,19 @@ export function RepoBindControl({
 
   const place = () => {
     const triggerEl = triggerRef.current;
+    const menuEl = menuRef.current;
     const trigger = triggerEl?.getBoundingClientRect();
-    const menu = menuRef.current?.getBoundingClientRect();
     if (!triggerEl || !trigger) return;
     const align = repoMenuAlignElement(triggerEl).getBoundingClientRect();
     const next = placeRepoMenu({
       trigger,
       menu: {
-        width: align.width || menu?.width || Math.min(360, window.innerWidth - 16),
-        height: menu?.height || 1,
+        width: align.width || menuEl?.offsetWidth || Math.min(360, window.innerWidth - 16),
+        height: menuEl?.offsetHeight || 1,
       },
       viewport: { width: window.innerWidth, height: window.innerHeight },
       align,
+      gap: 4,
     });
     setCoords((prev) =>
       prev && prev.top === next.top && prev.left === next.left && prev.width === next.width ? prev : next,
@@ -85,11 +86,15 @@ export function RepoBindControl({
     }
     place();
     const frame = window.requestAnimationFrame(() => place());
+    const menuEl = menuRef.current;
+    const observer = menuEl ? new ResizeObserver(() => place()) : null;
+    if (menuEl) observer?.observe(menuEl);
     const onReposition = () => place();
     window.addEventListener("resize", onReposition);
     window.addEventListener("scroll", onReposition, true);
     return () => {
       window.cancelAnimationFrame(frame);
+      observer?.disconnect();
       window.removeEventListener("resize", onReposition);
       window.removeEventListener("scroll", onReposition, true);
     };

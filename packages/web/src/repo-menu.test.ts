@@ -10,7 +10,7 @@ test("placeRepoMenu prefers the space above the trigger", () => {
   });
   assert.equal(placed.width, 360);
   assert.equal(placed.left, 80);
-  assert.equal(placed.top, 520 - 6 - 160);
+  assert.equal(placed.top, 520 - 4 - 160);
 });
 
 test("placeRepoMenu flips below when there is no room above", () => {
@@ -19,7 +19,7 @@ test("placeRepoMenu flips below when there is no room above", () => {
     menu: { width: 360, height: 160 },
     viewport: { width: 1280, height: 800 },
   });
-  assert.equal(placed.top, 48 + 6);
+  assert.equal(placed.top, 48 + 4);
 });
 
 test("placeRepoMenu aligns left and width to the composer box", () => {
@@ -31,7 +31,7 @@ test("placeRepoMenu aligns left and width to the composer box", () => {
   });
   assert.equal(placed.left, 256);
   assert.equal(placed.width, 768);
-  assert.equal(placed.top, 520 - 6 - 160);
+  assert.equal(placed.top, 520 - 4 - 160);
 });
 
 test("placeRepoMenu keeps the aligned panel inside the viewport", () => {

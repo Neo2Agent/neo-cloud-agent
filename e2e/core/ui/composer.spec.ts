@@ -64,6 +64,18 @@ test.describe("composer / run boundaries", () => {
   test("repo.search-pick: picker lists account repos and selecting one shows owner/repo", async ({ page }) => {
     await loginAs(page);
     await page.route("**/v1/scm/repos**", async (route) => {
+      const url = new URL(route.request().url());
+      const q = (url.searchParams.get("q") ?? "").toLowerCase();
+      const all = [
+        { fullName: "acme/app", url: "https://github.com/acme/app.git" },
+        { fullName: "ada/notes", url: "https://github.com/ada/notes.git" },
+        { fullName: "kaibairen/animate-camera", url: "https://github.com/kaibairen/animate-camera.git" },
+        {
+          fullName: "kaibairen/very-long-repository-name-for-layoutout",
+          url: "https://github.com/kaibairen/very-long-repository-name-for-layoutout.git",
+        },
+      ];
+      const repos = q ? all.filter((item) => item.fullName.toLowerCase().includes(q)) : all;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -72,21 +84,30 @@ test.describe("composer / run boundaries", () => {
           connected: true,
           login: "ada",
           oauthConfigured: true,
-          repos: [
-            { fullName: "acme/app", url: "https://github.com/acme/app.git" },
-            { fullName: "ada/notes", url: "https://github.com/ada/notes.git" },
-            { fullName: "kaibairen/animate-camera", url: "https://github.com/kaibairen/animate-camera.git" },
-          ],
+          repos,
         }),
       });
     });
     await page.locator("#repo-bind").click();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
+    const menu = page.locator(".repo-bind-menu");
+    const box = page.locator(".composer-box");
+    await expect(menu).toBeVisible();
+    await expect(box).toBeVisible();
+    const openBox = await box.boundingBox();
+    const openMenu = await menu.boundingBox();
+    expect(openBox).toBeTruthy();
+    expect(openMenu).toBeTruthy();
+    expect(Math.abs((openMenu?.x ?? 0) - (openBox?.x ?? 0))).toBeLessThan(2);
+    expect(Math.abs((openMenu?.width ?? 0) - (openBox?.width ?? 0))).toBeLessThan(2);
     await page.locator("#repo-bind-search").fill("animate");
     const longRepo = page.getByRole("button", { name: "kaibairen/animate-camera" });
     await expect(longRepo).toBeVisible();
+    await expect(page.getByRole("button", { name: "kaibairen/very-long-repository-name-for-layoutout" })).toHaveCount(0);
     await expect(longRepo.locator(".repo-bind-item-name")).toHaveText("animate-camera");
     await expect(longRepo.locator(".repo-bind-item-owner")).toHaveText("kaibairen");
+    const filtered = await menu.boundingBox();
+    expect(filtered?.height ?? 999).toBeLessThan(180);
     await page.locator("#repo-bind-search").fill("acme");
     await page.getByRole("button", { name: "acme/app" }).click();
     await expect(page.locator("#repo-bind")).toHaveText("acme/app");
