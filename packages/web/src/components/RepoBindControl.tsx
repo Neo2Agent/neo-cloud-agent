@@ -55,8 +55,13 @@ export function RepoBindControl({
     const recentUrls = new Set(recent);
     const top = repos.filter((item) => recentUrls.has(item.url));
     const rest = repos.filter((item) => !recentUrls.has(item.url));
-    return [...top, ...rest];
-  }, [recent, repos]);
+    const merged = [...top, ...rest];
+    const q = query.trim().toLowerCase();
+    if (!q) return merged;
+    return merged.filter(
+      (item) => item.fullName.toLowerCase().includes(q) || item.url.toLowerCase().includes(q),
+    );
+  }, [query, recent, repos]);
 
   const place = () => {
     const triggerEl = triggerRef.current;
