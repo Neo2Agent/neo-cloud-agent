@@ -1913,13 +1913,18 @@ button.tool-file-more:hover {
   overflow: visible;
 }
 
-.repo-bind-lock {
+.repo-bind-lock,
+.repo-bind-trigger {
   display: inline-flex;
   align-items: center;
   min-height: 28px;
   max-width: min(36ch, 42vw);
   padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: 13px;
 }
 
@@ -1930,46 +1935,23 @@ button.tool-file-more:hover {
   white-space: nowrap;
 }
 
-.repo-bind-pop {
-  position: relative;
-  overflow: visible;
-}
-
-.repo-bind-pop > summary {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  max-width: min(36ch, 42vw);
-  padding: 0 8px;
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 13px;
+.repo-bind-trigger {
   cursor: pointer;
-  list-style: none;
 }
 
-.repo-bind-pop > summary::-webkit-details-marker,
-.repo-bind-pop > summary::marker {
-  display: none;
-  content: "";
-}
-
-.repo-bind-pop > summary:hover,
-.repo-bind-pop[open] > summary {
+.repo-bind-trigger:hover,
+.repo-bind-trigger.is-open {
   background: #ececee;
   color: var(--text);
 }
 
 .repo-bind-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 80;
   display: grid;
   box-sizing: border-box;
-  width: min(440px, calc(100vw - 32px));
-  min-width: min(440px, calc(100vw - 32px));
-  max-width: calc(100vw - 24px);
+  width: min(360px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createProject, loginAs } from "./helpers.js";
+import { createProject, createRun, loginAs } from "./helpers.js";
 
 test.describe("composer / run boundaries", () => {
   test("runs.empty-ui: send is disabled on a blank composer", async ({ page }) => {
@@ -107,6 +107,19 @@ test.describe("composer / run boundaries", () => {
     await expect(page.locator("#execution-target")).toHaveText("云端");
     await expect(page.locator("#execution-target")).toBeDisabled();
     await expect(page.locator("#repo-bind")).toHaveText("无仓库");
+  });
+
+  test("repo.lock-after-send: an existing session cannot change repo", async ({ page }) => {
+    await loginAs(page);
+    const run = await createRun(page, {
+      prompt: "lock the repo",
+      repoUrls: ["https://github.com/acme/app.git"],
+    });
+    await page.goto(`/#/runs/${run.id}`);
+    await expect(page.locator("#composer")).toBeVisible();
+    await expect(page.locator("#repo-bind")).toHaveText("acme/app");
+    await page.locator("#repo-bind").click();
+    await expect(page.locator("#repo-bind-search")).toHaveCount(0);
   });
 
   test("repo.plus: Plus 仓库 opens the same picker", async ({ page }) => {

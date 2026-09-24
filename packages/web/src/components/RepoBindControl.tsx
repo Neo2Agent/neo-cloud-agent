@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { placeRepoMenu } from "../repo-menu";
 import { repoShortLabel, splitRepoLabel } from "../repo";
 
 export type RepoBindMode = "none" | "bind";
@@ -25,6 +27,8 @@ type Props = {
   onOpenSettings?: () => void;
 };
 
+type MenuCoords = { top: number; left: number; width: number };
+
 export function RepoBindControl({
   mode,
   repo,
@@ -41,19 +45,10 @@ export function RepoBindControl({
   onRepo,
   onOpenSettings,
 }: Props) {
-  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!detailsRef.current?.contains(event.target as Node)) onOpen?.(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    return () => document.removeEventListener("pointerdown", onPointer);
-  }, [open, onOpen]);
-  useEffect(() => {
-    if (open) searchRef.current?.focus();
-  }, [open]);
+  const [coords, setCoords] = useState<MenuCoords | null>(null);
 
   const label = mode === "bind" && repo ? repoShortLabel(repo) : "无仓库";
   const ranked = useMemo(() => {
@@ -62,6 +57,60 @@ export function RepoBindControl({
     const rest = repos.filter((item) => !recentUrls.has(item.url));
     return [...top, ...rest];
   }, [recent, repos]);
+
+  const place = () => {
+    const trigger = triggerRef.current?.getBoundingClientRect();
+    const menu = menuRef.current?.getBoundingClientRect();
+    if (!trigger) return;
+    setCoords(
+      placeRepoMenu(
+        trigger,
+        {
+          width: menu?.width || Math.min(360, window.innerWidth - 16),
+          height: menu?.height || 240,
+        },
+        { width: window.innerWidth, height: window.innerHeight },
+      ),
+    );
+  };
+
+  useLayoutEffect(() => {
+    if (!open || locked) {
+      setCoords(null);
+      return;
+    }
+    place();
+    const onReposition = () => place();
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [open, locked, ranked.length, reposLoading, query]);
+
+  useEffect(() => {
+    if (!open || locked) return;
+    const onPointer = (event: PointerEvent) => {
+      const node = event.target as Node;
+      if (triggerRef.current?.contains(node) || menuRef.current?.contains(node)) return;
+      onOpen?.(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpen?.(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, locked, onOpen]);
+
+  useEffect(() => {
+    if (!open || locked) return;
+    searchRef.current?.focus({ preventScroll: true });
+  }, [open, locked]);
 
   const pickNone = () => {
     onMode("none");
@@ -77,25 +126,26 @@ export function RepoBindControl({
   if (locked) {
     return (
       <div className="picker">
-        <span className="repo-bind-lock" id="repo-bind" title={repo || "无仓库"}>
+        <span className="repo-bind-lock" id="repo-bind" title={`${label}（对话已开始，不能再换仓库）`}>
           <span className="repo-bind-label">{label}</span>
         </span>
       </div>
     );
   }
 
-  return (
-    <div className="picker repo-bind">
-      <details
-        ref={detailsRef}
-        className="repo-bind-pop"
-        open={open}
-        onToggle={(event) => onOpen?.((event.currentTarget as HTMLDetailsElement).open)}
-      >
-        <summary id="repo-bind" aria-label="仓库" title={label}>
-          <span className="repo-bind-label">{label}</span>
-        </summary>
-        <div className="repo-bind-menu">
+  const menu = open
+    ? createPortal(
+        <div
+          ref={menuRef}
+          className="repo-bind-menu"
+          role="listbox"
+          aria-label="选择仓库"
+          style={
+            coords
+              ? { top: coords.top, left: coords.left, width: coords.width }
+              : { visibility: "hidden", top: 0, left: 0 }
+          }
+        >
           <input
             ref={searchRef}
             id="repo-bind-search"
@@ -110,7 +160,11 @@ export function RepoBindControl({
             <li>
               <button type="button" className={mode === "none" ? "is-selected" : undefined} onClick={pickNone}>
                 <span>无仓库</span>
-                {mode === "none" ? <span className="repo-bind-check" aria-hidden="true">✓</span> : null}
+                {mode === "none" ? (
+                  <span className="repo-bind-check" aria-hidden="true">
+                    ✓
+                  </span>
+                ) : null}
               </button>
             </li>
             {ranked.map((item) => {
@@ -129,7 +183,11 @@ export function RepoBindControl({
                       <span className="repo-bind-item-name">{parts.name}</span>
                       {parts.owner ? <span className="repo-bind-item-owner">{parts.owner}</span> : null}
                     </span>
-                    {selected ? <span className="repo-bind-check" aria-hidden="true">✓</span> : null}
+                    {selected ? (
+                      <span className="repo-bind-check" aria-hidden="true">
+                        ✓
+                      </span>
+                    ) : null}
                   </button>
                 </li>
               );
@@ -149,8 +207,27 @@ export function RepoBindControl({
           {!reposLoading && reposConfigured && ranked.length === 0 ? (
             <p className="hint">{query.trim() ? "没有匹配的仓库" : "这个账号下还没有可用仓库"}</p>
           ) : null}
-        </div>
-      </details>
+        </div>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <div className="picker repo-bind">
+      <button
+        ref={triggerRef}
+        type="button"
+        id="repo-bind"
+        className={`repo-bind-trigger${open ? " is-open" : ""}`}
+        aria-label="仓库"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        title={label}
+        onClick={() => onOpen?.(!open)}
+      >
+        <span className="repo-bind-label">{label}</span>
+      </button>
+      {menu}
     </div>
   );
 }

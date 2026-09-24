@@ -241,7 +241,7 @@
   overflow: visible;
 }
 
-.buddy-composer-bar .repo-bind-pop > summary,
+.buddy-composer-bar .repo-bind-trigger,
 .buddy-composer-bar .repo-bind-lock {
   max-width: min(36ch, 42vw);
 }

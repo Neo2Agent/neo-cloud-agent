@@ -30,10 +30,12 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onAction: (id: BuddyPlusAction) => void;
+  hiddenActions?: BuddyPlusAction[];
 };
 
-export function BuddyPlusSheet({ open, onClose, onAction }: Props) {
+export function BuddyPlusSheet({ open, onClose, onAction, hiddenActions = [] }: Props) {
   if (!open) return null;
+  const hidden = new Set(hiddenActions);
   return (
     <div className="buddy-sheet-root">
       <button type="button" className="buddy-sheet-backdrop" aria-label="关闭" onClick={onClose} />
@@ -41,7 +43,7 @@ export function BuddyPlusSheet({ open, onClose, onAction }: Props) {
         <span className="buddy-sheet-handle" />
         <h3>添加</h3>
         <div className="buddy-sheet-grid">
-          {GRID.map((item) => (
+          {GRID.filter((item) => !hidden.has(item.id)).map((item) => (
             <button key={item.id} type="button" onClick={() => onAction(item.id)}>
               <span className="buddy-icon-slot">
                 <BuddyIcon name={item.icon} />
