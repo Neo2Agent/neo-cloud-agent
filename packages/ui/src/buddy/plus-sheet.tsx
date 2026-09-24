@@ -8,7 +8,6 @@ export type BuddyPlusAction =
   | "skill"
   | "camera"
   | "new"
-  | "pr"
   | "settings"
   | "memory";
 
@@ -25,17 +24,15 @@ export const BUDDY_PLUS_ROWS: Array<{ id: BuddyPlusAction; label: string; icon: 
   { id: "memory", label: "记忆", icon: "doc" },
   { id: "settings", label: "设置", icon: "gear" },
   { id: "new", label: "新对话", icon: "chat" },
-  { id: "pr", label: "导出 / 开 PR", icon: "pr" },
 ];
 
 type Props = {
   open: boolean;
-  canOpenPr?: boolean;
   onClose: () => void;
   onAction: (id: BuddyPlusAction) => void;
 };
 
-export function BuddyPlusSheet({ open, canOpenPr = false, onClose, onAction }: Props) {
+export function BuddyPlusSheet({ open, onClose, onAction }: Props) {
   if (!open) return null;
   return (
     <div className="buddy-sheet-root">
@@ -56,7 +53,7 @@ export function BuddyPlusSheet({ open, canOpenPr = false, onClose, onAction }: P
         <ul className="buddy-sheet-rows">
           {BUDDY_PLUS_ROWS.map((item) => (
             <li key={item.id}>
-              <button type="button" disabled={item.id === "pr" && !canOpenPr} onClick={() => onAction(item.id)}>
+              <button type="button" onClick={() => onAction(item.id)}>
                 <BuddyIcon name={item.icon} size={18} />
                 <span>{item.label}</span>
               </button>

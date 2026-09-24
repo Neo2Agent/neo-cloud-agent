@@ -52,7 +52,7 @@ export const BUNDLED_RECIPES: Recipe[] = [
     id: "recipe_tests_pr",
     title: "补测再开 draft PR",
     description: "补测试，再走受控提交和草稿 PR。",
-    prompt: "按现有测试补上缺失的校验，改完跑测试。通过后用 neo_git_commit 和 neo_pr_open 开草稿 PR。",
+    prompt: "按现有测试补上缺失的校验，改完跑测试。通过后用 neo_git_commit 提交。轮次结束控制面会开草稿 PR。",
     expertId: "exp_implementer",
   },
   {
@@ -114,7 +114,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     id: "ship-change",
     name: "交付改动",
     instruction:
-      "这个项目里的对话默认交付一条可验收改动。按计划改、跑项目测试、用 neo_git_commit / neo_pr_open 开草稿 PR。不要用 bash 做 git push。",
+      "这个项目里的对话默认交付一条可验收改动。按计划改、跑项目测试、用 neo_git_commit 提交。轮次结束控制面会开草稿 PR。不要用 bash 做 git push。",
     expertIds: ["exp_planner", "exp_implementer", "exp_reviewer"],
     pluginIds: [],
   },

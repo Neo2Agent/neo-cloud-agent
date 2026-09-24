@@ -5,7 +5,7 @@ import { BUDDY_PLUS_ROWS } from "./plus-sheet.js";
 test("plus sheet lists memory then settings so the composer bar can drop the gear", () => {
   assert.deepEqual(
     BUDDY_PLUS_ROWS.map((item) => item.id),
-    ["memory", "settings", "new", "pr"],
+    ["memory", "settings", "new"],
   );
   assert.equal(BUDDY_PLUS_ROWS[0]?.label, "记忆");
   assert.equal(BUDDY_PLUS_ROWS[1]?.label, "设置");

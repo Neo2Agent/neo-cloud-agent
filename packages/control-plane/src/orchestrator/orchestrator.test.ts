@@ -26,11 +26,18 @@ const {
   enqueueFollowUp,
   getBootstrap,
   getRun,
+  getRunCommits,
   getRunDiff,
   getRunDiagnostics,
   getRunSession,
   handoffRun,
+  ingestDeskGitSnapshot,
   ingestEvents,
+  markRunPullReady,
+  mergeRunPull,
+  refreshRunPullRequests,
+  requestRunReview,
+  setGithubFetchForTest,
   leaseDesk,
   listFollowUps,
   listRuns,
@@ -39,6 +46,7 @@ const {
   mintRunGitToken,
   projectRunCard,
   subscribeRun,
+  maybeDeliverHandoffDraft,
   openRunDraftPr,
   recoverLiveWorkers,
   reloadPersistedState,
@@ -51,10 +59,11 @@ const {
   rejectDeskRun,
   releaseDeskRun,
 } = await import("./orchestrator.js");
-const { bindDeskWorkspace, createDesk, openDeskInbox, takeDeskAssignment, updateDesk } = await import(
+const { bindDeskWorkspace, createDesk, deleteDesk, openDeskInbox, takeDeskAssignment, updateDesk } = await import(
   "../desks/store.js"
 );
 const { eventsForRun, listEvents } = await import("../events/bus.js");
+const { setDeliverHooksForTest } = await import("../scm/deliver.js");
 const { buildTranscriptSnapshot, transcriptHasUnsettledWork } = await import("@neo-cloud-agent/contracts");
 const { resolveEventImageData } = await import("../store/event-images.js");
 const { isObjectImageRef } = await import("../store/run-record.js");
@@ -124,6 +133,157 @@ test("commit and local draft PR stay on the control plane", async () => {
   const token = mintRunGitToken(run.id, { scope: "push", repoUrl: "fixtures/toy-repo" });
   assert.match(token.token, /^neo\.git\./);
   assert.doesNotMatch(token.token, /GITHUB_TOKEN|ghp-/);
+});
+
+async function withHandoffGithub<T>(fn: (counts: { opened: number; pushed: number }) => Promise<T>): Promise<T> {
+  const previous = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "tok";
+  const counts = { opened: 0, pushed: 0 };
+  setDeliverHooksForTest({
+    push: async (_cwd, _branch, remoteUrl) => {
+      counts.pushed += 1;
+      return { pushed: true, remote: remoteUrl ?? "https://github.com/acme/app.git" };
+    },
+    githubPulls: async (input) => {
+      counts.opened += 1;
+      return { url: `https://github.com/${input.owner}/${input.repo}/pull/7`, number: 7 };
+    },
+  });
+  try {
+    return await fn(counts);
+  } finally {
+    setDeliverHooksForTest(null);
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
+}
+
+test("maybeDeliverHandoffDraft opens a GitHub draft when the branch has commits", async () => {
+  await withHandoffGithub(async (counts) => {
+    const run = await createRun({ prompt: "ship a draft", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(run.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "SHIP.md"), "ok\n");
+    await commitRun(run.id, { message: "docs: ship" });
+    await maybeDeliverHandoffDraft(run.id);
+    assert.equal(counts.opened, 1);
+    assert.equal(counts.pushed, 1);
+    const pr = getRun(run.id)?.pullRequests[0];
+    assert.equal(pr?.url, "https://github.com/acme/app/pull/7");
+    assert.equal(pr?.draft, true);
+    assert.equal(pr?.number, 7);
+    assert.ok(listEvents(run.id).some((item) => item.kind === "scm.pr_opened"));
+  });
+});
+
+test("maybeDeliverHandoffDraft only pushes when a GitHub PR already exists", async () => {
+  await withHandoffGithub(async (counts) => {
+    const run = await createRun({ prompt: "follow up commits", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(run.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    live.pullRequests = [
+      {
+        repoUrl: "https://github.com/acme/app",
+        branch: live.branchName ?? "HEAD",
+        url: "https://github.com/acme/app/pull/12",
+        draft: true,
+        number: 12,
+        title: "Draft",
+      },
+    ];
+    writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "MORE.md"), "ok\n");
+    await commitRun(run.id, { message: "docs: more" });
+    await maybeDeliverHandoffDraft(run.id);
+    assert.equal(counts.opened, 0);
+    assert.equal(counts.pushed, 1);
+    assert.equal(getRun(run.id)?.pullRequests[0]?.number, 12);
+    assert.ok(listEvents(run.id).some((item) => item.kind === "scm.push_succeeded"));
+  });
+});
+
+test("maybeDeliverHandoffDraft skips when token, commits, or GitHub are missing", async () => {
+  const previous = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  setDeliverHooksForTest({
+    push: async () => {
+      throw new Error("should not push");
+    },
+    githubPulls: async () => {
+      throw new Error("should not open");
+    },
+  });
+  try {
+    const noToken = await createRun({ prompt: "no token", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(noToken.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    writeFileSync(path.join(getBootstrap(noToken.id).workspaceDir, "A.md"), "a\n");
+    await commitRun(noToken.id, { message: "docs: a" });
+    await maybeDeliverHandoffDraft(noToken.id);
+    assert.equal(getRun(noToken.id)?.pullRequests.length, 0);
+
+    process.env.GITHUB_TOKEN = "tok";
+    const noCommits = await createRun({ prompt: "no extra commits", repoUrls: ["fixtures/toy-repo"] });
+    const bare = getRun(noCommits.id);
+    assert.ok(bare);
+    bare.repoUrls = ["https://github.com/acme/app.git"];
+    await maybeDeliverHandoffDraft(noCommits.id);
+    assert.equal(getRun(noCommits.id)?.pullRequests.length, 0);
+
+    const localOnly = await createRun({ prompt: "local fixture", repoUrls: ["fixtures/toy-repo"] });
+    writeFileSync(path.join(getBootstrap(localOnly.id).workspaceDir, "B.md"), "b\n");
+    await commitRun(localOnly.id, { message: "docs: b" });
+    await maybeDeliverHandoffDraft(localOnly.id);
+    assert.equal(getRun(localOnly.id)?.pullRequests.length, 0);
+  } finally {
+    setDeliverHooksForTest(null);
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
+});
+
+test("maybeDeliverHandoffDraft skips desk runs", async () => {
+  await withHandoffGithub(async (counts) => {
+    const run = await createRun({ prompt: "desk handoff", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(run.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "DESK.md"), "ok\n");
+    await commitRun(run.id, { message: "docs: desk" });
+    live.executionTarget = { loop: "desk", tools: "desk", deskId: "desk_handoff_skip" };
+    await maybeDeliverHandoffDraft(run.id);
+    assert.equal(counts.opened, 0);
+    assert.equal(counts.pushed, 0);
+    assert.equal(getRun(run.id)?.pullRequests.length, 0);
+  });
+});
+
+test("agent.end idle joins the handoff draft", async () => {
+  await withHandoffGithub(async (counts) => {
+    const run = await createRun({ prompt: "idle handoff", repoUrls: ["fixtures/toy-repo"] });
+    const live = getRun(run.id);
+    assert.ok(live);
+    live.repoUrls = ["https://github.com/acme/app.git"];
+    writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "IDLE.md"), "ok\n");
+    await commitRun(run.id, { message: "docs: idle" });
+    ingestEvents(run.id, [
+      {
+        id: "handoff-end-1",
+        runId: run.id,
+        createdAt: new Date().toISOString(),
+        category: "agent_run",
+        level: "info",
+        kind: "agent.end",
+        title: "done",
+      },
+    ]);
+    await maybeDeliverHandoffDraft(run.id);
+    assert.equal(getRun(run.id)?.status, "IDLE");
+    assert.equal(counts.opened, 1);
+    assert.equal(getRun(run.id)?.pullRequests[0]?.number, 7);
+  });
 });
 
 test("createRun fails when environment install exits non-zero", async () => {
@@ -1100,6 +1260,224 @@ test("git on a desk run says the files are elsewhere instead of spawn git ENOENT
   await assert.rejects(() => commitRun(run.id, { message: "wip" }), /控制面看不到/);
   const diff = await getRunDiff(run.id);
   assert.equal(diff.stat, "");
+  assert.equal(diff.source, "none");
+});
+
+test("a desk run's Git panel reads the laptop's snapshot, and only that desk may write it", async () => {
+  const registered = newDesk("snap-box");
+  const bound = bindDeskWorkspace(registered.desk.id, { name: "app", repoKey: "local:app", git: true });
+  const run = await createRun({
+    prompt: "show my changes",
+    repoUrls: [],
+    source: "desk",
+    start: "inline",
+    deskWorkspaceId: bound.id,
+    target: { loop: "desk", tools: "desk", deskId: registered.desk.id },
+  });
+  await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/neo-desk-snapshot-elsewhere", pid: 4245 });
+  const asked: Array<{ kind: string; runId?: string; since?: string; workspaceId?: string }> = [];
+  const detach = openDeskInbox(registered.desk.id, (item) => asked.push(item as (typeof asked)[number]));
+  const first = await getRunDiff(run.id);
+  assert.equal(first.source, "none");
+  const requests = () => asked.filter((item) => item.kind === "git_snapshot");
+  assert.deepEqual(requests().map((item) => item.runId), [run.id]);
+  assert.equal(requests()[0]?.since, run.createdAt);
+  assert.equal(requests()[0]?.workspaceId, bound.id);
+  const turn = { runId: run.id, category: "agent_run" as const, level: "info" as const, createdAt: new Date().toISOString() };
+  ingestEvents(run.id, [
+    { ...turn, id: "snap-start", kind: "agent.start", title: "start" },
+    { ...turn, id: "snap-end", kind: "agent.end", title: "end" },
+  ]);
+  assert.equal(requests().length, 2, "a finished turn asks the laptop for a fresh snapshot");
+  const snapshot = {
+    branch: "main",
+    baseBranch: "main",
+    stat: " a.ts | 1 +",
+    patch: "diff --git a/a.ts b/a.ts\n+x\n",
+    files: [{ path: "a.ts", status: "modified" as const, added: 1, removed: 0 }],
+    truncated: false,
+    commits: [{ sha: "a".repeat(40), message: "wip", author: "me", authoredAt: "2026-09-23T10:00:00Z", added: 1, removed: 0, files: 1 }],
+  };
+  assert.throws(() => ingestDeskGitSnapshot("desk_someone_else", run.id, snapshot), /不在这台电脑上/);
+  ingestDeskGitSnapshot(registered.desk.id, run.id, snapshot);
+  const diff = await getRunDiff(run.id);
+  assert.equal(diff.source, "desk");
+  assert.equal(diff.files[0]?.path, "a.ts");
+  assert.ok(diff.capturedAt);
+  const commits = await getRunCommits(run.id);
+  assert.equal(commits.source, "desk");
+  assert.equal(commits.commits[0]?.message, "wip");
+  detach();
+  deleteDesk(registered.desk.id);
+});
+
+test("commits made through /commit survive the workspace going away", async () => {
+  const run = await createRun({ prompt: "record commits", repoUrls: ["fixtures/toy-repo"] });
+  writeFileSync(path.join(getBootstrap(run.id).workspaceDir, "RECORDED.md"), "one\ntwo\n");
+  const committed = await commitRun(run.id, { message: "docs: add RECORDED.md" });
+  assert.equal(committed.empty, false);
+  const recorded = getRun(run.id)?.commits ?? [];
+  assert.equal(recorded.at(-1)?.message, "docs: add RECORDED.md");
+  assert.equal(recorded.at(-1)?.added, 2);
+  const live = await getRunCommits(run.id);
+  assert.equal(live.source, "workspace");
+  assert.equal(live.commits[0]?.message, "docs: add RECORDED.md");
+  const diff = await getRunDiff(run.id);
+  assert.equal(diff.source, "workspace");
+  assert.ok(diff.files.some((item) => item.path === "RECORDED.md"));
+  assert.equal(diff.dirty, false);
+});
+
+test("markRunPullReady and mergeRunPull update the stored GitHub ref", async () => {
+  const previous = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "tok";
+  const run = await createRun({ prompt: "ready then merge", repoUrls: ["fixtures/toy-repo"] });
+  const live = getRun(run.id);
+  assert.ok(live);
+  live.pullRequests = [
+    {
+      repoUrl: "https://github.com/acme/app",
+      branch: "neo/feature",
+      url: "https://github.com/acme/app/pull/12",
+      draft: true,
+      number: 12,
+      title: "Draft",
+      state: "open",
+    },
+  ];
+  let merged = false;
+  setGithubFetchForTest(async (url, init) => {
+    const method = (init.method ?? "GET").toUpperCase();
+    if (method === "PUT" && url.includes("/merge")) {
+      merged = true;
+      return new Response(JSON.stringify({ merged: true }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (method === "PATCH") {
+      return new Response(JSON.stringify({ draft: false }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(
+      JSON.stringify({
+        number: 12,
+        title: "Draft",
+        html_url: "https://github.com/acme/app/pull/12",
+        state: merged ? "closed" : "open",
+        merged,
+        merged_at: merged ? "2026-09-24T06:00:00Z" : null,
+        draft: false,
+        base: { ref: "main" },
+        head: { sha: "abc123" },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  });
+  try {
+    const ready = await markRunPullReady(run.id, 12);
+    assert.equal(ready.draft, false);
+    assert.equal(getRun(run.id)?.pullRequests[0]?.draft, false);
+    const merged = await mergeRunPull(run.id, 12);
+    assert.equal(merged.state, "merged");
+    await assert.rejects(() => markRunPullReady(run.id, 99), /找不到/);
+    live.pullRequests = [{ repoUrl: "/tmp/repo", branch: "main", url: "local://pr/x/1", draft: true, number: 1, title: "local" }];
+    await assert.rejects(() => markRunPullReady(run.id, 1), /不是 GitHub/);
+  } finally {
+    setGithubFetchForTest(null);
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
+});
+
+test("refreshRunPullRequests walks the parent PR from the base branch", async () => {
+  const previous = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "tok";
+  const run = await createRun({ prompt: "stacked refresh", repoUrls: ["fixtures/toy-repo"] });
+  const live = getRun(run.id);
+  assert.ok(live);
+  live.branchName = "neo/feature";
+  live.pullRequests = [
+    {
+      repoUrl: "https://github.com/acme/app",
+      branch: "neo/feature",
+      url: "https://github.com/acme/app/pull/12",
+      draft: false,
+      number: 12,
+      title: "Tip",
+      state: "open",
+    },
+  ];
+  setGithubFetchForTest(async (url) => {
+    const path = url.replace("https://api.github.com", "").replace(/\?.*$/, "");
+    if (path === "/repos/acme/app/pulls/12") {
+      return new Response(
+        JSON.stringify({
+          number: 12,
+          title: "Tip",
+          html_url: "https://github.com/acme/app/pull/12",
+          state: "open",
+          draft: false,
+          additions: 10,
+          deletions: 1,
+          base: { ref: "cursor/parent" },
+          head: { sha: "aaa", ref: "neo/feature" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (path === "/repos/acme/app/pulls") {
+      return new Response(
+        JSON.stringify([
+          {
+            number: 11,
+            title: "Parent",
+            html_url: "https://github.com/acme/app/pull/11",
+            draft: true,
+            state: "open",
+            head: { ref: "cursor/parent", sha: "bbb" },
+            base: { ref: "main" },
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (path === "/repos/acme/app/pulls/11") {
+      return new Response(
+        JSON.stringify({
+          number: 11,
+          title: "Parent",
+          html_url: "https://github.com/acme/app/pull/11",
+          state: "open",
+          draft: true,
+          additions: 2061,
+          deletions: 963,
+          base: { ref: "main" },
+          head: { sha: "bbb", ref: "cursor/parent" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  });
+  try {
+    const next = await refreshRunPullRequests(run.id, { force: true });
+    assert.equal(next.length, 2);
+    assert.equal(next[0]?.number, 12);
+    assert.equal(next[1]?.number, 11);
+    assert.equal(next[1]?.additions, 2061);
+    assert.equal(getRun(run.id)?.pullRequests.length, 2);
+  } finally {
+    setGithubFetchForTest(null);
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
+});
+
+test("review asks the same run to review its branch as a queued follow-up", async () => {
+  const run = await createRun({ prompt: "review me", repoUrls: ["fixtures/toy-repo"] });
+  takeInbound(run.id);
+  const follow = await requestRunReview(run.id);
+  assert.equal(follow.delivery === "follow_up" || follow.delivery === "prompt", true);
+  assert.match(follow.text, /审查/);
+  const plain = await createRun({ prompt: "just chat", repoUrls: [] });
+  await assert.rejects(() => requestRunReview(plain.id), /没有绑定仓库/);
 });
 
 test("a desk worker that crashes surfaces the exit code instead of going idle", async () => {

@@ -1,7 +1,18 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { PullRequestRef } from "@neo-cloud-agent/contracts";
+import {
+  collectCommits,
+  collectWorkspaceDiff,
+  GIT_EMPTY_TREE,
+  GIT_LOG_FORMAT,
+  gitDiffBase,
+  parseGitLog,
+  type GitFileChange,
+  type GitRunner,
+  type PullRequestRef,
+  type RunCommitRef,
+} from "@neo-cloud-agent/contracts";
 import { gitOk, parseGithubRepo, runGit } from "./git.js";
 import { resolveScmPushToken } from "./token.js";
 
@@ -87,7 +98,28 @@ esac
   }
 }
 
+export type PushWorkspaceFn = (
+  cwd: string,
+  branch: string,
+  remoteUrl?: string,
+) => Promise<{ pushed: boolean; remote: string | null }>;
+
+type DeliverHooks = {
+  githubPulls?: GithubPullsClient;
+  push?: PushWorkspaceFn;
+};
+
+let deliverHooks: DeliverHooks = {};
+
+/** Test-only: stub GitHub pulls / push so handoff does not hit the network. */
+export function setDeliverHooksForTest(hooks: DeliverHooks | null): void {
+  deliverHooks = hooks ?? {};
+}
+
 export async function pushWorkspace(cwd: string, branch: string, remoteUrl?: string): Promise<{ pushed: boolean; remote: string | null }> {
+  if (deliverHooks.push) {
+    return deliverHooks.push(cwd, branch, remoteUrl);
+  }
   const remote = await ensureOrigin(cwd, remoteUrl);
   if (!remote) {
     return { pushed: false, remote: null };
@@ -166,7 +198,7 @@ export async function openDraftPullRequest(
   const github = parseGithubRepo(remote);
   const token = await resolveScmPushToken();
   if (github && token) {
-    const opened = await (input.githubPulls ?? defaultGithubPulls)({
+    const opened = await (input.githubPulls ?? deliverHooks.githubPulls ?? defaultGithubPulls)({
       owner: github.owner,
       repo: github.repo,
       title: input.title,
@@ -198,15 +230,33 @@ export async function openDraftPullRequest(
   };
 }
 
-export async function workspaceDiff(cwd: string, baseBranch?: string | null): Promise<{ stat: string; patch: string }> {
-  const range = baseBranch ? `${baseBranch}...HEAD` : "HEAD";
-  const stat = await runGit(cwd, baseBranch ? ["diff", "--stat", range] : ["diff", "--stat"]);
-  const patch = await runGit(cwd, baseBranch ? ["diff", range] : ["diff"]);
-  const uncommitted = await runGit(cwd, ["diff", "--stat"]);
-  return {
-    stat: [stat.stdout, uncommitted.stdout].filter(Boolean).join("\n"),
-    patch: patch.stdout,
-  };
+function gitIn(cwd: string): GitRunner {
+  return (args) => runGit(cwd, args);
+}
+
+/**
+ * Everything this run changed: from where the branch forked to the working tree, so committed,
+ * staged, unstaged, and untracked changes all show.
+ */
+export async function workspaceDiff(
+  cwd: string,
+  baseBranch?: string | null,
+): Promise<{ stat: string; patch: string; files: GitFileChange[]; truncated: boolean; dirty: boolean }> {
+  const git = gitIn(cwd);
+  return collectWorkspaceDiff(git, await gitDiffBase(git, baseBranch));
+}
+
+/** Commits on this branch since it forked, newest first. */
+export async function workspaceCommits(cwd: string, baseBranch?: string | null): Promise<RunCommitRef[]> {
+  const git = gitIn(cwd);
+  const base = await gitDiffBase(git, baseBranch);
+  if (base === GIT_EMPTY_TREE) return [];
+  return collectCommits(git, base === "HEAD" ? ["HEAD"] : [`${base}..HEAD`]);
+}
+
+export async function commitInfo(cwd: string, sha: string): Promise<RunCommitRef | null> {
+  const log = await runGit(cwd, ["log", "-1", `--format=${GIT_LOG_FORMAT}`, "--numstat", sha]);
+  return log.code === 0 ? (parseGitLog(log.stdout)[0] ?? null) : null;
 }
 
 export function resetLocalPullRequests(): void {

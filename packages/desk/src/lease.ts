@@ -1,4 +1,11 @@
-import type { BindDeskWorkspaceRequest, Desk, DeskAssignment, DeskLeaseResponse, DeskWorkspace } from "@neo-cloud-agent/contracts";
+import type {
+  BindDeskWorkspaceRequest,
+  Desk,
+  DeskAssignment,
+  DeskGitSnapshot,
+  DeskLeaseResponse,
+  DeskWorkspace,
+} from "@neo-cloud-agent/contracts";
 
 export type LeaseClient = {
   register(input: { name?: string; hostname?: string; platform?: string; userToken: string }): Promise<{
@@ -20,6 +27,8 @@ export type LeaseClient = {
   reject(input: { deskId: string; deskToken: string; runId: string; reason?: string }): Promise<void>;
   /** Tell the control plane this machine's worker for a run has exited. */
   release(input: { deskId: string; deskToken: string; runId: string; code?: number | null }): Promise<void>;
+  /** Report a local run's git state; the control plane cannot read this disk. */
+  uploadGitSnapshot(input: { deskId: string; deskToken: string; runId: string; snapshot: DeskGitSnapshot }): Promise<void>;
   bindWorkspace(input: { deskId: string; deskToken: string } & BindDeskWorkspaceRequest): Promise<DeskWorkspace>;
   unbindWorkspace(input: { deskId: string; deskToken: string; workspaceId: string }): Promise<void>;
 };
@@ -126,6 +135,9 @@ export function createLeaseClient(baseUrl: string, fetchImpl: typeof fetch = fet
         { runId: input.runId, code: input.code ?? null },
         "desk release failed",
       );
+    },
+    async uploadGitSnapshot(input) {
+      await deskPost(input.deskId, input.deskToken, `runs/${encodeURIComponent(input.runId)}/git`, input.snapshot, "git snapshot upload failed");
     },
     async bindWorkspace(input) {
       const response = await deskPost(

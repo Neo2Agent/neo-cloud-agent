@@ -121,7 +121,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(appText, /toggle-settings/);
   assert.match(appText, /status-pop/);
   assert.match(appText, /sidebar-toggle/);
-  assert.match(appText, /tool-diff|diff-add/);
+  assert.match(appText, /git-hunk-line|Find Issues/);
+  assert.match(cssText, /\.git-gutter/);
   assert.match(appText, /type===["']tool["']/);
   assert.match(appText, /artifact/);
   assert.match(appText, /deepseek-flash/);

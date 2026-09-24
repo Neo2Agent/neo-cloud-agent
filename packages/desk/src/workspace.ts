@@ -2,8 +2,15 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileS
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
-import type { DeskAssignment } from "@neo-cloud-agent/contracts";
+import type { DeskAssignment, RunCommitRef } from "@neo-cloud-agent/contracts";
 import { deskRepoKey, deskWorkspaceShortName } from "@neo-cloud-agent/contracts/desk-workspace";
+import {
+  collectCommits,
+  collectWorkspaceDiff,
+  GIT_EMPTY_TREE,
+  type DeskGitSnapshot,
+  type GitRunner,
+} from "@neo-cloud-agent/contracts/git";
 import {
   FOLDER_UNREADABLE_MESSAGE,
   HOME_OR_ROOT_REJECT_MESSAGE,
@@ -201,6 +208,43 @@ export async function localWorkspaceDiffStat(folder: string): Promise<{ added: n
     removed += Number.parseInt(r ?? "", 10) || 0;
   }
   return { added, removed };
+}
+
+function gitRunner(cwd: string): GitRunner {
+  return (args) =>
+    new Promise((resolve) => {
+      const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
+      let stdout = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.on("error", () => resolve({ code: 1, stdout: "" }));
+      child.on("exit", (code) => resolve({ code: code ?? 1, stdout }));
+    });
+}
+
+/**
+ * Git state of a local run for the Web Git panel: commits made since the run started,
+ * and every change from just before the first of them to the working tree.
+ */
+export async function localGitSnapshot(folder: string, since?: string | null): Promise<DeskGitSnapshot | null> {
+  if (!isGitRepo(folder)) {
+    return null;
+  }
+  const git = gitRunner(folder);
+  const head = await git(["rev-parse", "--verify", "--quiet", "HEAD"]);
+  let base = head.code === 0 ? "HEAD" : GIT_EMPTY_TREE;
+  let commits: RunCommitRef[] = [];
+  if (head.code === 0 && since) {
+    commits = await collectCommits(git, [`--since=${since}`, "HEAD"]);
+    const oldest = commits.at(-1)?.sha;
+    if (oldest) {
+      const parent = await git(["rev-parse", "--verify", "--quiet", `${oldest}^`]);
+      base = parent.code === 0 ? parent.stdout.trim() : GIT_EMPTY_TREE;
+    }
+  }
+  const branch = (await git(["symbolic-ref", "--short", "-q", "HEAD"])).stdout.trim();
+  return { branch: branch || null, baseBranch: null, commits, ...(await collectWorkspaceDiff(git, base)) };
 }
 
 function gitOutput(cwd: string, args: string[]): Promise<string> {

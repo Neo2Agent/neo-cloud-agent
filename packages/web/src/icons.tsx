@@ -9,7 +9,10 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  Copy,
   Download,
+  GitBranch,
+  RefreshCw,
   File,
   FileBraces,
   FileCode,
@@ -190,6 +193,18 @@ export function IconMemory(props: IconProps) {
 
 export function IconMore(props: IconProps) {
   return icon(MoreHorizontal, props);
+}
+
+export function IconCopy(props: IconProps) {
+  return icon(Copy, props);
+}
+
+export function IconRefresh(props: IconProps) {
+  return icon(RefreshCw, props);
+}
+
+export function IconBranch(props: IconProps) {
+  return icon(GitBranch, props);
 }
 
 export function IconPr(props: IconProps) {

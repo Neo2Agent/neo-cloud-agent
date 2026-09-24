@@ -1,6 +1,14 @@
 import type { CreateCommitRequest, CreateGitTokenRequest, CreatePullRequestRequest, Run } from "@neo-cloud-agent/contracts";
 import { prepareWorkspaceRepo } from "./branch.js";
-import { commitWorkspace, openDraftPullRequest, workspaceDiff } from "./deliver.js";
+import {
+  commitInfo,
+  commitWorkspace,
+  openDraftPullRequest,
+  pushWorkspace,
+  setDeliverHooksForTest,
+  workspaceCommits,
+  workspaceDiff,
+} from "./deliver.js";
 import { mintGitToken, type IssuedGitToken } from "./token.js";
 
 export { mintGitToken, resolveScmPushToken, scmPushToken, verifyGitToken } from "./token.js";
@@ -55,3 +63,9 @@ export async function openRunPullRequest(
 export async function diffRunWorkspace(cwd: string, run: Run) {
   return workspaceDiff(cwd, run.baseBranch);
 }
+
+export async function commitsRunWorkspace(cwd: string, run: Run) {
+  return workspaceCommits(cwd, run.baseBranch);
+}
+
+export { commitInfo, pushWorkspace, setDeliverHooksForTest };

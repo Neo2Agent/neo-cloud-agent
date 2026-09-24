@@ -418,6 +418,9 @@ export function isExpensiveWrite(method: string, path: string): boolean {
   if (/^\/v1\/runs\/[^/]+\/(commit|pull-request|scm\/pull-request|handoff|transfer)$/.test(path)) {
     return true;
   }
+  if (/^\/v1\/runs\/[^/]+\/pull-requests\/\d+\/(ready|merge)$/.test(path)) {
+    return true;
+  }
   if (path === "/v1/desks" || ((method === "DELETE" || method === "PATCH") && /^\/v1\/desks\/[^/]+$/.test(path))) {
     return true;
   }

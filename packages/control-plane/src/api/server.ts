@@ -13,6 +13,7 @@ import type {
   BindDeskWorkspaceRequest,
   CreateDeskRequest,
   CreateDeviceRequest,
+  DeskGitSnapshot,
   DeskInboxEvent,
   UpdateDeskRequest,
   CreateExpertRequest,
@@ -77,9 +78,16 @@ import {
   ingestGitHubWebhook,
   getBootstrap,
   getRun,
+  getRunCommits,
   getRunDiagnostics,
   getRunDiff,
+  getRunPullRequestFeedback,
   getRunSession,
+  ingestDeskGitSnapshot,
+  markRunPullReady,
+  mergeRunPull,
+  refreshRunPullRequests,
+  requestRunReview,
   completeLoopTurn,
   heartbeatLoopTurn,
   ingestEvents,
@@ -762,6 +770,27 @@ export function createApiServer() {
             send(res, 200, await claimDeskRun(deskId, { runId: body.runId, workspaceDir: body.workspaceDir, pid: body.pid }));
           } catch (error) {
             send(res, 400, { error: error instanceof Error ? error.message : "desk_action_failed" });
+          }
+          return;
+        }
+        const deskGit = /^\/v1\/desks\/([^/]+)\/runs\/([^/]+)\/git$/.exec(path);
+        if (deskGit && method === "POST") {
+          const deskId = deskGit[1] ?? "";
+          const token = readBearer(req);
+          const desk = token ? findDeskByToken(token) : undefined;
+          if (!desk || desk.id !== deskId) {
+            send(res, 401, { error: "unauthorized" });
+            return;
+          }
+          if (await rejectRateLimits(res, [{ policy: "write", key: `desk:${deskId}` }])) {
+            return;
+          }
+          try {
+            const body = (await readJson(req)) as DeskGitSnapshot;
+            send(res, 200, ingestDeskGitSnapshot(deskId, deskGit[2] ?? "", body));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "git_snapshot_failed";
+            send(res, message.includes("not found") ? 404 : 403, { error: message });
           }
           return;
         }
@@ -2682,6 +2711,94 @@ export function createApiServer() {
           return;
         }
         send(res, 200, await getRunDiff(runId));
+        return;
+      }
+
+      const commitsMatch = /^\/v1\/runs\/([^/]+)\/commits$/.exec(path);
+      if (commitsMatch && method === "GET") {
+        const runId = commitsMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        send(res, 200, await getRunCommits(runId));
+        return;
+      }
+
+      const pullsMatch = /^\/v1\/runs\/([^/]+)\/pull-requests$/.exec(path);
+      if (pullsMatch && method === "GET") {
+        const runId = pullsMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        const force = url.searchParams.get("refresh") === "force";
+        const refresh = force || url.searchParams.get("refresh") === "1";
+        const pullRequests = refresh ? await refreshRunPullRequests(runId, { force }) : (run?.pullRequests ?? []);
+        send(res, 200, { pullRequests });
+        return;
+      }
+
+      const feedbackMatch = /^\/v1\/runs\/([^/]+)\/pull-requests\/(\d+)\/feedback$/.exec(path);
+      if (feedbackMatch && method === "GET") {
+        const runId = feedbackMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        try {
+          send(res, 200, await getRunPullRequestFeedback(runId, Number(feedbackMatch[2])));
+        } catch (error) {
+          send(res, 502, { error: error instanceof Error ? error.message : "feedback_failed" });
+        }
+        return;
+      }
+
+      const readyMatch = /^\/v1\/runs\/([^/]+)\/pull-requests\/(\d+)\/ready$/.exec(path);
+      if (readyMatch && method === "POST") {
+        const runId = readyMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        try {
+          send(res, 200, { pullRequest: await markRunPullReady(runId, Number(readyMatch[2])) });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "ready_failed";
+          send(res, message.includes("找不到") || message.includes("不是 GitHub") ? 400 : 502, { error: message });
+        }
+        return;
+      }
+
+      const mergeMatch = /^\/v1\/runs\/([^/]+)\/pull-requests\/(\d+)\/merge$/.exec(path);
+      if (mergeMatch && method === "POST") {
+        const runId = mergeMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        try {
+          const body = (await readJson(req).catch(() => ({}))) as { merge_method?: string };
+          send(res, 200, { pullRequest: await mergeRunPull(runId, Number(mergeMatch[2]), body.merge_method) });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "merge_failed";
+          send(res, message.includes("找不到") || message.includes("不是 GitHub") || message.includes("先 Mark") || message.includes("已经关闭") ? 400 : 502, { error: message });
+        }
+        return;
+      }
+
+      const reviewMatch = /^\/v1\/runs\/([^/]+)\/review$/.exec(path);
+      if (reviewMatch && method === "POST") {
+        const runId = reviewMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        try {
+          send(res, 202, await requestRunReview(runId, actor.kind === "user" ? { userId: actor.userId, email: actor.email } : undefined));
+        } catch (error) {
+          send(res, 400, { error: error instanceof Error ? error.message : "review_failed" });
+        }
         return;
       }
 

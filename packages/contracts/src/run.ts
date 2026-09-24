@@ -242,6 +242,8 @@ export interface Run {
   baseBranch: string | null;
   repoUrls: string[];
   pullRequests: PullRequestRef[];
+  /** Commits made through `/commit`, newest last. Capped; the workspace log is authoritative while it exists. */
+  commits?: RunCommitRef[];
   workerHandle: string | null;
   /** Firecracker / loop VM slot claimed for this run, e.g. slot-0. */
   vmSlotId?: string | null;
@@ -290,6 +292,14 @@ export function runDisplayTitle(run: { title?: string | null; prompt?: string | 
   return (run.title ?? "").trim() || (run.prompt ?? "").trim();
 }
 
+export type PullRequestState = "open" | "closed" | "merged";
+
+export interface PullRequestChecks {
+  passed: number;
+  failed: number;
+  pending: number;
+}
+
 export interface PullRequestRef {
   repoUrl: string;
   branch: string;
@@ -297,6 +307,28 @@ export interface PullRequestRef {
   draft: boolean;
   number: number | null;
   title: string;
+  /** Filled from GitHub (API refresh or `pull_request` webhook). Absent for `local://pr`. */
+  state?: PullRequestState;
+  mergedAt?: string | null;
+  baseBranch?: string | null;
+  headSha?: string | null;
+  checks?: PullRequestChecks | null;
+  /** GitHub compare stats; absent until refresh. */
+  additions?: number | null;
+  deletions?: number | null;
+  /** When state / checks were last read from GitHub. */
+  updatedAt?: string | null;
+}
+
+/** A commit this run made, recorded so the list survives the workspace being reclaimed. */
+export interface RunCommitRef {
+  sha: string;
+  message: string;
+  author: string;
+  authoredAt: string;
+  added: number;
+  removed: number;
+  files: number;
 }
 
 export type FollowUpDelivery = "prompt" | "steer" | "follow_up";

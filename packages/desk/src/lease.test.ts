@@ -35,3 +35,21 @@ test("createLeaseClient can list and prune desks with the user token", async () 
   assert.equal(desks[0]?.id, "desk_old");
   assert.deepEqual(calls, ["GET http://cp/v1/desks", "DELETE http://cp/v1/desks/desk_old"]);
 });
+
+test("createLeaseClient uploads a run's git snapshot with the desk token", async () => {
+  const calls: Array<{ url: string; auth: string | null; body: unknown }> = [];
+  const fake = (async (url: string | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(url),
+      auth: new Headers(init?.headers).get("authorization"),
+      body: JSON.parse(String(init?.body ?? "null")),
+    });
+    return new Response(JSON.stringify({ capturedAt: "now" }), { status: 200 });
+  }) as typeof fetch;
+  const client = createLeaseClient("http://cp", fake);
+  const snapshot = { branch: "main", baseBranch: null, stat: "", patch: "", files: [], truncated: false, commits: [] };
+  await client.uploadGitSnapshot({ deskId: "desk_1", deskToken: "desk_tok", runId: "run_1", snapshot });
+  assert.equal(calls[0]?.url, "http://cp/v1/desks/desk_1/runs/run_1/git");
+  assert.equal(calls[0]?.auth, "Bearer desk_tok");
+  assert.deepEqual(calls[0]?.body, snapshot);
+});
