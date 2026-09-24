@@ -35,6 +35,7 @@ import { SkillsPage } from "./components/SkillsPage";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { MemoriesPage } from "./components/MemoriesPage";
 import { SettingsPanel, type BuildOption, type EnvOption, type LlmSettings, type ScmSettings } from "./components/SettingsPanel";
+import type { GithubRepoOption, RepoBindMode } from "./components/RepoBindControl";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import { BUNDLED_RECIPES, recipeById, type IntentCapsule, type Recipe } from "@neo-cloud-agent/contracts/recipe";
@@ -43,7 +44,6 @@ import { parseProjectHash, projectHashHref } from "./project-route.js";
 import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
-import type { RepoBindMode } from "./components/RepoBindControl";
 import { useConfirm, toast } from "./feedback";
 import {
   IconArchive,
@@ -216,7 +216,7 @@ function hashMemories(): boolean {
 }
 
 function hashSettings(): boolean {
-  return location.hash === "#/settings";
+  return location.hash === "#/settings" || location.hash.startsWith("#/settings?");
 }
 
 function hashCatalog(): boolean {
@@ -317,22 +317,23 @@ export function App() {
   const [pluginPick, setPluginPick] = useState<PluginCatalogItem | null>(null);
   const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([]);
   const [projectNames, setProjectNames] = useState<Record<string, string>>({});
-  const [projectDefaultRepos, setProjectDefaultRepos] = useState<Record<string, string>>({});
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [selectedExpertId, setSelectedExpertId] = useState<string | null>(hashExpertId);
   const [experts, setExperts] = useState<Expert[]>([]);
   const [teams, setTeams] = useState<ExpertTeam[]>([]);
   const [expertPick, setExpertPick] = useState<ExpertPick>({});
-  const [activeProject, setActiveProject] = useState<{ id: string; name: string; defaultRepo?: string } | null>(null);
+  const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(hashProjectId);
   const [projectAssetsTab, setProjectAssetsTab] = useState(hashProjectAssets);
   const [highlightAssetId, setHighlightAssetId] = useState<string | null>(hashProjectAssetId);
   const [inviteToken, setInviteToken] = useState<string | null>(hashInviteToken);
   const [llm, setLlm] = useState<LlmSettings>({ configured: false, upstream: "deepseek", model: null });
   const [llmKey, setLlmKey] = useState("");
-  const [scm, setScm] = useState<ScmSettings>({ configured: false, method: "none" });
-  const [scmToken, setScmToken] = useState("");
+  const [githubRepos, setGithubRepos] = useState<GithubRepoOption[]>([]);
+  const [githubReposConfigured, setGithubReposConfigured] = useState(false);
+  const [githubReposLoading, setGithubReposLoading] = useState(false);
+  const [repoQuery, setRepoQuery] = useState("");
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [pendingTurn, setPendingTurn] = useState<PendingUser | null>(null);
@@ -622,9 +623,6 @@ export function App() {
       if (projectRes.ok) {
         const projects = (await readJson<{ projects?: Project[] }>(projectRes)).projects ?? [];
         setProjectNames(Object.fromEntries(projects.map((item) => [item.id, item.name])));
-        setProjectDefaultRepos(
-          Object.fromEntries(projects.map((item) => [item.id, item.defaultRepoUrls[0] ?? ""])),
-        );
       }
     } catch {
       // optional catalog
@@ -701,22 +699,36 @@ export function App() {
     }
   }, []);
 
-  const refreshScm = useCallback(async () => {
+  const refreshGithubRepos = useCallback(async (q = "") => {
+    if (!tokenRef.current) return;
+    setGithubReposLoading(true);
     try {
-      const response = await api(tokenRef.current, "/v1/settings/scm");
+      const query = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+      const response = await api(tokenRef.current, `/v1/scm/repos${query}`);
       if (!response.ok) return;
-      const settings = await readJson<ScmSettings & { error?: string }>(response);
-      if (!settings.error) {
-        setScm({
-          configured: settings.configured,
-          method: settings.method === "github-app" || settings.method === "pat" ? settings.method : "none",
-        });
-        setScmToken("");
-      }
+      const body = await readJson<{
+        configured?: boolean;
+        connected?: boolean;
+        repos?: GithubRepoOption[];
+        error?: string;
+      }>(response);
+      if (body.error) return;
+      setGithubReposConfigured(Boolean(body.configured ?? body.connected));
+      setGithubRepos(body.repos ?? []);
     } catch {
       // optional
+    } finally {
+      setGithubReposLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!repoPickerOpen) return;
+    const timer = window.setTimeout(() => {
+      void refreshGithubRepos(repoQuery);
+    }, repoQuery.trim() ? 200 : 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshGithubRepos, repoPickerOpen, repoQuery]);
 
   const resetComposer = useCallback(() => {
     closeStream();
@@ -740,6 +752,7 @@ export function App() {
     setRepo("");
     setRepoMode("none");
     setRepoPickerOpen(false);
+    setRepoQuery("");
     setHighlightId(null);
     setMoreOpen(false);
     setPlusOpen(false);
@@ -910,17 +923,12 @@ export function App() {
   );
 
   const startProjectChat = useCallback(
-    (project: { id: string; name: string; defaultRepoUrls?: string[] }) => {
+    (project: { id: string; name: string }) => {
       resetComposer();
-      const defaultRepo = project.defaultRepoUrls?.[0] ? normalizeRepoUrl(project.defaultRepoUrls[0]) : "";
-      setActiveProject({ id: project.id, name: project.name, defaultRepo: defaultRepo || undefined });
+      setActiveProject({ id: project.id, name: project.name });
       setDeskTarget({ kind: "cloud" });
       writeLastTarget({ kind: "cloud" });
       void deskBridge()?.setTarget({ kind: "cloud" });
-      if (defaultRepo) {
-        setRepo(defaultRepo);
-        setRepoMode("bind");
-      }
       setMainTab("chat");
     },
     [resetComposer],
@@ -948,7 +956,6 @@ export function App() {
       refreshRuns(),
       refreshEnvironments(),
       refreshLlm(),
-      refreshScm(),
       refreshVms(),
       refreshExperts(),
       refreshDesks(),
@@ -1001,12 +1008,11 @@ export function App() {
       match ? openRun(match) : Promise.resolve(),
       refreshEnvironments(),
       refreshLlm(),
-      refreshScm(),
       refreshVms(),
       refreshDesks(),
     ]);
     if (!match && !hashRunId() && !hashCatalog()) resetComposer();
-  }, [openRun, refreshDesks, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshScm, refreshVms, resetComposer]);
+  }, [openRun, refreshDesks, refreshEnvironments, refreshExperts, refreshLlm, refreshRuns, refreshVms, resetComposer]);
 
   const applySession = useCallback(
     async (nextToken: string, user?: { id?: string; email?: string; username?: string; avatar?: string | null } | null) => {
@@ -1078,7 +1084,7 @@ export function App() {
     if (!runId && repoMode === "bind") {
       const bound = cloudSafeRepoUrls([normalizeRepoUrl(repo)]);
       if (bound.length === 0) {
-        toast("绑定 Git 前先选出仓库。", "err");
+        toast("先选出仓库。", "err");
         return;
       }
     }
@@ -1889,7 +1895,6 @@ export function App() {
       return;
     }
     if (action === "repo") {
-      setRepoMode("bind");
       setRepoPickerOpen(true);
       return;
     }
@@ -2176,7 +2181,6 @@ export function App() {
             startProjectChat({
               id,
               name: projectNames[id] || "项目对话",
-              defaultRepoUrls: projectDefaultRepos[id] ? [projectDefaultRepos[id]] : [],
             });
             setSidebarOpen((open) => {
               if (!closeMobileSidebar()) return open;
@@ -2395,8 +2399,6 @@ export function App() {
                   builds={builds}
                   llm={llm}
                   llmKey={llmKey}
-                  scm={scm}
-                  scmToken={scmToken}
                   onRepo={setRepo}
                   onEnv={setEnvId}
                   onBuild={setBuildId}
@@ -2439,52 +2441,12 @@ export function App() {
                 toast(error instanceof Error ? error.message : "保存失败", "err");
               });
             }}
-                  onScmToken={setScmToken}
-                  onSaveScm={() => {
-              void (async () => {
-                if (!scmToken && !scm.configured) return;
-                const payload: { token?: string } = {};
-                if (scmToken) payload.token = scmToken;
-                const saved = await readJson<ScmSettings & { error?: string }>(
-                  await api(token, "/v1/settings/scm", { method: "POST", body: JSON.stringify(payload) }),
-                );
-                if (saved.error === "login_required") throw new Error("请先登录再保存 GitHub 凭证");
-                if (saved.error) throw new Error(saved.error);
-                setScm({
-                  configured: saved.configured,
-                  method: saved.method === "github-app" || saved.method === "pat" ? saved.method : "none",
-                });
-                setScmToken("");
-                const nextHealth = await readJson<Health>(await fetch("/health"));
-                setHealth(nextHealth);
-                setHealthText(formatHealth(nextHealth, vms));
-                toast("GitHub 凭证已保存");
-              })().catch((error) => {
-                toast(error instanceof Error ? error.message : "保存 GitHub 凭证失败", "err");
-              });
-            }}
-                  onClearScm={() => {
-              void (async () => {
-                const saved = await readJson<ScmSettings & { error?: string }>(
-                  await api(token, "/v1/settings/scm", { method: "POST", body: JSON.stringify({ clear: true }) }),
-                );
-                if (saved.error) throw new Error(saved.error);
-                setScm({ configured: false, method: "none" });
-                setScmToken("");
-                const nextHealth = await readJson<Health>(await fetch("/health"));
-                setHealth(nextHealth);
-                setHealthText(formatHealth(nextHealth, vms));
-                toast("已清除 GitHub 凭证");
-              })().catch((error) => {
-                toast(error instanceof Error ? error.message : "清除 GitHub 凭证失败", "err");
-              });
-            }}
                   token={token}
                   onWarm={() => {
                     void (async () => {
-                      const warmRepo = repo.trim() || activeProject?.defaultRepo || "";
+                      const warmRepo = repo.trim();
                       if (!warmRepo) {
-                        toast("预热前先绑定仓库。", "err");
+                        toast("预热前先填写仓库。", "err");
                         return;
                       }
                       const created = await readJson<{ id?: string; status?: string; error?: string; failureMessage?: string }>(
@@ -2717,12 +2679,17 @@ export function App() {
               repoMode={repoMode}
               repo={repo}
               recentRepos={recentRepos}
-              projectDefaultRepo={activeProject?.defaultRepo ?? ""}
+              githubRepos={githubRepos}
+              githubReposLoading={githubReposLoading}
+              githubReposConfigured={githubReposConfigured}
+              repoQuery={repoQuery}
               repoLocked={Boolean(runId)}
               repoPickerOpen={repoPickerOpen}
               onRepoMode={setRepoMode}
               onRepo={setRepo}
+              onRepoQuery={setRepoQuery}
               onRepoPickerOpen={setRepoPickerOpen}
+              onOpenGithubSettings={openSettings}
             />
           ) : null}
           </div>

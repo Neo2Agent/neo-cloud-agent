@@ -28,7 +28,7 @@ type Props = {
 };
 
 type DetailTab = "chats" | "assets" | "config" | "members" | "activity";
-type ConfigTab = "instruction" | "repos" | "experts" | "skills";
+type ConfigTab = "instruction" | "experts" | "skills";
 
 export function ProjectsPage({
   token,
@@ -48,7 +48,6 @@ export function ProjectsPage({
   const [createName, setCreateName] = useState("");
   const [createInstruction, setCreateInstruction] = useState("");
   const [instruction, setInstruction] = useState("");
-  const [defaultRepos, setDefaultRepos] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [transferNote, setTransferNote] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
@@ -116,7 +115,6 @@ export function ProjectsPage({
       setDetail(project);
       if (!options.light) {
         setInstruction(project.instruction);
-        setDefaultRepos(project.defaultRepoUrls.join("\n"));
         setPinnedIds(project.expertIds ?? []);
         setPinnedPluginIds(project.pluginIds ?? []);
       }
@@ -552,7 +550,6 @@ export function ProjectsPage({
             <CatalogTabs
               tabs={[
                 { id: "instruction", label: "指令" },
-                { id: "repos", label: "仓库", count: defaultRepos.split("\n").filter((item) => item.trim()).length || undefined },
                 { id: "experts", label: "专家", count: pinnedIds.length },
                 { id: "skills", label: "技能", count: pinnedPluginIds.length },
               ]}
@@ -578,38 +575,6 @@ export function ProjectsPage({
                 <button className="proj-add" type="submit" disabled={busy}>
                   保存指令
                 </button>
-              </form>
-            ) : null}
-            {configTab === "repos" ? (
-              <form
-                className="proj-card"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  saveProject({
-                    defaultRepoUrls: defaultRepos
-                      .split("\n")
-                      .map((item) => item.trim())
-                      .filter(Boolean),
-                  });
-                }}
-              >
-                <p className="proj-card-title">默认仓库</p>
-                <p className="hint">可选。组里新对话选「绑定 Git」时预填第一行。显式选「无仓库」不会回填。</p>
-                <textarea
-                  id="project-default-repos"
-                  value={defaultRepos}
-                  disabled={!canManage}
-                  onChange={(event) => setDefaultRepos(event.target.value)}
-                  rows={3}
-                  placeholder="每行一个 git URL，例如 github.com/org/repo"
-                />
-                {canManage ? (
-                  <button className="proj-add" type="submit" disabled={busy}>
-                    保存默认仓库
-                  </button>
-                ) : (
-                  <p className="hint">只有所有者或管理员能改默认仓库。</p>
-                )}
               </form>
             ) : null}
             {configTab === "experts" ? (

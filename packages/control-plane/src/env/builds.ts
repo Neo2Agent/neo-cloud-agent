@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Build, CreateBuildRequest, DiskCloneResult, Environment, EnvironmentJson } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 import { materializeSnapshot } from "../scm/clone.js";
+import { resolveScmPushToken } from "../scm/token.js";
 import { materializeRepos, copyWorkspaceTree } from "../scm/workspace.js";
 import { controlStateDir } from "../store/persist.js";
 import { repoRoot } from "../worker-spawn.js";
@@ -296,7 +297,9 @@ export async function createEnvironmentBuild(input: CreateBuildRequest): Promise
   try {
     rmSync(workspaceDir, { recursive: true, force: true });
     appendBuildLog(build.id, `materialize ${input.repoUrls.join(" ")}\n`);
-    await materializeRepos(input.repoUrls, workspaceDir, repoRoot());
+    await materializeRepos(input.repoUrls, workspaceDir, repoRoot(), {
+      token: (await resolveScmPushToken().catch(() => null)) ?? undefined,
+    });
     writeEnvironmentOverlay(workspaceDir, input.environmentJson ?? env.config, Boolean(input.environmentJson));
     const targets = findInstallTargets(workspaceDir);
     for (const target of targets) {

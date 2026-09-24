@@ -57,6 +57,7 @@ export async function openRunPullRequest(
     title,
     body,
     remoteUrl: input.remoteUrl,
+    userId: run.userId,
   });
 }
 

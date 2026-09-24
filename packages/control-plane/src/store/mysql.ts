@@ -30,6 +30,10 @@ import {
   eventsBackupTableName,
   persistEventImages,
 } from "./event-images.js";
+import {
+  mapGithubConnectionRow,
+  type GithubConnection,
+} from "../integrations/github-store.js";
 import { persistImagesForRecord, type PersistedRun, type WorkerLease } from "./persist.js";
 import type { PostgresMetadataStore, SqlQuery } from "./postgres.js";
 import {
@@ -169,6 +173,14 @@ CREATE TABLE IF NOT EXISTS loop_sessions (
   user_id VARCHAR(191) NOT NULL,
   state_json JSON NOT NULL,
   updated_at DATETIME(3) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_github_connections (
+  user_id VARCHAR(191) PRIMARY KEY,
+  github_login VARCHAR(191) NOT NULL,
+  access_token TEXT NOT NULL,
+  scopes VARCHAR(255) NOT NULL DEFAULT '',
+  updated_at DATETIME(3) NOT NULL,
+  CONSTRAINT fk_github_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 `;
 
@@ -757,6 +769,28 @@ export function createMysqlMetadataStore(query: SqlQuery): MysqlMetadataStore {
     async loadLoopSession(runId) {
       const result = await query(`SELECT state_json FROM loop_sessions WHERE run_id = ?`, [runId]);
       return asLoopState(result.rows[0]?.state_json);
+    },
+    async getGithubConnection(userId) {
+      const result = await query(
+        `SELECT user_id, github_login, access_token, scopes, updated_at FROM user_github_connections WHERE user_id = ?`,
+        [userId],
+      );
+      return mapGithubConnectionRow(result.rows[0]);
+    },
+    async putGithubConnection(conn: GithubConnection) {
+      await query(
+        `INSERT INTO user_github_connections (user_id, github_login, access_token, scopes, updated_at)
+         VALUES (?, ?, ?, ?, ?) AS incoming
+         ON DUPLICATE KEY UPDATE
+           github_login = incoming.github_login,
+           access_token = incoming.access_token,
+           scopes = incoming.scopes,
+           updated_at = incoming.updated_at`,
+        [conn.userId, conn.login, conn.accessToken, conn.scopes, mysqlDateTime(conn.updatedAt)],
+      );
+    },
+    async deleteGithubConnection(userId) {
+      await query(`DELETE FROM user_github_connections WHERE user_id = ?`, [userId]);
     },
   };
 }

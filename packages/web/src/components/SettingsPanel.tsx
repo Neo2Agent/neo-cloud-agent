@@ -21,6 +21,12 @@ export type ScmSettings = {
 export type EnvOption = { id: string; name?: string };
 export type BuildOption = { id: string; envId?: string; status: string; draft?: boolean };
 
+export type GithubAccount = {
+  connected: boolean;
+  login: string | null;
+  oauthConfigured: boolean;
+};
+
 type Props = {
   repo: string;
   envId: string;
@@ -29,8 +35,6 @@ type Props = {
   builds: BuildOption[];
   llm: LlmSettings;
   llmKey: string;
-  scm: ScmSettings;
-  scmToken: string;
   onRepo: (value: string) => void;
   onEnv: (value: string) => void;
   onBuild: (value: string) => void;
@@ -38,9 +42,6 @@ type Props = {
   onLlmModel: (value: string) => void;
   onLlmKey: (value: string) => void;
   onSaveLlm: () => void;
-  onScmToken: (value: string) => void;
-  onSaveScm: () => void;
-  onClearScm: () => void;
   onWarm: () => void;
   token?: string;
 };
@@ -53,8 +54,6 @@ export function SettingsPanel({
   builds,
   llm,
   llmKey,
-  scm,
-  scmToken,
   onRepo,
   onEnv,
   onBuild,
@@ -62,9 +61,6 @@ export function SettingsPanel({
   onLlmModel: _onLlmModel,
   onLlmKey,
   onSaveLlm,
-  onScmToken,
-  onSaveScm,
-  onClearScm,
   onWarm,
   token = "",
 }: Props) {
@@ -78,12 +74,25 @@ export function SettingsPanel({
   const [mcpName, setMcpName] = useState("");
   const [mcpBearer, setMcpBearer] = useState("");
   const [mcpHint, setMcpHint] = useState("HTTP MCP 的 Bearer 只存在控制面。");
+  const [github, setGithub] = useState<GithubAccount>({ connected: false, login: null, oauthConfigured: false });
+  const [githubBusy, setGithubBusy] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpUser, setSmtpUser] = useState("");
   const [smtpPass, setSmtpPass] = useState("");
   const [smtpFrom, setSmtpFrom] = useState("");
   const [notifyHint, setNotifyHint] = useState("做完或 PR 开好了会按这里推。");
+
+  useEffect(() => {
+    const match = /[?&]github=([^&]+)/.exec(location.hash);
+    if (match?.[1]) {
+      const reason = decodeURIComponent(match[1]);
+      if (reason && reason !== "ok") {
+        toast(reason === "login_required" ? "请先登录再绑定 GitHub" : `GitHub 绑定失败：${reason}`, "err");
+      }
+      history.replaceState(null, "", "/#/settings");
+    }
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -126,6 +135,18 @@ export function SettingsPanel({
       } catch {
         // optional
       }
+      try {
+        const account = await readJson<GithubAccount & { error?: string }>(await api(token, "/v1/integrations/github"));
+        if (!account.error) {
+          setGithub({
+            connected: Boolean(account.connected),
+            login: account.login ?? null,
+            oauthConfigured: Boolean(account.oauthConfigured),
+          });
+        }
+      } catch {
+        // optional
+      }
     })();
   }, [token]);
 
@@ -134,7 +155,7 @@ export function SettingsPanel({
       <section className="settings-group">
         <header>
           <h3>仓库与环境</h3>
-          <p className="hint">预热环境和快照用。新对话在输入框选「无仓库」或「绑定 Git」，不读这里。</p>
+          <p className="hint">预热环境和快照用。新对话在输入框选仓库，不读这里。</p>
         </header>
         <label className="repo-row">
           <span>预热仓库</span>
@@ -256,42 +277,59 @@ export function SettingsPanel({
 
       <section className="settings-group">
         <header>
-          <h3>GitHub</h3>
-          <p className="hint" id="scm-status">
-            {scm.method === "github-app"
-              ? "已配置 GitHub App，Agent 可以 push / 开 PR。"
-              : scm.configured
-                ? "已配置 PAT，Agent 可以 push / 开 PR。"
-                : "未配置 GitHub 凭证，push 只会记成本地 local://pr。"}
+          <h3>GitHub 账号</h3>
+          <p className="hint" id="github-account-status">
+            {github.connected
+              ? `已绑定 @${github.login}。选仓和 push 用这个账号。`
+              : github.oauthConfigured
+                ? "绑定后，新对话可以从你的仓库里搜索选择。"
+                : "管理员还没配置 GitHub OAuth（GITHUB_OAUTH_CLIENT_ID）。"}
           </p>
         </header>
-        <div className="env-row llm-row">
-          <label>
-            <span>GitHub PAT</span>
-            <input
-              id="scm-token"
-              name="scm-token"
-              type="password"
-              autoComplete="new-password"
-              placeholder={scm.configured ? "已保存，留空则保持" : "ghp_… 或 github_pat_…"}
-              value={scmToken}
-              onChange={(event) => onScmToken(event.target.value)}
-              onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  onSaveScm();
-                }
-              }}
-            />
-          </label>
-        </div>
         <div className="settings-actions">
-          <button className="ghost" id="clear-scm" type="button" onClick={onClearScm} hidden={!scm.configured || scm.method === "github-app"}>
-            清除
-          </button>
-          <button className="quiet-btn primary" id="save-scm" type="button" onClick={onSaveScm}>
-            保存 GitHub
-          </button>
+          {github.connected ? (
+            <button
+              className="ghost"
+              id="github-disconnect"
+              type="button"
+              disabled={githubBusy}
+              onClick={() => {
+                void (async () => {
+                  setGithubBusy(true);
+                  try {
+                    const saved = await readJson<GithubAccount & { error?: string }>(
+                      await api(token, "/v1/integrations/github", { method: "DELETE" }),
+                    );
+                    if (saved.error) throw new Error(saved.error);
+                    setGithub({
+                      connected: false,
+                      login: null,
+                      oauthConfigured: saved.oauthConfigured ?? github.oauthConfigured,
+                    });
+                    toast("已解除 GitHub 绑定");
+                  } catch (error) {
+                    toast(error instanceof Error ? error.message : "解除失败", "err");
+                  } finally {
+                    setGithubBusy(false);
+                  }
+                })();
+              }}
+            >
+              解除绑定
+            </button>
+          ) : (
+            <a
+              className="quiet-btn primary"
+              id="github-connect"
+              href="/v1/integrations/github/authorize"
+              aria-disabled={!github.oauthConfigured}
+              onClick={(event) => {
+                if (!github.oauthConfigured) event.preventDefault();
+              }}
+            >
+              绑定 GitHub
+            </a>
+          )}
         </div>
       </section>
 

@@ -17,7 +17,7 @@ import { composerKeyAction, isImeComposing } from "@neo-cloud-agent/contracts/co
 import { isNarrowViewport } from "../viewport";
 import { ContextUsageControl } from "./ContextUsage";
 import { TargetPicker } from "./TargetPicker";
-import { RepoBindControl, type RepoBindMode } from "./RepoBindControl";
+import { RepoBindControl, type GithubRepoOption, type RepoBindMode } from "./RepoBindControl";
 
 export type { BuildOption, EnvOption, LlmSettings, ScmSettings } from "./SettingsPanel";
 
@@ -70,12 +70,17 @@ type Props = {
   repoMode?: RepoBindMode;
   repo?: string;
   recentRepos?: string[];
-  projectDefaultRepo?: string;
+  githubRepos?: GithubRepoOption[];
+  githubReposLoading?: boolean;
+  githubReposConfigured?: boolean;
+  repoQuery?: string;
   repoLocked?: boolean;
   repoPickerOpen?: boolean;
   onRepoMode?: (mode: RepoBindMode) => void;
   onRepo?: (value: string) => void;
+  onRepoQuery?: (value: string) => void;
   onRepoPickerOpen?: (open: boolean) => void;
+  onOpenGithubSettings?: () => void;
 };
 
 export function Composer({
@@ -123,12 +128,17 @@ export function Composer({
   repoMode = "none",
   repo = "",
   recentRepos = [],
-  projectDefaultRepo = "",
+  githubRepos = [],
+  githubReposLoading = false,
+  githubReposConfigured = false,
+  repoQuery = "",
   repoLocked = false,
   repoPickerOpen = false,
   onRepoMode,
   onRepo,
+  onRepoQuery,
   onRepoPickerOpen,
+  onOpenGithubSettings,
 }: Props) {
   const [usageOpen, setUsageOpen] = useState(false);
   const [listening, setListening] = useState(false);
@@ -260,12 +270,17 @@ export function Composer({
       mode={repoMode}
       repo={repo}
       recent={recentRepos}
-      projectDefault={projectDefaultRepo}
+      repos={githubRepos}
+      reposLoading={githubReposLoading}
+      reposConfigured={githubReposConfigured}
+      query={repoQuery}
       locked={repoLocked || followUp}
       open={repoPickerOpen}
       onOpen={onRepoPickerOpen}
+      onQuery={onRepoQuery}
       onMode={onRepoMode}
       onRepo={onRepo}
+      onOpenSettings={onOpenGithubSettings}
     />
   ) : null;
   const input = (

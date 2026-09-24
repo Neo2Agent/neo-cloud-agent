@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, rmdirSync, rmSync, statS
 import { cp } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { withAskpass } from "./askpass.js";
 
 const SKIP_NAMES = new Set(["node_modules", "dist", ".pnpm-store", ".control", ".builds", ".warm", ".firecracker"]);
 
@@ -111,7 +112,12 @@ export function resolveRepoRef(raw: string, root: string): RepoRef {
   return { raw: trimmed, kind: "local", source, name: repoName(source) };
 }
 
-export function gitClone(url: string, dest: string, timeoutMs = 60_000): Promise<void> {
+export async function gitClone(
+  url: string,
+  dest: string,
+  timeoutMs = 60_000,
+  token?: string,
+): Promise<void> {
   if (existsSync(dest)) {
     if (readdirSync(dest).length > 0) {
       throw new Error(`clone destination is not empty: ${dest}`);
@@ -120,31 +126,39 @@ export function gitClone(url: string, dest: string, timeoutMs = 60_000): Promise
   }
   mkdirSync(path.dirname(dest), { recursive: true });
 
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", ["clone", "--depth", "1", url, dest], {
-      stdio: ["ignore", "pipe", "pipe"],
+  const run = (env?: NodeJS.ProcessEnv) =>
+    new Promise<void>((resolve, reject) => {
+      const child = spawn("git", ["clone", "--depth", "1", url, dest], {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: env ? { ...process.env, ...env } : undefined,
+      });
+      let stderr = "";
+      child.stderr?.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      const timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        reject(new Error("git clone timed out"));
+      }, timeoutMs);
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.on("exit", (code) => {
+        clearTimeout(timer);
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        reject(new Error(stderr.trim() || `git clone exited ${code}`));
+      });
     });
-    let stderr = "";
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error("git clone timed out"));
-    }, timeoutMs);
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("exit", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(stderr.trim() || `git clone exited ${code}`));
-    });
-  });
+
+  if (token) {
+    await withAskpass(token, (env) => run(env));
+    return;
+  }
+  await run();
 }
 
 export async function copyWorkspaceTree(src: string, dest: string): Promise<void> {
@@ -232,6 +246,7 @@ export async function materializeRepos(
   repoUrls: string[],
   workspaceDir: string,
   root: string,
+  options?: { token?: string },
 ): Promise<Array<{ dest: string; ref: RepoRef }>> {
   mkdirSync(workspaceDir, { recursive: true });
   const refs = repoUrls.map((item) => resolveRepoRef(item, root));
@@ -240,7 +255,7 @@ export async function materializeRepos(
   for (const ref of refs) {
     const dest = refs.length === 1 ? workspaceDir : path.join(workspaceDir, ref.name);
     if (ref.kind === "remote") {
-      await gitClone(ref.source, dest);
+      await gitClone(ref.source, dest, 60_000, options?.token);
     } else {
       if (!existsSync(ref.source) || !statSync(ref.source).isDirectory()) {
         throw new Error(

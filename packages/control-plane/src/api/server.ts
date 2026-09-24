@@ -140,6 +140,16 @@ import {
 import { TitleSuggestError } from "../title/suggest.js";
 import { defaultWorkerResources, getConfig } from "../config.js";
 import { publicScmSettings, writeScmSettings } from "../scm/settings.js";
+import {
+  completeGithubOAuthCallback,
+  createGithubAuthorizeUrl,
+  disconnectGithubAccount,
+  githubOAuthConfigured,
+  listGithubRepos,
+  publicGithubAccount,
+  resolvePublicOrigin,
+  settingsPageUrl,
+} from "../integrations/github.js";
 import { getObjectStore } from "../objects/store.js";
 import { startPlatform, platformInfo } from "../platform.js";
 import {
@@ -433,6 +443,11 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     "content-length": Buffer.byteLength(json),
   });
   res.end(json);
+}
+
+function redirect(res: ServerResponse, location: string): void {
+  res.writeHead(302, { ...CORS, location });
+  res.end();
 }
 
 function notFound(res: ServerResponse): void {
@@ -921,6 +936,80 @@ export function createApiServer() {
         }
         if (method === "GET" && path === "/v1/settings/scm") {
           send(res, 200, publicScmSettings());
+          return;
+        }
+        if (method === "GET" && path === "/v1/integrations/github") {
+          const userId = actor.kind === "user" ? actor.userId : undefined;
+          send(res, 200, await publicGithubAccount(userId));
+          return;
+        }
+        if (method === "GET" && path === "/v1/integrations/github/authorize") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          if (!githubOAuthConfigured()) {
+            send(res, 503, { error: "oauth_not_configured" });
+            return;
+          }
+          try {
+            redirect(res, createGithubAuthorizeUrl(actor.userId, resolvePublicOrigin(req)));
+          } catch (error) {
+            send(res, 400, { error: error instanceof Error ? error.message : "authorize_failed" });
+          }
+          return;
+        }
+        if (method === "GET" && path === "/v1/integrations/github/callback") {
+          const origin = resolvePublicOrigin(req);
+          const oauthError = url.searchParams.get("error");
+          if (oauthError) {
+            redirect(res, settingsPageUrl(origin, oauthError));
+            return;
+          }
+          if (actor.kind !== "user") {
+            redirect(res, settingsPageUrl(origin, "login_required"));
+            return;
+          }
+          const code = url.searchParams.get("code")?.trim() ?? "";
+          const state = url.searchParams.get("state")?.trim() ?? "";
+          if (!code || !state) {
+            redirect(res, settingsPageUrl(origin, "missing_code"));
+            return;
+          }
+          try {
+            await completeGithubOAuthCallback({ code, state, userId: actor.userId, origin });
+            redirect(res, settingsPageUrl(origin));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "oauth_failed";
+            redirect(res, settingsPageUrl(origin, message));
+          }
+          return;
+        }
+        if (method === "DELETE" && path === "/v1/integrations/github") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          send(res, 200, await disconnectGithubAccount(actor.userId));
+          return;
+        }
+        if (method === "GET" && path === "/v1/scm/repos") {
+          if (actor.kind !== "user") {
+            send(res, 200, {
+              connected: false,
+              login: null,
+              oauthConfigured: githubOAuthConfigured(),
+              configured: false,
+              repos: [],
+            });
+            return;
+          }
+          try {
+            const listed = await listGithubRepos(actor.userId, url.searchParams.get("q") ?? "");
+            send(res, 200, { ...listed, configured: listed.connected });
+          } catch (error) {
+            send(res, 502, { error: error instanceof Error ? error.message : "github_repos_failed" });
+          }
           return;
         }
         if (method === "POST" && path === "/v1/settings/scm") {
