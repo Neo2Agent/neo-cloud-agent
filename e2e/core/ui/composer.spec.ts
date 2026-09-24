@@ -83,9 +83,10 @@ test.describe("composer / run boundaries", () => {
     await page.locator("#repo-bind").click();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
     await page.locator("#repo-bind-search").fill("animate");
-    await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
-    await expect(page.locator(".repo-bind-item-name")).toHaveText("animate-camera");
-    await expect(page.locator(".repo-bind-item-owner")).toHaveText("kaibairen");
+    const longRepo = page.getByRole("button", { name: "kaibairen/animate-camera" });
+    await expect(longRepo).toBeVisible();
+    await expect(longRepo.locator(".repo-bind-item-name")).toHaveText("animate-camera");
+    await expect(longRepo.locator(".repo-bind-item-owner")).toHaveText("kaibairen");
     await page.locator("#repo-bind-search").fill("acme");
     await page.getByRole("button", { name: "acme/app" }).click();
     await expect(page.locator("#repo-bind")).toHaveText("acme/app");
