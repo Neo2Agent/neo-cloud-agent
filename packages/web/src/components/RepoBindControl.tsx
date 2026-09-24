@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { placeRepoMenu } from "../repo-menu";
+import { placeRepoMenu, repoMenuAlignElement } from "../repo-menu";
 import { repoShortLabel, splitRepoLabel } from "../repo";
 
 export type RepoBindMode = "none" | "bind";
@@ -59,18 +59,22 @@ export function RepoBindControl({
   }, [recent, repos]);
 
   const place = () => {
-    const trigger = triggerRef.current?.getBoundingClientRect();
+    const triggerEl = triggerRef.current;
+    const trigger = triggerEl?.getBoundingClientRect();
     const menu = menuRef.current?.getBoundingClientRect();
-    if (!trigger) return;
-    setCoords(
-      placeRepoMenu(
-        trigger,
-        {
-          width: menu?.width || Math.min(360, window.innerWidth - 16),
-          height: menu?.height || 240,
-        },
-        { width: window.innerWidth, height: window.innerHeight },
-      ),
+    if (!triggerEl || !trigger) return;
+    const align = repoMenuAlignElement(triggerEl).getBoundingClientRect();
+    const next = placeRepoMenu({
+      trigger,
+      menu: {
+        width: align.width || menu?.width || Math.min(360, window.innerWidth - 16),
+        height: menu?.height || 1,
+      },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      align,
+    });
+    setCoords((prev) =>
+      prev && prev.top === next.top && prev.left === next.left && prev.width === next.width ? prev : next,
     );
   };
 
@@ -80,10 +84,12 @@ export function RepoBindControl({
       return;
     }
     place();
+    const frame = window.requestAnimationFrame(() => place());
     const onReposition = () => place();
     window.addEventListener("resize", onReposition);
     window.addEventListener("scroll", onReposition, true);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", onReposition);
       window.removeEventListener("scroll", onReposition, true);
     };
