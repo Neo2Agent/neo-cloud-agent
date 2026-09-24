@@ -2572,9 +2572,61 @@ button.send:disabled {
   min-width: 0;
 }
 
-.git-pr-title {
+.git-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin-left: auto;
+}
+
+.git-view-pr,
+.git-head-cta {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+a.git-view-pr {
+  text-decoration: none;
+}
+
+.git-more {
+  position: relative;
+}
+
+.git-more > summary {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  color: var(--muted);
+  list-style: none;
+  cursor: pointer;
+}
+
+.git-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.git-more[open] > summary {
+  background: #f0f0f1;
+}
+
+.git-more .quiet-btn {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 2;
+  margin-top: 4px;
+}
+
+.git-pr-title,
+.git-head-title > .git-pr-name {
   display: inline-flex;
   align-items: baseline;
+  flex: 1 1 auto;
   gap: 6px;
   min-width: 0;
   color: var(--text);
@@ -2645,11 +2697,23 @@ button.send:disabled {
   color: #b42318;
 }
 
+.git-badge.is-draft,
+.git-badge.is-local {
+  background: #f0f0f1;
+  color: var(--text);
+}
+
 .git-branch {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.git-branch:hover code {
+  text-decoration: underline;
 }
 
 .git-branch code {
@@ -2719,6 +2783,13 @@ button.send:disabled {
   font-weight: 500;
   line-height: 16px;
   text-align: center;
+}
+
+.git-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #1a7f37;
 }
 
 .git-body {
@@ -2952,6 +3023,23 @@ button.send:disabled {
   word-break: break-word;
 }
 
+.git-hunk-fold {
+  display: block;
+  width: 100%;
+  padding: 2px 8px;
+  border: 0;
+  background: #f4f0fb;
+  color: #6f42c1;
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.git-hunk-fold:hover {
+  background: #ebe4f8;
+}
+
 .git-commit {
   display: grid;
   flex: none;
@@ -3090,7 +3178,43 @@ button.send:disabled {
   gap: 16px;
 }
 
-.git-review-agent {
+.git-checks-card {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.git-checks-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.git-check-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #1a7f37;
+}
+
+.git-check-dot.is-fail {
+  background: #b42318;
+}
+
+.git-check-dot.is-pending {
+  background: #9a6700;
+}
+
+.git-check-count {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.git-draft-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3100,9 +3224,36 @@ button.send:disabled {
   border-radius: 10px;
 }
 
+.git-draft-card h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.git-draft-card p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.git-review-agent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+
 .git-review-agent h4 {
   color: var(--text);
   font-size: 13px;
+  font-weight: 500;
+}
+
+.git-review-pr > summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .git-review-agent .hint {
