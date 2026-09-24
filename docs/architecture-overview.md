@@ -628,7 +628,7 @@ Desk 本机路径（已落地）。`start` 分开「谁起这个 worker」：
 
 共同约束：`online` 就是「正握着 inbox」；控制面**不**杀笔记本 pid；文件工具锁在工作区根内；掉线走 `detachOrQueue`，不标 ERROR。This Computer worker `WORKER_EXIT_AFTER_TURN=1`；Remote tools worker `=0`。每轮划痕在 `<workspace>/.neo/runs/<runId>/`。规格见 [server-side-agent-loop.md](./server-side-agent-loop.md)、[desk.md](./desk.md)。
 
-设计细节：[cli.md](./cli.md)、[desk.md](./desk.md)、[mobile.md](./mobile.md)。
+设计细节：[cli.md](./cli.md)、[desk.md](./desk.md)、[mobile.md](./mobile.md)。三端（Web / Desk / Mobile）怎么对齐 Cursor、共享的客户端核心（`contracts` 的 `client-stream` / `turn-view` / `work-view` / `composer-keys`，`packages/ui` 的 `MarkdownBody`）、多端实测的问题清单和分期方案见 [client-unification.md](./client-unification.md)。
 
 ---
 

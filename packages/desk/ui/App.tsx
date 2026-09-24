@@ -6,7 +6,9 @@ import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
-import { runDisplayTitle, type ExecutionTarget, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
+import { runDisplayTitle, type ExecutionTarget, type FollowUpDelivery, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
+import { composerKeyAction, followUpDelivery } from "@neo-cloud-agent/contracts/composer-keys";
+import { batchTurnSignal, parseSseData, runEventsQuery, RUN_LIST_REFRESH_MS } from "@neo-cloud-agent/contracts/client-stream";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Tooltip } from "@neo-cloud-agent/ui";
@@ -77,11 +79,12 @@ import { InviteAcceptPage } from "./project/InviteAcceptPage";
 import { ProjectChatPage } from "./project/ProjectChatPage";
 import { ProjectWorkbench } from "./project/ProjectWorkbench";
 import type { WorkbenchTab } from "./project/types";
-import { batchTurnSignal, liveActivityLabel, parseSse, runEventsQuery } from "../src/stream";
+import { liveActivityLabel } from "../src/stream";
 import {
   appendPendingUser,
   dropResolvedPendingUsers,
   isActiveRunStatus,
+  isComposerClosed,
   isTurnBusy,
   mergeUnresolvedPending,
   pendingUserArrived,
@@ -269,7 +272,6 @@ export function App() {
   const [nav, setNav] = useState<NavId>("chats");
   const [target, setTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [folder, setFolder] = useState("");
-  const [mode] = useState<"agent" | "ask">("agent");
   const [llm, setLlm] = useState<PublicLlmSettings>({
     configured: false,
     upstream: "mock",
@@ -338,8 +340,8 @@ export function App() {
     setCurrent((cur) => {
       if (!cur) return cur;
       const fresh = next.find((item) => item.id === cur.id);
-      if (!fresh || fresh.status === cur.status) return cur;
-      return { ...cur, status: fresh.status };
+      if (!fresh || (fresh.status === cur.status && fresh.title === cur.title && fresh.updatedAt === cur.updatedAt)) return cur;
+      return { ...cur, ...fresh };
     });
   }, []);
 
@@ -485,7 +487,7 @@ export function App() {
         }
       };
       source.onmessage = (event) => {
-        const parsed = parseSse(event.data);
+        const parsed = parseSseData(event.data);
         if (!parsed) return;
         lastEventIdRef.current = parsed.id;
         pending.push(parsed);
@@ -787,7 +789,10 @@ export function App() {
     setCurrent((prev) => (prev && prev.id === current.id ? { ...prev, status: "IDLE" } : prev));
   };
 
-  const send = async (draft?: string, opts?: { asNew?: boolean; todo?: { id: string; title: string } | null }) => {
+  const send = async (
+    draft?: string,
+    opts?: { asNew?: boolean; todo?: { id: string; title: string } | null; delivery?: FollowUpDelivery },
+  ) => {
     const attached = images;
     const text = (draft ?? prompt).trim();
     if ((!text && attached.length === 0) || sending) return;
@@ -821,10 +826,9 @@ export function App() {
       setAuthError(MISSING_DESK_ID_HINT);
       return;
     }
-    const askPrefix = mode === "ask" ? "只阅读和回答，不要修改文件或执行会改状态的命令。\n\n" : "";
     const startNew = opts?.asNew || !runId;
     const boundTodo = opts && "todo" in opts ? opts.todo : pendingTodo;
-    const composed = `${askPrefix}${startNew && boundTodo ? `待办：${boundTodo.title}\n\n` : ""}${text}`;
+    const composed = `${startNew && boundTodo ? `待办：${boundTodo.title}\n\n` : ""}${text}`;
     const pending: PendingUser = {
       id: `pending-${Date.now()}`,
       text: composed || "（图片）",
@@ -894,7 +898,7 @@ export function App() {
       }
       const follow = await api(token, `/v1/runs/${runId}/follow-ups`, {
         method: "POST",
-        body: JSON.stringify({ text: pending.text, images: attached.length ? attached : undefined }),
+        body: JSON.stringify({ text: pending.text, images: attached.length ? attached : undefined, delivery: opts?.delivery }),
       });
       const followBody = await readJson<{ error?: string }>(follow);
       if (!follow.ok) {
@@ -1030,10 +1034,14 @@ export function App() {
     window.addEventListener("focus", onShow);
     document.addEventListener("visibilitychange", onShow);
     const timer = window.setInterval(() => void refreshInbox(), 20_000);
+    const listTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshRuns();
+    }, RUN_LIST_REFRESH_MS);
     return () => {
       window.removeEventListener("focus", onShow);
       document.removeEventListener("visibilitychange", onShow);
       window.clearInterval(timer);
+      window.clearInterval(listTimer);
     };
   }, [authed, refreshInbox, refreshRuns]);
 
@@ -1528,10 +1536,21 @@ export function App() {
   }, inboxRef);
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void send();
-    }
+    const action = composerKeyAction(
+      {
+        key: event.key,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        isComposing: event.nativeEvent.isComposing,
+        keyCode: event.keyCode,
+      },
+      { busy: Boolean(current) && turnLive },
+    );
+    if (!action) return;
+    event.preventDefault();
+    void send(undefined, { delivery: followUpDelivery(action) });
   };
 
   const headerPanelSlot = (
@@ -2173,6 +2192,7 @@ export function App() {
                 activity={activity}
                 busy={busy}
                 user={user}
+                userId={userId}
                 userAvatar={userAvatar}
                 neoAvatar={neoAvatar}
                 feedRef={feedRef}
@@ -2209,14 +2229,18 @@ export function App() {
                   prompt={prompt}
                   setPrompt={setPrompt}
                   placeholder={
-                    hostLock.locked
+                    isComposerClosed(current.status)
+                      ? "这条对话已归档"
+                      : hostLock.locked
                       ? hostLock.hint
-                      : current.projectId
-                        ? `${greetLine}  @ 引用资产文件或项目待办`
-                        : `${greetLine}  @ 引用对话文件，/ 调用已有自动化`
+                      : turnLive
+                        ? "回车排队，⌘/Ctrl+回车立即插话"
+                        : current.projectId
+                          ? `${greetLine}  @ 引用资产文件或项目待办`
+                          : `${greetLine}  @ 引用对话文件，/ 调用已有自动化`
                   }
                   sending={sending}
-                  locked={hostLock.locked}
+                  locked={hostLock.locked || isComposerClosed(current.status)}
                   models={modelNames}
                   selected={selectedModel}
                   menuOpen={modelMenu}

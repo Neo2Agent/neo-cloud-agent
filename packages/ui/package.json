@@ -10,6 +10,7 @@
     "./term-write": "./src/term-write.ts",
     "./speech": "./src/speech/index.ts",
     "./styles.css": "./src/styles.css",
+    "./markdown.css": "./src/markdown.css",
     "./buddy.css": "./src/buddy/styles.css"
   },
   "scripts": {

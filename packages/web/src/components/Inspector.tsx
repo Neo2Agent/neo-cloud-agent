@@ -75,6 +75,7 @@ export function InspectorShell({
           </button>
           <button type="button" className="icon-btn pane-close" aria-label="收起侧栏" title="收起侧栏" onClick={onClose}>
             <IconPanelRight size={16} />
+            <span className="pane-close-label">返回对话</span>
           </button>
         </div>
       </div>

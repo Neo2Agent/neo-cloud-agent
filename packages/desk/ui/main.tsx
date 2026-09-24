@@ -12,6 +12,7 @@ import "@fontsource/noto-sans-sc/500.css";
 import "@fontsource/noto-sans-sc/600.css";
 import "@fontsource/noto-sans-sc/700.css";
 import "@neo-cloud-agent/ui/styles.css";
+import "@neo-cloud-agent/ui/markdown.css";
 import "animal-island-ui/style";
 import "./styles.css";
 

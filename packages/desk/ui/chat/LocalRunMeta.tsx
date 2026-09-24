@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { IconComputer } from "../icons";
+import { RUN_MODE_LABELS } from "@neo-cloud-agent/contracts/run";
+import { IconCloud, IconComputer } from "../icons";
 import { IslandButton } from "../island";
 import type { LocalRunView } from "./local-run-view";
 
@@ -18,7 +19,15 @@ export function LocalRunMeta({
   otherCount: number;
   onResume: () => void;
 }): ReactNode {
-  if (!view.isLocal) return null;
+  if (!view.isLocal) {
+    return (
+      <div className="local-meta">
+        <IconCloud size={14} />
+        <span className="local-meta-place">{RUN_MODE_LABELS.cloud}</span>
+      </div>
+    );
+  }
+  const remote = placeLabel === RUN_MODE_LABELS.remote;
   const folder = folderName(view.folder);
   return (
     <div className="local-meta">
@@ -33,7 +42,9 @@ export function LocalRunMeta({
         </>
       ) : null}
       {view.status?.state === "starting" ? <span className="local-meta-state is-warn">启动中</span> : null}
-      {view.status?.state === "running" ? <span className="local-meta-state is-run">运行中</span> : null}
+      {view.status?.state === "running" ? (
+        <span className="local-meta-state is-run">{remote ? "本机工具已连接" : "运行中"}</span>
+      ) : null}
       {view.status?.state === "failed" ? (
         <span className="local-meta-state is-fail">{view.status.detail || "启动失败"}</span>
       ) : null}

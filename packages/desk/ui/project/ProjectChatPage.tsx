@@ -98,6 +98,7 @@ export function ProjectChatPage({
         activity={activity}
         busy={busy}
         user={user}
+        userId={userId}
         userAvatar={userAvatar}
         neoAvatar={neoAvatar}
         feedRef={feedRef}

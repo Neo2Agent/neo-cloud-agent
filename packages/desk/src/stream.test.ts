@@ -7,14 +7,7 @@ import {
   transcriptGroups,
 } from "@neo-cloud-agent/contracts/transcript";
 import { assistantIsLive } from "@neo-cloud-agent/contracts/turn-state";
-import {
-  batchTurnSignal,
-  liveActivityLabel,
-  parseSse,
-  runEventsQuery,
-  shouldShowAssistantActions,
-  shouldShowThinking,
-} from "./stream.js";
+import { liveActivityLabel, shouldShowAssistantActions } from "./stream.js";
 
 function ev(partial: Partial<RunEvent> & Pick<RunEvent, "id" | "kind">): RunEvent {
   return {
@@ -48,28 +41,6 @@ const HISTORY: RunEvent[] = [
   ev({ id: "m1", kind: "message.delta", data: { delta: "当前目录是 /workspace" } }),
   ev({ id: "z1", kind: "run.idle" }),
 ];
-
-test("runEventsQuery resumes after the snapshot cursor", () => {
-  assert.equal(runEventsQuery(), "");
-  assert.equal(runEventsQuery({ after: "t3" }), "?after=t3");
-  assert.equal(
-    runEventsQuery({ after: "t3", accessToken: "tok", client: "desk" }),
-    "?after=t3&access_token=tok&client=desk",
-  );
-});
-
-test("parseSse rejects malformed frames", () => {
-  assert.equal(parseSse("{"), null);
-  assert.equal(parseSse(JSON.stringify({ kind: "run.idle" })), null);
-  assert.equal(parseSse(JSON.stringify(HISTORY[0]))?.id, "u1");
-});
-
-test("batchTurnSignal treats a trailing run.idle as idle even after tools", () => {
-  assert.equal(batchTurnSignal([{ kind: "tool.end" }, { kind: "run.idle" }]), "idle");
-  assert.equal(batchTurnSignal([{ kind: "message.delta" }, { kind: "run.idle" }]), "idle");
-  assert.equal(batchTurnSignal([{ kind: "run.idle" }, { kind: "tool.start" }]), "work");
-  assert.equal(batchTurnSignal([{ kind: "run.error" }]), "fail");
-});
 
 test("replaying the snapshot event log duplicates user bubbles", () => {
   const snapshot = buildTranscriptSnapshot("run-1", HISTORY);
@@ -176,29 +147,4 @@ test("assistant actions appear once at the bottom after the turn is idle", () =>
   if (first !== last) {
     assert.equal(shouldShowAssistantActions(done, first), false);
   }
-});
-
-test("shouldShowThinking stays up until text streams or a tool is running", () => {
-  const user = { id: "u1", role: "user" as const, text: "你好", createdAt: "2026-08-28T00:00:00.000Z" };
-  const empty = { id: "a1", role: "assistant" as const, text: "", createdAt: user.createdAt, streaming: true };
-  const toolsDone = {
-    ...empty,
-    streaming: false,
-    tools: [{ id: "w1", name: "ls", status: "done" as const }],
-  };
-  assert.equal(shouldShowThinking(true, [user]), true);
-  assert.equal(shouldShowThinking(false, [user]), false);
-  assert.equal(shouldShowThinking(true, [user, empty]), true);
-  assert.equal(shouldShowThinking(true, [user, toolsDone]), true);
-  assert.equal(
-    shouldShowThinking(true, [user, { ...empty, text: "好的", streaming: true }]),
-    false,
-  );
-  assert.equal(
-    shouldShowThinking(true, [
-      user,
-      { ...empty, tools: [{ id: "w1", name: "write", status: "running" }] },
-    ]),
-    false,
-  );
 });

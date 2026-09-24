@@ -30,8 +30,8 @@ test("composerGate locks This Computer follow-up when the host is offline", () =
 });
 
 test("runRowMeta labels cloud vs remote without a color pill", () => {
-  assert.match(runRowMeta({ ...remote, executionTarget: { loop: "cloud", tools: "cloud" } }), /cloud/);
-  assert.match(runRowMeta(remote), /remote/);
+  assert.match(runRowMeta({ ...remote, executionTarget: { loop: "cloud", tools: "cloud" } }), /云端/);
+  assert.match(runRowMeta(remote), /Remote/);
 });
 
 test("chatStatusText prefers the offline host hint", () => {

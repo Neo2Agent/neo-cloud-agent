@@ -1,4 +1,4 @@
-import { isRemoteControlTarget, type ExecutionTarget } from "@neo-cloud-agent/contracts/run";
+import { isRemoteControlTarget, RUN_MODE_SHORT_LABELS, type ExecutionTarget } from "@neo-cloud-agent/contracts/run";
 
 export const CLOUD_TARGET = { loop: "cloud", tools: "cloud" } as const satisfies ExecutionTarget;
 
@@ -9,7 +9,7 @@ export function runPlace(run?: { executionTarget?: ExecutionTarget | null } | nu
 }
 
 export function runPlaceLabel(run?: { executionTarget?: ExecutionTarget | null } | null): string {
-  return runPlace(run) === "remote" ? "remote" : "cloud";
+  return RUN_MODE_SHORT_LABELS[runPlace(run)];
 }
 
 export const DEFAULT_API_URL = "https://neorun.cloud";

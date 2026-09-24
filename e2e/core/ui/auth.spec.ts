@@ -21,15 +21,16 @@ test.describe("auth boundaries", () => {
     await expect(page.locator("#auth-error")).toContainText(/invalid account or password|登录失败/);
     await expect(page.locator("#auth-gate")).toBeVisible();
     await expect(page.locator("#auth-submit")).toBeVisible();
-    await expect(page.locator("#account-email")).toContainText("未登录");
+    await expect(page.locator("#account-email")).toHaveCount(0);
   });
 
   test("auth.login-happy then logout returns to the gate", async ({ page }) => {
     await loginAs(page);
     await expect(page.locator("#account-email")).toContainText(ADMIN_EMAIL);
+    await page.locator(".account-hit").click();
     await page.locator("#logout").click();
     await expect(page.locator("#auth-gate")).toBeVisible();
-    await expect(page.locator("#account-email")).toContainText("未登录");
+    await expect(page.locator("#account-email")).toHaveCount(0);
   });
 
   test("auth.reload: session survives a full page reload", async ({ page }) => {

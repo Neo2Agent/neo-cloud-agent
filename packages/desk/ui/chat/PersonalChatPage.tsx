@@ -11,6 +11,7 @@ export function PersonalChatPage({
   activity,
   busy,
   user,
+  userId,
   userAvatar,
   neoAvatar,
   feedRef,
@@ -26,6 +27,7 @@ export function PersonalChatPage({
   activity: string | null;
   busy?: boolean;
   user: string;
+  userId?: string;
   userAvatar?: string | null;
   neoAvatar?: string | null;
   feedRef: Ref<HTMLDivElement>;
@@ -44,6 +46,7 @@ export function PersonalChatPage({
         activity={activity}
         busy={busy}
         user={user}
+        userId={userId}
         userAvatar={userAvatar}
         neoAvatar={neoAvatar}
         feedRef={feedRef}

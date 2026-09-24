@@ -2222,6 +2222,94 @@ img.avatar {
   font-size: 14.5px;
 }
 
+.chat-bubble.assistant .md {
+  white-space: normal;
+}
+
+.work-fold,
+.work-group {
+  width: 100%;
+}
+
+.work-sum {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.work-sum:hover {
+  color: var(--text);
+}
+
+.work-sum-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.work-chevron {
+  display: inline-block;
+  transition: transform 160ms ease;
+}
+
+.is-open > .work-sum .work-chevron {
+  transform: rotate(90deg);
+}
+
+.work-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+.work-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.work-more {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.work-spinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: work-spin 0.8s linear infinite;
+}
+
+@keyframes work-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-spinner,
+  .work-chevron {
+    animation: none;
+    transition: none;
+  }
+}
+
 .tool-stack {
   display: flex;
   flex-direction: column;

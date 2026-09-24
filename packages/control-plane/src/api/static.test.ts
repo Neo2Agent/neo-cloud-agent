@@ -52,6 +52,24 @@ function readBuiltAsset(ext: string): string {
   return files.map((file) => readFileSync(path.join(assets, file), "utf8")).join("\n");
 }
 
+/** Every `@media (max-width: 860px)` block of the built CSS, joined. */
+function narrowCss(cssText: string): string {
+  const blocks: string[] = [];
+  const opener = /@media\s*\(max-width:\s*860px\)\s*\{/g;
+  for (let match = opener.exec(cssText); match; match = opener.exec(cssText)) {
+    let depth = 1;
+    let index = match.index + match[0].length;
+    const start = index;
+    while (index < cssText.length && depth > 0) {
+      if (cssText[index] === "{") depth += 1;
+      else if (cssText[index] === "}") depth -= 1;
+      index += 1;
+    }
+    blocks.push(cssText.slice(start, index - 1));
+  }
+  return blocks.join("\n");
+}
+
 test("serves the chat index and rejects path traversal", () => {
   const index = resolveWebFile("/");
   assert.ok(index);
@@ -159,6 +177,15 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.artifact-preview-empty/);
   assert.match(cssText, /\.workspace-col\{[^}]*overflow:\s*hidden/);
   assert.match(cssText, /\.composer\{[^}]*grid-area:\s*composer/);
+  assert.match(cssText, /\.run-item:hover \.run-time,\s*\.run-item:focus-within \.run-time\{[^}]*pointer-events:\s*none/);
+  const narrow = narrowCss(cssText);
+  assert.match(narrow, /\.app\.sidebar-closed \.sidebar\{[^}]*position:\s*fixed/, "closed phone drawer leaves the grid");
+  assert.match(narrow, /\.app\.sidebar-closed \.sidebar\{[^}]*visibility:\s*hidden/);
+  assert.match(narrow, /\.workspace-col\.has-inspector>\.chat-column\{[^}]*visibility:\s*hidden/);
+  const composerZ = Number(/\.composer\{[^}]*z-index:\s*(\d+)/.exec(cssText)?.[1]);
+  const inspectorZ = Number(/\.workspace-col\.has-inspector \.inspector\{[^}]*z-index:\s*(\d+)/.exec(narrow)?.[1]);
+  assert.ok(inspectorZ > composerZ, `phone inspector (${inspectorZ}) must stack above the composer (${composerZ})`);
+  assert.match(appText, /pane-close-label/);
   assert.doesNotMatch(html, /Fraunces/);
   assert.doesNotMatch(cssText, /#0b0[0-9a-f]{3}\b/);
   assert.equal(resolveWebFile("/../package.json"), null);

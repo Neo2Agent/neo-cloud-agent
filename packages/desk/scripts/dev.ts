@@ -25,7 +25,8 @@ async function main(): Promise<void> {
   await waitForHttp(uiUrl);
   console.log(`desk UI vite on ${uiUrl}; opening Electron (not a browser tab)`);
 
-  const electron = spawnPnpm(["exec", "electron", "app/main.cjs"], {
+  const cdpPort = process.env.NEO_DESK_CDP_PORT;
+  const electron = spawnPnpm(["exec", "electron", ...(cdpPort ? [`--remote-debugging-port=${cdpPort}`] : []), "app/main.cjs"], {
     cwd: deskRoot,
     stdio: "inherit",
     env: {

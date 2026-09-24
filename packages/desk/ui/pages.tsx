@@ -1,6 +1,7 @@
 import { describeAutomationSchedule, type Automation, type AutomationSchedule } from "@neo-cloud-agent/contracts/automation";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
+import { isImeComposing } from "@neo-cloud-agent/contracts/composer-keys";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 import { Select } from "@neo-cloud-agent/ui";
 import { Avatar } from "./Avatar";
@@ -1008,6 +1009,9 @@ export function ChatComposer({
           });
         }}
         onKeyDown={(event) => {
+          if (isImeComposing({ isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode })) {
+            return;
+          }
           if (event.key === "Escape" && mentionHits.length > 0) {
             event.preventDefault();
             setPrompt(prompt.replace(/[@/][^\s@/]*$/, ""));

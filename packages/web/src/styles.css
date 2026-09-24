@@ -1189,6 +1189,19 @@ h1 {
   border: 0;
 }
 
+.bubble.user.from-other {
+  align-self: flex-start;
+  background: var(--bg-2);
+}
+
+.bubble-author {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .bubble.assistant {
   align-self: stretch;
   padding: 2px 8px;
@@ -4534,10 +4547,24 @@ button.composer-mic.is-listening,
   box-shadow: 8px 0 24px rgba(17, 17, 16, 0.08);
 }
 
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+.pane-close-label {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app.sidebar-closed.is-sidebar-peek.is-sidebar-motion .sidebar,
   .app.sidebar-closed.is-sidebar-peek.is-sidebar-motion .new-chat {
     transition: none;
+  }
+
+  .app .sidebar {
+    animation: none !important;
   }
 }
 
@@ -4596,6 +4623,19 @@ button.composer-mic.is-listening,
     border-right: 1px solid var(--line);
     box-shadow: var(--shadow);
     background: var(--rail);
+    animation: drawer-in 200ms ease;
+  }
+
+  /* The 48px rail is desktop-only; a closed phone drawer leaves the grid entirely. */
+  .app.sidebar-closed .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(360px, 92vw);
+    max-width: none;
+    transform: translateX(-100%);
+    visibility: hidden;
   }
 
   .sidebar {
@@ -4850,10 +4890,14 @@ button.composer-mic.is-listening,
     min-width: 0;
   }
 
+  .workspace-col.has-inspector > .chat-column {
+    visibility: hidden;
+  }
+
   .workspace-col.has-inspector .inspector {
     position: absolute;
     inset: 0;
-    z-index: 6;
+    z-index: 12;
     width: auto;
     max-width: none;
     margin: 0;
@@ -4867,6 +4911,21 @@ button.composer-mic.is-listening,
   .resize-handle.is-invert {
     left: 0;
     width: 16px;
+  }
+
+  .inspector .inspector-collapse {
+    display: none;
+  }
+
+  .inspector .pane-close {
+    width: auto;
+    gap: 4px;
+    padding: 0 10px;
+  }
+
+  .pane-close-label {
+    display: inline;
+    font-size: 13px;
   }
 
   .inspector-body {
@@ -5008,6 +5067,16 @@ button.composer-mic.is-listening,
   grid-area: 1 / 1;
 }
 
+.run-place {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+
 .run-item .run-meta {
   position: relative;
   display: grid;
@@ -5039,6 +5108,7 @@ button.composer-mic.is-listening,
 .run-item:hover .run-time,
 .run-item:focus-within .run-time {
   opacity: 0;
+  pointer-events: none;
 }
 
 .run-item:hover .run-actions,

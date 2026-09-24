@@ -19,7 +19,7 @@ import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs";
 import { cloudSafeRepoUrls, isLocalFolderRef } from "./repo";
 import { shortcutAction } from "./shortcuts";
-import { applyLiveEvents, parseSseData } from "./stream-apply";
+import { applyLiveEvents, parseSseData, RUN_LIST_REFRESH_MS } from "@neo-cloud-agent/contracts/client-stream";
 import { AuthGate, type AuthMode } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { ArtifactsPanel } from "./components/ArtifactsPanel";
@@ -43,7 +43,18 @@ import { InboxBell } from "./components/InboxBell";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
 import { useConfirm, toast } from "./feedback";
-import { IconArchive, IconBack, IconComputer, IconGear, IconInfo, IconMemory, IconPanelRight, IconPr, IconTrash } from "./icons";
+import {
+  IconArchive,
+  IconBack,
+  IconComputer,
+  IconGear,
+  IconInfo,
+  IconMemory,
+  IconPanelRight,
+  IconPr,
+  IconSidebarOpen,
+  IconTrash,
+} from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { ContextUsagePanel } from "./components/ContextUsage";
 import { Transcript } from "./components/Transcript";
@@ -55,7 +66,19 @@ import {
   parseContextUsage,
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
-import { formatRunTime, formatUsage, modelLabel, nextChatModel, preview, resolveChatModel, shortId, slotLabel, slotMenuLines, upstreamForChatModel } from "./format";
+import {
+  formatRunTime,
+  formatUsage,
+  modelLabel,
+  nextChatModel,
+  preview,
+  resolveChatModel,
+  runListTitle,
+  shortId,
+  slotLabel,
+  slotMenuLines,
+  upstreamForChatModel,
+} from "./format";
 import {
   isActiveRunStatus,
   isComposerClosed,
@@ -334,6 +357,7 @@ export function App() {
   const streamTimerRef = useRef(0);
   const lastEventIdRef = useRef<string | null>(null);
   const lastSseAtRef = useRef(0);
+  const runsRefreshedRef = useRef(0);
   const appliedEventIdsRef = useRef<Set<string>>(new Set());
   const openGenRef = useRef(0);
   const listenRef = useRef<(id: string, after?: string | null) => void>(() => undefined);
@@ -727,6 +751,12 @@ export function App() {
       if (openGenRef.current !== gen) return false;
       if (!runRes.ok) {
         setLoadingTranscript(false);
+        if (runRes.status === 404) {
+          setRunId(null);
+          setCurrentRun(null);
+          history.replaceState(null, "", "/");
+          toast("打不开这条对话：它已删除、不是你的，或是另一台电脑上的本机对话。", "err");
+        }
         return false;
       }
       const run = await readJson<Run>(runRes);
@@ -1107,7 +1137,7 @@ export function App() {
     }
   }, [activeProject?.id, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, runId, messages, stopping]);
 
-  const queueMessage = useCallback(async () => {
+  const followUpWhileBusy = useCallback(async (delivery: "follow_up" | "steer") => {
     const text = prompt.trim();
     if (!text && images.length === 0) return;
     if (isComposerClosed(currentRun?.status) || !runId) return;
@@ -1130,6 +1160,7 @@ export function App() {
           body: JSON.stringify({
             text: text || "（图片）",
             images: attached.length ? attached : undefined,
+            delivery,
           }),
         }),
       );
@@ -1137,7 +1168,8 @@ export function App() {
     } catch (error) {
       setPrompt(text);
       setImages(attached);
-      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "排队失败")]);
+      const fallback = delivery === "steer" ? "插话失败" : "排队失败";
+      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : fallback)]);
     }
   }, [currentRun, desks, deskTarget.deskId, images, prompt, runId]);
 
@@ -1294,13 +1326,31 @@ export function App() {
         } catch {
           // keep last
         }
-        if (runId) await refreshRuns();
+        const listDue = document.visibilityState === "visible" && Date.now() - runsRefreshedRef.current >= RUN_LIST_REFRESH_MS;
+        if (runId || listDue) {
+          runsRefreshedRef.current = Date.now();
+          await refreshRuns();
+        }
         await refreshVms();
         await refreshDesks();
       })();
     }, 5000);
     return () => window.clearInterval(timer);
   }, [applyVms, refreshDesks, refreshRuns, refreshVms, runId]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (!tokenRef.current || document.visibilityState !== "visible") return;
+      runsRefreshedRef.current = Date.now();
+      void refreshRuns();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refreshRuns]);
 
   useEffect(() => {
     if (!runId) return;
@@ -1439,10 +1489,6 @@ export function App() {
         resetComposer();
         return;
       }
-      if (action === "queue") {
-        void queueMessage();
-        return;
-      }
       if (action === "stop") {
         stopTurn();
         return;
@@ -1461,7 +1507,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openRun, queueMessage, resetComposer, runId, runs, stopTurn]);
+  }, [openRun, resetComposer, runId, runs, stopTurn]);
 
   useEffect(() => {
     return deskBridge()?.onDeepLink((url) => {
@@ -2184,6 +2230,11 @@ export function App() {
           <div className="chat-column">
           <header className="topbar">
             <div className="topbar-lead">
+              {narrow ? (
+                <button type="button" className="icon-btn buddy-menu" aria-label="打开对话列表" title="对话列表" onClick={toggleSidebar}>
+                  <IconSidebarOpen size={16} />
+                </button>
+              ) : null}
               <div className="topbar-heading">
                 <p className="eyebrow" id="run-label">
                   {mainTab === "projects"
@@ -2236,7 +2287,7 @@ export function App() {
                       : mainTab === "context"
                       ? "这次对话占了什么"
                       : currentRun
-                        ? preview(currentRun.prompt)
+                        ? runListTitle(currentRun)
                         : expertPick.expertTeamId || expertPick.expertId
                           ? `以「${
                               teams.find((item) => item.id === expertPick.expertTeamId)?.name ||
@@ -2541,6 +2592,7 @@ export function App() {
                       openInspector("files");
                     }}
                     onPickRecipe={applyRecipe}
+                    viewer={{ id: userId, email: userEmail }}
                   />
                 )}
               </ChatErrorBoundary>
@@ -2641,7 +2693,8 @@ export function App() {
               onPrompt={setPrompt}
               onImages={setImages}
               onSend={() => void sendMessage()}
-              onQueue={() => void queueMessage()}
+              onQueue={() => void followUpWhileBusy("follow_up")}
+              onSteer={() => void followUpWhileBusy("steer")}
               onStop={stopTurn}
               layout={narrow ? "buddy" : "default"}
               followUp={Boolean(runId)}

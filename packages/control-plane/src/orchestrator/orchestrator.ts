@@ -1241,7 +1241,13 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
   publish(
     event(run.id, "user.message", "User message", {
       category: "agent_run",
-      data: { text: input.prompt, source: run.source, images: input.images },
+      data: {
+        text: input.prompt,
+        source: run.source,
+        images: input.images,
+        actorUserId: owner?.userId,
+        actorEmail: owner?.email,
+      },
     }),
   );
   writeExpertRole(run);
@@ -1634,6 +1640,11 @@ export async function transferRun(
   if (!isRunHost(run, actor.userId) && !canManageProject(memberRole(run.projectId, actor.userId))) {
     throw new Error("没有权限转交");
   }
+  const previous = run.collaborators ?? [];
+  const toEmail =
+    previous.find((item) => item.userId === toUserId)?.email ||
+    getProject(run.projectId)?.members.find((item) => item.userId === toUserId)?.email ||
+    toUserId;
   const resolved: TransferRunMode = mode ?? (run.executionTarget?.loop === "desk" ? "fork" : "reassign");
   if (resolved === "fork") {
     const pack = buildHandoffMarkdown(run, note, actor.email);
@@ -1648,15 +1659,13 @@ export async function transferRun(
         expertId: run.expertId ?? undefined,
         expertTeamId: run.expertTeamId ?? undefined,
       },
-      { userId: toUserId, orgId: run.orgId },
+      { userId: toUserId, orgId: run.orgId, email: toEmail },
     );
     await attachHandoffPack({ source: run, target: forked, actor, note }).catch(() => undefined);
     recordProjectEvent(run.projectId, actor, "transferred", note.trim() ? `分出了新对话：${note.trim()}` : "分出了一条新对话");
     pushInbox({ userId: toUserId, kind: "transfer", title: `${actor.email} 给你开了一条新对话`, projectId: run.projectId, runId: forked.id });
     return forked;
   }
-  const previous = run.collaborators ?? [];
-  const toEmail = previous.find((item) => item.userId === toUserId)?.email || toUserId;
   run.collaborators = [
     ...previous
       .filter((item) => item.userId !== toUserId)
@@ -2048,6 +2057,9 @@ export function ingestEvents(runId: string, events: RunEvent[]): void {
         void import("../notify/dispatch.js")
           .then(({ notifyRunFinished }) => notifyRunFinished(run, "idle"))
           .catch(() => undefined);
+      } else if (run?.status === "IDLE") {
+        // A turn that ends after Stop already went idle: transcripts keep it open until run.idle.
+        publish(event(runId, "run.idle", "Late turn events settled"));
       }
     }
     if (item.kind === "agent.start") {

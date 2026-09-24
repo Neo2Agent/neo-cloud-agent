@@ -162,6 +162,28 @@ export function isRemoteControlTarget(
   );
 }
 
+export type RunMode = "cloud" | "remote" | "local";
+
+export const RUN_MODE_LABELS: Record<RunMode, string> = {
+  cloud: "云端",
+  remote: "Remote Control",
+  local: "This Computer",
+};
+
+/** Run-list tags, where the full name does not fit. */
+export const RUN_MODE_SHORT_LABELS: Record<RunMode, string> = {
+  cloud: "云端",
+  remote: "Remote",
+  local: "本机",
+};
+
+/** Where a run executes, named the same on every client. */
+export function runMode(target?: ExecutionTarget | null): RunMode {
+  if (isDeskTarget(target)) return "local";
+  if (isDeskToolsTarget(target)) return "remote";
+  return "cloud";
+}
+
 /**
  * Cursor-shaped kernel pick. Explicit `kernel` always wins.
  * This Computer stays colocated pi. Remote needs agentscope.

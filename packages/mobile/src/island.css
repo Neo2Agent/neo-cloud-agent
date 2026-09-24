@@ -407,6 +407,20 @@ button:disabled { opacity: 0.4; cursor: default; }
 .avatar.user { background: var(--ink); }
 .avatar.neo { background: var(--accent); }
 .msg-col { display: flex; flex-direction: column; gap: 8px; max-width: 78%; min-width: 0; }
+.msg-row.user .msg-col { align-items: flex-end; }
+.msg-author { color: var(--muted); font-size: 12px; font-weight: 600; }
+.msg-time { color: var(--muted); font-size: 11px; line-height: 1; }
+.topbar .chat-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 15px;
+}
+.page-error { margin: 0 16px; color: #b3261e; font-size: 13px; }
+.topbar .chat-title + .status-pill { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bubble { border-radius: 16px; padding: 12px; border: 1px solid var(--line); background: var(--card); }
 .bubble.user { background: var(--bg-raised); }
 .bubble p { margin: 0; white-space: pre-wrap; }
