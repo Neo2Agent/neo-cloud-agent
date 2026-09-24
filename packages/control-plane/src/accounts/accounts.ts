@@ -45,12 +45,21 @@ export function mintSessionToken(): string {
   return `neo_sess_${randomBytes(24).toString("base64url")}`;
 }
 
+export function sessionCookieSecure(): boolean {
+  return (process.env.PUBLIC_APP_URL ?? "").trim().toLowerCase().startsWith("https://");
+}
+
+function sessionCookieFlags(maxAge: number): string {
+  const secure = sessionCookieSecure() ? "; Secure" : "";
+  return `Path=${sessionCookiePath()}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+
 export function sessionCookieHeader(token: string): string {
-  return `${sessionCookieName()}=${encodeURIComponent(token)}; Path=${sessionCookiePath()}; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`;
+  return `${sessionCookieName()}=${encodeURIComponent(token)}; ${sessionCookieFlags(Math.floor(SESSION_TTL_MS / 1000))}`;
 }
 
 export function clearSessionCookieHeader(): string {
-  return `${sessionCookieName()}=; Path=${sessionCookiePath()}; HttpOnly; SameSite=Lax; Max-Age=0`;
+  return `${sessionCookieName()}=; ${sessionCookieFlags(0)}`;
 }
 
 export class AccountError extends Error {

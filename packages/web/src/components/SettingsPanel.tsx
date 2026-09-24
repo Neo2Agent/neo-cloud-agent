@@ -1,6 +1,6 @@
 import { Select } from "@neo-cloud-agent/ui";
 import { chatModelLabel } from "@neo-cloud-agent/contracts/llm-ids";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { api, readJson } from "../api";
 import { toast } from "../feedback";
 
@@ -83,16 +83,35 @@ export function SettingsPanel({
   const [smtpFrom, setSmtpFrom] = useState("");
   const [notifyHint, setNotifyHint] = useState("做完或 PR 开好了会按这里推。");
 
+  const refreshGithub = useCallback(async () => {
+    if (!token) return;
+    try {
+      const account = await readJson<GithubAccount & { error?: string }>(await api(token, "/v1/integrations/github"));
+      if (!account.error) {
+        setGithub({
+          connected: Boolean(account.connected),
+          login: account.login ?? null,
+          oauthConfigured: Boolean(account.oauthConfigured),
+        });
+      }
+    } catch {
+      // optional
+    }
+  }, [token]);
+
   useEffect(() => {
     const match = /[?&]github=([^&]+)/.exec(location.hash);
     if (match?.[1]) {
       const reason = decodeURIComponent(match[1]);
-      if (reason && reason !== "ok") {
+      if (reason === "ok") {
+        toast("已绑定 GitHub");
+      } else if (reason) {
         toast(reason === "login_required" ? "请先登录再绑定 GitHub" : `GitHub 绑定失败：${reason}`, "err");
       }
       history.replaceState(null, "", "/#/settings");
+      void refreshGithub();
     }
-  }, []);
+  }, [refreshGithub]);
 
   useEffect(() => {
     if (!token) return;
@@ -135,20 +154,9 @@ export function SettingsPanel({
       } catch {
         // optional
       }
-      try {
-        const account = await readJson<GithubAccount & { error?: string }>(await api(token, "/v1/integrations/github"));
-        if (!account.error) {
-          setGithub({
-            connected: Boolean(account.connected),
-            login: account.login ?? null,
-            oauthConfigured: Boolean(account.oauthConfigured),
-          });
-        }
-      } catch {
-        // optional
-      }
+      await refreshGithub();
     })();
-  }, [token]);
+  }, [token, refreshGithub]);
 
   return (
     <div className="settings-panel" id="settings-panel">

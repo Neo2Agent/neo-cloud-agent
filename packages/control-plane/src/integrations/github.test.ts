@@ -114,5 +114,6 @@ test("public account never echoes the token", async () => {
   assert.equal(pub.login, "neo");
   assert.doesNotMatch(JSON.stringify(pub), /gho_secret/);
   assert.equal(settingsPageUrl("https://neorun.cloud", "denied"), "https://neorun.cloud/#/settings?github=denied");
+  assert.equal(settingsPageUrl("https://neorun.cloud", "ok"), "https://neorun.cloud/#/settings?github=ok");
   await deleteGithubConnection("user-pub");
 });

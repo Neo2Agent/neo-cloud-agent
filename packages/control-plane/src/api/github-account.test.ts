@@ -94,7 +94,7 @@ test("github account API: authorize requires login; repos empty until bound; cal
     { headers: auth, redirect: "manual" },
   );
   assert.equal(callback.status, 302);
-  assert.equal(callback.headers.get("location"), "https://neorun.cloud/#/settings");
+  assert.equal(callback.headers.get("location"), "https://neorun.cloud/#/settings?github=ok");
 
   const status = (await (await fetch(`${base}/v1/integrations/github`, { headers: auth })).json()) as {
     connected: boolean;
@@ -122,4 +122,44 @@ test("github account API: authorize requires login; repos empty until bound; cal
   assert.equal(after.connected, false);
   const reposAfter = (await (await fetch(`${base}/v1/scm/repos`, { headers: auth })).json()) as { configured: boolean };
   assert.equal(reposAfter.configured, false);
+
+  const noCookie = await fetch(
+    `${base}/v1/integrations/github/callback?code=abc&state=${encodeURIComponent(signGithubOAuthState(userId))}`,
+    { redirect: "manual" },
+  );
+  assert.equal(noCookie.status, 302);
+  assert.equal(noCookie.headers.get("location"), "https://neorun.cloud/#/settings?github=ok");
+  const persisted = (await (await fetch(`${base}/v1/integrations/github`, { headers: auth })).json()) as {
+    connected: boolean;
+    login: string | null;
+  };
+  assert.equal(persisted.connected, true);
+  assert.equal(persisted.login, "octocat");
+
+  await fetch(`${base}/v1/integrations/github`, { method: "DELETE", headers: auth });
+
+  const expired = await fetch(
+    `${base}/v1/integrations/github/callback?code=abc&state=${encodeURIComponent(signGithubOAuthState(userId, Date.now() - 11 * 60 * 1000))}`,
+    { redirect: "manual" },
+  );
+  assert.equal(expired.status, 302);
+  assert.equal(expired.headers.get("location"), "https://neorun.cloud/#/settings?github=invalid_state");
+
+  const forged = await fetch(`${base}/v1/integrations/github/callback?code=abc&state=not-a-state`, {
+    redirect: "manual",
+  });
+  assert.equal(forged.status, 302);
+  assert.equal(forged.headers.get("location"), "https://neorun.cloud/#/settings?github=invalid_state");
+
+  const mismatch = await fetch(
+    `${base}/v1/integrations/github/callback?code=abc&state=${encodeURIComponent(signGithubOAuthState("other-user"))}`,
+    { headers: auth, redirect: "manual" },
+  );
+  assert.equal(mismatch.status, 302);
+  assert.equal(mismatch.headers.get("location"), "https://neorun.cloud/#/settings?github=state_user_mismatch");
+
+  const untouched = (await (await fetch(`${base}/v1/integrations/github`, { headers: auth })).json()) as {
+    connected: boolean;
+  };
+  assert.equal(untouched.connected, false);
 });

@@ -149,6 +149,7 @@ import {
   publicGithubAccount,
   resolvePublicOrigin,
   settingsPageUrl,
+  verifyGithubOAuthState,
 } from "../integrations/github.js";
 import { getObjectStore } from "../objects/store.js";
 import { startPlatform, platformInfo } from "../platform.js";
@@ -966,19 +967,27 @@ export function createApiServer() {
             redirect(res, settingsPageUrl(origin, oauthError));
             return;
           }
-          if (actor.kind !== "user") {
-            redirect(res, settingsPageUrl(origin, "login_required"));
-            return;
-          }
           const code = url.searchParams.get("code")?.trim() ?? "";
           const state = url.searchParams.get("state")?.trim() ?? "";
           if (!code || !state) {
             redirect(res, settingsPageUrl(origin, "missing_code"));
             return;
           }
+          let userId: string;
           try {
-            await completeGithubOAuthCallback({ code, state, userId: actor.userId, origin });
-            redirect(res, settingsPageUrl(origin));
+            userId = verifyGithubOAuthState(state);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "invalid_state";
+            redirect(res, settingsPageUrl(origin, message));
+            return;
+          }
+          if (actor.kind === "user" && actor.userId !== userId) {
+            redirect(res, settingsPageUrl(origin, "state_user_mismatch"));
+            return;
+          }
+          try {
+            await completeGithubOAuthCallback({ code, state, userId, origin });
+            redirect(res, settingsPageUrl(origin, "ok"));
           } catch (error) {
             const message = error instanceof Error ? error.message : "oauth_failed";
             redirect(res, settingsPageUrl(origin, message));
