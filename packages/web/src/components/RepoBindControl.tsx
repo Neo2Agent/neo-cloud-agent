@@ -89,11 +89,12 @@ export function RepoBindControl({
       <details
         ref={detailsRef}
         className="repo-bind-pop"
-        id="repo-bind"
         open={open}
         onToggle={(event) => onOpen?.((event.currentTarget as HTMLDetailsElement).open)}
       >
-        <summary aria-label="仓库">{label}</summary>
+        <summary id="repo-bind" aria-label="仓库">
+          {label}
+        </summary>
         <div className="repo-bind-menu">
           <input
             ref={searchRef}
