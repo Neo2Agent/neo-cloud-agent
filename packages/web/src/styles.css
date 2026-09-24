@@ -3159,9 +3159,7 @@ a.git-branch:hover code {
 }
 
 .git-day ul,
-.git-feedback,
-.git-check-list,
-.git-review-subs ul {
+.git-check-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3246,11 +3244,7 @@ a.git-branch:hover code {
   gap: 0;
 }
 
-.git-checks-card,
-.git-draft-card,
-.git-review-agent,
-.git-review-pr,
-.git-review-subs {
+.git-checks-card {
   padding: 12px 16px;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -3284,77 +3278,6 @@ a.git-branch:hover code {
 .git-check-count {
   margin: 6px 0 0;
   color: var(--muted);
-  font-size: 12px;
-}
-
-.git-draft-card,
-.git-review-agent {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.git-draft-card h4,
-.git-review-agent h4 {
-  margin: 0;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.git-draft-card p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.git-review-pr > summary {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.git-review-agent .hint {
-  margin: 0;
-}
-
-.git-feedback li {
-  display: grid;
-  gap: 6px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.git-feedback-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.git-feedback-head b {
-  color: var(--text);
-}
-
-.git-feedback-head a {
-  margin-left: auto;
-  color: var(--muted);
-}
-
-.git-feedback-body {
-  margin: 0;
-  font-size: 13px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.git-feedback .quiet-btn {
-  justify-self: start;
-  min-height: 26px;
   font-size: 12px;
 }
 

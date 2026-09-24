@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  feedbackFollowUpText,
   foldUnmodifiedLines,
   groupCommitsByDay,
   parseHunkLines,
@@ -18,9 +17,6 @@ import { formatListWhen } from "../format";
 import { IconBranch, IconCopy, IconMore } from "../icons";
 
 export type GitView = "diff" | "review" | "commits";
-
-/** The slice of `RunSubscription` the review tab shows. */
-type RunSubscription = { id: string; kind: string; repo: string; prNumber?: number | null };
 
 type Props = {
   token: string;
@@ -501,99 +497,25 @@ function ReviewView({
   pr,
   feedback,
   feedbackError,
-  subscriptions,
-  reviewState,
-  acting,
-  onReview,
-  onReady,
-  onHandOff,
 }: {
   pr: PullRequestRef | undefined;
   feedback: PullRequestFeedback | null;
   feedbackError: string;
-  subscriptions: RunSubscription[];
-  reviewState: "idle" | "sending" | "sent" | "error";
-  acting: boolean;
-  onReview: () => void;
-  onReady: () => void;
-  onHandOff: (item: { author: string; body: string; path?: string | null; line?: number | null; url?: string }) => Promise<void>;
 }) {
-  const [handed, setHanded] = useState<Record<string, boolean>>({});
-  const items = [
-    ...(feedback?.reviews ?? []).map((item) => ({ key: `r${item.id}`, author: item.author, body: item.body, label: item.state, url: item.url, path: null, line: null })),
-    ...(feedback?.comments ?? []).map((item) => ({ key: `c${item.id}`, author: item.author, body: item.body, label: item.path ? `${item.path}${item.line ? `:${item.line}` : ""}` : "评论", url: item.url, path: item.path, line: item.line })),
-  ].filter((item) => item.body.trim());
-  const github = isGithubPr(pr);
+  const checks = feedback?.checks ?? [];
+  const counts = pr?.checks ?? { passed: 0, failed: 0, pending: 0 };
+  const hasChecks = checks.length > 0 || counts.passed + counts.failed + counts.pending > 0;
   return (
     <div className="git-review">
-      <ChecksSummary pr={pr} checks={feedback?.checks ?? []} />
-      {github && pr?.draft ? (
-        <section className="git-draft-card">
-          <div>
-            <h4>草稿 PR</h4>
-            <p>还在改，还没准备好合并。</p>
-          </div>
-          <button type="button" className="git-btn is-ghost" disabled={acting} onClick={onReady}>
-            标为可合并
-          </button>
-        </section>
-      ) : null}
-      <section className="git-review-agent">
-        <div>
-          <h4>查找问题</h4>
-          <p className="hint">点一下会在当前对话排队一条只审不改的跟进。</p>
+      {feedbackError ? <p className="setup err">{feedbackError}</p> : null}
+      {hasChecks ? (
+        <ChecksSummary pr={pr} checks={checks} />
+      ) : (
+        <div className="git-empty">
+          <strong>还没有检查</strong>
+          <p>绑定 GitHub PR 之后，这里显示 CI / CD 结果。</p>
         </div>
-        <button type="button" className="git-btn is-ghost" disabled={reviewState === "sending"} onClick={onReview}>
-          {reviewState === "sending" ? "发送中…" : reviewState === "sent" ? "再审一次" : "查找问题"}
-        </button>
-      </section>
-      {reviewState === "sent" ? <p className="git-note">已发给 Agent，看对话里的回复。</p> : null}
-      {reviewState === "error" ? <p className="setup err">发送审查失败</p> : null}
-      {github && items.length > 0 ? (
-        <details className="git-review-pr">
-          <summary>评论 {items.length}</summary>
-          {feedbackError ? <p className="setup err">{feedbackError}</p> : null}
-          <ul className="git-feedback">
-            {items.map((item) => (
-              <li key={item.key}>
-                <p className="git-feedback-head">
-                  <b>{item.author || "someone"}</b>
-                  <span>{item.label}</span>
-                  {item.url ? (
-                    <a href={item.url} target="_blank" rel="noreferrer">
-                      在 GitHub 查看
-                    </a>
-                  ) : null}
-                </p>
-                <p className="git-feedback-body">{item.body}</p>
-                <button
-                  type="button"
-                  className="git-btn is-ghost"
-                  disabled={handed[item.key]}
-                  onClick={() => {
-                    void onHandOff(item).then(() => setHanded((prev) => ({ ...prev, [item.key]: true })));
-                  }}
-                >
-                  {handed[item.key] ? "已交给 Agent" : "交给 Agent 处理"}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-      {subscriptions.length > 0 ? (
-        <section className="git-review-subs">
-          <h4>正在等</h4>
-          <ul>
-            {subscriptions.map((item) => (
-              <li key={item.id}>
-                {item.kind === "github_ci" ? "CI 结果" : "PR 评论"} · {item.repo}
-                {item.prNumber ? ` #${item.prNumber}` : ""}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -610,14 +532,12 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
   const [actionError, setActionError] = useState("");
   const [feedback, setFeedback] = useState<PullRequestFeedback | null>(null);
   const [feedbackError, setFeedbackError] = useState("");
-  const [subscriptions, setSubscriptions] = useState<RunSubscription[]>([]);
-  const [reviewState, setReviewState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const pr = diff?.pullRequests?.[0];
   const files = diff?.files ?? [];
   const resolvedPath = files.some((item) => item.path === selectedPath) ? selectedPath : (files[0]?.path ?? null);
-  const reviewDot = Boolean(pr?.checks?.failed || feedback?.reviews.some((item) => item.state === "CHANGES_REQUESTED"));
+  const reviewDot = Boolean(pr?.checks?.failed);
 
   const load = useCallback(
     async (refreshPr: boolean) => {
@@ -654,7 +574,6 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
     setDiff(null);
     setCommits(null);
     setFeedback(null);
-    setReviewState("idle");
     setSelectedPath(null);
     setActionError("");
   }, [runId]);
@@ -671,19 +590,15 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
 
   useEffect(() => {
     if (view !== "review") return;
-    void api(token, `/v1/runs/${runId}/subscriptions`)
-      .then((res) => readJson<{ subscriptions?: RunSubscription[] }>(res))
-      .then((body) => setSubscriptions(body.subscriptions ?? []))
-      .catch(() => setSubscriptions([]));
     if (!pr?.number || pr.url.startsWith("local://")) return;
     setFeedbackError("");
     void api(token, `/v1/runs/${runId}/pull-requests/${pr.number}/feedback`)
       .then(async (res) => {
         const body = await readJson<PullRequestFeedback & { error?: string }>(res);
-        if (!res.ok) throw new Error(body.error || "读取 PR 讨论失败");
+        if (!res.ok) throw new Error(body.error || "读取检查失败");
         setFeedback(body);
       })
-      .catch((err) => setFeedbackError(err instanceof Error ? err.message : "读取 PR 讨论失败"));
+      .catch((err) => setFeedbackError(err instanceof Error ? err.message : "读取检查失败"));
   }, [pr?.number, pr?.url, runId, token, view]);
 
   const commit = async (message: string) => {
@@ -700,14 +615,6 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
     } finally {
       setCommitting(false);
     }
-  };
-
-  const followUp = async (text: string) => {
-    const res = await api(token, `/v1/runs/${runId}/follow-ups`, {
-      method: "POST",
-      body: JSON.stringify({ text, delivery: "follow_up" }),
-    });
-    if (!res.ok) throw new Error("发送失败");
   };
 
   const writePr = async (path: "ready" | "merge") => {
@@ -771,22 +678,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
         ) : view === "commits" ? (
           <CommitsView commits={commits} />
         ) : (
-          <ReviewView
-            pr={pr}
-            feedback={feedback}
-            feedbackError={feedbackError}
-            subscriptions={subscriptions}
-            reviewState={reviewState}
-            acting={acting}
-            onReady={() => void writePr("ready")}
-            onReview={() => {
-              setReviewState("sending");
-              void api(token, `/v1/runs/${runId}/review`, { method: "POST", body: "{}" })
-                .then((res) => setReviewState(res.ok ? "sent" : "error"))
-                .catch(() => setReviewState("error"));
-            }}
-            onHandOff={(item) => followUp(feedbackFollowUpText({ number: pr?.number ?? 0, ...item }))}
-          />
+          <ReviewView pr={pr} feedback={feedback} feedbackError={feedbackError} />
         )}
       </div>
     </section>

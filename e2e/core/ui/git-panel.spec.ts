@@ -125,7 +125,7 @@ test.describe("git panel", () => {
     await expect(page.locator("#open-pr")).toHaveCount(0);
   });
 
-  test("git.repo-run: no open-draft CTA, dirty commit box, find issues", async ({ page }) => {
+  test("git.repo-run: no open-draft CTA, dirty commit box, CI-only review", async ({ page }) => {
     await loginAs(page);
     const runId = await createRun(page, { prompt: "改 toy-repo", repoUrls: ["fixtures/toy-repo"] });
     await seedWorkspaceDiff(runId);
@@ -146,12 +146,13 @@ test.describe("git panel", () => {
     await expect(views).toHaveText(["改动", "审查", /^提交/]);
     await views.nth(1).click();
     await expect(page.locator(".git-draft-card")).toHaveCount(0);
-    await expect(page.locator(".git-review-agent")).toContainText("查找问题");
+    await expect(page.locator(".git-review-agent")).toHaveCount(0);
+    await expect(page.locator(".git-review")).toContainText("还没有检查");
     await views.nth(2).click();
     await expect(page.locator(".git-body")).toBeVisible();
   });
 
-  test("git.header-pr: view PR, checks, draft row, ready then squash", async ({ page }) => {
+  test("git.header-pr: view PR, CI checks, ready then squash", async ({ page }) => {
     await loginAs(page);
     const runId = await createRun(page, { prompt: "审 mock PR", repoUrls: ["fixtures/toy-repo"] });
     await mockGithubPr(page, {
@@ -180,12 +181,12 @@ test.describe("git panel", () => {
     const views = page.getByRole("tablist", { name: "Git" }).getByRole("tab");
     await views.nth(1).click();
     await expect(page.locator(".git-checks-card")).toContainText("检查已通过");
-    await expect(page.locator(".git-draft-card")).toContainText("草稿 PR");
-    await expect(page.locator(".git-review-agent")).toContainText("查找问题");
+    await expect(page.locator(".git-check-list")).toContainText("typecheck");
+    await expect(page.locator(".git-draft-card")).toHaveCount(0);
+    await expect(page.locator(".git-review-agent")).toHaveCount(0);
     await page.locator(".git-head-cta").click();
     await expect(page.locator(".git-head-cta")).toHaveText("压缩合并");
     await expect(page.locator(".git-badge")).toHaveText("打开");
-    await expect(page.locator(".git-draft-card")).toHaveCount(0);
     await page.locator(".git-head-cta").click();
     await expect(page.locator(".git-head-cta")).toHaveText("已合并");
     await expect(page.locator(".git-head-cta")).toBeDisabled();

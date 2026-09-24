@@ -65,7 +65,7 @@
 | 运行列表后台刷新 | ✓ 8s + 聚焦（△ 只在打开对话时） | ✓ 8s + 聚焦（△ 只在聚焦时） | ✓ 8s + 可见（✗ 从不） |
 | 执行模式标签 | Remote / 本机（✗ 无） | 云端 / Remote / 本机（△ 英文小写） | 云端 / Remote（△ 英文小写） |
 | Agent / Ask 模式 | 已删除 | 已删除（△ 前缀代码还在） | 已删除（△ `askPrompt` 还在） |
-| Diff / 提交 / PR | ✓ Git 面板（头栏 ready / squash merge、点选文件、行号、Find Issues） | △ 只有 `+N -M` | ✗ |
+| Diff / 提交 / PR | ✓ Git 面板（头栏 ready / squash merge、点选文件、行号、审查页 CI） | △ 只有 `+N -M` | ✗ |
 | 文件 / 终端 / 产物 | ✓ | ✓（本机 + 云端） | △ 只有产物 |
 | 会话搜索 | △ 只有手机布局有 | ✓ 搜索面板 | ✗ |
 | 推送 | ✗ | 系统通知（派活） | ✓ Expo 推送 |
@@ -131,7 +131,7 @@
 4. **运行中的发送语义统一成 Cursor 那套**：空闲时 Enter 发送；运行中 Enter 排队（`delivery: "follow_up"`），Cmd/Ctrl+Enter 立即插话（`delivery: "steer"`）；组词中不处理；手机上回车换行，箭头按钮在运行中排队。
 5. **Desk 补齐**：输入法保护、Markdown、工作折叠和转圈、进行中不显示时间、删掉 Ask 残留。
 6. **Mobile 补齐**：消息时间、运行中排队（实验室和原生）、实验室 Markdown、统一「正在思考」、删掉 `askPrompt`。
-7. **Web Git 面板**（单独的 PR）：普通对话不显示 Git；绑了仓库或本机目录的对话显示 PR 头 + Diff / 审查 / 提交记录；本机工作区由 Desk 回传快照。展示对齐 cursor.com/agents 右栏：头栏状态机、选中文件 + 双 gutter、工作区 dirty 才出提交底栏、审查页是 checks / Draft 卡 / Find Issues。
+7. **Web Git 面板**（单独的 PR）：普通对话不显示 Git；绑了仓库或本机目录的对话显示 PR 头 + Diff / 审查 / 提交记录；本机工作区由 Desk 回传快照。展示对齐 cursor.com/agents 右栏：头栏状态机、选中文件 + 双 gutter、工作区 dirty 才出提交底栏、审查页只显示 CI / CD。
 
 ### 5.1 Cursor 的两套 Git 皮（2026-09-24 补）
 
@@ -144,10 +144,10 @@
   - `merged` / `closed`：禁用，文案 `已合并` / `已关闭`
   - `local://`、Desk、未配 SCM：写按钮不出现；handoff 也不造 `local://` 假 PR。失败时头栏显示 GitHub 原文，`查看 PR` 仍可打开仓库
 - **改动**：选中文件 + 双 gutter；连续未改行可折成「N 行未改」。提交底栏只在 `GET /diff` 的 `dirty`（工作区相对 HEAD）为真时出现。有 GitHub PR 且工作区干净时，改动页只审 PR。
-- **审查**：先 checks 手风琴（`检查已通过` / `N 项失败` / `N 项进行中`），草稿时再出草稿行，查找问题是次要一行（只审不改，结果进对话）。评论折进「评论」小段。内部页签用和文件栏一样的灰底 pill，不用第二套下划线。
+- **审查**：只显示 CI / CD 手风琴（`检查已通过` / `N 项失败` / `N 项进行中`）。草稿说明和「标为可合并」只在头栏，不在审查页再放一张卡。内部页签用和文件栏一样的灰底 pill，不用第二套下划线。
 - **Cursor 3 Agents Window**：改动树、Commit and Push 下拉。这是桌面编排面，Neo 不跟。
 
-Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、`dirty`、`GET /commits`、`POST /review`、Desk 快照、ready / squash merge。Desk / Mobile 自己的 Git 标签仍是第二期。改 reviewer、行内评论回写仍是第三期。
+Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、`dirty`、`GET /commits`、审查页 CI、Desk 快照、ready / squash merge。Desk / Mobile 自己的 Git 标签仍是第二期。改 reviewer、行内评论回写仍是第三期。
 
 ### 第二期
 
