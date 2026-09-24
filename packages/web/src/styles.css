@@ -2550,19 +2550,61 @@ button.send:disabled {
   background: transparent;
 }
 
-/* Git panel: Cursor-style selected file + hunk gutters + commit footer. */
+/* Git panel: Cursor header flow, Neo inspector chrome. */
 .git-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: transparent;
+}
+
+.git-panel .git-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 24px;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.git-panel .git-btn.is-ghost {
+  border: 1px solid var(--line);
   background: #fff;
+  color: var(--text);
+}
+
+.git-panel .git-btn.is-ghost:hover:not(:disabled) {
+  background: #f6f6f7;
+}
+
+.git-panel .git-btn.is-primary {
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+}
+
+.git-panel .git-btn.is-primary:hover:not(:disabled) {
+  background: var(--accent-2);
+}
+
+.git-panel .git-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .git-head {
   display: grid;
-  gap: 6px;
-  padding: 10px 14px 8px;
-  border-bottom: 1px solid var(--line);
+  gap: 4px;
+  padding: 8px 12px 6px;
 }
 
 .git-head-title {
@@ -2570,6 +2612,7 @@ button.send:disabled {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  min-height: 28px;
 }
 
 .git-head-actions {
@@ -2580,15 +2623,11 @@ button.send:disabled {
   margin-left: auto;
 }
 
-.git-view-pr,
-.git-head-cta {
+.git-head-actions .icon-btn {
+  min-width: 28px;
   min-height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-
-a.git-view-pr {
-  text-decoration: none;
+  padding: 4px;
+  border-radius: 8px;
 }
 
 .git-more {
@@ -2596,30 +2635,18 @@ a.git-view-pr {
 }
 
 .git-more > summary {
-  display: grid;
-  place-items: center;
-  min-width: 28px;
-  min-height: 28px;
-  border-radius: 8px;
-  color: var(--muted);
   list-style: none;
-  cursor: pointer;
 }
 
-.git-more > summary::-webkit-details-marker {
+.git-more > summary::-webkit-details-marker,
+.git-more > summary::marker {
   display: none;
+  content: "";
 }
 
-.git-more[open] > summary {
-  background: #f0f0f1;
-}
-
-.git-more .quiet-btn {
-  position: absolute;
-  top: 100%;
+.git-more .inspector-more-pop {
   right: 0;
-  z-index: 2;
-  margin-top: 4px;
+  left: auto;
 }
 
 .git-pr-title,
@@ -2746,8 +2773,10 @@ a.git-branch:hover code {
 
 .git-tabs {
   display: flex;
-  gap: 0;
-  padding: 0 10px;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -2755,22 +2784,23 @@ a.git-branch:hover code {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px 7px;
+  margin: 0;
+  padding: 4px 10px;
   border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 20px;
   cursor: pointer;
 }
 
 .git-tabs button.is-on {
-  border-bottom-color: var(--text);
-  background: transparent;
+  background: #e8e8ea;
   color: var(--text);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .git-tab-count {
@@ -2815,25 +2845,51 @@ a.git-branch:hover code {
 
 .git-review,
 .git-commits {
-  gap: 12px;
-  padding: 10px 14px 14px;
+  gap: 0;
+  padding: 0;
   overflow: auto;
 }
 
+.git-commits {
+  padding: 10px 12px 14px;
+}
+
 .git-review .git-note,
-.git-review .git-empty,
-.git-commits .git-note,
-.git-commits .git-empty {
-  padding: 0;
+.git-commits .git-note {
+  padding: 10px 16px 0;
 }
 
 .git-note,
-.git-empty,
 .git-summary {
   margin: 0;
-  padding: 8px 14px 0;
+  padding: 8px 12px 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.git-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  flex: 1;
+  margin: 0;
+  padding: 32px 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.git-empty strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.git-empty p {
+  margin: 0;
+  max-width: 220px;
 }
 
 .git-summary {
@@ -2859,10 +2915,11 @@ a.git-branch:hover code {
 .git-files {
   flex: none;
   max-height: 34%;
-  margin: 8px 14px 0;
+  margin: 4px 0 0;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
   list-style: none;
   overflow: auto;
 }
@@ -2877,7 +2934,7 @@ a.git-branch:hover code {
   gap: 8px;
   width: 100%;
   min-height: 28px;
-  padding: 0 8px;
+  padding: 0 12px;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -2956,10 +3013,10 @@ a.git-branch:hover code {
 .git-hunks {
   flex: 1 1 auto;
   min-height: 88px;
-  margin: 8px 14px 0;
+  margin: 0;
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
   background: #fafafa;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
@@ -3084,7 +3141,7 @@ a.git-branch:hover code {
 }
 
 .git-day h4,
-.git-review h4 {
+.git-review-subs h4 {
   margin: 0 0 6px;
   color: var(--muted);
   font-size: 12px;
@@ -3174,14 +3231,20 @@ a.git-branch:hover code {
 }
 
 .git-review {
-  display: grid;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
-.git-checks-card {
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+.git-checks-card,
+.git-draft-card,
+.git-review-agent,
+.git-review-pr,
+.git-review-subs {
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
 }
 
 .git-checks-card > summary {
@@ -3214,20 +3277,20 @@ a.git-branch:hover code {
   font-size: 12px;
 }
 
-.git-draft-card {
+.git-draft-card,
+.git-review-agent {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
 }
 
-.git-draft-card h4 {
+.git-draft-card h4,
+.git-review-agent h4 {
   margin: 0;
   color: var(--text);
   font-size: 13px;
+  font-weight: 600;
 }
 
 .git-draft-card p {
@@ -3236,23 +3299,10 @@ a.git-branch:hover code {
   font-size: 12px;
 }
 
-.git-review-agent {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 0;
-}
-
-.git-review-agent h4 {
+.git-review-pr > summary {
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
-}
-
-.git-review-pr > summary {
-  color: var(--muted);
-  font-size: 12px;
   cursor: pointer;
 }
 

@@ -15,7 +15,7 @@ import {
 import type { PullRequestRef, RunCommitRef } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
 import { formatListWhen } from "../format";
-import { IconBranch, IconCopy, IconRefresh } from "../icons";
+import { IconBranch, IconCopy, IconMore } from "../icons";
 
 export type GitView = "diff" | "review" | "commits";
 
@@ -42,9 +42,9 @@ const STATUS_MARK: Record<GitFileChange["status"], string> = {
 };
 
 const PR_BADGE: Record<string, string> = {
-  open: "Open",
-  merged: "Merged",
-  closed: "Closed",
+  open: "打开",
+  merged: "已合并",
+  closed: "已关闭",
 };
 
 /** While a turn runs, the diff moves with the agent. */
@@ -71,7 +71,7 @@ function prBadge(pr: PullRequestRef): { label: string; tone: string } {
   if (pr.url.startsWith("local://")) return { label: "本地", tone: "local" };
   if (pr.state === "merged") return { label: PR_BADGE.merged!, tone: "merged" };
   if (pr.state === "closed") return { label: PR_BADGE.closed!, tone: "closed" };
-  if (pr.draft) return { label: "Draft", tone: "draft" };
+  if (pr.draft) return { label: "草稿", tone: "draft" };
   return { label: PR_BADGE.open!, tone: "open" };
 }
 
@@ -95,10 +95,10 @@ function headAction(pr: PullRequestRef | undefined, context: Props["context"], c
   if (context !== "cloud") return null;
   if (canOpenPr) return { kind: "open-draft", label: "开草稿 PR" };
   if (!isGithubPr(pr) || !pr) return null;
-  if (pr.state === "merged") return { kind: "merged", label: "Merged", disabled: true };
-  if (pr.state === "closed") return { kind: "closed", label: "Closed", disabled: true };
-  if (pr.draft) return { kind: "ready", label: "Mark as ready" };
-  return { kind: "merge", label: "Squash and merge" };
+  if (pr.state === "merged") return { kind: "merged", label: "已合并", disabled: true };
+  if (pr.state === "closed") return { kind: "closed", label: "已关闭", disabled: true };
+  if (pr.draft) return { kind: "ready", label: "标为可合并" };
+  return { kind: "merge", label: "压缩合并" };
 }
 
 function checkPassed(check: { status: string; conclusion: string | null }): boolean {
@@ -161,14 +161,14 @@ function PrHeader({
         )}
         <div className="git-head-actions">
           {view ? (
-            <a className="quiet-btn git-view-pr" href={view} target="_blank" rel="noreferrer">
-              View PR
+            <a className="git-btn is-ghost git-view-pr" href={view} target="_blank" rel="noreferrer">
+              查看 PR
             </a>
           ) : null}
           {action ? (
             <button
               type="button"
-              className="quiet-btn primary git-head-cta"
+              className={`git-btn git-head-cta${action.disabled ? " is-ghost" : " is-primary"}`}
               data-action={action.kind}
               disabled={acting || action.disabled}
               onClick={runAction}
@@ -177,11 +177,14 @@ function PrHeader({
             </button>
           ) : null}
           <details className="git-more">
-            <summary aria-label="更多">…</summary>
-            <button type="button" className="quiet-btn" disabled={refreshing} onClick={onRefresh}>
-              <IconRefresh size={14} className={refreshing ? "spin" : undefined} />
-              刷新
-            </button>
+            <summary className="icon-btn" aria-label="更多">
+              <IconMore size={16} />
+            </summary>
+            <div className="inspector-more-pop">
+              <button type="button" disabled={refreshing} onClick={onRefresh}>
+                刷新
+              </button>
+            </div>
           </details>
         </div>
       </div>
@@ -260,7 +263,7 @@ function HunkPreview({ lines }: { lines: HunkLine[] }) {
             className="git-hunk-fold"
             onClick={() => setOpen((prev) => ({ ...prev, [item.id]: true }))}
           >
-            {item.count} unmodified lines
+            {item.count} 行未改
           </button>
         );
       })}
@@ -298,7 +301,10 @@ function DiffView({
       ) : null}
       {context === "desk" && diff?.source === "none" ? <p className="git-note">正在等这台电脑上报改动。电脑离线时这里是空的。</p> : null}
       {files.length === 0 ? (
-        <p className="git-empty">{diff ? "没有改动。" : "正在读取…"}</p>
+        <div className="git-empty">
+          <strong>{diff ? "没有改动" : "正在读取"}</strong>
+          <p>{diff ? "工作区相对 HEAD 是干净的。" : "正在比对这个分支和底部分支。"}</p>
+        </div>
       ) : (
         <>
           <p className="git-summary">
@@ -353,7 +359,7 @@ function DiffView({
         >
           <textarea name="message" rows={2} placeholder="提交说明" disabled={committing} />
           <div className="git-commit-actions">
-            <button type="submit" className="quiet-btn primary" disabled={committing}>
+            <button type="submit" className="git-btn is-primary" disabled={committing}>
               {committing ? "提交中…" : "提交"}
             </button>
           </div>
@@ -401,8 +407,22 @@ function CommitRow({ commit }: { commit: RunCommitRef }) {
 }
 
 function CommitsView({ commits }: { commits: RunCommitsResponse | null }) {
-  if (!commits) return <p className="git-empty">正在读取…</p>;
-  if (commits.commits.length === 0) return <p className="git-empty">这个分支还没有提交。</p>;
+  if (!commits) {
+    return (
+      <div className="git-empty">
+        <strong>正在读取</strong>
+        <p>正在拉这个分支上的提交。</p>
+      </div>
+    );
+  }
+  if (commits.commits.length === 0) {
+    return (
+      <div className="git-empty">
+        <strong>还没有提交</strong>
+        <p>这个分支上还没有记下提交。</p>
+      </div>
+    );
+  }
   return (
     <div className="git-commits">
       {commits.source === "recorded" ? <p className="git-note">工作区已回收，这里是提交时记下的记录。</p> : null}
@@ -438,17 +458,17 @@ function ChecksSummary({
   const total = fromList.passed + fromList.failed + fromList.pending;
   if (total === 0 && checks.length === 0) return null;
   const title = fromList.failed
-    ? `${fromList.failed} failing`
+    ? `${fromList.failed} 项失败`
     : fromList.pending
-      ? `${fromList.pending} pending`
-      : "All checks passing";
+      ? `${fromList.pending} 项进行中`
+      : "检查已通过";
   return (
     <details className="git-checks-card" open>
       <summary>
         <span className={`git-check-dot ${fromList.failed ? "is-fail" : fromList.pending ? "is-pending" : "is-pass"}`} />
         {title}
       </summary>
-      {fromList.passed ? <p className="git-check-count">{fromList.passed} passed</p> : null}
+      {fromList.passed ? <p className="git-check-count">{fromList.passed} 项通过</p> : null}
       {checks.length > 0 ? (
         <ul className="git-check-list">
           {checks.map((check) => (
@@ -501,21 +521,21 @@ function ReviewView({
       {github && pr?.draft ? (
         <section className="git-draft-card">
           <div>
-            <h4>Draft pull request</h4>
-            <p>This pull request is still a work in progress.</p>
+            <h4>草稿 PR</h4>
+            <p>还在改，还没准备好合并。</p>
           </div>
-          <button type="button" className="quiet-btn" disabled={acting} onClick={onReady}>
-            Mark as ready
+          <button type="button" className="git-btn is-ghost" disabled={acting} onClick={onReady}>
+            标为可合并
           </button>
         </section>
       ) : null}
       <section className="git-review-agent">
         <div>
-          <h4>Find Issues</h4>
+          <h4>查找问题</h4>
           <p className="hint">只审不改，结果会出现在对话里。</p>
         </div>
-        <button type="button" className="quiet-btn" disabled={reviewState === "sending"} onClick={onReview}>
-          {reviewState === "sending" ? "发送中…" : reviewState === "sent" ? "再审一次" : "Find Issues"}
+        <button type="button" className="git-btn is-ghost" disabled={reviewState === "sending"} onClick={onReview}>
+          {reviewState === "sending" ? "发送中…" : reviewState === "sent" ? "再审一次" : "查找问题"}
         </button>
       </section>
       {reviewState === "sent" ? <p className="git-note">已发给 Agent，看对话里的回复。</p> : null}
@@ -539,7 +559,7 @@ function ReviewView({
                 <p className="git-feedback-body">{item.body}</p>
                 <button
                   type="button"
-                  className="quiet-btn"
+                  className="git-btn is-ghost"
                   disabled={handed[item.key]}
                   onClick={() => {
                     void onHandOff(item).then(() => setHanded((prev) => ({ ...prev, [item.key]: true })));
@@ -689,7 +709,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onOp
     try {
       const res = await api(token, `/v1/runs/${runId}/pull-requests/${pr.number}/${path}`, { method: "POST", body: "{}" });
       const body = await readJson<{ error?: string; pullRequest?: PullRequestRef }>(res);
-      if (!res.ok || body.error) throw new Error(body.error || (path === "ready" ? "Mark as ready 失败" : "合并失败"));
+      if (!res.ok || body.error) throw new Error(body.error || (path === "ready" ? "标为可合并失败" : "合并失败"));
       if (body.pullRequest) onPullRequests?.([body.pullRequest]);
       await load(true);
     } catch (err) {
@@ -729,7 +749,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onOp
       <div className="git-tabs" role="tablist" aria-label="Git">
         {(
           [
-            ["diff", "Diff"],
+            ["diff", "改动"],
             ["review", "审查"],
             ["commits", "提交"],
           ] as const

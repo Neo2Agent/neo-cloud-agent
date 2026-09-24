@@ -125,7 +125,7 @@ test.describe("git panel", () => {
     await expect(page.locator("#open-pr")).toBeHidden();
   });
 
-  test("git.repo-run: header open-draft, dirty commit box, Find Issues", async ({ page }) => {
+  test("git.repo-run: header open-draft, dirty commit box, find issues", async ({ page }) => {
     await loginAs(page);
     const runId = await createRun(page, { prompt: "改 toy-repo", repoUrls: ["fixtures/toy-repo"] });
     await seedWorkspaceDiff(runId);
@@ -141,15 +141,15 @@ test.describe("git panel", () => {
     await files.filter({ hasText: "hello.txt" }).click();
     await expect(page.locator(".git-file.is-on")).toContainText("hello.txt");
     const views = page.getByRole("tablist", { name: "Git" }).getByRole("tab");
-    await expect(views).toHaveText(["Diff", "审查", /^提交/]);
+    await expect(views).toHaveText(["改动", "审查", /^提交/]);
     await views.nth(1).click();
     await expect(page.locator(".git-draft-card")).toHaveCount(0);
-    await expect(page.locator(".git-review-agent")).toContainText("Find Issues");
+    await expect(page.locator(".git-review-agent")).toContainText("查找问题");
     await views.nth(2).click();
     await expect(page.locator(".git-body")).toBeVisible();
   });
 
-  test("git.header-pr: View PR, checks, Draft card, ready then squash", async ({ page }) => {
+  test("git.header-pr: view PR, checks, draft row, ready then squash", async ({ page }) => {
     await loginAs(page);
     const runId = await createRun(page, { prompt: "审 mock PR", repoUrls: ["fixtures/toy-repo"] });
     await mockGithubPr(page, {
@@ -164,28 +164,28 @@ test.describe("git panel", () => {
       checks: { passed: 2, failed: 0, pending: 0 },
     });
     await openGitPanel(page, runId);
-    await expect(page.getByRole("link", { name: "View PR" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "查看 PR" })).toHaveAttribute(
       "href",
       "https://github.com/acme/app/pull/12",
     );
-    await expect(page.locator(".git-badge")).toHaveText("Draft");
+    await expect(page.locator(".git-badge")).toHaveText("草稿");
     await expect(page.locator(".git-branch")).toHaveAttribute(
       "href",
       "https://github.com/acme/app/compare/main...neo%2Ffeature",
     );
-    await expect(page.locator(".git-head-cta")).toHaveText("Mark as ready");
+    await expect(page.locator(".git-head-cta")).toHaveText("标为可合并");
     await expect(page.locator(".git-commit")).toHaveCount(0);
     const views = page.getByRole("tablist", { name: "Git" }).getByRole("tab");
     await views.nth(1).click();
-    await expect(page.locator(".git-checks-card")).toContainText("All checks passing");
-    await expect(page.locator(".git-draft-card")).toContainText("Draft pull request");
-    await expect(page.locator(".git-review-agent")).toContainText("Find Issues");
+    await expect(page.locator(".git-checks-card")).toContainText("检查已通过");
+    await expect(page.locator(".git-draft-card")).toContainText("草稿 PR");
+    await expect(page.locator(".git-review-agent")).toContainText("查找问题");
     await page.locator(".git-head-cta").click();
-    await expect(page.locator(".git-head-cta")).toHaveText("Squash and merge");
-    await expect(page.locator(".git-badge")).toHaveText("Open");
+    await expect(page.locator(".git-head-cta")).toHaveText("压缩合并");
+    await expect(page.locator(".git-badge")).toHaveText("打开");
     await expect(page.locator(".git-draft-card")).toHaveCount(0);
     await page.locator(".git-head-cta").click();
-    await expect(page.locator(".git-head-cta")).toHaveText("Merged");
+    await expect(page.locator(".git-head-cta")).toHaveText("已合并");
     await expect(page.locator(".git-head-cta")).toBeDisabled();
   });
 });
