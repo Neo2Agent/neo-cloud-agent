@@ -17,6 +17,8 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /button:focus-visible/);
   assert.match(css, /\.toast-host/);
   assert.match(css, /\.settings-group/);
+  assert.match(css, /\.repo-bind-menu/);
+  assert.match(css, /\.run-folder-head/);
   assert.match(css, /\.term-shell\s*\{/);
 });
 

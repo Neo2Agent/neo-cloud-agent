@@ -27,3 +27,33 @@ export async function loginAs(
   await expect(page.locator("#auth-gate")).toBeHidden({ timeout: 15_000 });
   await expect(page.locator("#composer")).toBeVisible();
 }
+
+export async function apiToken(page: Page): Promise<string> {
+  return page.evaluate(() => localStorage.getItem("neo.apiToken.v2") ?? "");
+}
+
+export async function createProject(
+  page: Page,
+  body: Record<string, unknown> = {},
+): Promise<{ id: string; name: string }> {
+  const token = await apiToken(page);
+  const response = await page.request.post("/v1/projects", {
+    headers: { authorization: `Bearer ${token}` },
+    data: { name: `组 ${Date.now()}`, ...body },
+  });
+  expect(response.status()).toBe(201);
+  return (await response.json()) as { id: string; name: string };
+}
+
+export async function createRun(
+  page: Page,
+  body: Record<string, unknown> = {},
+): Promise<{ id: string }> {
+  const token = await apiToken(page);
+  const response = await page.request.post("/v1/runs", {
+    headers: { authorization: `Bearer ${token}` },
+    data: { prompt: "e2e run", repoUrls: [], ...body },
+  });
+  expect(response.status()).toBe(201);
+  return (await response.json()) as { id: string };
+}

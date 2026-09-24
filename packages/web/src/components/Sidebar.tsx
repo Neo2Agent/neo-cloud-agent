@@ -5,7 +5,7 @@ import { formatListWhen, runListPlaceSuffix, runListTitle, STATUS_LABELS } from 
 import { BuddyMascot } from "@neo-cloud-agent/ui";
 import { IconArchive, IconAutomations, IconChat, IconExperts, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
-import { filterRuns, groupRunsByProject, isShelvedRun, splitShelvedRuns } from "../pins";
+import { filterRuns, groupRunsByProject, isShelvedRun, runKindLabel, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { initials } from "../catalog";
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "../pane-size";
@@ -37,6 +37,7 @@ type Props = {
   pinnedIds?: string[];
   projectNames?: Record<string, string>;
   onNewChat: () => void;
+  onStartProjectChat?: (projectId: string) => void;
   onOpenRun: (id: string) => void;
   onPatchTitle?: (id: string, body: PatchRunRequest) => Promise<void>;
   onPin?: (id: string) => void;
@@ -73,6 +74,7 @@ export function Sidebar({
   pinnedIds = [],
   projectNames = {},
   onNewChat,
+  onStartProjectChat,
   onOpenRun,
   onPatchTitle,
   onPin,
@@ -107,6 +109,7 @@ export function Sidebar({
   const [draft, setDraft] = useState("");
   const [titleBusy, setTitleBusy] = useState(false);
   const [titleError, setTitleError] = useState("");
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const skipTitleBlur = useRef(false);
   const items = [...runs].sort((left, right) => {
     const leftAt = left.updatedAt || left.createdAt;
@@ -167,6 +170,7 @@ export function Sidebar({
     const pinned = pinnedIds.includes(run.id);
     const canSelect = selecting && !isShelvedRun(run.status);
     const editing = editingId === run.id;
+    const kind = runKindLabel(run);
     return (
       <div
         key={run.id}
@@ -262,6 +266,11 @@ export function Sidebar({
             </span>
           )}
         </div>
+        {kind ? (
+          <span className="run-kind" data-kind={kind === "代码" ? "code" : "office"}>
+            {kind}
+          </span>
+        ) : null}
         {runMode(run.executionTarget) !== "cloud" ? (
           <span className="run-place">{RUN_MODE_SHORT_LABELS[runMode(run.executionTarget)]}</span>
         ) : null}
@@ -329,15 +338,58 @@ export function Sidebar({
             {grouped.pinned.map(renderRun)}
           </section>
         ) : null}
-        {grouped.sections.map((section) =>
-          section.active.length + section.recent.length === 0 ? null : (
-            <section key={section.key} className="run-group">
-              {section.label !== "未归项目" ? <p className="eyebrow">{section.label}</p> : null}
-              {section.active.map(renderRun)}
-              {section.recent.map(renderRun)}
-            </section>
-          ),
-        )}
+        {grouped.folders.map((folder) => {
+          const items = [...folder.active, ...folder.recent];
+          if (items.length === 0) return null;
+          const containsCurrent = items.some((item) => item.id === currentRunId);
+          const open = containsCurrent || !collapsedFolders.has(folder.key);
+          return (
+            <details
+              key={folder.key}
+              className="run-group run-folder"
+              id={`run-folder-${folder.key}`}
+              data-project={folder.key}
+              open={open}
+              onToggle={(event) => {
+                const nextOpen = (event.currentTarget as HTMLDetailsElement).open;
+                setCollapsedFolders((prev) => {
+                  const copy = new Set(prev);
+                  if (nextOpen) copy.delete(folder.key);
+                  else copy.add(folder.key);
+                  return copy;
+                });
+              }}
+            >
+              <summary className="run-folder-head">
+                <span className="run-folder-name">{folder.label}</span>
+                <span className="run-folder-count">{items.length}</span>
+                {onStartProjectChat ? (
+                  <button
+                    type="button"
+                    className="run-folder-new"
+                    aria-label={`在「${folder.label}」里开对话`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onStartProjectChat(folder.key);
+                    }}
+                  >
+                    <IconPlus size={12} />
+                  </button>
+                ) : null}
+              </summary>
+              {folder.active.map(renderRun)}
+              {folder.recent.map(renderRun)}
+            </details>
+          );
+        })}
+        {grouped.loose.active.length + grouped.loose.recent.length > 0 ? (
+          <section className="run-group" data-loose="true">
+            {grouped.loose.active.map(renderRun)}
+            {grouped.loose.recent.map(renderRun)}
+          </section>
+        ) : null}
         {shelved.length > 0 ? (
           <details className="run-group run-archived">
             <summary className="eyebrow">已归档 · {shelved.length}</summary>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readLastRunId, readLastTarget, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs.js";
+import { readLastRunId, readLastTarget, readRecentRepos, rememberRecentRepo, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs.js";
 
 function memory(): Storage {
   const data = new Map<string, string>();
@@ -46,4 +46,12 @@ test("last target remembers desk folder", () => {
   const storage = memory();
   writeLastTarget({ kind: "desk", folder: "/tmp/repo", deskId: "desk_1" }, storage);
   assert.deepEqual(readLastTarget(storage), { kind: "desk", folder: "/tmp/repo", deskId: "desk_1" });
+});
+
+test("recent repos remember the latest first and drop duplicates", () => {
+  const storage = memory();
+  rememberRecentRepo("https://github.com/acme/a.git", storage);
+  rememberRecentRepo("https://github.com/acme/b.git", storage);
+  rememberRecentRepo("https://github.com/acme/a.git", storage);
+  assert.deepEqual(readRecentRepos(storage), ["https://github.com/acme/a.git", "https://github.com/acme/b.git"]);
 });

@@ -153,6 +153,21 @@
 
 Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、`dirty`、`GET /commits`、审查页 CI、Desk 快照、ready / squash merge。Desk / Mobile 自己的 Git 标签仍是第二期。改 reviewer、行内评论回写仍是第三期。
 
+### 5.2 协作组文件夹 + 组内选仓（2026-09-24）
+
+项目是侧栏一个可折叠协作组文件夹（人、指令、资产），不是 Cursor 的「项目 ≈ 一个仓」。组内新对话只开云端。拉人进同一条云端项目对话是唯一可选分享；不拉人就是个人正常对话。不做转交房主，也不做 ownership router。
+
+| 层 | Neo |
+| --- | --- |
+| 协作组 | `Project` + 成员 / 指令 / 邀请。侧栏按 `projectId` 收成文件夹；旧无项目对话平铺，不迁移，不自动建 Project |
+| 组内选仓 | Composer 显式「无仓库 / 绑定 Git」。绑仓必须选出 URL，发出后只读。有 `defaultRepoUrls[0]` 则预填 |
+| 无仓不被回填 | `CreateRunRequest.skipRepoDefaults`。显式无仓时服务端不得用项目或环境默认仓填 `repoUrls` |
+| Git / PR | 只在绑仓对话（`runGitContext !== none`）：clone、Git 页签、审查 CI、失败才「查找问题」、idle 开草稿 PR。无仓仍有终端 + 文件 |
+| 拉人 | 仅云端 + `projectId`。全局闲聊、没进项目的绑仓闲聊、本机对话都不能拉人 |
+| Web 配置 | 项目配置可编 `defaultRepoUrls`（对齐 Desk）。Settings `#repo` 只给预热用，不再驱动新对话 |
+
+对齐（只在绑仓对话）：cursor.com/agents 的 Git 页签行为。同方向：文件夹 = 协作组，控件跟现有 pill。不对齐 / 不做：Origin 草稿仓、桌面 This Computer / Select Multiple、按仓自动建 Project、项目必须等于一个仓、转交房主。
+
 ### 第二期
 
 - 视觉 token 统一到 `packages/ui`，以 Web 现在的单色风为基准；Desk、Mobile 换皮。
