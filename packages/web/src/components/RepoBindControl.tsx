@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { repoShortLabel } from "../repo";
+import { repoShortLabel, splitRepoLabel } from "../repo";
 
 export type RepoBindMode = "none" | "bind";
 
@@ -78,7 +78,7 @@ export function RepoBindControl({
     return (
       <div className="picker">
         <span className="repo-bind-lock" id="repo-bind" title={repo || "无仓库"}>
-          {label}
+          <span className="repo-bind-label">{label}</span>
         </span>
       </div>
     );
@@ -92,8 +92,8 @@ export function RepoBindControl({
         open={open}
         onToggle={(event) => onOpen?.((event.currentTarget as HTMLDetailsElement).open)}
       >
-        <summary id="repo-bind" aria-label="仓库">
-          {label}
+        <summary id="repo-bind" aria-label="仓库" title={label}>
+          <span className="repo-bind-label">{label}</span>
         </summary>
         <div className="repo-bind-menu">
           <input
@@ -115,10 +115,20 @@ export function RepoBindControl({
             </li>
             {ranked.map((item) => {
               const selected = mode === "bind" && (repo === item.url || repoShortLabel(repo) === item.fullName);
+              const parts = splitRepoLabel(item.fullName);
               return (
                 <li key={item.url}>
-                  <button type="button" className={selected ? "is-selected" : undefined} onClick={() => pickRepo(item.url)}>
-                    <span>{item.fullName}</span>
+                  <button
+                    type="button"
+                    className={selected ? "is-selected" : undefined}
+                    aria-label={item.fullName}
+                    title={item.fullName}
+                    onClick={() => pickRepo(item.url)}
+                  >
+                    <span className="repo-bind-item">
+                      <span className="repo-bind-item-name">{parts.name}</span>
+                      {parts.owner ? <span className="repo-bind-item-owner">{parts.owner}</span> : null}
+                    </span>
                     {selected ? <span className="repo-bind-check" aria-hidden="true">✓</span> : null}
                   </button>
                 </li>

@@ -75,12 +75,17 @@ test.describe("composer / run boundaries", () => {
           repos: [
             { fullName: "acme/app", url: "https://github.com/acme/app.git" },
             { fullName: "ada/notes", url: "https://github.com/ada/notes.git" },
+            { fullName: "kaibairen/animate-camera", url: "https://github.com/kaibairen/animate-camera.git" },
           ],
         }),
       });
     });
     await page.locator("#repo-bind").click();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
+    await page.locator("#repo-bind-search").fill("animate");
+    await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
+    await expect(page.locator(".repo-bind-item-name")).toHaveText("animate-camera");
+    await expect(page.locator(".repo-bind-item-owner")).toHaveText("kaibairen");
     await page.locator("#repo-bind-search").fill("acme");
     await page.getByRole("button", { name: "acme/app" }).click();
     await expect(page.locator("#repo-bind")).toHaveText("acme/app");

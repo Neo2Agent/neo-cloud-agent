@@ -201,6 +201,7 @@
   gap: 8px;
   min-height: 40px;
   padding: 0 4px 2px;
+  overflow: visible;
 }
 
 .buddy-composer-bar-start,
@@ -237,7 +238,12 @@
 
 .buddy-composer-bar .repo-bind {
   min-width: 0;
-  max-width: 42vw;
+  overflow: visible;
+}
+
+.buddy-composer-bar .repo-bind-pop > summary,
+.buddy-composer-bar .repo-bind-lock {
+  max-width: min(36ch, 42vw);
 }
 
 .buddy-footer {
