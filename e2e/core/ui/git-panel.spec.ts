@@ -67,6 +67,8 @@ type MockPr = {
   title: string;
   state: "open" | "merged" | "closed";
   checks: { passed: number; failed: number; pending: number };
+  additions?: number;
+  deletions?: number;
   feedbackChecks?: MockCheck[];
 };
 
@@ -75,39 +77,53 @@ const PASSING_CHECKS: MockCheck[] = [
   { name: "test", status: "completed", conclusion: "success", url: "https://github.com/acme/app/actions/2" },
 ];
 
-async function mockGithubPr(page: Page, initial: MockPr): Promise<void> {
-  let pr = { ...initial };
-  const feedbackChecks = initial.feedbackChecks ?? PASSING_CHECKS;
+async function mockGithubPrs(page: Page, initial: MockPr[]): Promise<{ mergeBodies: string[] }> {
+  let prs = initial.map((item) => ({ ...item }));
+  const mergeBodies: string[] = [];
+  const numberFrom = (url: string): number | null => {
+    const match = /\/pull-requests\/(\d+)\//.exec(url);
+    return match ? Number(match[1]) : null;
+  };
+  const byNumber = (number: number | null) => prs.find((item) => item.number === number);
   await page.route(/\/v1\/runs\/[^/]+\/diff$/, async (route) => {
     const response = await route.fetch();
     const body = (await response.json()) as Record<string, unknown>;
-    await route.fulfill({ json: { ...body, pullRequests: [pr] } });
+    await route.fulfill({ json: { ...body, pullRequests: prs } });
   });
   await page.route(/\/v1\/runs\/[^/]+\/pull-requests(?:\?.*)?$/, async (route) => {
     if (route.request().method() !== "GET") {
       await route.continue();
       return;
     }
-    await route.fulfill({ json: { pullRequests: [pr] } });
+    await route.fulfill({ json: { pullRequests: prs } });
   });
   await page.route(/\/v1\/runs\/[^/]+\/pull-requests\/\d+\/feedback$/, async (route) => {
+    const current = byNumber(numberFrom(route.request().url()));
     await route.fulfill({
       json: {
-        number: pr.number,
+        number: current?.number ?? 0,
         reviews: [],
         comments: [],
-        checks: feedbackChecks,
+        checks: current?.feedbackChecks ?? PASSING_CHECKS,
       },
     });
   });
   await page.route(/\/v1\/runs\/[^/]+\/pull-requests\/\d+\/ready$/, async (route) => {
-    pr = { ...pr, draft: false };
-    await route.fulfill({ json: { pullRequest: pr } });
+    const number = numberFrom(route.request().url());
+    prs = prs.map((item) => (item.number === number ? { ...item, draft: false } : item));
+    await route.fulfill({ json: { pullRequest: byNumber(number) } });
   });
   await page.route(/\/v1\/runs\/[^/]+\/pull-requests\/\d+\/merge$/, async (route) => {
-    pr = { ...pr, draft: false, state: "merged" };
-    await route.fulfill({ json: { pullRequest: pr } });
+    mergeBodies.push(route.request().postData() ?? "");
+    const number = numberFrom(route.request().url());
+    prs = prs.map((item) => (item.number === number ? { ...item, draft: false, state: "merged" as const } : item));
+    await route.fulfill({ json: { pullRequest: byNumber(number) } });
   });
+  return { mergeBodies };
+}
+
+async function mockGithubPr(page: Page, initial: MockPr): Promise<{ mergeBodies: string[] }> {
+  return mockGithubPrs(page, [initial]);
 }
 
 test.describe("git panel", () => {
@@ -173,6 +189,8 @@ test.describe("git panel", () => {
       "https://github.com/acme/app/compare/main...neo%2Ffeature",
     );
     await expect(page.locator(".git-head-cta")).toHaveText("标为可合并");
+    await expect(page.locator(".git-pr-picker")).toHaveCount(0);
+    await expect(page.locator(".git-pr-index")).toHaveCount(0);
     await expect(page.locator(".git-commit")).toHaveCount(0);
     const views = page.getByRole("tablist", { name: "Git" }).getByRole("tab");
     await views.nth(1).click();
@@ -185,6 +203,7 @@ test.describe("git panel", () => {
     await expect(page.locator(".git-draft-card")).toHaveCount(0);
     await page.locator(".git-head-cta").click();
     await expect(page.locator(".git-head-cta")).toHaveText("压缩合并");
+    await expect(page.locator(".git-merge-split")).toBeVisible();
     await expect(page.locator(".git-badge")).toHaveText("打开");
     await page.locator(".git-head-cta").click();
     await expect(page.locator(".git-head-cta")).toHaveText("已合并");
@@ -225,5 +244,62 @@ test.describe("git panel", () => {
     await page.locator(".git-find-issues .git-btn").click();
     await expect(page.locator(".git-find-issues")).toContainText("再审一次");
     expect(reviewed).toBe(true);
+  });
+
+  test("git.pr-switcher: 1 of N picker and merge method dropdown", async ({ page }) => {
+    await loginAs(page);
+    const runId = await createRun(page, { prompt: "切 stacked PR", repoUrls: ["fixtures/toy-repo"] });
+    const { mergeBodies } = await mockGithubPrs(page, [
+      {
+        repoUrl: "https://github.com/acme/app",
+        branch: "neo/feature",
+        baseBranch: "neo/parent",
+        url: "https://github.com/acme/app/pull/12",
+        draft: false,
+        number: 12,
+        title: "Tip PR",
+        state: "open",
+        checks: { passed: 2, failed: 0, pending: 0 },
+        additions: 10,
+        deletions: 2,
+      },
+      {
+        repoUrl: "https://github.com/acme/app",
+        branch: "neo/parent",
+        baseBranch: "main",
+        url: "https://github.com/acme/app/pull/11",
+        draft: true,
+        number: 11,
+        title: "Parent PR",
+        state: "open",
+        checks: { passed: 1, failed: 0, pending: 0 },
+        additions: 2061,
+        deletions: 963,
+      },
+    ]);
+    await openGitPanel(page, runId);
+    await expect(page.locator(".git-pr-index")).toHaveText("1 of 2");
+    await expect(page.getByRole("link", { name: "查看 PR" })).toHaveAttribute(
+      "href",
+      "https://github.com/acme/app/pull/12",
+    );
+    await expect(page.locator(".git-merge-split")).toBeVisible();
+    await page.locator(".git-pr-picker > summary").click();
+    await expect(page.locator(".git-pr-menu")).toContainText("Parent PR");
+    await expect(page.locator(".git-pr-menu")).toContainText("+2061");
+    await page.locator(".git-pr-menu button").nth(1).click();
+    await expect(page.locator(".git-pr-index")).toHaveText("2 of 2");
+    await expect(page.getByRole("link", { name: "查看 PR" })).toHaveAttribute(
+      "href",
+      "https://github.com/acme/app/pull/11",
+    );
+    await expect(page.locator(".git-head-cta")).toHaveText("标为可合并");
+    await expect(page.locator(".git-merge-split")).toHaveCount(0);
+    await page.locator(".git-pr-picker > summary").click();
+    await page.locator(".git-pr-menu button").nth(0).click();
+    await page.locator(".git-merge-caret").click();
+    await page.locator("[data-merge-method='merge']").click();
+    await expect(page.locator(".git-head-cta")).toHaveText("已合并");
+    expect(mergeBodies.at(-1)).toContain("\"merge_method\":\"merge\"");
   });
 });

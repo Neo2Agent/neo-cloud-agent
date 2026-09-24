@@ -471,10 +471,25 @@ export function App() {
             }
           }
           if (event.kind === "scm.pr_opened" && event.data?.url) {
-            patchRun(id, (run) => ({
-              ...run,
-              pullRequests: [{ url: String(event.data?.url), draft: event.data?.draft !== false, repoUrl: "", branch: "", number: null, title: "" }],
-            }));
+            const incoming = {
+              url: String(event.data.url),
+              draft: event.data.draft !== false,
+              repoUrl: "",
+              branch: "",
+              number: typeof event.data.number === "number" ? event.data.number : null,
+              title: typeof event.data.title === "string" ? event.data.title : "",
+            };
+            patchRun(id, (run) => {
+              const match = (item: { url?: string; number?: number | null }) =>
+                item.url === incoming.url || (incoming.number != null && item.number === incoming.number);
+              const list = run.pullRequests ?? [];
+              return {
+                ...run,
+                pullRequests: list.some(match)
+                  ? list.map((item) => (match(item) ? { ...item, ...incoming } : item))
+                  : [...list, incoming],
+              };
+            });
           }
           if (event.kind === "context.usage") {
             const parsed = parseContextUsage(event.data);

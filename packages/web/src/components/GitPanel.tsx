@@ -14,7 +14,7 @@ import {
 import type { PullRequestRef, RunCommitRef } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
 import { formatListWhen } from "../format";
-import { IconBranch, IconCheck, IconCopy, IconError, IconMore, IconSpinner } from "../icons";
+import { IconBranch, IconCheck, IconChevronDown, IconCopy, IconError, IconMore, IconSpinner } from "../icons";
 
 export type GitView = "diff" | "review" | "commits";
 
@@ -85,6 +85,34 @@ function Stat({ added, removed }: { added: number; removed: number }) {
 }
 
 type HeadAction = { kind: "ready" | "merge" | "merged" | "closed"; label: string; disabled?: boolean };
+type MergeMethod = "squash" | "merge" | "rebase";
+
+const MERGE_LABEL: Record<MergeMethod, string> = {
+  squash: "压缩合并",
+  merge: "合并",
+  rebase: "变基合并",
+};
+
+function upsertPull(list: PullRequestRef[], next: PullRequestRef): PullRequestRef[] {
+  const match = (item: PullRequestRef) =>
+    (next.number != null && item.number === next.number) || (!!next.url && item.url === next.url);
+  return list.some(match) ? list.map((item) => (match(item) ? next : item)) : [...list, next];
+}
+
+function pickPull(prs: PullRequestRef[], selectedNumber: number | null, workspaceBranch: string | null): PullRequestRef | undefined {
+  if (selectedNumber != null) {
+    const found = prs.find((item) => item.number === selectedNumber);
+    if (found) return found;
+  }
+  return prs.find((item) => item.branch && item.branch === workspaceBranch) ?? prs[0];
+}
+
+function prDotTone(pr: PullRequestRef): "open" | "draft" | "merged" | "closed" {
+  if (pr.state === "merged") return "merged";
+  if (pr.state === "closed") return "closed";
+  if (pr.draft) return "draft";
+  return "open";
+}
 
 function headAction(pr: PullRequestRef | undefined, context: Props["context"]): HeadAction | null {
   if (context !== "cloud") return null;
@@ -123,7 +151,102 @@ function CheckMark({ kind }: { kind: "pending" | "fail" | "pass" }) {
   return <IconCheck size={12} />;
 }
 
+function closeDetails(target: HTMLElement) {
+  const details = target.closest("details");
+  if (details) details.open = false;
+}
+
+function PrTitle({ pr }: { pr: PullRequestRef }) {
+  return (
+    <span className="git-pr-title">
+      <span className="git-pr-name">{pr.title || "Pull request"}</span>
+      {pr.number ? <span className="git-pr-number">#{pr.number}</span> : null}
+    </span>
+  );
+}
+
+function PrPicker({
+  prs,
+  selected,
+  onSelect,
+}: {
+  prs: PullRequestRef[];
+  selected: PullRequestRef;
+  onSelect: (pr: PullRequestRef) => void;
+}) {
+  if (prs.length <= 1) return <PrTitle pr={selected} />;
+  const index = Math.max(0, prs.findIndex((item) => item.number === selected.number && item.url === selected.url));
+  return (
+    <details className="git-pr-picker">
+      <summary>
+        <span className="git-pr-name">{selected.title || "Pull request"}</span>
+        <span className="git-pr-index">
+          {index + 1} of {prs.length}
+        </span>
+        <IconChevronDown size={12} />
+      </summary>
+      <ul className="git-pr-menu" role="listbox" aria-label="Pull requests">
+        {prs.map((item) => {
+          const on = item.number === selected.number && item.url === selected.url;
+          return (
+            <li key={`${item.number ?? ""}:${item.url}`}>
+              <button type="button" role="option" aria-selected={on} className={on ? "is-on" : ""} onClick={(event) => { onSelect(item); closeDetails(event.currentTarget); }}>
+                <span className={`git-pr-dot is-${prDotTone(item)}`} aria-hidden="true" />
+                <span className="git-pr-menu-title">{item.title || "Pull request"}</span>
+                {item.additions != null || item.deletions != null ? (
+                  <span className="git-stat">
+                    <span className="git-stat-add">+{item.additions ?? 0}</span>
+                    <span className="git-stat-del">-{item.deletions ?? 0}</span>
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+function MergeSplit({
+  acting,
+  onMerge,
+}: {
+  acting: boolean;
+  onMerge: (method: MergeMethod) => void;
+}) {
+  return (
+    <div className="git-merge-split">
+      <button type="button" className="git-btn is-primary git-head-cta" data-action="merge" disabled={acting} onClick={() => onMerge("squash")}>
+        {acting ? "…" : MERGE_LABEL.squash}
+      </button>
+      <details className="git-merge-more">
+        <summary className="git-btn is-primary git-merge-caret" aria-label="合并方式">
+          <IconChevronDown size={12} />
+        </summary>
+        <div className="inspector-more-pop">
+          {(Object.keys(MERGE_LABEL) as MergeMethod[]).map((method) => (
+            <button
+              key={method}
+              type="button"
+              data-merge-method={method}
+              disabled={acting}
+              onClick={(event) => {
+                onMerge(method);
+                closeDetails(event.currentTarget);
+              }}
+            >
+              {MERGE_LABEL[method]}
+            </button>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function PrHeader({
+  prs,
   pr,
   branch,
   baseBranch,
@@ -132,9 +255,11 @@ function PrHeader({
   refreshing,
   acting,
   actionError,
+  onSelect,
   onReady,
   onMerge,
 }: {
+  prs: PullRequestRef[];
   pr: PullRequestRef | undefined;
   branch: string | null;
   baseBranch: string | null;
@@ -143,8 +268,9 @@ function PrHeader({
   refreshing: boolean;
   acting: boolean;
   actionError: string;
+  onSelect: (pr: PullRequestRef) => void;
   onReady: () => void;
-  onMerge: () => void;
+  onMerge: (method: MergeMethod) => void;
 }) {
   const badge = pr ? prBadge(pr) : null;
   const head = pr?.branch || branch;
@@ -155,20 +281,13 @@ function PrHeader({
   const runAction = () => {
     if (!action || action.disabled) return;
     if (action.kind === "ready") onReady();
-    else if (action.kind === "merge") onMerge();
+    else if (action.kind === "merge") onMerge("squash");
   };
   return (
     <header className="git-head">
       <div className="git-head-title">
         {pr ? (
-          view ? (
-            <a className="git-pr-title" href={view} target="_blank" rel="noreferrer">
-              <span className="git-pr-name">{pr.title || "Pull request"}</span>
-              {pr.number ? <span className="git-pr-number">#{pr.number}</span> : null}
-            </a>
-          ) : (
-            <span className="git-pr-name">{pr.title || "Pull request"}</span>
-          )
+          <PrPicker prs={prs} selected={pr} onSelect={onSelect} />
         ) : (
           <span className="git-pr-name is-muted">{context === "desk" ? "这台电脑上的改动" : "还没有 PR"}</span>
         )}
@@ -178,7 +297,9 @@ function PrHeader({
               查看 PR
             </a>
           ) : null}
-          {action ? (
+          {action?.kind === "merge" && !action.disabled ? (
+            <MergeSplit acting={acting} onMerge={onMerge} />
+          ) : action ? (
             <button
               type="button"
               className={`git-btn git-head-cta${action.disabled ? " is-ghost" : " is-primary"}`}
@@ -292,6 +413,7 @@ function DiffView({
   committing,
   commitError,
   onCommit,
+  otherBranch,
 }: {
   diff: RunDiffResponse | null;
   context: Props["context"];
@@ -300,6 +422,7 @@ function DiffView({
   committing: boolean;
   commitError: string;
   onCommit: (message: string) => void;
+  otherBranch?: string | null;
 }) {
   const patches = useMemo(() => new Map(splitPatchByFile(diff?.patch ?? "").map((item) => [item.path, item.patch])), [diff?.patch]);
   const files = diff?.files ?? [];
@@ -309,6 +432,7 @@ function DiffView({
   const dirty = diff?.dirty === true;
   return (
     <div className="git-diff">
+      {otherBranch ? <p className="git-note">当前看的是 {otherBranch} 上的 PR，改动和提交仍是这条对话的工作区。</p> : null}
       {diff?.source === "desk" && diff.capturedAt ? (
         <p className="git-note">来自这台电脑的快照 · {formatListWhen(diff.capturedAt)}前</p>
       ) : null}
@@ -591,8 +715,10 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
   const [feedbackError, setFeedbackError] = useState("");
   const [reviewState, setReviewState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
 
-  const pr = diff?.pullRequests?.[0];
+  const prs = diff?.pullRequests ?? [];
+  const pr = pickPull(prs, selectedNumber, diff?.branch ?? null);
   const files = diff?.files ?? [];
   const resolvedPath = files.some((item) => item.path === selectedPath) ? selectedPath : (files[0]?.path ?? null);
   const reviewCounts = checkCounts(pr, feedback?.checks ?? []);
@@ -636,6 +762,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
     setFeedback(null);
     setReviewState("idle");
     setSelectedPath(null);
+    setSelectedNumber(null);
     setActionError("");
   }, [runId]);
 
@@ -662,6 +789,10 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
       .catch((err) => setFeedbackError(err instanceof Error ? err.message : "读取检查失败"));
   }, [pr?.number, pr?.url, runId, token, view]);
 
+  useEffect(() => {
+    setReviewState("idle");
+  }, [pr?.number]);
+
   const commit = async (message: string) => {
     setCommitting(true);
     setCommitError("");
@@ -678,15 +809,21 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
     }
   };
 
-  const writePr = async (path: "ready" | "merge") => {
+  const writePr = async (path: "ready" | "merge", method: MergeMethod = "squash") => {
     if (!pr?.number) return;
     setActing(true);
     setActionError("");
     try {
-      const res = await api(token, `/v1/runs/${runId}/pull-requests/${pr.number}/${path}`, { method: "POST", body: "{}" });
+      const res = await api(token, `/v1/runs/${runId}/pull-requests/${pr.number}/${path}`, {
+        method: "POST",
+        body: path === "merge" ? JSON.stringify({ merge_method: method }) : "{}",
+      });
       const body = await readJson<{ error?: string; pullRequest?: PullRequestRef }>(res);
       if (!res.ok || body.error) throw new Error(body.error || (path === "ready" ? "标为可合并失败" : "合并失败"));
-      if (body.pullRequest) onPullRequests?.([body.pullRequest]);
+      if (body.pullRequest) {
+        setDiff((prev) => (prev ? { ...prev, pullRequests: upsertPull(prev.pullRequests, body.pullRequest!) } : prev));
+        onPullRequests?.(upsertPull(prs, body.pullRequest));
+      }
       await load(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "操作失败");
@@ -698,6 +835,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
   return (
     <section className="git-panel" id="run-git">
       <PrHeader
+        prs={prs}
         pr={pr}
         branch={diff?.branch ?? null}
         baseBranch={diff?.baseBranch ?? null}
@@ -705,9 +843,10 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
         refreshing={loading}
         acting={acting}
         actionError={actionError}
+        onSelect={(next) => setSelectedNumber(next.number)}
         onRefresh={() => void load(true)}
         onReady={() => void writePr("ready")}
-        onMerge={() => void writePr("merge")}
+        onMerge={(method) => void writePr("merge", method)}
       />
       <div className="git-tabs" role="tablist" aria-label="Git">
         {(
@@ -738,6 +877,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
             committing={committing}
             commitError={commitError}
             onCommit={(message) => void commit(message)}
+            otherBranch={pr?.branch && diff?.branch && pr.branch !== diff.branch ? pr.branch : null}
           />
         ) : view === "commits" ? (
           <CommitsView commits={commits} />

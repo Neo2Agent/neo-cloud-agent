@@ -137,10 +137,12 @@
 
 官方文档里 Git 有两套界面，Neo Web 对齐的是第一套（cursor.com/agents 右栏，不是桌面 Agents Window）：
 
-- **cursor.com/agents（Web / iOS）**：右栏 Git。同一套头栏：标题 / `查看 PR` 跳绑定仓库；`head → base` 跳 compare；**一个**主按钮按 GitHub 状态切换（文案跟 Neo 其他面板一样用中文，控件用文件栏那套 24px / 6px 圆角）。人**不**点「开草稿 PR」：云端轮次 `agent.end` → IDLE 后，控制面 `maybeDeliverHandoffDraft` 在分支有提交且已配 GitHub 时 push 并开 draft（已有 GitHub PR 则只 push）。`neo_pr_open` / `POST /v1/runs/:id/pull-request` / `pnpm neo pr` 仍留给 agent 和运维。
+- **cursor.com/agents（Web / iOS）**：右栏 Git。同一套头栏：截断标题（多 PR 时是 `1 of N` 下拉）/ `查看 PR` 跳选中的仓库；`head → base` 跳 compare；主按钮按 GitHub 状态切换（文案跟 Neo 其他面板一样用中文，控件用文件栏那套 24px / 6px 圆角）。可合并时主按钮是分体：默认压缩合并，右侧 ▾ 可选合并 / 变基合并。人**不**点「开草稿 PR」：云端轮次 `agent.end` → IDLE 后，控制面 `maybeDeliverHandoffDraft` 在分支有提交且已配 GitHub 时 push 并开 draft（已有 GitHub PR 则只 push）。`neo_pr_open` / `POST /v1/runs/:id/pull-request` / `pnpm neo pr` 仍留给 agent 和运维。
   - 无 PR（cloud）：头栏只有「还没有 PR」，没有主按钮
+  - `N = 1`：截断标题，不出 `1 of 1`
+  - `N > 1`：`标题  1 of N` 下拉。列表 = 本 run 已挂的 PR + refresh 时沿 `base` 补的父 PR（不扫 sibling）。点色：打开绿 / 草稿灰 / 已合并紫。有 `additions`/`deletions` 才显示 +/-。切换跟 `查看 PR`、ready/merge、审查 CI；改动 / 提交仍是工作区
   - `draft`：`标为可合并` → `POST /v1/runs/:id/pull-requests/:n/ready`（GitHub `PATCH` `{ draft: false }`）
-  - `open` 且未合并：`压缩合并` → `POST /v1/runs/:id/pull-requests/:n/merge`（GitHub `PUT` `{ merge_method: "squash" }`）
+  - `open` 且未合并：`压缩合并` → `POST /v1/runs/:id/pull-requests/:n/merge`（`{ merge_method: "squash"|"merge"|"rebase" }`，默认 squash）
   - `merged` / `closed`：禁用，文案 `已合并` / `已关闭`
   - `local://`、Desk、未配 SCM：写按钮不出现；handoff 也不造 `local://` 假 PR。失败时头栏显示 GitHub 原文，`查看 PR` 仍可打开仓库
 - **改动**：选中文件 + 双 gutter；连续未改行可折成「N 行未改」。提交底栏只在 `GET /diff` 的 `dirty`（工作区相对 HEAD）为真时出现。有 GitHub PR 且工作区干净时，改动页只审 PR。
