@@ -33,7 +33,10 @@ const {
   handoffRun,
   ingestDeskGitSnapshot,
   ingestEvents,
+  markRunPullReady,
+  mergeRunPull,
   requestRunReview,
+  setGithubFetchForTest,
   leaseDesk,
   listFollowUps,
   listRuns,
@@ -1168,6 +1171,65 @@ test("commits made through /commit survive the workspace going away", async () =
   const diff = await getRunDiff(run.id);
   assert.equal(diff.source, "workspace");
   assert.ok(diff.files.some((item) => item.path === "RECORDED.md"));
+  assert.equal(diff.dirty, false);
+});
+
+test("markRunPullReady and mergeRunPull update the stored GitHub ref", async () => {
+  const previous = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "tok";
+  const run = await createRun({ prompt: "ready then merge", repoUrls: ["fixtures/toy-repo"] });
+  const live = getRun(run.id);
+  assert.ok(live);
+  live.pullRequests = [
+    {
+      repoUrl: "https://github.com/acme/app",
+      branch: "neo/feature",
+      url: "https://github.com/acme/app/pull/12",
+      draft: true,
+      number: 12,
+      title: "Draft",
+      state: "open",
+    },
+  ];
+  let merged = false;
+  setGithubFetchForTest(async (url, init) => {
+    const method = (init.method ?? "GET").toUpperCase();
+    if (method === "PUT" && url.includes("/merge")) {
+      merged = true;
+      return new Response(JSON.stringify({ merged: true }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (method === "PATCH") {
+      return new Response(JSON.stringify({ draft: false }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(
+      JSON.stringify({
+        number: 12,
+        title: "Draft",
+        html_url: "https://github.com/acme/app/pull/12",
+        state: merged ? "closed" : "open",
+        merged,
+        merged_at: merged ? "2026-09-24T06:00:00Z" : null,
+        draft: false,
+        base: { ref: "main" },
+        head: { sha: "abc123" },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  });
+  try {
+    const ready = await markRunPullReady(run.id, 12);
+    assert.equal(ready.draft, false);
+    assert.equal(getRun(run.id)?.pullRequests[0]?.draft, false);
+    const merged = await mergeRunPull(run.id, 12);
+    assert.equal(merged.state, "merged");
+    await assert.rejects(() => markRunPullReady(run.id, 99), /找不到/);
+    live.pullRequests = [{ repoUrl: "/tmp/repo", branch: "main", url: "local://pr/x/1", draft: true, number: 1, title: "local" }];
+    await assert.rejects(() => markRunPullReady(run.id, 1), /不是 GitHub/);
+  } finally {
+    setGithubFetchForTest(null);
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
 });
 
 test("review asks the same run to review its branch as a queued follow-up", async () => {

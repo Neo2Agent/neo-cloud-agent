@@ -6,6 +6,7 @@ import {
   groupCommitsByDay,
   mergeFileChanges,
   parseGitLog,
+  foldUnmodifiedLines,
   parseHunkLines,
   parseNameStatus,
   parseNumstat,
@@ -116,4 +117,15 @@ test("parseHunkLines assigns old and new line numbers across ctx, del, and add",
     { type: "del", text: "gone", oldLine: 20 },
     { type: "add", text: "here", newLine: 21 },
   ]);
+});
+
+test("foldUnmodifiedLines hides a long ctx run and keeps edges", () => {
+  const ctx = (n: number) =>
+    Array.from({ length: n }, (_, index) => ({ type: "ctx" as const, text: `l${index}`, oldLine: index + 1, newLine: index + 1 }));
+  const folded = foldUnmodifiedLines([{ type: "hunk", text: "@@ -1 +1 @@" }, ...ctx(10), { type: "add", text: "x", newLine: 11 }]);
+  assert.equal(folded[0]?.kind, "line");
+  const fold = folded.find((item) => item.kind === "fold");
+  assert.ok(fold && fold.kind === "fold");
+  assert.equal(fold.count, 4);
+  assert.equal(folded.filter((item) => item.kind === "line").length, 1 + 3 + 3 + 1);
 });

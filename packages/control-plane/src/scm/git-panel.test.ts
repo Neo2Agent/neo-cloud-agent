@@ -6,7 +6,15 @@ import test from "node:test";
 import type { PullRequestRef } from "@neo-cloud-agent/contracts";
 import { commitInfo, workspaceCommits, workspaceDiff } from "./deliver.js";
 import { gitOk } from "./git.js";
-import { fetchPullFeedback, fetchPullStatus, githubPullSlug, summarizeChecks, type GithubFetch } from "./pull-status.js";
+import {
+  fetchPullFeedback,
+  fetchPullStatus,
+  githubPullSlug,
+  markPullReady,
+  squashMergePull,
+  summarizeChecks,
+  type GithubFetch,
+} from "./pull-status.js";
 
 async function repoWithBranch(): Promise<string> {
   const dir = mkdtempSync(path.join(tmpdir(), "neo-git-panel-"));
@@ -36,6 +44,7 @@ test("workspaceDiff covers committed, uncommitted, and untracked changes from th
   assert.match(diff.stat, /README\.md/);
   assert.match(diff.stat, /1 untracked file/);
   assert.equal(diff.truncated, false);
+  assert.equal(diff.dirty, true);
 });
 
 test("workspaceDiff on a repo with no commits diffs against the empty tree", async () => {
@@ -49,6 +58,7 @@ test("workspaceDiff on a repo with no commits diffs against the empty tree", asy
 
 test("workspaceCommits lists only this branch's commits with numstat; commitInfo reads one", async () => {
   const dir = await repoWithBranch();
+  assert.equal((await workspaceDiff(dir, "main")).dirty, false);
   writeFileSync(path.join(dir, "keep.ts"), "export const a = 3;\nexport const b = 4;\n");
   await gitOk(dir, ["commit", "-am", "fix: keep"]);
   const commits = await workspaceCommits(dir, "main");
@@ -59,15 +69,27 @@ test("workspaceCommits lists only this branch's commits with numstat; commitInfo
   assert.equal(one?.message, "feat: say world");
 });
 
-function fakeGithub(routes: Record<string, unknown>): { fetch: GithubFetch; seen: string[] } {
+function fakeGithub(routes: Record<string, unknown>): { fetch: GithubFetch; seen: string[]; writes: Array<{ method: string; url: string; body: string }> } {
   const seen: string[] = [];
+  const writes: Array<{ method: string; url: string; body: string }> = [];
   return {
     seen,
-    fetch: async (url) => {
+    writes,
+    fetch: async (url, init) => {
       const key = url.replace("https://api.github.com", "").replace(/\?.*$/, "");
-      seen.push(key);
-      if (!(key in routes)) return new Response("{}", { status: 404 });
-      return new Response(JSON.stringify(routes[key]), { status: 200, headers: { "content-type": "application/json" } });
+      const method = (init.method ?? "GET").toUpperCase();
+      seen.push(`${method} ${key}`);
+      if (method !== "GET") writes.push({ method, url: key, body: init.body ?? "" });
+      if (!(key in routes) && method === "GET") return new Response("{}", { status: 404 });
+      if (method !== "GET" && !(key in routes)) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      const value = routes[key];
+      if (value && typeof value === "object" && "status" in (value as object) && "body" in (value as object)) {
+        const boxed = value as { status: number; body: unknown };
+        return new Response(JSON.stringify(boxed.body), { status: boxed.status, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify(value ?? {}), { status: 200, headers: { "content-type": "application/json" } });
     },
   };
 }
@@ -111,6 +133,56 @@ test("fetchPullStatus reads state, base, head, and check counts", async () => {
   assert.equal(next.updatedAt, "2026-09-23T12:00:00.000Z");
   assert.deepEqual(summarizeChecks([{ status: "completed", conclusion: "skipped" }]), { passed: 1, failed: 0, pending: 0 });
   assert.equal(githubPullSlug({ url: "local://pr/run/1", repoUrl: "/tmp/repo", number: 1 }), null);
+});
+
+test("markPullReady PATCHes draft false then rereads the PR", async () => {
+  const github = fakeGithub({
+    "/repos/acme/app/pulls/12": {
+      number: 12,
+      title: "Web polish",
+      html_url: "https://github.com/acme/app/pull/12",
+      state: "open",
+      merged: false,
+      draft: false,
+      base: { ref: "main" },
+      head: { sha: "abc123", ref: "neo/feature-1234abcd" },
+    },
+  });
+  const next = await markPullReady(pr, "tok", github.fetch);
+  assert.equal(next.draft, false);
+  assert.equal(next.state, "open");
+  assert.equal(github.writes[0]?.method, "PATCH");
+  assert.match(github.writes[0]?.body ?? "", /"draft":false/);
+  await assert.rejects(
+    () => markPullReady({ ...pr, url: "local://pr/run/1", repoUrl: "/tmp/repo" }, "tok", github.fetch),
+    /不是 GitHub/,
+  );
+});
+
+test("squashMergePull PUTs merge_method squash", async () => {
+  const github = fakeGithub({
+    "/repos/acme/app/pulls/12": {
+      number: 12,
+      title: "Web polish",
+      html_url: "https://github.com/acme/app/pull/12",
+      state: "closed",
+      merged: true,
+      merged_at: "2026-09-24T06:00:00Z",
+      draft: false,
+      base: { ref: "main" },
+      head: { sha: "abc123" },
+    },
+    "/repos/acme/app/pulls/12/merge": { merged: true },
+  });
+  const next = await squashMergePull({ ...pr, draft: false, state: "open" }, "tok", github.fetch);
+  assert.equal(next.state, "merged");
+  assert.equal(github.writes[0]?.method, "PUT");
+  assert.match(github.writes[0]?.body ?? "", /squash/);
+  await assert.rejects(() => squashMergePull(pr, "tok", github.fetch), /先 Mark as ready/);
+  await assert.rejects(
+    () => squashMergePull({ ...pr, url: "local://pr/run/1", repoUrl: "/tmp/repo", draft: false, state: "open" }, "tok", github.fetch),
+    /不是 GitHub/,
+  );
 });
 
 test("fetchPullFeedback merges reviews, inline and conversation comments", async () => {

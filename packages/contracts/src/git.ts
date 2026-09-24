@@ -42,6 +42,8 @@ export interface RunDiffResponse {
   patch: string;
   files: GitFileChange[];
   truncated: boolean;
+  /** Working tree vs HEAD (including untracked). Commit footer only shows when this is true. */
+  dirty?: boolean;
   source: RunGitSource;
   /** Desk snapshots only: when the laptop last reported. */
   capturedAt?: string | null;
@@ -61,6 +63,7 @@ export interface DeskGitSnapshot {
   patch: string;
   files: GitFileChange[];
   truncated: boolean;
+  dirty?: boolean;
   commits: RunCommitRef[];
 }
 
@@ -273,6 +276,47 @@ export function parseHunkLines(patch: string): HunkLine[] {
   return out;
 }
 
+/** Consecutive context longer than this is folded in the Diff pane (Cursor's "N unmodified lines"). */
+export const UNMODIFIED_FOLD_MIN = 8;
+const UNMODIFIED_FOLD_EDGE = 3;
+
+export type FoldedHunkLine =
+  | { kind: "line"; line: HunkLine }
+  | { kind: "fold"; id: number; count: number; hidden: HunkLine[] };
+
+/** Fold long unchanged runs, keeping a few context lines on each side. */
+export function foldUnmodifiedLines(
+  lines: HunkLine[],
+  min = UNMODIFIED_FOLD_MIN,
+  edge = UNMODIFIED_FOLD_EDGE,
+): FoldedHunkLine[] {
+  const out: FoldedHunkLine[] = [];
+  let index = 0;
+  let foldId = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line || line.type !== "ctx") {
+      if (line) out.push({ kind: "line", line });
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (end < lines.length && lines[end]?.type === "ctx") end += 1;
+    const run = lines.slice(index, end);
+    if (run.length >= min && run.length > edge * 2) {
+      for (const item of run.slice(0, edge)) out.push({ kind: "line", line: item });
+      const hidden = run.slice(edge, run.length - edge);
+      out.push({ kind: "fold", id: foldId, count: hidden.length, hidden });
+      foldId += 1;
+      for (const item of run.slice(run.length - edge)) out.push({ kind: "line", line: item });
+    } else {
+      for (const item of run) out.push({ kind: "line", line: item });
+    }
+    index = end;
+  }
+  return out;
+}
+
 /** Split a unified patch into per-file bodies keyed by the new path. */
 export function splitPatchByFile(patch: string): Array<{ path: string; patch: string }> {
   const out: Array<{ path: string; patch: string }> = [];
@@ -349,7 +393,7 @@ async function untrackedChanges(git: GitRunner): Promise<{ files: Array<{ path: 
 export async function collectWorkspaceDiff(
   git: GitRunner,
   base: string,
-): Promise<{ stat: string; patch: string; files: GitFileChange[]; truncated: boolean }> {
+): Promise<{ stat: string; patch: string; files: GitFileChange[]; truncated: boolean; dirty: boolean }> {
   // One at a time: a plain `git diff` may refresh the index and parallel runs then race on index.lock.
   const diff = (...args: string[]) => git(["--no-optional-locks", "diff", "-M", ...args, base]);
   const stat = await diff("--stat");
@@ -357,6 +401,7 @@ export async function collectWorkspaceDiff(
   const numstat = await diff("--numstat");
   const names = await diff("--name-status");
   const untracked = await untrackedChanges(git);
+  const porcelain = await git(["--no-optional-locks", "status", "--porcelain"]);
   const files = mergeFileChanges(parseNameStatus(names.stdout), parseNumstat(numstat.stdout), untracked.files);
   const capped = capPatch([patch.stdout.replace(/\n$/, ""), untracked.patch].filter(Boolean).join("\n"));
   const untrackedLine = untracked.files.length > 0 ? `${untracked.files.length} untracked file(s)` : "";
@@ -365,6 +410,7 @@ export async function collectWorkspaceDiff(
     patch: capped.patch,
     files,
     truncated: capped.truncated,
+    dirty: Boolean(porcelain.stdout.trim()),
   };
 }
 

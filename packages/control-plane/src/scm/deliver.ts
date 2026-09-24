@@ -220,7 +220,7 @@ function gitIn(cwd: string): GitRunner {
 export async function workspaceDiff(
   cwd: string,
   baseBranch?: string | null,
-): Promise<{ stat: string; patch: string; files: GitFileChange[]; truncated: boolean }> {
+): Promise<{ stat: string; patch: string; files: GitFileChange[]; truncated: boolean; dirty: boolean }> {
   const git = gitIn(cwd);
   return collectWorkspaceDiff(git, await gitDiffBase(git, baseBranch));
 }

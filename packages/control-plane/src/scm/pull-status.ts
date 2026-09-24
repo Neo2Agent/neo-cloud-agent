@@ -9,7 +9,10 @@ import type {
 } from "@neo-cloud-agent/contracts";
 import { parseGithubRepo } from "./git.js";
 
-export type GithubFetch = (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
+export type GithubFetch = (
+  url: string,
+  init: { method?: string; headers: Record<string, string>; body?: string },
+) => Promise<Response>;
 
 const API = "https://api.github.com";
 const PASSED = new Set(["success", "neutral", "skipped"]);
@@ -52,12 +55,34 @@ export function summarizeChecks(runs: Array<{ status?: string; conclusion?: stri
   return checks;
 }
 
-async function getJson(fetchImpl: GithubFetch, url: string, token: string): Promise<unknown> {
-  const response = await fetchImpl(url, { headers: ghHeaders(token) });
+async function readGithub(response: Response, url: string): Promise<unknown> {
+  const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(`github ${response.status} ${url.replace(API, "")}`);
+    const message = asString(asRecord(body).message);
+    throw new Error(message || `github ${response.status} ${url.replace(API, "")}`);
   }
-  return response.json();
+  return body;
+}
+
+async function getJson(fetchImpl: GithubFetch, url: string, token: string): Promise<unknown> {
+  return readGithub(await fetchImpl(url, { headers: ghHeaders(token) }), url);
+}
+
+async function sendJson(
+  fetchImpl: GithubFetch,
+  url: string,
+  token: string,
+  method: string,
+  body?: Record<string, unknown>,
+): Promise<unknown> {
+  return readGithub(
+    await fetchImpl(url, {
+      method,
+      headers: { ...ghHeaders(token), "content-type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+    url,
+  );
 }
 
 function checkRuns(body: unknown): PullRequestCheck[] {
@@ -157,4 +182,46 @@ export async function fetchPullFeedback(
     }
   }
   return { number: slug.number, reviews, comments, checks };
+}
+
+function requireGithubPull(pr: PullRequestRef): { owner: string; repo: string; number: number } {
+  const slug = githubPullSlug(pr);
+  if (!slug) throw new Error("不是 GitHub 上的 pull request");
+  return slug;
+}
+
+/** Draft → ready. Idempotent if the PR is already open. */
+export async function markPullReady(
+  pr: PullRequestRef,
+  token: string,
+  fetchImpl: GithubFetch = fetch,
+): Promise<PullRequestRef> {
+  const slug = requireGithubPull(pr);
+  if (!pr.draft && pr.state === "open") {
+    return fetchPullStatus(pr, token, fetchImpl);
+  }
+  await sendJson(fetchImpl, `${API}/repos/${slug.owner}/${slug.repo}/pulls/${slug.number}`, token, "PATCH", { draft: false });
+  return fetchPullStatus({ ...pr, draft: false }, token, fetchImpl);
+}
+
+/** Squash-merge an open, non-draft GitHub PR. */
+export async function squashMergePull(
+  pr: PullRequestRef,
+  token: string,
+  fetchImpl: GithubFetch = fetch,
+): Promise<PullRequestRef> {
+  const slug = requireGithubPull(pr);
+  if (pr.state === "merged") {
+    return fetchPullStatus(pr, token, fetchImpl);
+  }
+  if (pr.draft) {
+    throw new Error("先 Mark as ready");
+  }
+  if (pr.state === "closed") {
+    throw new Error("这个 PR 已经关闭");
+  }
+  await sendJson(fetchImpl, `${API}/repos/${slug.owner}/${slug.repo}/pulls/${slug.number}/merge`, token, "PUT", {
+    merge_method: "squash",
+  });
+  return fetchPullStatus({ ...pr, draft: false, state: "merged" }, token, fetchImpl);
 }

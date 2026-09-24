@@ -11,6 +11,7 @@ import type {
   DeskAssignment,
   DeskGitSnapshot,
   PullRequestFeedback,
+  PullRequestRef,
   RunCommitsResponse,
   RunDiffResponse,
   DeskLeaseResponse,
@@ -103,7 +104,14 @@ import {
   prepareRunRepos,
   resolveScmPushToken,
 } from "../scm/scm.js";
-import { fetchPullFeedback, fetchPullStatus, githubPullSlug, type GithubFetch } from "../scm/pull-status.js";
+import {
+  fetchPullFeedback,
+  fetchPullStatus,
+  githubPullSlug,
+  markPullReady,
+  squashMergePull,
+  type GithubFetch,
+} from "../scm/pull-status.js";
 import { materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
@@ -2793,12 +2801,12 @@ export async function getRunDiff(runId: string): Promise<RunDiffResponse> {
     return { ...head, ...(await diffRunWorkspace(cwd, run)), source: "workspace" };
   }
   if (runGitContext(run) !== "desk") {
-    return { ...head, ...empty, source: "none" };
+    return { ...head, ...empty, dirty: false, source: "none" };
   }
   if (staleDeskSnapshot(runId)) requestDeskGitSnapshot(runId);
   const snapshot = deskGitSnapshots.get(runId);
   if (!snapshot) {
-    return { ...head, ...empty, source: "none", capturedAt: null };
+    return { ...head, ...empty, dirty: false, source: "none", capturedAt: null };
   }
   return {
     ...head,
@@ -2808,6 +2816,7 @@ export async function getRunDiff(runId: string): Promise<RunDiffResponse> {
     patch: snapshot.patch,
     files: snapshot.files,
     truncated: snapshot.truncated,
+    dirty: snapshot.dirty === true,
     source: "desk",
     capturedAt: snapshot.capturedAt,
   };
@@ -2845,6 +2854,7 @@ export function ingestDeskGitSnapshot(deskId: string, runId: string, input: Desk
     patch: capped.patch,
     files: Array.isArray(input.files) ? input.files.slice(0, DESK_SNAPSHOT_MAX_FILES) : [],
     truncated: capped.truncated || input.truncated === true,
+    dirty: input.dirty === true,
     commits: Array.isArray(input.commits) ? input.commits.slice(0, GIT_COMMITS_MAX) : [],
     capturedAt,
   });
@@ -2942,6 +2952,28 @@ export async function requestRunReview(runId: string, actor?: { userId: string; 
     "这一轮只审查，不要修改文件，也不要提交。",
   ].join("\n");
   return enqueueFollowUp(runId, { text, delivery: "follow_up", source: "user" }, actor);
+}
+
+async function writeRunPull(runId: string, number: number, apply: (pr: PullRequestRef, token: string) => Promise<PullRequestRef>): Promise<PullRequestRef> {
+  const run = requireRun(runId);
+  const pr = run.pullRequests.find((item) => item.number === number);
+  if (!pr) throw new Error("找不到这个 PR");
+  if (!githubPullSlug(pr)) throw new Error("不是 GitHub 上的 pull request");
+  const token = await resolveScmPushToken().catch(() => null);
+  if (!token) throw new Error("没有配置 GitHub 令牌");
+  const next = await apply(pr, token);
+  run.pullRequests = run.pullRequests.map((item) => (item.number === number ? next : item));
+  prRefreshedAt.delete(runId);
+  flushRun(runId);
+  return next;
+}
+
+export async function markRunPullReady(runId: string, number: number): Promise<PullRequestRef> {
+  return writeRunPull(runId, number, (pr, token) => markPullReady(pr, token, githubFetch));
+}
+
+export async function mergeRunPull(runId: string, number: number): Promise<PullRequestRef> {
+  return writeRunPull(runId, number, (pr, token) => squashMergePull(pr, token, githubFetch));
 }
 
 const DIAGNOSTIC_EVENT_KINDS = new Set([

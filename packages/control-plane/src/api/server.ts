@@ -84,6 +84,8 @@ import {
   getRunPullRequestFeedback,
   getRunSession,
   ingestDeskGitSnapshot,
+  markRunPullReady,
+  mergeRunPull,
   refreshRunPullRequests,
   requestRunReview,
   completeLoopTurn,
@@ -2748,6 +2750,38 @@ export function createApiServer() {
           send(res, 200, await getRunPullRequestFeedback(runId, Number(feedbackMatch[2])));
         } catch (error) {
           send(res, 502, { error: error instanceof Error ? error.message : "feedback_failed" });
+        }
+        return;
+      }
+
+      const readyMatch = /^\/v1\/runs\/([^/]+)\/pull-requests\/(\d+)\/ready$/.exec(path);
+      if (readyMatch && method === "POST") {
+        const runId = readyMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        try {
+          send(res, 200, { pullRequest: await markRunPullReady(runId, Number(readyMatch[2])) });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "ready_failed";
+          send(res, message.includes("找不到") || message.includes("不是 GitHub") ? 400 : 502, { error: message });
+        }
+        return;
+      }
+
+      const mergeMatch = /^\/v1\/runs\/([^/]+)\/pull-requests\/(\d+)\/merge$/.exec(path);
+      if (mergeMatch && method === "POST") {
+        const runId = mergeMatch[1] ?? "";
+        const run = await requireRun(runId);
+        if (!actor || !denyUnless(run, actor, res, req)) {
+          return;
+        }
+        try {
+          send(res, 200, { pullRequest: await mergeRunPull(runId, Number(mergeMatch[2])) });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "merge_failed";
+          send(res, message.includes("找不到") || message.includes("不是 GitHub") || message.includes("先 Mark") || message.includes("已经关闭") ? 400 : 502, { error: message });
         }
         return;
       }
