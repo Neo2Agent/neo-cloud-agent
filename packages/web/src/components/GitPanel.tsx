@@ -501,11 +501,16 @@ function ChecksSummary({
   const pending = checks.filter((item) => checkKind(item) === "pending");
   const failed = checks.filter((item) => checkKind(item) === "fail");
   const passed = checks.filter((item) => checkKind(item) === "pass");
+  const shouldOpen = fromList.failed > 0 || fromList.pending > 0;
+  const [open, setOpen] = useState(shouldOpen);
+  useEffect(() => {
+    setOpen(shouldOpen);
+  }, [shouldOpen]);
   return (
     <details
       className="git-checks-card"
-      key={`${fromList.failed}-${fromList.pending}-${fromList.passed}`}
-      defaultOpen={fromList.failed > 0 || fromList.pending > 0}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
         <span className={`git-check-dot ${fromList.failed ? "is-fail" : fromList.pending ? "is-pending" : "is-pass"}`} />

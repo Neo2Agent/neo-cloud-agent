@@ -222,7 +222,7 @@ test.describe("git panel", () => {
     await expect(page.locator(".git-check-group").filter({ hasText: "1 项失败" })).toContainText("test");
     await expect(page.locator(".git-check-group").filter({ hasText: "1 项通过" })).toContainText("typecheck");
     await expect(page.locator(".git-find-issues")).toContainText("查找问题");
-    await page.getByRole("button", { name: "查找问题" }).click();
+    await page.locator(".git-find-issues .git-btn").click();
     await expect(page.locator(".git-find-issues")).toContainText("再审一次");
     expect(reviewed).toBe(true);
   });
