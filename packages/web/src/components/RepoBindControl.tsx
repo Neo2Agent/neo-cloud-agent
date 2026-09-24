@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { placeRepoMenu, repoMenuAlignElement } from "../repo-menu";
+import { placeRepoMenu, repoMenuClampElement } from "../repo-menu";
 import { repoShortLabel, splitRepoLabel } from "../repo";
 
 export type RepoBindMode = "none" | "bind";
@@ -68,15 +68,15 @@ export function RepoBindControl({
     const menuEl = menuRef.current;
     const trigger = triggerEl?.getBoundingClientRect();
     if (!triggerEl || !trigger) return;
-    const align = repoMenuAlignElement(triggerEl).getBoundingClientRect();
+    const clamp = repoMenuClampElement(triggerEl).getBoundingClientRect();
     const next = placeRepoMenu({
       trigger,
       menu: {
-        width: align.width || menuEl?.offsetWidth || Math.min(360, window.innerWidth - 16),
+        width: menuEl?.offsetWidth || 280,
         height: menuEl?.offsetHeight || 1,
       },
       viewport: { width: window.innerWidth, height: window.innerHeight },
-      align,
+      clamp,
       gap: 4,
     });
     setCoords((prev) =>

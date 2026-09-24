@@ -1952,24 +1952,31 @@ button.tool-file-more:hover {
   align-content: start;
   justify-items: stretch;
   box-sizing: border-box;
-  width: min(360px, calc(100vw - 16px));
+  width: min(300px, calc(100vw - 16px));
+  min-width: 220px;
   height: fit-content;
   max-height: min(220px, calc(100vh - 24px));
-  padding: 4px;
+  padding: 6px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fff;
-  box-shadow: 0 10px 30px rgba(17, 17, 16, 0.12);
+  box-shadow: 0 16px 40px rgba(17, 17, 16, 0.12);
   gap: 4px;
   overflow: hidden;
 }
 
 .repo-bind-menu input {
   width: 100%;
-  min-height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: #f4f4f5;
+}
+
+.repo-bind-menu input:focus {
+  outline: 0;
+  background: #ececee;
 }
 
 .repo-bind-menu ul {
@@ -1989,16 +1996,16 @@ button.tool-file-more:hover {
 
 .repo-bind-menu button {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
   text-align: left;
-  padding: 4px 8px;
+  padding: 6px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
   font-size: 13px;
