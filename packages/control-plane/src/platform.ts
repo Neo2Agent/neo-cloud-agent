@@ -24,6 +24,7 @@ import { attachRateLimitRedis, resetRateLimitStore } from "./security/rate-limit
 import { reloadPersistedState } from "./orchestrator/orchestrator.js";
 import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
 import { attachLoopSessionBackends, resetLoopSessionBackends } from "./loop/session-store.js";
+import { attachGithubSqlStore, resetGithubSqlStore } from "./integrations/github-store.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
 import { persistRunRecord, persistWorkerLease, setPersistHooks } from "./store/persist.js";
 import { mergeStoredRun } from "./store/run-record.js";
@@ -76,6 +77,7 @@ export function resetPlatformForTests(): void {
   attachRateLimitRedis(null);
   resetRateLimitStore();
   resetLoopSessionBackends();
+  resetGithubSqlStore();
 }
 
 async function attachRedisBus(redisUrl: string): Promise<void> {
@@ -113,6 +115,7 @@ async function doStart(): Promise<void> {
     metadataKind = connected.kind;
     attachLoopSessionBackends({ redis, sql: metadata });
     setAccountStore(metadata, connected.kind);
+    attachGithubSqlStore(metadata);
     setPersistHooks({
       onRun: (record) => {
         void metadata?.saveRun(record).catch((error) => console.error("metadata saveRun failed", error));

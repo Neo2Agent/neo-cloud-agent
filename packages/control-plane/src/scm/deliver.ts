@@ -1,6 +1,3 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import {
   collectCommits,
   collectWorkspaceDiff,
@@ -13,6 +10,7 @@ import {
   type PullRequestRef,
   type RunCommitRef,
 } from "@neo-cloud-agent/contracts";
+import { withAskpass } from "./askpass.js";
 import { gitOk, parseGithubRepo, runGit } from "./git.js";
 import { resolveScmPushToken } from "./token.js";
 
@@ -73,30 +71,6 @@ export async function ensureOrigin(cwd: string, remoteUrl?: string): Promise<str
   return origin.code === 0 ? origin.stdout : null;
 }
 
-async function withAskpass<T>(password: string, fn: (env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(path.join(tmpdir(), "neo-askpass-"));
-  const script = path.join(dir, "askpass");
-  writeFileSync(
-    script,
-    `#!/bin/sh
-case "$1" in
-  *Username*) printf '%s' "x-access-token" ;;
-  *) printf '%s' "$NEO_SCM_PASSWORD" ;;
-esac
-`,
-  );
-  chmodSync(script, 0o700);
-  try {
-    return await fn({
-      GIT_ASKPASS: script,
-      SSH_ASKPASS: script,
-      GIT_TERMINAL_PROMPT: "0",
-      NEO_SCM_PASSWORD: password,
-    });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
 
 export type PushWorkspaceFn = (
   cwd: string,
@@ -116,7 +90,12 @@ export function setDeliverHooksForTest(hooks: DeliverHooks | null): void {
   deliverHooks = hooks ?? {};
 }
 
-export async function pushWorkspace(cwd: string, branch: string, remoteUrl?: string): Promise<{ pushed: boolean; remote: string | null }> {
+export async function pushWorkspace(
+  cwd: string,
+  branch: string,
+  remoteUrl?: string,
+  userId?: string,
+): Promise<{ pushed: boolean; remote: string | null }> {
   if (deliverHooks.push) {
     return deliverHooks.push(cwd, branch, remoteUrl);
   }
@@ -124,7 +103,7 @@ export async function pushWorkspace(cwd: string, branch: string, remoteUrl?: str
   if (!remote) {
     return { pushed: false, remote: null };
   }
-  const token = await resolveScmPushToken();
+  const token = await resolveScmPushToken(userId);
   const github = parseGithubRepo(remote);
   if (github && token) {
     await withAskpass(token, (env) => gitOk(cwd, ["push", "-u", "origin", `HEAD:${branch}`], env));
@@ -186,6 +165,7 @@ export async function openDraftPullRequest(
     title: string;
     body: string;
     remoteUrl?: string;
+    userId?: string;
     githubPulls?: GithubPullsClient;
     push?: boolean;
   },
@@ -193,10 +173,10 @@ export async function openDraftPullRequest(
   const pushed =
     input.push === false
       ? { pushed: false, remote: input.remoteUrl ?? input.repoUrl }
-      : await pushWorkspace(cwd, input.branch, input.remoteUrl);
+      : await pushWorkspace(cwd, input.branch, input.remoteUrl, input.userId);
   const remote = pushed.remote ?? input.remoteUrl ?? input.repoUrl;
   const github = parseGithubRepo(remote);
-  const token = await resolveScmPushToken();
+  const token = await resolveScmPushToken(input.userId);
   if (github && token) {
     const opened = await (input.githubPulls ?? deliverHooks.githubPulls ?? defaultGithubPulls)({
       owner: github.owner,

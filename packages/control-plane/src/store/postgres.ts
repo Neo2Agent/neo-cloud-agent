@@ -31,6 +31,11 @@ import {
   eventsBackupTableName,
   persistEventImages,
 } from "./event-images.js";
+import {
+  mapGithubConnectionRow,
+  type GithubConnection,
+  type GithubSqlStore,
+} from "../integrations/github-store.js";
 import { persistImagesForRecord, type PersistedRun, type WorkerLease } from "./persist.js";
 import {
   applyRunIndexColumns,
@@ -167,9 +172,17 @@ CREATE TABLE IF NOT EXISTS loop_sessions (
   state_json JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS user_github_connections (
+  user_id TEXT PRIMARY KEY,
+  github_login TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  scopes TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL,
+  CONSTRAINT fk_github_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 `;
 
-export interface PostgresMetadataStore extends AccountStore {
+export interface PostgresMetadataStore extends AccountStore, GithubSqlStore {
   migrate(): Promise<void>;
   saveRun(record: PersistedRun): Promise<void>;
   loadRun(runId: string): Promise<PersistedRun | null>;
@@ -782,6 +795,28 @@ export function createPostgresMetadataStore(query: SqlQuery): PostgresMetadataSt
     async loadLoopSession(runId) {
       const result = await query(`SELECT state_json FROM loop_sessions WHERE run_id = $1`, [runId]);
       return asLoopState(result.rows[0]?.state_json);
+    },
+    async getGithubConnection(userId) {
+      const result = await query(
+        `SELECT user_id, github_login, access_token, scopes, updated_at FROM user_github_connections WHERE user_id = $1`,
+        [userId],
+      );
+      return mapGithubConnectionRow(result.rows[0]);
+    },
+    async putGithubConnection(conn: GithubConnection) {
+      await query(
+        `INSERT INTO user_github_connections (user_id, github_login, access_token, scopes, updated_at)
+         VALUES ($1, $2, $3, $4, $5::timestamptz)
+         ON CONFLICT (user_id) DO UPDATE SET
+           github_login = EXCLUDED.github_login,
+           access_token = EXCLUDED.access_token,
+           scopes = EXCLUDED.scopes,
+           updated_at = EXCLUDED.updated_at`,
+        [conn.userId, conn.login, conn.accessToken, conn.scopes, conn.updatedAt],
+      );
+    },
+    async deleteGithubConnection(userId) {
+      await query(`DELETE FROM user_github_connections WHERE user_id = $1`, [userId]);
     },
   };
 }

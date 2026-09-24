@@ -160,13 +160,14 @@ Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、
 | 层 | Neo |
 | --- | --- |
 | 协作组 | `Project` + 成员 / 指令 / 邀请。侧栏按 `projectId` 收成文件夹；旧无项目对话平铺，不迁移，不自动建 Project |
-| 组内选仓 | Composer 显式「无仓库 / 绑定 Git」。绑仓必须选出 URL，发出后只读。有 `defaultRepoUrls[0]` 则预填 |
+| GitHub 账号 | 设置里 OAuth 绑定当前用户自己的 GitHub。`GET /v1/integrations/github`；token 按 `userId` 存，不是整机 PAT |
+| 组内选仓 | Composer 一个仓库 pill：关着显示「无仓库」或 `owner/repo`；打开后搜索账号仓库（`GET /v1/scm/repos?q=`）。未绑则去设置。发出后只读。Web 不再预填项目 `defaultRepoUrls` |
 | 无仓不被回填 | `CreateRunRequest.skipRepoDefaults`。显式无仓时服务端不得用项目或环境默认仓填 `repoUrls` |
-| Git / PR | 只在绑仓对话（`runGitContext !== none`）：clone、Git 页签、审查 CI、失败才「查找问题」、idle 开草稿 PR。无仓仍有终端 + 文件 |
+| Git / PR | 只在绑仓对话（`runGitContext !== none`）：clone、Git 页签、审查 CI、失败才「查找问题」、idle 开草稿 PR。该用户的 clone / push 优先用自己的 OAuth token。无仓仍有终端 + 文件 |
 | 拉人 | 仅云端 + `projectId`。全局闲聊、没进项目的绑仓闲聊、本机对话都不能拉人 |
-| Web 配置 | 项目配置可编 `defaultRepoUrls`（对齐 Desk）。Settings `#repo` 只给预热用，不再驱动新对话 |
+| Web 配置 | 项目配置不再编默认仓库。Settings `#repo` 只给预热用，不再驱动新对话 |
 
-对齐（只在绑仓对话）：cursor.com/agents 的 Git 页签行为。同方向：文件夹 = 协作组，控件跟现有 pill。不对齐 / 不做：Origin 草稿仓、桌面 This Computer / Select Multiple、按仓自动建 Project、项目必须等于一个仓、转交房主。
+对齐（只在绑仓对话）：cursor.com/agents 的 Git 页签行为。同方向：文件夹 = 协作组，控件跟现有 pill。不对齐 / 不做：Origin 草稿仓、桌面 This Computer / Select Multiple、按仓自动建 Project、项目必须等于一个仓、转交房主、GitHub 登录 Neo。
 
 ### 第二期
 

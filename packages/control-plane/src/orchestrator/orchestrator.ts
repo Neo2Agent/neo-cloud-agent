@@ -1364,7 +1364,9 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
             data: { repoUrls: run.repoUrls },
           }),
         );
-        const placed = await materializeRepos(run.repoUrls, workspaceFor(run.id), repoRoot());
+        const placed = await materializeRepos(run.repoUrls, workspaceFor(run.id), repoRoot(), {
+          token: (await resolveScmPushToken(run.userId).catch(() => null)) ?? undefined,
+        });
         publish(
           event(run.id, "scm.clone_succeeded", "Workspace ready", {
             data: {
@@ -1531,7 +1533,9 @@ export async function resumeRun(runId: string): Promise<Run> {
   }
   if (loadWorkspaceMeta(runId)?.state === "evicted" && run.repoUrls.length > 0) {
     try {
-      await materializeRepos(run.repoUrls, hostWorkspaceFor(runId), repoRoot());
+      await materializeRepos(run.repoUrls, hostWorkspaceFor(runId), repoRoot(), {
+        token: (await resolveScmPushToken(run.userId).catch(() => null)) ?? undefined,
+      });
       markWorkspacePresent(runId, measureWorkspaceBytes(hostWorkspaceFor(runId)));
       publish(event(runId, "workspace.restored", "Workspace restored from repo after reclaim"));
     } catch (error) {
@@ -1992,7 +1996,9 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
       data: { repoUrls: remotes },
     }),
   );
-  await materializeRepos(remotes, workspaceFor(run.id), repoRoot());
+  await materializeRepos(remotes, workspaceFor(run.id), repoRoot(), {
+    token: (await resolveScmPushToken(run.userId).catch(() => null)) ?? undefined,
+  });
   publish(event(run.id, "scm.clone_succeeded", "Handoff workspace ready"));
   await attachWorker(run, "Handed off to cloud worker");
   return run;
@@ -2696,7 +2702,7 @@ async function deliverHandoffDraft(runId: string): Promise<void> {
   if (!cwd) return;
   const repoUrl = run.repoUrls[0] ?? "";
   if (!parseGithubRepo(repoUrl)) return;
-  const token = await resolveScmPushToken().catch(() => null);
+  const token = await resolveScmPushToken(run.userId).catch(() => null);
   if (!token) return;
   let commits;
   try {
@@ -2711,7 +2717,7 @@ async function deliverHandoffDraft(runId: string): Promise<void> {
   );
   try {
     if (existing) {
-      const pushed = await pushWorkspace(cwd, branch ?? existing.branch ?? "HEAD", repoUrl);
+      const pushed = await pushWorkspace(cwd, branch ?? existing.branch ?? "HEAD", repoUrl, run.userId);
       if (pushed.pushed) {
         publish(
           event(runId, "scm.push_succeeded", `Pushed ${branch ?? existing.branch}`, {
@@ -2947,7 +2953,7 @@ export async function refreshRunPullRequests(runId: string, options: { force?: b
   if (github.length === 0) {
     return run.pullRequests;
   }
-  const token = await resolveScmPushToken().catch(() => null);
+  const token = await resolveScmPushToken(run.userId).catch(() => null);
   if (!token) {
     return run.pullRequests;
   }
@@ -2966,7 +2972,7 @@ export async function getRunPullRequestFeedback(runId: string, number: number): 
   if (!pr || !githubPullSlug(pr)) {
     return { number, reviews: [], comments: [], checks: [] };
   }
-  const token = await resolveScmPushToken().catch(() => null);
+  const token = await resolveScmPushToken(run.userId).catch(() => null);
   if (!token) {
     throw new Error("没有配置 GitHub 令牌，读不到 PR 讨论");
   }
@@ -3027,7 +3033,7 @@ async function writeRunPull(runId: string, number: number, apply: (pr: PullReque
   const pr = run.pullRequests.find((item) => item.number === number);
   if (!pr) throw new Error("找不到这个 PR");
   if (!githubPullSlug(pr)) throw new Error("不是 GitHub 上的 pull request");
-  const token = await resolveScmPushToken().catch(() => null);
+  const token = await resolveScmPushToken(run.userId).catch(() => null);
   if (!token) throw new Error("没有配置 GitHub 令牌");
   const next = await apply(pr, token);
   run.pullRequests = run.pullRequests.map((item) => (item.number === number ? next : item));

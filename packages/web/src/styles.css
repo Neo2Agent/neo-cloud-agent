@@ -1982,6 +1982,9 @@ button.tool-file-more:hover {
 }
 
 .repo-bind-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
   text-align: left;
   padding: 6px 8px;
@@ -1991,8 +1994,25 @@ button.tool-file-more:hover {
   color: var(--text);
 }
 
-.repo-bind-menu button:hover {
+.repo-bind-menu button:hover,
+.repo-bind-menu button.is-selected {
   background: #ececee;
+}
+
+.repo-bind-check {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.repo-bind-link {
+  display: inline;
+  width: auto;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-decoration: underline;
 }
 
 .composer-context .neo-select-pill,
@@ -6457,6 +6477,13 @@ button.composer-mic.is-listening,
   font-size: 13px;
   font-weight: 650;
   cursor: pointer;
+  text-decoration: none;
+}
+
+a.quiet-btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .quiet-btn:hover:not(:disabled) {
