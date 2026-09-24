@@ -29,7 +29,6 @@ type Props = {
   /** Re-read everything when this changes, e.g. when a turn settles. */
   refreshKey: string;
   busy?: boolean;
-  onOpenPr?: () => Promise<void> | void;
   onPullRequests?: (next: PullRequestRef[]) => void;
 };
 
@@ -89,11 +88,10 @@ function Stat({ added, removed }: { added: number; removed: number }) {
   );
 }
 
-type HeadAction = { kind: "open-draft" | "ready" | "merge" | "merged" | "closed"; label: string; disabled?: boolean };
+type HeadAction = { kind: "ready" | "merge" | "merged" | "closed"; label: string; disabled?: boolean };
 
-function headAction(pr: PullRequestRef | undefined, context: Props["context"], canOpenPr: boolean): HeadAction | null {
+function headAction(pr: PullRequestRef | undefined, context: Props["context"]): HeadAction | null {
   if (context !== "cloud") return null;
-  if (canOpenPr) return { kind: "open-draft", label: "开草稿 PR" };
   if (!isGithubPr(pr) || !pr) return null;
   if (pr.state === "merged") return { kind: "merged", label: "已合并", disabled: true };
   if (pr.state === "closed") return { kind: "closed", label: "已关闭", disabled: true };
@@ -122,12 +120,10 @@ function PrHeader({
   branch,
   baseBranch,
   context,
-  canOpenPr,
   onRefresh,
   refreshing,
   acting,
   actionError,
-  onOpenPr,
   onReady,
   onMerge,
 }: {
@@ -135,12 +131,10 @@ function PrHeader({
   branch: string | null;
   baseBranch: string | null;
   context: Props["context"];
-  canOpenPr: boolean;
   onRefresh: () => void;
   refreshing: boolean;
   acting: boolean;
   actionError: string;
-  onOpenPr?: () => void;
   onReady: () => void;
   onMerge: () => void;
 }) {
@@ -149,11 +143,10 @@ function PrHeader({
   const base = pr?.baseBranch || baseBranch;
   const view = prHref(pr);
   const compare = compareHref(pr, branch, baseBranch);
-  const action = headAction(pr, context, canOpenPr);
+  const action = headAction(pr, context);
   const runAction = () => {
     if (!action || action.disabled) return;
-    if (action.kind === "open-draft") onOpenPr?.();
-    else if (action.kind === "ready") onReady();
+    if (action.kind === "ready") onReady();
     else if (action.kind === "merge") onMerge();
   };
   return (
@@ -605,7 +598,7 @@ function ReviewView({
   );
 }
 
-export function GitPanel({ token, runId, context, refreshKey, busy = false, onOpenPr, onPullRequests }: Props) {
+export function GitPanel({ token, runId, context, refreshKey, busy = false, onPullRequests }: Props) {
   const [view, setView] = useState<GitView>("diff");
   const [diff, setDiff] = useState<RunDiffResponse | null>(null);
   const [commits, setCommits] = useState<RunCommitsResponse | null>(null);
@@ -624,7 +617,6 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onOp
   const pr = diff?.pullRequests?.[0];
   const files = diff?.files ?? [];
   const resolvedPath = files.some((item) => item.path === selectedPath) ? selectedPath : (files[0]?.path ?? null);
-  const canOpenPr = context === "cloud" && Boolean(onOpenPr) && !pr?.url;
   const reviewDot = Boolean(pr?.checks?.failed || feedback?.reviews.some((item) => item.state === "CHANGES_REQUESTED"));
 
   const load = useCallback(
@@ -742,23 +734,10 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onOp
         branch={diff?.branch ?? null}
         baseBranch={diff?.baseBranch ?? null}
         context={context}
-        canOpenPr={canOpenPr}
         refreshing={loading}
         acting={acting}
         actionError={actionError}
         onRefresh={() => void load(true)}
-        onOpenPr={
-          onOpenPr
-            ? () => {
-                setActing(true);
-                setActionError("");
-                void Promise.resolve(onOpenPr())
-                  .then(() => load(true))
-                  .catch((err) => setActionError(err instanceof Error ? err.message : "开 PR 失败"))
-                  .finally(() => setActing(false));
-              }
-            : undefined
-        }
         onReady={() => void writePr("ready")}
         onMerge={() => void writePr("merge")}
       />

@@ -1579,7 +1579,6 @@ export function App() {
   const statusView = turnStatusLabel({ sending, stopping, status: currentRun?.status });
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
   const gitContext = currentRun ? runGitContext(currentRun) : "none";
-  const canOpenPr = Boolean(runId) && gitContext === "cloud" && !pr?.url;
   const gitRefreshKey = `${runId ?? ""}:${busy ? "busy" : "idle"}:${currentRun?.pullRequests?.length ?? 0}`;
   useEffect(() => {
     if (inspectorTab === "git" && gitContext === "none") setInspectorTab("terminal");
@@ -1819,23 +1818,6 @@ export function App() {
     setMainTab("chat");
   };
 
-  const openDraftPr = async () => {
-    if (!runId) return;
-    try {
-      const created = await readJson<{ error?: string; pullRequest?: PullRequest }>(
-        await api(token, `/v1/runs/${runId}/pull-request`, {
-          method: "POST",
-          body: JSON.stringify({ title: currentRun?.prompt || "Agent changes" }),
-        }),
-      );
-      if (created.error) throw new Error(created.error);
-      const next = created.pullRequest ?? created;
-      setCurrentRun((run) => (run ? { ...run, pullRequests: [next as Run["pullRequests"][number]] } : run));
-    } catch (error) {
-      setMessages((prev) => [...prev, localErrorMessage(runId, error instanceof Error ? error.message : "开 PR 失败")]);
-    }
-  };
-
   const applyBuddyPlus = (action: BuddyPlusAction) => {
     setPlusOpen(false);
     if (action === "image" || action === "file") {
@@ -1865,9 +1847,7 @@ export function App() {
     if (action === "new") {
       resetComposer();
       setMainTab("chat");
-      return;
     }
-    if (action === "pr") void openDraftPr();
   };
 
   const addPickedImages = (files: FileList | null) => {
@@ -2096,16 +2076,6 @@ export function App() {
                   {pr.draft === false ? "PR" : "草稿 PR"}
                 </a>
               ) : null}
-              <button
-                className="ghost"
-                id="open-pr"
-                type="button"
-                hidden={!canOpenPr}
-                onClick={() => void openDraftPr()}
-              >
-                <IconPr size={16} />
-                开草稿 PR
-              </button>
             </>
           }
           pinnedIds={pinnedIds}
@@ -2702,7 +2672,6 @@ export function App() {
                   context={gitContext}
                   refreshKey={gitRefreshKey}
                   busy={busy}
-                  onOpenPr={canOpenPr ? () => openDraftPr() : undefined}
                   onPullRequests={applyPullRequests}
                 />
               ) : inspectorTab === "terminal" ? (
@@ -2778,7 +2747,7 @@ export function App() {
           event.currentTarget.value = "";
         }}
       />
-      <BuddyPlusSheet open={plusOpen} canOpenPr={canOpenPr} onClose={() => setPlusOpen(false)} onAction={applyBuddyPlus} />
+      <BuddyPlusSheet open={plusOpen} onClose={() => setPlusOpen(false)} onAction={applyBuddyPlus} />
       <AuthGate
         open={authOpen}
         mode={authMode}
