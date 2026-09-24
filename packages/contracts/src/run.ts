@@ -313,6 +313,9 @@ export interface PullRequestRef {
   baseBranch?: string | null;
   headSha?: string | null;
   checks?: PullRequestChecks | null;
+  /** GitHub compare stats; absent until refresh. */
+  additions?: number | null;
+  deletions?: number | null;
   /** When state / checks were last read from GitHub. */
   updatedAt?: string | null;
 }

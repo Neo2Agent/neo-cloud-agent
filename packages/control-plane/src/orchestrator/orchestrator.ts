@@ -111,9 +111,12 @@ import {
   fetchPullFeedback,
   fetchPullStatus,
   githubPullSlug,
+  hydrateStackedPulls,
   markPullReady,
-  squashMergePull,
+  mergePull,
+  parseGithubMergeMethod,
   type GithubFetch,
+  type GithubMergeMethod,
 } from "../scm/pull-status.js";
 import { materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
@@ -2952,7 +2955,7 @@ export async function refreshRunPullRequests(runId: string, options: { force?: b
   const next = await Promise.all(
     run.pullRequests.map((item) => (githubPullSlug(item) ? fetchPullStatus(item, token, githubFetch).catch(() => item) : item)),
   );
-  run.pullRequests = next;
+  run.pullRequests = await hydrateStackedPulls(next, token, githubFetch, { preferBranch: run.branchName });
   flushRun(runId);
   return run.pullRequests;
 }
@@ -3037,8 +3040,9 @@ export async function markRunPullReady(runId: string, number: number): Promise<P
   return writeRunPull(runId, number, (pr, token) => markPullReady(pr, token, githubFetch));
 }
 
-export async function mergeRunPull(runId: string, number: number): Promise<PullRequestRef> {
-  return writeRunPull(runId, number, (pr, token) => squashMergePull(pr, token, githubFetch));
+export async function mergeRunPull(runId: string, number: number, method: GithubMergeMethod | string = "squash"): Promise<PullRequestRef> {
+  const mergeMethod = parseGithubMergeMethod(method);
+  return writeRunPull(runId, number, (pr, token) => mergePull(pr, token, githubFetch, mergeMethod));
 }
 
 const DIAGNOSTIC_EVENT_KINDS = new Set([

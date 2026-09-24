@@ -10,7 +10,9 @@ import {
   fetchPullFeedback,
   fetchPullStatus,
   githubPullSlug,
+  hydrateStackedPulls,
   markPullReady,
+  mergePull,
   squashMergePull,
   summarizeChecks,
   type GithubFetch,
@@ -115,6 +117,8 @@ test("fetchPullStatus reads state, base, head, and check counts", async () => {
       draft: false,
       base: { ref: "main" },
       head: { sha: "abc123" },
+      additions: 21,
+      deletions: 4,
     },
     "/repos/acme/app/commits/abc123/check-runs": {
       check_runs: [
@@ -129,6 +133,8 @@ test("fetchPullStatus reads state, base, head, and check counts", async () => {
   assert.equal(next.draft, false);
   assert.equal(next.title, "Web polish");
   assert.equal(next.baseBranch, "main");
+  assert.equal(next.additions, 21);
+  assert.equal(next.deletions, 4);
   assert.deepEqual(next.checks, { passed: 1, failed: 1, pending: 1 });
   assert.equal(next.updatedAt, "2026-09-23T12:00:00.000Z");
   assert.deepEqual(summarizeChecks([{ status: "completed", conclusion: "skipped" }]), { passed: 1, failed: 0, pending: 0 });
@@ -156,6 +162,70 @@ test("markPullReady PATCHes draft false then rereads the PR", async () => {
   await assert.rejects(
     () => markPullReady({ ...pr, url: "local://pr/run/1", repoUrl: "/tmp/repo" }, "tok", github.fetch),
     /不是 GitHub/,
+  );
+});
+
+test("mergePull PUTs the requested merge_method", async () => {
+  const github = fakeGithub({
+    "/repos/acme/app/pulls/12": {
+      number: 12,
+      title: "Web polish",
+      html_url: "https://github.com/acme/app/pull/12",
+      state: "closed",
+      merged: true,
+      merged_at: "2026-09-24T06:00:00Z",
+      draft: false,
+      base: { ref: "main" },
+      head: { sha: "abc123" },
+    },
+    "/repos/acme/app/pulls/12/merge": { merged: true },
+  });
+  const next = await mergePull({ ...pr, draft: false, state: "open" }, "tok", github.fetch, "rebase");
+  assert.equal(next.state, "merged");
+  assert.match(github.writes[0]?.body ?? "", /"merge_method":"rebase"/);
+});
+
+test("hydrateStackedPulls walks the base branch and skips a main parent", async () => {
+  const github = fakeGithub({
+    "/repos/acme/app/pulls": [
+      {
+        number: 11,
+        title: "Parent",
+        html_url: "https://github.com/acme/app/pull/11",
+        draft: true,
+        state: "open",
+        head: { ref: "cursor/parent", sha: "def456" },
+        base: { ref: "main" },
+      },
+    ],
+    "/repos/acme/app/pulls/11": {
+      number: 11,
+      title: "Parent",
+      html_url: "https://github.com/acme/app/pull/11",
+      state: "open",
+      draft: true,
+      additions: 2061,
+      deletions: 963,
+      base: { ref: "main" },
+      head: { sha: "def456", ref: "cursor/parent" },
+    },
+  });
+  const stacked = await hydrateStackedPulls(
+    [{ ...pr, title: "Tip", baseBranch: "cursor/parent" }],
+    "tok",
+    github.fetch,
+    { preferBranch: "neo/feature-1234abcd" },
+  );
+  assert.equal(stacked.length, 2);
+  assert.equal(stacked[0]?.number, 12);
+  assert.equal(stacked[1]?.number, 11);
+  assert.equal(stacked[1]?.additions, 2061);
+  assert.equal(stacked[1]?.deletions, 963);
+  const onlyMain = await hydrateStackedPulls([{ ...pr, baseBranch: "main" }], "tok", github.fetch);
+  assert.equal(onlyMain.length, 1);
+  assert.equal(
+    github.seen.filter((item) => item === "GET /repos/acme/app/pulls").length,
+    1,
   );
 });
 

@@ -35,6 +35,7 @@ const {
   ingestEvents,
   markRunPullReady,
   mergeRunPull,
+  refreshRunPullRequests,
   requestRunReview,
   setGithubFetchForTest,
   leaseDesk,
@@ -1378,6 +1379,90 @@ test("markRunPullReady and mergeRunPull update the stored GitHub ref", async () 
     await assert.rejects(() => markRunPullReady(run.id, 99), /找不到/);
     live.pullRequests = [{ repoUrl: "/tmp/repo", branch: "main", url: "local://pr/x/1", draft: true, number: 1, title: "local" }];
     await assert.rejects(() => markRunPullReady(run.id, 1), /不是 GitHub/);
+  } finally {
+    setGithubFetchForTest(null);
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+  }
+});
+
+test("refreshRunPullRequests walks the parent PR from the base branch", async () => {
+  const previous = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "tok";
+  const run = await createRun({ prompt: "stacked refresh", repoUrls: ["fixtures/toy-repo"] });
+  const live = getRun(run.id);
+  assert.ok(live);
+  live.branchName = "neo/feature";
+  live.pullRequests = [
+    {
+      repoUrl: "https://github.com/acme/app",
+      branch: "neo/feature",
+      url: "https://github.com/acme/app/pull/12",
+      draft: false,
+      number: 12,
+      title: "Tip",
+      state: "open",
+    },
+  ];
+  setGithubFetchForTest(async (url) => {
+    const path = url.replace("https://api.github.com", "").replace(/\?.*$/, "");
+    if (path === "/repos/acme/app/pulls/12") {
+      return new Response(
+        JSON.stringify({
+          number: 12,
+          title: "Tip",
+          html_url: "https://github.com/acme/app/pull/12",
+          state: "open",
+          draft: false,
+          additions: 10,
+          deletions: 1,
+          base: { ref: "cursor/parent" },
+          head: { sha: "aaa", ref: "neo/feature" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (path === "/repos/acme/app/pulls") {
+      return new Response(
+        JSON.stringify([
+          {
+            number: 11,
+            title: "Parent",
+            html_url: "https://github.com/acme/app/pull/11",
+            draft: true,
+            state: "open",
+            head: { ref: "cursor/parent", sha: "bbb" },
+            base: { ref: "main" },
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (path === "/repos/acme/app/pulls/11") {
+      return new Response(
+        JSON.stringify({
+          number: 11,
+          title: "Parent",
+          html_url: "https://github.com/acme/app/pull/11",
+          state: "open",
+          draft: true,
+          additions: 2061,
+          deletions: 963,
+          base: { ref: "main" },
+          head: { sha: "bbb", ref: "cursor/parent" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  });
+  try {
+    const next = await refreshRunPullRequests(run.id, { force: true });
+    assert.equal(next.length, 2);
+    assert.equal(next[0]?.number, 12);
+    assert.equal(next[1]?.number, 11);
+    assert.equal(next[1]?.additions, 2061);
+    assert.equal(getRun(run.id)?.pullRequests.length, 2);
   } finally {
     setGithubFetchForTest(null);
     if (previous === undefined) delete process.env.GITHUB_TOKEN;

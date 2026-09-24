@@ -131,6 +131,8 @@ export async function fetchPullStatus(
     baseBranch: asString(asRecord(pull.base).ref) || pr.baseBranch || null,
     headSha,
     checks,
+    additions: asNumber(pull.additions) ?? pr.additions ?? null,
+    deletions: asNumber(pull.deletions) ?? pr.deletions ?? null,
     updatedAt: now.toISOString(),
   };
 }
@@ -204,11 +206,20 @@ export async function markPullReady(
   return fetchPullStatus({ ...pr, draft: false }, token, fetchImpl);
 }
 
-/** Squash-merge an open, non-draft GitHub PR. */
-export async function squashMergePull(
+export type GithubMergeMethod = "squash" | "merge" | "rebase";
+
+const MERGE_METHODS = new Set<GithubMergeMethod>(["squash", "merge", "rebase"]);
+
+export function parseGithubMergeMethod(value: unknown): GithubMergeMethod {
+  return typeof value === "string" && MERGE_METHODS.has(value as GithubMergeMethod) ? (value as GithubMergeMethod) : "squash";
+}
+
+/** Merge an open, non-draft GitHub PR. Defaults to squash. */
+export async function mergePull(
   pr: PullRequestRef,
   token: string,
   fetchImpl: GithubFetch = fetch,
+  method: GithubMergeMethod = "squash",
 ): Promise<PullRequestRef> {
   const slug = requireGithubPull(pr);
   if (pr.state === "merged") {
@@ -221,7 +232,99 @@ export async function squashMergePull(
     throw new Error("这个 PR 已经关闭");
   }
   await sendJson(fetchImpl, `${API}/repos/${slug.owner}/${slug.repo}/pulls/${slug.number}/merge`, token, "PUT", {
-    merge_method: "squash",
+    merge_method: parseGithubMergeMethod(method),
   });
   return fetchPullStatus({ ...pr, draft: false, state: "merged" }, token, fetchImpl);
+}
+
+/** @deprecated use mergePull */
+export async function squashMergePull(
+  pr: PullRequestRef,
+  token: string,
+  fetchImpl: GithubFetch = fetch,
+): Promise<PullRequestRef> {
+  return mergePull(pr, token, fetchImpl, "squash");
+}
+
+const DEFAULT_BASES = new Set(["main", "master", "develop", "trunk"]);
+
+export function isDefaultBaseBranch(branch: string | null | undefined): boolean {
+  const name = (branch ?? "").trim().toLowerCase();
+  return !name || DEFAULT_BASES.has(name);
+}
+
+function pickStackedParent(found: unknown[]): Record<string, unknown> | null {
+  const rows = found.map((item) => asRecord(item)).filter((item) => asNumber(item.number));
+  return rows.find((item) => item.draft !== true && asString(item.state) === "open") ?? rows[0] ?? null;
+}
+
+function pullKey(pr: Pick<PullRequestRef, "number" | "url">): string {
+  return pr.number != null ? `n:${pr.number}` : `u:${pr.url}`;
+}
+
+/** Walk each PR's base branch and attach the parent GitHub PR. Does not add siblings. */
+export async function hydrateStackedPulls(
+  prs: PullRequestRef[],
+  token: string,
+  fetchImpl: GithubFetch = fetch,
+  options: { preferBranch?: string | null; maxDepth?: number } = {},
+): Promise<PullRequestRef[]> {
+  const maxDepth = options.maxDepth ?? 8;
+  const byKey = new Map<string, PullRequestRef>();
+  for (const pr of prs) byKey.set(pullKey(pr), pr);
+
+  let frontier = prs.filter((item) => githubPullSlug(item));
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth += 1) {
+    const nextFrontier: PullRequestRef[] = [];
+    for (const pr of frontier) {
+      if (isDefaultBaseBranch(pr.baseBranch) || !pr.baseBranch) continue;
+      const slug = githubPullSlug(pr);
+      if (!slug) continue;
+      try {
+        const list = await getJson(
+          fetchImpl,
+          `${API}/repos/${slug.owner}/${slug.repo}/pulls?head=${encodeURIComponent(`${slug.owner}:${pr.baseBranch}`)}&state=all&per_page=5`,
+          token,
+        );
+        const pick = pickStackedParent(Array.isArray(list) ? list : []);
+        if (!pick) continue;
+        const number = asNumber(pick.number);
+        const url = asString(pick.html_url) || (number ? `https://github.com/${slug.owner}/${slug.repo}/pull/${number}` : "");
+        const key = number != null ? `n:${number}` : `u:${url}`;
+        if (byKey.has(key)) continue;
+        const stub: PullRequestRef = {
+          repoUrl: pr.repoUrl || `https://github.com/${slug.owner}/${slug.repo}`,
+          branch: asString(asRecord(pick.head).ref) || pr.baseBranch,
+          url,
+          draft: pick.draft === true,
+          number,
+          title: asString(pick.title),
+        };
+        const full = await fetchPullStatus(stub, token, fetchImpl).catch(() => stub);
+        byKey.set(pullKey(full), full);
+        nextFrontier.push(full);
+      } catch {
+        // no token scope or no parent PR
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  const ordered: PullRequestRef[] = [];
+  const seen = new Set<string>();
+  for (const pr of prs) {
+    const key = pullKey(pr);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push(byKey.get(key) ?? pr);
+  }
+  for (const pr of byKey.values()) {
+    const key = pullKey(pr);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push(pr);
+  }
+  const prefer = options.preferBranch;
+  if (!prefer) return ordered;
+  return [...ordered.filter((item) => item.branch === prefer), ...ordered.filter((item) => item.branch !== prefer)];
 }

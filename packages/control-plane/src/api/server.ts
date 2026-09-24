@@ -2778,7 +2778,8 @@ export function createApiServer() {
           return;
         }
         try {
-          send(res, 200, { pullRequest: await mergeRunPull(runId, Number(mergeMatch[2])) });
+          const body = (await readJson(req).catch(() => ({}))) as { merge_method?: string };
+          send(res, 200, { pullRequest: await mergeRunPull(runId, Number(mergeMatch[2]), body.merge_method) });
         } catch (error) {
           const message = error instanceof Error ? error.message : "merge_failed";
           send(res, message.includes("找不到") || message.includes("不是 GitHub") || message.includes("先 Mark") || message.includes("已经关闭") ? 400 : 502, { error: message });
