@@ -2686,6 +2686,7 @@ export function App() {
               githubReposConfigured={githubReposConfigured}
               repoQuery={repoQuery}
               repoLocked={Boolean(runId || sending || pendingTurn)}
+              branch={runId ? currentRun?.branchName ?? "" : ""}
               repoPickerOpen={repoPickerOpen}
               onRepoMode={setRepoMode}
               onRepo={setRepo}

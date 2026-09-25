@@ -89,12 +89,12 @@ test.describe("composer / run boundaries", () => {
       });
     });
     await page.locator("#repo-bind").click();
-    await expect(page.locator("#repo-bind-search")).toBeVisible();
     const menu = page.locator(".repo-bind-menu");
     const box = page.locator(".composer-box");
     const trigger = page.locator("#repo-bind");
     await expect(menu).toBeVisible();
     await expect(box).toBeVisible();
+    await expect(page.locator("#repo-bind-search")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "最近" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "仓库" })).toBeVisible();
     await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
@@ -112,9 +112,12 @@ test.describe("composer / run boundaries", () => {
     expect(Math.abs((openMenu?.x ?? 0) - (openTrigger?.x ?? 0))).toBeLessThan(12);
     await page.getByRole("button", { name: "GitHub" }).click();
     await expect(page.getByRole("button", { name: "返回" })).toBeVisible();
+    await expect(page.locator("#repo-bind-search")).toBeVisible();
     await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
     await page.getByRole("button", { name: "返回" }).click();
     await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
+    await expect(page.locator("#repo-bind-search")).toHaveCount(0);
+    await page.getByRole("button", { name: "GitHub" }).click();
     await page.locator("#repo-bind-search").fill("animate");
     const longRepo = page.getByRole("button", { name: "kaibairen/animate-camera" });
     await expect(longRepo).toBeVisible();
@@ -156,6 +159,16 @@ test.describe("composer / run boundaries", () => {
     await expect(page.locator("#repo-bind")).toHaveText("acme/app");
     await page.locator("#repo-bind").click();
     await expect(page.locator("#repo-bind-search")).toHaveCount(0);
+    await expect(page.locator(".repo-bind-menu")).toHaveCount(0);
+  });
+
+  test("repo.session-empty: a session without a repo or branch hides both chips", async ({ page }) => {
+    await loginAs(page);
+    const run = await createRun(page, { prompt: "plain chat", repoUrls: [] });
+    await page.goto(`/#/runs/${run.id}`);
+    await expect(page.locator("#composer")).toBeVisible();
+    await expect(page.locator("#repo-bind")).toHaveCount(0);
+    await expect(page.locator("#run-branch")).toHaveCount(0);
   });
 
   test("repo.plus: Plus 仓库 opens the same picker", async ({ page }) => {
@@ -163,6 +176,9 @@ test.describe("composer / run boundaries", () => {
     await loginAs(page);
     await page.locator(".buddy-plus").click();
     await page.getByRole("dialog", { name: "添加" }).getByRole("button", { name: "仓库" }).click();
+    await expect(page.getByRole("button", { name: "GitHub" })).toBeVisible();
+    await expect(page.locator("#repo-bind-search")).toHaveCount(0);
+    await page.getByRole("button", { name: "GitHub" }).click();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
   });
 

@@ -39,10 +39,6 @@ function isRepoSelected(mode: RepoBindMode, repo: string, item: GithubRepoOption
   return mode === "bind" && (repo === item.url || repoShortLabel(repo) === item.fullName);
 }
 
-function matchesScratch(q: string): boolean {
-  return /无仓库|从头|none|scratch/i.test(q);
-}
-
 function RepoRow({
   item,
   selected,
@@ -101,7 +97,8 @@ export function RepoBindControl({
   const [coords, setCoords] = useState<MenuCoords | null>(null);
   const [pane, setPane] = useState<Pane>("root");
 
-  const label = mode === "bind" && repo ? repoShortLabel(repo) : "无仓库";
+  const bound = mode === "bind" && Boolean(repo.trim());
+  const label = bound ? repoShortLabel(repo) : "无仓库";
   const q = query.trim().toLowerCase();
   const searching = Boolean(q);
 
@@ -114,16 +111,10 @@ export function RepoBindControl({
     return items;
   }, [recent, repos]);
 
-  const filteredRecent = useMemo(
-    () => (searching ? recentItems.filter((item) => matchesRepo(item, q)) : recentItems),
-    [q, recentItems, searching],
-  );
-  const filteredRepos = useMemo(() => {
-    const listed = searching ? repos.filter((item) => matchesRepo(item, q)) : repos;
-    if (!searching) return listed;
-    const recentUrls = new Set(recentItems.filter((item) => matchesRepo(item, q)).map((item) => item.url));
-    return listed.filter((item) => !recentUrls.has(item.url));
-  }, [q, recentItems, repos, searching]);
+  const githubRepos = useMemo(() => {
+    if (pane !== "github" || !searching) return repos;
+    return repos.filter((item) => matchesRepo(item, q));
+  }, [pane, q, repos, searching]);
 
   const place = () => {
     const triggerEl = triggerRef.current;
@@ -146,6 +137,11 @@ export function RepoBindControl({
     );
   };
 
+  const goRoot = () => {
+    setPane("root");
+    onQuery?.("");
+  };
+
   useLayoutEffect(() => {
     if (!open || locked) {
       setCoords(null);
@@ -166,7 +162,7 @@ export function RepoBindControl({
       window.removeEventListener("resize", onReposition);
       window.removeEventListener("scroll", onReposition, true);
     };
-  }, [open, locked, pane, filteredRecent.length, filteredRepos.length, reposLoading, query]);
+  }, [open, locked, pane, githubRepos.length, recentItems.length, reposLoading, query]);
 
   useEffect(() => {
     if (!open || locked) return;
@@ -177,8 +173,8 @@ export function RepoBindControl({
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (pane === "github" && !searching) {
-        setPane("root");
+      if (pane === "github") {
+        goRoot();
         return;
       }
       onOpen?.(false);
@@ -189,12 +185,16 @@ export function RepoBindControl({
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, locked, onOpen, pane, searching]);
+  }, [open, locked, onOpen, pane]);
 
   useEffect(() => {
-    if (!open || locked) return;
+    if (!open || locked || pane !== "github") return;
     searchRef.current?.focus({ preventScroll: true });
   }, [open, locked, pane]);
+
+  useEffect(() => {
+    if (!open) onQuery?.("");
+  }, [open, onQuery]);
 
   const pickNone = () => {
     onMode("none");
@@ -221,17 +221,15 @@ export function RepoBindControl({
   );
 
   if (locked) {
+    if (!bound) return null;
     return (
       <div className="picker">
-        <span className="repo-bind-lock" id="repo-bind" title={`${label}（对话已开始，不能再换仓库）`}>
+        <span className="repo-bind-lock" id="repo-bind" title={label}>
           {triggerInner}
         </span>
       </div>
     );
   }
-
-  const showScratch = !searching || matchesScratch(q);
-  const showRecent = filteredRecent.length > 0 && (searching || pane === "root");
 
   const menu = open
     ? createPortal(
@@ -246,79 +244,28 @@ export function RepoBindControl({
               : { visibility: "hidden", top: 0, left: 0 }
           }
         >
-          <label className="repo-bind-search">
-            <span className="repo-bind-row-icon" aria-hidden="true">
-              <IconSearch size={14} />
-            </span>
-            <input
-              ref={searchRef}
-              id="repo-bind-search"
-              name="repo-bind-search"
-              type="text"
-              inputMode="search"
-              autoComplete="off"
-              placeholder="搜索仓库…"
-              value={query}
-              onChange={(event) => onQuery?.(event.target.value)}
-            />
-          </label>
+          {pane === "github" ? (
+            <label className="repo-bind-search">
+              <span className="repo-bind-row-icon" aria-hidden="true">
+                <IconSearch size={14} />
+              </span>
+              <input
+                ref={searchRef}
+                id="repo-bind-search"
+                name="repo-bind-search"
+                type="text"
+                inputMode="search"
+                autoComplete="off"
+                placeholder="搜索仓库…"
+                value={query}
+                onChange={(event) => onQuery?.(event.target.value)}
+              />
+            </label>
+          ) : null}
           <div className="repo-bind-body">
-            {showRecent ? (
+            {pane === "github" ? (
               <section className="repo-bind-section">
-                <h3 className="repo-bind-heading">最近</h3>
-                <ul>
-                  {filteredRecent.map((item) => (
-                    <RepoRow
-                      key={`recent:${item.url}`}
-                      item={item}
-                      selected={isRepoSelected(mode, repo, item)}
-                      onPick={() => pickRepo(item.url)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {searching ? (
-              <section className="repo-bind-section">
-                {filteredRepos.length > 0 ? <h3 className="repo-bind-heading">仓库</h3> : null}
-                {reposLoading ? <p className="hint">正在拉取仓库…</p> : null}
-                {!reposLoading && !reposConfigured ? (
-                  <ul>
-                    <li>
-                      <button type="button" onClick={openSettings}>
-                        <span className="repo-bind-row-icon" aria-hidden="true">
-                          <IconFolder size={16} />
-                        </span>
-                        <span className="repo-bind-item">
-                          <span className="repo-bind-item-name">绑定 GitHub</span>
-                        </span>
-                        <span className="repo-bind-check" aria-hidden="true">
-                          <IconChevronRight size={14} />
-                        </span>
-                      </button>
-                    </li>
-                  </ul>
-                ) : null}
-                {!reposLoading && reposConfigured && filteredRepos.length === 0 && filteredRecent.length === 0 ? (
-                  <p className="hint">没有匹配的仓库</p>
-                ) : null}
-                {reposConfigured && filteredRepos.length > 0 ? (
-                  <ul>
-                    {filteredRepos.map((item) => (
-                      <RepoRow
-                        key={item.url}
-                        item={item}
-                        selected={isRepoSelected(mode, repo, item)}
-                        onPick={() => pickRepo(item.url)}
-                      />
-                    ))}
-                  </ul>
-                ) : null}
-              </section>
-            ) : pane === "github" ? (
-              <section className="repo-bind-section">
-                <button type="button" className="repo-bind-back" aria-label="返回" onClick={() => setPane("root")}>
+                <button type="button" className="repo-bind-back" aria-label="返回" onClick={goRoot}>
                   <span className="repo-bind-row-icon" aria-hidden="true">
                     <IconChevronLeft size={16} />
                   </span>
@@ -327,12 +274,12 @@ export function RepoBindControl({
                   </span>
                 </button>
                 {reposLoading ? <p className="hint">正在拉取仓库…</p> : null}
-                {!reposLoading && reposConfigured && filteredRepos.length === 0 ? (
-                  <p className="hint">这个账号下还没有可用仓库</p>
+                {!reposLoading && reposConfigured && githubRepos.length === 0 ? (
+                  <p className="hint">{searching ? "没有匹配的仓库" : "这个账号下还没有可用仓库"}</p>
                 ) : null}
-                {reposConfigured && filteredRepos.length > 0 ? (
+                {reposConfigured && githubRepos.length > 0 ? (
                   <ul>
-                    {filteredRepos.map((item) => (
+                    {githubRepos.map((item) => (
                       <RepoRow
                         key={item.url}
                         item={item}
@@ -344,37 +291,52 @@ export function RepoBindControl({
                 ) : null}
               </section>
             ) : (
-              <section className="repo-bind-section">
-                <h3 className="repo-bind-heading">仓库</h3>
-                <ul>
-                  <li>
-                    {reposConfigured ? (
-                      <button type="button" aria-label="GitHub" onClick={() => setPane("github")}>
-                        <span className="repo-bind-row-icon" aria-hidden="true">
-                          <IconFolder size={16} />
-                        </span>
-                        <span className="repo-bind-item">
-                          <span className="repo-bind-item-name">GitHub</span>
-                        </span>
-                        <span className="repo-bind-check" aria-hidden="true">
-                          <IconChevronRight size={14} />
-                        </span>
-                      </button>
-                    ) : (
-                      <button type="button" aria-label="绑定 GitHub" onClick={openSettings}>
-                        <span className="repo-bind-row-icon" aria-hidden="true">
-                          <IconFolder size={16} />
-                        </span>
-                        <span className="repo-bind-item">
-                          <span className="repo-bind-item-name">绑定 GitHub</span>
-                        </span>
-                        <span className="repo-bind-check" aria-hidden="true">
-                          <IconChevronRight size={14} />
-                        </span>
-                      </button>
-                    )}
-                  </li>
-                  {showScratch ? (
+              <>
+                {recentItems.length > 0 ? (
+                  <section className="repo-bind-section">
+                    <h3 className="repo-bind-heading">最近</h3>
+                    <ul>
+                      {recentItems.map((item) => (
+                        <RepoRow
+                          key={`recent:${item.url}`}
+                          item={item}
+                          selected={isRepoSelected(mode, repo, item)}
+                          onPick={() => pickRepo(item.url)}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+                <section className="repo-bind-section">
+                  <h3 className="repo-bind-heading">仓库</h3>
+                  <ul>
+                    <li>
+                      {reposConfigured ? (
+                        <button type="button" aria-label="GitHub" onClick={() => setPane("github")}>
+                          <span className="repo-bind-row-icon" aria-hidden="true">
+                            <IconFolder size={16} />
+                          </span>
+                          <span className="repo-bind-item">
+                            <span className="repo-bind-item-name">GitHub</span>
+                          </span>
+                          <span className="repo-bind-check" aria-hidden="true">
+                            <IconChevronRight size={14} />
+                          </span>
+                        </button>
+                      ) : (
+                        <button type="button" aria-label="绑定 GitHub" onClick={openSettings}>
+                          <span className="repo-bind-row-icon" aria-hidden="true">
+                            <IconFolder size={16} />
+                          </span>
+                          <span className="repo-bind-item">
+                            <span className="repo-bind-item-name">绑定 GitHub</span>
+                          </span>
+                          <span className="repo-bind-check" aria-hidden="true">
+                            <IconChevronRight size={14} />
+                          </span>
+                        </button>
+                      )}
+                    </li>
                     <li>
                       <button
                         type="button"
@@ -395,37 +357,10 @@ export function RepoBindControl({
                         ) : null}
                       </button>
                     </li>
-                  ) : null}
-                </ul>
-              </section>
+                  </ul>
+                </section>
+              </>
             )}
-
-            {searching && showScratch ? (
-              <section className="repo-bind-section">
-                <ul>
-                  <li>
-                    <button
-                      type="button"
-                      className={mode === "none" ? "is-selected" : undefined}
-                      aria-label="从头开始"
-                      onClick={pickNone}
-                    >
-                      <span className="repo-bind-row-icon" aria-hidden="true">
-                        <IconPlus size={16} />
-                      </span>
-                      <span className="repo-bind-item">
-                        <span className="repo-bind-item-name">从头开始</span>
-                      </span>
-                      {mode === "none" ? (
-                        <span className="repo-bind-check" aria-hidden="true">
-                          <IconCheck size={14} />
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                </ul>
-              </section>
-            ) : null}
           </div>
         </div>,
         document.body,
