@@ -16,7 +16,7 @@ function run(partial: Partial<Run> = {}): Run {
     status: "IDLE",
     createdAt: "2026-09-25T00:00:00.000Z",
     updatedAt: "2026-09-25T00:00:00.000Z",
-    collaborators: [{ userId: "host", email: "host@x", role: "host" }],
+    collaborators: [{ userId: "host", email: "host@x", role: "host", joinedAt: "2026-09-25T00:00:00.000Z" }],
     ...partial,
   } as Run;
 }
@@ -28,8 +28,8 @@ test("runListAudience includes host, assignee, and collaborators", () => {
         userId: "a",
         assigneeUserId: "b",
         collaborators: [
-          { userId: "a", email: "a@x", role: "host" },
-          { userId: "c", email: "c@x", role: "editor" },
+          { userId: "a", email: "a@x", role: "host", joinedAt: "2026-09-25T00:00:00.000Z" },
+          { userId: "c", email: "c@x", role: "editor", joinedAt: "2026-09-25T00:00:00.000Z" },
         ],
       }),
     ).sort(),
