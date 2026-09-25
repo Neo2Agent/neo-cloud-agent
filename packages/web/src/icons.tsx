@@ -19,7 +19,9 @@ import {
   FileImage,
   FilePen,
   FileText,
+  Folder,
   FolderGit2,
+  FolderOpen,
   FolderPlus,
   GitPullRequest,
   SlidersHorizontal,
@@ -183,6 +185,14 @@ export function IconDownload(props: IconProps) {
 
 export function IconFolder(props: IconProps) {
   return icon(FolderGit2, props);
+}
+
+export function IconFolderClosed(props: IconProps) {
+  return icon(Folder, props);
+}
+
+export function IconFolderOpen(props: IconProps) {
+  return icon(FolderOpen, props);
 }
 
 export function IconFolderPlus(props: IconProps) {

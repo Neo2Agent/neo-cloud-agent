@@ -3,7 +3,7 @@ import type { PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
 import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode } from "@neo-cloud-agent/contracts/run";
 import { formatListWhen, runListPlaceSuffix, runListTitle, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
-import { IconArchive, IconAutomations, IconChat, IconChevronRight, IconExperts, IconFolder, IconFolderPlus, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconSort, IconStar, IconTrash, IconUsers } from "../icons";
+import { IconArchive, IconAutomations, IconChat, IconChevronRight, IconExperts, IconFolderClosed, IconFolderOpen, IconFolderPlus, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconSort, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import { filterRuns, folderKindLabel, groupSidebarRuns, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
@@ -374,6 +374,7 @@ export function Sidebar({
             if (items.length === 0) return null;
             const key = `project:${folder.key}`;
             const work = folderKindLabel(items);
+            const open = folderOpen(key, items);
             return (
               <details
                 key={folder.key}
@@ -382,12 +383,12 @@ export function Sidebar({
                 data-kind="project"
                 data-work={work === "代码" ? "code" : work === "办公" ? "office" : undefined}
                 data-project={folder.key}
-                open={folderOpen(key, items)}
+                open={open}
                 onToggle={(event) => onFolderToggle(key, event)}
               >
                 <summary className="run-folder-head">
                   <IconChevronRight size={12} className="run-folder-chevron" />
-                  <IconUsers size={14} />
+                  {open ? <IconFolderOpen size={14} className="run-folder-icon" /> : <IconFolderClosed size={14} className="run-folder-icon" />}
                   <span className="run-folder-name">{folder.label}</span>
                   {onStartProjectChat ? (
                     <button
@@ -433,6 +434,7 @@ export function Sidebar({
             if (items.length === 0) return null;
             const key = `repo:${folder.key}`;
             const slug = folder.key.replace(/[^a-zA-Z0-9._-]+/g, "-");
+            const open = folderOpen(key, items);
             return (
               <details
                 key={folder.key}
@@ -440,12 +442,12 @@ export function Sidebar({
                 id={`run-folder-repo-${slug}`}
                 data-kind="repo"
                 data-repo={folder.key}
-                open={folderOpen(key, items)}
+                open={open}
                 onToggle={(event) => onFolderToggle(key, event)}
               >
                 <summary className="run-folder-head">
                   <IconChevronRight size={12} className="run-folder-chevron" />
-                  <IconFolder size={14} />
+                  {open ? <IconFolderOpen size={14} className="run-folder-icon" /> : <IconFolderClosed size={14} className="run-folder-icon" />}
                   <span className="run-folder-name">{folder.label}</span>
                   {onStartRepoChat && folder.source ? (
                     <button

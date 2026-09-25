@@ -78,6 +78,7 @@ test.describe("catalog and session chrome", () => {
     const codeFolder = page.locator(`#run-folder-${codeProject.id}`);
     await expect(officeFolder).toBeVisible();
     await expect(officeFolder).toContainText("侧栏办公组");
+    await expect(officeFolder.locator(".run-folder-icon")).toHaveCount(1);
     await expect(officeFolder).toHaveAttribute("data-work", "office");
     await expect(officeFolder.locator(".run-folder-kind")).toHaveCount(0);
     await expect(officeFolder.locator(".run-folder-count")).toHaveCount(0);

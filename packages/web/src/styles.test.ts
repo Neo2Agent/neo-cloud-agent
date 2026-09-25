@@ -34,6 +34,7 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /\.run-section-head/);
   assert.match(css, /\.run-library\s*\{/);
   assert.match(css, /\.run-folder-chevron/);
+  assert.match(css, /\.run-folder-icon/);
   assert.match(css, /\.run-folder\s+\.run-item\s*\{[^}]*padding-left:\s*28px/);
   assert.match(css, /\.run-mark\s*\{[^}]*width:\s*16px/);
   assert.match(css, /\.pulse-dot\s*\{[^}]*animation:\s*pulse-dot/);

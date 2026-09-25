@@ -6317,10 +6317,14 @@ button.composer-mic.is-listening,
   content: "";
 }
 
-.run-folder-chevron {
+.run-folder-chevron,
+.run-folder-icon {
   display: block;
   flex: none;
   color: var(--muted);
+}
+
+.run-folder-chevron {
   transition: transform var(--ease);
 }
 
