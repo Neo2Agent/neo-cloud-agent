@@ -1,4 +1,4 @@
-import { deskRepoKey } from "@neo-cloud-agent/contracts";
+import { deskRepoKey } from "@neo-cloud-agent/contracts/desk-workspace";
 import { repoShortLabel } from "./repo.js";
 
 const KEY = "neo.pinnedRuns";
