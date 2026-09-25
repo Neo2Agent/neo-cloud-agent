@@ -257,7 +257,7 @@ export function RepoBindControl({
                 </button>
                 <label className="repo-bind-search">
                   <span className="repo-bind-row-icon" aria-hidden="true">
-                    <IconSearch size={12} />
+                    <IconSearch size={16} />
                   </span>
                   <input
                     ref={searchRef}

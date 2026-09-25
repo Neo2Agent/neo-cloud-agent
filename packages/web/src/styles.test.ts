@@ -20,6 +20,12 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /\.repo-bind-menu/);
   assert.match(css, /\.repo-bind-menu\s*\{[^}]*width:\s*min\(300px/);
   assert.match(css, /\.repo-bind-body\s*\{[^}]*max-height:\s*min\(280px/);
+  assert.match(css, /\.repo-bind-search\s*\{[^}]*margin:\s*0 6px 4px/);
+  assert.match(css, /\.repo-bind-search\s*\{[^}]*padding:\s*0 10px/);
+  assert.match(css, /\.repo-bind-menu button\s*\{[^}]*padding:\s*6px 10px/);
+  assert.match(css, /\.repo-bind-back\s*\{[^}]*margin:\s*0 6px/);
+  assert.match(css, /\.repo-bind-menu \.repo-bind-row-icon\s*\{[^}]*width:\s*16px/);
+  assert.match(css, /\.repo-bind-menu \.repo-bind-row-icon\s*\{[^}]*height:\s*16px/);
   assert.match(css, /\.repo-bind-trigger/);
   assert.match(css, /\.repo-bind-item-name/);
   assert.match(css, /\.run-folder-head/);

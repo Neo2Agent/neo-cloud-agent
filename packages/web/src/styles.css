@@ -2082,6 +2082,7 @@ button.tool-file-more:hover {
   align-items: center;
   justify-content: center;
   width: 16px;
+  height: 16px;
   color: var(--muted);
 }
 
