@@ -1059,6 +1059,7 @@ h1 {
   container-type: size;
   container-name: transcript;
   scrollbar-width: none;
+  font-size: 13px;
 }
 
 .transcript::-webkit-scrollbar {
@@ -1175,7 +1176,8 @@ h1 {
   max-width: 100%;
   border-radius: 22px;
   padding: 10px 16px;
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.55;
   white-space: pre-wrap;
   background: transparent;
 }
@@ -1215,10 +1217,12 @@ h1 {
 .md-h,
 .md-list {
   margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .md-h {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
 }
 
@@ -5088,6 +5092,8 @@ textarea:focus {
   max-height: 200px;
   padding: 8px 8px 0;
   box-shadow: none;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .composer:has(textarea:focus-visible) {
