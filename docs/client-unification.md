@@ -159,7 +159,7 @@ Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、
 
 | 层 | Neo |
 | --- | --- |
-| 协作组 | `Project` + 成员 / 指令 / 邀请。侧栏最上置顶，然后 **项目 / 仓库 / 日常**：有 `projectId` 进项目夹；没项目但绑了仓按仓折；两样都没有进日常。不按仓自动建 Project。视觉对齐 Cursor：弱段头、夹上 chevron、组内种类挂在夹上（代码 / 办公），对话行只留标题 |
+| 协作组 | `Project` + 成员 / 指令 / 邀请。侧栏最上置顶，然后 **项目 / 仓库 / 日常**：有 `projectId` 进项目夹；没项目但绑了仓按仓折；两样都没有进日常。不按仓自动建 Project。视觉对齐 Cursor：弱段头、夹上 chevron，夹头不标种类和人数；空闲行空心气泡，运行中旋转黑球 |
 | GitHub 账号 | 设置里 OAuth 绑定当前用户自己的 GitHub。`GET /v1/integrations/github`；token 按 `userId` 存，不是整机 PAT |
 | 组内选仓 | Composer 一个仓库 pill：关着显示「无仓库」或 `owner/repo`；打开后搜索账号仓库（`GET /v1/scm/repos?q=`）。未绑则去设置。发出后只读。Web 不再预填项目 `defaultRepoUrls` |
 | 无仓不被回填 | `CreateRunRequest.skipRepoDefaults`。显式无仓时服务端不得用项目或环境默认仓填 `repoUrls` |

@@ -79,14 +79,15 @@ test.describe("catalog and session chrome", () => {
     await expect(officeFolder).toBeVisible();
     await expect(officeFolder).toContainText("侧栏办公组");
     await expect(officeFolder).toHaveAttribute("data-work", "office");
-    await expect(officeFolder.locator(".run-folder-kind")).toHaveText("办公");
+    await expect(officeFolder.locator(".run-folder-kind")).toHaveCount(0);
+    await expect(officeFolder.locator(".run-folder-count")).toHaveCount(0);
     await expect(officeFolder.locator(`[data-id="${office.id}"]`)).toBeVisible();
     await expect(officeFolder.locator(".run-kind")).toHaveCount(0);
     await expect(page.locator(".run-item .pulse-dot")).toHaveCount(0);
     await expect(officeFolder.locator(`[data-id="${office.id}"] .run-mark`)).toBeVisible();
     await expect(codeFolder).toBeVisible();
     await expect(codeFolder).toHaveAttribute("data-work", "code");
-    await expect(codeFolder.locator(".run-folder-kind")).toHaveText("代码");
+    await expect(codeFolder.locator(".run-folder-kind")).toHaveCount(0);
     await expect(codeFolder.locator(`[data-id="${code.id}"]`)).toBeVisible();
     await expect(codeFolder.locator(`[data-id="${loose.id}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-section="chat"] [data-id="${loose.id}"]`)).toBeVisible();
@@ -119,6 +120,7 @@ test.describe("catalog and session chrome", () => {
     const repoFolder = page.locator(`[data-section="repos"] [data-repo="fixtures/toy-repo"]`);
     await expect(repoFolder).toBeVisible();
     await expect(repoFolder).toContainText("fixtures/toy-repo");
+    await expect(repoFolder.locator(".run-folder-count")).toHaveCount(0);
     await expect(repoFolder.locator(`[data-id="${first.id}"]`)).toBeVisible();
     await expect(repoFolder.locator(`[data-id="${second.id}"]`)).toBeVisible();
     await expect(repoFolder.locator(`[data-id="${projectCode.id}"]`)).toHaveCount(0);

@@ -391,12 +391,6 @@ export function Sidebar({
                   <IconChevronRight size={12} className="run-folder-chevron" />
                   <IconUsers size={14} />
                   <span className="run-folder-name">{folder.label}</span>
-                  {work ? (
-                    <span className="run-folder-kind" data-kind={work === "代码" ? "code" : "office"}>
-                      {work}
-                    </span>
-                  ) : null}
-                  <span className="run-folder-count">{items.length}</span>
                   {onStartProjectChat ? (
                     <button
                       type="button"
@@ -455,7 +449,6 @@ export function Sidebar({
                   <IconChevronRight size={12} className="run-folder-chevron" />
                   <IconFolder size={14} />
                   <span className="run-folder-name">{folder.label}</span>
-                  <span className="run-folder-count">{items.length}</span>
                   {onStartRepoChat && folder.source ? (
                     <button
                       type="button"
