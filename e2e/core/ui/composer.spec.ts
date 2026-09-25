@@ -113,6 +113,15 @@ test.describe("composer / run boundaries", () => {
     await page.getByRole("button", { name: "GitHub", exact: true }).click();
     await expect(page.getByRole("button", { name: "返回" })).toBeVisible();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
+    const backIcon = page.locator(".repo-bind-back .repo-bind-row-icon");
+    const searchIcon = page.locator(".repo-bind-search .repo-bind-row-icon");
+    const backIconBox = await backIcon.boundingBox();
+    const searchIconBox = await searchIcon.boundingBox();
+    expect(backIconBox).toBeTruthy();
+    expect(searchIconBox).toBeTruthy();
+    expect(backIconBox?.width).toBe(16);
+    expect(searchIconBox?.width).toBe(16);
+    expect(Math.abs((backIconBox?.x ?? 0) - (searchIconBox?.x ?? 0))).toBeLessThan(0.5);
     await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
     await page.getByRole("button", { name: "返回" }).click();
     await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
