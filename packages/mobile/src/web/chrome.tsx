@@ -541,10 +541,7 @@ export function IslandComposer(props: {
                   }}
                 />
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                  <path
-                    fill="currentColor"
-                    d="M5 19h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2l-1.2-1.6a1 1 0 0 0-.8-.4H10.2a1 1 0 0 0-.8.4L8.2 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2Zm7-3.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
-                  />
+                  <path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" />
                 </svg>
               </label>
             ) : null}

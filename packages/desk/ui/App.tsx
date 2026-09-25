@@ -2378,6 +2378,7 @@ export function App() {
                   </button>
                 </div>
               ) : null}
+              <div className={current ? "composer-follow" : "home-composer"}>
               <ContextBar
                 workspaces={workspaces}
                 folder={current ? localRun.folder || folder : folder}
@@ -2488,48 +2489,47 @@ export function App() {
                   contextUsage={contextUsage}
                 />
               ) : (
-                <div className="home-composer">
-                  <ChatComposer
-                    prompt={prompt}
-                    setPrompt={setPrompt}
-                    placeholder={
-                      hostLock.locked
-                        ? hostLock.hint
-                        : pluginPick
-                          ? `${greetLine}  将使用技能：${pluginPick.name}`
-                          : greetLine
+                <ChatComposer
+                  prompt={prompt}
+                  setPrompt={setPrompt}
+                  placeholder={
+                    hostLock.locked
+                      ? hostLock.hint
+                      : pluginPick
+                        ? `${greetLine}  将使用技能：${pluginPick.name}`
+                        : greetLine
+                  }
+                  sending={sending}
+                  locked={hostLock.locked}
+                  models={modelNames}
+                  selected={selectedModel}
+                  menuOpen={modelMenu}
+                  setMenuOpen={(next) => {
+                    setModelMenu(next);
+                    if (next) {
+                      setContextOpen(null);
+                      setInboxOpen(false);
                     }
-                    sending={sending}
-                    locked={hostLock.locked}
-                    models={modelNames}
-                    selected={selectedModel}
-                    menuOpen={modelMenu}
-                    setMenuOpen={(next) => {
-                      setModelMenu(next);
-                      if (next) {
-                        setContextOpen(null);
-                        setInboxOpen(false);
-                      }
-                    }}
-                    onSelectModel={(name) => {
-                      setSelectedModel(name);
-                      setModelMenu(false);
-                    }}
-                    onAddModel={() => openSettings("models")}
-                    onSubmit={() => void send()}
-                    taRef={taRef}
-                    onComposerKey={onComposerKey}
-                    home
-                    mentions={mentions}
-                    onMention={applyMention}
-                    token={token}
-                    images={images}
-                    onImages={setImages}
-                    onCapsule={applyCapsule}
-                    contextUsage={contextUsage}
-                  />
-                </div>
+                  }}
+                  onSelectModel={(name) => {
+                    setSelectedModel(name);
+                    setModelMenu(false);
+                  }}
+                  onAddModel={() => openSettings("models")}
+                  onSubmit={() => void send()}
+                  taRef={taRef}
+                  onComposerKey={onComposerKey}
+                  home
+                  mentions={mentions}
+                  onMention={applyMention}
+                  token={token}
+                  images={images}
+                  onImages={setImages}
+                  onCapsule={applyCapsule}
+                  contextUsage={contextUsage}
+                />
               )}
+              </div>
               {authError ? <p className="error toast-inline">{authError}</p> : null}
               {localNotice ? (
                 <p className="toast-inline local-notice">

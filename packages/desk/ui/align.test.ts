@@ -28,7 +28,10 @@ test("desk composer is the Cursor / Web box: + pickers left, circular send", () 
 
 test("desk expert picker sits in the context bar like Web", () => {
   const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
+  const app = readFileSync(path.join(here, "App.tsx"), "utf8");
   assert.match(pages, /className="expert-pick context-expert"/);
   assert.match(pages, /onExpert\?: \(value: string\) => void;/);
   assert.doesNotMatch(pages, /experts,\s*teams,\s*expertValue/);
+  assert.match(app, /className=\{current \? "composer-follow" : "home-composer"\}/);
+  assert.match(app, /<ContextBar/);
 });

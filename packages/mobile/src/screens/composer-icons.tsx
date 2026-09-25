@@ -13,5 +13,5 @@ export function SettingsIcon({ color }: { color: string }) {
 }
 
 export function PhotoIcon({ color }: { color: string }) {
-  return <Ionicons name="image-outline" size={20} color={color} />;
+  return <Ionicons name="add" size={22} color={color} />;
 }

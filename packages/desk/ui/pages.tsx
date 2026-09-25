@@ -1198,17 +1198,9 @@ export function ChatComposer({
     </>
   );
 
-  if (home) {
-    return (
-      <div className="composer composer-stack composer-box home">
-        {inner}
-      </div>
-    );
-  }
-
   return (
-    <div ref={boxRef} className="composer-follow">
-      <div className="composer composer-stack composer-box follow">{inner}</div>
+    <div ref={home ? undefined : boxRef} className={`composer composer-stack composer-box${home ? " home" : " follow"}`}>
+      {inner}
     </div>
   );
 }
