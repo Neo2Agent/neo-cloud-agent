@@ -300,7 +300,7 @@ export function RepoBindControl({
                     </li>
                   </ul>
                 ) : null}
-                {!reposLoading && reposConfigured && filteredRepos.length === 0 ? (
+                {!reposLoading && reposConfigured && filteredRepos.length === 0 && filteredRecent.length === 0 ? (
                   <p className="hint">没有匹配的仓库</p>
                 ) : null}
                 {reposConfigured && filteredRepos.length > 0 ? (
