@@ -6243,6 +6243,14 @@ button.composer-mic.is-listening,
   height: 6px;
   margin: 0;
   flex: none;
+  box-shadow: none;
+  animation: sidebar-row-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sidebar-row-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .run-place,
