@@ -98,7 +98,7 @@ test.describe("composer / run boundaries", () => {
     await expect(page.getByRole("heading", { name: "最近" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "仓库" })).toBeVisible();
     await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "GitHub" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "GitHub", exact: true })).toBeVisible();
     const openBox = await box.boundingBox();
     const openMenu = await menu.boundingBox();
     const openTrigger = await trigger.boundingBox();
@@ -110,14 +110,14 @@ test.describe("composer / run boundaries", () => {
     expect(openMenu?.x ?? 0).toBeGreaterThanOrEqual((openBox?.x ?? 0) - 2);
     expect((openMenu?.x ?? 0) + (openMenu?.width ?? 0)).toBeLessThanOrEqual((openBox?.x ?? 0) + (openBox?.width ?? 0) + 2);
     expect(Math.abs((openMenu?.x ?? 0) - (openTrigger?.x ?? 0))).toBeLessThan(12);
-    await page.getByRole("button", { name: "GitHub" }).click();
+    await page.getByRole("button", { name: "GitHub", exact: true }).click();
     await expect(page.getByRole("button", { name: "返回" })).toBeVisible();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
     await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
     await page.getByRole("button", { name: "返回" }).click();
     await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
     await expect(page.locator("#repo-bind-search")).toHaveCount(0);
-    await page.getByRole("button", { name: "GitHub" }).click();
+    await page.getByRole("button", { name: "GitHub", exact: true }).click();
     await page.locator("#repo-bind-search").fill("animate");
     const longRepo = page.getByRole("button", { name: "kaibairen/animate-camera" });
     await expect(longRepo).toBeVisible();
@@ -174,11 +174,24 @@ test.describe("composer / run boundaries", () => {
   test("repo.plus: Plus 仓库 opens the same picker", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await loginAs(page);
+    await page.route("**/v1/scm/repos**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          configured: true,
+          connected: true,
+          login: "ada",
+          oauthConfigured: true,
+          repos: [{ fullName: "ada/notes", url: "https://github.com/ada/notes.git" }],
+        }),
+      });
+    });
     await page.locator(".buddy-plus").click();
     await page.getByRole("dialog", { name: "添加" }).getByRole("button", { name: "仓库" }).click();
-    await expect(page.getByRole("button", { name: "GitHub" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "GitHub", exact: true })).toBeVisible();
     await expect(page.locator("#repo-bind-search")).toHaveCount(0);
-    await page.getByRole("button", { name: "GitHub" }).click();
+    await page.getByRole("button", { name: "GitHub", exact: true }).click();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
   });
 
