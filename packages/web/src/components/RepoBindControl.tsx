@@ -244,33 +244,37 @@ export function RepoBindControl({
               : { visibility: "hidden", top: 0, left: 0 }
           }
         >
+          {pane === "github" ? (
+            <div className="repo-bind-github-head">
+              <button type="button" className="repo-bind-back" aria-label="返回" onClick={goRoot}>
+                <span className="repo-bind-row-icon" aria-hidden="true">
+                  <IconChevronLeft size={16} />
+                </span>
+                <span className="repo-bind-item">
+                  <span className="repo-bind-item-name">GitHub</span>
+                </span>
+              </button>
+              <label className="repo-bind-search">
+                <span className="repo-bind-row-icon" aria-hidden="true">
+                  <IconSearch size={16} />
+                </span>
+                <input
+                  ref={searchRef}
+                  id="repo-bind-search"
+                  name="repo-bind-search"
+                  type="text"
+                  inputMode="search"
+                  autoComplete="off"
+                  aria-label="搜索"
+                  value={query}
+                  onChange={(event) => onQuery?.(event.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
           <div className="repo-bind-body">
             {pane === "github" ? (
               <section className="repo-bind-section">
-                <button type="button" className="repo-bind-back" aria-label="返回" onClick={goRoot}>
-                  <span className="repo-bind-row-icon" aria-hidden="true">
-                    <IconChevronLeft size={16} />
-                  </span>
-                  <span className="repo-bind-item">
-                    <span className="repo-bind-item-name">GitHub</span>
-                  </span>
-                </button>
-                <label className="repo-bind-search">
-                  <span className="repo-bind-row-icon" aria-hidden="true">
-                    <IconSearch size={16} />
-                  </span>
-                  <input
-                    ref={searchRef}
-                    id="repo-bind-search"
-                    name="repo-bind-search"
-                    type="text"
-                    inputMode="search"
-                    autoComplete="off"
-                    aria-label="搜索"
-                    value={query}
-                    onChange={(event) => onQuery?.(event.target.value)}
-                  />
-                </label>
                 {reposLoading ? <p className="hint">正在拉取仓库…</p> : null}
                 {!reposLoading && reposConfigured && githubRepos.length === 0 ? (
                   <p className="hint">{searching ? "没有匹配的仓库" : "这个账号下还没有可用仓库"}</p>

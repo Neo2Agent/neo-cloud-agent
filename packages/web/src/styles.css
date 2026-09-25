@@ -1964,9 +1964,9 @@ button.tool-file-more:hover {
 .repo-bind-menu {
   position: fixed;
   z-index: 80;
-  display: grid;
-  align-content: start;
-  justify-items: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   box-sizing: border-box;
   width: min(300px, calc(100vw - 16px));
   min-width: 220px;
@@ -1978,6 +1978,13 @@ button.tool-file-more:hover {
   background: #fff;
   box-shadow: 0 16px 40px rgba(17, 17, 16, 0.12);
   overflow: hidden;
+}
+
+.repo-bind-github-head {
+  flex: none;
+  display: grid;
+  align-content: start;
+  background: #fff;
 }
 
 .repo-bind-search {
@@ -2010,6 +2017,7 @@ button.tool-file-more:hover {
 .repo-bind-body {
   display: grid;
   align-content: start;
+  flex: 1 1 auto;
   min-height: 0;
   max-height: min(280px, 45vh);
   overflow-x: hidden;

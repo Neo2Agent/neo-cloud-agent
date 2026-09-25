@@ -19,7 +19,9 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /\.settings-group/);
   assert.match(css, /\.repo-bind-menu/);
   assert.match(css, /\.repo-bind-menu\s*\{[^}]*width:\s*min\(300px/);
+  assert.match(css, /\.repo-bind-github-head\s*\{[^}]*flex:\s*none/);
   assert.match(css, /\.repo-bind-body\s*\{[^}]*max-height:\s*min\(280px/);
+  assert.match(css, /\.repo-bind-body\s*\{[^}]*overflow-y:\s*auto/);
   assert.match(css, /\.repo-bind-search\s*\{[^}]*margin:\s*0 6px 4px/);
   assert.match(css, /\.repo-bind-search\s*\{[^}]*padding:\s*0 10px/);
   assert.match(css, /\.repo-bind-menu button\s*\{[^}]*padding:\s*6px 10px/);

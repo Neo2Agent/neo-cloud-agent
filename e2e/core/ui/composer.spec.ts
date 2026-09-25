@@ -66,6 +66,10 @@ test.describe("composer / run boundaries", () => {
     await page.route("**/v1/scm/repos**", async (route) => {
       const url = new URL(route.request().url());
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
+      const extras = Array.from({ length: 10 }, (_, index) => ({
+        fullName: `ada/extra-${index + 1}`,
+        url: `https://github.com/ada/extra-${index + 1}.git`,
+      }));
       const all = [
         { fullName: "acme/app", url: "https://github.com/acme/app.git" },
         { fullName: "ada/notes", url: "https://github.com/ada/notes.git" },
@@ -74,6 +78,7 @@ test.describe("composer / run boundaries", () => {
           fullName: "kaibairen/very-long-repository-name-for-layoutout",
           url: "https://github.com/kaibairen/very-long-repository-name-for-layoutout.git",
         },
+        ...extras,
       ];
       const repos = q ? all.filter((item) => item.fullName.toLowerCase().includes(q)) : all;
       await route.fulfill({
@@ -123,6 +128,22 @@ test.describe("composer / run boundaries", () => {
     expect(searchIconBox?.width).toBe(16);
     expect(Math.abs((backIconBox?.x ?? 0) - (searchIconBox?.x ?? 0))).toBeLessThan(0.5);
     await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
+    expect(await page.locator("#repo-bind-search").evaluate((el) => Boolean(el.closest(".repo-bind-body")))).toBe(
+      false,
+    );
+    const searchBefore = await page.locator(".repo-bind-search").boundingBox();
+    await page.locator(".repo-bind-body").evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    const searchAfter = await page.locator(".repo-bind-search").boundingBox();
+    const bodyScroll = await page.locator(".repo-bind-body").evaluate((el) => ({
+      top: el.scrollTop,
+      height: el.scrollHeight,
+      client: el.clientHeight,
+    }));
+    expect(bodyScroll.height).toBeGreaterThan(bodyScroll.client);
+    expect(bodyScroll.top).toBeGreaterThan(20);
+    expect(Math.abs((searchAfter?.y ?? 0) - (searchBefore?.y ?? 0))).toBeLessThan(0.5);
     await page.getByRole("button", { name: "返回" }).click();
     await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
     await expect(page.locator("#repo-bind-search")).toHaveCount(0);
