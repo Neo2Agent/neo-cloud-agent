@@ -19,7 +19,9 @@ import {
   FileImage,
   FilePen,
   FileText,
+  Folder,
   FolderGit2,
+  FolderOpen,
   FolderPlus,
   GitPullRequest,
   SlidersHorizontal,
@@ -30,7 +32,7 @@ import {
   LoaderCircle,
   Maximize2,
   Mic,
-  MessageSquare,
+  MessageCircle,
   MoreHorizontal,
   Monitor,
   Package,
@@ -70,7 +72,7 @@ export function IconSidebarClose(props: IconProps) {
 }
 
 export function IconChat(props: IconProps) {
-  return icon(MessageSquare, props);
+  return icon(MessageCircle, props);
 }
 
 export function IconProjects(props: IconProps) {
@@ -78,6 +80,10 @@ export function IconProjects(props: IconProps) {
 }
 
 export function IconExperts(props: IconProps) {
+  return icon(Users, props);
+}
+
+export function IconUsers(props: IconProps) {
   return icon(Users, props);
 }
 
@@ -179,6 +185,14 @@ export function IconDownload(props: IconProps) {
 
 export function IconFolder(props: IconProps) {
   return icon(FolderGit2, props);
+}
+
+export function IconFolderClosed(props: IconProps) {
+  return icon(Folder, props);
+}
+
+export function IconFolderOpen(props: IconProps) {
+  return icon(FolderOpen, props);
 }
 
 export function IconFolderPlus(props: IconProps) {

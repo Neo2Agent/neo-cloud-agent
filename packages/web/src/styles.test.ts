@@ -35,6 +35,12 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /\.repo-bind-item-name/);
   assert.match(css, /\.run-folder-head/);
   assert.match(css, /\.run-section-head/);
+  assert.match(css, /\.run-library\s*\{/);
+  assert.match(css, /\.run-folder-chevron/);
+  assert.match(css, /\.run-folder-icon/);
+  assert.match(css, /\.run-folder\s+\.run-item\s*\{[^}]*padding-left:\s*28px/);
+  assert.match(css, /\.run-mark\s*\{[^}]*width:\s*16px/);
+  assert.match(css, /\.pulse-dot\s*\{[^}]*animation:\s*pulse-dot/);
   assert.match(css, /\.term-shell\s*\{/);
   assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);
   assert.match(css, /\.palette-backdrop\s*\{/);
