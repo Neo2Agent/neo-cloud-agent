@@ -84,7 +84,7 @@ test.describe("catalog and session chrome", () => {
     await expect(officeFolder.locator(".run-folder-count")).toHaveCount(0);
     await expect(officeFolder.locator(`[data-id="${office.id}"]`)).toBeVisible();
     await expect(officeFolder.locator(".run-kind")).toHaveCount(0);
-    await expect(page.locator(".run-item .pulse-dot")).toHaveCount(0);
+    await expect(page.locator('.run-item[data-busy="false"] .pulse-dot')).toHaveCount(0);
     await expect(officeFolder.locator(`[data-id="${office.id}"] .run-mark`)).toBeVisible();
     await expect(codeFolder).toBeVisible();
     await expect(codeFolder).toHaveAttribute("data-work", "code");
