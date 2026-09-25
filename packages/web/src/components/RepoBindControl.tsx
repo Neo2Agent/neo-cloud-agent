@@ -118,10 +118,12 @@ export function RepoBindControl({
     () => (searching ? recentItems.filter((item) => matchesRepo(item, q)) : recentItems),
     [q, recentItems, searching],
   );
-  const filteredRepos = useMemo(
-    () => (searching ? repos.filter((item) => matchesRepo(item, q)) : repos),
-    [q, repos, searching],
-  );
+  const filteredRepos = useMemo(() => {
+    const listed = searching ? repos.filter((item) => matchesRepo(item, q)) : repos;
+    if (!searching) return listed;
+    const recentUrls = new Set(recentItems.filter((item) => matchesRepo(item, q)).map((item) => item.url));
+    return listed.filter((item) => !recentUrls.has(item.url));
+  }, [q, recentItems, repos, searching]);
 
   const place = () => {
     const triggerEl = triggerRef.current;
