@@ -18,7 +18,7 @@ import { readImageRef } from "./image-ref";
 import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconMic, IconPlus, IconProjects, IconSearch, IconStop, IconUnbindFolder } from "./icons";
 import { applyClickVoice, startDeskVoice } from "./speech";
 
-export type ContextMenuId = "repo" | "target" | null;
+export type ContextMenuId = "repo" | "target" | "expert" | null;
 
 export type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
 export type SearchFilter = "all" | "agents" | "files" | "actions" | "todos" | "settings";
@@ -656,6 +656,11 @@ export function ContextBar({
   cloudRepo = "",
   githubRepos = [],
   onCloudRepo,
+  experts = [],
+  teams = [],
+  expertValue = "",
+  expertLocked = false,
+  onExpert,
 }: {
   workspaces: Array<{ id: string; folder: string; name: string; git: boolean }>;
   folder: string;
@@ -674,6 +679,11 @@ export function ContextBar({
   cloudRepo?: string;
   githubRepos?: Array<{ fullName: string; url: string }>;
   onCloudRepo?: (url: string) => void;
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
+  onExpert?: (value: string) => void;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(open !== null && !locked, () => setOpen(null), barRef);
@@ -833,6 +843,26 @@ export function ContextBar({
           </div>
         ) : null}
       </div>
+      {onExpert ? (
+        <label className="expert-pick context-expert">
+          <Select
+            size="pill"
+            aria-label="专家"
+            value={expertValue}
+            disabled={locked || expertLocked}
+            onValueChange={onExpert}
+            groups={[
+              { label: "默认", options: [{ value: "", label: "Neo" }] },
+              ...(experts.length > 0
+                ? [{ label: "专家", options: experts.map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
+                : []),
+              ...(teams.length > 0
+                ? [{ label: "专家团", options: teams.map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: `团 · ${item.name}` })) }]
+                : []),
+            ]}
+          />
+        </label>
+      ) : null}
     </div>
   );
 }
@@ -893,11 +923,6 @@ export function ChatComposer({
   waiting,
   onStop,
   onQueue,
-  experts,
-  teams,
-  expertValue,
-  expertLocked,
-  onExpert,
   onMention,
   token,
   images,
@@ -924,11 +949,6 @@ export function ChatComposer({
   waiting?: boolean;
   onStop?: () => void;
   onQueue?: () => void;
-  experts?: Expert[];
-  teams?: ExpertTeam[];
-  expertValue?: string;
-  expertLocked?: boolean;
-  onExpert?: (value: string) => void;
   onMention?: (item: ComposerMention) => void;
   token?: string;
   images?: ImageRef[];
@@ -1116,26 +1136,6 @@ export function ChatComposer({
               });
             }}
           />
-          {onExpert ? (
-            <label className="expert-pick">
-              <Select
-                size="pill"
-                aria-label="专家"
-                value={expertValue ?? ""}
-                disabled={expertLocked}
-                onValueChange={onExpert}
-                groups={[
-                  { label: "默认", options: [{ value: "", label: "Neo" }] },
-                  ...((experts ?? []).length > 0
-                    ? [{ label: "专家", options: (experts ?? []).map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
-                    : []),
-                  ...((teams ?? []).length > 0
-                    ? [{ label: "专家团", options: (teams ?? []).map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: `团 · ${item.name}` })) }]
-                    : []),
-                ]}
-              />
-            </label>
-          ) : null}
           <div className="model-wrap" ref={modelRef}>
             <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
               {label}

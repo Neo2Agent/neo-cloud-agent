@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import { composerKeyAction } from "@neo-cloud-agent/contracts/composer-keys";
@@ -317,6 +318,11 @@ export function IslandComposer(props: {
   repos?: Array<{ fullName: string; url: string }>;
   repoLocked?: boolean;
   onRepo?: (url: string) => void;
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
+  onExpert?: (value: string) => void;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
@@ -424,6 +430,7 @@ export function IslandComposer(props: {
 
   const images = props.images ?? [];
   const canSend = Boolean(props.prompt.trim() || images.length > 0);
+  const expertValue = props.expertValue ?? "";
 
   return (
     <div className="composer-dock">
@@ -448,8 +455,31 @@ export function IslandComposer(props: {
         ) : (
           <span>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</span>
         )}
+        {props.onExpert ? (
+          <label className="composer-repo">
+            <span className="sr-only">专家</span>
+            <select
+              aria-label="专家"
+              value={expertValue}
+              disabled={props.expertLocked || props.locked}
+              onChange={(event) => props.onExpert?.(event.target.value)}
+            >
+              <option value={encodeExpertPick({})}>Neo</option>
+              {(props.experts ?? []).map((item) => (
+                <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
+                  {expertPickerLabel(item)}
+                </option>
+              ))}
+              {(props.teams ?? []).map((item) => (
+                <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
-      <div className="composer-bar">
+      <div className="composer-box composer-bar">
         {images.length > 0 ? (
           <div className="composer-thumbs">
             {images.map((image, index) => (
@@ -495,49 +525,10 @@ export function IslandComposer(props: {
             else if (!props.sending) props.onSend();
           }}
         />
-        <div className="composer-tools">
-          <div className="composer-model-wrap">
-            <button
-              type="button"
-              className="composer-model"
-              aria-haspopup="listbox"
-              aria-expanded={menuOpen}
-              aria-label="选择模型"
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              {chatModelLabel(props.model)}
-              <span aria-hidden="true">▴</span>
-            </button>
-            {menuOpen ? (
-              <div className="composer-model-menu" role="listbox" aria-label="模型">
-                {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="option"
-                    aria-selected={item.id === selected}
-                    className={item.id === selected ? "on" : undefined}
-                    onClick={() => {
-                      props.onModel(item.id);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="composer-send-group">
-            {props.contextUsage ? (
-              <ContextUsageControl
-                usage={props.contextUsage}
-                open={usageOpen}
-                onToggle={() => setUsageOpen((open) => !open)}
-              />
-            ) : null}
+        <div className="composer-tools composer-bar-inner">
+          <div className="composer-pickers">
             {props.onPickImages ? (
-              <label className="composer-attach" title="加图片">
+              <label className="composer-attach" title="添加图片">
                 <input
                   type="file"
                   accept="image/*"
@@ -556,6 +547,47 @@ export function IslandComposer(props: {
                   />
                 </svg>
               </label>
+            ) : null}
+            <div className="composer-model-wrap">
+              <button
+                type="button"
+                className="composer-model"
+                aria-haspopup="listbox"
+                aria-expanded={menuOpen}
+                aria-label="选择模型"
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                {chatModelLabel(props.model)}
+                <span aria-hidden="true">▴</span>
+              </button>
+              {menuOpen ? (
+                <div className="composer-model-menu" role="listbox" aria-label="模型">
+                  {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="option"
+                      aria-selected={item.id === selected}
+                      className={item.id === selected ? "on" : undefined}
+                      onClick={() => {
+                        props.onModel(item.id);
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="composer-send-group">
+            {props.contextUsage ? (
+              <ContextUsageControl
+                usage={props.contextUsage}
+                open={usageOpen}
+                onToggle={() => setUsageOpen((open) => !open)}
+              />
             ) : null}
             <button
               type="button"

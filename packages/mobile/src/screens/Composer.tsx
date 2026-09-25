@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, resolveChatModel } from "../format";
 import type { StartVoiceResult } from "../speech-cloud";
@@ -31,6 +32,11 @@ type Props = {
   repos?: Array<{ fullName: string; url: string }>;
   repoLocked?: boolean;
   onRepo?: (url: string) => void;
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
+  onExpert?: (value: string) => void;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
@@ -128,6 +134,59 @@ export function Composer(props: Props) {
 
   return (
     <View style={styles.dock}>
+      <View style={styles.contextRow}>
+        <Text style={styles.context}>云端</Text>
+        {props.onRepo && !props.repoLocked ? (
+          <View style={styles.repoWrap}>
+            <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
+            {(props.repos ?? []).slice(0, 8).map((item) => (
+              <Pressable key={item.url} onPress={() => props.onRepo?.(item.url === props.repo ? "" : item.url)}>
+                <Text style={[styles.repoOpt, item.url === props.repo ? styles.repoOn : null]}>{item.fullName}</Text>
+              </Pressable>
+            ))}
+            {props.repo ? (
+              <Pressable onPress={() => props.onRepo?.("")}>
+                <Text style={styles.repoOpt}>无仓库</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : (
+          <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
+        )}
+        {props.onExpert ? (
+          <View style={styles.repoWrap}>
+            <Pressable
+              disabled={props.expertLocked || props.locked}
+              onPress={() => props.onExpert?.(encodeExpertPick({}))}
+              accessibilityLabel="专家"
+            >
+              <Text style={[styles.repoOpt, !props.expertValue ? styles.repoOn : null]}>Neo</Text>
+            </Pressable>
+            {(props.experts ?? []).map((item) => (
+              <Pressable
+                key={item.id}
+                disabled={props.expertLocked || props.locked}
+                onPress={() => props.onExpert?.(encodeExpertPick({ expertId: item.id }))}
+              >
+                <Text style={[styles.repoOpt, props.expertValue === encodeExpertPick({ expertId: item.id }) ? styles.repoOn : null]}>
+                  {expertPickerLabel(item)}
+                </Text>
+              </Pressable>
+            ))}
+            {(props.teams ?? []).map((item) => (
+              <Pressable
+                key={item.id}
+                disabled={props.expertLocked || props.locked}
+                onPress={() => props.onExpert?.(encodeExpertPick({ expertTeamId: item.id }))}
+              >
+                <Text style={[styles.repoOpt, props.expertValue === encodeExpertPick({ expertTeamId: item.id }) ? styles.repoOn : null]}>
+                  {item.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
       <View style={styles.bar}>
         {images.length > 0 ? (
           <View style={styles.thumbs}>
@@ -146,26 +205,6 @@ export function Composer(props: Props) {
             ))}
           </View>
         ) : null}
-        <View style={styles.contextRow}>
-          <Text style={styles.context}>云端</Text>
-          {props.onRepo && !props.repoLocked ? (
-            <View style={styles.repoWrap}>
-              <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
-              {(props.repos ?? []).slice(0, 8).map((item) => (
-                <Pressable key={item.url} onPress={() => props.onRepo?.(item.url === props.repo ? "" : item.url)}>
-                  <Text style={[styles.repoOpt, item.url === props.repo ? styles.repoOn : null]}>{item.fullName}</Text>
-                </Pressable>
-              ))}
-              {props.repo ? (
-                <Pressable onPress={() => props.onRepo?.("")}>
-                  <Text style={styles.repoOpt}>无仓库</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : (
-            <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
-          )}
-        </View>
         {props.imageHint ? <Text style={styles.imageHint}>{props.imageHint}</Text> : null}
         <TextInput
           ref={fieldRef}
@@ -179,43 +218,45 @@ export function Composer(props: Props) {
           style={styles.field}
         />
         <View style={styles.tools}>
-          <View style={styles.modelWrap}>
-            {menuOpen ? (
-              <View style={styles.modelMenu} accessibilityRole="menu">
-                {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => {
-                      props.onModel(item.id);
-                      setMenuOpen(false);
-                    }}
-                    style={[styles.option, item.id === selected ? styles.optionOn : null]}
-                    accessibilityRole="menuitem"
-                  >
-                    <Text style={styles.model}>{item.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
+          <View style={styles.pickers}>
+            {props.onPickImages ? (
+              <Pressable
+                disabled={props.locked || props.sending}
+                onPress={props.onPickImages}
+                style={styles.mic}
+                accessibilityLabel="添加图片"
+              >
+                <PhotoIcon color={props.locked || props.sending ? colors.muted : colors.ink} />
+              </Pressable>
             ) : null}
-            <Pressable onPress={() => setMenuOpen((open) => !open)} style={styles.modelChip} accessibilityLabel="选择模型">
-              <Text style={styles.model}>{chatModelLabel(props.model)} ▴</Text>
-            </Pressable>
+            <View style={styles.modelWrap}>
+              {menuOpen ? (
+                <View style={styles.modelMenu} accessibilityRole="menu">
+                  {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => {
+                        props.onModel(item.id);
+                        setMenuOpen(false);
+                      }}
+                      style={[styles.option, item.id === selected ? styles.optionOn : null]}
+                      accessibilityRole="menuitem"
+                    >
+                      <Text style={styles.model}>{item.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              <Pressable onPress={() => setMenuOpen((open) => !open)} style={styles.modelChip} accessibilityLabel="选择模型">
+                <Text style={styles.model}>{chatModelLabel(props.model)} ▴</Text>
+              </Pressable>
+            </View>
           </View>
           <View style={styles.sendGroup}>
             {props.usageLabel ? (
               <View style={styles.usageChip} accessibilityLabel="上下文用量">
                 <Text style={styles.usageText}>{props.usageLabel}</Text>
               </View>
-            ) : null}
-            {props.onPickImages ? (
-              <Pressable
-                disabled={props.locked || props.sending}
-                onPress={props.onPickImages}
-                style={styles.mic}
-                accessibilityLabel="加图片"
-              >
-                <PhotoIcon color={props.locked || props.sending ? colors.muted : colors.ink} />
-              </Pressable>
             ) : null}
             <Pressable
               disabled={props.locked || props.sending}
@@ -293,6 +334,7 @@ const styles = StyleSheet.create({
   thumbCloseText: { color: "#fff", fontSize: 13, lineHeight: 15 },
   imageHint: { color: colors.muted, fontSize: 12 },
   tools: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8, zIndex: 3 },
+  pickers: { flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 },
   modelWrap: { position: "relative", zIndex: 4 },
   modelMenu: {
     position: "absolute",

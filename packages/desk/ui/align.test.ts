@@ -25,3 +25,10 @@ test("desk composer is the Cursor / Web box: + pickers left, circular send", () 
   assert.match(css, /\.send-btn\s*\{[^}]*border-radius:\s*50%/);
   assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);
 });
+
+test("desk expert picker sits in the context bar like Web", () => {
+  const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
+  assert.match(pages, /className="expert-pick context-expert"/);
+  assert.match(pages, /onExpert\?: \(value: string\) => void;/);
+  assert.doesNotMatch(pages, /experts,\s*teams,\s*expertValue/);
+});

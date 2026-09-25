@@ -2427,6 +2427,18 @@ export function App() {
                 cloudRepo={current?.repoUrls?.[0] || cloudRepo}
                 githubRepos={githubRepos}
                 onCloudRepo={setCloudRepo}
+                experts={experts}
+                teams={teams}
+                expertValue={
+                  current
+                    ? encodeExpertPick({
+                        expertId: current.expertId ?? undefined,
+                        expertTeamId: current.expertTeamId ?? undefined,
+                      })
+                    : encodeExpertPick(expertPick)
+                }
+                expertLocked={Boolean(current)}
+                onExpert={(value) => setExpertPick(decodeExpertPick(value))}
               />
               {current ? (
                 <ChatComposer
@@ -2465,14 +2477,6 @@ export function App() {
                   onComposerKey={onComposerKey}
                   home={false}
                   mentions={mentions}
-                  experts={experts}
-                  teams={teams}
-                  expertValue={encodeExpertPick({
-                    expertId: current.expertId ?? undefined,
-                    expertTeamId: current.expertTeamId ?? undefined,
-                  })}
-                  expertLocked
-                  onExpert={(value) => setExpertPick(decodeExpertPick(value))}
                   onMention={applyMention}
                   token={token}
                   images={images}
@@ -2517,10 +2521,6 @@ export function App() {
                     onComposerKey={onComposerKey}
                     home
                     mentions={mentions}
-                    experts={experts}
-                    teams={teams}
-                    expertValue={encodeExpertPick(expertPick)}
-                    onExpert={(value) => setExpertPick(decodeExpertPick(value))}
                     onMention={applyMention}
                     token={token}
                     images={images}

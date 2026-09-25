@@ -229,6 +229,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   box-shadow: var(--shadow);
 }
 
+.composer-box,
 .composer-bar {
   position: relative;
   z-index: 2;
@@ -264,11 +265,19 @@ button:disabled { opacity: 0.4; cursor: default; }
   color: var(--muted);
 }
 
-.composer-tools {
+.composer-tools,
+.composer-bar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.composer-pickers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .composer-model-wrap {

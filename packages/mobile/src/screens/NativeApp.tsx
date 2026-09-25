@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
-import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import { runGitContext } from "@neo-cloud-agent/contracts/git";
@@ -840,6 +840,29 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       repos={githubRepos}
       repoLocked={Boolean(current)}
       onRepo={setCloudRepo}
+      experts={experts}
+      teams={teams}
+      expertValue={
+        current
+          ? encodeExpertPick({
+              expertId: current.expertId ?? undefined,
+              expertTeamId: current.expertTeamId ?? undefined,
+            })
+          : encodeExpertPick(expertPick)
+      }
+      expertLocked={Boolean(current)}
+      onExpert={(value) => {
+        const pick = decodeExpertPick(value);
+        setExpertPick(pick);
+        const expert = pick.expertId ? experts.find((item) => item.id === pick.expertId) : undefined;
+        setExpertName(
+          pick.expertTeamId
+            ? teams.find((item) => item.id === pick.expertTeamId)?.name ?? ""
+            : expert
+              ? expertPickerLabel(expert)
+              : "",
+        );
+      }}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
     />
   );

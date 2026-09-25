@@ -7,7 +7,7 @@ import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
-import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import { runGitContext } from "@neo-cloud-agent/contracts/git";
 import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
@@ -566,6 +566,27 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     }
   };
 
+  const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
+  const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
+  const liveId = liveAssistantId(visible, turnBusy);
+  const contextUsage = useMemo(() => {
+    const reported = parseContextUsage(current?.contextUsage ?? null);
+    const base = reported ?? baselineContextUsage(model);
+    const catalogWindow = resolveModelLimits(base.model || model)?.contextWindow ?? null;
+    const contextWindow = base.contextWindow ?? catalogWindow;
+    const streaming = visible.find((message) => message.streaming)?.text ?? "";
+    return overlayContextUsage(
+      {
+        ...base,
+        model: base.model || model,
+        contextWindow,
+        percent: contextWindow ? (base.tokens / contextWindow) * 100 : null,
+      },
+      { draft: prompt, streaming },
+    );
+  }, [current?.contextUsage, model, prompt, visible]);
+  const openGitContext = current ? runGitContext(current) : "none";
+
   if (!ready) return <div className="login-shell"><p>正在进入…</p></div>;
 
   if (!token) {
@@ -836,7 +857,6 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     );
   }
 
-  const openGitContext = current ? runGitContext(current) : "none";
   if (panel === "git" && current && openGitContext !== "none") {
     return (
       <div className="app git-sheet">
@@ -858,25 +878,6 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     );
   }
 
-  const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
-  const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
-  const liveId = liveAssistantId(visible, turnBusy);
-  const contextUsage = useMemo(() => {
-    const reported = parseContextUsage(current?.contextUsage ?? null);
-    const base = reported ?? baselineContextUsage(model);
-    const catalogWindow = resolveModelLimits(base.model || model)?.contextWindow ?? null;
-    const contextWindow = base.contextWindow ?? catalogWindow;
-    const streaming = visible.find((message) => message.streaming)?.text ?? "";
-    return overlayContextUsage(
-      {
-        ...base,
-        model: base.model || model,
-        contextWindow,
-        percent: contextWindow ? (base.tokens / contextWindow) * 100 : null,
-      },
-      { draft: prompt, streaming },
-    );
-  }, [current?.contextUsage, model, prompt, visible]);
   const gate = composerGate(current, desks);
   const composer = (
     <IslandComposer
@@ -907,6 +908,29 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       repos={githubRepos}
       repoLocked={Boolean(current)}
       onRepo={setCloudRepo}
+      experts={experts}
+      teams={teams}
+      expertValue={
+        current
+          ? encodeExpertPick({
+              expertId: current.expertId ?? undefined,
+              expertTeamId: current.expertTeamId ?? undefined,
+            })
+          : encodeExpertPick(expertPick)
+      }
+      expertLocked={Boolean(current)}
+      onExpert={(value) => {
+        const pick = decodeExpertPick(value);
+        setExpertPick(pick);
+        const expert = pick.expertId ? experts.find((item) => item.id === pick.expertId) : undefined;
+        setExpertName(
+          pick.expertTeamId
+            ? teams.find((item) => item.id === pick.expertTeamId)?.name ?? ""
+            : expert
+              ? expertPickerLabel(expert)
+              : "",
+        );
+      }}
       startVoice={(onPreview, onError, onEnded) => startAppVoice(client, onPreview, onError, onEnded)}
     />
   );
