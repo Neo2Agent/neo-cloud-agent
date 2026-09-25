@@ -2083,7 +2083,12 @@ button.tool-file-more:hover {
   line-height: 1.3;
 }
 
-.repo-bind-menu button:hover {
+.repo-bind-menu button:focus {
+  outline: 0;
+}
+
+.repo-bind-menu button:hover,
+.repo-bind-menu button:focus-visible {
   background: #f4f4f5;
 }
 
