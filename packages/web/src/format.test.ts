@@ -6,6 +6,7 @@ import {
   formatRunTime,
   formatUsage,
   formatListWhen,
+  formatSidebarAge,
   formatWhen,
   modelLabel,
   nextChatModel,
@@ -58,6 +59,14 @@ test("formatListWhen uses minutes, then hours, then days", () => {
   assert.equal(formatListWhen("2026-08-24T08:00:00.000Z", now), "2小时");
   assert.equal(formatListWhen("2026-08-23T10:00:00.000Z", now), "1天");
   assert.equal(formatListWhen("2026-08-21T10:00:00.000Z", now), "3天");
+});
+
+test("formatSidebarAge uses Cursor's short m/h/d rest labels", () => {
+  const now = new Date("2026-08-24T10:00:00.000Z");
+  assert.equal(formatSidebarAge("2026-08-24T09:59:30.000Z", now), "");
+  assert.equal(formatSidebarAge("2026-08-24T09:55:00.000Z", now), "5m");
+  assert.equal(formatSidebarAge("2026-08-24T06:00:00.000Z", now), "4h");
+  assert.equal(formatSidebarAge("2026-07-05T10:00:00.000Z", now), "50d");
 });
 
 test("formatWhen uses Shanghai time and drops the current year", () => {

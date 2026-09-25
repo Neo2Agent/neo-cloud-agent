@@ -180,7 +180,9 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.artifact-preview-empty/);
   assert.match(cssText, /\.workspace-col\{[^}]*overflow:\s*hidden/);
   assert.match(cssText, /\.composer\{[^}]*grid-area:\s*composer/);
-  assert.match(cssText, /\.run-group\[open\]>\.run-section-head \.run-folder-chevron/);
+  assert.doesNotMatch(cssText, /\.run-folder-chevron/);
+  assert.match(cssText, /\.run-idle-dot/);
+  assert.match(cssText, /\.run-folder \.run-item\{[^}]*padding-left:\s*32px/);
   assert.match(cssText, /\.run-folder-head:hover \.run-folder-new/);
   const narrow = narrowCss(cssText);
   assert.match(narrow, /\.app\.sidebar-closed \.sidebar\{[^}]*position:\s*fixed/, "closed phone drawer leaves the grid");

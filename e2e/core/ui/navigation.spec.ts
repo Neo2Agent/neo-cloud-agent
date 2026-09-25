@@ -81,8 +81,9 @@ test.describe("catalog and session chrome", () => {
     await expect(officeFolder).toBeVisible();
     await expect(officeFolder).toContainText(officeProject.name);
     await expect(officeFolder.locator(".run-folder-icon")).toHaveCount(1);
-    await expect(officeFolder.locator(".run-folder-chevron")).toHaveCount(1);
-    await expect(projectSection.locator("> .run-section-head .run-folder-chevron")).toHaveCount(1);
+    await expect(officeFolder.locator(".run-folder-chevron")).toHaveCount(0);
+    await expect(projectSection.locator("> .run-section-head .run-folder-chevron")).toHaveCount(0);
+    await expect(officeFolder.locator(".run-idle-dot")).toHaveCount(1);
     await expect(officeFolder).toHaveAttribute("data-work", "office");
     await expect(officeFolder.locator(".run-folder-kind")).toHaveCount(0);
     await expect(officeFolder.locator(".run-folder-count")).toHaveCount(0);
@@ -151,7 +152,7 @@ test.describe("catalog and session chrome", () => {
     await expect(repoFolder).toBeVisible();
     await expect(repoFolder).toContainText("fixtures/toy-repo");
     await expect(repoFolder.locator(".run-folder-count")).toHaveCount(0);
-    await expect(repoFolder.locator(".run-folder-chevron")).toHaveCount(1);
+    await expect(repoFolder.locator(".run-folder-chevron")).toHaveCount(0);
     await expect(repoFolder.locator(".run-folder-icon")).toHaveCount(1);
     await expect(repoFolder.locator(`[data-id="${first.id}"]`)).toBeVisible();
     await expect(repoFolder.locator(`[data-id="${second.id}"]`)).toBeVisible();

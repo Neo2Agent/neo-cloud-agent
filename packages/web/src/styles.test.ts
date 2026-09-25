@@ -35,14 +35,13 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /\.repo-bind-item-name/);
   assert.match(css, /\.run-folder-head/);
   assert.match(css, /\.run-section-head/);
-  assert.match(css, /\.run-group\[open\]\s*>\s*\.run-section-head\s+\.run-folder-chevron/);
+  assert.doesNotMatch(css, /\.run-folder-chevron/);
   assert.match(css, /\.run-library\s*\{/);
   assert.doesNotMatch(css, /\.run-library\s*\{[^}]*border-top:\s*1px solid/);
-  assert.match(css, /details\.run-group\s*>\s*\.run-section-head:hover\s+\.run-folder-chevron/);
-  assert.match(css, /\.run-folder-head:hover\s+\.run-folder-chevron/);
-  assert.match(css, /\.run-folder-chevron/);
+  assert.match(css, /\.run-folder-head:hover\s+\.run-folder-new/);
+  assert.match(css, /\.run-idle-dot/);
   assert.match(css, /\.run-folder-icon/);
-  assert.match(css, /\.run-folder\s+\.run-item\s*\{[^}]*padding-left:\s*28px/);
+  assert.match(css, /\.run-folder\s+\.run-item\s*\{[^}]*padding-left:\s*32px/);
   assert.match(css, /\.run-mark\s*\{[^}]*width:\s*16px/);
   assert.match(css, /\.pulse-dot\s*\{[^}]*animation:\s*pulse-dot/);
   assert.match(css, /\.term-shell\s*\{/);
