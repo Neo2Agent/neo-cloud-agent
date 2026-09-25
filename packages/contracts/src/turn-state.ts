@@ -11,6 +11,14 @@ export const ACTIVE_RUN_STATUSES = [
 const SETUP_STATUSES = new Set<string>(["NOT_YET_STARTED", "PROVISIONING", "INSTALLING"]);
 const WORKING_STATUSES = new Set<string>(["RUNNING", "WAITING_FOR_BACKGROUND_WORK"]);
 const TERMINAL_EVENT_KINDS = new Set(["run.idle", "run.error", "run.archived", "run.deleted"]);
+const RUN_FAILURE_KINDS = new Set([
+  "run.error",
+  "scm.clone_failed",
+  "run.install_failed",
+  "scm.branch_failed",
+  "run.start_failed",
+  "egress.denied",
+]);
 const PENDING_USER_PREFIX = "pending-";
 
 /** The server echo of an optimistic bubble can be stamped slightly before the local send time. */
@@ -35,7 +43,7 @@ export function isComposerClosed(status?: string | null): boolean {
 }
 
 export function isTerminalTurnEvent(kind: string): boolean {
-  return TERMINAL_EVENT_KINDS.has(kind);
+  return TERMINAL_EVENT_KINDS.has(kind) || RUN_FAILURE_KINDS.has(kind);
 }
 
 /** Map a live event onto the run status a client should show. `null` keeps the current status. */
@@ -66,6 +74,11 @@ export function statusFromEventKind(kind: string, current?: string | null): stri
     case "run.deleted":
       return "ARCHIVED";
     case "run.error":
+    case "scm.clone_failed":
+    case "run.install_failed":
+    case "scm.branch_failed":
+    case "run.start_failed":
+    case "egress.denied":
       return "ERROR";
     default:
       return null;

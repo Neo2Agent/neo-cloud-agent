@@ -64,6 +64,8 @@ test("statusFromEventKind marks follow-ups running without clobbering setup", ()
   assert.equal(statusFromEventKind("run.provisioning"), "PROVISIONING");
   assert.equal(statusFromEventKind("run.idle", "RUNNING"), "IDLE");
   assert.equal(statusFromEventKind("run.error", "RUNNING"), "ERROR");
+  assert.equal(statusFromEventKind("scm.clone_failed", "PROVISIONING"), "ERROR");
+  assert.equal(isTerminalTurnEvent("scm.clone_failed"), true);
   assert.equal(statusFromEventKind("run.deleted"), "ARCHIVED");
   assert.equal(statusFromEventKind("tool.start", "RUNNING"), null);
 });

@@ -4,11 +4,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { createServer } from "node:http";
 import { runGit } from "./git.js";
 import {
   CLONE_DEST_BUSY,
+  formatCloneFailedTitle,
+  formatGitCloneTimeoutError,
+  GIT_CLONE_MAX_ATTEMPTS,
+  GIT_CLONE_TIMEOUT_MS,
   copyTreeAll,
   gitClone,
+  gitCloneTimeoutMs,
   materializeRepos,
   measureWorkspaceBytes,
   persistDurableWorkspace,
@@ -161,6 +167,44 @@ test("gitClone refuses unknown leftover files without leaking the dest path", as
     return true;
   });
   rmSync(dest, { recursive: true, force: true });
+});
+
+test("clone timeout errors name the repo, budget, and stderr", () => {
+  assert.equal(GIT_CLONE_TIMEOUT_MS, 180_000);
+  assert.equal(GIT_CLONE_MAX_ATTEMPTS, 2);
+  assert.equal(gitCloneTimeoutMs() >= 1, true);
+  const error = formatGitCloneTimeoutError("https://github.com/acme/app.git", 180_000, "fatal: unable to access");
+  assert.match(error.message, /180000ms/);
+  assert.match(error.message, /github.com\/acme\/app/);
+  assert.match(error.message, /unable to access/);
+  assert.equal(formatCloneFailedTitle(error.message, ["https://github.com/acme/app.git"]), "仓库克隆超时：app，已等待 180 秒。");
+});
+
+test("gitClone retries a hung remote once before timing out", async () => {
+  let hits = 0;
+  const server = createServer(() => {
+    hits += 1;
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  const dest = mkdtempSync(path.join(tmpdir(), "neo-ws-timeout-"));
+  rmSync(dest, { recursive: true, force: true });
+  try {
+    await assert.rejects(
+      () => gitClone(`http://127.0.0.1:${port}/slow.git`, dest, 400),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /timed out after 400ms/);
+        assert.match(error.message, /127\.0\.0\.1/);
+        return true;
+      },
+    );
+    assert.ok(hits >= GIT_CLONE_MAX_ATTEMPTS);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    rmSync(dest, { recursive: true, force: true });
+  }
 });
 
 test("copyTreeAll keeps install output that skipCopy would drop", async () => {

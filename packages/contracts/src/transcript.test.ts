@@ -5,7 +5,9 @@ import {
   applyRunEventsToMessages,
   buildTranscriptSnapshot,
   displayTranscriptMessages,
+  isSetupFailureMessage,
   isSetupKind,
+  latestSetupFailure,
   pageTranscriptMessages,
   pageTranscriptSnapshot,
   slimTranscriptSnapshotImages,
@@ -225,6 +227,32 @@ test("llm.error shows as a setup notice; llm.usage does not", () => {
     snapshot.messages.some((item) => /Token usage/.test(item.text)),
     false,
   );
+});
+
+test("scm.clone_failed plus run.error collapse to one setup row", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({ id: "u1", kind: "user.message", data: { text: "clone this" } }),
+    ev({ id: "p1", kind: "scm.clone_started", title: "Preparing workspace" }),
+    ev({
+      id: "c1",
+      kind: "scm.clone_failed",
+      level: "error",
+      title: "仓库克隆超时：my-working-party，已等待 60 秒。",
+      detail: "git clone timed out after 60000ms: https://github.com/kaibairen/my-working-party.git",
+    }),
+    ev({
+      id: "e1",
+      kind: "run.error",
+      level: "error",
+      title: "git clone timed out",
+    }),
+  ]);
+  const setup = snapshot.messages.filter((item) => item.role === "setup");
+  assert.equal(setup.length, 2);
+  assert.equal(setup.filter((item) => item.level === "error" || String(item.kind).endsWith("_failed")).length, 1);
+  assert.equal(setup.at(-1)?.kind, "scm.clone_failed");
+  assert.equal(latestSetupFailure(snapshot.messages)?.kind, "scm.clone_failed");
+  assert.equal(isSetupFailureMessage(setup.at(-1)!), true);
 });
 
 test("one user turn is one reply bubble even when text and tools alternate", () => {

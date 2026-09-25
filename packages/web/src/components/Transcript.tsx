@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
-import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { latestSetupFailure, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import { currentTurnMessages, liveAssistantId } from "@neo-cloud-agent/contracts/turn-state";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
@@ -376,6 +376,36 @@ function WorkFold({ message, live }: { message: TranscriptMessage; live: boolean
   );
 }
 
+function SetupFailBanner({
+  message,
+  highlight = false,
+  sticky = false,
+  onOpenDiagnostics,
+}: {
+  message: TranscriptMessage;
+  highlight?: boolean;
+  sticky?: boolean;
+  onOpenDiagnostics?: () => void;
+}) {
+  return (
+    <p
+      id={`msg-${message.id}`}
+      className={sticky ? "setup err is-sticky" : "setup err"}
+      data-highlight={highlight ? "true" : undefined}
+    >
+      <span>{message.text}</span>
+      {onOpenDiagnostics ? (
+        <button type="button" className="ghost diag-link" onClick={onOpenDiagnostics}>
+          查看诊断
+        </button>
+      ) : null}
+      <time className="bubble-time setup-time" dateTime={message.createdAt}>
+        {formatWhen(message.createdAt)}
+      </time>
+    </p>
+  );
+}
+
 function ArtifactCard({ message, onOpen }: { message: TranscriptMessage; onOpen?: (name: string) => void }) {
   const name = artifactFileName(message);
   const kind = artifactKind({ name, contentType: message.mediaType });
@@ -409,6 +439,7 @@ export function Transcript({
   const stick = useRef(true);
   const restore = useRef<{ height: number; top: number } | null>(null);
   const liveId = liveAssistantId(messages, busy);
+  const stickyFail = latestSetupFailure(messages);
 
   useLayoutEffect(() => {
     const node = scroller.current;
@@ -489,19 +520,27 @@ export function Transcript({
             }
             if (message.role === "setup") {
               const failed = message.level === "error" || String(message.kind).endsWith("_failed") || message.kind === "run.error";
+              if (failed && stickyFail && message.id === stickyFail.id) {
+                return null;
+              }
+              if (failed) {
+                return (
+                  <SetupFailBanner
+                    key={message.id}
+                    message={message}
+                    highlight={highlightId === message.id}
+                    onOpenDiagnostics={onOpenDiagnostics}
+                  />
+                );
+              }
               return (
                 <p
                   key={message.id}
                   id={`msg-${message.id}`}
-                  className={failed ? "setup err" : "setup"}
+                  className="setup"
                   data-highlight={highlightId === message.id ? "true" : undefined}
                 >
                   <span>{message.text}</span>
-                  {failed && onOpenDiagnostics ? (
-                    <button type="button" className="ghost diag-link" onClick={onOpenDiagnostics}>
-                      查看诊断
-                    </button>
-                  ) : null}
                   <time className="bubble-time setup-time" dateTime={message.createdAt}>
                     {formatWhen(message.createdAt)}
                   </time>
@@ -569,6 +608,15 @@ export function Transcript({
             <span>{activity || "正在思考…"}</span>
             <IconSpinner size={12} />
           </div>
+        ) : null}
+        {stickyFail ? (
+          <SetupFailBanner
+            key={`sticky-${stickyFail.id}`}
+            message={stickyFail}
+            highlight={highlightId === stickyFail.id}
+            sticky
+            onOpenDiagnostics={onOpenDiagnostics}
+          />
         ) : null}
       </div>
     </section>

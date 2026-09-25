@@ -118,7 +118,7 @@ import {
   type GithubFetch,
   type GithubMergeMethod,
 } from "../scm/pull-status.js";
-import { materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
+import { formatCloneFailedTitle, materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
   backfillPersistedEventImages,
@@ -200,6 +200,11 @@ const PR_REFRESH_MS = 60_000;
 const DESK_SNAPSHOT_STALE_MS = 30_000;
 const DESK_SNAPSHOT_MAX_FILES = 500;
 const RUN_COMMITS_MAX = 50;
+const WORKER_LEASE_WATCH_MS = 2_000;
+const WORKER_HEARTBEAT_TIMEOUT_MS_DEFAULT = 20_000;
+const SETUP_PROGRESS_INTERVAL_MS = 5_000;
+/** This process is still cloning or installing; not a dead worker. */
+const preparing = new Set<string>();
 let startingQueued = false;
 let leaseWatch: ReturnType<typeof setInterval> | null = null;
 let lastWorkspaceReclaimAt = 0;
@@ -231,14 +236,41 @@ function flushRun(runId: string): void {
   });
 }
 
+function isSetupFailureMessage(message: string | null | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+  return /clone|install|workspace prepare|仓库克隆|仓库准备|environment install|git clone/i.test(message);
+}
+
 function failRun(run: Run, message: string, kind: RunEvent["kind"] = "run.error", title = message): void {
+  const handle = handles.get(run.id);
+  inbound.set(run.id, []);
+  pendingLoopStarts.delete(run.id);
+  clearActiveTurn(run.id);
+  preparing.delete(run.id);
   run.status = "ERROR";
   run.errorMessage = message;
+  run.workerHandle = null;
+  run.vmSlotId = null;
   run.updatedAt = now();
+  handles.delete(run.id);
+  deleteWorkerLease(run.id);
+  heartbeats.delete(run.id);
+  if (handle) {
+    void stopWorker(run.id, handle, title)
+      .catch((error) => {
+        console.error(`failRun stopWorker failed for ${run.id}`, error);
+      })
+      .finally(() => {
+        void tryStartQueued();
+      });
+  }
   if (kind !== "run.error") {
     publish(event(run.id, kind, title, { level: "error", detail: message }));
+  } else {
+    publish(event(run.id, "run.error", message));
   }
-  publish(event(run.id, "run.error", message));
   flushRun(run.id);
   void import("../notify/dispatch.js")
     .then(({ notifyRunFinished }) => notifyRunFinished(run, "error"))
@@ -306,13 +338,16 @@ export function reloadPersistedState(): void {
   deskWorkspaces.clear();
   deskGitSnapshots.clear();
   prRefreshedAt.clear();
+  pendingLoopStarts.clear();
+  preparing.clear();
   startingQueued = false;
   resetHistory();
   hydrateFromDisk();
 }
 
 export function workerHeartbeatTimeoutMs(): number {
-  return Number(process.env.WORKER_HEARTBEAT_TIMEOUT_MS ?? 20_000);
+  const raw = Number(process.env.WORKER_HEARTBEAT_TIMEOUT_MS ?? WORKER_HEARTBEAT_TIMEOUT_MS_DEFAULT);
+  return Number.isFinite(raw) && raw > 0 ? raw : WORKER_HEARTBEAT_TIMEOUT_MS_DEFAULT;
 }
 
 export function noteWorkerHeartbeat(runId: string, at = Date.now()): void {
@@ -357,6 +392,10 @@ function clearActiveTurn(runId: string): void {
 
 function requeueActiveTurn(run: Run): boolean {
   if (hasPendingUserInbound(run.id)) {
+    // Seeded first prompt while setup never attached a worker is not an interrupted turn.
+    if (!handles.has(run.id) && !activeTurns.has(run.id) && !heartbeats.has(run.id)) {
+      return false;
+    }
     return true;
   }
   const active = activeTurns.get(run.id);
@@ -423,7 +462,18 @@ function settleDetachedRun(run: Run, title: string): void {
   flushRun(run.id);
 }
 
+function isSetupInFlight(run: Run): boolean {
+  return (
+    (run.status === "PROVISIONING" || run.status === "INSTALLING") &&
+    !handles.has(run.id) &&
+    preparing.has(run.id)
+  );
+}
+
 function detachOrQueue(run: Run, queuedTitle: string, idleTitle: string): void {
+  if (isSetupInFlight(run)) {
+    return;
+  }
   const resumed = requeueActiveTurn(run);
   if (isDeskToolsTarget(run.executionTarget)) {
     const deskId = run.executionTarget.deskId ?? "";
@@ -558,6 +608,9 @@ export function expireStaleWorkers(at = Date.now()): string[] {
     if (!LIVE_STATUSES.has(run.status) || run.status === "NOT_YET_STARTED") {
       continue;
     }
+    if (isSetupInFlight(run)) {
+      continue;
+    }
     const handle = handles.get(run.id);
     if (handle && handle.runtime !== "desk") {
       // Process/container liveness is owned by the runtime. Heartbeats only
@@ -607,12 +660,19 @@ function queueRun(run: Run, title = "两台云端电脑都在忙，已排队，�
 
 /** Cloud VM queue only — desk / remote-tools runs wait on a machine, not a loop slot. */
 export function isWaitingForCloudVm(run: Run): boolean {
-  return (
-    !isDeskToolsTarget(run.executionTarget) &&
-    !handles.has(run.id) &&
-    (run.status === "NOT_YET_STARTED" ||
-      ((run.status === "IDLE" || run.status === "ERROR") && hasPendingUserInbound(run.id)))
-  );
+  if (isDeskToolsTarget(run.executionTarget) || handles.has(run.id) || isSetupInFlight(run)) {
+    return false;
+  }
+  if (run.status === "NOT_YET_STARTED") {
+    return true;
+  }
+  if (run.status === "IDLE" && hasPendingUserInbound(run.id)) {
+    return true;
+  }
+  if (run.status === "ERROR" && hasPendingUserInbound(run.id) && !isSetupFailureMessage(run.errorMessage)) {
+    return true;
+  }
+  return false;
 }
 
 export async function tryStartQueued(): Promise<string | null> {
@@ -777,7 +837,7 @@ export function startWorkerLeaseWatch(): void {
       lastWorkspaceReclaimAt = at;
       reclaimAndPublish();
     }
-  }, 2000);
+  }, WORKER_LEASE_WATCH_MS);
   leaseWatch.unref();
 }
 
@@ -1308,9 +1368,23 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     return run;
   }
 
+  preparing.add(run.id);
+  const progressTimer = setInterval(() => {
+    if (!runs.has(run.id)) {
+      return;
+    }
+    if (run.status !== "PROVISIONING" && run.status !== "INSTALLING") {
+      return;
+    }
+    run.updatedAt = now();
+    flushRun(run.id);
+  }, SETUP_PROGRESS_INTERVAL_MS);
+  progressTimer.unref();
+
   const fingerprint = environmentFingerprint({ repoUrls: run.repoUrls, ref: input.ref ?? null });
   let restoredFromBuild = false;
   const policy = rememberEgress(run);
+  try {
   for (const url of run.repoUrls) {
     if (denyEgress(run, policy, url)) {
       return run;
@@ -1367,6 +1441,10 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
         );
         const placed = await materializeRepos(run.repoUrls, workspaceFor(run.id), repoRoot(), {
           token: (await resolveScmPushToken(run.userId).catch(() => null)) ?? undefined,
+          onProgress: () => {
+            run.updatedAt = now();
+            flushRun(run.id);
+          },
         });
         publish(
           event(run.id, "scm.clone_succeeded", "Workspace ready", {
@@ -1381,7 +1459,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "workspace prepare failed";
-    failRun(run, message, "scm.clone_failed", "Workspace prepare failed");
+    failRun(run, message, "scm.clone_failed", formatCloneFailedTitle(message, run.repoUrls));
     return run;
   }
 
@@ -1482,6 +1560,10 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     return run;
   }
   return run;
+  } finally {
+    clearInterval(progressTimer);
+    preparing.delete(run.id);
+  }
 }
 
 async function attachWorker(run: Run, title: string): Promise<void> {

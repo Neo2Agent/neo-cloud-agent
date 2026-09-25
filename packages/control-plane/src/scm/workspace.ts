@@ -130,6 +130,34 @@ const NEO_OVERLAY_NAMES = new Set([".neo"]);
 
 export const CLONE_DEST_BUSY = "clone destination already has files";
 
+/** Default remote clone budget. Override with NEO_GIT_CLONE_TIMEOUT_MS in tests. */
+export const GIT_CLONE_TIMEOUT_MS = 180_000;
+export const GIT_CLONE_MAX_ATTEMPTS = 2;
+const GIT_CLONE_STDERR_TAIL = 400;
+const MS_PER_SECOND = 1000;
+const GIT_CLONE_KILL_GRACE_MS = 200;
+
+export function gitCloneTimeoutMs(): number {
+  const raw = Number(process.env.NEO_GIT_CLONE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : GIT_CLONE_TIMEOUT_MS;
+}
+
+export function formatGitCloneTimeoutError(url: string, timeoutMs: number, stderr: string): Error {
+  const tail = stderr.trim().slice(-GIT_CLONE_STDERR_TAIL);
+  const base = `git clone timed out after ${timeoutMs}ms: ${url}`;
+  return new Error(tail ? `${base}\n${tail}` : base);
+}
+
+export function formatCloneFailedTitle(message: string, repoUrls: string[]): string {
+  const repo = repoUrls[0] ? repoName(repoUrls[0]) : "仓库";
+  const timeout = /timed out after (\d+)ms/i.exec(message);
+  if (timeout) {
+    const seconds = Math.max(1, Math.round(Number(timeout[1]) / MS_PER_SECOND));
+    return `仓库克隆超时：${repo}，已等待 ${seconds} 秒。`;
+  }
+  return `仓库准备失败：${repo}`;
+}
+
 export function isNeoOverlayOnly(dest: string): boolean {
   if (!existsSync(dest) || !statSync(dest).isDirectory()) {
     return false;
@@ -176,12 +204,14 @@ async function cloneIntoEmpty(
         env: env ? { ...process.env, ...env } : undefined,
       });
       let stderr = "";
+      child.stdout?.resume();
       child.stderr?.on("data", (chunk) => {
         stderr += String(chunk);
       });
       const timer = setTimeout(() => {
         child.kill("SIGTERM");
-        reject(new Error("git clone timed out"));
+        setTimeout(() => child.kill("SIGKILL"), GIT_CLONE_KILL_GRACE_MS).unref();
+        reject(formatGitCloneTimeoutError(url, timeoutMs, stderr));
       }, timeoutMs);
       child.on("error", (error) => {
         clearTimeout(timer);
@@ -193,7 +223,7 @@ async function cloneIntoEmpty(
           resolve();
           return;
         }
-        reject(new Error(stderr.trim() || `git clone exited ${code}`));
+        reject(new Error(stderr.trim() || `git clone exited ${code}: ${url}`));
       });
     });
 
@@ -230,10 +260,52 @@ async function cloneBesideOverlay(url: string, dest: string, timeoutMs: number, 
   }
 }
 
+function resetFailedCloneDest(dest: string): void {
+  if (!existsSync(dest)) {
+    return;
+  }
+  if (isNeoOverlayOnly(dest)) {
+    return;
+  }
+  if (existsSync(path.join(dest, ".neo"))) {
+    for (const name of readdirSync(dest)) {
+      if (name === ".neo") {
+        continue;
+      }
+      rmSync(path.join(dest, name), { recursive: true, force: true });
+    }
+    return;
+  }
+  rmSync(dest, { recursive: true, force: true });
+}
+
+async function cloneWithRetry(
+  url: string,
+  dest: string,
+  timeoutMs: number,
+  token: string | undefined,
+  clone: (url: string, dest: string, timeoutMs: number, token?: string) => Promise<void>,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= GIT_CLONE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await clone(url, dest, timeoutMs, token);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= GIT_CLONE_MAX_ATTEMPTS) {
+        break;
+      }
+      resetFailedCloneDest(dest);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`git clone failed: ${url}`);
+}
+
 export async function gitClone(
   url: string,
   dest: string,
-  timeoutMs = 60_000,
+  timeoutMs = gitCloneTimeoutMs(),
   token?: string,
 ): Promise<void> {
   if (existsSync(dest)) {
@@ -245,13 +317,13 @@ export async function gitClone(
     } else if (await originMatches(dest, url)) {
       return;
     } else if (isNeoOverlayOnly(dest)) {
-      await cloneBesideOverlay(url, dest, timeoutMs, token);
+      await cloneWithRetry(url, dest, timeoutMs, token, cloneBesideOverlay);
       return;
     } else {
       throw new Error(CLONE_DEST_BUSY);
     }
   }
-  await cloneIntoEmpty(url, dest, timeoutMs, token);
+  await cloneWithRetry(url, dest, timeoutMs, token, cloneIntoEmpty);
 }
 
 export async function copyWorkspaceTree(src: string, dest: string): Promise<void> {
@@ -339,7 +411,7 @@ export async function materializeRepos(
   repoUrls: string[],
   workspaceDir: string,
   root: string,
-  options?: { token?: string },
+  options?: { token?: string; onProgress?: () => void },
 ): Promise<Array<{ dest: string; ref: RepoRef }>> {
   mkdirSync(workspaceDir, { recursive: true });
   const refs = repoUrls.map((item) => resolveRepoRef(item, root));
@@ -348,7 +420,8 @@ export async function materializeRepos(
   for (const ref of refs) {
     const dest = refs.length === 1 ? workspaceDir : path.join(workspaceDir, ref.name);
     if (ref.kind === "remote") {
-      await gitClone(ref.source, dest, 60_000, options?.token);
+      await gitClone(ref.source, dest, gitCloneTimeoutMs(), options?.token);
+      options?.onProgress?.();
     } else {
       if (!existsSync(ref.source) || !statSync(ref.source).isDirectory()) {
         throw new Error(

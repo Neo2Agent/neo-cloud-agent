@@ -15,6 +15,7 @@ import {
   writeWorkspaceTerm,
   type WorkspaceTermInfo,
 } from "../workspace-term.js";
+import { shouldAutoOpenPty, workspaceNotReadyMessage, type TerminalIntent } from "../setup-diag.js";
 
 type Log = { name: string; content?: string };
 
@@ -33,16 +34,17 @@ type Props = {
   setupLoading: boolean;
   setupError: string;
   setupLogs: Log[];
+  intent?: TerminalIntent;
 };
 
-export function TerminalPanel({ token, runId, setupLoading, setupError, setupLogs }: Props) {
+export function TerminalPanel({ token, runId, setupLoading, setupError, setupLogs, intent = "shell" }: Props) {
   const [sessions, setSessions] = useState<SessionState[]>([]);
   const [activeId, setActiveId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [focused, setFocused] = useState(false);
-  const [showSetup, setShowSetup] = useState(false);
+  const [showSetup, setShowSetup] = useState(intent === "setup");
   const menuRef = useRef<HTMLDetailsElement>(null);
   const outRef = useRef<HTMLDivElement | null>(null);
   const ghostRef = useRef<HTMLTextAreaElement | null>(null);
@@ -132,7 +134,7 @@ export function TerminalPanel({ token, runId, setupLoading, setupError, setupLog
       setActiveId(info.id);
       setShowSetup(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "打不开终端");
+      setError(workspaceNotReadyMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -150,7 +152,7 @@ export function TerminalPanel({ token, runId, setupLoading, setupError, setupLog
         adopt(item);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "打不开终端");
+      setError(workspaceNotReadyMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -175,12 +177,16 @@ export function TerminalPanel({ token, runId, setupLoading, setupError, setupLog
   }, [runId, token]);
 
   useEffect(() => {
-    if (!runId || attempted || sessions.length > 0) {
+    setShowSetup(intent === "setup");
+  }, [intent, runId]);
+
+  useEffect(() => {
+    if (!shouldAutoOpenPty(intent) || !runId || attempted || sessions.length > 0) {
       return;
     }
     setAttempted(true);
     void ensure();
-  }, [attempted, ensure, runId, sessions.length]);
+  }, [attempted, ensure, intent, runId, sessions.length]);
 
   useEffect(() => {
     if (outRef.current) {
@@ -290,7 +296,7 @@ export function TerminalPanel({ token, runId, setupLoading, setupError, setupLog
   );
 
   return (
-    <section className="terminal-panel" id="run-terminal">
+    <section className="terminal-panel" id="run-terminal" data-intent={intent} data-show-setup={showSetup ? "true" : "false"}>
       {menu}
       {error ? <p className="setup err">{error}</p> : null}
       {showSetup ? (
@@ -304,6 +310,16 @@ export function TerminalPanel({ token, runId, setupLoading, setupError, setupLog
               <pre className="terminal-log">{log.content || "（空）"}</pre>
             </article>
           ))}
+          <button
+            type="button"
+            className="ghost"
+            disabled={busy || !runId}
+            onClick={() => {
+              void create();
+            }}
+          >
+            打开终端
+          </button>
         </div>
       ) : active ? (
         <div

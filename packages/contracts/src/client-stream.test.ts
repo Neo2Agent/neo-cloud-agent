@@ -50,6 +50,7 @@ test("batchTurnSignal reports the last turn signal in a batch", () => {
   assert.equal(batchTurnSignal([{ kind: "tool.end" }, { kind: "run.idle" }]), "idle");
   assert.equal(batchTurnSignal([{ kind: "run.idle" }, { kind: "message.delta" }]), "work");
   assert.equal(batchTurnSignal([{ kind: "message.delta" }, { kind: "run.error" }]), "fail");
+  assert.equal(batchTurnSignal([{ kind: "scm.clone_failed" }]), "fail");
 });
 
 test("runEventsQuery only carries the parameters it was given", () => {

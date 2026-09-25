@@ -52,6 +52,10 @@ const {
   reloadPersistedState,
   restoreArchivedRun,
   expireStaleWorkers,
+  isWaitingForCloudVm,
+  isWorkerAttached,
+  tryStartQueued,
+  workerHeartbeatTimeoutMs,
   releaseIdleWorker,
   saveRunSession,
   takeInbound,
@@ -704,7 +708,14 @@ test("createRun fails when the local repo path does not exist", async () => {
   });
   assert.equal(run.status, "ERROR");
   assert.match(run.errorMessage ?? "", /not found/);
-  assert.ok(listEvents(run.id).some((item) => item.kind === "scm.clone_failed"));
+  const failed = listEvents(run.id).filter((item) => item.kind === "scm.clone_failed" || item.kind === "run.error");
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0]?.kind, "scm.clone_failed");
+  assert.match(failed[0]?.title ?? "", /仓库准备失败/);
+  assert.equal(takeInbound(run.id).length, 0);
+  assert.equal(isWaitingForCloudVm(run), false);
+  assert.equal(await tryStartQueued(), null);
+  assert.equal(getRun(run.id)?.status, "ERROR");
 });
 
 test("allowlist_only blocks a remote host before clone", async () => {
@@ -1971,6 +1982,62 @@ test("skipRepoDefaults also skips environment default repos", async () => {
     skipRepoDefaults: true,
   });
   assert.deepEqual(run.repoUrls, []);
+});
+
+async function waitFor<T>(read: () => T | undefined, timeoutMs = 2000): Promise<T> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const value = read();
+    if (value) {
+      return value;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("timed out waiting for run");
+}
+
+test("expireStaleWorkers does not requeue a clone still in flight", async () => {
+  const previous = process.env.NEO_GIT_CLONE_TIMEOUT_MS;
+  process.env.NEO_GIT_CLONE_TIMEOUT_MS = "1200";
+  const server = createServer(() => undefined);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  const pending = createRun({
+    prompt: "clone this slowly",
+    repoUrls: [`http://127.0.0.1:${port}/slow.git`],
+  });
+  try {
+    const run = await waitFor(() =>
+      listRuns().find((item) => item.prompt === "clone this slowly" && item.status === "PROVISIONING"),
+    );
+    const expired = expireStaleWorkers(Date.now() + workerHeartbeatTimeoutMs() + 2000);
+    assert.equal(expired.includes(run.id), false);
+    assert.equal(getRun(run.id)?.status, "PROVISIONING");
+    assert.equal(
+      listEvents(run.id).some((item) => item.kind === "run.queued" && /中断的回合/.test(item.title)),
+      false,
+    );
+    assert.equal(listEvents(run.id).some((item) => item.kind === "run.running"), false);
+    const finished = await pending;
+    assert.equal(finished.status, "ERROR");
+    const failed = listEvents(finished.id).filter((item) => item.kind === "scm.clone_failed" || item.kind === "run.error");
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0]?.kind, "scm.clone_failed");
+    assert.match(failed[0]?.title ?? "", /仓库克隆超时：slow/);
+    assert.equal(isWorkerAttached(finished.id), false);
+    assert.equal(takeInbound(finished.id).length, 0);
+    assert.equal(isWaitingForCloudVm(getRun(finished.id)!), false);
+    assert.equal(await tryStartQueued(), null);
+    assert.equal(getRun(finished.id)?.status, "ERROR");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.NEO_GIT_CLONE_TIMEOUT_MS;
+    } else {
+      process.env.NEO_GIT_CLONE_TIMEOUT_MS = previous;
+    }
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
 });
 
 test("second same-repo cloud run restores the captured build", async () => {

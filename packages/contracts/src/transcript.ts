@@ -36,6 +36,23 @@ export function isSetupKind(kind: string): boolean {
   return SETUP_PREFIXES.some((prefix) => kind.startsWith(prefix));
 }
 
+export function isSetupFailureMessage(message: TranscriptMessage): boolean {
+  return (
+    message.role === "setup" &&
+    (message.level === "error" || String(message.kind).endsWith("_failed") || message.kind === "run.error")
+  );
+}
+
+export function latestSetupFailure(messages: TranscriptMessage[]): TranscriptMessage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message && isSetupFailureMessage(message)) {
+      return message;
+    }
+  }
+  return null;
+}
+
 function toolKey(event: RunEvent): string {
   const callId = event.data?.toolCallId;
   if (typeof callId === "string" && callId) {
@@ -672,6 +689,10 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
   }
   if (event.kind === "run.error") {
     settleAll(state, event.createdAt);
+    const last = state.messages.at(-1);
+    if (last && isSetupFailureMessage(last)) {
+      return;
+    }
     state.messages.push({
       id: event.id,
       role: "setup",

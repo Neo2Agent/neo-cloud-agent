@@ -83,7 +83,16 @@ export function applyLiveEvents(prev: RunEvent[], incoming: RunEvent[]): RunEven
 export function batchTurnSignal(events: Array<{ kind: string }>): TurnSignal | null {
   let signal: TurnSignal | null = null;
   for (const event of events) {
-    if (event.kind === "run.error" || event.kind === "run.archived" || event.kind === "run.deleted") {
+    if (
+      event.kind === "run.error" ||
+      event.kind === "run.archived" ||
+      event.kind === "run.deleted" ||
+      event.kind === "scm.clone_failed" ||
+      event.kind === "run.install_failed" ||
+      event.kind === "scm.branch_failed" ||
+      event.kind === "run.start_failed" ||
+      event.kind === "egress.denied"
+    ) {
       signal = "fail";
     } else if (event.kind === "run.idle") {
       signal = "idle";

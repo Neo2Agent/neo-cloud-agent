@@ -36,6 +36,7 @@ import { FileTree } from "./components/FileTree";
 import { InspectorShell, type InspectorTab } from "./components/Inspector";
 import { WorkspaceFiles, type FilesView } from "./components/WorkspaceFiles";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { inspectorOpenForDiagnostics, type TerminalIntent } from "./setup-diag";
 import { AutomationsPage } from "./components/AutomationsPage";
 import { ExpertsPage } from "./components/ExpertsPage";
 import { SkillsPage } from "./components/SkillsPage";
@@ -307,6 +308,7 @@ export function App() {
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab | null>(null);
   const [lastPane, setLastPane] = useState<InspectorTab>("terminal");
+  const [terminalIntent, setTerminalIntent] = useState<TerminalIntent>("shell");
   const [artifactFocus, setArtifactFocus] = useState<string | null>(null);
   const [contextFocusId, setContextFocusId] = useState("");
   const [deskTarget, setDeskTarget] = useState<DeskTarget>({ kind: "cloud" });
@@ -484,7 +486,7 @@ export function App() {
             if (event.kind === "run.idle" || event.kind === "agent.end") {
               void deskBridge()?.notify("对话已完成", preview(currentRun?.prompt ?? "Neo"));
             }
-            if (event.kind === "run.error") {
+            if (event.kind === "run.error" || event.kind === "scm.clone_failed" || event.kind === "run.install_failed") {
               void deskBridge()?.notify("对话出错", event.title || "Run error");
             }
           }
@@ -1723,6 +1725,9 @@ export function App() {
   useEffect(() => {
     if (inspectorTab === "git" && gitContext === "none") setInspectorTab("terminal");
   }, [gitContext, inspectorTab]);
+  useEffect(() => {
+    setTerminalIntent("shell");
+  }, [runId]);
   const currentSlot =
     vms.slots.find((slot) => slot.runId === runId && slot.status === "busy")?.id ||
     (isActiveRunStatus(currentRun?.status) ? currentRun?.vmSlotId : null) ||
@@ -1764,10 +1769,11 @@ export function App() {
   };
 
   const railNow = () => (narrow ? 0 : sidebarOpen ? sidebarWidth : 48);
-  const openInspector = (requested: InspectorTab) => {
+  const openInspector = (requested: InspectorTab, intent: TerminalIntent = "shell") => {
     if (!runId) return;
     const id = requested === "git" && gitContext === "none" ? "terminal" : requested;
     setLastPane(id);
+    setTerminalIntent(id === "terminal" ? intent : "shell");
     if (!inspectorTab) {
       setPaneFull(false);
       setPaneSnap("idle");
@@ -2040,7 +2046,8 @@ export function App() {
 
   const openDiagnostics = () => {
     if (!runId) return;
-    openInspector("terminal");
+    const next = inspectorOpenForDiagnostics();
+    openInspector(next.tab, next.intent);
   };
 
   const loadOlder = () => {
@@ -2821,6 +2828,7 @@ export function App() {
                 <TerminalPanel
                   token={token}
                   runId={runId}
+                  intent={terminalIntent}
                   setupLoading={diagLoading}
                   setupError={diagError}
                   setupLogs={diagLogs}
