@@ -30,7 +30,7 @@ import {
   LoaderCircle,
   Maximize2,
   Mic,
-  MessageSquare,
+  MessageCircle,
   MoreHorizontal,
   Monitor,
   Package,
@@ -70,7 +70,7 @@ export function IconSidebarClose(props: IconProps) {
 }
 
 export function IconChat(props: IconProps) {
-  return icon(MessageSquare, props);
+  return icon(MessageCircle, props);
 }
 
 export function IconProjects(props: IconProps) {

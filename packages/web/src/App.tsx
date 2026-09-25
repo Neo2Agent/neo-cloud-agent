@@ -2174,6 +2174,7 @@ export function App() {
           deskDisabled={!deskBridge()?.canRunLocal && !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0)}
           onTarget={(value) => applyTarget({ ...deskTarget, kind: value })}
           nav={mainTab}
+          sending={sending || Boolean(pendingTurn)}
           onOpenNav={(id) => {
             if (narrow) setSidebarOpen(false);
             if (id === "automations") openAutomations();
