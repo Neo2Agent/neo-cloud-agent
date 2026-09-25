@@ -6342,10 +6342,6 @@ details.run-group > .run-section-head {
   transition: transform var(--ease);
 }
 
-.run-folder[open] .run-folder-chevron {
-  transform: rotate(90deg);
-}
-
 .run-folder-head:hover {
   background: #ececee;
   color: var(--text);

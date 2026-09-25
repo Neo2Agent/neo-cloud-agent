@@ -77,9 +77,12 @@ test.describe("catalog and session chrome", () => {
     await expect(page.locator("#composer")).toBeVisible();
     const officeFolder = page.locator(`#run-folder-${officeProject.id}`);
     const codeFolder = page.locator(`#run-folder-${codeProject.id}`);
+    const projectSection = page.locator(`[data-section="projects"]`);
     await expect(officeFolder).toBeVisible();
     await expect(officeFolder).toContainText(officeProject.name);
     await expect(officeFolder.locator(".run-folder-icon")).toHaveCount(1);
+    await expect(officeFolder.locator(".run-folder-chevron")).toHaveCount(0);
+    await expect(projectSection.locator("> .run-section-head .run-folder-chevron")).toHaveCount(1);
     await expect(officeFolder).toHaveAttribute("data-work", "office");
     await expect(officeFolder.locator(".run-folder-kind")).toHaveCount(0);
     await expect(officeFolder.locator(".run-folder-count")).toHaveCount(0);
@@ -95,7 +98,6 @@ test.describe("catalog and session chrome", () => {
     await expect(page.locator(`[data-section="chat"] [data-id="${loose.id}"]`)).toBeVisible();
     await expect(page.locator(`[data-section="chat"] [data-id="${office.id}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-section="repos"] [data-id="${code.id}"]`)).toHaveCount(0);
-    const projectSection = page.locator(`[data-section="projects"]`);
     await expect(projectSection).toContainText("项目");
     await expect(page.getByRole("button", { name: "新建协作组" })).toHaveCount(0);
     await expect(officeFolder.getByRole("button", { name: `在「${officeProject.name}」里开对话` })).toHaveCount(1);
@@ -144,6 +146,8 @@ test.describe("catalog and session chrome", () => {
     await expect(repoFolder).toBeVisible();
     await expect(repoFolder).toContainText("fixtures/toy-repo");
     await expect(repoFolder.locator(".run-folder-count")).toHaveCount(0);
+    await expect(repoFolder.locator(".run-folder-chevron")).toHaveCount(0);
+    await expect(repoFolder.locator(".run-folder-icon")).toHaveCount(1);
     await expect(repoFolder.locator(`[data-id="${first.id}"]`)).toBeVisible();
     await expect(repoFolder.locator(`[data-id="${second.id}"]`)).toBeVisible();
     await expect(repoFolder.locator(`[data-id="${projectCode.id}"]`)).toHaveCount(0);

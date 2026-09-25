@@ -390,7 +390,6 @@ export function Sidebar({
                   onToggle={(event) => onFolderToggle(key, event)}
                 >
                   <summary className="run-folder-head">
-                    <IconChevronRight size={12} className="run-folder-chevron" />
                     {open ? <IconFolderOpen size={14} className="run-folder-icon" /> : <IconFolderClosed size={14} className="run-folder-icon" />}
                     <span className="run-folder-name">{folder.label}</span>
                     {onStartProjectChat ? (
@@ -450,7 +449,6 @@ export function Sidebar({
                 onToggle={(event) => onFolderToggle(key, event)}
               >
                 <summary className="run-folder-head">
-                  <IconChevronRight size={12} className="run-folder-chevron" />
                   {open ? <IconFolderOpen size={14} className="run-folder-icon" /> : <IconFolderClosed size={14} className="run-folder-icon" />}
                   <span className="run-folder-name">{folder.label}</span>
                   {onStartRepoChat && folder.source ? (
