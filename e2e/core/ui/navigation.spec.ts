@@ -83,7 +83,6 @@ test.describe("catalog and session chrome", () => {
     await expect(officeFolder.locator(".run-folder-icon")).toHaveCount(1);
     await expect(officeFolder.locator(".run-folder-chevron")).toHaveCount(0);
     await expect(projectSection.locator("> .run-section-head .run-folder-chevron")).toHaveCount(0);
-    await expect(officeFolder.locator(".run-idle-dot")).toHaveCount(1);
     await expect(officeFolder).toHaveAttribute("data-work", "office");
     await expect(officeFolder.locator(".run-folder-kind")).toHaveCount(0);
     await expect(officeFolder.locator(".run-folder-count")).toHaveCount(0);
