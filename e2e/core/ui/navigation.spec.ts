@@ -58,8 +58,9 @@ test.describe("catalog and session chrome", () => {
 
   test("sidebar.project-folder: project chats fold; global chats stay loose", async ({ page }) => {
     await loginAs(page);
-    const officeProject = await createProject(page, { name: "侧栏办公组" });
-    const codeProject = await createProject(page, { name: "侧栏协作组" });
+    const stamp = Date.now();
+    const officeProject = await createProject(page, { name: `侧栏办公组 ${stamp}` });
+    const codeProject = await createProject(page, { name: `侧栏协作组 ${stamp}` });
     const office = await createRun(page, {
       prompt: "组内办公",
       projectId: officeProject.id,
@@ -77,7 +78,7 @@ test.describe("catalog and session chrome", () => {
     const officeFolder = page.locator(`#run-folder-${officeProject.id}`);
     const codeFolder = page.locator(`#run-folder-${codeProject.id}`);
     await expect(officeFolder).toBeVisible();
-    await expect(officeFolder).toContainText("侧栏办公组");
+    await expect(officeFolder).toContainText(officeProject.name);
     await expect(officeFolder.locator(".run-folder-icon")).toHaveCount(1);
     await expect(officeFolder).toHaveAttribute("data-work", "office");
     await expect(officeFolder.locator(".run-folder-kind")).toHaveCount(0);
@@ -97,7 +98,7 @@ test.describe("catalog and session chrome", () => {
     const projectSection = page.locator(`[data-section="projects"]`);
     await expect(projectSection).toContainText("项目");
     await expect(page.getByRole("button", { name: "新建协作组" })).toHaveCount(0);
-    await expect(officeFolder.getByRole("button", { name: "在「侧栏办公组」里开对话" })).toHaveCount(1);
+    await expect(officeFolder.getByRole("button", { name: `在「${officeProject.name}」里开对话` })).toHaveCount(1);
     await expect(page.locator(".run-search")).toBeVisible();
     await expect(page.locator(".session-head")).toHaveCount(0);
 
@@ -107,8 +108,8 @@ test.describe("catalog and session chrome", () => {
     await expect(page.getByRole("button", { name: "打开项目" })).toHaveCount(0);
 
     await officeFolder.locator("> .run-folder-head").hover();
-    await officeFolder.getByRole("button", { name: "在「侧栏办公组」里开对话" }).click();
-    await expect(page.locator("#project-chip")).toContainText("将在项目「侧栏办公组」中开对话");
+    await officeFolder.getByRole("button", { name: `在「${officeProject.name}」里开对话` }).click();
+    await expect(page.locator("#project-chip")).toContainText(`将在项目「${officeProject.name}」中开对话`);
     await expect(page.getByRole("button", { name: "不用项目" })).toBeVisible();
 
     await officeFolder.locator("> .run-folder-head").click();
@@ -122,7 +123,7 @@ test.describe("catalog and session chrome", () => {
 
   test("sidebar.repo-folder: unbound same-repo chats fold; project chats stay out", async ({ page }) => {
     await loginAs(page);
-    const project = await createProject(page, { name: "侧栏仓组" });
+    const project = await createProject(page, { name: `侧栏仓组 ${Date.now()}` });
     const projectCode = await createRun(page, {
       prompt: "组内同仓",
       projectId: project.id,
