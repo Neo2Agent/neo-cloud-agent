@@ -95,6 +95,10 @@ test.describe("composer / run boundaries", () => {
     const trigger = page.locator("#repo-bind");
     await expect(menu).toBeVisible();
     await expect(box).toBeVisible();
+    await expect(page.getByRole("heading", { name: "最近" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "仓库" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "GitHub" })).toBeVisible();
     const openBox = await box.boundingBox();
     const openMenu = await menu.boundingBox();
     const openTrigger = await trigger.boundingBox();
@@ -106,6 +110,11 @@ test.describe("composer / run boundaries", () => {
     expect(openMenu?.x ?? 0).toBeGreaterThanOrEqual((openBox?.x ?? 0) - 2);
     expect((openMenu?.x ?? 0) + (openMenu?.width ?? 0)).toBeLessThanOrEqual((openBox?.x ?? 0) + (openBox?.width ?? 0) + 2);
     expect(Math.abs((openMenu?.x ?? 0) - (openTrigger?.x ?? 0))).toBeLessThan(12);
+    await page.getByRole("button", { name: "GitHub" }).click();
+    await expect(page.getByRole("button", { name: "返回" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
+    await page.getByRole("button", { name: "返回" }).click();
+    await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
     await page.locator("#repo-bind-search").fill("animate");
     const longRepo = page.getByRole("button", { name: "kaibairen/animate-camera" });
     await expect(longRepo).toBeVisible();
@@ -113,7 +122,7 @@ test.describe("composer / run boundaries", () => {
     await expect(longRepo.locator(".repo-bind-item-name")).toHaveText("animate-camera");
     await expect(longRepo.locator(".repo-bind-item-owner")).toHaveText("kaibairen");
     const filtered = await menu.boundingBox();
-    expect(filtered?.height ?? 999).toBeLessThan(180);
+    expect(filtered?.height ?? 999).toBeLessThan(220);
     await page.locator("#repo-bind-search").fill("acme");
     await page.getByRole("button", { name: "acme/app" }).click();
     await expect(page.locator("#repo-bind")).toHaveText("acme/app");

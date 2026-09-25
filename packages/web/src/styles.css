@@ -1917,6 +1917,7 @@ button.tool-file-more:hover {
 .repo-bind-trigger {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 28px;
   max-width: min(36ch, 42vw);
   padding: 0 8px;
@@ -1939,9 +1940,24 @@ button.tool-file-more:hover {
   cursor: pointer;
 }
 
+.repo-bind-chevron,
+.repo-bind-lock .repo-bind-row-icon,
+.repo-bind-trigger .repo-bind-row-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
 .repo-bind-trigger:hover,
 .repo-bind-trigger.is-open {
   background: #ececee;
+  color: var(--text);
+}
+
+.repo-bind-trigger:hover .repo-bind-chevron,
+.repo-bind-trigger.is-open .repo-bind-chevron,
+.repo-bind-trigger:hover .repo-bind-row-icon,
+.repo-bind-trigger.is-open .repo-bind-row-icon {
   color: var(--text);
 }
 
@@ -1955,52 +1971,82 @@ button.tool-file-more:hover {
   width: min(300px, calc(100vw - 16px));
   min-width: 220px;
   height: fit-content;
-  max-height: min(220px, calc(100vh - 24px));
-  padding: 6px;
+  max-height: min(360px, calc(100vh - 24px));
+  padding: 4px 0 6px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 16px 40px rgba(17, 17, 16, 0.12);
-  gap: 4px;
   overflow: hidden;
 }
 
-.repo-bind-menu input {
-  width: 100%;
-  min-height: 32px;
+.repo-bind-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0 6px;
   padding: 0 10px;
-  border: 0;
-  border-radius: 10px;
-  background: #f4f4f5;
+  color: var(--muted);
 }
 
-.repo-bind-menu input:focus {
+.repo-bind-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.repo-bind-search input:focus {
   outline: 0;
-  background: #ececee;
+}
+
+.repo-bind-search input::placeholder {
+  color: var(--muted);
+}
+
+.repo-bind-body {
+  display: grid;
+  align-content: start;
+  min-height: 0;
+  max-height: min(280px, 45vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.repo-bind-section {
+  display: grid;
+  align-content: start;
+}
+
+.repo-bind-heading {
+  margin: 0;
+  padding: 8px 16px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
 }
 
 .repo-bind-menu ul {
   display: grid;
   align-content: start;
-  align-self: start;
   gap: 1px;
   margin: 0;
-  padding: 0;
+  padding: 0 6px;
   list-style: none;
-  height: auto;
-  min-height: 0;
-  max-height: min(120px, 22vh);
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 
 .repo-bind-menu button {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   width: 100%;
   min-width: 0;
+  min-height: 36px;
   box-sizing: border-box;
   text-align: left;
   padding: 6px 10px;
@@ -2009,6 +2055,12 @@ button.tool-file-more:hover {
   background: transparent;
   color: var(--text);
   font-size: 13px;
+}
+
+.repo-bind-row-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
 }
 
 .repo-bind-item {
@@ -2033,12 +2085,23 @@ button.tool-file-more:hover {
 
 .repo-bind-menu button:hover,
 .repo-bind-menu button.is-selected {
-  background: #ececee;
+  background: #f4f4f5;
 }
 
 .repo-bind-check {
+  display: inline-flex;
+  flex: none;
   color: var(--muted);
-  font-size: 12px;
+}
+
+.repo-bind-back {
+  margin: 0 6px 2px;
+}
+
+.repo-bind-menu .hint {
+  margin: 0;
+  padding: 8px 16px 10px;
+  color: var(--muted);
 }
 
 .repo-bind-link {
