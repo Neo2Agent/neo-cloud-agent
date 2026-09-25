@@ -188,6 +188,8 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.run-item \.run-meta\{[^}]*right:\s*8px/);
   assert.match(cssText, /\.transcript\{[^}]*font-size:\s*13px/);
   assert.match(cssText, /\.bubble\{[^}]*font-size:\s*13px/);
+  assert.match(cssText, /\.md-p,\.md-h,\.md-list\{[^}]*font-size:\s*13px/);
+  assert.match(cssText, /\.composer textarea\{[^}]*font-size:\s*13px/);
   assert.match(cssText, /\.run-folder-head:hover \.run-folder-new/);
   const narrow = narrowCss(cssText);
   assert.match(narrow, /\.app\.sidebar-closed \.sidebar\{[^}]*position:\s*fixed/, "closed phone drawer leaves the grid");
