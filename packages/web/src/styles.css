@@ -1983,10 +1983,10 @@ button.tool-file-more:hover {
 .repo-bind-search {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-height: 26px;
-  margin: 0 12px 4px 16px;
-  padding: 0 8px;
+  margin: 0 6px 4px;
+  padding: 0 10px;
   border-radius: 8px;
   background: #f4f4f5;
   color: var(--muted);
@@ -2056,12 +2056,6 @@ button.tool-file-more:hover {
   font-size: 13px;
 }
 
-.repo-bind-row-icon {
-  display: inline-flex;
-  flex: none;
-  color: var(--muted);
-}
-
 .repo-bind-item {
   display: grid;
   gap: 1px;
@@ -2080,6 +2074,15 @@ button.tool-file-more:hover {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.3;
+}
+
+.repo-bind-menu .repo-bind-row-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--muted);
 }
 
 .repo-bind-menu button:focus {
