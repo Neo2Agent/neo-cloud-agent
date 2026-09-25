@@ -3,7 +3,7 @@ import type { PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
 import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode } from "@neo-cloud-agent/contracts/run";
 import { formatListWhen, runListPlaceSuffix, runListTitle, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
-import { IconArchive, IconAutomations, IconChat, IconChevronRight, IconExperts, IconFolderClosed, IconFolderOpen, IconFolderPlus, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconSort, IconStar, IconTrash } from "../icons";
+import { IconArchive, IconAutomations, IconChat, IconChevronRight, IconExperts, IconFolderClosed, IconFolderOpen, IconFolderPlus, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSearch, IconSidebarClose, IconSidebarOpen, IconSkills, IconSort, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
 import { filterRuns, folderKindLabel, groupSidebarRuns, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
@@ -55,6 +55,8 @@ type Props = {
   onTarget?: (value: "cloud" | "desk") => void;
   nav?: "chat" | "projects" | "experts" | "skills" | "memories" | "automations" | "settings" | "context";
   onOpenNav?: (id: "automations" | "experts" | "projects" | "skills" | "memories") => void;
+  searchOpen?: boolean;
+  onOpenSearch?: () => void;
 };
 
 export function Sidebar({
@@ -93,6 +95,8 @@ export function Sidebar({
   onTarget,
   nav = "chat",
   onOpenNav,
+  searchOpen = false,
+  onOpenSearch,
 }: Props) {
   const accountBox = useRef<{ el: HTMLDetailsElement | null }>({ el: null });
   const [accountOpen, setAccountOpen] = useState(false);
@@ -119,7 +123,7 @@ export function Sidebar({
     const rightAt = right.updatedAt || right.createdAt;
     return rightAt.localeCompare(leftAt) || right.createdAt.localeCompare(left.createdAt);
   });
-  const visible = filterRuns(items, query);
+  const visible = filterRuns(items, buddy ? query : "");
   const { live, shelved } = splitShelvedRuns(visible);
   const grouped = groupSidebarRuns(live, pinnedIds, projectNames);
   const repoFolders = [...grouped.repos].sort((left, right) => {
@@ -343,16 +347,18 @@ export function Sidebar({
   const listAndAccount = (
     <>
       <div className="run-library">
-      <div className="run-tools">
-        <input
-          type="search"
-          className="run-search"
-          placeholder={buddy ? "搜索任务" : "搜索对话"}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label={buddy ? "搜索任务" : "搜索对话"}
-        />
-      </div>
+      {buddy ? (
+        <div className="run-tools">
+          <input
+            type="search"
+            className="run-search"
+            placeholder="搜索任务"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="搜索任务"
+          />
+        </div>
+      ) : null}
       <div className="run-list" id="run-list">
         {grouped.pinned.length > 0 ? (
           <section className="run-group" data-section="pinned">
@@ -390,6 +396,7 @@ export function Sidebar({
                   onToggle={(event) => onFolderToggle(key, event)}
                 >
                   <summary className="run-folder-head">
+                    <IconChevronRight size={12} className="run-folder-chevron" />
                     {open ? <IconFolderOpen size={14} className="run-folder-icon" /> : <IconFolderClosed size={14} className="run-folder-icon" />}
                     <span className="run-folder-name">{folder.label}</span>
                     {onStartProjectChat ? (
@@ -449,6 +456,7 @@ export function Sidebar({
                 onToggle={(event) => onFolderToggle(key, event)}
               >
                 <summary className="run-folder-head">
+                  <IconChevronRight size={12} className="run-folder-chevron" />
                   {open ? <IconFolderOpen size={14} className="run-folder-icon" /> : <IconFolderClosed size={14} className="run-folder-icon" />}
                   <span className="run-folder-name">{folder.label}</span>
                   {onStartRepoChat && folder.source ? (
@@ -637,6 +645,20 @@ export function Sidebar({
       </button>
       {buddy ? null : (
         <nav className="rail-nav" aria-label="功能">
+          {onOpenSearch ? (
+            <button
+              type="button"
+              className={searchOpen ? "rail-item on" : "rail-item"}
+              aria-expanded={searchOpen}
+              aria-haspopup="dialog"
+              onClick={onOpenSearch}
+            >
+              <span className="rail-ico" aria-hidden="true">
+                <IconSearch size={16} />
+              </span>
+              <span className="rail-label">搜索</span>
+            </button>
+          ) : null}
           <button type="button" className={nav === "automations" ? "rail-item on" : "rail-item"} onClick={() => onOpenNav?.("automations")}>
             <span className="rail-ico" aria-hidden="true">
               <IconAutomations size={16} />

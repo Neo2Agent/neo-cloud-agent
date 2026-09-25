@@ -81,7 +81,7 @@ test.describe("catalog and session chrome", () => {
     await expect(officeFolder).toBeVisible();
     await expect(officeFolder).toContainText(officeProject.name);
     await expect(officeFolder.locator(".run-folder-icon")).toHaveCount(1);
-    await expect(officeFolder.locator(".run-folder-chevron")).toHaveCount(0);
+    await expect(officeFolder.locator(".run-folder-chevron")).toHaveCount(1);
     await expect(projectSection.locator("> .run-section-head .run-folder-chevron")).toHaveCount(1);
     await expect(officeFolder).toHaveAttribute("data-work", "office");
     await expect(officeFolder.locator(".run-folder-kind")).toHaveCount(0);
@@ -101,7 +101,12 @@ test.describe("catalog and session chrome", () => {
     await expect(projectSection).toContainText("项目");
     await expect(page.getByRole("button", { name: "新建协作组" })).toHaveCount(0);
     await expect(officeFolder.getByRole("button", { name: `在「${officeProject.name}」里开对话` })).toHaveCount(1);
-    await expect(page.locator(".run-search")).toBeVisible();
+    await expect(page.locator(".run-search")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "功能" }).getByRole("button", { name: "搜索" })).toBeVisible();
+    await page.getByRole("navigation", { name: "功能" }).getByRole("button", { name: "搜索" }).click();
+    await expect(page.getByRole("dialog", { name: "搜索对话" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "搜索对话" })).toHaveCount(0);
     await expect(page.locator(".session-head")).toHaveCount(0);
 
     await officeFolder.locator(`[data-id="${office.id}"]`).click();
@@ -146,7 +151,7 @@ test.describe("catalog and session chrome", () => {
     await expect(repoFolder).toBeVisible();
     await expect(repoFolder).toContainText("fixtures/toy-repo");
     await expect(repoFolder.locator(".run-folder-count")).toHaveCount(0);
-    await expect(repoFolder.locator(".run-folder-chevron")).toHaveCount(0);
+    await expect(repoFolder.locator(".run-folder-chevron")).toHaveCount(1);
     await expect(repoFolder.locator(".run-folder-icon")).toHaveCount(1);
     await expect(repoFolder.locator(`[data-id="${first.id}"]`)).toBeVisible();
     await expect(repoFolder.locator(`[data-id="${second.id}"]`)).toBeVisible();

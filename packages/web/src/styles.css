@@ -6177,9 +6177,9 @@ button.composer-mic.is-listening,
   flex: 1;
   min-width: 0;
   min-height: 0;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .run-library .run-tools {
@@ -6287,6 +6287,15 @@ details.run-group > .run-section-head {
   transform: rotate(90deg);
 }
 
+details.run-group > .run-section-head .run-folder-chevron {
+  opacity: 0;
+}
+
+details.run-group > .run-section-head:hover .run-folder-chevron,
+details.run-group > .run-section-head:focus-within .run-folder-chevron {
+  opacity: 1;
+}
+
 .run-section-head .run-folder-new,
 .run-folder-head .run-folder-new {
   opacity: 0;
@@ -6339,7 +6348,20 @@ details.run-group > .run-section-head {
 }
 
 .run-folder-chevron {
-  transition: transform var(--ease);
+  transition: transform var(--ease), opacity var(--ease);
+}
+
+.run-folder-head .run-folder-chevron {
+  opacity: 0;
+}
+
+.run-folder-head:hover .run-folder-chevron,
+.run-folder-head:focus-within .run-folder-chevron {
+  opacity: 1;
+}
+
+.run-folder[open] .run-folder-chevron {
+  transform: rotate(90deg);
 }
 
 .run-folder-head:hover {
