@@ -6245,16 +6245,6 @@ button.composer-mic.is-listening,
   color: var(--muted);
 }
 
-.run-busy-ball {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 32% 28%, #7a7a7a 0 16%, transparent 40%),
-    #111;
-  animation: spin 0.8s linear infinite;
-}
-
 .run-place,
 .run-kind {
   flex: none;

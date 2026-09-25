@@ -55,7 +55,6 @@ type Props = {
   onTarget?: (value: "cloud" | "desk") => void;
   nav?: "chat" | "projects" | "experts" | "skills" | "memories" | "automations" | "settings" | "context";
   onOpenNav?: (id: "automations" | "experts" | "projects" | "skills" | "memories") => void;
-  sending?: boolean;
 };
 
 export function Sidebar({
@@ -94,7 +93,6 @@ export function Sidebar({
   onTarget,
   nav = "chat",
   onOpenNav,
-  sending = false,
 }: Props) {
   const accountBox = useRef<{ el: HTMLDetailsElement | null }>({ el: null });
   const [accountOpen, setAccountOpen] = useState(false);
@@ -190,7 +188,7 @@ export function Sidebar({
   };
 
   const renderRun = (run: Run) => {
-    const running = (sending && run.id === currentRunId) || isActiveRunStatus(run.status);
+    const running = isActiveRunStatus(run.status);
     const pinned = pinnedIds.includes(run.id);
     const canSelect = selecting && !isShelvedRun(run.status);
     const editing = editingId === run.id;
@@ -233,7 +231,7 @@ export function Sidebar({
           />
         ) : null}
         <span className="run-mark" aria-hidden="true">
-          {running ? <span className="run-busy-ball" /> : <IconChat size={14} />}
+          {running ? <span className="pulse-dot" /> : <IconChat size={14} />}
         </span>
         <div className="run-main">
           {editing ? (
