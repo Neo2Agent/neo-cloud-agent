@@ -6233,7 +6233,7 @@ button.composer-mic.is-listening,
 
 .run-item .run-title {
   display: block;
-  padding-right: 48px;
+  padding-right: 32px;
   font-size: 13px;
   font-weight: 400;
   line-height: 1.35;
@@ -6241,7 +6241,7 @@ button.composer-mic.is-listening,
 
 .run-item:hover .run-title,
 .run-item:focus-within .run-title {
-  padding-right: 56px;
+  padding-right: 48px;
 }
 
 .run-mark {
@@ -6423,7 +6423,7 @@ details.run-group > .run-section-head {
 
 .run-item .run-meta {
   position: absolute;
-  right: 6px;
+  right: 8px;
   top: 50%;
   display: flex;
   align-items: center;
@@ -6435,13 +6435,13 @@ details.run-group > .run-section-head {
 .run-item .run-time {
   display: block;
   margin: 0;
-  padding-left: 10px;
+  padding: 0;
   color: #8a8a8a;
   font-size: 11px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  background: var(--bg-2);
+  background: transparent;
 }
 
 .run-item:hover .run-time,
@@ -6450,12 +6450,10 @@ details.run-group > .run-section-head {
 }
 
 .run-item .run-actions {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: flex-end;
   gap: 0;
-  opacity: 0;
-  pointer-events: none;
 }
 
 .run-item .pin {
@@ -6469,8 +6467,7 @@ details.run-group > .run-section-head {
 
 .run-item:hover .run-actions,
 .run-item:focus-within .run-actions {
-  opacity: 1;
-  pointer-events: auto;
+  display: flex;
 }
 
 .run-item .pin.is-on {
