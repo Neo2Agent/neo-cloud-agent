@@ -1973,3 +1973,17 @@ test("skipRepoDefaults also skips environment default repos", async () => {
   assert.deepEqual(run.repoUrls, []);
 });
 
+test("second same-repo cloud run restores the captured build", async () => {
+  const first = await createRun({ prompt: "capture for restore", repoUrls: ["fixtures/toy-repo"] });
+  assert.equal(first.status, "RUNNING");
+  assert.ok(first.buildId);
+  const second = await createRun({ prompt: "restore the snapshot", repoUrls: ["fixtures/toy-repo"] });
+  assert.equal(second.status, "RUNNING");
+  assert.equal(second.buildId, first.buildId);
+  assert.notEqual(getBootstrap(second.id).workspaceDir, getBootstrap(first.id).workspaceDir);
+  const started = listEvents(second.id).find((item) => item.kind === "scm.clone_started");
+  assert.equal(started?.title, "Restoring environment snapshot");
+  assert.ok(listEvents(second.id).some((item) => item.kind === "build.used"));
+  assert.equal(existsSync(path.join(getBootstrap(first.id).workspaceDir, ".neo", "plugins.json")), true);
+});
+

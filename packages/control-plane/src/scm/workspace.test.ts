@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { runGit } from "./git.js";
 import {
+  CLONE_DEST_BUSY,
   copyTreeAll,
+  gitClone,
   materializeRepos,
   measureWorkspaceBytes,
   persistDurableWorkspace,
@@ -28,6 +31,7 @@ test("resolves GitHub shorthand and local fixture paths", () => {
   assert.equal(local.source, path.join(root, "fixtures/toy-repo"));
   assert.equal(local.name, "toy-repo");
   assert.equal(repoName("https://github.com/acme/app.git"), "app");
+  assert.equal(resolveRepoRef("file:///tmp/not-a-repo", root).kind, "local");
 });
 
 test("skipCopy keeps environment.json and drops run workspaces", () => {
@@ -94,6 +98,69 @@ test("persistDurableWorkspace skips caches, copies user files, and prunes stale 
   assert.equal(existsSync(path.join(dest, "stale.txt")), false);
   assert.equal(measureWorkspaceBytes(src) > 0, true);
   assert.equal(measureWorkspaceBytes(dest), measureWorkspaceBytes(src));
+});
+
+async function fileRemoteFromToy(): Promise<{ url: string; cleanup: () => void }> {
+  const src = mkdtempSync(path.join(tmpdir(), "neo-ws-src-"));
+  const bare = mkdtempSync(path.join(tmpdir(), "neo-ws-bare-"));
+  await copyTreeAll(path.join(root, "fixtures/toy-repo"), src);
+  await runGit(src, ["init", "-b", "main"]);
+  await runGit(src, ["add", "-A"]);
+  await runGit(src, ["commit", "-m", "init"]);
+  await runGit(bare, ["init", "--bare", "-b", "main"]);
+  await runGit(src, ["remote", "add", "origin", bare]);
+  await runGit(src, ["push", "origin", "HEAD:main"]);
+  return {
+    url: pathToFileURL(bare).href,
+    cleanup: () => {
+      rmSync(src, { recursive: true, force: true });
+      rmSync(bare, { recursive: true, force: true });
+    },
+  };
+}
+
+test("materializeRepos clones into a dest that already has Neo overlay", async () => {
+  const remote = await fileRemoteFromToy();
+  const dest = mkdtempSync(path.join(tmpdir(), "neo-ws-overlay-"));
+  try {
+    mkdirSync(path.join(dest, ".neo"), { recursive: true });
+    writeFileSync(path.join(dest, ".neo", "plugins.json"), '{"plugins":[]}\n');
+    const placed = await materializeRepos([remote.url], dest, root);
+    assert.equal(placed.length, 1);
+    assert.equal(existsSync(path.join(dest, ".git")), true);
+    assert.equal(readFileSync(path.join(dest, ".neo", "plugins.json"), "utf8"), '{"plugins":[]}\n');
+    assert.equal(readFileSync(path.join(dest, "hello.txt"), "utf8").includes("toy repo"), true);
+  } finally {
+    remote.cleanup();
+    rmSync(dest, { recursive: true, force: true });
+  }
+});
+
+test("gitClone skips when dest already has a matching remote", async () => {
+  const remote = await fileRemoteFromToy();
+  const dest = mkdtempSync(path.join(tmpdir(), "neo-ws-skip-"));
+  try {
+    rmSync(dest, { recursive: true, force: true });
+    await gitClone(remote.url, dest);
+    writeFileSync(path.join(dest, "LOCAL.txt"), "keep\n");
+    await gitClone(remote.url, dest);
+    assert.equal(readFileSync(path.join(dest, "LOCAL.txt"), "utf8"), "keep\n");
+  } finally {
+    remote.cleanup();
+    rmSync(dest, { recursive: true, force: true });
+  }
+});
+
+test("gitClone refuses unknown leftover files without leaking the dest path", async () => {
+  const dest = mkdtempSync(path.join(tmpdir(), "neo-ws-busy-"));
+  writeFileSync(path.join(dest, "NOTES.md"), "user file\n");
+  await assert.rejects(() => gitClone("https://github.com/acme/app.git", dest), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, CLONE_DEST_BUSY);
+    assert.equal(error.message.includes(dest), false);
+    return true;
+  });
+  rmSync(dest, { recursive: true, force: true });
 });
 
 test("copyTreeAll keeps install output that skipCopy would drop", async () => {

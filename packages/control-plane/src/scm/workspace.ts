@@ -1,9 +1,11 @@
+import { deskRepoKey } from "@neo-cloud-agent/contracts";
 import { spawn } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readdirSync, rmdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { withAskpass } from "./askpass.js";
+import { gitOk } from "./git.js";
 
 const SKIP_NAMES = new Set(["node_modules", "dist", ".pnpm-store", ".control", ".builds", ".warm", ".firecracker"]);
 
@@ -77,6 +79,15 @@ export type RepoRef = {
   name: string;
 };
 
+function looksBareGit(dir: string): boolean {
+  return (
+    existsSync(path.join(dir, "HEAD")) &&
+    existsSync(path.join(dir, "objects")) &&
+    existsSync(path.join(dir, "refs")) &&
+    !existsSync(path.join(dir, ".git"))
+  );
+}
+
 export function repoName(input: string): string {
   const cleaned = input.replace(/\/+$/, "").replace(/\.git$/i, "");
   const base = cleaned.split("/").filter(Boolean).pop() ?? "repo";
@@ -92,6 +103,9 @@ export function resolveRepoRef(raw: string, root: string): RepoRef {
 
   if (trimmed.startsWith("file://")) {
     const source = fileURLToPath(trimmed);
+    if (looksBareGit(source) || /\.git$/i.test(source)) {
+      return { raw: trimmed, kind: "remote", source, name: repoName(source) };
+    }
     return { raw: trimmed, kind: "local", source, name: repoName(source) };
   }
 
@@ -112,15 +126,44 @@ export function resolveRepoRef(raw: string, root: string): RepoRef {
   return { raw: trimmed, kind: "local", source, name: repoName(source) };
 }
 
-export async function gitClone(
+const NEO_OVERLAY_NAMES = new Set([".neo"]);
+
+export const CLONE_DEST_BUSY = "clone destination already has files";
+
+export function isNeoOverlayOnly(dest: string): boolean {
+  if (!existsSync(dest) || !statSync(dest).isDirectory()) {
+    return false;
+  }
+  const names = readdirSync(dest);
+  return names.length > 0 && names.every((name) => NEO_OVERLAY_NAMES.has(name));
+}
+
+function repoIdentity(url: string): string {
+  return deskRepoKey({ remoteUrl: url }) || url.trim().toLowerCase();
+}
+
+async function originMatches(dest: string, url: string): Promise<boolean> {
+  if (!existsSync(path.join(dest, ".git"))) {
+    return false;
+  }
+  try {
+    const origin = await gitOk(dest, ["remote", "get-url", "origin"]);
+    const wanted = repoIdentity(url);
+    return Boolean(wanted) && repoIdentity(origin) === wanted;
+  } catch {
+    return false;
+  }
+}
+
+async function cloneIntoEmpty(
   url: string,
   dest: string,
-  timeoutMs = 60_000,
+  timeoutMs: number,
   token?: string,
 ): Promise<void> {
   if (existsSync(dest)) {
     if (readdirSync(dest).length > 0) {
-      throw new Error(`clone destination is not empty: ${dest}`);
+      throw new Error(CLONE_DEST_BUSY);
     }
     rmdirSync(dest);
   }
@@ -159,6 +202,56 @@ export async function gitClone(
     return;
   }
   await run();
+}
+
+async function cloneBesideOverlay(url: string, dest: string, timeoutMs: number, token?: string): Promise<void> {
+  const tmp = mkdtempSync(path.join(path.dirname(dest), ".neo-clone-"));
+  try {
+    await cloneIntoEmpty(url, tmp, timeoutMs, token);
+    for (const name of readdirSync(tmp)) {
+      const from = path.join(tmp, name);
+      const to = path.join(dest, name);
+      if (name === ".neo" && existsSync(to)) {
+        for (const child of readdirSync(from)) {
+          const childTo = path.join(to, child);
+          if (!existsSync(childTo)) {
+            renameSync(path.join(from, child), childTo);
+          }
+        }
+        continue;
+      }
+      if (existsSync(to)) {
+        continue;
+      }
+      renameSync(from, to);
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+export async function gitClone(
+  url: string,
+  dest: string,
+  timeoutMs = 60_000,
+  token?: string,
+): Promise<void> {
+  if (existsSync(dest)) {
+    if (!statSync(dest).isDirectory()) {
+      throw new Error(CLONE_DEST_BUSY);
+    }
+    if (readdirSync(dest).length === 0) {
+      rmdirSync(dest);
+    } else if (await originMatches(dest, url)) {
+      return;
+    } else if (isNeoOverlayOnly(dest)) {
+      await cloneBesideOverlay(url, dest, timeoutMs, token);
+      return;
+    } else {
+      throw new Error(CLONE_DEST_BUSY);
+    }
+  }
+  await cloneIntoEmpty(url, dest, timeoutMs, token);
 }
 
 export async function copyWorkspaceTree(src: string, dest: string): Promise<void> {
