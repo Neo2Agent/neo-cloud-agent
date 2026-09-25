@@ -178,7 +178,6 @@ export function SidePanel({
         <div className="wb-home">
           <IslandCard
             hoverable
-            color="app-teal"
             className="wb-tile"
             role="button"
             tabIndex={0}
@@ -195,7 +194,6 @@ export function SidePanel({
           </IslandCard>
           <IslandCard
             hoverable
-            color="app-yellow"
             className="wb-tile"
             role="button"
             tabIndex={0}
@@ -230,7 +228,6 @@ export function SidePanel({
           ) : null}
           <IslandCard
             hoverable
-            color="brown"
             className="wb-tile"
             role="button"
             tabIndex={0}

@@ -15,7 +15,9 @@ import type {
 } from "@neo-cloud-agent/contracts/project";
 import type { CreateProjectAssetRequest, ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
-import type { RunCommitsResponse, RunDiffResponse } from "@neo-cloud-agent/contracts/git";
+import type { PullRequestFeedback, RunCommitsResponse, RunDiffResponse } from "@neo-cloud-agent/contracts/git";
+import type { UserListEvent } from "@neo-cloud-agent/contracts/client-stream";
+import { RUN_LIST_STREAM_PATH } from "@neo-cloud-agent/contracts/client-stream";
 import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
 import { DEFAULT_TRANSCRIPT_PAGE } from "@neo-cloud-agent/contracts/transcript";
 
@@ -434,6 +436,19 @@ export class MobileClient {
     return this.request("GET", `/v1/runs/${id}/commits`);
   }
 
+  runPrFeedback(id: string, number: number): Promise<PullRequestFeedback> {
+    return this.request("GET", `/v1/runs/${id}/pull-requests/${number}/feedback`);
+  }
+
+  inviteCollaborator(id: string, userId: string): Promise<Run> {
+    return this.request("POST", `/v1/runs/${id}/collaborators`, { userId });
+  }
+
+  listScmRepos(query?: string): Promise<{ connected?: boolean; repos: Array<{ fullName: string; url: string }> }> {
+    const q = query?.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
+    return this.request("GET", `/v1/scm/repos${q}`);
+  }
+
   registerDevice(input: CreateDeviceRequest): Promise<Device> {
     return this.request("POST", "/v1/devices", input);
   }
@@ -472,6 +487,28 @@ export class MobileClient {
       throw new MobileApiError(`sse ${response.status}`, response.status);
     }
     for await (const event of readSseEvents<RunEvent>(response)) {
+      onEvent(event);
+    }
+  }
+
+  async streamUserList(
+    onEvent: (event: UserListEvent) => void,
+    options?: { signal?: AbortSignal },
+  ): Promise<void> {
+    const headers = this.headers(false, { accept: "text/event-stream" });
+    if (!this.injectedFetch && shouldUseXhrSse()) {
+      await streamSseWithXhr<UserListEvent>(this.resolve(RUN_LIST_STREAM_PATH), headers, onEvent, options?.signal);
+      return;
+    }
+    const response = await this.fetchImpl(this.resolve(RUN_LIST_STREAM_PATH), {
+      method: "GET",
+      headers,
+      signal: options?.signal,
+    });
+    if (!response.ok) {
+      throw new MobileApiError(`sse ${response.status}`, response.status);
+    }
+    for await (const event of readSseEvents<UserListEvent>(response)) {
       onEvent(event);
     }
   }

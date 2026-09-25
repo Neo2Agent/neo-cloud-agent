@@ -22,6 +22,7 @@ import type {
   TranscriptSnapshot,
   WorkerInbound,
 } from "@neo-cloud-agent/contracts";
+import { notifyRunListWatchers } from "../events/user-bus.js";
 import {
   getObjectSync,
   listObjectsSync,
@@ -206,6 +207,7 @@ export function persistRunRecord(record: PersistedRun, runsDir?: string, options
   if (options?.mirror !== false) {
     persistHooks.onRun?.(stored);
   }
+  notifyRunListWatchers(stored.run);
 }
 
 export function persistTranscriptSnapshot(snapshot: TranscriptSnapshot, runsDir?: string): void {

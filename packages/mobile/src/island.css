@@ -200,6 +200,35 @@ button:disabled { opacity: 0.4; cursor: default; }
   font-size: 12px;
 }
 
+.composer-repo select {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.chat-head-pop { position: relative; }
+.chat-pop {
+  position: absolute;
+  right: 0;
+  top: 36px;
+  z-index: 8;
+  width: 240px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
 .composer-bar {
   position: relative;
   z-index: 2;

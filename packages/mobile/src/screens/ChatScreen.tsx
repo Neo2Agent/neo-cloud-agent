@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
@@ -31,6 +31,7 @@ type Props = {
   onOpenDiagnostics?: () => void;
   onOpenGit?: () => void;
   userId?: string;
+  invite?: ReactNode;
 };
 
 function Avatar({ src, letter, neo }: { src?: string | null; letter: string; neo?: boolean }) {
@@ -111,6 +112,7 @@ export function ChatScreen({
   onOpenDiagnostics,
   onOpenGit,
   userId,
+  invite,
 }: Props) {
   const liveId = liveAssistantId(messages, running);
   const mine = avatarLetter(userEmail);
@@ -142,6 +144,7 @@ export function ChatScreen({
               <Text style={styles.actionText}>Git</Text>
             </Pressable>
           ) : null}
+          {invite}
           {run.status === "ERROR" && onOpenDiagnostics ? (
             <Pressable onPress={onOpenDiagnostics} style={[styles.action, styles.actionWarn]}>
               <Text style={styles.actionText}>查看诊断</Text>

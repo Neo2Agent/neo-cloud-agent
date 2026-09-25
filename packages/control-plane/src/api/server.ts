@@ -58,6 +58,7 @@ import {
   resolveTranscriptImage,
 } from "../store/event-images.js";
 import { SSE_HEADERS, attachEventStream } from "../events/stream.js";
+import { attachUserListStream } from "../events/user-stream.js";
 import {
   abortRun,
   archiveRun,
@@ -891,6 +892,14 @@ export function createApiServer() {
           } catch (error) {
             send(res, 502, { error: error instanceof Error ? error.message : "听写服务不可用" });
           }
+          return;
+        }
+        if (method === "GET" && path === "/v1/me/events") {
+          if (actor.kind !== "user") {
+            send(res, 401, { error: "login_required" });
+            return;
+          }
+          attachUserListStream(req, res, actor.userId);
           return;
         }
         if (method === "GET" && path === "/v1/me") {

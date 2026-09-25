@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { parseHunkLines, splitPatchByFile, type RunCommitsResponse, type RunDiffResponse } from "@neo-cloud-agent/contracts/git";
+import {
+  parseHunkLines,
+  splitPatchByFile,
+  type PullRequestFeedback,
+  type RunCommitsResponse,
+  type RunDiffResponse,
+} from "@neo-cloud-agent/contracts/git";
 import type { MobileClient } from "../api/client";
 import { colors } from "./theme";
 
-type Tab = "diff" | "commits";
+type Tab = "diff" | "review" | "commits";
 
 export function GitScreen({
   client,
@@ -20,6 +26,7 @@ export function GitScreen({
   const [tab, setTab] = useState<Tab>("diff");
   const [diff, setDiff] = useState<RunDiffResponse | null>(null);
   const [commits, setCommits] = useState<RunCommitsResponse | null>(null);
+  const [feedback, setFeedback] = useState<PullRequestFeedback | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -27,11 +34,21 @@ export function GitScreen({
     let cancelled = false;
     const load = () => {
       void Promise.all([client.runDiff(runId), client.runCommits(runId)])
-        .then(([nextDiff, nextCommits]) => {
+        .then(async ([nextDiff, nextCommits]) => {
           if (cancelled) return;
           setDiff(nextDiff);
           setCommits(nextCommits);
           setSelected((cur) => cur ?? nextDiff.files[0]?.path ?? null);
+          const number = nextDiff.pullRequests.find((item) => item.number)?.number;
+          if (!number) {
+            setFeedback(null);
+            return;
+          }
+          try {
+            setFeedback(await client.runPrFeedback(runId, number));
+          } catch {
+            if (!cancelled) setFeedback(null);
+          }
         })
         .catch((caught) => {
           if (!cancelled) setError(caught instanceof Error ? caught.message : "读不出 Git");
@@ -66,6 +83,9 @@ export function GitScreen({
         <Pressable onPress={() => setTab("diff")} style={[styles.tab, tab === "diff" ? styles.tabOn : null]}>
           <Text style={styles.tabText}>改动</Text>
         </Pressable>
+        <Pressable onPress={() => setTab("review")} style={[styles.tab, tab === "review" ? styles.tabOn : null]}>
+          <Text style={styles.tabText}>审查</Text>
+        </Pressable>
         <Pressable onPress={() => setTab("commits")} style={[styles.tab, tab === "commits" ? styles.tabOn : null]}>
           <Text style={styles.tabText}>提交</Text>
         </Pressable>
@@ -83,7 +103,28 @@ export function GitScreen({
             </Text>
           </View>
         ))}
-        {tab === "diff" ? (
+        {tab === "review" ? (
+          <>
+            <Text style={styles.section}>审查（只读）</Text>
+            {(feedback?.checks ?? []).length === 0 ? <Text style={styles.muted}>还没有 CI</Text> : null}
+            {(feedback?.checks ?? []).map((check) => (
+              <View key={`${check.name}:${check.url}`} style={styles.card}>
+                <Text style={styles.file}>{check.name}</Text>
+                <Text style={styles.muted}>
+                  {check.status}
+                  {check.conclusion ? ` · ${check.conclusion}` : ""}
+                </Text>
+              </View>
+            ))}
+            {(feedback?.reviews ?? []).map((review) => (
+              <View key={review.id} style={styles.card}>
+                <Text style={styles.pr}>{review.author || "审阅者"}</Text>
+                <Text style={styles.muted}>{review.state}</Text>
+                {review.body ? <Text style={styles.file}>{review.body}</Text> : null}
+              </View>
+            ))}
+          </>
+        ) : tab === "diff" ? (
           <>
             <Text style={styles.section}>文件</Text>
             {(diff?.files ?? []).map((file) => (

@@ -20,7 +20,14 @@ import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, readRecentRepos, rememberRecentRepo, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs";
 import { cloudSafeRepoUrls, isLocalFolderRef, normalizeRepoUrl } from "./repo";
 import { shortcutAction } from "./shortcuts";
-import { applyLiveEvents, parseSseData, RUN_LIST_REFRESH_MS } from "@neo-cloud-agent/contracts/client-stream";
+import {
+  applyLiveEvents,
+  parseSseData,
+  parseUserListEvent,
+  runListEventsQuery,
+  RUN_LIST_REFRESH_MS,
+  RUN_LIST_STREAM_PATH,
+} from "@neo-cloud-agent/contracts/client-stream";
 import { AuthGate, type AuthMode } from "./components/AuthGate";
 import { ChatErrorBoundary } from "./components/ChatErrorBoundary";
 import { ArtifactsPanel } from "./components/ArtifactsPanel";
@@ -1396,6 +1403,18 @@ export function App() {
     }, 5000);
     return () => window.clearInterval(timer);
   }, [applyVms, refreshDesks, refreshRuns, refreshVms, runId]);
+
+  useEffect(() => {
+    if (!token) return;
+    const source = new EventSource(withApiBase(`${RUN_LIST_STREAM_PATH}${runListEventsQuery({ accessToken: token })}`));
+    source.onmessage = (event) => {
+      if (parseUserListEvent(event.data)) {
+        runsRefreshedRef.current = Date.now();
+        void refreshRuns();
+      }
+    };
+    return () => source.close();
+  }, [refreshRuns, token]);
 
   useEffect(() => {
     const onVisible = () => {

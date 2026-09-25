@@ -313,6 +313,10 @@ export function IslandComposer(props: {
   onSteer?: () => void;
   onStop?: () => void;
   contextUsage?: ContextUsageSnapshot | null;
+  repo?: string;
+  repos?: Array<{ fullName: string; url: string }>;
+  repoLocked?: boolean;
+  onRepo?: (url: string) => void;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
@@ -425,6 +429,25 @@ export function IslandComposer(props: {
     <div className="composer-dock">
       <div className="composer-context">
         <span>云端</span>
+        {props.onRepo && !props.repoLocked ? (
+          <label className="composer-repo">
+            <span className="sr-only">仓库</span>
+            <select
+              aria-label="绑定仓库"
+              value={props.repo ?? ""}
+              onChange={(event) => props.onRepo?.(event.target.value)}
+            >
+              <option value="">无仓库</option>
+              {(props.repos ?? []).map((item) => (
+                <option key={item.url} value={item.url}>
+                  {item.fullName}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</span>
+        )}
       </div>
       <div className="composer-bar">
         {images.length > 0 ? (

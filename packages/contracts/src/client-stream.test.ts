@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyLiveEvents, batchTurnSignal, parseSseData, runEventsQuery, runsNewestFirst } from "./client-stream.js";
+import {
+  applyLiveEvents,
+  batchTurnSignal,
+  parseSseData,
+  parseUserListEvent,
+  runEventsQuery,
+  runListEventsQuery,
+  RUN_LIST_CHANGED_KIND,
+  RUN_LIST_STREAM_PATH,
+  runsNewestFirst,
+} from "./client-stream.js";
 import type { RunEvent } from "./events.js";
 
 function ev(id: string, kind: RunEvent["kind"], delta?: string): RunEvent {
@@ -46,6 +56,13 @@ test("runEventsQuery only carries the parameters it was given", () => {
   assert.equal(runEventsQuery(), "");
   assert.equal(runEventsQuery({ after: "e1" }), "?after=e1");
   assert.equal(runEventsQuery({ after: "e1", accessToken: "t", client: "desk" }), "?after=e1&access_token=t&client=desk");
+});
+
+test("run list stream helpers name the user-level path and kind", () => {
+  assert.equal(RUN_LIST_STREAM_PATH, "/v1/me/events");
+  assert.equal(runListEventsQuery({ accessToken: "t" }), "?access_token=t");
+  assert.equal(parseUserListEvent(JSON.stringify({ id: "l1", kind: RUN_LIST_CHANGED_KIND, createdAt: "t" }))?.id, "l1");
+  assert.equal(parseUserListEvent(JSON.stringify({ id: "x", kind: "ping" })), null);
 });
 
 test("runsNewestFirst orders by last activity", () => {

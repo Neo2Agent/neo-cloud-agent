@@ -16,6 +16,8 @@ test("mobile lab uses the shared Web monochrome tokens", () => {
   assert.match(css, /@import "@neo-cloud-agent\/ui\/git-panel\.css"/);
   assert.match(css, /font:\s*16px\/1.45 var\(--font-sans\)/);
   assert.match(css, /\.composer-context\s*\{/);
+  assert.match(css, /\.composer-repo select/);
+  assert.match(css, /\.chat-head-pop/);
   assert.match(css, /\.work-fold\s*,/);
   assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);
   assert.match(css, /\.work-fold-body\s*\{/);

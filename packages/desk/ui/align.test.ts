@@ -18,6 +18,7 @@ test("desk chrome imports the shared Web monochrome tokens", () => {
 });
 
 test("desk composer is the Cursor / Web box: + pickers left, circular send", () => {
+  assert.match(css, /\.composer-box/);
   assert.match(css, /\.composer-pickers\s*\{/);
   assert.match(css, /\.composer-attach\s*\{/);
   assert.match(css, /\.composer-queue\s*\{/);

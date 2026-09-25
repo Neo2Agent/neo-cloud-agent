@@ -2629,6 +2629,7 @@ img.avatar {
   margin-top: 2px;
 }
 
+.composer-box,
 .composer.composer-stack {
   position: relative;
   display: flex;

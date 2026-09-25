@@ -2,8 +2,19 @@ import type { RunEvent } from "./events.js";
 
 export type TurnSignal = "work" | "idle" | "fail";
 
-/** There is no run-list push yet; every client re-reads `GET /v1/runs` this often while visible. */
-export const RUN_LIST_REFRESH_MS = 8000;
+/** User-level SSE that pushes `runs.changed` when a visible run is created, renamed, archived, or shared. */
+export const RUN_LIST_STREAM_PATH = "/v1/me/events";
+export const RUN_LIST_CHANGED_KIND = "runs.changed";
+
+/** Fallback poll if the list stream is down. Live clients prefer `RUN_LIST_STREAM_PATH`. */
+export const RUN_LIST_REFRESH_MS = 30_000;
+
+export type UserListEvent = {
+  id: string;
+  kind: typeof RUN_LIST_CHANGED_KIND;
+  createdAt: string;
+  data?: { runId?: string; reason?: string };
+};
 
 /** Newest activity first, the order every client's run list uses. */
 export function runsNewestFirst<T extends { updatedAt?: string; createdAt?: string }>(runs: T[]): T[] {
@@ -93,4 +104,22 @@ export function runEventsQuery(
   if (opts.client) params.set("client", opts.client);
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+/** Query for `GET /v1/me/events`. EventSource cannot set Authorization, so the token is a query param. */
+export function runListEventsQuery(opts: { accessToken?: string | null; after?: string | null } = {}): string {
+  const params = new URLSearchParams();
+  if (opts.after) params.set("after", opts.after);
+  if (opts.accessToken) params.set("access_token", opts.accessToken);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export function parseUserListEvent(raw: string): UserListEvent | null {
+  try {
+    const event = JSON.parse(raw) as UserListEvent;
+    return event?.id && event.kind === RUN_LIST_CHANGED_KIND ? event : null;
+  } catch {
+    return null;
+  }
 }

@@ -89,7 +89,7 @@
 
 ### 4.1 读代码发现的
 
-1. **Remote Control 在现网跑不起来。** Remote 要 `neo-loop`，而 `deploy.sh` 每次都会把现网 `neo-loop` 关掉（4C/4G 内存的取舍），但 Desk 上仍然能选 Remote。**未改**，放第二期：`/health` 报 `neoLoop.available=false` 时把 Remote 置灰，或加内存后开 loop。
+1. **Remote Control 在现网跑不起来。** Remote 要 `neo-loop`，而 `deploy.sh` 每次都会把现网 `neo-loop` 关掉（4C/4G 内存的取舍）。**已修**：`/health` 报 `neoLoop.available=false` 时 Desk 把 Remote Control 置灰。
 2. **手机浏览器打开 Web 布局是坏的。** 桌面的「折叠侧栏 = 48px 图标栏」在窄屏也生效，关掉的侧栏被排到第 2 行；窄屏检查器覆盖层的层级低于输入框；对话列表按钮随图标栏一起进了侧栏，关掉后没地方打开。**已修**，见 §6.3。
 3. **Web 普通对话也显示 Diff 和「开草稿 PR」。** 在 Git 面板那个 PR 里修（按 `runGitContext` 显示）。人入口已去掉：绑仓库的对话进 IDLE 且分支有提交时，控制面 handoff 自动开草稿 PR。
 4. **Desk 回车没有输入法保护。** **已修**。
@@ -151,7 +151,7 @@
 - **审查**：CI 手风琴按 `进行中` / `失败` / `已通过` 分组，左侧图标。有失败或进行中默认展开，全绿默认收起。**只有 `failed > 0`** 时在手风琴底部出「查找问题」（`POST /v1/runs/:id/review`）。审查页签：进行中转圈、失败红点、全绿绿点。不做 Ready to merge 第二颗合并按钮。内部页签用和文件栏一样的灰底 pill。
 - **Cursor 3 Agents Window**：改动树、Commit and Push 下拉。这是桌面编排面，Neo 不跟。
 
-Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、`dirty`、`GET /commits`、审查页 CI、Desk 快照、ready / squash merge。Desk / Mobile 自己的 Git 标签仍是第二期。改 reviewer、行内评论回写仍是第三期。
+Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、`dirty`、`GET /commits`、审查页 CI、Desk 快照、ready / squash merge。Desk 本机 Git 与 Mobile 只读 Git（改动 / 审查 / 提交）已落地。改 reviewer、行内评论回写仍是第三期。
 
 ### 5.2 协作组文件夹 + 组内选仓（2026-09-24）
 
@@ -175,7 +175,7 @@ Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、
 - Desk 和 Mobile 的输入框改成 Cursor 式：选择器在框外上方，框内是 `+`、模型、用量、麦克风、圆形发送 / 停止。**已落地**（用量芯片三端共用 `packages/ui` `ContextUsageControl`）。
 - Git 面板复用到 Desk（本机 git）和 Mobile（只读 PR / 提交）。**已落地**。
 - Web 桌面加 Cmd+K 会话搜索；Web 加「邀请协作者进对话」（P15）。**已落地**。
-- 运行列表改成推送：用户级 SSE 推「列表变了」，替掉 8s 轮询。**未改**，三端仍是 8s + 聚焦刷新。
+- 运行列表改成推送：用户级 SSE 推「列表变了」，替掉 8s 轮询。**已落地**（`GET /v1/me/events` 的 `runs.changed`；三端聚焦刷新 + 30s 兜底）。
 - `/health` 报告 `neo-loop` 可用性，现网不可用时 Desk 把 Remote Control 置灰（§4.1 第 1 条）；P16、P17。**已落地**。
 - Mobile 原生：Markdown、工作折叠、插话。**已落地**。
 

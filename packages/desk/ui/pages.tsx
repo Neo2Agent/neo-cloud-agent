@@ -140,12 +140,12 @@ export function SearchPalette({
   onClose: () => void;
 }) {
   const tabs: Array<{ id: SearchFilter; label: string }> = [
-    { id: "all", label: "All" },
-    { id: "agents", label: "Agents" },
-    { id: "files", label: "Files" },
-    { id: "actions", label: "Actions" },
+    { id: "all", label: "全部" },
+    { id: "agents", label: "对话" },
+    { id: "files", label: "文件" },
+    { id: "actions", label: "操作" },
     { id: "todos", label: "待办" },
-    { id: "settings", label: "Settings" },
+    { id: "settings", label: "设置" },
   ];
   const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
@@ -163,14 +163,14 @@ export function SearchPalette({
         className="palette palette-float"
         role="dialog"
         aria-modal="true"
-        aria-label="Search"
+        aria-label="搜索对话"
         onClick={(event) => event.stopPropagation()}
       >
         <input
           ref={searchRef}
           className="palette-input"
           value={query}
-          placeholder="Search agents, files, actions…"
+          placeholder="搜索对话、项目、文件…"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={onKey}
         />
@@ -189,7 +189,7 @@ export function SearchPalette({
         <div className="palette-body">
           {filter === "settings" ? (
             <button type="button" className="palette-row" onClick={onOpenSettings}>
-              <strong>Models</strong>
+              <strong>模型</strong>
               <span>配置模型名、API Key、Base URL</span>
             </button>
           ) : filter === "files" || filter === "actions" ? (
@@ -653,6 +653,9 @@ export function ContextBar({
   setOpen,
   locked,
   remoteAvailable = true,
+  cloudRepo = "",
+  githubRepos = [],
+  onCloudRepo,
 }: {
   workspaces: Array<{ id: string; folder: string; name: string; git: boolean }>;
   folder: string;
@@ -668,6 +671,9 @@ export function ContextBar({
   locked?: boolean;
   /** Control-plane `/health.neoLoop.available`. Remote Control needs neo-loop. */
   remoteAvailable?: boolean;
+  cloudRepo?: string;
+  githubRepos?: Array<{ fullName: string; url: string }>;
+  onCloudRepo?: (url: string) => void;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(open !== null && !locked, () => setOpen(null), barRef);
@@ -675,23 +681,26 @@ export function ContextBar({
   const remoteNeedsFolder = !folder;
   const remoteDisabled = !canRunLocal || remoteNeedsFolder || !remoteAvailable;
   const folderPickerOpen = !locked && local && open === "repo";
+  const cloudRepoOpen = !locked && !local && open === "repo" && Boolean(onCloudRepo);
   const activeFolder = workspaces.find((item) => trimTrailingSlash(item.folder) === trimTrailingSlash(folder));
   const workspaceLabel = local
     ? activeFolder?.name || (folder ? lastSegment(folder) : targetKind === TARGET_REMOTE ? "选择文件夹" : "不绑定文件夹")
-    : "不关联仓库";
+    : cloudRepo
+      ? lastSegment(cloudRepo.replace(/\.git$/, ""))
+      : "无仓库";
 
   return (
-    <div className="context-bar" ref={barRef}>
+    <div className="context-bar composer-context" ref={barRef}>
       <div className="context-item-wrap">
         <button
           type="button"
           className="context-item"
-          disabled={locked || !local}
+          disabled={locked || (local ? false : !onCloudRepo)}
           onClick={() => setOpen(open === "repo" ? null : "repo")}
         >
           {local ? folder ? <IconComputer size={13} /> : <IconUnbindFolder size={13} /> : null}
           <span>{workspaceLabel}</span>
-          {local ? <IconChevronDown size={12} /> : null}
+          {locked ? null : <IconChevronDown size={12} />}
         </button>
         {folderPickerOpen ? (
           <div className="context-menu" role="menu">
@@ -731,6 +740,34 @@ export function ContextBar({
               >
                 <IconComputer size={13} />
                 <span title={item.git ? undefined : "不是 git 仓库"}>{item.name}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {cloudRepoOpen ? (
+          <div className="context-menu" role="menu">
+            <button
+              type="button"
+              className={!cloudRepo ? "on" : ""}
+              onClick={() => {
+                onCloudRepo?.("");
+                setOpen(null);
+              }}
+            >
+              无仓库
+            </button>
+            {githubRepos.length === 0 ? <p className="context-menu-label">设置里绑定 GitHub 后可选仓库</p> : <p className="context-menu-label">GitHub</p>}
+            {githubRepos.map((item) => (
+              <button
+                key={item.url}
+                type="button"
+                className={cloudRepo === item.url ? "on" : ""}
+                onClick={() => {
+                  onCloudRepo?.(item.url);
+                  setOpen(null);
+                }}
+              >
+                {item.fullName}
               </button>
             ))}
           </div>
@@ -1106,7 +1143,7 @@ export function ChatComposer({
             </button>
             {menuOpen ? (
               <div className="model-menu" role="menu">
-                <p className="palette-label">Your models</p>
+                <p className="palette-label">你的模型</p>
                 {models.length === 0 ? <p className="pane-note">还没有配置模型</p> : null}
                 {models.map((name) => (
                   <button key={name} type="button" className={name === selected ? "on" : ""} onClick={() => onSelectModel(name)}>
@@ -1115,7 +1152,7 @@ export function ChatComposer({
                   </button>
                 ))}
                 <button type="button" className="add-model" onClick={onAddModel}>
-                  Add Models
+                  添加模型
                 </button>
               </div>
             ) : null}
@@ -1152,7 +1189,7 @@ export function ChatComposer({
               <IconStop size={14} />
             </button>
           ) : (
-            <button type="button" className="send-btn" aria-label="Send" disabled={locked || sending || empty || listening} onClick={onSubmit}>
+            <button type="button" className="send-btn" aria-label="发送" disabled={locked || sending || empty || listening} onClick={onSubmit}>
               <IconArrowUp size={16} />
             </button>
           )}
@@ -1163,7 +1200,7 @@ export function ChatComposer({
 
   if (home) {
     return (
-      <div className="composer composer-stack home">
+      <div className="composer composer-stack composer-box home">
         {inner}
       </div>
     );
@@ -1171,7 +1208,7 @@ export function ChatComposer({
 
   return (
     <div ref={boxRef} className="composer-follow">
-      <div className="composer composer-stack follow">{inner}</div>
+      <div className="composer composer-stack composer-box follow">{inner}</div>
     </div>
   );
 }

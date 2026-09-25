@@ -15,7 +15,15 @@ import {
 } from "@neo-cloud-agent/contracts/context-usage";
 import { runDisplayTitle, type ExecutionTarget, type FollowUpDelivery, type ImageRef, type PullRequestRef, type Run } from "@neo-cloud-agent/contracts/run";
 import { composerKeyAction, followUpDelivery } from "@neo-cloud-agent/contracts/composer-keys";
-import { batchTurnSignal, parseSseData, runEventsQuery, RUN_LIST_REFRESH_MS } from "@neo-cloud-agent/contracts/client-stream";
+import {
+  batchTurnSignal,
+  parseSseData,
+  parseUserListEvent,
+  runEventsQuery,
+  runListEventsQuery,
+  RUN_LIST_REFRESH_MS,
+  RUN_LIST_STREAM_PATH,
+} from "@neo-cloud-agent/contracts/client-stream";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Tooltip } from "@neo-cloud-agent/ui";
@@ -283,6 +291,8 @@ export function App() {
   const [nav, setNav] = useState<NavId>("chats");
   const [target, setTarget] = useState<DeskTarget>({ kind: "cloud" });
   const [folder, setFolder] = useState("");
+  const [cloudRepo, setCloudRepo] = useState("");
+  const [githubRepos, setGithubRepos] = useState<Array<{ fullName: string; url: string }>>([]);
   const [llm, setLlm] = useState<PublicLlmSettings>({
     configured: false,
     upstream: "mock",
@@ -934,9 +944,10 @@ export function App() {
                 ? folder
                   ? [folder]
                   : []
-                : activeProject?.defaultRepoUrls?.length
-                  ? activeProject.defaultRepoUrls
+                : cloudRepo
+                  ? [cloudRepo]
                   : [],
+              skipRepoDefaults: !local && !cloudRepo,
               target: local ? localRunTarget(target, localDeskId) : { loop: "cloud", tools: "cloud" },
             }),
           }),
@@ -1072,6 +1083,14 @@ export function App() {
         setInboxOpen(false);
         setAccountOpen(false);
       }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchOpen(true);
+        setSearchFilter("all");
+        void refreshRuns();
+        requestAnimationFrame(() => searchRef.current?.focus());
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "w") {
         if (!runId) return;
         event.preventDefault();
@@ -1087,7 +1106,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeProject, closeStream, runId]);
+  }, [activeProject, closeStream, refreshRuns, runId]);
 
   useEffect(() => {
     if (!authed) return;
@@ -1113,6 +1132,19 @@ export function App() {
       window.clearInterval(listTimer);
     };
   }, [authed, refreshHealth, refreshInbox, refreshRuns]);
+
+  useEffect(() => {
+    if (!authed || !token) return;
+    void api(token, "/v1/scm/repos")
+      .then((response) => readJson<{ repos?: Array<{ fullName: string; url: string }> }>(response))
+      .then((body) => setGithubRepos(body.repos ?? []))
+      .catch(() => setGithubRepos([]));
+    const source = new EventSource(withApiBase(`${RUN_LIST_STREAM_PATH}${runListEventsQuery({ accessToken: token })}`));
+    source.onmessage = (event) => {
+      if (parseUserListEvent(event.data)) void refreshRuns();
+    };
+    return () => source.close();
+  }, [authed, refreshRuns, token]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
@@ -1368,6 +1400,7 @@ export function App() {
     setDiff(null);
     setImages([]);
     setPluginPick(null);
+    setCloudRepo("");
     setSearchOpen(false);
     setModelMenu(false);
     setContextOpen(null);
@@ -1717,7 +1750,7 @@ export function App() {
     return (
       <div className="login-shell">
         <div className="login-scene">
-          <IslandTitle color="app-teal" size="large">
+          <IslandTitle size="large">
             Neo Desk
           </IslandTitle>
           <IslandCard className="login-card">
@@ -2006,7 +2039,7 @@ export function App() {
             >
               <Avatar src={userAvatar} label={user} />
               <span className="profile-name">{user}</span>
-              {remoteApiHost ? <IslandTag color="app-teal">生产</IslandTag> : null}
+              {remoteApiHost ? <IslandTag>生产</IslandTag> : null}
             </button>
             <div className="profile-tools">
               <Tooltip content="收件箱" side="top">
@@ -2391,6 +2424,9 @@ export function App() {
                 }}
                 locked={Boolean(current)}
                 remoteAvailable={remoteAvailable}
+                cloudRepo={current?.repoUrls?.[0] || cloudRepo}
+                githubRepos={githubRepos}
+                onCloudRepo={setCloudRepo}
               />
               {current ? (
                 <ChatComposer

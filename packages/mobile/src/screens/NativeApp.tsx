@@ -7,6 +7,7 @@ import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import { runGitContext } from "@neo-cloud-agent/contracts/git";
 import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
+import { attachUserListStream } from "../list-live";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { transcriptBodyNeeded } from "@neo-cloud-agent/contracts/transcript";
 import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
@@ -55,6 +56,7 @@ import {
 import { formatContextPercent } from "@neo-cloud-agent/contracts/context-usage";
 import { ChatScreen } from "./ChatScreen";
 import { GitScreen } from "./GitScreen";
+import { RunInvite } from "./RunInvite";
 import { startNativeVoice } from "../native/speech";
 import { Composer } from "./Composer";
 import { Drawer } from "./Drawer";
@@ -105,6 +107,8 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [cloudRepo, setCloudRepo] = useState("");
+  const [githubRepos, setGithubRepos] = useState<Array<{ fullName: string; url: string }>>([]);
   const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [memoryConfigured, setMemoryConfigured] = useState(false);
@@ -211,15 +215,20 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     void refreshList().catch((error) => {
       if (error instanceof MobileApiError && error.status === 401) void persistTokenRef.current("");
     });
+    void client.listScmRepos().then((listed) => setGithubRepos(listed.repos ?? [])).catch(() => setGithubRepos([]));
     void registerExpoPushDevice((input) => client.registerDevice(input), Platform.OS === "ios" ? "iPhone" : "Android");
     const timer = setInterval(() => {
       void refreshList().catch(() => undefined);
     }, RUN_LIST_REFRESH_MS);
+    const stopList = attachUserListStream(client, () => {
+      void refreshList().catch(() => undefined);
+    });
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") void refreshList().catch(() => undefined);
     });
     return () => {
       clearInterval(timer);
+      stopList();
       sub.remove();
     };
   }, [ready, token, refreshList, client]);
@@ -497,6 +506,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             expert: expertPick,
             pluginIds,
             projectId: projectId ?? undefined,
+            repoUrls: cloudRepo ? [cloudRepo] : [],
             images: attached,
           }),
         );
@@ -826,6 +836,10 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       onSteer={current ? () => void send("steer") : undefined}
       onStop={current ? () => void client.abort(current.id) : undefined}
       usageLabel={formatContextPercent(contextUsage.percent) ?? "用量"}
+      repo={current?.repoUrls?.[0] || cloudRepo}
+      repos={githubRepos}
+      repoLocked={Boolean(current)}
+      onRepo={setCloudRepo}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
     />
   );
@@ -866,6 +880,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
           }}
           onOpenGit={current && runGitContext(current) !== "none" ? () => setScreen("git") : undefined}
           userId={userId}
+          invite={current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         />
       ) : (
         <View style={styles.home}>

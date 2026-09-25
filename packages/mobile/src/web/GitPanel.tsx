@@ -57,6 +57,7 @@ type Props = {
   refreshKey: string;
   busy?: boolean;
   onPullRequests?: (next: PullRequestRef[]) => void;
+  readOnly?: boolean;
 };
 
 const STATUS_MARK: Record<GitFileChange["status"], string> = {
@@ -289,6 +290,7 @@ function PrHeader({
   onSelect,
   onReady,
   onMerge,
+  readOnly = false,
 }: {
   prs: PullRequestRef[];
   pr: PullRequestRef | undefined;
@@ -300,8 +302,9 @@ function PrHeader({
   acting: boolean;
   actionError: string;
   onSelect: (pr: PullRequestRef) => void;
-  onReady: () => void;
-  onMerge: (method: MergeMethod) => void;
+  onReady?: () => void;
+  onMerge?: (method: MergeMethod) => void;
+  readOnly?: boolean;
 }) {
   const badge = pr ? prBadge(pr) : null;
   const head = pr?.branch || branch;
@@ -310,9 +313,9 @@ function PrHeader({
   const compare = compareHref(pr, branch, baseBranch);
   const action = headAction(pr, context);
   const runAction = () => {
-    if (!action || action.disabled) return;
-    if (action.kind === "ready") onReady();
-    else if (action.kind === "merge") onMerge("squash");
+    if (readOnly || !action || action.disabled) return;
+    if (action.kind === "ready") onReady?.();
+    else if (action.kind === "merge") onMerge?.("squash");
   };
   return (
     <header className="git-head">
@@ -328,9 +331,9 @@ function PrHeader({
               查看 PR
             </a>
           ) : null}
-          {action?.kind === "merge" && !action.disabled ? (
+          {readOnly ? null : action?.kind === "merge" && !action.disabled && onMerge ? (
             <MergeSplit acting={acting} onMerge={onMerge} />
-          ) : action ? (
+          ) : !readOnly && action ? (
             <button
               type="button"
               className={`git-btn git-head-cta${action.disabled ? " is-ghost" : " is-primary"}`}
@@ -445,6 +448,7 @@ function DiffView({
   commitError,
   onCommit,
   otherBranch,
+  readOnly = false,
 }: {
   diff: RunDiffResponse | null;
   context: Props["context"];
@@ -454,6 +458,7 @@ function DiffView({
   commitError: string;
   onCommit: (message: string) => void;
   otherBranch?: string | null;
+  readOnly?: boolean;
 }) {
   const patches = useMemo(() => new Map(splitPatchByFile(diff?.patch ?? "").map((item) => [item.path, item.patch])), [diff?.patch]);
   const files = diff?.files ?? [];
@@ -512,7 +517,7 @@ function DiffView({
           {diff?.truncated ? <p className="git-note">改动太大，预览只显示了前一部分。</p> : null}
         </>
       )}
-      {context === "cloud" && dirty ? (
+      {!readOnly && context === "cloud" && dirty ? (
         <form
           className="git-commit"
           onSubmit={(event) => {
@@ -732,7 +737,7 @@ function ReviewView({
   );
 }
 
-export function GitPanel({ token, runId, context, refreshKey, busy = false, onPullRequests }: Props) {
+export function GitPanel({ token, runId, context, refreshKey, busy = false, onPullRequests, readOnly = false }: Props) {
   const [view, setView] = useState<GitView>("diff");
   const [diff, setDiff] = useState<RunDiffResponse | null>(null);
   const [commits, setCommits] = useState<RunCommitsResponse | null>(null);
@@ -876,8 +881,8 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
         actionError={actionError}
         onSelect={(next) => setSelectedNumber(next.number)}
         onRefresh={() => void load(true)}
-        onReady={() => void writePr("ready")}
-        onMerge={(method) => void writePr("merge", method)}
+        onReady={readOnly ? undefined : () => void writePr("ready")}
+        onMerge={readOnly ? undefined : (method) => void writePr("merge", method)}
       />
       <div className="git-tabs" role="tablist" aria-label="Git">
         {(
@@ -909,6 +914,7 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
             commitError={commitError}
             onCommit={(message) => void commit(message)}
             otherBranch={pr?.branch && diff?.branch && pr.branch !== diff.branch ? pr.branch : null}
+            readOnly={readOnly}
           />
         ) : view === "commits" ? (
           <CommitsView commits={commits} />

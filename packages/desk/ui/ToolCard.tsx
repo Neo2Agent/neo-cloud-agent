@@ -54,10 +54,9 @@ function ToolBody({ tool, running }: { tool: TranscriptTool; running: boolean })
 
 function ToolHead({ tool }: { tool: TranscriptTool }) {
   const preview = toolArgPreview(tool.args);
-  const color = tool.isError ? "app-red" : tool.status === "running" ? "app-teal" : "app-green";
   return (
     <div className="tool-head">
-      <IslandTag color={color}>
+      <IslandTag>
         {toolMark(tool)} {toolDisplayName(tool)}
       </IslandTag>
       {preview ? <span className="cmd">{preview}</span> : null}

@@ -17,7 +17,6 @@
   "dependencies": {
     "@fontsource/geist-sans": "^5.3.0",
     "@fontsource/noto-sans-sc": "^5.3.0",
-    "@fontsource/nunito": "^5.3.0",
     "@neo-cloud-agent/contracts": "workspace:*",
     "@neo-cloud-agent/ui": "workspace:*",
     "animal-island-ui": "^1.7.0",

@@ -9,6 +9,17 @@ test("cloudRunRequest always posts the cloud target", () => {
   assert.equal(body.source, "ios");
   assert.equal(body.projectId, "p1");
   assert.deepEqual(body.repoUrls, []);
+  assert.equal(body.skipRepoDefaults, true);
+});
+
+test("an explicit repo rides along and keeps project defaults off", () => {
+  const body = cloudRunRequest({
+    prompt: "绑仓",
+    source: "ios",
+    repoUrls: ["https://github.com/acme/app"],
+  });
+  assert.deepEqual(body.repoUrls, ["https://github.com/acme/app"]);
+  assert.equal(body.skipRepoDefaults, false);
 });
 
 test("a summoned expert team reaches the API instead of being dropped", () => {

@@ -27,6 +27,10 @@ type Props = {
   onSteer?: () => void;
   onStop?: () => void;
   usageLabel?: string;
+  repo?: string;
+  repos?: Array<{ fullName: string; url: string }>;
+  repoLocked?: boolean;
+  onRepo?: (url: string) => void;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
@@ -142,7 +146,26 @@ export function Composer(props: Props) {
             ))}
           </View>
         ) : null}
-        <Text style={styles.context}>云端</Text>
+        <View style={styles.contextRow}>
+          <Text style={styles.context}>云端</Text>
+          {props.onRepo && !props.repoLocked ? (
+            <View style={styles.repoWrap}>
+              <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
+              {(props.repos ?? []).slice(0, 8).map((item) => (
+                <Pressable key={item.url} onPress={() => props.onRepo?.(item.url === props.repo ? "" : item.url)}>
+                  <Text style={[styles.repoOpt, item.url === props.repo ? styles.repoOn : null]}>{item.fullName}</Text>
+                </Pressable>
+              ))}
+              {props.repo ? (
+                <Pressable onPress={() => props.onRepo?.("")}>
+                  <Text style={styles.repoOpt}>无仓库</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
+          )}
+        </View>
         {props.imageHint ? <Text style={styles.imageHint}>{props.imageHint}</Text> : null}
         <TextInput
           ref={fieldRef}
@@ -235,7 +258,11 @@ export function Composer(props: Props) {
 
 const styles = StyleSheet.create({
   dock: { paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8, backgroundColor: colors.bg, overflow: "visible", zIndex: 2 },
-  context: { color: colors.muted, fontSize: 12, marginBottom: 6 },
+  contextRow: { gap: 4, marginBottom: 6 },
+  context: { color: colors.muted, fontSize: 12 },
+  repoWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  repoOpt: { color: colors.ink, fontSize: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.hover },
+  repoOn: { backgroundColor: colors.accent, color: colors.cream },
   bar: {
     backgroundColor: colors.paper,
     borderColor: colors.line,

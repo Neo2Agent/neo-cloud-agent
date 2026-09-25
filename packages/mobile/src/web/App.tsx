@@ -28,6 +28,7 @@ import { acceptImages, imageHint, overImageBudget } from "../images";
 import { filesToImageRefs } from "./pick-images";
 import { avatarLetter, CHAT_MODELS, chatModelShort, resolveChatModel, runListTitle, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
+import { attachUserListStream } from "../list-live";
 import { messageTimeLabel, userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
 import { runPlaceLabel } from "../place";
 import { chatStatusText, composerGate } from "../session";
@@ -64,6 +65,7 @@ import { AutomationsPage } from "./AutomationsPage";
 import { startAppVoice } from "../start-voice";
 import { WorkFold } from "../work-fold";
 import { GitPanel } from "./GitPanel";
+import { RunInvite } from "./RunInvite";
 import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
@@ -122,6 +124,8 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [projects, setProjects] = useState<Project[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [cloudRepo, setCloudRepo] = useState("");
+  const [githubRepos, setGithubRepos] = useState<Array<{ fullName: string; url: string }>>([]);
   const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [memoryConfigured, setMemoryConfigured] = useState(false);
@@ -257,9 +261,15 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       }).catch(() => undefined);
     };
     const timer = window.setInterval(pull, RUN_LIST_REFRESH_MS);
+    const stopList = attachUserListStream(client, pull);
+    void client
+      .listScmRepos()
+      .then((listed) => setGithubRepos(listed.repos ?? []))
+      .catch(() => setGithubRepos([]));
     document.addEventListener("visibilitychange", pull);
     return () => {
       window.clearInterval(timer);
+      stopList();
       document.removeEventListener("visibilitychange", pull);
     };
   }, [client, token]);
@@ -534,6 +544,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             expert: expertPick,
             pluginIds,
             projectId: projectId ?? undefined,
+            repoUrls: cloudRepo ? [cloudRepo] : [],
             images: attached,
           }),
         );
@@ -841,6 +852,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           context={openGitContext}
           refreshKey={`${current.status}:${current.updatedAt}`}
           busy={isActiveRunStatus(current.status)}
+          readOnly
         />
       </div>
     );
@@ -891,6 +903,10 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       onSteer={current ? () => void send("steer") : undefined}
       onStop={current ? () => void client.abort(current.id) : undefined}
       contextUsage={contextUsage}
+      repo={current?.repoUrls?.[0] || cloudRepo}
+      repos={githubRepos}
+      repoLocked={Boolean(current)}
+      onRepo={setCloudRepo}
       startVoice={(onPreview, onError, onEnded) => startAppVoice(client, onPreview, onError, onEnded)}
     />
   );
@@ -946,6 +962,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
               Git
             </button>
           ) : null}
+          {current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         </header>
         {pageError ? <p className="page-error">{pageError}</p> : null}
         {current ? (

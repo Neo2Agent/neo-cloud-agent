@@ -33,12 +33,12 @@
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/linabell-face.png",
-        "backgroundColor": "#f7f3df"
+        "backgroundColor": "#f4f4f5"
       }
     },
     "androidStatusBar": {
       "barStyle": "dark-content",
-      "backgroundColor": "#f7f3df",
+      "backgroundColor": "#f4f4f5",
       "translucent": true
     },
     "plugins": [
