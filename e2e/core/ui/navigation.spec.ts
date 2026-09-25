@@ -79,7 +79,39 @@ test.describe("catalog and session chrome", () => {
     await expect(folder.locator(`[data-id="${office.id}"] .run-kind`)).toHaveText("办公");
     await expect(folder.locator(`[data-id="${code.id}"] .run-kind`)).toHaveText("代码");
     await expect(folder.locator(`[data-id="${loose.id}"]`)).toHaveCount(0);
-    await expect(page.locator(`.run-group[data-loose] [data-id="${loose.id}"]`)).toBeVisible();
-    await expect(page.locator(`.run-group[data-loose] [data-id="${office.id}"]`)).toHaveCount(0);
+    await expect(page.locator(`[data-section="chat"] [data-id="${loose.id}"]`)).toBeVisible();
+    await expect(page.locator(`[data-section="chat"] [data-id="${office.id}"]`)).toHaveCount(0);
+    await expect(page.locator(`[data-section="repos"] [data-id="${code.id}"]`)).toHaveCount(0);
+    await expect(page.locator(`[data-section="projects"]`)).toContainText("项目");
+  });
+
+  test("sidebar.repo-folder: unbound same-repo chats fold; project chats stay out", async ({ page }) => {
+    await loginAs(page);
+    const project = await createProject(page, { name: "侧栏仓组" });
+    const projectCode = await createRun(page, {
+      prompt: "组内同仓",
+      projectId: project.id,
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    const first = await createRun(page, {
+      prompt: "散装仓一",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    const second = await createRun(page, {
+      prompt: "散装仓二",
+      repoUrls: ["fixtures/toy-repo"],
+    });
+    const everyday = await createRun(page, { prompt: "日常闲聊", repoUrls: [] });
+    await page.reload();
+    await expect(page.locator("#composer")).toBeVisible();
+    const repoFolder = page.locator(`[data-section="repos"] [data-repo="fixtures/toy-repo"]`);
+    await expect(repoFolder).toBeVisible();
+    await expect(repoFolder).toContainText("fixtures/toy-repo");
+    await expect(repoFolder.locator(`[data-id="${first.id}"]`)).toBeVisible();
+    await expect(repoFolder.locator(`[data-id="${second.id}"]`)).toBeVisible();
+    await expect(repoFolder.locator(`[data-id="${projectCode.id}"]`)).toHaveCount(0);
+    await expect(page.locator(`#run-folder-${project.id} [data-id="${projectCode.id}"]`)).toBeVisible();
+    await expect(page.locator(`[data-section="chat"] [data-id="${everyday.id}"]`)).toBeVisible();
+    await expect(page.locator(`[data-section="chat"] [data-id="${first.id}"]`)).toHaveCount(0);
   });
 });

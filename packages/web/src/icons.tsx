@@ -20,7 +20,9 @@ import {
   FilePen,
   FileText,
   FolderGit2,
+  FolderPlus,
   GitPullRequest,
+  SlidersHorizontal,
   Globe,
   Info,
   LayoutGrid,
@@ -177,6 +179,14 @@ export function IconDownload(props: IconProps) {
 
 export function IconFolder(props: IconProps) {
   return icon(FolderGit2, props);
+}
+
+export function IconFolderPlus(props: IconProps) {
+  return icon(FolderPlus, props);
+}
+
+export function IconSort(props: IconProps) {
+  return icon(SlidersHorizontal, props);
 }
 
 export function IconFileKind({ kind, ...props }: IconProps & { kind: ArtifactKind }) {
