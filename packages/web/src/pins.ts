@@ -98,6 +98,13 @@ export function runKindLabel(run: { projectId?: string | null; repoUrls?: string
   return run.repoUrls && run.repoUrls.length > 0 ? "代码" : "办公";
 }
 
+export function folderKindLabel<T extends { projectId?: string | null; repoUrls?: string[] | null }>(
+  items: T[],
+): "办公" | "代码" | null {
+  if (items.length === 0 || !items.some((item) => item.projectId)) return null;
+  return items.some((item) => (item.repoUrls?.length ?? 0) > 0) ? "代码" : "办公";
+}
+
 export type SidebarFolder<T> = {
   key: string;
   label: string;

@@ -3,9 +3,9 @@ import type { PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
 import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode } from "@neo-cloud-agent/contracts/run";
 import { formatListWhen, runListPlaceSuffix, runListTitle, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
-import { IconArchive, IconAutomations, IconChat, IconExperts, IconFolder, IconFolderPlus, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconSort, IconStar, IconTrash } from "../icons";
+import { IconArchive, IconAutomations, IconChevronRight, IconExperts, IconFolder, IconFolderPlus, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconSort, IconStar, IconTrash, IconUsers } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
-import { filterRuns, groupSidebarRuns, isShelvedRun, runKindLabel, splitShelvedRuns } from "../pins";
+import { filterRuns, folderKindLabel, groupSidebarRuns, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { initials } from "../catalog";
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "../pane-size";
@@ -192,7 +192,10 @@ export function Sidebar({
     const pinned = pinnedIds.includes(run.id);
     const canSelect = selecting && !isShelvedRun(run.status);
     const editing = editingId === run.id;
-    const kind = runKindLabel(run);
+    const when = formatListWhen(run.updatedAt || run.createdAt);
+    const statusHint = running ? `${STATUS_LABELS[run.status] ?? run.status}${runListPlaceSuffix(run)}` : when;
+    const place = runMode(run.executionTarget) !== "cloud" ? RUN_MODE_SHORT_LABELS[runMode(run.executionTarget)] : "";
+    const tip = [runListTitle(run), place, statusHint, onPatchTitle ? "双击重命名" : ""].filter(Boolean).join(" · ");
     return (
       <div
         key={run.id}
@@ -201,6 +204,7 @@ export function Sidebar({
         data-busy={running ? "true" : "false"}
         role="button"
         tabIndex={0}
+        title={tip}
         aria-current={run.id === currentRunId ? "true" : undefined}
         onClick={() => {
           if (editing) return;
@@ -226,9 +230,6 @@ export function Sidebar({
             aria-label="选择对话"
           />
         ) : null}
-        <span className="run-mark" aria-hidden="true">
-          {running ? <span className="pulse-dot" /> : <IconChat size={14} />}
-        </span>
         <div className="run-main">
           {editing ? (
             <div
@@ -276,7 +277,6 @@ export function Sidebar({
           ) : (
             <span
               className="run-title"
-              title={onPatchTitle ? `${runListTitle(run)} · 双击重命名` : runListTitle(run)}
               onDoubleClick={(event) => {
                 if (canSelect) return;
                 event.preventDefault();
@@ -284,22 +284,12 @@ export function Sidebar({
                 startEdit(run);
               }}
             >
+              {running ? <span className="pulse-dot" aria-hidden="true" /> : null}
               {runListTitle(run)}
             </span>
           )}
         </div>
-        {kind ? (
-          <span className="run-kind" data-kind={kind === "代码" ? "code" : "office"}>
-            {kind}
-          </span>
-        ) : null}
-        {runMode(run.executionTarget) !== "cloud" ? (
-          <span className="run-place">{RUN_MODE_SHORT_LABELS[runMode(run.executionTarget)]}</span>
-        ) : null}
         <div className="run-meta">
-          <time className="run-time" dateTime={run.updatedAt || run.createdAt} title={running ? `${STATUS_LABELS[run.status] ?? run.status}${runListPlaceSuffix(run)}` : undefined}>
-            {formatListWhen(run.updatedAt || run.createdAt)}
-          </time>
           <span className="run-actions">
             {onPin && !isShelvedRun(run.status) ? (
               <button
@@ -348,11 +338,17 @@ export function Sidebar({
 
   const listAndAccount = (
     <>
-      {buddy ? null : (
-      <div className="session-head">
-        <span>会话</span>
+      <div className="run-library">
+      <div className="run-tools">
+        <input
+          type="search"
+          className="run-search"
+          placeholder={buddy ? "搜索任务" : "搜索对话"}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label={buddy ? "搜索任务" : "搜索对话"}
+        />
       </div>
-      )}
       <div className="run-list" id="run-list">
         {grouped.pinned.length > 0 ? (
           <section className="run-group" data-section="pinned">
@@ -375,19 +371,27 @@ export function Sidebar({
             const items = [...folder.active, ...folder.recent];
             if (items.length === 0) return null;
             const key = `project:${folder.key}`;
+            const work = folderKindLabel(items);
             return (
               <details
                 key={folder.key}
                 className="run-folder"
                 id={`run-folder-${folder.key}`}
                 data-kind="project"
+                data-work={work === "代码" ? "code" : work === "办公" ? "office" : undefined}
                 data-project={folder.key}
                 open={folderOpen(key, items)}
                 onToggle={(event) => onFolderToggle(key, event)}
               >
                 <summary className="run-folder-head">
-                  <IconProjects size={14} />
+                  <IconChevronRight size={12} className="run-folder-chevron" />
+                  <IconUsers size={14} />
                   <span className="run-folder-name">{folder.label}</span>
+                  {work ? (
+                    <span className="run-folder-kind" data-kind={work === "代码" ? "code" : "office"}>
+                      {work}
+                    </span>
+                  ) : null}
                   <span className="run-folder-count">{items.length}</span>
                   {onStartProjectChat ? (
                     <button
@@ -444,6 +448,7 @@ export function Sidebar({
                 onToggle={(event) => onFolderToggle(key, event)}
               >
                 <summary className="run-folder-head">
+                  <IconChevronRight size={12} className="run-folder-chevron" />
                   <IconFolder size={14} />
                   <span className="run-folder-name">{folder.label}</span>
                   <span className="run-folder-count">{items.length}</span>
@@ -482,6 +487,7 @@ export function Sidebar({
             {shelved.map(renderRun)}
           </details>
         ) : null}
+      </div>
       </div>
       <footer className="sidebar-foot">
         <div className="account" id="account">
@@ -656,18 +662,6 @@ export function Sidebar({
         </nav>
       )}
       </div>
-      {buddy ? (
-        <div className="run-tools">
-          <input
-            type="search"
-            className="run-search"
-            placeholder="搜索任务"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            aria-label="搜索任务"
-          />
-        </div>
-      ) : null}
       {listAndAccount}
       </div>
       {onSidebarWidth ? (

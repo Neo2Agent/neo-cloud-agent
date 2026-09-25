@@ -6,6 +6,7 @@ import {
   groupRunsByProject,
   groupSidebarRuns,
   readPinnedRuns,
+  folderKindLabel,
   runKindLabel,
   runRepoKey,
   splitShelvedRuns,
@@ -97,6 +98,15 @@ test("runKindLabel marks project chats as office or code", () => {
   assert.equal(runKindLabel({ projectId: "p1", repoUrls: [] }), "办公");
   assert.equal(runKindLabel({ projectId: "p1", repoUrls: ["https://github.com/acme/app.git"] }), "代码");
   assert.equal(runKindLabel({ repoUrls: ["https://github.com/acme/app.git"] }), null);
+  assert.equal(folderKindLabel([{ projectId: "p1", repoUrls: [] }]), "办公");
+  assert.equal(
+    folderKindLabel([
+      { projectId: "p1", repoUrls: [] },
+      { projectId: "p1", repoUrls: ["https://github.com/acme/app.git"] },
+    ]),
+    "代码",
+  );
+  assert.equal(folderKindLabel([{ repoUrls: ["https://github.com/acme/app.git"] }]), null);
 });
 
 test("splitShelvedRuns keeps archived and expired out of the live list", () => {

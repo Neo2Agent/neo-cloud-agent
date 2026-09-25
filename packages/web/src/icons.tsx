@@ -81,6 +81,10 @@ export function IconExperts(props: IconProps) {
   return icon(Users, props);
 }
 
+export function IconUsers(props: IconProps) {
+  return icon(Users, props);
+}
+
 export function IconSkills(props: IconProps) {
   return icon(BookOpen, props);
 }

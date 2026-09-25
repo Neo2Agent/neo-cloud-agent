@@ -58,31 +58,41 @@ test.describe("catalog and session chrome", () => {
 
   test("sidebar.project-folder: project chats fold; global chats stay loose", async ({ page }) => {
     await loginAs(page);
-    const project = await createProject(page, { name: "侧栏协作组" });
+    const officeProject = await createProject(page, { name: "侧栏办公组" });
+    const codeProject = await createProject(page, { name: "侧栏协作组" });
     const office = await createRun(page, {
       prompt: "组内办公",
-      projectId: project.id,
+      projectId: officeProject.id,
       repoUrls: [],
       skipRepoDefaults: true,
     });
     const code = await createRun(page, {
       prompt: "组内代码",
-      projectId: project.id,
+      projectId: codeProject.id,
       repoUrls: ["fixtures/toy-repo"],
     });
     const loose = await createRun(page, { prompt: "全局闲聊", repoUrls: [] });
     await page.reload();
     await expect(page.locator("#composer")).toBeVisible();
-    const folder = page.locator(`#run-folder-${project.id}`);
-    await expect(folder).toBeVisible();
-    await expect(folder).toContainText("侧栏协作组");
-    await expect(folder.locator(`[data-id="${office.id}"] .run-kind`)).toHaveText("办公");
-    await expect(folder.locator(`[data-id="${code.id}"] .run-kind`)).toHaveText("代码");
-    await expect(folder.locator(`[data-id="${loose.id}"]`)).toHaveCount(0);
+    const officeFolder = page.locator(`#run-folder-${officeProject.id}`);
+    const codeFolder = page.locator(`#run-folder-${codeProject.id}`);
+    await expect(officeFolder).toBeVisible();
+    await expect(officeFolder).toContainText("侧栏办公组");
+    await expect(officeFolder).toHaveAttribute("data-work", "office");
+    await expect(officeFolder.locator(".run-folder-kind")).toHaveText("办公");
+    await expect(officeFolder.locator(`[data-id="${office.id}"]`)).toBeVisible();
+    await expect(officeFolder.locator(".run-kind")).toHaveCount(0);
+    await expect(codeFolder).toBeVisible();
+    await expect(codeFolder).toHaveAttribute("data-work", "code");
+    await expect(codeFolder.locator(".run-folder-kind")).toHaveText("代码");
+    await expect(codeFolder.locator(`[data-id="${code.id}"]`)).toBeVisible();
+    await expect(codeFolder.locator(`[data-id="${loose.id}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-section="chat"] [data-id="${loose.id}"]`)).toBeVisible();
     await expect(page.locator(`[data-section="chat"] [data-id="${office.id}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-section="repos"] [data-id="${code.id}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-section="projects"]`)).toContainText("项目");
+    await expect(page.locator(".run-search")).toBeVisible();
+    await expect(page.locator(".session-head")).toHaveCount(0);
   });
 
   test("sidebar.repo-folder: unbound same-repo chats fold; project chats stay out", async ({ page }) => {
