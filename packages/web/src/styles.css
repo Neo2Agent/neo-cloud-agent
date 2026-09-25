@@ -6216,10 +6216,13 @@ button.composer-mic.is-listening,
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 30px;
+  min-height: 26px;
   padding: 2px 8px;
   border: 0;
   border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .run-item.is-selecting {
@@ -6234,9 +6237,9 @@ button.composer-mic.is-listening,
 .run-item .run-title {
   display: block;
   padding-right: 32px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
-  line-height: 1.35;
+  line-height: 16px;
 }
 
 .run-item:hover .run-title,
@@ -6275,10 +6278,10 @@ button.composer-mic.is-listening,
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 22px;
-  padding: 16px 8px 6px;
+  min-height: 20px;
+  padding: 14px 8px 4px;
   color: #8a8a8a;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: 0;
   list-style: none;
@@ -6327,13 +6330,14 @@ details.run-group > .run-section-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 30px;
+  min-height: 26px;
   padding: 2px 8px;
   border-radius: 6px;
   cursor: pointer;
   list-style: none;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .run-folder-head::-webkit-details-marker,
@@ -6360,7 +6364,9 @@ details.run-group > .run-section-head {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 16px;
 }
 
 .run-folder-kind,
@@ -7146,8 +7152,8 @@ a.quiet-btn[aria-disabled="true"] {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 36px;
-  min-height: 36px;
+  height: 32px;
+  min-height: 32px;
   margin: 0;
   padding: 0 8px 0 0;
   border: 0;
@@ -7155,7 +7161,7 @@ a.quiet-btn[aria-disabled="true"] {
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
@@ -7164,8 +7170,26 @@ a.quiet-btn[aria-disabled="true"] {
   display: grid;
   place-items: center;
   flex: none;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+}
+
+.sidebar .new-chat {
+  height: 32px;
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sidebar .new-chat-plus {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+
+.sidebar .new-chat-label {
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .rail-item:hover,
