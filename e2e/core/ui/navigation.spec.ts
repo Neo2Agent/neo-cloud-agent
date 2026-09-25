@@ -94,9 +94,30 @@ test.describe("catalog and session chrome", () => {
     await expect(page.locator(`[data-section="chat"] [data-id="${loose.id}"]`)).toBeVisible();
     await expect(page.locator(`[data-section="chat"] [data-id="${office.id}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-section="repos"] [data-id="${code.id}"]`)).toHaveCount(0);
-    await expect(page.locator(`[data-section="projects"]`)).toContainText("项目");
+    const projectSection = page.locator(`[data-section="projects"]`);
+    await expect(projectSection).toContainText("项目");
+    await expect(page.getByRole("button", { name: "新建协作组" })).toHaveCount(0);
+    await expect(officeFolder.getByRole("button", { name: "在「侧栏办公组」里开对话" })).toHaveCount(1);
     await expect(page.locator(".run-search")).toBeVisible();
     await expect(page.locator(".session-head")).toHaveCount(0);
+
+    await officeFolder.locator(`[data-id="${office.id}"]`).click();
+    await expect(page.locator("#composer")).toBeVisible();
+    await expect(page.locator("#project-chip")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "打开项目" })).toHaveCount(0);
+
+    await officeFolder.locator("> .run-folder-head").hover();
+    await officeFolder.getByRole("button", { name: "在「侧栏办公组」里开对话" }).click();
+    await expect(page.locator("#project-chip")).toContainText("将在项目「侧栏办公组」中开对话");
+    await expect(page.getByRole("button", { name: "不用项目" })).toBeVisible();
+
+    await officeFolder.locator("> .run-folder-head").click();
+    await expect(officeFolder.locator(`[data-id="${office.id}"]`)).toBeHidden();
+    await expect(codeFolder.locator(`[data-id="${code.id}"]`)).toBeVisible();
+
+    await projectSection.locator("> .run-section-head").click();
+    await expect(officeFolder).toBeHidden();
+    await expect(codeFolder).toBeHidden();
   });
 
   test("sidebar.repo-folder: unbound same-repo chats fold; project chats stay out", async ({ page }) => {

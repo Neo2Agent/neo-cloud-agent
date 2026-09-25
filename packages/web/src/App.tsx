@@ -2657,11 +2657,11 @@ export function App() {
               </ChatErrorBoundary>
             )}
           </div>
-          {mainTab === "chat" && (activeProject || expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
+          {mainTab === "chat" && ((!runId && activeProject) || expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
             <div className="proj-chip-bar" id="project-chip">
-              {activeProject ? (
+              {!runId && activeProject ? (
                 <span className="proj-chip">
-                  {runId ? `项目对话 · ${activeProject.name}` : `将在项目「${activeProject.name}」中开对话`}
+                  {`将在项目「${activeProject.name}」中开对话`}
                 </span>
               ) : null}
               {expertPick.expertTeamId || expertPick.expertId ? (
@@ -2674,11 +2674,7 @@ export function App() {
               {pluginPick ? (
                 <span className="proj-chip">技能 · {pluginPickerLabel(pluginPick)}</span>
               ) : null}
-              {runId && activeProject ? (
-                <button type="button" className="ghost" onClick={() => openProjects(activeProject.id)}>
-                  打开项目
-                </button>
-              ) : !runId && activeProject ? (
+              {!runId && activeProject ? (
                 <button type="button" className="ghost" onClick={() => setActiveProject(null)}>
                   不用项目
                 </button>

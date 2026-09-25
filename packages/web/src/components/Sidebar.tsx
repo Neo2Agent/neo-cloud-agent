@@ -128,6 +128,8 @@ export function Sidebar({
     const rightAt = [...right.active, ...right.recent][0]?.createdAt ?? "";
     return rightAt.localeCompare(leftAt);
   });
+  const projectFolders = grouped.folders.filter((folder) => folder.active.length + folder.recent.length > 0);
+  const projectRuns = projectFolders.flatMap((folder) => [...folder.active, ...folder.recent]);
 
   const folderOpen = (key: string, items: Run[]) =>
     items.some((item) => item.id === currentRunId) || !collapsedFolders.has(key);
@@ -360,58 +362,60 @@ export function Sidebar({
             {grouped.pinned.map(renderRun)}
           </section>
         ) : null}
-        <section className="run-group" data-section="projects">
-          <div className="run-section-head">
-            <span>项目</span>
-            {onOpenNav ? (
-              <button type="button" className="run-folder-new" aria-label="新建协作组" onClick={() => onOpenNav("projects")}>
-                <IconPlus size={12} />
-              </button>
-            ) : null}
-          </div>
-          {grouped.folders.map((folder) => {
-            const items = [...folder.active, ...folder.recent];
-            if (items.length === 0) return null;
-            const key = `project:${folder.key}`;
-            const work = folderKindLabel(items);
-            const open = folderOpen(key, items);
-            return (
-              <details
-                key={folder.key}
-                className="run-folder"
-                id={`run-folder-${folder.key}`}
-                data-kind="project"
-                data-work={work === "代码" ? "code" : work === "办公" ? "office" : undefined}
-                data-project={folder.key}
-                open={open}
-                onToggle={(event) => onFolderToggle(key, event)}
-              >
-                <summary className="run-folder-head">
-                  <IconChevronRight size={12} className="run-folder-chevron" />
-                  {open ? <IconFolderOpen size={14} className="run-folder-icon" /> : <IconFolderClosed size={14} className="run-folder-icon" />}
-                  <span className="run-folder-name">{folder.label}</span>
-                  {onStartProjectChat ? (
-                    <button
-                      type="button"
-                      className="run-folder-new"
-                      aria-label={`在「${folder.label}」里开对话`}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onStartProjectChat(folder.key);
-                      }}
-                    >
-                      <IconPlus size={12} />
-                    </button>
-                  ) : null}
-                </summary>
-                {folder.active.map(renderRun)}
-                {folder.recent.map(renderRun)}
-              </details>
-            );
-          })}
-        </section>
+        {projectFolders.length > 0 ? (
+          <details
+            className="run-group"
+            data-section="projects"
+            open={folderOpen("section:projects", projectRuns)}
+            onToggle={(event) => onFolderToggle("section:projects", event)}
+          >
+            <summary className="run-section-head">
+              <IconChevronRight size={12} className="run-folder-chevron" />
+              <span>项目</span>
+            </summary>
+            {projectFolders.map((folder) => {
+              const items = [...folder.active, ...folder.recent];
+              const key = `project:${folder.key}`;
+              const work = folderKindLabel(items);
+              const open = folderOpen(key, items);
+              return (
+                <details
+                  key={folder.key}
+                  className="run-folder"
+                  id={`run-folder-${folder.key}`}
+                  data-kind="project"
+                  data-work={work === "代码" ? "code" : work === "办公" ? "office" : undefined}
+                  data-project={folder.key}
+                  open={open}
+                  onToggle={(event) => onFolderToggle(key, event)}
+                >
+                  <summary className="run-folder-head">
+                    <IconChevronRight size={12} className="run-folder-chevron" />
+                    {open ? <IconFolderOpen size={14} className="run-folder-icon" /> : <IconFolderClosed size={14} className="run-folder-icon" />}
+                    <span className="run-folder-name">{folder.label}</span>
+                    {onStartProjectChat ? (
+                      <button
+                        type="button"
+                        className="run-folder-new"
+                        aria-label={`在「${folder.label}」里开对话`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onStartProjectChat(folder.key);
+                        }}
+                      >
+                        <IconPlus size={12} />
+                      </button>
+                    ) : null}
+                  </summary>
+                  {folder.active.map(renderRun)}
+                  {folder.recent.map(renderRun)}
+                </details>
+              );
+            })}
+          </details>
+        ) : null}
         <section className="run-group" data-section="repos">
           <div className="run-section-head">
             <span>仓库</span>

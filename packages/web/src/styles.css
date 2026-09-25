@@ -6263,12 +6263,28 @@ button.composer-mic.is-listening,
   color: var(--muted);
   font-size: 11px;
   letter-spacing: 0.02em;
+  list-style: none;
+  cursor: default;
 }
 
-.run-section-head > span:first-child {
+details.run-group > .run-section-head {
+  cursor: pointer;
+}
+
+.run-section-head::-webkit-details-marker,
+.run-section-head::marker {
+  display: none;
+  content: "";
+}
+
+.run-section-head > span {
   flex: 1;
   min-width: 0;
   font-weight: 500;
+}
+
+.run-group[open] > .run-section-head .run-folder-chevron {
+  transform: rotate(90deg);
 }
 
 .run-section-head .run-folder-new,
