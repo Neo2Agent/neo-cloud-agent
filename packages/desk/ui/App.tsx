@@ -504,7 +504,14 @@ export function App() {
               };
             }
             if (event.kind === "scm.pr_opened" && event.data?.url) {
-              const incoming = event.data as PullRequestRef;
+              const incoming: PullRequestRef = {
+                url: String(event.data.url),
+                draft: event.data.draft !== false,
+                repoUrl: "",
+                branch: "",
+                number: typeof event.data.number === "number" ? event.data.number : null,
+                title: typeof event.data.title === "string" ? event.data.title : "",
+              };
               const list = next.pullRequests ?? [];
               const match = (item: PullRequestRef) =>
                 item.url === incoming.url || (incoming.number != null && item.number === incoming.number);
