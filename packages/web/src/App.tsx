@@ -1098,6 +1098,7 @@ export function App() {
       ]);
       return;
     }
+    setRepoPickerOpen(false);
     const attached = images;
     const previousStatus = currentRun?.status;
     const pending: PendingUser = {
@@ -1895,6 +1896,7 @@ export function App() {
       return;
     }
     if (action === "repo") {
+      if (runId || sending || pendingTurn) return;
       setRepoPickerOpen(true);
       return;
     }
@@ -2683,7 +2685,8 @@ export function App() {
               githubReposLoading={githubReposLoading}
               githubReposConfigured={githubReposConfigured}
               repoQuery={repoQuery}
-              repoLocked={Boolean(runId)}
+              repoLocked={Boolean(runId || sending || pendingTurn)}
+              branch={runId ? currentRun?.branchName ?? "" : ""}
               repoPickerOpen={repoPickerOpen}
               onRepoMode={setRepoMode}
               onRepo={setRepo}
@@ -2802,7 +2805,12 @@ export function App() {
           event.currentTarget.value = "";
         }}
       />
-      <BuddyPlusSheet open={plusOpen} onClose={() => setPlusOpen(false)} onAction={applyBuddyPlus} />
+      <BuddyPlusSheet
+        open={plusOpen}
+        hiddenActions={runId || sending || pendingTurn ? ["repo"] : []}
+        onClose={() => setPlusOpen(false)}
+        onAction={applyBuddyPlus}
+      />
       <AuthGate
         open={authOpen}
         mode={authMode}

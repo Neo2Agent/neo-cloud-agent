@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cloudSafeRepoUrls, isLocalFolderRef, normalizeRepoUrl, repoShortLabel } from "./repo.js";
+import { cloudSafeRepoUrls, isLocalFolderRef, normalizeRepoUrl, repoShortLabel, splitRepoLabel } from "./repo.js";
 
 test("isLocalFolderRef accepts host paths and file URLs", () => {
   assert.equal(isLocalFolderRef("/tmp/desk-local-verify"), true);
@@ -26,4 +26,10 @@ test("normalizeRepoUrl accepts owner/repo and host paths", () => {
 test("repoShortLabel keeps owner/name", () => {
   assert.equal(repoShortLabel("https://github.com/acme/app.git"), "acme/app");
   assert.equal(repoShortLabel("acme/app"), "acme/app");
+});
+
+test("splitRepoLabel separates owner and repo", () => {
+  assert.deepEqual(splitRepoLabel("kaibairen/animate-camera"), { owner: "kaibairen", name: "animate-camera" });
+  assert.deepEqual(splitRepoLabel("acme/app"), { owner: "acme", name: "app" });
+  assert.deepEqual(splitRepoLabel("no-slash"), { owner: "", name: "no-slash" });
 });

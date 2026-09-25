@@ -175,6 +175,10 @@ export function IconDownload(props: IconProps) {
   return icon(Download, props);
 }
 
+export function IconFolder(props: IconProps) {
+  return icon(FolderGit2, props);
+}
+
 export function IconFileKind({ kind, ...props }: IconProps & { kind: ArtifactKind }) {
   if (kind === "html") return icon(FileCode, props);
   if (kind === "image") return icon(FileImage, props);

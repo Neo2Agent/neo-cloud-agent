@@ -31,3 +31,10 @@ export function repoShortLabel(value: string): string {
   if (parts.length >= 2) return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
   return cleaned;
 }
+
+export function splitRepoLabel(fullName: string): { owner: string; name: string } {
+  const text = fullName.trim();
+  const slash = text.lastIndexOf("/");
+  if (slash <= 0 || slash === text.length - 1) return { owner: "", name: text };
+  return { owner: text.slice(0, slash), name: text.slice(slash + 1) };
+}

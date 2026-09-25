@@ -10,7 +10,7 @@ import { pageAllowsLiveMic, type VoiceSession } from "@neo-cloud-agent/ui/speech
 import { BuddyVoiceFileSheet, Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
 import { readToken } from "../api";
 import type { DeskTarget } from "../desk";
-import { IconArrowUp, IconInfo, IconMic, IconPlus, IconStop } from "../icons";
+import { IconArrowUp, IconBranch, IconInfo, IconMic, IconPlus, IconStop } from "../icons";
 import { applyMention, filterMentions, mentionKindLabel, mentionTrigger, type ComposerMention } from "../mention";
 import { applyClickVoice, startWebVoice } from "../speech";
 import { composerKeyAction, isImeComposing } from "@neo-cloud-agent/contracts/composer-keys";
@@ -75,6 +75,7 @@ type Props = {
   githubReposConfigured?: boolean;
   repoQuery?: string;
   repoLocked?: boolean;
+  branch?: string;
   repoPickerOpen?: boolean;
   onRepoMode?: (mode: RepoBindMode) => void;
   onRepo?: (value: string) => void;
@@ -133,6 +134,7 @@ export function Composer({
   githubReposConfigured = false,
   repoQuery = "",
   repoLocked = false,
+  branch = "",
   repoPickerOpen = false,
   onRepoMode,
   onRepo,
@@ -283,6 +285,14 @@ export function Composer({
       onOpenSettings={onOpenGithubSettings}
     />
   ) : null;
+  const branchLock = branch.trim() ? (
+    <span className="repo-bind-lock" id="run-branch" title={branch}>
+      <span className="repo-bind-row-icon" aria-hidden="true">
+        <IconBranch size={14} />
+      </span>
+      <span className="repo-bind-label">{branch}</span>
+    </span>
+  ) : null;
   const input = (
     <>
       {images.length > 0 ? (
@@ -402,6 +412,7 @@ export function Composer({
             </button>
             {!sendLocked ? voiceButton("buddy-icon-btn") : null}
             {repoControl}
+            {branchLock}
             <div className="buddy-model">
               <Select
                 id="agent-model"
@@ -446,6 +457,7 @@ export function Composer({
           onPickFolder={onPickFolder}
         />
         {repoControl}
+        {branchLock}
         <Select
           id="agent-expert"
           size="pill"

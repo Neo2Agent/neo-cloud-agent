@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createProject, loginAs } from "./helpers.js";
+import { createProject, createRun, loginAs } from "./helpers.js";
 
 test.describe("composer / run boundaries", () => {
   test("runs.empty-ui: send is disabled on a blank composer", async ({ page }) => {
@@ -64,6 +64,18 @@ test.describe("composer / run boundaries", () => {
   test("repo.search-pick: picker lists account repos and selecting one shows owner/repo", async ({ page }) => {
     await loginAs(page);
     await page.route("**/v1/scm/repos**", async (route) => {
+      const url = new URL(route.request().url());
+      const q = (url.searchParams.get("q") ?? "").toLowerCase();
+      const all = [
+        { fullName: "acme/app", url: "https://github.com/acme/app.git" },
+        { fullName: "ada/notes", url: "https://github.com/ada/notes.git" },
+        { fullName: "kaibairen/animate-camera", url: "https://github.com/kaibairen/animate-camera.git" },
+        {
+          fullName: "kaibairen/very-long-repository-name-for-layoutout",
+          url: "https://github.com/kaibairen/very-long-repository-name-for-layoutout.git",
+        },
+      ];
+      const repos = q ? all.filter((item) => item.fullName.toLowerCase().includes(q)) : all;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -72,15 +84,57 @@ test.describe("composer / run boundaries", () => {
           connected: true,
           login: "ada",
           oauthConfigured: true,
-          repos: [
-            { fullName: "acme/app", url: "https://github.com/acme/app.git" },
-            { fullName: "ada/notes", url: "https://github.com/ada/notes.git" },
-          ],
+          repos,
         }),
       });
     });
     await page.locator("#repo-bind").click();
+    const menu = page.locator(".repo-bind-menu");
+    const box = page.locator(".composer-box");
+    const trigger = page.locator("#repo-bind");
+    await expect(menu).toBeVisible();
+    await expect(box).toBeVisible();
+    await expect(page.locator("#repo-bind-search")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "最近" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "仓库" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "GitHub", exact: true })).toBeVisible();
+    const openBox = await box.boundingBox();
+    const openMenu = await menu.boundingBox();
+    const openTrigger = await trigger.boundingBox();
+    expect(openBox).toBeTruthy();
+    expect(openMenu).toBeTruthy();
+    expect(openTrigger).toBeTruthy();
+    expect(openMenu?.width ?? 999).toBeLessThanOrEqual(320);
+    expect(openMenu?.width ?? 0).toBeLessThan((openBox?.width ?? 0) - 80);
+    expect(openMenu?.x ?? 0).toBeGreaterThanOrEqual((openBox?.x ?? 0) - 2);
+    expect((openMenu?.x ?? 0) + (openMenu?.width ?? 0)).toBeLessThanOrEqual((openBox?.x ?? 0) + (openBox?.width ?? 0) + 2);
+    expect(Math.abs((openMenu?.x ?? 0) - (openTrigger?.x ?? 0))).toBeLessThan(12);
+    await page.getByRole("button", { name: "GitHub", exact: true }).click();
+    await expect(page.getByRole("button", { name: "返回" })).toBeVisible();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
+    const backIcon = page.locator(".repo-bind-back .repo-bind-row-icon");
+    const searchIcon = page.locator(".repo-bind-search .repo-bind-row-icon");
+    const backIconBox = await backIcon.boundingBox();
+    const searchIconBox = await searchIcon.boundingBox();
+    expect(backIconBox).toBeTruthy();
+    expect(searchIconBox).toBeTruthy();
+    expect(backIconBox?.width).toBe(16);
+    expect(searchIconBox?.width).toBe(16);
+    expect(Math.abs((backIconBox?.x ?? 0) - (searchIconBox?.x ?? 0))).toBeLessThan(0.5);
+    await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
+    await page.getByRole("button", { name: "返回" }).click();
+    await expect(page.getByRole("button", { name: "从头开始" })).toBeVisible();
+    await expect(page.locator("#repo-bind-search")).toHaveCount(0);
+    await page.getByRole("button", { name: "GitHub", exact: true }).click();
+    await page.locator("#repo-bind-search").fill("animate");
+    const longRepo = page.getByRole("button", { name: "kaibairen/animate-camera" });
+    await expect(longRepo).toBeVisible();
+    await expect(page.getByRole("button", { name: "kaibairen/very-long-repository-name-for-layoutout" })).toHaveCount(0);
+    await expect(longRepo.locator(".repo-bind-item-name")).toHaveText("animate-camera");
+    await expect(longRepo.locator(".repo-bind-item-owner")).toHaveText("kaibairen");
+    const filtered = await menu.boundingBox();
+    expect(filtered?.height ?? 999).toBeLessThan(220);
     await page.locator("#repo-bind-search").fill("acme");
     await page.getByRole("button", { name: "acme/app" }).click();
     await expect(page.locator("#repo-bind")).toHaveText("acme/app");
@@ -103,11 +157,50 @@ test.describe("composer / run boundaries", () => {
     await expect(page.locator("#repo-bind")).toHaveText("无仓库");
   });
 
+  test("repo.lock-after-send: an existing session cannot change repo", async ({ page }) => {
+    await loginAs(page);
+    const run = await createRun(page, {
+      prompt: "lock the repo",
+      repoUrls: ["https://github.com/acme/app.git"],
+    });
+    await page.goto(`/#/runs/${run.id}`);
+    await expect(page.locator("#composer")).toBeVisible();
+    await expect(page.locator("#repo-bind")).toHaveText("acme/app");
+    await page.locator("#repo-bind").click();
+    await expect(page.locator("#repo-bind-search")).toHaveCount(0);
+    await expect(page.locator(".repo-bind-menu")).toHaveCount(0);
+  });
+
+  test("repo.session-empty: a session without a repo or branch hides both chips", async ({ page }) => {
+    await loginAs(page);
+    const run = await createRun(page, { prompt: "plain chat", repoUrls: [] });
+    await page.goto(`/#/runs/${run.id}`);
+    await expect(page.locator("#composer")).toBeVisible();
+    await expect(page.locator("#repo-bind")).toHaveCount(0);
+    await expect(page.locator("#run-branch")).toHaveCount(0);
+  });
+
   test("repo.plus: Plus 仓库 opens the same picker", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await loginAs(page);
+    await page.route("**/v1/scm/repos**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          configured: true,
+          connected: true,
+          login: "ada",
+          oauthConfigured: true,
+          repos: [{ fullName: "ada/notes", url: "https://github.com/ada/notes.git" }],
+        }),
+      });
+    });
     await page.locator(".buddy-plus").click();
-    await page.getByRole("button", { name: "仓库" }).click();
+    await page.getByRole("dialog", { name: "添加" }).getByRole("button", { name: "仓库" }).click();
+    await expect(page.getByRole("button", { name: "GitHub", exact: true })).toBeVisible();
+    await expect(page.locator("#repo-bind-search")).toHaveCount(0);
+    await page.getByRole("button", { name: "GitHub", exact: true }).click();
     await expect(page.locator("#repo-bind-search")).toBeVisible();
   });
 
