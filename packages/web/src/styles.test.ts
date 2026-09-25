@@ -16,7 +16,7 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.doesNotMatch(css, /#4d6bfe/);
   assert.match(css, /\.new-chat-plus\s*\{/);
   assert.match(css, /button\.send\s*\{[^}]*padding:\s*8px 16px/);
-  assert.match(css, /--ease:\s*140ms ease/);
+  assert.match(tokens, /--ease:\s*140ms ease/);
   assert.match(css, /button:focus-visible/);
   assert.match(css, /\.toast-host/);
   assert.match(css, /\.settings-group/);
