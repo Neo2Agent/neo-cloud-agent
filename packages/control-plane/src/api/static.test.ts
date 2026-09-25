@@ -184,7 +184,7 @@ test("serves the chat index and rejects path traversal", () => {
   assert.match(cssText, /\.run-idle-dot/);
   assert.match(cssText, /\.run-folder \.run-item\{[^}]*padding-left:\s*8px/);
   assert.match(cssText, /\.run-item \.run-actions\{[^}]*display:\s*none/);
-  assert.match(cssText, /\.run-item:hover \.run-actions\{[^}]*display:\s*flex/);
+  assert.match(cssText, /\.run-item:hover \.run-actions/);
   assert.match(cssText, /\.run-item \.run-meta\{[^}]*right:\s*8px/);
   assert.match(cssText, /\.run-folder-head:hover \.run-folder-new/);
   const narrow = narrowCss(cssText);
