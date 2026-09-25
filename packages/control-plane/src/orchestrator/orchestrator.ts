@@ -1301,7 +1301,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     if (start === "inline") {
       // The caller is that desk: it spawns the worker from this response, so
       // there is nothing to hand out and nothing to wait for.
-      queueRun(run, "正在这台电脑上启动 Agent");
+      queueRun(run, "正在 Desk 上启动 Agent");
       return run;
     }
     dispatchToDesk(run, owner?.email);
@@ -1820,7 +1820,7 @@ function dispatchToDesk(run: Run, requestedBy?: string | null): void {
   const deskId = run.executionTarget?.deskId ?? "";
   offerDeskAssignment(deskId, run.id);
   const delivered = pushDeskInbox(deskId, { kind: "assignment", assignment: assignmentFor(run, requestedBy) });
-  queueRun(run, delivered ? "已派给这台电脑，等待启动" : "等待这台电脑上线");
+  queueRun(run, delivered ? "已派给 Desk，等待启动" : "等待 Desk 上线");
 }
 
 /** Desk could not take the run. Surface why instead of leaving it queued forever. */

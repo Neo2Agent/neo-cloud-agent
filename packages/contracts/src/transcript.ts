@@ -318,7 +318,7 @@ export function settleTranscriptMessages(messages: TranscriptMessage[]): Transcr
 const RESTART_HEARTBEAT = /heartbeat lost after control plane restart/i;
 const SLOT_BUSY_NOTICE = /all VM slots are busy/i;
 /** Control plane waiting for a desk to pick the run up. Never user-facing on the desk itself. */
-const DESK_CLAIM_NOTICE = /(等待本机 Desk 认领|等待 Desk 认领|已派给这台电脑，等待启动)/;
+const DESK_CLAIM_NOTICE = /(等待本机 Desk 认领|等待 Desk 认领|已派给这台电脑，等待启动|已派给 Desk，等待启动)/;
 const INTERRUPTED_QUEUE_NOTICE = /中断的回合已自动排队/;
 
 function isTransientInfraNotice(text: string | undefined): boolean {

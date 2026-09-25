@@ -1,8 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
+import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/artifact";
+import { liveAssistantId } from "@neo-cloud-agent/contracts/turn-state";
+import { messageTimeLabel, userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
+import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
 import type { Run } from "@neo-cloud-agent/contracts/run";
+import { MarkdownNative } from "./MarkdownNative";
+import { WorkFold } from "./WorkFold";
 import { avatarLetter, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { runPlaceLabel } from "../place";
 import { generationStarted, hasVisibleTranscript, isStartupWhisper } from "../turn";
@@ -23,6 +29,9 @@ type Props = {
   onOpenDrawer: () => void;
   onOpenArtifacts?: () => void;
   onOpenDiagnostics?: () => void;
+  onOpenGit?: () => void;
+  userId?: string;
+  invite?: ReactNode;
 };
 
 function Avatar({ src, letter, neo }: { src?: string | null; letter: string; neo?: boolean }) {
@@ -101,7 +110,11 @@ export function ChatScreen({
   onOpenDrawer,
   onOpenArtifacts,
   onOpenDiagnostics,
+  onOpenGit,
+  userId,
+  invite,
 }: Props) {
+  const liveId = liveAssistantId(messages, running);
   const mine = avatarLetter(userEmail);
   const started = generationStarted(messages);
   const scrollRef = useRef<ScrollView>(null);
@@ -126,6 +139,12 @@ export function ChatScreen({
           <Pressable onPress={onOpenArtifacts} style={styles.action}>
             <Text style={styles.actionText}>产物</Text>
           </Pressable>
+          {onOpenGit ? (
+            <Pressable onPress={onOpenGit} style={styles.action}>
+              <Text style={styles.actionText}>Git</Text>
+            </Pressable>
+          ) : null}
+          {invite}
           {run.status === "ERROR" && onOpenDiagnostics ? (
             <Pressable onPress={onOpenDiagnostics} style={[styles.action, styles.actionWarn]}>
               <Text style={styles.actionText}>查看诊断</Text>
@@ -149,11 +168,21 @@ export function ChatScreen({
               </Text>
             );
           }
+          if (message.kind === "artifact.uploaded") {
+            const name = artifactFileName(message);
+            return (
+              <Pressable key={message.id} onPress={onOpenArtifacts} style={styles.artifact}>
+                <Text style={styles.artifactName} numberOfLines={1}>{name}</Text>
+                <Text style={styles.when}>{artifactKindLabel({ name, contentType: message.mediaType })}</Text>
+              </Pressable>
+            );
+          }
           if (!hasVisibleTranscript(message)) return null;
           const mineMsg = message.role === "user";
-          const groups = transcriptGroups(message).filter((group) =>
-            group.type === "tools" ? group.tools.length > 0 : Boolean(group.text.trim()),
-          );
+          const author = mineMsg ? userMessageAuthor(message, { id: userId, email: userEmail }) : null;
+          const live = !mineMsg && (liveId === message.id || Boolean(running && message.streaming));
+          const when = message.role === "setup" ? null : messageTimeLabel(message, { live });
+          const groups = transcriptGroups(message);
           return (
             <View key={message.id} style={[styles.row, mineMsg ? styles.rowUser : styles.rowAgent]}>
               <Avatar
@@ -162,6 +191,7 @@ export function ChatScreen({
                 neo={!mineMsg}
               />
               <View style={styles.col}>
+                {author ? <Text style={styles.author}>{author}</Text> : null}
                 {message.images?.length ? (
                   <View style={styles.imageRow}>
                     {message.images.map((image, index) => (
@@ -173,21 +203,48 @@ export function ChatScreen({
                     ))}
                   </View>
                 ) : null}
-                {groups.map((group, index) =>
-                  group.type === "text" ? (
-                    <View key={`${message.id}-t${index}`} style={[styles.bubble, mineMsg ? styles.user : styles.agent]}>
-                      <Text style={styles.body} selectable>
-                        {group.text}
-                      </Text>
-                    </View>
-                  ) : (
-                    <View key={`${message.id}-g${index}`} style={styles.toolStack}>
-                      {group.tools.map((tool) => (
-                        <ToolCard key={tool.id ?? tool.name} tool={tool} />
-                      ))}
-                    </View>
-                  ),
-                )}
+                {mineMsg
+                  ? groups.map((group, index) =>
+                      group.type === "text" ? (
+                        <View key={`${message.id}-t${index}`} style={[styles.bubble, styles.user]}>
+                          <Text style={styles.body} selectable>
+                            {group.text}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View key={`${message.id}-g${index}`} style={styles.toolStack}>
+                          {group.tools.map((tool) => (
+                            <ToolCard key={tool.id ?? tool.name} tool={tool} />
+                          ))}
+                        </View>
+                      ),
+                    )
+                  : (() => {
+                      const turn = partitionTurn(groups);
+                      return (
+                        <>
+                          <WorkFold
+                            turn={turn}
+                            live={live}
+                            createdAt={message.createdAt}
+                            updatedAt={message.updatedAt}
+                            renderTools={(tools) => (
+                              <View style={styles.toolStack}>
+                                {tools.map((tool) => (
+                                  <ToolCard key={tool.id ?? tool.name} tool={tool} />
+                                ))}
+                              </View>
+                            )}
+                          />
+                          {turn.answer ? (
+                            <View style={[styles.bubble, styles.agent]}>
+                              <MarkdownNative text={turn.answer} />
+                            </View>
+                          ) : null}
+                        </>
+                      );
+                    })()}
+                {when ? <Text style={styles.when}>{when}</Text> : null}
               </View>
             </View>
           );
@@ -203,7 +260,9 @@ const styles = StyleSheet.create({
   topbar: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
   menu: { fontSize: 20, color: colors.ink, width: 28 },
   pill: { flex: 1, borderRadius: 999, backgroundColor: colors.paper, paddingHorizontal: 10, paddingVertical: 6 },
-  pillBusy: { backgroundColor: "#d7f6f2" },
+  pillBusy: { backgroundColor: colors.hover },
+  author: { color: colors.muted, fontSize: 12 },
+  when: { color: colors.muted, fontSize: 11 },
   pillText: { color: colors.ink, fontSize: 13 },
   place: { width: 56, color: colors.muted, fontSize: 12, textAlign: "right" },
   older: { alignSelf: "center", paddingHorizontal: 14, paddingVertical: 6 },
@@ -224,7 +283,19 @@ const styles = StyleSheet.create({
   whisper: { color: colors.muted, fontSize: 12, textAlign: "center", paddingHorizontal: 24, lineHeight: 18 },
   thinkBox: { flexShrink: 1, maxWidth: "78%", gap: 8, paddingTop: 6 },
   thinkDots: { flexDirection: "row", alignItems: "center", gap: 5 },
-  thinkDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#c5ddd9" },
+  thinkDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.hover },
+  artifact: {
+    alignSelf: "flex-start",
+    maxWidth: "78%",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  artifactName: { color: colors.ink, fontSize: 14, fontWeight: "600" },
   thinkDotOn: { backgroundColor: colors.accent },
   thinkText: { color: colors.muted, fontSize: 13, lineHeight: 18 },
   row: { flexDirection: "row", alignItems: "flex-start", gap: 8, maxWidth: "100%" },
@@ -252,7 +323,7 @@ const styles = StyleSheet.create({
     borderLeftColor: colors.accent,
     borderRadius: 16,
   },
-  toolRun: { backgroundColor: "#e6f9f6", borderColor: "#9ad9d2" },
+  toolRun: { backgroundColor: colors.hover, borderColor: colors.line },
   toolErr: { backgroundColor: "#fdecec", borderColor: "#e8b4b4", borderLeftColor: colors.error },
   toolHead: { flexDirection: "row", alignItems: "center", gap: 8 },
   toolMark: { color: "#2b8a4e", fontWeight: "800", fontSize: 13 },

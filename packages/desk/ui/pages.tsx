@@ -3,7 +3,8 @@ import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } fro
 import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import { isImeComposing } from "@neo-cloud-agent/contracts/composer-keys";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
-import { Select } from "@neo-cloud-agent/ui";
+import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
+import { ContextUsageControl, Select } from "@neo-cloud-agent/ui";
 import { Avatar } from "./Avatar";
 import { IslandButton, IslandInput, IslandSwitch } from "./island";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -17,7 +18,7 @@ import { readImageRef } from "./image-ref";
 import { IconAddRepo, IconArrowUp, IconChevronDown, IconCloud, IconComputer, IconMic, IconPlus, IconProjects, IconSearch, IconStop, IconUnbindFolder } from "./icons";
 import { applyClickVoice, startDeskVoice } from "./speech";
 
-export type ContextMenuId = "repo" | "target" | null;
+export type ContextMenuId = "repo" | "target" | "expert" | null;
 
 export type ScheduleKind = "hourly" | "six_hours" | "daily_09" | "weekly_mon_09";
 export type SearchFilter = "all" | "agents" | "files" | "actions" | "todos" | "settings";
@@ -139,12 +140,12 @@ export function SearchPalette({
   onClose: () => void;
 }) {
   const tabs: Array<{ id: SearchFilter; label: string }> = [
-    { id: "all", label: "All" },
-    { id: "agents", label: "Agents" },
-    { id: "files", label: "Files" },
-    { id: "actions", label: "Actions" },
+    { id: "all", label: "全部" },
+    { id: "agents", label: "对话" },
+    { id: "files", label: "文件" },
+    { id: "actions", label: "操作" },
     { id: "todos", label: "待办" },
-    { id: "settings", label: "Settings" },
+    { id: "settings", label: "设置" },
   ];
   const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
@@ -162,14 +163,14 @@ export function SearchPalette({
         className="palette palette-float"
         role="dialog"
         aria-modal="true"
-        aria-label="Search"
+        aria-label="搜索对话"
         onClick={(event) => event.stopPropagation()}
       >
         <input
           ref={searchRef}
           className="palette-input"
           value={query}
-          placeholder="Search agents, files, actions…"
+          placeholder="搜索对话、项目、文件…"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={onKey}
         />
@@ -188,7 +189,7 @@ export function SearchPalette({
         <div className="palette-body">
           {filter === "settings" ? (
             <button type="button" className="palette-row" onClick={onOpenSettings}>
-              <strong>Models</strong>
+              <strong>模型</strong>
               <span>配置模型名、API Key、Base URL</span>
             </button>
           ) : filter === "files" || filter === "actions" ? (
@@ -651,6 +652,15 @@ export function ContextBar({
   open,
   setOpen,
   locked,
+  remoteAvailable = true,
+  cloudRepo = "",
+  githubRepos = [],
+  onCloudRepo,
+  experts = [],
+  teams = [],
+  expertValue = "",
+  expertLocked = false,
+  onExpert,
 }: {
   workspaces: Array<{ id: string; folder: string; name: string; git: boolean }>;
   folder: string;
@@ -664,29 +674,43 @@ export function ContextBar({
   open: ContextMenuId;
   setOpen: (id: ContextMenuId) => void;
   locked?: boolean;
+  /** Control-plane `/health.neoLoop.available`. Remote Control needs neo-loop. */
+  remoteAvailable?: boolean;
+  cloudRepo?: string;
+  githubRepos?: Array<{ fullName: string; url: string }>;
+  onCloudRepo?: (url: string) => void;
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
+  onExpert?: (value: string) => void;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(open !== null && !locked, () => setOpen(null), barRef);
   const local = isLocalDeskKind(targetKind);
   const remoteNeedsFolder = !folder;
+  const remoteDisabled = !canRunLocal || remoteNeedsFolder || !remoteAvailable;
   const folderPickerOpen = !locked && local && open === "repo";
+  const cloudRepoOpen = !locked && !local && open === "repo" && Boolean(onCloudRepo);
   const activeFolder = workspaces.find((item) => trimTrailingSlash(item.folder) === trimTrailingSlash(folder));
   const workspaceLabel = local
     ? activeFolder?.name || (folder ? lastSegment(folder) : targetKind === TARGET_REMOTE ? "选择文件夹" : "不绑定文件夹")
-    : "不关联仓库";
+    : cloudRepo
+      ? lastSegment(cloudRepo.replace(/\.git$/, ""))
+      : "无仓库";
 
   return (
-    <div className="context-bar" ref={barRef}>
+    <div className="context-bar composer-context" ref={barRef}>
       <div className="context-item-wrap">
         <button
           type="button"
           className="context-item"
-          disabled={locked || !local}
+          disabled={locked || (local ? false : !onCloudRepo)}
           onClick={() => setOpen(open === "repo" ? null : "repo")}
         >
           {local ? folder ? <IconComputer size={13} /> : <IconUnbindFolder size={13} /> : null}
           <span>{workspaceLabel}</span>
-          {local ? <IconChevronDown size={12} /> : null}
+          {locked ? null : <IconChevronDown size={12} />}
         </button>
         {folderPickerOpen ? (
           <div className="context-menu" role="menu">
@@ -726,6 +750,34 @@ export function ContextBar({
               >
                 <IconComputer size={13} />
                 <span title={item.git ? undefined : "不是 git 仓库"}>{item.name}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {cloudRepoOpen ? (
+          <div className="context-menu" role="menu">
+            <button
+              type="button"
+              className={!cloudRepo ? "on" : ""}
+              onClick={() => {
+                onCloudRepo?.("");
+                setOpen(null);
+              }}
+            >
+              无仓库
+            </button>
+            {githubRepos.length === 0 ? <p className="context-menu-label">设置里绑定 GitHub 后可选仓库</p> : <p className="context-menu-label">GitHub</p>}
+            {githubRepos.map((item) => (
+              <button
+                key={item.url}
+                type="button"
+                className={cloudRepo === item.url ? "on" : ""}
+                onClick={() => {
+                  onCloudRepo?.(item.url);
+                  setOpen(null);
+                }}
+              >
+                {item.fullName}
               </button>
             ))}
           </div>
@@ -775,18 +827,42 @@ export function ContextBar({
             <button
               type="button"
               className={targetKind === TARGET_REMOTE ? "on" : ""}
-              disabled={!canRunLocal || remoteNeedsFolder}
+              disabled={remoteDisabled}
               onClick={() => {
                 onTarget(TARGET_REMOTE);
                 setOpen(null);
               }}
             >
               <IconComputer size={14} />
-              {!canRunLocal ? "Remote Control（需要 Desk）" : "Remote Control"}
+              {!canRunLocal
+                ? "Remote Control（需要 Desk）"
+                : !remoteAvailable
+                  ? "Remote Control（neo-loop 未就绪）"
+                  : "Remote Control"}
             </button>
           </div>
         ) : null}
       </div>
+      {onExpert ? (
+        <label className="expert-pick context-expert">
+          <Select
+            size="pill"
+            aria-label="专家"
+            value={expertValue}
+            disabled={locked || expertLocked}
+            onValueChange={onExpert}
+            groups={[
+              { label: "默认", options: [{ value: "", label: "Neo" }] },
+              ...(experts.length > 0
+                ? [{ label: "专家", options: experts.map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
+                : []),
+              ...(teams.length > 0
+                ? [{ label: "专家团", options: teams.map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: `团 · ${item.name}` })) }]
+                : []),
+            ]}
+          />
+        </label>
+      ) : null}
     </div>
   );
 }
@@ -846,16 +922,13 @@ export function ChatComposer({
   mentions,
   waiting,
   onStop,
-  experts,
-  teams,
-  expertValue,
-  expertLocked,
-  onExpert,
+  onQueue,
   onMention,
   token,
   images,
   onImages,
   onCapsule,
+  contextUsage,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -875,20 +948,19 @@ export function ChatComposer({
   mentions?: ComposerMention[];
   waiting?: boolean;
   onStop?: () => void;
-  experts?: Expert[];
-  teams?: ExpertTeam[];
-  expertValue?: string;
-  expertLocked?: boolean;
-  onExpert?: (value: string) => void;
+  onQueue?: () => void;
   onMention?: (item: ComposerMention) => void;
   token?: string;
   images?: ImageRef[];
   onImages?: (images: ImageRef[]) => void;
   onCapsule?: (capsule: IntentCapsule) => void;
+  contextUsage?: ContextUsageSnapshot | null;
 }) {
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -1036,31 +1108,34 @@ export function ChatComposer({
           ))}
         </div>
       ) : null}
-      <div className="composer-tools">
-        {onExpert ? (
-          <label className="expert-pick">
-            <span>专家</span>
-            <Select
-              size="pill"
-              aria-label="专家"
-              value={expertValue ?? ""}
-              disabled={expertLocked}
-              onValueChange={onExpert}
-              groups={[
-                { label: "默认", options: [{ value: "", label: "Neo" }] },
-                ...((experts ?? []).length > 0
-                  ? [{ label: "专家", options: (experts ?? []).map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
-                  : []),
-                ...((teams ?? []).length > 0
-                  ? [{ label: "专家团", options: (teams ?? []).map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: `团 · ${item.name}` })) }]
-                  : []),
-              ]}
-            />
-          </label>
-        ) : null}
-        {/* Model and send belong together on the right; spreading them apart
-            left a wide gap where the eye expects one control group. */}
-        <div className="composer-send-group">
+      <div className="composer-tools composer-bar">
+        <div className="composer-pickers">
+          <button
+            type="button"
+            className="composer-attach"
+            aria-label="添加图片"
+            disabled={locked}
+            onClick={() => fileRef.current?.click()}
+          >
+            <IconPlus size={16} />
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            multiple
+            onChange={(event) => {
+              const files = [...(event.target.files ?? [])].filter((file) => file.type.startsWith("image/"));
+              event.target.value = "";
+              if (files.length === 0) return;
+              void Promise.all(files.slice(0, 4).map(readImageRef)).then((next) => {
+                const merged = [...attached, ...next].slice(0, 4);
+                onImages?.(merged);
+                if (attached.length + files.length > 4) setVoiceError("一次最多 4 张图");
+              });
+            }}
+          />
           <div className="model-wrap" ref={modelRef}>
             <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
               {label}
@@ -1068,7 +1143,7 @@ export function ChatComposer({
             </button>
             {menuOpen ? (
               <div className="model-menu" role="menu">
-                <p className="palette-label">Your models</p>
+                <p className="palette-label">你的模型</p>
                 {models.length === 0 ? <p className="pane-note">还没有配置模型</p> : null}
                 {models.map((name) => (
                   <button key={name} type="button" className={name === selected ? "on" : ""} onClick={() => onSelectModel(name)}>
@@ -1077,11 +1152,16 @@ export function ChatComposer({
                   </button>
                 ))}
                 <button type="button" className="add-model" onClick={onAddModel}>
-                  Add Models
+                  添加模型
                 </button>
               </div>
             ) : null}
           </div>
+        </div>
+        <div className="composer-send-group">
+          {contextUsage ? (
+            <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
+          ) : null}
           {token ? (
             <button
               type="button"
@@ -1093,12 +1173,23 @@ export function ChatComposer({
               <IconMic size={15} />
             </button>
           ) : null}
+          {waitingNow && onQueue ? (
+            <button
+              type="button"
+              className="composer-queue"
+              aria-label="排队跟进"
+              disabled={locked || empty}
+              onClick={onQueue}
+            >
+              <IconArrowUp size={14} />
+            </button>
+          ) : null}
           {onStop && waitingNow ? (
             <button type="button" className="send-btn stop" aria-label="停止" onClick={onStop}>
               <IconStop size={14} />
             </button>
           ) : (
-            <button type="button" className="send-btn" aria-label="Send" disabled={locked || sending || empty || listening} onClick={onSubmit}>
+            <button type="button" className="send-btn" aria-label="发送" disabled={locked || sending || empty || listening} onClick={onSubmit}>
               <IconArrowUp size={16} />
             </button>
           )}
@@ -1107,17 +1198,9 @@ export function ChatComposer({
     </>
   );
 
-  if (home) {
-    return (
-      <div className="composer composer-stack home">
-        {inner}
-      </div>
-    );
-  }
-
   return (
-    <div ref={boxRef} className="composer-follow">
-      <div className="composer composer-stack follow">{inner}</div>
+    <div ref={home ? undefined : boxRef} className={`composer composer-stack composer-box${home ? " home" : " follow"}`}>
+      {inner}
     </div>
   );
 }

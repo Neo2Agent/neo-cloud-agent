@@ -4,6 +4,7 @@ import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import { assistantIsLive } from "@neo-cloud-agent/contracts/turn-state";
 import { messageTimeLabel, shouldShowThinking, userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
 import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
+import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/artifact";
 import { MarkdownBody } from "@neo-cloud-agent/ui";
 import type { Ref } from "react";
 import { shouldShowAssistantActions } from "../../src/stream";
@@ -41,6 +42,7 @@ export function ChatTranscript({
   onCopy,
   thinkingHint,
   onOpenDiagnostics,
+  onOpenArtifact,
 }: {
   current: Run;
   visible: TranscriptMessage[];
@@ -54,6 +56,7 @@ export function ChatTranscript({
   onCopy: (text: string) => void;
   thinkingHint?: string;
   onOpenDiagnostics?: () => void;
+  onOpenArtifact?: (name: string) => void;
 }) {
   const viewer = { id: userId, email: user };
   let currentTurnStart = 0;
@@ -71,6 +74,17 @@ export function ChatTranscript({
         </article>
       ) : null}
       {visible.map((message, messageIndex) => {
+        if (message.kind === "artifact.uploaded") {
+          const name = artifactFileName(message);
+          return (
+            <article key={message.id} className="artifact">
+              <button type="button" className="artifact-chip" onClick={() => onOpenArtifact?.(name)}>
+                <span className="artifact-chip-name">{name}</span>
+                <span className="chat-time">{artifactKindLabel({ name, contentType: message.mediaType })}</span>
+              </button>
+            </article>
+          );
+        }
         if (message.role === "user") {
           const author = userMessageAuthor(message, viewer);
           const when = message.createdAt ? messageTimeLabel(message) : null;

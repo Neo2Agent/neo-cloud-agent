@@ -12,6 +12,7 @@ export function cloudRunRequest(input: {
   pluginIds?: string[];
   projectId?: string;
   images?: ImageRef[];
+  repoUrls?: string[];
 }): CreateRunRequest {
   // A run takes an expert or a team, never both; the control plane rejects the pair.
   const expertTeamId = input.expert?.expertTeamId || undefined;
@@ -19,7 +20,8 @@ export function cloudRunRequest(input: {
   const images = input.images?.length ? input.images.slice(0, MAX_IMAGES) : undefined;
   return {
     prompt: input.prompt || "（图片）",
-    repoUrls: [],
+    repoUrls: input.repoUrls?.length ? input.repoUrls : [],
+    skipRepoDefaults: !input.repoUrls?.length,
     envId: input.envId || undefined,
     source: input.source,
     model: input.model,

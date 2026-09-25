@@ -1,157 +1,13 @@
 import { useEffect } from "react";
-import type {
-  ContextUsageBucket,
-  ContextUsageBucketId,
-  ContextUsageSnapshot,
-} from "@neo-cloud-agent/contracts/context-usage";
-import {
-  formatContextPercent,
-  formatTokenCount,
-  layoutContextBar,
-} from "@neo-cloud-agent/contracts/context-usage";
-import { IconBack, IconExpand, IconX } from "../icons";
+import type { ContextUsageBucket, ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
+import { formatContextPercent, formatTokenCount } from "@neo-cloud-agent/contracts/context-usage";
+import { ContextUsageBar, bucketColor, percentLabel, totalLabel } from "@neo-cloud-agent/ui";
+import { IconBack } from "../icons";
 
-const COLORS: Record<ContextUsageBucketId, string> = {
-  system: "#9ca3af",
-  rules: "#047857",
-  memory: "#a16207",
-  skills: "#0891b2",
-  tools: "#8b5cf6",
-  cloudTools: "#9d174d",
-  mcp: "#2563eb",
-  subagents: "#7c3aed",
-  summarized: "#b91c1c",
-  conversation: "#f97316",
-};
-
-const BAR_UNITS = 1000;
-
-type Props = {
-  usage: ContextUsageSnapshot;
-  open: boolean;
-  onToggle: () => void;
-  /** Hand the breakdown to the stage; the popover stays a summary. */
-  onOpenDetail?: (bucketId?: string) => void;
-};
-
-function bucketColor(id: string): string {
-  return COLORS[id as ContextUsageBucketId] ?? "#9ca3af";
-}
-
-function percentLabel(usage: ContextUsageSnapshot): string {
-  const percent = formatContextPercent(usage.percent);
-  return percent == null ? "窗口未知" : `${percent} 已用`;
-}
-
-function totalLabel(usage: ContextUsageSnapshot): string {
-  return usage.contextWindow
-    ? `~${formatTokenCount(usage.tokens)} / ${formatTokenCount(usage.contextWindow)} Tokens`
-    : `~${formatTokenCount(usage.tokens)} Tokens`;
-}
+export { ContextUsageControl } from "@neo-cloud-agent/ui";
 
 function share(tokens: number, total: number): string {
   return total > 0 ? (formatContextPercent((tokens / total) * 100) ?? "") : "";
-}
-
-/** Widths come from the shared layout so a 0.3% fill still shows a sliver. */
-function UsageBar({ usage, className }: { usage: ContextUsageSnapshot; className?: string }) {
-  const layout = layoutContextBar({
-    width: BAR_UNITS,
-    tokens: usage.tokens,
-    contextWindow: usage.contextWindow,
-    buckets: usage.buckets,
-  });
-  return (
-    <div className={className ?? "context-usage-bar"} aria-hidden="true">
-      {layout.slices.map((slice) => (
-        <i
-          key={slice.id}
-          title={`${slice.label}  ${formatTokenCount(slice.tokens)}`}
-          style={{
-            width: `${(slice.width / BAR_UNITS) * 100}%`,
-            background: bucketColor(slice.id),
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-export function ContextUsageControl({ usage, open, onToggle, onOpenDetail }: Props) {
-  const chip = formatContextPercent(usage.percent) ?? "用量";
-
-  return (
-    <div className="context-usage">
-      <button
-        type="button"
-        id="context-usage-toggle"
-        className="context-usage-chip"
-        aria-expanded={open}
-        aria-controls="context-usage-pop"
-        onClick={onToggle}
-      >
-        {chip}
-      </button>
-      {open ? (
-        <>
-          <button
-            type="button"
-            className="context-usage-backdrop"
-            aria-label="关闭上下文用量"
-            onClick={onToggle}
-          />
-          <div className="context-usage-pop" id="context-usage-pop" role="dialog" aria-label="上下文用量">
-            <div className="context-usage-head">
-              <span>上下文用量</span>
-              <span className="context-usage-actions">
-                {onOpenDetail ? (
-                  <button
-                    type="button"
-                    className="context-usage-icon"
-                    aria-label="打开明细"
-                    title="打开明细"
-                    onClick={() => onOpenDetail()}
-                  >
-                    <IconExpand size={14} />
-                  </button>
-                ) : null}
-                <button type="button" className="context-usage-icon" aria-label="关闭" onClick={onToggle}>
-                  <IconX size={14} />
-                </button>
-              </span>
-            </div>
-            <p className="context-usage-status">
-              <span>{percentLabel(usage)}</span>
-              <span>{totalLabel(usage)}</span>
-            </p>
-            <UsageBar usage={usage} />
-            <ul className="context-usage-list">
-              {usage.buckets.map((bucket) => (
-                <li key={bucket.id}>
-                  <span className="context-usage-name">
-                    <i style={{ background: bucketColor(bucket.id) }} />
-                    {bucket.label}
-                  </span>
-                  {onOpenDetail && bucket.children?.length ? (
-                    <button
-                      type="button"
-                      className="context-usage-icon"
-                      aria-label={`查看${bucket.label}明细`}
-                      title={`查看${bucket.label}明细`}
-                      onClick={() => onOpenDetail(bucket.id)}
-                    >
-                      <IconExpand size={13} />
-                    </button>
-                  ) : null}
-                  <span className="context-usage-value">{formatTokenCount(bucket.tokens)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
 }
 
 function BucketSection({
@@ -233,7 +89,7 @@ export function ContextUsagePanel({
         </div>
       </header>
       <div className="context-page-body">
-        <UsageBar usage={usage} className="context-usage-bar is-wide" />
+        <ContextUsageBar usage={usage} className="context-usage-bar is-wide" />
         <div className="context-sections">
           {usage.buckets.map((bucket) => (
             <BucketSection

@@ -26,6 +26,7 @@ import { ensureGitHubWebhookSecret } from "./subscriptions/secret.js";
 import { attachLoopSessionBackends, resetLoopSessionBackends } from "./loop/session-store.js";
 import { attachGithubSqlStore, resetGithubSqlStore } from "./integrations/github-store.js";
 import { connectDatabase, type DatabaseKind, type MetadataStore } from "./store/database.js";
+import { resetUserListWatchers } from "./events/user-bus.js";
 import { persistRunRecord, persistWorkerLease, setPersistHooks } from "./store/persist.js";
 import { mergeStoredRun } from "./store/run-record.js";
 
@@ -66,6 +67,7 @@ export function resetPlatformForTests(): void {
   metadataKind = "fs";
   eventBusKind = "memory";
   setPersistHooks({});
+  resetUserListWatchers();
   setEnvPersistHooks({});
   setAutomationPersistHooks({});
   setProjectPersistHooks({});

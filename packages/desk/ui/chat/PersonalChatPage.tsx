@@ -20,6 +20,7 @@ export function PersonalChatPage({
   headerEnd,
   thinkingHint,
   onOpenDiagnostics,
+  onOpenArtifact,
 }: {
   title: string;
   current: Run;
@@ -36,6 +37,7 @@ export function PersonalChatPage({
   headerEnd?: ReactNode;
   thinkingHint?: string;
   onOpenDiagnostics?: () => void;
+  onOpenArtifact?: (name: string) => void;
 }) {
   return (
     <div className="personal-chat-shell">
@@ -53,6 +55,7 @@ export function PersonalChatPage({
         onCopy={onCopy}
         thinkingHint={thinkingHint}
         onOpenDiagnostics={onOpenDiagnostics}
+        onOpenArtifact={onOpenArtifact}
       />
     </div>
   );

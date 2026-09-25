@@ -55,21 +55,21 @@
 | 能力 | Web | Desk | Mobile |
 | --- | --- | --- | --- |
 | 云端对话、直播、跟进、停止 | ✓ | ✓ | ✓ |
-| Markdown 渲染 | ✓ | ✓（✗ 纯文本） | ✓ 实验室（✗）/ 原生仍纯文本 |
-| 工作折叠（工具按类归组、进行中转圈） | ✓ | ✓（✗ 平铺工具卡） | ✗ 平铺工具卡 |
-| 进行中不显示时间，结束后显示时间和耗时 | ✓ | ✓（△ 相对时间） | ✓（✗ 不显示） |
+| Markdown 渲染 | ✓ | ✓ | ✓ 实验室 + 原生 |
+| 工作折叠（工具按类归组、进行中转圈） | ✓ | ✓ | ✓ 实验室 + 原生 |
+| 进行中不显示时间，结束后显示时间和耗时 | ✓ | ✓（△ 相对时间） | ✓ |
 | 「正在思考」判定 | 共享 `shouldShowThinking` | 共享（原来工具之间会再冒出来） | 共享 |
 | 输入法组词回车不发送 | ✓ | ✓（✗） | ✓ 实验室 |
-| 运行中排队 / 插话 | ✓ Enter 排队、Cmd/Ctrl+Enter 插话（△ Ctrl+Enter 排队） | ✓（△ 只能排队） | ✓ 箭头排队，实验室 Cmd/Ctrl+Enter 插话（✗ 发送键变停止键） |
+| 运行中排队 / 插话 | ✓ Enter 排队、Cmd/Ctrl+Enter 插话（△ Ctrl+Enter 排队） | ✓ 回车排队、⌘/Ctrl+回车插话，另有排队键 | ✓ 箭头排队，实验室 Cmd/Ctrl+Enter 插话，原生另有插话键 |
 | 共享对话里的发送人 | ✓（✗ 不显示） | ✓（✗ 首条算成自己） | ✓（✗ 全用自己的头像） |
 | 运行列表后台刷新 | ✓ 8s + 聚焦（△ 只在打开对话时） | ✓ 8s + 聚焦（△ 只在聚焦时） | ✓ 8s + 可见（✗ 从不） |
 | 执行模式标签 | Remote / 本机（✗ 无） | 云端 / Remote / 本机（△ 英文小写） | 云端 / Remote（△ 英文小写） |
 | Agent / Ask 模式 | 已删除 | 已删除（△ 前缀代码还在） | 已删除（△ `askPrompt` 还在） |
-| Diff / 提交 / PR | ✓ Git 面板（头栏 ready / squash merge、点选文件、行号、审查页 CI） | △ 只有 `+N -M` | ✗ |
+| Diff / 提交 / PR | ✓ Git 面板（头栏 ready / squash merge、点选文件、行号、审查页 CI） | ✓ 右侧栏 Git 页（本机 + 云端） | ✓ 只读 PR / 改动 / 提交 |
 | 文件 / 终端 / 产物 | ✓ | ✓（本机 + 云端） | △ 只有产物 |
-| 会话搜索 | △ 只有手机布局有 | ✓ 搜索面板 | ✗ |
+| 会话搜索 | ✓ Cmd+K 全局搜索面板 | ✓ 搜索面板 | ✓ 侧栏搜索 |
 | 推送 | ✗ | 系统通知（派活） | ✓ Expo 推送 |
-| 视觉 | 冷灰单色、Geist | 暖纸木纹、Nunito | Island 纸卡片 |
+| 视觉 | 冷灰单色、Geist | 冷灰单色、Geist（与 Web 同一套 `packages/ui` token） | 冷灰单色、Geist（实验室）/ 同色 RN token |
 
 ### 3.1 原来写了三份的逻辑，现在在哪
 
@@ -89,7 +89,7 @@
 
 ### 4.1 读代码发现的
 
-1. **Remote Control 在现网跑不起来。** Remote 要 `neo-loop`，而 `deploy.sh` 每次都会把现网 `neo-loop` 关掉（4C/4G 内存的取舍），但 Desk 上仍然能选 Remote。**未改**，放第二期：`/health` 报 `neoLoop.available=false` 时把 Remote 置灰，或加内存后开 loop。
+1. **Remote Control 在现网跑不起来。** Remote 要 `neo-loop`，而 `deploy.sh` 每次都会把现网 `neo-loop` 关掉（4C/4G 内存的取舍）。**已修**：`/health` 报 `neoLoop.available=false` 时 Desk 把 Remote Control 置灰。
 2. **手机浏览器打开 Web 布局是坏的。** 桌面的「折叠侧栏 = 48px 图标栏」在窄屏也生效，关掉的侧栏被排到第 2 行；窄屏检查器覆盖层的层级低于输入框；对话列表按钮随图标栏一起进了侧栏，关掉后没地方打开。**已修**，见 §6.3。
 3. **Web 普通对话也显示 Diff 和「开草稿 PR」。** 在 Git 面板那个 PR 里修（按 `runGitContext` 显示）。人入口已去掉：绑仓库的对话进 IDLE 且分支有提交时，控制面 handoff 自动开草稿 PR。
 4. **Desk 回车没有输入法保护。** **已修**。
@@ -115,10 +115,10 @@
 | P12 | 别处归档当前打开的对话后，Desk 输入框没锁 | 低 | 已修 |
 | P13 | Web 邀请页文案说加入后能看到「对话」，实际只能看到被邀请进的对话；申请后跳到空项目页，没有「等待通过」提示；项目详情页不刷新成员 / 待审批 | 低 | 已修 |
 | P14 | 转交后原房主降为协作者，对话仍在原房主列表里 | 设计 | 未改：现在的语义是「交出主导权、保留协作」。要改成「移交」再讨论 |
-| P15 | Web 没有「邀请协作者进对话」入口，只有 Desk 有 | 缺功能 | 未改，放第二期 |
-| P16 | Desk 自己离线（inbox 断开）时，Desk 界面上没有提示；Web / Mobile 3~4 秒内正确锁住并提示 | 低 | 未改，放第二期 |
-| P17 | Remote Control 的 transcript 显示「正在这台电脑上启动 Agent」，在 Web 上「这台电脑」指代不清 | 低 | 未改，放第二期 |
-| P18 | 产物在 Web 是可点的文件卡片，在 Desk 和 Mobile 是一行文字（Mobile 还多一条「已上传 notes.md」气泡） | 低 | 未改，放第二期 |
+| P15 | Web 没有「邀请协作者进对话」入口，只有 Desk 有 | 缺功能 | 已修：对话顶栏邀请 |
+| P16 | Desk 自己离线（inbox 断开）时，Desk 界面上没有提示；Web / Mobile 3~4 秒内正确锁住并提示 | 低 | 已修：Desk 顶栏提示 inbox 断开 |
+| P17 | Remote Control 的 transcript 显示「正在这台电脑上启动 Agent」，在 Web 上「这台电脑」指代不清 | 低 | 已修：改成「正在 Desk 上启动 Agent」 |
+| P18 | 产物在 Web 是可点的文件卡片，在 Desk 和 Mobile 是一行文字（Mobile 还多一条「已上传 notes.md」气泡） | 低 | 已修：Desk / Mobile 也是可点产物卡片 |
 | P19 | 对话删除后，收件箱里指向它的通知还在，点进去打不开 | 低 | 未改，放第二期 |
 
 ---
@@ -151,7 +151,7 @@
 - **审查**：CI 手风琴按 `进行中` / `失败` / `已通过` 分组，左侧图标。有失败或进行中默认展开，全绿默认收起。**只有 `failed > 0`** 时在手风琴底部出「查找问题」（`POST /v1/runs/:id/review`）。审查页签：进行中转圈、失败红点、全绿绿点。不做 Ready to merge 第二颗合并按钮。内部页签用和文件栏一样的灰底 pill。
 - **Cursor 3 Agents Window**：改动树、Commit and Push 下拉。这是桌面编排面，Neo 不跟。
 
-Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、`dirty`、`GET /commits`、审查页 CI、Desk 快照、ready / squash merge。Desk / Mobile 自己的 Git 标签仍是第二期。改 reviewer、行内评论回写仍是第三期。
+Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、`dirty`、`GET /commits`、审查页 CI、Desk 快照、ready / squash merge。Desk 本机 Git 与 Mobile 只读 Git（改动 / 审查 / 提交）已落地。改 reviewer、行内评论回写仍是第三期。
 
 ### 5.2 协作组文件夹 + 组内选仓（2026-09-24）
 
@@ -171,13 +171,13 @@ Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、
 
 ### 第二期
 
-- 视觉 token 统一到 `packages/ui`，以 Web 现在的单色风为基准；Desk、Mobile 换皮。
-- Desk 和 Mobile 的输入框改成 Cursor 式：选择器在框外上方，框内是 `+`、模型、用量、麦克风、圆形发送 / 停止。
-- Git 面板复用到 Desk（本机 git）和 Mobile（只读 PR / 提交）。
-- Web 桌面加 Cmd+K 会话搜索；Web 加「邀请协作者进对话」（P15）。
-- 运行列表改成推送：用户级 SSE 推「列表变了」，替掉 8s 轮询。
-- `/health` 报告 `neo-loop` 可用性，现网不可用时 Desk 把 Remote Control 置灰（§4.1 第 1 条）；P16、P17。
-- Mobile 原生：Markdown、工作折叠、插话。
+- 视觉 token 统一到 `packages/ui`，以 Web 现在的单色风为基准；Desk、Mobile 换皮。**已落地**（`tokens.css` / `tokens.ts`）。
+- Desk 和 Mobile 的输入框改成 Cursor 式：选择器在框外上方，框内是 `+`、模型、用量、麦克风、圆形发送 / 停止。**已落地**（用量芯片三端共用 `packages/ui` `ContextUsageControl`）。
+- Git 面板复用到 Desk（本机 git）和 Mobile（只读 PR / 提交）。**已落地**。
+- Web 桌面加 Cmd+K 会话搜索；Web 加「邀请协作者进对话」（P15）。**已落地**。
+- 运行列表改成推送：用户级 SSE 推「列表变了」，替掉 8s 轮询。**已落地**（`GET /v1/me/events` 的 `runs.changed`；三端聚焦刷新 + 30s 兜底）。
+- `/health` 报告 `neo-loop` 可用性，现网不可用时 Desk 把 Remote Control 置灰（§4.1 第 1 条）；P16、P17。**已落地**。
+- Mobile 原生：Markdown、工作折叠、插话。**已落地**。
 
 ### 第三期
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { runListTitle } from "../format";
 import { runRowMeta } from "../session";
@@ -38,7 +38,15 @@ export function Drawer(props: Props) {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
   const { live, shelved } = splitShelvedRuns(props.runs);
+  const q = query.trim().toLowerCase();
+  const shownLive = q
+    ? live.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
+    : live;
+  const shownShelved = q
+    ? shelved.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
+    : shelved;
 
   useEffect(() => {
     if (props.open) {
@@ -102,6 +110,14 @@ export function Drawer(props: Props) {
               {id === "inbox" && props.unread ? <Text style={styles.badge}>{props.unread}</Text> : null}
             </Pressable>
           ))}
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="搜索对话"
+            placeholderTextColor={colors.muted}
+            style={styles.search}
+            accessibilityLabel="搜索对话"
+          />
           <View style={styles.sectionRow}>
             <Text style={styles.section}>近期</Text>
             {props.onArchiveMany && live.length > 0 ? (
@@ -135,7 +151,8 @@ export function Drawer(props: Props) {
           ) : null}
           <ScrollView>
             {props.runs.length === 0 ? <Text style={styles.empty}>暂无近期任务</Text> : null}
-            {live.map((run) => (
+            {q && shownLive.length === 0 && shownShelved.length === 0 ? <Text style={styles.empty}>没有匹配的对话。</Text> : null}
+            {shownLive.map((run) => (
               <Pressable
                 key={run.id}
                 onPress={() => (selecting ? setSelected((prev) => toggleSelected(prev, run.id)) : props.onOpenRun(run.id))}
@@ -148,8 +165,8 @@ export function Drawer(props: Props) {
                 <Text style={styles.rowMeta}>{runRowMeta(run)}</Text>
               </Pressable>
             ))}
-            {shelved.length > 0 ? <Text style={styles.section}>已归档</Text> : null}
-            {shelved.map((run) => (
+            {shownShelved.length > 0 ? <Text style={styles.section}>已归档</Text> : null}
+            {shownShelved.map((run) => (
               <View key={run.id} style={styles.row}>
                 <Pressable onPress={() => props.onOpenRun(run.id)}>
                   <Text style={styles.rowTitle} numberOfLines={2}>{runListTitle(run)}</Text>
@@ -198,6 +215,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   brand: { fontSize: 20, fontWeight: "800", color: colors.ink, marginBottom: 12 },
+  search: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: colors.ink,
+    backgroundColor: colors.paper,
+    marginBottom: 8,
+  },
   nav: { paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 8 },
   navText: { color: colors.ink, fontSize: 16 },
   badge: {

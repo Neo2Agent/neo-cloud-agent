@@ -5,6 +5,7 @@ import { currentTurnMessages, liveAssistantId } from "@neo-cloud-agent/contracts
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { BUNDLED_RECIPES } from "@neo-cloud-agent/contracts/recipe";
+import { artifactFileName } from "@neo-cloud-agent/contracts/artifact";
 import { artifactKind } from "../artifact";
 import {
   fileCardPreview,
@@ -59,18 +60,6 @@ function toolDisplayName(tool: TranscriptTool): string {
     return `${nested} / ${verb}`;
   }
   return verb;
-}
-
-function artifactFileName(message: TranscriptMessage): string {
-  const href = message.href ?? "";
-  const path = href.split("?")[0] ?? "";
-  const raw = path.slice(path.lastIndexOf("/") + 1);
-  if (!raw) return message.text.replace(/^已上传\s*/, "").trim() || "产物";
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
 }
 
 function readSubagentTasks(details?: Record<string, unknown>): SubagentTask[] {

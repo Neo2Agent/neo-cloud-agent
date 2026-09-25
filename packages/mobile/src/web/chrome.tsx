@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
+import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import { composerKeyAction } from "@neo-cloud-agent/contracts/composer-keys";
+import { ContextUsageControl } from "@neo-cloud-agent/ui";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, resolveChatModel, runListTitle } from "../format";
 import { dayGreeting } from "../island-theme";
@@ -123,7 +126,15 @@ export function IslandDrawer(props: {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
   const { live, shelved } = splitShelvedRuns(props.runs.slice(0, 20));
+  const q = query.trim().toLowerCase();
+  const shownLive = q
+    ? live.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
+    : live;
+  const shownShelved = q
+    ? shelved.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
+    : shelved;
 
   useEffect(() => {
     let cancelled = false;
@@ -172,6 +183,12 @@ export function IslandDrawer(props: {
             {id === "inbox" && props.unread ? <span className="nav-badge">{props.unread}</span> : null}
           </button>
         ))}
+        <IslandInput
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索对话"
+          aria-label="搜索对话"
+        />
         <div className="section-row">
           <span className="section">近期</span>
           {props.onArchiveMany && live.length > 0 ? (
@@ -207,7 +224,8 @@ export function IslandDrawer(props: {
           </IslandButton>
         ) : null}
         {props.runs.length === 0 ? <p className="empty">暂无近期任务</p> : null}
-        {live.map((run) => (
+        {q && shownLive.length === 0 && shownShelved.length === 0 ? <p className="empty">没有匹配的对话。</p> : null}
+        {shownLive.map((run) => (
           <button
             key={run.id}
             className="run-row"
@@ -221,8 +239,8 @@ export function IslandDrawer(props: {
             <span>{runRowMeta(run)}</span>
           </button>
         ))}
-        {shelved.length > 0 ? <div className="section">已归档</div> : null}
-        {shelved.map((run) => (
+        {shownShelved.length > 0 ? <div className="section">已归档</div> : null}
+        {shownShelved.map((run) => (
           <div key={run.id} className="run-row is-shelved">
             <button type="button" className="run-open" onClick={() => props.onOpenRun(run.id)}>
               <b>{runListTitle(run)}</b>
@@ -295,12 +313,23 @@ export function IslandComposer(props: {
   /** While a turn runs, Cmd/Ctrl+Enter hands it to the agent at its next tool call. */
   onSteer?: () => void;
   onStop?: () => void;
+  contextUsage?: ContextUsageSnapshot | null;
+  repo?: string;
+  repos?: Array<{ fullName: string; url: string }>;
+  repoLocked?: boolean;
+  onRepo?: (url: string) => void;
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
+  onExpert?: (value: string) => void;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
     onEnded?: () => void,
   ) => Promise<StartVoiceResult>;
 }) {
+  const [usageOpen, setUsageOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceHint, setVoiceHint] = useState("");
@@ -401,10 +430,56 @@ export function IslandComposer(props: {
 
   const images = props.images ?? [];
   const canSend = Boolean(props.prompt.trim() || images.length > 0);
+  const expertValue = props.expertValue ?? "";
 
   return (
     <div className="composer-dock">
-      <div className="composer-bar">
+      <div className="composer-context">
+        <span>云端</span>
+        {props.onRepo && !props.repoLocked ? (
+          <label className="composer-repo">
+            <span className="sr-only">仓库</span>
+            <select
+              aria-label="绑定仓库"
+              value={props.repo ?? ""}
+              onChange={(event) => props.onRepo?.(event.target.value)}
+            >
+              <option value="">无仓库</option>
+              {(props.repos ?? []).map((item) => (
+                <option key={item.url} value={item.url}>
+                  {item.fullName}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</span>
+        )}
+        {props.onExpert ? (
+          <label className="composer-repo">
+            <span className="sr-only">专家</span>
+            <select
+              aria-label="专家"
+              value={expertValue}
+              disabled={props.expertLocked || props.locked}
+              onChange={(event) => props.onExpert?.(event.target.value)}
+            >
+              <option value={encodeExpertPick({})}>Neo</option>
+              {(props.experts ?? []).map((item) => (
+                <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
+                  {expertPickerLabel(item)}
+                </option>
+              ))}
+              {(props.teams ?? []).map((item) => (
+                <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+      <div className="composer-box composer-bar">
         {images.length > 0 ? (
           <div className="composer-thumbs">
             {images.map((image, index) => (
@@ -450,42 +525,10 @@ export function IslandComposer(props: {
             else if (!props.sending) props.onSend();
           }}
         />
-        <div className="composer-tools">
-          <div className="composer-model-wrap">
-            <button
-              type="button"
-              className="composer-model"
-              aria-haspopup="listbox"
-              aria-expanded={menuOpen}
-              aria-label="选择模型"
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              {chatModelLabel(props.model)}
-              <span aria-hidden="true">▴</span>
-            </button>
-            {menuOpen ? (
-              <div className="composer-model-menu" role="listbox" aria-label="模型">
-                {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="option"
-                    aria-selected={item.id === selected}
-                    className={item.id === selected ? "on" : undefined}
-                    onClick={() => {
-                      props.onModel(item.id);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="composer-send-group">
+        <div className="composer-tools composer-bar-inner">
+          <div className="composer-pickers">
             {props.onPickImages ? (
-              <label className="composer-attach" title="加图片">
+              <label className="composer-attach" title="添加图片">
                 <input
                   type="file"
                   accept="image/*"
@@ -498,12 +541,50 @@ export function IslandComposer(props: {
                   }}
                 />
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                  <path
-                    fill="currentColor"
-                    d="M5 19h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2l-1.2-1.6a1 1 0 0 0-.8-.4H10.2a1 1 0 0 0-.8.4L8.2 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2Zm7-3.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
-                  />
+                  <path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" />
                 </svg>
               </label>
+            ) : null}
+            <div className="composer-model-wrap">
+              <button
+                type="button"
+                className="composer-model"
+                aria-haspopup="listbox"
+                aria-expanded={menuOpen}
+                aria-label="选择模型"
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                {chatModelLabel(props.model)}
+                <span aria-hidden="true">▴</span>
+              </button>
+              {menuOpen ? (
+                <div className="composer-model-menu" role="listbox" aria-label="模型">
+                  {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="option"
+                      aria-selected={item.id === selected}
+                      className={item.id === selected ? "on" : undefined}
+                      onClick={() => {
+                        props.onModel(item.id);
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="composer-send-group">
+            {props.contextUsage ? (
+              <ContextUsageControl
+                usage={props.contextUsage}
+                open={usageOpen}
+                onToggle={() => setUsageOpen((open) => !open)}
+              />
             ) : null}
             <button
               type="button"

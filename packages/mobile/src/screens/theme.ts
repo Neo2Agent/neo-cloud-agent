@@ -10,6 +10,7 @@ export const colors = {
   accent: ISLAND.accent,
   cream: ISLAND.cream,
   line: ISLAND.line,
+  hover: ISLAND.hover,
   send: ISLAND.accent,
   error: ISLAND.red,
   bubbleUser: ISLAND.raised,

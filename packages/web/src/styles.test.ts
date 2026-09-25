@@ -4,16 +4,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "styles.css"), "utf8");
+const here = path.dirname(fileURLToPath(import.meta.url));
+const css = readFileSync(path.join(here, "styles.css"), "utf8");
+const tokens = readFileSync(path.join(here, "../../ui/src/tokens.css"), "utf8");
 
 test("web shell uses the quiet monochrome workspace", () => {
-  assert.match(css, /--bg:\s*#f4f4f5/);
-  assert.match(css, /--accent:\s*#1c1c1c/);
-  assert.match(css, /font-family:\s*"Geist Sans"/);
+  assert.match(css, /@import "@neo-cloud-agent\/ui\/tokens\.css"/);
+  assert.match(tokens, /--bg:\s*#f4f4f5/);
+  assert.match(tokens, /--accent:\s*#1c1c1c/);
+  assert.match(css, /font-family:\s*var\(--font-sans\)/);
   assert.doesNotMatch(css, /#4d6bfe/);
   assert.match(css, /\.new-chat-plus\s*\{/);
   assert.match(css, /button\.send\s*\{[^}]*padding:\s*8px 16px/);
-  assert.match(css, /--ease:\s*140ms ease/);
+  assert.match(tokens, /--ease:\s*140ms ease/);
   assert.match(css, /button:focus-visible/);
   assert.match(css, /\.toast-host/);
   assert.match(css, /\.settings-group/);
@@ -33,6 +36,8 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /\.run-folder-head/);
   assert.match(css, /\.run-section-head/);
   assert.match(css, /\.term-shell\s*\{/);
+  assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);
+  assert.match(css, /\.palette-backdrop\s*\{/);
 });
 
 test("welcome cluster fits a 14-inch laptop viewport without a page scroll", () => {

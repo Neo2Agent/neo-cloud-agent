@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ISLAND, dayGreeting } from "./island-theme.js";
+import { ISLAND, dayGreeting } from "./island-theme.ts";
 
-test("island tokens match Desk parchment", () => {
-  assert.equal(ISLAND.stage, "#f7f3df");
-  assert.equal(ISLAND.ink, "#794f27");
-  assert.equal(ISLAND.accent, "#19c8b9");
-  assert.equal(ISLAND.rail, "#f0e8d8");
+test("island tokens match the shared Web monochrome workspace", () => {
+  assert.equal(ISLAND.stage, "#f4f4f5");
+  assert.equal(ISLAND.ink, "#1c1c1c");
+  assert.equal(ISLAND.accent, "#1c1c1c");
+  assert.equal(ISLAND.rail, "#ffffff");
 });
 
 test("dayGreeting follows Desk copy", () => {

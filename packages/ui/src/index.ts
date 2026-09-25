@@ -1,4 +1,6 @@
 export { BrandMark } from "./brand-mark";
+export { THEME, type ThemeTokens } from "./tokens";
+export { ContextUsageBar, ContextUsageControl, bucketColor, percentLabel, totalLabel } from "./context-usage";
 export { MarkdownBody } from "./markdown";
 export { Checkbox } from "./checkbox";
 export { RadioGroup } from "./radio-group";

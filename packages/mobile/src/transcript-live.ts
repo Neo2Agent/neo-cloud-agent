@@ -15,6 +15,7 @@ export function attachRunStream(
     onMessages: (updater: (prev: TranscriptMessage[]) => TranscriptMessage[]) => void;
     onStatus?: (status: string) => void;
     onEventId?: (id: string) => void;
+    onEvent?: (event: RunEvent) => void;
   },
 ): () => void {
   const controller = new AbortController();
@@ -36,6 +37,7 @@ export function attachRunStream(
       handlers.onEventId?.(event.id);
       const status = statusFromEventKind(event.kind);
       if (status) handlers.onStatus?.(status);
+      handlers.onEvent?.(event);
     }
   };
 

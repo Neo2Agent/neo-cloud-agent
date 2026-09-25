@@ -1,35 +1,15 @@
+@import "@neo-cloud-agent/ui/tokens.css";
+@import "@neo-cloud-agent/ui/git-panel.css";
+@import "@neo-cloud-agent/ui/context-usage.css";
+
 :root {
-  color-scheme: light;
-  --bg: #f8f8f0;
-  --rail: #f0e8d8;
-  --stage: rgb(247, 243, 223);
-  --card: #f7f3df;
-  --bg-raised: #fffbe7;
-  --line: #c4b89e;
-  --text: #794f27;
-  --muted: #8a7b66;
-  --ink: #794f27;
-  --hover: #d6dff0;
-  --active: #b7c6e5;
-  --accent: #19c8b9;
-  --blue: var(--accent);
-  --brand: #19c8b9;
-  --green: #6fba2c;
-  --red: #e05a5a;
-  --shadow: 0 8px 24px 0 rgba(61, 52, 40, 0.14);
-  --shadow-soft: 0 3px 10px 0 rgba(61, 52, 40, 0.1);
-  --ink-line: 2px solid var(--line);
-  --shadow-stack: 0 3px 0 0 #d4c9b4;
-  --shadow-press: 0 5px 0 0 #bdaea0;
-  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cfilter id='p' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='72' height='72' filter='url(%23p)' opacity='0.035'/%3E%3C/svg%3E");
-  --wood-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='56'%3E%3Cg fill='none' stroke='%23794f27' stroke-opacity='0.06' stroke-width='1'%3E%3Cpath d='M0 7h140M0 18h140M0 29h140M0 40h140M0 51h140'/%3E%3C/g%3E%3C/svg%3E");
   --transcript-max: 860px;
   --transcript-gutter: 48px;
   --rail-w: 248px;
   --panel-w: 560px;
-  font-family: Nunito, "Noto Sans SC", "SF Pro Text", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-weight: 500;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -48,6 +28,8 @@ body,
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
 }
 
 #root {
@@ -2302,6 +2284,10 @@ img.avatar {
   }
 }
 
+.is-spin {
+  animation: work-spin 0.8s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .work-spinner,
   .work-chevron {
@@ -2527,11 +2513,11 @@ img.avatar {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 1120px;
-  background: var(--bg-raised);
-  border: var(--ink-line);
-  border-radius: 20px;
-  box-shadow: var(--shadow-stack);
+  max-width: 768px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .context-bar {
@@ -2544,14 +2530,15 @@ img.avatar {
   margin: 0 auto 16px;
 }
 
-.home-composer .context-bar {
-  justify-content: space-between;
+.home-composer .context-bar,
+.composer-follow .context-bar {
+  justify-content: flex-start;
   width: 100%;
   max-width: none;
-  margin: 0;
-  padding: 10px 16px;
-  gap: 12px;
-  border-bottom: var(--ink-line);
+  margin: 0 0 8px;
+  padding: 0 2px;
+  gap: 8px;
+  border-bottom: 0;
 }
 
 .home-composer .context-item-wrap:first-child .context-menu {
@@ -2642,6 +2629,7 @@ img.avatar {
   margin-top: 2px;
 }
 
+.composer-box,
 .composer.composer-stack {
   position: relative;
   display: flex;
@@ -2652,11 +2640,11 @@ img.avatar {
   min-width: 320px;
   min-height: 0;
   margin: 0 auto;
-  padding: 10px 14px 10px;
-  background: var(--bg-raised);
-  border: var(--ink-line);
-  border-radius: 20px;
-  box-shadow: var(--shadow-stack);
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
   transition: width 0.12s ease;
 }
 
@@ -2677,11 +2665,44 @@ img.avatar {
   min-height: 56px;
 }
 
-.composer-tools {
+.composer-tools,
+.composer-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.composer-pickers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.composer-attach {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.composer-attach:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.composer-queue {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: var(--panel);
 }
 
 .composer-send-group {
@@ -2690,12 +2711,47 @@ img.avatar {
   gap: 6px;
 }
 
+.artifact {
+  align-self: flex-start;
+  max-width: 520px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.artifact-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.artifact-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .expert-pick {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.context-expert {
+  min-width: 0;
 }
 
 .expert-pick .neo-select-trigger {
@@ -2799,31 +2855,25 @@ img.avatar {
   place-items: center;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff9e3;
-  box-shadow: 0 3px 0 0 color-mix(in srgb, var(--accent) 55%, #0a7a72);
-  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.send-btn:not(:disabled):active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 0 color-mix(in srgb, var(--accent) 55%, #0a7a72);
+  color: #fff;
+  box-shadow: none;
 }
 
 .send-btn:disabled {
-  background: color-mix(in srgb, var(--accent) 22%, var(--bg-raised));
-  color: var(--muted);
+  background: #d4d4d8;
+  color: #fff;
   box-shadow: none;
   opacity: 1;
 }
 
 .send-btn.stop {
-  background: var(--red);
-  box-shadow: 0 3px 0 0 color-mix(in srgb, var(--red) 70%, #7a2020);
+  background: var(--err);
+  box-shadow: none;
 }
 
 .send-btn.stop:active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 0 color-mix(in srgb, var(--red) 70%, #7a2020);
+  transform: none;
+  box-shadow: none;
 }
 
 .palette-backdrop {

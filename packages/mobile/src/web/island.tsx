@@ -83,7 +83,7 @@ export function IslandSwitch({
 export function IslandTitle({
   children,
   size = "middle",
-  color = "app-teal",
+  color,
   className,
 }: {
   children?: ReactNode;
@@ -91,7 +91,11 @@ export function IslandTitle({
   color?: string;
   className?: string;
 }) {
-  return <h1 className={`island-title island-title-${size} island-title-${color}${className ? ` ${className}` : ""}`}>{children}</h1>;
+  return (
+    <h1 className={`island-title island-title-${size}${color ? ` island-title-${color}` : ""}${className ? ` ${className}` : ""}`}>
+      {children}
+    </h1>
+  );
 }
 
 export function IslandCollapse({

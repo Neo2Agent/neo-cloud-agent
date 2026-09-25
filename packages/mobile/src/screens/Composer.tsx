@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, resolveChatModel } from "../format";
 import type { StartVoiceResult } from "../speech-cloud";
@@ -24,7 +25,18 @@ type Props = {
   onSend: () => void;
   /** While a turn runs, the arrow queues this message for after it. */
   onQueue?: () => void;
+  onSteer?: () => void;
   onStop?: () => void;
+  usageLabel?: string;
+  repo?: string;
+  repos?: Array<{ fullName: string; url: string }>;
+  repoLocked?: boolean;
+  onRepo?: (url: string) => void;
+  experts?: Expert[];
+  teams?: ExpertTeam[];
+  expertValue?: string;
+  expertLocked?: boolean;
+  onExpert?: (value: string) => void;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
@@ -122,6 +134,59 @@ export function Composer(props: Props) {
 
   return (
     <View style={styles.dock}>
+      <View style={styles.contextRow}>
+        <Text style={styles.context}>云端</Text>
+        {props.onRepo && !props.repoLocked ? (
+          <View style={styles.repoWrap}>
+            <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
+            {(props.repos ?? []).slice(0, 8).map((item) => (
+              <Pressable key={item.url} onPress={() => props.onRepo?.(item.url === props.repo ? "" : item.url)}>
+                <Text style={[styles.repoOpt, item.url === props.repo ? styles.repoOn : null]}>{item.fullName}</Text>
+              </Pressable>
+            ))}
+            {props.repo ? (
+              <Pressable onPress={() => props.onRepo?.("")}>
+                <Text style={styles.repoOpt}>无仓库</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : (
+          <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
+        )}
+        {props.onExpert ? (
+          <View style={styles.repoWrap}>
+            <Pressable
+              disabled={props.expertLocked || props.locked}
+              onPress={() => props.onExpert?.(encodeExpertPick({}))}
+              accessibilityLabel="专家"
+            >
+              <Text style={[styles.repoOpt, !props.expertValue ? styles.repoOn : null]}>Neo</Text>
+            </Pressable>
+            {(props.experts ?? []).map((item) => (
+              <Pressable
+                key={item.id}
+                disabled={props.expertLocked || props.locked}
+                onPress={() => props.onExpert?.(encodeExpertPick({ expertId: item.id }))}
+              >
+                <Text style={[styles.repoOpt, props.expertValue === encodeExpertPick({ expertId: item.id }) ? styles.repoOn : null]}>
+                  {expertPickerLabel(item)}
+                </Text>
+              </Pressable>
+            ))}
+            {(props.teams ?? []).map((item) => (
+              <Pressable
+                key={item.id}
+                disabled={props.expertLocked || props.locked}
+                onPress={() => props.onExpert?.(encodeExpertPick({ expertTeamId: item.id }))}
+              >
+                <Text style={[styles.repoOpt, props.expertValue === encodeExpertPick({ expertTeamId: item.id }) ? styles.repoOn : null]}>
+                  {item.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
       <View style={styles.bar}>
         {images.length > 0 ? (
           <View style={styles.thumbs}>
@@ -153,38 +218,45 @@ export function Composer(props: Props) {
           style={styles.field}
         />
         <View style={styles.tools}>
-          <View style={styles.modelWrap}>
-            {menuOpen ? (
-              <View style={styles.modelMenu} accessibilityRole="menu">
-                {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => {
-                      props.onModel(item.id);
-                      setMenuOpen(false);
-                    }}
-                    style={[styles.option, item.id === selected ? styles.optionOn : null]}
-                    accessibilityRole="menuitem"
-                  >
-                    <Text style={styles.model}>{item.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-            <Pressable onPress={() => setMenuOpen((open) => !open)} style={styles.modelChip} accessibilityLabel="选择模型">
-              <Text style={styles.model}>{chatModelLabel(props.model)} ▴</Text>
-            </Pressable>
-          </View>
-          <View style={styles.sendGroup}>
+          <View style={styles.pickers}>
             {props.onPickImages ? (
               <Pressable
                 disabled={props.locked || props.sending}
                 onPress={props.onPickImages}
                 style={styles.mic}
-                accessibilityLabel="加图片"
+                accessibilityLabel="添加图片"
               >
                 <PhotoIcon color={props.locked || props.sending ? colors.muted : colors.ink} />
               </Pressable>
+            ) : null}
+            <View style={styles.modelWrap}>
+              {menuOpen ? (
+                <View style={styles.modelMenu} accessibilityRole="menu">
+                  {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => {
+                        props.onModel(item.id);
+                        setMenuOpen(false);
+                      }}
+                      style={[styles.option, item.id === selected ? styles.optionOn : null]}
+                      accessibilityRole="menuitem"
+                    >
+                      <Text style={styles.model}>{item.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              <Pressable onPress={() => setMenuOpen((open) => !open)} style={styles.modelChip} accessibilityLabel="选择模型">
+                <Text style={styles.model}>{chatModelLabel(props.model)} ▴</Text>
+              </Pressable>
+            </View>
+          </View>
+          <View style={styles.sendGroup}>
+            {props.usageLabel ? (
+              <View style={styles.usageChip} accessibilityLabel="上下文用量">
+                <Text style={styles.usageText}>{props.usageLabel}</Text>
+              </View>
             ) : null}
             <Pressable
               disabled={props.locked || props.sending}
@@ -198,6 +270,11 @@ export function Composer(props: Props) {
             {props.canStop && props.onQueue && canSend && !props.locked ? (
               <Pressable onPress={props.onQueue} style={styles.send} accessibilityLabel="排队发送">
                 <SendIcon color={colors.cream} />
+              </Pressable>
+            ) : null}
+            {props.canStop && props.onSteer && canSend && !props.locked ? (
+              <Pressable onPress={props.onSteer} style={styles.steer} accessibilityLabel="立即插话">
+                <Text style={styles.steerText}>插话</Text>
               </Pressable>
             ) : null}
             <Pressable
@@ -222,11 +299,16 @@ export function Composer(props: Props) {
 
 const styles = StyleSheet.create({
   dock: { paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8, backgroundColor: colors.bg, overflow: "visible", zIndex: 2 },
+  contextRow: { gap: 4, marginBottom: 6 },
+  context: { color: colors.muted, fontSize: 12 },
+  repoWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  repoOpt: { color: colors.ink, fontSize: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.hover },
+  repoOn: { backgroundColor: colors.accent, color: colors.cream },
   bar: {
     backgroundColor: colors.paper,
     borderColor: colors.line,
-    borderWidth: 2,
-    borderRadius: 20,
+    borderWidth: 1,
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 10,
@@ -252,6 +334,7 @@ const styles = StyleSheet.create({
   thumbCloseText: { color: "#fff", fontSize: 13, lineHeight: 15 },
   imageHint: { color: colors.muted, fontSize: 12 },
   tools: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8, zIndex: 3 },
+  pickers: { flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 },
   modelWrap: { position: "relative", zIndex: 4 },
   modelMenu: {
     position: "absolute",
@@ -266,11 +349,23 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     elevation: 6,
   },
-  modelChip: { backgroundColor: "#d7f6f2", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
-  model: { color: colors.ink, fontWeight: "700", fontSize: 13 },
+  modelChip: { backgroundColor: colors.hover, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  model: { color: colors.ink, fontWeight: "600", fontSize: 13 },
   option: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
-  optionOn: { backgroundColor: "#d7f6f2" },
+  optionOn: { backgroundColor: colors.hover },
+  steer: { borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 10, paddingVertical: 6 },
+  steerText: { color: colors.ink, fontSize: 12, fontWeight: "600" },
   sendGroup: { flexDirection: "row", alignItems: "center", gap: 8 },
+  usageChip: {
+    minWidth: 44,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  usageText: { color: colors.muted, fontSize: 12 },
   mic: {
     width: 36,
     height: 36,
@@ -289,7 +384,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendStop: { backgroundColor: colors.error },
-  sendOff: { backgroundColor: "#e6efe8" },
+  sendOff: { backgroundColor: colors.hover },
   stopIcon: { width: 10, height: 10, borderRadius: 2, backgroundColor: colors.cream },
   legal: { color: colors.muted, fontSize: 11, textAlign: "center", marginTop: 8 },
 });

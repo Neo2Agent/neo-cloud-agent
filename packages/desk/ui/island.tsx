@@ -39,6 +39,6 @@ export function IslandCollapse(props: CollapseProps) {
   return <Collapse {...props} />;
 }
 
-export function IslandTitle({ size = "middle", color = "app-teal", ...props }: TitleProps) {
-  return <Title size={size} color={color} {...props} />;
+export function IslandTitle({ size = "middle", ...props }: TitleProps) {
+  return <Title size={size} {...props} />;
 }

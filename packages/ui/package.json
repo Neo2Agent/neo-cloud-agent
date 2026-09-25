@@ -9,9 +9,13 @@
     "./term-render": "./src/term-render.ts",
     "./term-write": "./src/term-write.ts",
     "./speech": "./src/speech/index.ts",
+    "./tokens": "./src/tokens.ts",
+    "./tokens.css": "./src/tokens.css",
     "./styles.css": "./src/styles.css",
     "./markdown.css": "./src/markdown.css",
-    "./buddy.css": "./src/buddy/styles.css"
+    "./buddy.css": "./src/buddy/styles.css",
+    "./git-panel.css": "./src/git-panel.css",
+    "./context-usage.css": "./src/context-usage.css"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -21,6 +25,7 @@
     "react-dom": "^18.3.1"
   },
   "dependencies": {
+    "@neo-cloud-agent/contracts": "workspace:*",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-radio-group": "^1.3.8",
     "@radix-ui/react-select": "^2.2.6",

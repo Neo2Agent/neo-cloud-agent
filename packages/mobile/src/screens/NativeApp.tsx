@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
-import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
+import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
+import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
+import { attachUserListStream } from "../list-live";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { transcriptBodyNeeded } from "@neo-cloud-agent/contracts/transcript";
 import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
@@ -43,7 +46,17 @@ import {
   thinkingHint,
 } from "../turn";
 import { attachRunStream } from "../transcript-live";
+import { applyRunSideEvent } from "../run-events";
+import {
+  baselineContextUsage,
+  overlayContextUsage,
+  parseContextUsage,
+  resolveModelLimits,
+} from "@neo-cloud-agent/contracts/context-usage";
+import { formatContextPercent } from "@neo-cloud-agent/contracts/context-usage";
 import { ChatScreen } from "./ChatScreen";
+import { GitScreen } from "./GitScreen";
+import { RunInvite } from "./RunInvite";
 import { startNativeVoice } from "../native/speech";
 import { Composer } from "./Composer";
 import { Drawer } from "./Drawer";
@@ -66,13 +79,15 @@ type Screen =
   | "inbox"
   | "skills"
   | "artifacts"
-  | "diagnostics";
+  | "diagnostics"
+  | "git";
 
 export function NativeApp({ store }: { store: CredentialStore }) {
   const [ready, setReady] = useState(false);
   const [token, setToken] = useState("");
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [email, setEmail] = useState("");
+  const [userId, setUserId] = useState("");
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
@@ -92,6 +107,8 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [cloudRepo, setCloudRepo] = useState("");
+  const [githubRepos, setGithubRepos] = useState<Array<{ fullName: string; url: string }>>([]);
   const [plugins, setPlugins] = useState<PluginCatalogItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [memoryConfigured, setMemoryConfigured] = useState(false);
@@ -165,7 +182,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         client.listMemories().catch(() => ({ configured: false, memories: [] })),
         client.memorySettings().catch(() => ({ enabled: true, configured: false })),
       ]);
-    setRuns(listed.runs);
+    setRuns(runsNewestFirst(listed.runs));
     setDesks(deskList.desks);
     setExperts(expertList.experts);
     setTeams(teamList.teams);
@@ -178,6 +195,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     setMemorySettings(memoryPref);
     setMemoryConfigured(memoryList.configured);
     if (me.user) {
+      setUserId(me.user.id);
       setEmail(me.user.email);
       setUserAvatar(me.user.avatar ?? null);
       setNeoAvatar(me.user.neoAvatar ?? null);
@@ -197,7 +215,22 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     void refreshList().catch((error) => {
       if (error instanceof MobileApiError && error.status === 401) void persistTokenRef.current("");
     });
+    void client.listScmRepos().then((listed) => setGithubRepos(listed.repos ?? [])).catch(() => setGithubRepos([]));
     void registerExpoPushDevice((input) => client.registerDevice(input), Platform.OS === "ios" ? "iPhone" : "Android");
+    const timer = setInterval(() => {
+      void refreshList().catch(() => undefined);
+    }, RUN_LIST_REFRESH_MS);
+    const stopList = attachUserListStream(client, () => {
+      void refreshList().catch(() => undefined);
+    });
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshList().catch(() => undefined);
+    });
+    return () => {
+      clearInterval(timer);
+      stopList();
+      sub.remove();
+    };
   }, [ready, token, refreshList, client]);
 
   const closeStream = useCallback(() => {
@@ -218,6 +251,9 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         },
         onStatus: (status) => {
           setCurrent((run) => (run && run.id === id ? { ...run, status: status as Run["status"] } : run));
+        },
+        onEvent: (event) => {
+          setCurrent((run) => (run && run.id === id ? applyRunSideEvent(run, event) : run));
         },
       });
     },
@@ -470,6 +506,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             expert: expertPick,
             pluginIds,
             projectId: projectId ?? undefined,
+            repoUrls: cloudRepo ? [cloudRepo] : [],
             images: attached,
           }),
         );
@@ -490,6 +527,25 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       setSending(false);
     }
   };
+
+  const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
+  const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
+  const contextUsage = useMemo(() => {
+    const reported = parseContextUsage(current?.contextUsage ?? null);
+    const base = reported ?? baselineContextUsage(model);
+    const catalogWindow = resolveModelLimits(base.model || model)?.contextWindow ?? null;
+    const contextWindow = base.contextWindow ?? catalogWindow;
+    const streaming = visible.find((message) => message.streaming)?.text ?? "";
+    return overlayContextUsage(
+      {
+        ...base,
+        model: base.model || model,
+        contextWindow,
+        percent: contextWindow ? (base.tokens / contextWindow) * 100 : null,
+      },
+      { draft: prompt, streaming },
+    );
+  }, [current?.contextUsage, model, prompt, visible]);
 
   if (!ready) {
     return <Screen />;
@@ -732,6 +788,10 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     );
   }
 
+  if (screen === "git" && current) {
+    return <GitScreen client={client} runId={current.id} busy={isActiveRunStatus(current.status)} onBack={() => setScreen("chat")} />;
+  }
+
   if (screen === "diagnostics") {
     return (
       <DiagnosticsScreen
@@ -743,8 +803,6 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   }
 
   const gate = composerGate(current, desks);
-  const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
-  const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
   const thinking = shouldShowThinking(turnBusy, visible)
     ? thinkingHint({
         status: current?.status,
@@ -775,7 +833,36 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       onDropImage={(index) => setImages((prev) => prev.filter((_, item) => item !== index))}
       onSend={() => void send()}
       onQueue={current ? () => void send("follow_up") : undefined}
+      onSteer={current ? () => void send("steer") : undefined}
       onStop={current ? () => void client.abort(current.id) : undefined}
+      usageLabel={formatContextPercent(contextUsage.percent) ?? "用量"}
+      repo={current?.repoUrls?.[0] || cloudRepo}
+      repos={githubRepos}
+      repoLocked={Boolean(current)}
+      onRepo={setCloudRepo}
+      experts={experts}
+      teams={teams}
+      expertValue={
+        current
+          ? encodeExpertPick({
+              expertId: current.expertId ?? undefined,
+              expertTeamId: current.expertTeamId ?? undefined,
+            })
+          : encodeExpertPick(expertPick)
+      }
+      expertLocked={Boolean(current)}
+      onExpert={(value) => {
+        const pick = decodeExpertPick(value);
+        setExpertPick(pick);
+        const expert = pick.expertId ? experts.find((item) => item.id === pick.expertId) : undefined;
+        setExpertName(
+          pick.expertTeamId
+            ? teams.find((item) => item.id === pick.expertTeamId)?.name ?? ""
+            : expert
+              ? expertPickerLabel(expert)
+              : "",
+        );
+      }}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
     />
   );
@@ -814,6 +901,9 @@ export function NativeApp({ store }: { store: CredentialStore }) {
               .then((next) => setDiagnosticLogs(next.logs))
               .catch(() => setDiagnosticLogs([]));
           }}
+          onOpenGit={current && runGitContext(current) !== "none" ? () => setScreen("git") : undefined}
+          userId={userId}
+          invite={current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         />
       ) : (
         <View style={styles.home}>
