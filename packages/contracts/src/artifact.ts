@@ -41,3 +41,16 @@ export function artifactKind(item: { name: string; contentType?: string }): Arti
 export function artifactKindLabel(item: { name: string; contentType?: string }): string {
   return KIND_LABEL[artifactKind(item)];
 }
+
+/** Transcript `artifact.uploaded` rows store the file in `href`, not `text`. */
+export function artifactFileName(message: { href?: string | null; text?: string | null }): string {
+  const href = message.href ?? "";
+  const path = href.split("?")[0] ?? "";
+  const raw = path.slice(path.lastIndexOf("/") + 1);
+  if (!raw) return (message.text ?? "").replace(/^已上传\s*/, "").trim() || "产物";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}

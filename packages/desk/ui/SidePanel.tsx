@@ -15,10 +15,13 @@ import {
   writeWorkspaceTerm,
 } from "./workspace-term";
 import { FileGlyph } from "./FileGlyph";
-import { IconArtifacts, IconClose, IconExpand, IconFile, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";
+import { GitPanel } from "./GitPanel";
+import { IconArtifacts, IconClose, IconExpand, IconFile, IconGit, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";
 import { IslandButton, IslandCard, IslandInput } from "./island";
+import type { RunGitContext } from "@neo-cloud-agent/contracts/git";
+import type { PullRequestRef } from "@neo-cloud-agent/contracts/run";
 
-export type SidePanelTab = "home" | "files" | "terminal" | "artifacts";
+export type SidePanelTab = "home" | "files" | "terminal" | "artifacts" | "git";
 
 type FsEntry = { name: string; path: string; type: "file" | "dir" };
 
@@ -33,6 +36,9 @@ type Props = {
   local: boolean;
   refreshKey?: number;
   onSaved?: (asset: ProjectAsset) => void;
+  gitContext?: Exclude<RunGitContext, "none"> | "none";
+  busy?: boolean;
+  onPullRequests?: (next: PullRequestRef[]) => void;
 };
 
 export function SidePanel({
@@ -46,14 +52,20 @@ export function SidePanel({
   local,
   refreshKey = 0,
   onSaved,
+  gitContext = "none",
+  busy = false,
+  onPullRequests,
 }: Props) {
   const [maxed, setMaxed] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [filesTab, setFilesTab] = useState(tab === "files");
   const [artifactsTab, setArtifactsTab] = useState(tab === "artifacts");
+  const [gitTab, setGitTab] = useState(tab === "git");
   const term = useTerminalSessions({ folder, token, runId, local });
   const page =
-    tab === "artifacts"
+    tab === "git" && gitContext !== "none"
+      ? "git"
+      : tab === "artifacts"
       ? "artifacts"
       : tab === "files" && filesTab
         ? "files"
@@ -63,7 +75,9 @@ export function SidePanel({
             ? "files"
             : artifactsTab
               ? "artifacts"
-              : "home";
+              : gitTab && gitContext !== "none"
+                ? "git"
+                : "home";
   const showRail = page !== "home" && railOpen;
 
   const openTerminal = () => {
@@ -74,13 +88,23 @@ export function SidePanel({
   const openFiles = () => {
     setFilesTab(true);
     setArtifactsTab(false);
+    setGitTab(false);
     onTab("files");
   };
 
   const openArtifacts = () => {
     setArtifactsTab(true);
     setFilesTab(false);
+    setGitTab(false);
     onTab("artifacts");
+  };
+
+  const openGit = () => {
+    if (gitContext === "none") return;
+    setGitTab(true);
+    setFilesTab(false);
+    setArtifactsTab(false);
+    onTab("git");
   };
 
   const closeFiles = () => {
@@ -127,6 +151,13 @@ export function SidePanel({
           filesTab={filesTab}
           artifactsOn={page === "artifacts"}
           artifactsTab={artifactsTab}
+          gitOn={page === "git"}
+          gitTab={gitTab && gitContext !== "none"}
+          onGit={gitContext === "none" ? undefined : openGit}
+          onCloseGit={() => {
+            setGitTab(false);
+            onTab(filesTab ? "files" : artifactsTab ? "artifacts" : "home");
+          }}
           onSelectSession={(id) => {
             term.setActiveId(id);
             onTab("terminal");
@@ -179,6 +210,24 @@ export function SidePanel({
             <IconFile size={22} />
             <span>File</span>
           </IslandCard>
+          {gitContext !== "none" && runId ? (
+            <IslandCard
+              hoverable
+              className="wb-tile"
+              role="button"
+              tabIndex={0}
+              onClick={openGit}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openGit();
+                }
+              }}
+            >
+              <IconGit size={22} />
+              <span>Git</span>
+            </IslandCard>
+          ) : null}
           <IslandCard
             hoverable
             color="brown"
@@ -197,6 +246,15 @@ export function SidePanel({
             <span>产物</span>
           </IslandCard>
         </div>
+      ) : page === "git" && runId && gitContext !== "none" ? (
+        <GitPanel
+          token={token}
+          runId={runId}
+          context={gitContext}
+          refreshKey={String(refreshKey)}
+          busy={busy}
+          onPullRequests={onPullRequests}
+        />
       ) : page === "artifacts" ? (
         <ArtifactsPane token={token} runId={runId} projectId={projectId} refreshKey={refreshKey} onSaved={onSaved} />
       ) : page === "files" ? (
@@ -462,12 +520,16 @@ function WorkbenchTabs({
   filesTab,
   artifactsOn,
   artifactsTab,
+  gitOn,
+  gitTab,
   onSelectSession,
   onCloseSession,
   onFiles,
   onCloseFiles,
   onArtifacts,
   onCloseArtifacts,
+  onGit,
+  onCloseGit,
   onNew,
 }: {
   sessions: Array<{ id: string; label: string }>;
@@ -476,16 +538,40 @@ function WorkbenchTabs({
   filesTab: boolean;
   artifactsOn: boolean;
   artifactsTab: boolean;
+  gitOn?: boolean;
+  gitTab?: boolean;
   onSelectSession: (id: string) => void;
   onCloseSession: (id: string) => void;
   onFiles: () => void;
   onCloseFiles: () => void;
   onArtifacts: () => void;
   onCloseArtifacts: () => void;
+  onGit?: () => void;
+  onCloseGit?: () => void;
   onNew: () => void;
 }) {
   return (
     <div className="wb-tabs">
+      {gitTab && onGit ? (
+        <div className={`wb-tab${gitOn ? " on" : ""}`}>
+          <button type="button" className="wb-tab-main" onClick={onGit}>
+            <IconGit size={13} />
+            <span className="wb-tab-label">Git</span>
+          </button>
+          <button
+            type="button"
+            className="wb-tab-close is-shown"
+            aria-label="关闭 Git"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onCloseGit?.();
+            }}
+          >
+            <IconClose size={10} />
+          </button>
+        </div>
+      ) : null}
       {artifactsTab ? (
         <div className={`wb-tab${artifactsOn ? " on" : ""}`}>
           <button type="button" className="wb-tab-main" onClick={onArtifacts}>
@@ -527,7 +613,7 @@ function WorkbenchTabs({
         </div>
       ) : null}
       {sessions.map((item) => (
-        <div key={item.id} className={`wb-tab${item.id === activeId && !filesOn && !artifactsOn ? " on" : ""}`}>
+        <div key={item.id} className={`wb-tab${item.id === activeId && !filesOn && !artifactsOn && !gitOn ? " on" : ""}`}>
           <button type="button" className="wb-tab-main" onClick={() => onSelectSession(item.id)}>
             <IconTerminal size={13} />
             <span className="wb-tab-label">{item.label}</span>

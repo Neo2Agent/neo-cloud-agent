@@ -9,6 +9,8 @@ import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contrac
 import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import type { Expert, ExpertPick, ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
+import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
@@ -32,6 +34,7 @@ import { chatStatusText, composerGate } from "../session";
 import {
   appendPendingUser,
   isActiveRunStatus,
+  liveAssistantId,
   mergeUnresolvedPending,
   pendingUserArrived,
   shouldRefreshTranscript,
@@ -49,8 +52,18 @@ import {
   thinkingHint,
 } from "../turn";
 import { attachRunStream } from "../transcript-live";
+import { applyRunSideEvent } from "../run-events";
+import {
+  baselineContextUsage,
+  overlayContextUsage,
+  parseContextUsage,
+  resolveModelLimits,
+} from "@neo-cloud-agent/contracts/context-usage";
+import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/artifact";
 import { AutomationsPage } from "./AutomationsPage";
 import { startAppVoice } from "../start-voice";
+import { WorkFold } from "../work-fold";
+import { GitPanel } from "./GitPanel";
 import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
@@ -121,7 +134,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
   const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{ name: string; content: string }>>([]);
   // Sub-views of the open chat, so they stay local instead of taking a hash route.
-  const [panel, setPanel] = useState<"artifacts" | "diagnostics" | null>(null);
+  const [panel, setPanel] = useState<"artifacts" | "diagnostics" | "git" | null>(null);
   const [history, setHistory] = useState<TranscriptMessage[]>([]);
   const [older, setOlder] = useState<{ remaining: number; nextBefore: string | null }>({ remaining: 0, nextBefore: null });
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -320,6 +333,9 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
         },
         onStatus: (status) => {
           setCurrent((run) => (run && run.id === id ? { ...run, status: status as Run["status"] } : run));
+        },
+        onEvent: (event) => {
+          setCurrent((run) => (run && run.id === id ? applyRunSideEvent(run, event) : run));
         },
       });
     },
@@ -809,6 +825,46 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     );
   }
 
+  const openGitContext = current ? runGitContext(current) : "none";
+  if (panel === "git" && current && openGitContext !== "none") {
+    return (
+      <div className="app git-sheet">
+        <header className="topbar">
+          <button className="icon-btn" type="button" onClick={() => setPanel(null)} aria-label="返回">
+            ←
+          </button>
+          <h1>Git</h1>
+        </header>
+        <GitPanel
+          token={token}
+          runId={current.id}
+          context={openGitContext}
+          refreshKey={`${current.status}:${current.updatedAt}`}
+          busy={isActiveRunStatus(current.status)}
+        />
+      </div>
+    );
+  }
+
+  const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
+  const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
+  const liveId = liveAssistantId(visible, turnBusy);
+  const contextUsage = useMemo(() => {
+    const reported = parseContextUsage(current?.contextUsage ?? null);
+    const base = reported ?? baselineContextUsage(model);
+    const catalogWindow = resolveModelLimits(base.model || model)?.contextWindow ?? null;
+    const contextWindow = base.contextWindow ?? catalogWindow;
+    const streaming = visible.find((message) => message.streaming)?.text ?? "";
+    return overlayContextUsage(
+      {
+        ...base,
+        model: base.model || model,
+        contextWindow,
+        percent: contextWindow ? (base.tokens / contextWindow) * 100 : null,
+      },
+      { draft: prompt, streaming },
+    );
+  }, [current?.contextUsage, model, prompt, visible]);
   const gate = composerGate(current, desks);
   const composer = (
     <IslandComposer
@@ -834,6 +890,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       onQueue={current ? () => void send("follow_up") : undefined}
       onSteer={current ? () => void send("steer") : undefined}
       onStop={current ? () => void client.abort(current.id) : undefined}
+      contextUsage={contextUsage}
       startVoice={(onPreview, onError, onEnded) => startAppVoice(client, onPreview, onError, onEnded)}
     />
   );
@@ -868,8 +925,6 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     />
   );
 
-  const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
-  const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
   const lastUserIndex = visible.map((message) => message.role).lastIndexOf("user");
   const thinking = shouldShowThinking(turnBusy, visible)
     ? thinkingHint({
@@ -886,6 +941,11 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           {current ? <span className="chat-title">{runListTitle(current)}</span> : null}
           <span className={turnBusy ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
           {current ? <IslandTag>{runPlaceLabel(current)}</IslandTag> : null}
+          {current && runGitContext(current) !== "none" ? (
+            <button className="icon-btn" type="button" onClick={() => setPanel("git")} aria-label="Git">
+              Git
+            </button>
+          ) : null}
         </header>
         {pageError ? <p className="page-error">{pageError}</p> : null}
         {current ? (
@@ -910,9 +970,20 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
                 </p>
               );
             }
+            if (message.kind === "artifact.uploaded") {
+              const name = artifactFileName(message);
+              return (
+                <article key={message.id} className="artifact">
+                  <button type="button" className="artifact-chip" onClick={openArtifacts}>
+                    <span className="artifact-chip-name">{name}</span>
+                    <small>{artifactKindLabel({ name, contentType: message.mediaType })}</small>
+                  </button>
+                </article>
+              );
+            }
             if (!hasVisibleTranscript(message)) return null;
             const author = message.role === "user" ? userMessageAuthor(message, { id: userId, email }) : null;
-            const live = message.role === "assistant" && turnBusy && messageIndex > lastUserIndex;
+            const live = message.role === "assistant" && (liveId === message.id || (turnBusy && messageIndex > lastUserIndex));
             const when = message.role === "setup" ? null : messageTimeLabel(message, { live });
             return (
             <div key={message.id} className={`msg-row ${message.role}`} data-images={message.images?.length ? "1" : undefined}>
@@ -939,23 +1010,46 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
                     ))}
                   </div>
                 ) : null}
-                {transcriptGroups(message).map((group, index) =>
-                  group.type === "text" ? (
-                    <article key={`${message.id}-t${index}`} className={`bubble ${message.role}`}>
-                      {message.role === "assistant" ? (
-                        <MarkdownBody text={group.text} streaming={live && Boolean(message.streaming)} />
+                {(() => {
+                  if (message.role !== "assistant") {
+                    return transcriptGroups(message).map((group, index) =>
+                      group.type === "text" ? (
+                        <article key={`${message.id}-t${index}`} className={`bubble ${message.role}`}>
+                          <p>{group.text}</p>
+                        </article>
                       ) : (
-                        <p>{group.text}</p>
-                      )}
-                    </article>
-                  ) : (
-                    <div key={`${message.id}-g${index}`} className="tool-stack">
-                      {group.tools.map((tool) => (
-                        <ToolRow key={tool.id ?? tool.name} tool={tool} />
-                      ))}
-                    </div>
-                  ),
-                )}
+                        <div key={`${message.id}-g${index}`} className="tool-stack">
+                          {group.tools.map((tool) => (
+                            <ToolRow key={tool.id ?? tool.name} tool={tool} />
+                          ))}
+                        </div>
+                      ),
+                    );
+                  }
+                  const turn = partitionTurn(transcriptGroups(message));
+                  return (
+                    <>
+                      <WorkFold
+                        turn={turn}
+                        live={live}
+                        createdAt={message.createdAt}
+                        updatedAt={message.updatedAt}
+                        renderTools={(tools) => (
+                          <div className="tool-stack">
+                            {tools.map((tool) => (
+                              <ToolRow key={tool.id ?? tool.name} tool={tool} />
+                            ))}
+                          </div>
+                        )}
+                      />
+                      {turn.answer ? (
+                        <article className="bubble assistant">
+                          <MarkdownBody text={turn.answer} streaming={live && Boolean(message.streaming)} />
+                        </article>
+                      ) : null}
+                    </>
+                  );
+                })()}
                 {when ? <time className="msg-time" dateTime={message.updatedAt || message.createdAt}>{when}</time> : null}
               </div>
             </div>

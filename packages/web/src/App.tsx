@@ -42,6 +42,7 @@ import { BUNDLED_RECIPES, recipeById, type IntentCapsule, type Recipe } from "@n
 import { pluginPickerLabel, type PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import { parseProjectHash, projectHashHref } from "./project-route.js";
 import { InboxBell } from "./components/InboxBell";
+import { RunInvite } from "./components/RunInvite";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
 import { useConfirm, toast } from "./feedback";
@@ -59,6 +60,7 @@ import {
 } from "./icons";
 import { Sidebar, type VmSlotView } from "./components/Sidebar";
 import { ContextUsagePanel } from "./components/ContextUsage";
+import { SessionSearch } from "./components/SessionSearch";
 import { Transcript } from "./components/Transcript";
 import { TranscriptSearch } from "./components/TranscriptSearch";
 import type { ComposerMention } from "./mention";
@@ -149,6 +151,7 @@ type Health = {
   scmPush?: ScmSettings;
   workerMemoryMiB?: number;
   vmSlots?: VmSummary;
+  neoLoop?: { available?: boolean };
 };
 
 type PullRequest = { url?: string; draft?: boolean };
@@ -328,6 +331,8 @@ export function App() {
   const [projectAssetsTab, setProjectAssetsTab] = useState(hashProjectAssets);
   const [highlightAssetId, setHighlightAssetId] = useState<string | null>(hashProjectAssetId);
   const [inviteToken, setInviteToken] = useState<string | null>(hashInviteToken);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [llm, setLlm] = useState<LlmSettings>({ configured: false, upstream: "deepseek", model: null });
   const [llmKey, setLlmKey] = useState("");
   const [githubRepos, setGithubRepos] = useState<GithubRepoOption[]>([]);
@@ -1529,6 +1534,11 @@ export function App() {
       const typing = Boolean(el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable));
       const action = shortcutAction(event, deskBridge()?.platform === "darwin" ? "darwin" : "other");
       if (!action) return;
+      if (action === "search") {
+        event.preventDefault();
+        setSearchOpen((open) => !open);
+        return;
+      }
       if (typing && (action === "new-chat" || action === "prev-run" || action === "next-run" || action === "close")) {
         return;
       }
@@ -1664,6 +1674,33 @@ export function App() {
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
   const gitContext = currentRun ? runGitContext(currentRun) : "none";
   const gitRefreshKey = `${runId ?? ""}:${busy ? "busy" : "idle"}:${currentRun?.pullRequests?.length ?? 0}`;
+  const searchHits = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return runs
+      .filter((run) => {
+        if (!q) return true;
+        const projectName = (run.projectId && projectNames[run.projectId]) || "";
+        return (
+          (run.title ?? "").toLowerCase().includes(q) ||
+          run.prompt.toLowerCase().includes(q) ||
+          run.id.toLowerCase().includes(q) ||
+          projectName.toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 12)
+      .map((run) => ({
+        id: run.id,
+        title: runListTitle(run),
+        meta: projectNames[run.projectId ?? ""] || run.status,
+      }));
+  }, [projectNames, runs, searchQuery]);
+  const searchProjectHits = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return Object.entries(projectNames)
+      .filter(([, name]) => !q || name.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map(([id, name]) => ({ id, title: name, meta: "项目工作台" }));
+  }, [projectNames, searchQuery]);
   useEffect(() => {
     if (inspectorTab === "git" && gitContext === "none") setInspectorTab("terminal");
   }, [gitContext, inspectorTab]);
@@ -2354,6 +2391,9 @@ export function App() {
                 </button>
               ) : null}
               {narrow ? <TranscriptSearch messages={displayMessages} onJump={setHighlightId} /> : null}
+              {mainTab === "chat" && currentRun?.projectId ? (
+                <RunInvite token={token} run={currentRun} userId={userId} />
+              ) : null}
               {isDeskApp() ? (
                 <span className="desk-badge" title="Desk 预览，本机执行可用">
                   Desk
@@ -2833,6 +2873,28 @@ export function App() {
           event.currentTarget.value = "";
         }}
       />
+      {searchOpen ? (
+        <SessionSearch
+          query={searchQuery}
+          setQuery={setSearchQuery}
+          hits={searchHits}
+          projectHits={searchProjectHits}
+          onOpenRun={(id) => {
+            setSearchOpen(false);
+            setSearchQuery("");
+            void openRun(id);
+          }}
+          onOpenProject={(id) => {
+            setSearchOpen(false);
+            setSearchQuery("");
+            openProjects(id);
+          }}
+          onClose={() => {
+            setSearchOpen(false);
+            setSearchQuery("");
+          }}
+        />
+      ) : null}
       <BuddyPlusSheet
         open={plusOpen}
         hiddenActions={runId || sending || pendingTurn ? ["repo"] : []}

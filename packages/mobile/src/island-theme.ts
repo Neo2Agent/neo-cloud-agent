@@ -1,21 +1,23 @@
-/** Desk 动森 token. Vite CSS and RN screens both read these numbers. */
+import { THEME } from "@neo-cloud-agent/ui/tokens";
+
+/** Same Web monochrome tokens Desk and the lab now share. */
 export const ISLAND = {
-  bg: "#f8f8f0",
-  rail: "#f0e8d8",
-  stage: "#f7f3df",
-  card: "#f7f3df",
-  raised: "#fffbe7",
-  line: "#c4b89e",
-  ink: "#794f27",
-  muted: "#8a7b66",
-  hover: "#d6dff0",
-  accent: "#19c8b9",
-  cream: "#fff9e3",
-  green: "#6fba2c",
-  red: "#e05a5a",
-  clay: "#d4c9b4",
-  press: "#bdaea0",
-  font: 'Nunito, "Noto Sans SC", "SF Pro Text", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif',
+  bg: THEME.bg,
+  rail: THEME.rail,
+  stage: THEME.stage,
+  card: THEME.panel,
+  raised: THEME.raised,
+  line: THEME.line,
+  ink: THEME.ink,
+  muted: THEME.muted,
+  hover: THEME.hover,
+  accent: THEME.accent,
+  cream: THEME.cream,
+  green: THEME.green,
+  red: THEME.red,
+  clay: THEME.clay,
+  press: THEME.press,
+  font: THEME.font,
 } as const;
 
 export function dayGreeting(now = new Date()): string {

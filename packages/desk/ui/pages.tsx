@@ -3,7 +3,8 @@ import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } fro
 import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import { isImeComposing } from "@neo-cloud-agent/contracts/composer-keys";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
-import { Select } from "@neo-cloud-agent/ui";
+import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
+import { ContextUsageControl, Select } from "@neo-cloud-agent/ui";
 import { Avatar } from "./Avatar";
 import { IslandButton, IslandInput, IslandSwitch } from "./island";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -651,6 +652,7 @@ export function ContextBar({
   open,
   setOpen,
   locked,
+  remoteAvailable = true,
 }: {
   workspaces: Array<{ id: string; folder: string; name: string; git: boolean }>;
   folder: string;
@@ -664,11 +666,14 @@ export function ContextBar({
   open: ContextMenuId;
   setOpen: (id: ContextMenuId) => void;
   locked?: boolean;
+  /** Control-plane `/health.neoLoop.available`. Remote Control needs neo-loop. */
+  remoteAvailable?: boolean;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(open !== null && !locked, () => setOpen(null), barRef);
   const local = isLocalDeskKind(targetKind);
   const remoteNeedsFolder = !folder;
+  const remoteDisabled = !canRunLocal || remoteNeedsFolder || !remoteAvailable;
   const folderPickerOpen = !locked && local && open === "repo";
   const activeFolder = workspaces.find((item) => trimTrailingSlash(item.folder) === trimTrailingSlash(folder));
   const workspaceLabel = local
@@ -775,14 +780,18 @@ export function ContextBar({
             <button
               type="button"
               className={targetKind === TARGET_REMOTE ? "on" : ""}
-              disabled={!canRunLocal || remoteNeedsFolder}
+              disabled={remoteDisabled}
               onClick={() => {
                 onTarget(TARGET_REMOTE);
                 setOpen(null);
               }}
             >
               <IconComputer size={14} />
-              {!canRunLocal ? "Remote Control（需要 Desk）" : "Remote Control"}
+              {!canRunLocal
+                ? "Remote Control（需要 Desk）"
+                : !remoteAvailable
+                  ? "Remote Control（neo-loop 未就绪）"
+                  : "Remote Control"}
             </button>
           </div>
         ) : null}
@@ -846,6 +855,7 @@ export function ChatComposer({
   mentions,
   waiting,
   onStop,
+  onQueue,
   experts,
   teams,
   expertValue,
@@ -856,6 +866,7 @@ export function ChatComposer({
   images,
   onImages,
   onCapsule,
+  contextUsage,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
@@ -875,6 +886,7 @@ export function ChatComposer({
   mentions?: ComposerMention[];
   waiting?: boolean;
   onStop?: () => void;
+  onQueue?: () => void;
   experts?: Expert[];
   teams?: ExpertTeam[];
   expertValue?: string;
@@ -885,10 +897,13 @@ export function ChatComposer({
   images?: ImageRef[];
   onImages?: (images: ImageRef[]) => void;
   onCapsule?: (capsule: IntentCapsule) => void;
+  contextUsage?: ContextUsageSnapshot | null;
 }) {
   const label = selected || "Auto";
   const boxRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -1036,31 +1051,54 @@ export function ChatComposer({
           ))}
         </div>
       ) : null}
-      <div className="composer-tools">
-        {onExpert ? (
-          <label className="expert-pick">
-            <span>专家</span>
-            <Select
-              size="pill"
-              aria-label="专家"
-              value={expertValue ?? ""}
-              disabled={expertLocked}
-              onValueChange={onExpert}
-              groups={[
-                { label: "默认", options: [{ value: "", label: "Neo" }] },
-                ...((experts ?? []).length > 0
-                  ? [{ label: "专家", options: (experts ?? []).map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
-                  : []),
-                ...((teams ?? []).length > 0
-                  ? [{ label: "专家团", options: (teams ?? []).map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: `团 · ${item.name}` })) }]
-                  : []),
-              ]}
-            />
-          </label>
-        ) : null}
-        {/* Model and send belong together on the right; spreading them apart
-            left a wide gap where the eye expects one control group. */}
-        <div className="composer-send-group">
+      <div className="composer-tools composer-bar">
+        <div className="composer-pickers">
+          <button
+            type="button"
+            className="composer-attach"
+            aria-label="添加图片"
+            disabled={locked}
+            onClick={() => fileRef.current?.click()}
+          >
+            <IconPlus size={16} />
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            multiple
+            onChange={(event) => {
+              const files = [...(event.target.files ?? [])].filter((file) => file.type.startsWith("image/"));
+              event.target.value = "";
+              if (files.length === 0) return;
+              void Promise.all(files.slice(0, 4).map(readImageRef)).then((next) => {
+                const merged = [...attached, ...next].slice(0, 4);
+                onImages?.(merged);
+                if (attached.length + files.length > 4) setVoiceError("一次最多 4 张图");
+              });
+            }}
+          />
+          {onExpert ? (
+            <label className="expert-pick">
+              <Select
+                size="pill"
+                aria-label="专家"
+                value={expertValue ?? ""}
+                disabled={expertLocked}
+                onValueChange={onExpert}
+                groups={[
+                  { label: "默认", options: [{ value: "", label: "Neo" }] },
+                  ...((experts ?? []).length > 0
+                    ? [{ label: "专家", options: (experts ?? []).map((item) => ({ value: encodeExpertPick({ expertId: item.id }), label: expertPickerLabel(item) })) }]
+                    : []),
+                  ...((teams ?? []).length > 0
+                    ? [{ label: "专家团", options: (teams ?? []).map((item) => ({ value: encodeExpertPick({ expertTeamId: item.id }), label: `团 · ${item.name}` })) }]
+                    : []),
+                ]}
+              />
+            </label>
+          ) : null}
           <div className="model-wrap" ref={modelRef}>
             <button type="button" className="model-trigger" onClick={() => setMenuOpen(!menuOpen)}>
               {label}
@@ -1082,6 +1120,11 @@ export function ChatComposer({
               </div>
             ) : null}
           </div>
+        </div>
+        <div className="composer-send-group">
+          {contextUsage ? (
+            <ContextUsageControl usage={contextUsage} open={usageOpen} onToggle={() => setUsageOpen((open) => !open)} />
+          ) : null}
           {token ? (
             <button
               type="button"
@@ -1091,6 +1134,17 @@ export function ChatComposer({
               onClick={toggleVoice}
             >
               <IconMic size={15} />
+            </button>
+          ) : null}
+          {waitingNow && onQueue ? (
+            <button
+              type="button"
+              className="composer-queue"
+              aria-label="排队跟进"
+              disabled={locked || empty}
+              onClick={onQueue}
+            >
+              <IconArrowUp size={14} />
             </button>
           ) : null}
           {onStop && waitingNow ? (

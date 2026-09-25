@@ -10,12 +10,15 @@ export function pendingUserMessage(
   return { id: `pending-${now}`, role: "user", text, createdAt: now, images: images?.length ? images : undefined };
 }
 
-export const DESK_STARTING_NOTICE = "正在这台电脑上启动 Agent";
+export const DESK_STARTING_NOTICE = "正在 Desk 上启动 Agent";
 
 const STARTUP_WHISPERS = new Set([
   DESK_STARTING_NOTICE,
+  "正在这台电脑上启动 Agent",
   QUEUED_SLOT_NOTICE,
+  "已派给 Desk，等待启动",
   "已派给这台电脑，等待启动",
+  "等待 Desk 上线",
   "等待这台电脑上线",
 ]);
 

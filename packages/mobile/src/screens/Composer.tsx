@@ -24,7 +24,9 @@ type Props = {
   onSend: () => void;
   /** While a turn runs, the arrow queues this message for after it. */
   onQueue?: () => void;
+  onSteer?: () => void;
   onStop?: () => void;
+  usageLabel?: string;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
@@ -140,6 +142,7 @@ export function Composer(props: Props) {
             ))}
           </View>
         ) : null}
+        <Text style={styles.context}>云端</Text>
         {props.imageHint ? <Text style={styles.imageHint}>{props.imageHint}</Text> : null}
         <TextInput
           ref={fieldRef}
@@ -176,6 +179,11 @@ export function Composer(props: Props) {
             </Pressable>
           </View>
           <View style={styles.sendGroup}>
+            {props.usageLabel ? (
+              <View style={styles.usageChip} accessibilityLabel="上下文用量">
+                <Text style={styles.usageText}>{props.usageLabel}</Text>
+              </View>
+            ) : null}
             {props.onPickImages ? (
               <Pressable
                 disabled={props.locked || props.sending}
@@ -200,6 +208,11 @@ export function Composer(props: Props) {
                 <SendIcon color={colors.cream} />
               </Pressable>
             ) : null}
+            {props.canStop && props.onSteer && canSend && !props.locked ? (
+              <Pressable onPress={props.onSteer} style={styles.steer} accessibilityLabel="立即插话">
+                <Text style={styles.steerText}>插话</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               disabled={!props.canStop && !canSend}
               onPress={props.canStop ? props.onStop : props.onSend}
@@ -222,11 +235,12 @@ export function Composer(props: Props) {
 
 const styles = StyleSheet.create({
   dock: { paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8, backgroundColor: colors.bg, overflow: "visible", zIndex: 2 },
+  context: { color: colors.muted, fontSize: 12, marginBottom: 6 },
   bar: {
     backgroundColor: colors.paper,
     borderColor: colors.line,
-    borderWidth: 2,
-    borderRadius: 20,
+    borderWidth: 1,
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 10,
@@ -266,11 +280,23 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     elevation: 6,
   },
-  modelChip: { backgroundColor: "#d7f6f2", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
-  model: { color: colors.ink, fontWeight: "700", fontSize: 13 },
+  modelChip: { backgroundColor: colors.hover, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  model: { color: colors.ink, fontWeight: "600", fontSize: 13 },
   option: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
-  optionOn: { backgroundColor: "#d7f6f2" },
+  optionOn: { backgroundColor: colors.hover },
+  steer: { borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 10, paddingVertical: 6 },
+  steerText: { color: colors.ink, fontSize: 12, fontWeight: "600" },
   sendGroup: { flexDirection: "row", alignItems: "center", gap: 8 },
+  usageChip: {
+    minWidth: 44,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  usageText: { color: colors.muted, fontSize: 12 },
   mic: {
     width: 36,
     height: 36,
@@ -289,7 +315,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendStop: { backgroundColor: colors.error },
-  sendOff: { backgroundColor: "#e6efe8" },
+  sendOff: { backgroundColor: colors.hover },
   stopIcon: { width: 10, height: 10, borderRadius: 2, backgroundColor: colors.cream },
   legal: { color: colors.muted, fontSize: 11, textAlign: "center", marginTop: 8 },
 });

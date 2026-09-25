@@ -1,14 +1,17 @@
+@import "./tokens.css";
+@import "./context-usage.css";
+
 .neo-select-trigger,
 .neo-check,
 .neo-switch,
 .neo-radio {
-  --neo-ui-accent: var(--accent, var(--blue, #4d6bfe));
+  --neo-ui-accent: var(--accent, #1c1c1c);
   --neo-ui-accent-soft: color-mix(in srgb, var(--neo-ui-accent) 12%, #fff);
-  --neo-ui-line: var(--line, #e6e8ee);
-  --neo-ui-text: var(--text, var(--ink, #111318));
-  --neo-ui-muted: var(--muted, #6b7280);
+  --neo-ui-line: var(--line, #e8e8e8);
+  --neo-ui-text: var(--text, var(--ink, #1c1c1c));
+  --neo-ui-muted: var(--muted, #5c5c5c);
   --neo-ui-bg: var(--panel, var(--card, #fff));
-  --neo-ui-hover: var(--bg-2, var(--hover, #f4f5f8));
+  --neo-ui-hover: var(--bg-2, var(--hover, #f4f4f5));
   font: inherit;
 }
 
@@ -122,8 +125,8 @@
 }
 
 .neo-select-item[data-state="checked"] {
-  background: color-mix(in srgb, var(--accent, #4d6bfe) 10%, #fff);
-  color: var(--accent, #4d6bfe);
+  background: color-mix(in srgb, var(--accent, #1c1c1c) 10%, #fff);
+  color: var(--accent, #1c1c1c);
 }
 
 .neo-select-item[data-disabled] {
@@ -133,7 +136,7 @@
 
 .neo-select-check {
   display: grid;
-  color: var(--accent, #4d6bfe);
+  color: var(--accent, #1c1c1c);
 }
 
 .neo-check,

@@ -2,12 +2,17 @@ import {
   ArrowUp,
   Bell,
   Bot,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   CirclePlus,
   Cloud,
   Copy,
+  GitBranch,
+  GitPullRequest,
+  LoaderCircle,
   BookOpen,
   Brain,
   File,
@@ -209,4 +214,24 @@ export function IconFile(props: IconProps) {
 
 export function IconExpand(props: IconProps) {
   return icon(Maximize2, props);
+}
+
+export function IconBranch(props: IconProps) {
+  return icon(GitBranch, props);
+}
+
+export function IconCheck(props: IconProps) {
+  return icon(Check, props);
+}
+
+export function IconError(props: IconProps) {
+  return icon(CircleAlert, props);
+}
+
+export function IconSpinner(props: IconProps) {
+  return icon(LoaderCircle, { ...props, className: `${props.className ?? ""} is-spin`.trim() });
+}
+
+export function IconGit(props: IconProps) {
+  return icon(GitPullRequest, props);
 }

@@ -6,7 +6,14 @@ import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud
 import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
-import { runDisplayTitle, type ExecutionTarget, type FollowUpDelivery, type ImageRef, type Run } from "@neo-cloud-agent/contracts/run";
+import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import {
+  baselineContextUsage,
+  overlayContextUsage,
+  parseContextUsage,
+  resolveModelLimits,
+} from "@neo-cloud-agent/contracts/context-usage";
+import { runDisplayTitle, type ExecutionTarget, type FollowUpDelivery, type ImageRef, type PullRequestRef, type Run } from "@neo-cloud-agent/contracts/run";
 import { composerKeyAction, followUpDelivery } from "@neo-cloud-agent/contracts/composer-keys";
 import { batchTurnSignal, parseSseData, runEventsQuery, RUN_LIST_REFRESH_MS } from "@neo-cloud-agent/contracts/client-stream";
 import { applyRunEventsToMessages, displayTranscriptMessages, settleTranscriptMessages } from "@neo-cloud-agent/contracts/transcript";
@@ -19,6 +26,7 @@ import {
   deskBridge,
   isDeskBoundRun,
   isLocalDeskKind,
+  isRemoteControlRun,
   localRunFolder,
   localRunLabel,
   localRunTarget,
@@ -126,6 +134,7 @@ import {
   IconSkills,
   IconForward,
   IconGear,
+  IconGit,
   IconLogOut,
   IconNewChat,
   IconPanelRight,
@@ -234,6 +243,8 @@ export function App() {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxRow[]>([]);
+  const [inboxConnected, setInboxConnected] = useState(true);
+  const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("board");
   const [chatToolsOpen, setChatToolsOpen] = useState(false);
   const [mentions, setMentions] = useState<ComposerMention[]>([]);
@@ -428,6 +439,15 @@ export function App() {
     if (next.baseUrl) setModelBaseUrl(next.baseUrl);
   }, []);
 
+  const refreshHealth = useCallback(async () => {
+    try {
+      const payload = await readJson<{ neoLoop?: { available?: boolean } }>(await fetch(withApiBase("/health")));
+      setRemoteAvailable(Boolean(payload.neoLoop?.available));
+    } catch {
+      setRemoteAvailable(false);
+    }
+  }, []);
+
   const closeStream = useCallback(() => {
     if (streamFrameRef.current) {
       cancelAnimationFrame(streamFrameRef.current);
@@ -460,13 +480,45 @@ export function App() {
         });
         setCurrent((prev) => {
           if (!prev || prev.id !== id) return prev;
+          let next: Run = prev;
           let status = prev.status;
           for (const event of batch) {
             if (event.kind === "run.idle" || event.kind === "agent.end") continue;
             status = (statusFromEventKind(event.kind, status) as Run["status"]) ?? status;
+            if (event.kind === "context.usage") {
+              const parsed = parseContextUsage(event.data);
+              if (parsed) next = { ...next, contextUsage: parsed };
+            }
+            if (event.kind === "llm.usage") {
+              const promptTokens = Number(event.data?.promptTokens ?? 0);
+              const completionTokens = Number(event.data?.completionTokens ?? 0);
+              const totalTokens = Number(event.data?.totalTokens ?? promptTokens + completionTokens);
+              const prevUsage = next.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+              next = {
+                ...next,
+                usage: {
+                  promptTokens: prevUsage.promptTokens + promptTokens,
+                  completionTokens: prevUsage.completionTokens + completionTokens,
+                  totalTokens: prevUsage.totalTokens + totalTokens,
+                },
+              };
+            }
+            if (event.kind === "scm.pr_opened" && event.data?.url) {
+              const incoming = event.data as PullRequestRef;
+              const list = next.pullRequests ?? [];
+              const match = (item: PullRequestRef) =>
+                item.url === incoming.url || (incoming.number != null && item.number === incoming.number);
+              next = {
+                ...next,
+                pullRequests: list.some(match)
+                  ? list.map((item) => (match(item) ? { ...item, ...incoming } : item))
+                  : [...list, incoming],
+              };
+            }
           }
           if (signal === "work") status = "RUNNING";
-          return status === prev.status ? prev : { ...prev, status };
+          if (status !== next.status) next = { ...next, status };
+          return next === prev && status === prev.status ? prev : next;
         });
         if (idleTimerRef.current) {
           window.clearTimeout(idleTimerRef.current);
@@ -610,8 +662,9 @@ export function App() {
       refreshPlugins(),
       refreshLlm(),
       refreshInbox(),
+      refreshHealth(),
     ]);
-  }, [refreshAutomations, refreshExperts, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
+  }, [refreshAutomations, refreshExperts, refreshHealth, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     if (!authed) return;
@@ -805,6 +858,10 @@ export function App() {
     // A failure from an earlier turn must not sit under the composer forever.
     setAuthError("");
     const local = isLocalDeskKind(target.kind);
+    if (target.kind === TARGET_REMOTE && !remoteAvailable) {
+      setAuthError("Remote Control 需要 neo-loop。控制面 /health 里 neoLoop.available=false。");
+      return;
+    }
     if (target.kind === TARGET_REMOTE && !folder) {
       setAuthError("Remote Control 要先选一个本机文件夹，网页才能在同一目录接着聊。");
       return;
@@ -968,6 +1025,7 @@ export function App() {
       void bridge.listWorkspaces?.().then(setWorkspaces).catch(() => undefined);
     });
     const offInbox = bridge.onInboxState?.((state) => {
+      setInboxConnected(state.connected);
       if (state.deskId) {
         deskIdRef.current = state.deskId;
         setTarget((prev) => mergeDeskTarget(prev, state.deskId));
@@ -1030,12 +1088,16 @@ export function App() {
       if (document.visibilityState === "hidden") return;
       void refreshRuns();
       void refreshInbox();
+      void refreshHealth();
     };
     window.addEventListener("focus", onShow);
     document.addEventListener("visibilitychange", onShow);
     const timer = window.setInterval(() => void refreshInbox(), 20_000);
     const listTimer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refreshRuns();
+      if (document.visibilityState === "visible") {
+        void refreshRuns();
+        void refreshHealth();
+      }
     }, RUN_LIST_REFRESH_MS);
     return () => {
       window.removeEventListener("focus", onShow);
@@ -1043,7 +1105,7 @@ export function App() {
       window.clearInterval(timer);
       window.clearInterval(listTimer);
     };
-  }, [authed, refreshInbox, refreshRuns]);
+  }, [authed, refreshHealth, refreshInbox, refreshRuns]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
@@ -1065,6 +1127,22 @@ export function App() {
   );
   const busy = isTurnBusy({ sending, pending: Boolean(pendingTurn), status: current?.status, messages: visible });
   const activity = liveActivityLabel(visible);
+  const contextUsage = useMemo(() => {
+    const reported = parseContextUsage(current?.contextUsage ?? null);
+    const base = reported ?? baselineContextUsage(selectedModel);
+    const catalogWindow = resolveModelLimits(base.model || selectedModel)?.contextWindow ?? null;
+    const contextWindow = base.contextWindow ?? catalogWindow;
+    const streaming = visible.find((message) => message.streaming)?.text ?? "";
+    return overlayContextUsage(
+      {
+        ...base,
+        model: base.model || selectedModel,
+        contextWindow,
+        percent: contextWindow ? (base.tokens / contextWindow) * 100 : null,
+      },
+      { draft: prompt, streaming },
+    );
+  }, [current?.contextUsage, prompt, selectedModel, visible]);
   const rail = useMemo(() => {
     const names = new Map(projects.map((item) => [item.id, item.name]));
     return groupRailSessions(runs, (id) => names.get(id));
@@ -1512,6 +1590,7 @@ export function App() {
   // picker. Letting an open run fall back to the picker would point the file
   // tree and the diff at the wrong repo as soon as two local runs exist.
   const hostLock = remoteControlSendLock(current, [], { thisDeskId: target.deskId || deskIdRef.current });
+  const gitContext = current ? runGitContext(current) : "none";
   const localFolder = current ? localRun.folder : panelIsLocal ? folder : "";
   const runningRunIds = useMemo(() => runningLocalRunIds(localStatuses), [localStatuses]);
   const otherLocalRunCount = otherRunningLocalRuns(localStatuses, current?.id);
@@ -1556,6 +1635,21 @@ export function App() {
   const headerPanelSlot = (
     <span className="panel-toggle-slot">
       {current ? <TranscriptSearch messages={visible} onJump={jumpToTranscriptMessage} /> : null}
+      {gitContext !== "none" ? (
+        <Tooltip content="Git" side="left">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="打开 Git"
+            onClick={() => {
+              setPanelOpen(true);
+              setPanelTab("git");
+            }}
+          >
+            <IconGit size={15} />
+          </button>
+        </Tooltip>
+      ) : null}
       <Tooltip content="产物" side="left">
         <button
           type="button"
@@ -2170,6 +2264,10 @@ export function App() {
                   setPanelOpen(true);
                   setPanelTab("terminal");
                 }}
+                onOpenArtifact={() => {
+                  setPanelOpen(true);
+                  setPanelTab("artifacts");
+                }}
                 queueEpoch={queueEpoch}
                 thinkingHint={
                   localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
@@ -2201,6 +2299,10 @@ export function App() {
                   setPanelOpen(true);
                   setPanelTab("terminal");
                 }}
+                onOpenArtifact={() => {
+                  setPanelOpen(true);
+                  setPanelTab("artifacts");
+                }}
                 thinkingHint={
                   localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
                 }
@@ -2217,13 +2319,72 @@ export function App() {
             ) : null}
 
             <footer className={`composer-wrap${current ? "" : " home-wrap"}`}>
-              {current && diff && (diff.added > 0 || diff.removed > 0) ? (
+              {!inboxConnected ? (
+                <p className="hint toast-inline" role="status">
+                  Desk inbox 已断开，本机派活和 Remote Control 会暂停，直到重新连上控制面。
+                </p>
+              ) : null}
+              {current && gitContext !== "none" && diff && (diff.added > 0 || diff.removed > 0) ? (
                 <div className="chips">
-                  <button type="button" className="chip">
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => {
+                      setPanelOpen(true);
+                      setPanelTab("git");
+                    }}
+                  >
                     Changes <em className="add">+{diff.added}</em> <em className="del">-{diff.removed}</em>
                   </button>
                 </div>
               ) : null}
+              <ContextBar
+                workspaces={workspaces}
+                folder={current ? localRun.folder || folder : folder}
+                onWorkspace={(picked) => {
+                  setFolder(picked.folder);
+                  applyTarget({
+                    kind: isLocalDeskKind(target.kind) ? target.kind : TARGET_DESK,
+                    folder: picked.folder,
+                    workspaceId: picked.id,
+                    deskId: target.deskId,
+                  });
+                }}
+                onClearFolder={() => {
+                  setFolder("");
+                  applyTarget({
+                    kind: TARGET_DESK,
+                    folder: "",
+                    workspaceId: undefined,
+                    deskId: target.deskId,
+                  });
+                }}
+                onPickFolder={(kind) => void pickLocalFolder(kind)}
+                branch={branch || "main"}
+                targetKind={
+                  current
+                    ? isRemoteControlRun(current)
+                      ? TARGET_REMOTE
+                      : isDeskBoundRun(current)
+                        ? TARGET_DESK
+                        : TARGET_CLOUD
+                    : target.kind
+                }
+                canRunLocal={canRunLocal}
+                onTarget={(kind) =>
+                  applyTarget({ ...target, kind, folder: isLocalDeskKind(kind) ? folder : target.folder })
+                }
+                open={contextOpen}
+                setOpen={(id) => {
+                  setContextOpen(id);
+                  if (id) {
+                    setModelMenu(false);
+                    setInboxOpen(false);
+                  }
+                }}
+                locked={Boolean(current)}
+                remoteAvailable={remoteAvailable}
+              />
               {current ? (
                 <ChatComposer
                   prompt={prompt}
@@ -2276,47 +2437,11 @@ export function App() {
                   onCapsule={applyCapsule}
                   waiting={turnLive}
                   onStop={stopCurrentTurn}
+                  onQueue={() => void send(undefined, { delivery: "follow_up" })}
+                  contextUsage={contextUsage}
                 />
               ) : (
                 <div className="home-composer">
-                  <ContextBar
-                    workspaces={workspaces}
-                    folder={folder}
-                    onWorkspace={(picked) => {
-                      setFolder(picked.folder);
-                      applyTarget({
-                        kind: isLocalDeskKind(target.kind) ? target.kind : TARGET_DESK,
-                        folder: picked.folder,
-                        workspaceId: picked.id,
-                        deskId: target.deskId,
-                      });
-                    }}
-                    onClearFolder={() => {
-                      setFolder("");
-                      applyTarget({
-                        kind: TARGET_DESK,
-                        folder: "",
-                        workspaceId: undefined,
-                        deskId: target.deskId,
-                      });
-                    }}
-                    onPickFolder={(kind) => void pickLocalFolder(kind)}
-                    branch={branch || "main"}
-                    targetKind={target.kind}
-                    canRunLocal={canRunLocal}
-                    onTarget={(kind) =>
-                      applyTarget({ ...target, kind, folder: isLocalDeskKind(kind) ? folder : target.folder })
-                    }
-                    open={contextOpen}
-                    setOpen={(id) => {
-                      setContextOpen(id);
-                      if (id) {
-                        setModelMenu(false);
-                        setInboxOpen(false);
-                      }
-                    }}
-                    locked={false}
-                  />
                   <ChatComposer
                     prompt={prompt}
                     setPrompt={setPrompt}
@@ -2358,8 +2483,7 @@ export function App() {
                     images={images}
                     onImages={setImages}
                     onCapsule={applyCapsule}
-                    waiting={turnLive}
-                    onStop={stopCurrentTurn}
+                    contextUsage={contextUsage}
                   />
                 </div>
               )}
@@ -2393,8 +2517,15 @@ export function App() {
                 runId={runId}
                 projectId={current?.projectId}
                 local={panelIsLocal}
-                refreshKey={panelEpoch}
+                refreshKey={panelEpoch * 1000 + (current?.pullRequests?.length ?? 0) * 10 + (turnLive ? 1 : 0)}
                 onSaved={(asset) => void openProject(asset.projectId, "assets", asset.id)}
+                gitContext={gitContext}
+                busy={turnLive}
+                onPullRequests={(next) => {
+                  setCurrent((prev) => (prev ? { ...prev, pullRequests: next } : prev));
+                  if (!runId) return;
+                  setRuns((prev) => prev.map((item) => (item.id === runId ? { ...item, pullRequests: next } : item)));
+                }}
               />
             </div>
           </section>

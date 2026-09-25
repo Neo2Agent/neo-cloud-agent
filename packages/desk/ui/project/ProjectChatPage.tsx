@@ -35,6 +35,7 @@ export function ProjectChatPage({
   headerEnd,
   thinkingHint,
   onOpenDiagnostics,
+  onOpenArtifact,
 }: {
   title: string;
   project: Project | null;
@@ -63,6 +64,7 @@ export function ProjectChatPage({
   headerEnd?: ReactNode;
   thinkingHint?: string;
   onOpenDiagnostics?: () => void;
+  onOpenArtifact?: (name: string) => void;
 }) {
   return (
     <div className="project-chat-shell">
@@ -105,6 +107,7 @@ export function ProjectChatPage({
         onCopy={onCopy}
         thinkingHint={thinkingHint}
         onOpenDiagnostics={onOpenDiagnostics}
+        onOpenArtifact={onOpenArtifact}
       />
     </div>
   );

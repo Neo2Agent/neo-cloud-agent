@@ -6,7 +6,8 @@ export type ShortcutAction =
   | "next-run"
   | "cycle-model"
   | "stop"
-  | "close";
+  | "close"
+  | "search";
 
 export function shortcutAction(
   event: { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean } & ImeKeyState,
@@ -25,6 +26,7 @@ export function shortcutAction(
   if (event.key === "/" && !event.altKey) return "cycle-model";
   if (event.key === "Backspace" && event.shiftKey) return "stop";
   if (event.key === "w" || event.key === "W") return "close";
+  if (event.key === "k" || event.key === "K") return "search";
   return null;
 }
 

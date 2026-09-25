@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
+import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import { composerKeyAction } from "@neo-cloud-agent/contracts/composer-keys";
+import { ContextUsageControl } from "@neo-cloud-agent/ui";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelLabel, resolveChatModel, runListTitle } from "../format";
 import { dayGreeting } from "../island-theme";
@@ -123,7 +125,15 @@ export function IslandDrawer(props: {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
   const { live, shelved } = splitShelvedRuns(props.runs.slice(0, 20));
+  const q = query.trim().toLowerCase();
+  const shownLive = q
+    ? live.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
+    : live;
+  const shownShelved = q
+    ? shelved.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
+    : shelved;
 
   useEffect(() => {
     let cancelled = false;
@@ -172,6 +182,12 @@ export function IslandDrawer(props: {
             {id === "inbox" && props.unread ? <span className="nav-badge">{props.unread}</span> : null}
           </button>
         ))}
+        <IslandInput
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索对话"
+          aria-label="搜索对话"
+        />
         <div className="section-row">
           <span className="section">近期</span>
           {props.onArchiveMany && live.length > 0 ? (
@@ -207,7 +223,8 @@ export function IslandDrawer(props: {
           </IslandButton>
         ) : null}
         {props.runs.length === 0 ? <p className="empty">暂无近期任务</p> : null}
-        {live.map((run) => (
+        {q && shownLive.length === 0 && shownShelved.length === 0 ? <p className="empty">没有匹配的对话。</p> : null}
+        {shownLive.map((run) => (
           <button
             key={run.id}
             className="run-row"
@@ -221,8 +238,8 @@ export function IslandDrawer(props: {
             <span>{runRowMeta(run)}</span>
           </button>
         ))}
-        {shelved.length > 0 ? <div className="section">已归档</div> : null}
-        {shelved.map((run) => (
+        {shownShelved.length > 0 ? <div className="section">已归档</div> : null}
+        {shownShelved.map((run) => (
           <div key={run.id} className="run-row is-shelved">
             <button type="button" className="run-open" onClick={() => props.onOpenRun(run.id)}>
               <b>{runListTitle(run)}</b>
@@ -295,12 +312,14 @@ export function IslandComposer(props: {
   /** While a turn runs, Cmd/Ctrl+Enter hands it to the agent at its next tool call. */
   onSteer?: () => void;
   onStop?: () => void;
+  contextUsage?: ContextUsageSnapshot | null;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
     onEnded?: () => void,
   ) => Promise<StartVoiceResult>;
 }) {
+  const [usageOpen, setUsageOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceHint, setVoiceHint] = useState("");
@@ -404,6 +423,9 @@ export function IslandComposer(props: {
 
   return (
     <div className="composer-dock">
+      <div className="composer-context">
+        <span>云端</span>
+      </div>
       <div className="composer-bar">
         {images.length > 0 ? (
           <div className="composer-thumbs">
@@ -484,6 +506,13 @@ export function IslandComposer(props: {
             ) : null}
           </div>
           <div className="composer-send-group">
+            {props.contextUsage ? (
+              <ContextUsageControl
+                usage={props.contextUsage}
+                open={usageOpen}
+                onToggle={() => setUsageOpen((open) => !open)}
+              />
+            ) : null}
             {props.onPickImages ? (
               <label className="composer-attach" title="加图片">
                 <input

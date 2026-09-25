@@ -15,6 +15,7 @@ import type {
 } from "@neo-cloud-agent/contracts/project";
 import type { CreateProjectAssetRequest, ProjectAsset } from "@neo-cloud-agent/contracts/project-asset";
 import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
+import type { RunCommitsResponse, RunDiffResponse } from "@neo-cloud-agent/contracts/git";
 import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
 import { DEFAULT_TRANSCRIPT_PAGE } from "@neo-cloud-agent/contracts/transcript";
 
@@ -423,6 +424,14 @@ export class MobileClient {
 
   openPullRequest(id: string, title: string): Promise<{ pullRequest?: { url?: string } }> {
     return this.request("POST", `/v1/runs/${id}/pull-request`, { title });
+  }
+
+  runDiff(id: string): Promise<RunDiffResponse> {
+    return this.request("GET", `/v1/runs/${id}/diff`);
+  }
+
+  runCommits(id: string): Promise<RunCommitsResponse> {
+    return this.request("GET", `/v1/runs/${id}/commits`);
   }
 
   registerDevice(input: CreateDeviceRequest): Promise<Device> {
