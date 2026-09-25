@@ -1,3 +1,6 @@
+import { deskRepoKey } from "@neo-cloud-agent/contracts/desk-workspace";
+import { repoShortLabel } from "./repo.js";
+
 const KEY = "neo.pinnedRuns";
 
 export function readPinnedRuns(storage: Pick<Storage, "getItem"> = localStorage): string[] {
@@ -38,15 +41,40 @@ export function groupRuns<T extends { id: string; status: string; createdAt: str
 
 // Search both fields: a stored title is only the first line, so the rest of the
 // prompt must stay findable.
-export function filterRuns<T extends { title?: string | null; prompt?: string; id: string }>(runs: T[], query: string): T[] {
+export function filterRuns<
+  T extends { title?: string | null; prompt?: string; id: string; repoUrls?: string[] | null },
+>(runs: T[], query: string): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return runs;
-  return runs.filter(
-    (run) =>
-      (run.title ?? "").toLowerCase().includes(needle) ||
-      (run.prompt ?? "").toLowerCase().includes(needle) ||
-      run.id.toLowerCase().includes(needle),
-  );
+  return runs.filter((run) => {
+    if ((run.title ?? "").toLowerCase().includes(needle)) return true;
+    if ((run.prompt ?? "").toLowerCase().includes(needle)) return true;
+    if (run.id.toLowerCase().includes(needle)) return true;
+    return (run.repoUrls ?? []).some((url) => {
+      const text = url.toLowerCase();
+      return text.includes(needle) || repoShortLabel(url).toLowerCase().includes(needle);
+    });
+  });
+}
+
+export function runRepoKey(run: { repoUrls?: string[] | null }): string {
+  const urls = (run.repoUrls ?? []).map((item) => item.trim()).filter(Boolean);
+  if (urls.length === 0) return "";
+  const keys = urls
+    .map((url) => deskRepoKey({ remoteUrl: url }) || deskRepoKey({ folder: url }))
+    .filter(Boolean);
+  return [...new Set(keys)].sort().join("|");
+}
+
+export function runRepoLabel(run: { repoUrls?: string[] | null }): string {
+  const urls = (run.repoUrls ?? []).map((item) => item.trim()).filter(Boolean);
+  if (urls.length === 0) return "";
+  const first = repoShortLabel(urls[0] ?? "") || urls[0] || "仓库";
+  return urls.length > 1 ? `${first} +${urls.length - 1}` : first;
+}
+
+export function runRepoSource(run: { repoUrls?: string[] | null }): string {
+  return (run.repoUrls ?? []).map((item) => item.trim()).find(Boolean) ?? "";
 }
 
 const SHELVED = new Set(["ARCHIVED", "EXPIRED"]);
@@ -70,45 +98,90 @@ export function runKindLabel(run: { projectId?: string | null; repoUrls?: string
   return run.repoUrls && run.repoUrls.length > 0 ? "代码" : "办公";
 }
 
-export function groupRunsByProject<T extends { id: string; status: string; createdAt: string; projectId?: string | null }>(
+export type SidebarFolder<T> = {
+  key: string;
+  label: string;
+  source?: string;
+  active: T[];
+  recent: T[];
+};
+
+export function groupSidebarRuns<
+  T extends { id: string; status: string; createdAt: string; projectId?: string | null; repoUrls?: string[] | null },
+>(
   runs: T[],
   pinned: string[],
   projectNames: Record<string, string>,
 ): {
   pinned: T[];
-  folders: Array<{ key: string; label: string; active: T[]; recent: T[] }>;
-  loose: { active: T[]; recent: T[] };
+  folders: SidebarFolder<T>[];
+  repos: SidebarFolder<T>[];
+  chat: { active: T[]; recent: T[] };
 } {
   const { pinned: pinnedRuns, active, recent } = groupRuns(runs, pinned);
   const rest = [...active, ...recent];
-  const keys: string[] = [];
-  const buckets = new Map<string, T[]>();
+  const projectKeys: string[] = [];
+  const projectBuckets = new Map<string, T[]>();
+  const repoKeys: string[] = [];
+  const repoBuckets = new Map<string, T[]>();
+  const chatItems: T[] = [];
   for (const run of rest) {
-    const key = run.projectId || "";
-    if (!buckets.has(key)) {
-      buckets.set(key, []);
-      keys.push(key);
+    if (run.projectId) {
+      if (!projectBuckets.has(run.projectId)) {
+        projectBuckets.set(run.projectId, []);
+        projectKeys.push(run.projectId);
+      }
+      projectBuckets.get(run.projectId)!.push(run);
+      continue;
     }
-    buckets.get(key)!.push(run);
+    const repoKey = runRepoKey(run);
+    if (repoKey) {
+      if (!repoBuckets.has(repoKey)) {
+        repoBuckets.set(repoKey, []);
+        repoKeys.push(repoKey);
+      }
+      repoBuckets.get(repoKey)!.push(run);
+      continue;
+    }
+    chatItems.push(run);
   }
-  const folders = keys
-    .filter((key) => key)
-    .map((key) => {
-      const items = buckets.get(key) ?? [];
-      return {
-        key,
-        label: projectNames[key] || "项目对话",
-        active: items.filter((run) => ACTIVE.includes(run.status)),
-        recent: items.filter((run) => !ACTIVE.includes(run.status)),
-      };
-    });
-  const looseItems = buckets.get("") ?? [];
+  const toFolder = (items: T[], extra: { key: string; label: string; source?: string }): SidebarFolder<T> => ({
+    ...extra,
+    active: items.filter((run) => ACTIVE.includes(run.status)),
+    recent: items.filter((run) => !ACTIVE.includes(run.status)),
+  });
   return {
     pinned: pinnedRuns,
-    folders,
-    loose: {
-      active: looseItems.filter((run) => ACTIVE.includes(run.status)),
-      recent: looseItems.filter((run) => !ACTIVE.includes(run.status)),
+    folders: projectKeys.map((key) =>
+      toFolder(projectBuckets.get(key) ?? [], { key, label: projectNames[key] || "项目对话" }),
+    ),
+    repos: repoKeys.map((key) => {
+      const items = repoBuckets.get(key) ?? [];
+      const sample = items[0];
+      return toFolder(items, {
+        key,
+        label: sample ? runRepoLabel(sample) : key,
+        source: sample ? runRepoSource(sample) : "",
+      });
+    }),
+    chat: {
+      active: chatItems.filter((run) => ACTIVE.includes(run.status)),
+      recent: chatItems.filter((run) => !ACTIVE.includes(run.status)),
     },
   };
+}
+
+export function groupRunsByProject<
+  T extends { id: string; status: string; createdAt: string; projectId?: string | null; repoUrls?: string[] | null },
+>(
+  runs: T[],
+  pinned: string[],
+  projectNames: Record<string, string>,
+): {
+  pinned: T[];
+  folders: SidebarFolder<T>[];
+  loose: { active: T[]; recent: T[] };
+} {
+  const grouped = groupSidebarRuns(runs, pinned, projectNames);
+  return { pinned: grouped.pinned, folders: grouped.folders, loose: grouped.chat };
 }

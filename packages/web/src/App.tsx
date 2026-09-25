@@ -934,6 +934,27 @@ export function App() {
     [resetComposer],
   );
 
+  const startRepoChat = useCallback(
+    (repoUrl?: string) => {
+      resetComposer();
+      setActiveProject(null);
+      setDeskTarget({ kind: "cloud" });
+      writeLastTarget({ kind: "cloud" });
+      void deskBridge()?.setTarget({ kind: "cloud" });
+      if (repoUrl) {
+        setRepo(repoUrl);
+        setRepoMode("bind");
+        setRepoPickerOpen(false);
+      } else {
+        setRepo("");
+        setRepoMode("bind");
+        setRepoPickerOpen(true);
+      }
+      setMainTab("chat");
+    },
+    [resetComposer],
+  );
+
   const openChat = useCallback(() => {
     setMainTab("chat");
     setInspectorTab(null);
@@ -2184,6 +2205,13 @@ export function App() {
               id,
               name: projectNames[id] || "项目对话",
             });
+            setSidebarOpen((open) => {
+              if (!closeMobileSidebar()) return open;
+              return false;
+            });
+          }}
+          onStartRepoChat={(repoUrl) => {
+            startRepoChat(repoUrl);
             setSidebarOpen((open) => {
               if (!closeMobileSidebar()) return open;
               return false;

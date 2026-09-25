@@ -1291,12 +1291,13 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
       },
     }),
   );
-  writeExpertRole(run);
-  writeRunPlugins(run, input.pluginIds);
   mintJwtForRun(run);
   flushRun(run.id);
 
   if (isDeskToolsTarget(run.executionTarget)) {
+    writeExpertRole(run);
+    writeRunPlugins(run, input.pluginIds);
+    flushRun(run.id);
     if (start === "inline") {
       // The caller is that desk: it spawns the worker from this response, so
       // there is nothing to hand out and nothing to wait for.
@@ -1383,6 +1384,10 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     failRun(run, message, "scm.clone_failed", "Workspace prepare failed");
     return run;
   }
+
+  writeExpertRole(run);
+  writeRunPlugins(run, input.pluginIds);
+  flushRun(run.id);
 
   if (!restoredFromBuild) {
     try {

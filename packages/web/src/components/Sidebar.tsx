@@ -3,9 +3,9 @@ import type { PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
 import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode } from "@neo-cloud-agent/contracts/run";
 import { formatListWhen, runListPlaceSuffix, runListTitle, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
-import { IconArchive, IconAutomations, IconChat, IconExperts, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconStar, IconTrash } from "../icons";
+import { IconArchive, IconAutomations, IconChat, IconExperts, IconFolder, IconFolderPlus, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSidebarClose, IconSidebarOpen, IconSkills, IconSort, IconStar, IconTrash } from "../icons";
 import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
-import { filterRuns, groupRunsByProject, isShelvedRun, runKindLabel, splitShelvedRuns } from "../pins";
+import { filterRuns, groupSidebarRuns, isShelvedRun, runKindLabel, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { initials } from "../catalog";
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "../pane-size";
@@ -38,6 +38,7 @@ type Props = {
   projectNames?: Record<string, string>;
   onNewChat: () => void;
   onStartProjectChat?: (projectId: string) => void;
+  onStartRepoChat?: (repoUrl?: string) => void;
   onOpenRun: (id: string) => void;
   onPatchTitle?: (id: string, body: PatchRunRequest) => Promise<void>;
   onPin?: (id: string) => void;
@@ -75,6 +76,7 @@ export function Sidebar({
   projectNames = {},
   onNewChat,
   onStartProjectChat,
+  onStartRepoChat,
   onOpenRun,
   onPatchTitle,
   onPin,
@@ -110,6 +112,7 @@ export function Sidebar({
   const [titleBusy, setTitleBusy] = useState(false);
   const [titleError, setTitleError] = useState("");
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [repoSort, setRepoSort] = useState<"recent" | "name">("recent");
   const skipTitleBlur = useRef(false);
   const items = [...runs].sort((left, right) => {
     const leftAt = left.updatedAt || left.createdAt;
@@ -118,7 +121,26 @@ export function Sidebar({
   });
   const visible = filterRuns(items, query);
   const { live, shelved } = splitShelvedRuns(visible);
-  const grouped = groupRunsByProject(live, pinnedIds, projectNames);
+  const grouped = groupSidebarRuns(live, pinnedIds, projectNames);
+  const repoFolders = [...grouped.repos].sort((left, right) => {
+    if (repoSort === "name") return left.label.localeCompare(right.label, "zh-CN");
+    const leftAt = [...left.active, ...left.recent][0]?.createdAt ?? "";
+    const rightAt = [...right.active, ...right.recent][0]?.createdAt ?? "";
+    return rightAt.localeCompare(leftAt);
+  });
+
+  const folderOpen = (key: string, items: Run[]) =>
+    items.some((item) => item.id === currentRunId) || !collapsedFolders.has(key);
+
+  const onFolderToggle = (key: string, event: { currentTarget: EventTarget & HTMLDetailsElement }) => {
+    const nextOpen = event.currentTarget.open;
+    setCollapsedFolders((prev) => {
+      const copy = new Set(prev);
+      if (nextOpen) copy.delete(key);
+      else copy.add(key);
+      return copy;
+    });
+  };
 
   const toggle = (id: string) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
@@ -333,63 +355,127 @@ export function Sidebar({
       )}
       <div className="run-list" id="run-list">
         {grouped.pinned.length > 0 ? (
-          <section className="run-group">
-            <p className="eyebrow">置顶</p>
+          <section className="run-group" data-section="pinned">
+            <div className="run-section-head">
+              <span>置顶</span>
+            </div>
             {grouped.pinned.map(renderRun)}
           </section>
         ) : null}
-        {grouped.folders.map((folder) => {
-          const items = [...folder.active, ...folder.recent];
-          if (items.length === 0) return null;
-          const containsCurrent = items.some((item) => item.id === currentRunId);
-          const open = containsCurrent || !collapsedFolders.has(folder.key);
-          return (
-            <details
-              key={folder.key}
-              className="run-group run-folder"
-              id={`run-folder-${folder.key}`}
-              data-project={folder.key}
-              open={open}
-              onToggle={(event) => {
-                const nextOpen = (event.currentTarget as HTMLDetailsElement).open;
-                setCollapsedFolders((prev) => {
-                  const copy = new Set(prev);
-                  if (nextOpen) copy.delete(folder.key);
-                  else copy.add(folder.key);
-                  return copy;
-                });
-              }}
+        <section className="run-group" data-section="projects">
+          <div className="run-section-head">
+            <span>项目</span>
+            {onOpenNav ? (
+              <button type="button" className="run-folder-new" aria-label="新建协作组" onClick={() => onOpenNav("projects")}>
+                <IconPlus size={12} />
+              </button>
+            ) : null}
+          </div>
+          {grouped.folders.map((folder) => {
+            const items = [...folder.active, ...folder.recent];
+            if (items.length === 0) return null;
+            const key = `project:${folder.key}`;
+            return (
+              <details
+                key={folder.key}
+                className="run-folder"
+                id={`run-folder-${folder.key}`}
+                data-kind="project"
+                data-project={folder.key}
+                open={folderOpen(key, items)}
+                onToggle={(event) => onFolderToggle(key, event)}
+              >
+                <summary className="run-folder-head">
+                  <IconProjects size={14} />
+                  <span className="run-folder-name">{folder.label}</span>
+                  <span className="run-folder-count">{items.length}</span>
+                  {onStartProjectChat ? (
+                    <button
+                      type="button"
+                      className="run-folder-new"
+                      aria-label={`在「${folder.label}」里开对话`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onStartProjectChat(folder.key);
+                      }}
+                    >
+                      <IconPlus size={12} />
+                    </button>
+                  ) : null}
+                </summary>
+                {folder.active.map(renderRun)}
+                {folder.recent.map(renderRun)}
+              </details>
+            );
+          })}
+        </section>
+        <section className="run-group" data-section="repos">
+          <div className="run-section-head">
+            <span>仓库</span>
+            <button
+              type="button"
+              className="run-folder-new"
+              aria-label={repoSort === "recent" ? "按名称排序仓库" : "按最近排序仓库"}
+              onClick={() => setRepoSort((value) => (value === "recent" ? "name" : "recent"))}
             >
-              <summary className="run-folder-head">
-                <span className="run-folder-name">{folder.label}</span>
-                <span className="run-folder-count">{items.length}</span>
-                {onStartProjectChat ? (
-                  <button
-                    type="button"
-                    className="run-folder-new"
-                    aria-label={`在「${folder.label}」里开对话`}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onStartProjectChat(folder.key);
-                    }}
-                  >
-                    <IconPlus size={12} />
-                  </button>
-                ) : null}
-              </summary>
-              {folder.active.map(renderRun)}
-              {folder.recent.map(renderRun)}
-            </details>
-          );
-        })}
-        {grouped.loose.active.length + grouped.loose.recent.length > 0 ? (
-          <section className="run-group" data-loose="true">
-            {grouped.loose.active.map(renderRun)}
-            {grouped.loose.recent.map(renderRun)}
-          </section>
-        ) : null}
+              <IconSort size={12} />
+            </button>
+            {onStartRepoChat ? (
+              <button type="button" className="run-folder-new" aria-label="新开绑仓对话" onClick={() => onStartRepoChat()}>
+                <IconFolderPlus size={12} />
+              </button>
+            ) : null}
+          </div>
+          {repoFolders.map((folder) => {
+            const items = [...folder.active, ...folder.recent];
+            if (items.length === 0) return null;
+            const key = `repo:${folder.key}`;
+            const slug = folder.key.replace(/[^a-zA-Z0-9._-]+/g, "-");
+            return (
+              <details
+                key={folder.key}
+                className="run-folder"
+                id={`run-folder-repo-${slug}`}
+                data-kind="repo"
+                data-repo={folder.key}
+                open={folderOpen(key, items)}
+                onToggle={(event) => onFolderToggle(key, event)}
+              >
+                <summary className="run-folder-head">
+                  <IconFolder size={14} />
+                  <span className="run-folder-name">{folder.label}</span>
+                  <span className="run-folder-count">{items.length}</span>
+                  {onStartRepoChat && folder.source ? (
+                    <button
+                      type="button"
+                      className="run-folder-new"
+                      aria-label={`在「${folder.label}」开对话`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onStartRepoChat(folder.source);
+                      }}
+                    >
+                      <IconPlus size={12} />
+                    </button>
+                  ) : null}
+                </summary>
+                {folder.active.map(renderRun)}
+                {folder.recent.map(renderRun)}
+              </details>
+            );
+          })}
+        </section>
+        <section className="run-group" data-section="chat">
+          <div className="run-section-head">
+            <span>日常</span>
+          </div>
+          {grouped.chat.active.map(renderRun)}
+          {grouped.chat.recent.map(renderRun)}
+        </section>
         {shelved.length > 0 ? (
           <details className="run-group run-archived">
             <summary className="eyebrow">已归档 · {shelved.length}</summary>

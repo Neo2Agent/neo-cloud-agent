@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { filterRuns, groupRuns, groupRunsByProject, readPinnedRuns, runKindLabel, splitShelvedRuns, togglePinnedRun } from "./pins.js";
+import {
+  filterRuns,
+  groupRuns,
+  groupRunsByProject,
+  groupSidebarRuns,
+  readPinnedRuns,
+  runKindLabel,
+  runRepoKey,
+  splitShelvedRuns,
+  togglePinnedRun,
+} from "./pins.js";
 
 function memoryStorage(start: Record<string, string> = {}) {
   const data = { ...start };
@@ -43,6 +53,44 @@ test("groupRunsByProject keeps unassigned runs out of folders", () => {
   assert.equal(grouped.folders.some((item) => item.key === "none"), false);
   assert.deepEqual(filterRuns(runs, "官网"), []);
   assert.equal(filterRuns([{ id: "1", prompt: "修官网登录" }], "登录")[0]?.id, "1");
+});
+
+test("groupSidebarRuns splits projects, repos, and everyday chats", () => {
+  const runs = [
+    {
+      id: "proj-code",
+      status: "IDLE",
+      createdAt: "2026-08-23T10:00:00.000Z",
+      projectId: "p1",
+      repoUrls: ["https://github.com/acme/app.git"],
+    },
+    {
+      id: "loose-a",
+      status: "IDLE",
+      createdAt: "2026-08-23T11:00:00.000Z",
+      repoUrls: ["https://github.com/Acme/App"],
+    },
+    {
+      id: "loose-b",
+      status: "RUNNING",
+      createdAt: "2026-08-23T12:00:00.000Z",
+      repoUrls: ["https://github.com/acme/app.git"],
+    },
+    { id: "chat", status: "IDLE", createdAt: "2026-08-23T13:00:00.000Z" },
+  ];
+  const grouped = groupSidebarRuns(runs, ["chat"], { p1: "官网" });
+  assert.deepEqual(grouped.pinned.map((item) => item.id), ["chat"]);
+  assert.equal(grouped.folders[0]?.label, "官网");
+  assert.deepEqual(grouped.folders[0]?.recent.map((item) => item.id), ["proj-code"]);
+  assert.equal(grouped.repos.length, 1);
+  assert.equal(grouped.repos[0]?.label, "acme/app");
+  assert.deepEqual(
+    [...grouped.repos[0]!.active, ...grouped.repos[0]!.recent].map((item) => item.id).sort(),
+    ["loose-a", "loose-b"],
+  );
+  assert.deepEqual(grouped.chat.recent.map((item) => item.id), []);
+  assert.equal(runRepoKey({ repoUrls: ["https://github.com/acme/app.git"] }), "github.com/acme/app");
+  assert.equal(filterRuns(runs, "acme/app").some((item) => item.id === "loose-a"), true);
 });
 
 test("runKindLabel marks project chats as office or code", () => {

@@ -127,7 +127,7 @@ test.describe("composer / run boundaries", () => {
     expect(backIconBox?.width).toBe(16);
     expect(searchIconBox?.width).toBe(16);
     expect(Math.abs((backIconBox?.x ?? 0) - (searchIconBox?.x ?? 0))).toBeLessThan(0.5);
-    await expect(page.getByRole("button", { name: "kaibairen/animate-camera" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "kaibairen/animate-camera", exact: true })).toBeVisible();
     expect(await page.locator("#repo-bind-search").evaluate((el) => Boolean(el.closest(".repo-bind-body")))).toBe(
       false,
     );

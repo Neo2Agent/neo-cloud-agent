@@ -6226,8 +6226,29 @@ button.composer-mic.is-listening,
   line-height: 18px;
 }
 
+.run-section-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 6px 8px 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.run-section-head > span:first-child {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
 .run-folder {
   gap: 2px;
+}
+
+.run-folder[data-kind="repo"] .run-folder-head,
+.run-folder[data-kind="project"] .run-folder-head {
+  gap: 6px;
 }
 
 .run-folder-head {

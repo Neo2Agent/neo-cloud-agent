@@ -159,7 +159,7 @@ Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、
 
 | 层 | Neo |
 | --- | --- |
-| 协作组 | `Project` + 成员 / 指令 / 邀请。侧栏按 `projectId` 收成文件夹；旧无项目对话平铺，不迁移，不自动建 Project |
+| 协作组 | `Project` + 成员 / 指令 / 邀请。侧栏最上置顶，然后 **项目 / 仓库 / 日常**：有 `projectId` 进项目夹；没项目但绑了仓按仓折；两样都没有进日常。不按仓自动建 Project |
 | GitHub 账号 | 设置里 OAuth 绑定当前用户自己的 GitHub。`GET /v1/integrations/github`；token 按 `userId` 存，不是整机 PAT |
 | 组内选仓 | Composer 一个仓库 pill：关着显示「无仓库」或 `owner/repo`；打开后搜索账号仓库（`GET /v1/scm/repos?q=`）。未绑则去设置。发出后只读。Web 不再预填项目 `defaultRepoUrls` |
 | 无仓不被回填 | `CreateRunRequest.skipRepoDefaults`。显式无仓时服务端不得用项目或环境默认仓填 `repoUrls` |
@@ -167,7 +167,7 @@ Neo 现在的 Web 面板：`runGitContext` 门控、merge-base 按文件 diff、
 | 拉人 | 仅云端 + `projectId`。全局闲聊、没进项目的绑仓闲聊、本机对话都不能拉人 |
 | Web 配置 | 项目配置不再编默认仓库。Settings `#repo` 只给预热用，不再驱动新对话 |
 
-对齐（只在绑仓对话）：cursor.com/agents 的 Git 页签行为。同方向：文件夹 = 协作组，控件跟现有 pill。不对齐 / 不做：Origin 草稿仓、桌面 This Computer / Select Multiple、按仓自动建 Project、项目必须等于一个仓、转交房主、GitHub 登录 Neo。
+对齐（只在绑仓对话）：cursor.com/agents 的 Git 页签行为。侧栏仓库段对齐「按仓归组」；项目段仍是协作组。不对齐 / 不做：Origin 草稿仓、桌面 This Computer / Select Multiple、按仓自动建 Project、项目必须等于一个仓、转交房主、GitHub 登录 Neo。
 
 ### 第二期
 
