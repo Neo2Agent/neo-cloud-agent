@@ -1,11 +1,8 @@
 export type TerminalIntent = "setup" | "shell";
 
+/** Interactive PTY only when the user opened the terminal themselves. */
 export function shouldAutoOpenPty(intent: TerminalIntent): boolean {
   return intent === "shell";
-}
-
-export function inspectorOpenForDiagnostics(): { tab: "terminal"; intent: TerminalIntent } {
-  return { tab: "terminal", intent: "setup" };
 }
 
 export function workspaceNotReadyMessage(error: unknown): string {

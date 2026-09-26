@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inspectorOpenForDiagnostics, shouldAutoOpenPty, workspaceNotReadyMessage } from "./setup-diag.js";
+import { shouldAutoOpenPty, workspaceNotReadyMessage } from "./setup-diag.js";
 
-test("diagnostics open the terminal pane on Setup, not a PTY", () => {
-  assert.deepEqual(inspectorOpenForDiagnostics(), { tab: "terminal", intent: "setup" });
+test("opening the terminal pane does not auto-create a PTY on Setup", () => {
   assert.equal(shouldAutoOpenPty("setup"), false);
   assert.equal(shouldAutoOpenPty("shell"), true);
 });

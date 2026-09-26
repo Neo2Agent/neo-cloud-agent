@@ -36,7 +36,7 @@ import { FileTree } from "./components/FileTree";
 import { InspectorShell, type InspectorTab } from "./components/Inspector";
 import { WorkspaceFiles, type FilesView } from "./components/WorkspaceFiles";
 import { TerminalPanel } from "./components/TerminalPanel";
-import { inspectorOpenForDiagnostics, type TerminalIntent } from "./setup-diag";
+import type { TerminalIntent } from "./setup-diag";
 import { AutomationsPage } from "./components/AutomationsPage";
 import { ExpertsPage } from "./components/ExpertsPage";
 import { SkillsPage } from "./components/SkillsPage";
@@ -2044,12 +2044,6 @@ export function App() {
     await refreshRuns();
   };
 
-  const openDiagnostics = () => {
-    if (!runId) return;
-    const next = inspectorOpenForDiagnostics();
-    openInspector(next.tab, next.intent);
-  };
-
   const loadOlder = () => {
     if (!runId || remaining <= 0 || loadingOlder || loadingTranscript) return;
     const before = nextBefore ?? messages[0]?.id;
@@ -2653,7 +2647,6 @@ export function App() {
                     activity={activity}
                     highlightId={highlightId}
                     onLoadOlder={loadOlder}
-                    onOpenDiagnostics={openDiagnostics}
                     onOpenArtifact={(name) => {
                       setArtifactFocus(name);
                       setFilesView("artifacts");

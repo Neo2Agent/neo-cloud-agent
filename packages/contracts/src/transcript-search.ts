@@ -4,7 +4,7 @@ export function searchTranscript(messages: TranscriptMessage[], query: string): 
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
   return messages.filter((item) => {
-    const hay = [item.text, item.kind, ...(item.tools ?? []).map((tool) => tool.name)].join("\n").toLowerCase();
+    const hay = [item.text, item.detail, item.kind, ...(item.tools ?? []).map((tool) => tool.name)].join("\n").toLowerCase();
     return hay.includes(needle);
   });
 }

@@ -111,6 +111,8 @@ export interface TranscriptMessage {
   followUpId?: string;
   actorUserId?: string;
   actorEmail?: string;
+  /** Setup log snippet (git stderr, install tail). Short Chinese line stays in `text`. */
+  detail?: string;
 }
 
 export interface TranscriptSnapshot {

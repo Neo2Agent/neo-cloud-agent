@@ -14,6 +14,7 @@ import {
   SUBAGENT_TOOL_NAME,
   type SubagentStep,
 } from "./subagent.js";
+import { toSetupTranscriptMessage } from "./setup-fail.js";
 
 const SETUP_PREFIXES = [
   "scm.",
@@ -693,27 +694,11 @@ function applyEventToState(state: BuildState, event: RunEvent): void {
     if (last && isSetupFailureMessage(last)) {
       return;
     }
-    state.messages.push({
-      id: event.id,
-      role: "setup",
-      text: event.detail ? `${event.title}：${event.detail}` : event.title,
-      createdAt: event.createdAt,
-      kind: event.kind,
-      level: event.level ?? "error",
-    });
+    state.messages.push(toSetupTranscriptMessage(event));
     return;
   }
   if (isSetupKind(event.kind)) {
-    state.messages.push({
-      id: event.id,
-      role: "setup",
-      text: event.detail ? `${event.title}：${event.detail}` : event.title,
-      createdAt: event.createdAt,
-      kind: event.kind,
-      level: event.level,
-      href: typeof event.data?.url === "string" ? event.data.url : undefined,
-      mediaType: typeof event.data?.contentType === "string" ? event.data.contentType : undefined,
-    });
+    state.messages.push(toSetupTranscriptMessage(event));
   }
 }
 

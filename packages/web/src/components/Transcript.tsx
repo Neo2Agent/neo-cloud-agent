@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
-import { latestSetupFailure, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { isSetupFailureMessage, latestSetupFailure, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { setupDiagToggleLabel, setupFailLogText, setupFailureTitle } from "@neo-cloud-agent/contracts/setup-fail";
 import { currentTurnMessages, liveAssistantId } from "@neo-cloud-agent/contracts/turn-state";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
@@ -40,7 +41,6 @@ type Props = {
   activity?: string;
   highlightId?: string | null;
   onLoadOlder: () => void;
-  onOpenDiagnostics?: () => void;
   onOpenArtifact?: (name: string) => void;
   onPickRecipe?: (recipe: Recipe) => void;
   /** Signed-in user; shared runs label everyone else's messages. */
@@ -380,29 +380,42 @@ function SetupFailBanner({
   message,
   highlight = false,
   sticky = false,
-  onOpenDiagnostics,
 }: {
   message: TranscriptMessage;
   highlight?: boolean;
   sticky?: boolean;
-  onOpenDiagnostics?: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const title = setupFailureTitle(message);
+  const logText = setupFailLogText(message);
+  const logId = `setup-fail-log-${message.id}`;
   return (
-    <p
+    <div
       id={`msg-${message.id}`}
-      className={sticky ? "setup err is-sticky" : "setup err"}
+      className={sticky ? "setup-fail is-sticky" : "setup-fail"}
       data-highlight={highlight ? "true" : undefined}
     >
-      <span>{message.text}</span>
-      {onOpenDiagnostics ? (
-        <button type="button" className="ghost diag-link" onClick={onOpenDiagnostics}>
-          查看诊断
+      <p className="setup err">
+        <span>{title}</span>
+        <button
+          type="button"
+          className="ghost diag-link"
+          aria-expanded={open}
+          aria-controls={logId}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {setupDiagToggleLabel(open)}
         </button>
+        <time className="bubble-time setup-time" dateTime={message.createdAt}>
+          {formatWhen(message.createdAt)}
+        </time>
+      </p>
+      {open ? (
+        <pre id={logId} className="setup-fail-log">
+          {logText}
+        </pre>
       ) : null}
-      <time className="bubble-time setup-time" dateTime={message.createdAt}>
-        {formatWhen(message.createdAt)}
-      </time>
-    </p>
+    </div>
   );
 }
 
@@ -430,7 +443,6 @@ export function Transcript({
   activity,
   highlightId,
   onLoadOlder,
-  onOpenDiagnostics,
   onOpenArtifact,
   onPickRecipe,
   viewer = {},
@@ -519,7 +531,7 @@ export function Transcript({
               return <ArtifactCard key={message.id} message={message} onOpen={onOpenArtifact} />;
             }
             if (message.role === "setup") {
-              const failed = message.level === "error" || String(message.kind).endsWith("_failed") || message.kind === "run.error";
+              const failed = isSetupFailureMessage(message);
               if (failed && stickyFail && message.id === stickyFail.id) {
                 return null;
               }
@@ -529,7 +541,6 @@ export function Transcript({
                     key={message.id}
                     message={message}
                     highlight={highlightId === message.id}
-                    onOpenDiagnostics={onOpenDiagnostics}
                   />
                 );
               }
@@ -615,7 +626,6 @@ export function Transcript({
             message={stickyFail}
             highlight={highlightId === stickyFail.id}
             sticky
-            onOpenDiagnostics={onOpenDiagnostics}
           />
         ) : null}
       </div>

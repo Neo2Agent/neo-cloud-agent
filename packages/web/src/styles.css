@@ -1811,7 +1811,8 @@ button.tool-file-more:hover {
   color: var(--err);
 }
 
-.setup.err.is-sticky {
+.setup.err.is-sticky,
+.setup-fail.is-sticky {
   position: sticky;
   bottom: 0;
   z-index: 5;
@@ -1819,6 +1820,31 @@ button.tool-file-more:hover {
   padding: 10px 12px;
   background: color-mix(in srgb, var(--err) 10%, #ffffff);
   border-top: 1px solid color-mix(in srgb, var(--err) 22%, var(--line));
+}
+
+.setup-fail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.setup-fail > .setup.err {
+  margin: 0;
+}
+
+.setup-fail-log {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--err) 6%, #ffffff);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .composer {

@@ -19,6 +19,16 @@ import {
   transcriptHasUnsettledWork,
   transcriptGroups,
 } from "./transcript.js";
+import {
+  SETUP_FAIL_DIAG_CLOSE_LABEL,
+  SETUP_FAIL_DIAG_OPEN_LABEL,
+  SETUP_FAIL_NO_LOG_TEXT,
+  SETUP_TITLE_DETAIL_SEP,
+  setupDiagToggleLabel,
+  setupFailLogText,
+  setupFailureDetail,
+  setupFailureTitle,
+} from "./setup-fail.js";
 
 function ev(partial: Partial<RunEvent> & Pick<RunEvent, "id" | "kind">): RunEvent {
   return {
@@ -253,6 +263,47 @@ test("scm.clone_failed plus run.error collapse to one setup row", () => {
   assert.equal(setup.at(-1)?.kind, "scm.clone_failed");
   assert.equal(latestSetupFailure(snapshot.messages)?.kind, "scm.clone_failed");
   assert.equal(isSetupFailureMessage(setup.at(-1)!), true);
+  const failed = setup.at(-1)!;
+  assert.equal(failed.text, "仓库克隆超时：my-working-party，已等待 60 秒。");
+  assert.equal(
+    failed.detail,
+    "git clone timed out after 60000ms: https://github.com/kaibairen/my-working-party.git",
+  );
+  assert.equal(setupFailureTitle(failed), failed.text);
+  assert.match(setupFailLogText(failed), /git clone timed out after 60000ms/);
+});
+
+test("setup failure title stays short and detail is the expandable log", () => {
+  const snapshot = buildTranscriptSnapshot("run-1", [
+    ev({
+      id: "c1",
+      kind: "scm.clone_failed",
+      level: "error",
+      title: "仓库克隆超时：app，已等待 180 秒。",
+      detail: "git clone timed out after 180000ms\nfatal: unable to access",
+    }),
+  ]);
+  const failed = snapshot.messages[0]!;
+  assert.equal(setupFailureTitle(failed), "仓库克隆超时：app，已等待 180 秒。");
+  assert.match(setupFailureDetail(failed), /fatal: unable to access/);
+  assert.doesNotMatch(setupFailureTitle(failed), /fatal:/);
+});
+
+test("legacy setup snapshots split title and detail on the glued mark", () => {
+  const title = "仓库克隆超时：app，已等待 60 秒。";
+  const message: TranscriptMessage = {
+    id: "legacy",
+    role: "setup",
+    text: `${title}${SETUP_TITLE_DETAIL_SEP}git clone timed out after 60000ms`,
+    createdAt: "2026-09-26T00:00:00.000Z",
+    kind: "scm.clone_failed",
+    level: "error",
+  };
+  assert.equal(setupFailureTitle(message), title);
+  assert.equal(setupFailureDetail(message), "git clone timed out after 60000ms");
+  assert.equal(setupFailLogText({ ...message, text: "克隆失败", detail: "  " }), SETUP_FAIL_NO_LOG_TEXT);
+  assert.equal(setupDiagToggleLabel(false), SETUP_FAIL_DIAG_OPEN_LABEL);
+  assert.equal(setupDiagToggleLabel(true), SETUP_FAIL_DIAG_CLOSE_LABEL);
 });
 
 test("one user turn is one reply bubble even when text and tools alternate", () => {

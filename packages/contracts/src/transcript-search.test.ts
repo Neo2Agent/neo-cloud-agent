@@ -16,6 +16,21 @@ test("searchTranscript matches text and skips empty queries", () => {
   );
 });
 
+test("searchTranscript matches setup failure detail", () => {
+  const failed: TranscriptMessage = {
+    id: "c1",
+    role: "setup",
+    text: "仓库克隆超时：app，已等待 180 秒。",
+    detail: "fatal: unable to access",
+    createdAt: "2026-09-26T00:00:00.000Z",
+    kind: "scm.clone_failed",
+  };
+  assert.deepEqual(
+    searchTranscript([failed], "unable to access").map((item) => item.id),
+    ["c1"],
+  );
+});
+
 test("userQuestions keeps only user turns", () => {
   const messages = [msg("1", "user", "一"), msg("2", "assistant", "二"), msg("3", "setup", "三")];
   assert.deepEqual(

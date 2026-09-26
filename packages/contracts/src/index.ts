@@ -193,6 +193,18 @@ export {
   transcriptBlocks,
   transcriptGroups,
 } from "./transcript.js";
+export {
+  SETUP_FAIL_DIAG_CLOSE_LABEL,
+  SETUP_FAIL_DIAG_OPEN_LABEL,
+  SETUP_FAIL_NO_LOG_TEXT,
+  SETUP_LEGACY_TITLE_DETAIL_MARK,
+  SETUP_TITLE_DETAIL_SEP,
+  setupDiagToggleLabel,
+  setupFailLogText,
+  setupFailureDetail,
+  setupFailureTitle,
+  toSetupTranscriptMessage,
+} from "./setup-fail.js";
 export type { ConversationTurn } from "./conversation-replay.js";
 export {
   conversationReplayFromMessages,
