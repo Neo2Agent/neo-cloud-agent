@@ -1,10 +1,4 @@
-export type TerminalIntent = "setup" | "shell";
-
-/** Interactive PTY only when the user opened the terminal themselves. */
-export function shouldAutoOpenPty(intent: TerminalIntent): boolean {
-  return intent === "shell";
-}
-
+/** Map workspace-missing PTY errors to a Chinese line. */
 export function workspaceNotReadyMessage(error: unknown): string {
   const text = error instanceof Error ? error.message : "";
   if (!text || /not found|ENOENT|workspace|工作区|prepare|sandbox|还没/i.test(text)) {

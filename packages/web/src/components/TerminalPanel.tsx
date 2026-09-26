@@ -15,7 +15,7 @@ import {
   writeWorkspaceTerm,
   type WorkspaceTermInfo,
 } from "../workspace-term.js";
-import { shouldAutoOpenPty, workspaceNotReadyMessage, type TerminalIntent } from "../setup-diag.js";
+import { workspaceNotReadyMessage } from "../setup-diag.js";
 
 type Log = { name: string; content?: string };
 
@@ -34,17 +34,16 @@ type Props = {
   setupLoading: boolean;
   setupError: string;
   setupLogs: Log[];
-  intent?: TerminalIntent;
 };
 
-export function TerminalPanel({ token, runId, setupLoading, setupError, setupLogs, intent = "shell" }: Props) {
+export function TerminalPanel({ token, runId, setupLoading, setupError, setupLogs }: Props) {
   const [sessions, setSessions] = useState<SessionState[]>([]);
   const [activeId, setActiveId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [focused, setFocused] = useState(false);
-  const [showSetup, setShowSetup] = useState(intent === "setup");
+  const [showSetup, setShowSetup] = useState(false);
   const menuRef = useRef<HTMLDetailsElement>(null);
   const outRef = useRef<HTMLDivElement | null>(null);
   const ghostRef = useRef<HTMLTextAreaElement | null>(null);
@@ -177,16 +176,16 @@ export function TerminalPanel({ token, runId, setupLoading, setupError, setupLog
   }, [runId, token]);
 
   useEffect(() => {
-    setShowSetup(intent === "setup");
-  }, [intent, runId]);
+    setShowSetup(false);
+  }, [runId]);
 
   useEffect(() => {
-    if (!shouldAutoOpenPty(intent) || !runId || attempted || sessions.length > 0) {
+    if (!runId || attempted || sessions.length > 0) {
       return;
     }
     setAttempted(true);
     void ensure();
-  }, [attempted, ensure, intent, runId, sessions.length]);
+  }, [attempted, ensure, runId, sessions.length]);
 
   useEffect(() => {
     if (outRef.current) {
@@ -296,7 +295,7 @@ export function TerminalPanel({ token, runId, setupLoading, setupError, setupLog
   );
 
   return (
-    <section className="terminal-panel" id="run-terminal" data-intent={intent} data-show-setup={showSetup ? "true" : "false"}>
+    <section className="terminal-panel" id="run-terminal" data-show-setup={showSetup ? "true" : "false"}>
       {menu}
       {error ? <p className="setup err">{error}</p> : null}
       {showSetup ? (
