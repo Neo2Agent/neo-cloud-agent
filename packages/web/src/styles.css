@@ -1811,17 +1811,6 @@ button.tool-file-more:hover {
   color: var(--err);
 }
 
-.setup.err.is-sticky,
-.setup-fail.is-sticky {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  margin: 8px -12px 0;
-  padding: 10px 12px;
-  background: color-mix(in srgb, var(--err) 10%, #ffffff);
-  border-top: 1px solid color-mix(in srgb, var(--err) 22%, var(--line));
-}
-
 .setup-fail {
   display: flex;
   flex-direction: column;

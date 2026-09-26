@@ -56,8 +56,7 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /\.run-mark\s*\{[^}]*width:\s*16px/);
   assert.match(css, /\.pulse-dot\s*\{[^}]*animation:\s*pulse-dot/);
   assert.match(css, /\.term-shell\s*\{/);
-  assert.match(css, /\.setup\.err\.is-sticky,\s*\n\.setup-fail\.is-sticky\s*\{[^}]*position:\s*sticky/);
-  assert.match(css, /\.setup\.err\.is-sticky,\s*\n\.setup-fail\.is-sticky\s*\{[^}]*bottom:\s*0/);
+  assert.doesNotMatch(css, /\.setup-fail\.is-sticky/);
   assert.match(css, /\.setup-fail-log\s*\{[^}]*max-height:\s*220px/);
   assert.match(css, /\.setup-fail-log\s*\{[^}]*white-space:\s*pre-wrap/);
   assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);

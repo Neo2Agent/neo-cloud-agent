@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
-import { isSetupFailureMessage, latestSetupFailure, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { isSetupFailureMessage, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import { setupDiagToggleLabel, setupFailLogText, setupFailureTitle } from "@neo-cloud-agent/contracts/setup-fail";
 import { currentTurnMessages, liveAssistantId } from "@neo-cloud-agent/contracts/turn-state";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
@@ -379,11 +379,9 @@ function WorkFold({ message, live }: { message: TranscriptMessage; live: boolean
 function SetupFailBanner({
   message,
   highlight = false,
-  sticky = false,
 }: {
   message: TranscriptMessage;
   highlight?: boolean;
-  sticky?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const title = setupFailureTitle(message);
@@ -392,7 +390,7 @@ function SetupFailBanner({
   return (
     <div
       id={`msg-${message.id}`}
-      className={sticky ? "setup-fail is-sticky" : "setup-fail"}
+      className="setup-fail"
       data-highlight={highlight ? "true" : undefined}
     >
       <p className="setup err">
@@ -451,7 +449,6 @@ export function Transcript({
   const stick = useRef(true);
   const restore = useRef<{ height: number; top: number } | null>(null);
   const liveId = liveAssistantId(messages, busy);
-  const stickyFail = latestSetupFailure(messages);
 
   useLayoutEffect(() => {
     const node = scroller.current;
@@ -531,11 +528,7 @@ export function Transcript({
               return <ArtifactCard key={message.id} message={message} onOpen={onOpenArtifact} />;
             }
             if (message.role === "setup") {
-              const failed = isSetupFailureMessage(message);
-              if (failed && stickyFail && message.id === stickyFail.id) {
-                return null;
-              }
-              if (failed) {
+              if (isSetupFailureMessage(message)) {
                 return (
                   <SetupFailBanner
                     key={message.id}
@@ -619,14 +612,6 @@ export function Transcript({
             <span>{activity || "正在思考…"}</span>
             <IconSpinner size={12} />
           </div>
-        ) : null}
-        {stickyFail ? (
-          <SetupFailBanner
-            key={`sticky-${stickyFail.id}`}
-            message={stickyFail}
-            highlight={highlightId === stickyFail.id}
-            sticky
-          />
         ) : null}
       </div>
     </section>
