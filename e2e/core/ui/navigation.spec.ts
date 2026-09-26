@@ -116,8 +116,11 @@ test.describe("catalog and session chrome", () => {
 
     await officeFolder.locator("> .run-folder-head").hover();
     await officeFolder.getByRole("button", { name: `在「${officeProject.name}」里开对话` }).click();
-    await expect(page.locator("#project-chip")).toContainText(`将在项目「${officeProject.name}」中开对话`);
-    await expect(page.getByRole("button", { name: "不用项目" })).toBeVisible();
+    await expect(page.locator("#composer")).toBeVisible();
+    await expect(page.locator("#project-chip")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "不用项目" })).toHaveCount(0);
+    await expect(page.getByText("将在项目")).toHaveCount(0);
+    await page.screenshot({ path: "/opt/cursor/artifacts/project-new-chat-no-chip.png", fullPage: true });
 
     await officeFolder.locator("> .run-folder-head").click();
     await expect(officeFolder.locator(`[data-id="${office.id}"]`)).toBeHidden();
