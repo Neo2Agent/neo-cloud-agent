@@ -90,7 +90,6 @@ import { writeRecalledMemory } from "../memory/inject.js";
 import { persistRunWorkspace } from "../runtime/persist-workspace.js";
 import { reconcileOrphanVmSlots, vmWorkspaceFor } from "../runtime/vm-slots.js";
 import {
-  loadWorkspaceMeta,
   markWorkspacePresent,
   reclaimPersistedWorkspaces,
   workspaceReclaimIntervalMs,
@@ -118,7 +117,14 @@ import {
   type GithubFetch,
   type GithubMergeMethod,
 } from "../scm/pull-status.js";
-import { formatCloneFailedTitle, materializeRepos, measureWorkspaceBytes, repoName } from "../scm/workspace.js";
+import {
+  formatCloneFailedTitle,
+  materializeRepos,
+  measureWorkspaceBytes,
+  repoName,
+  resetUnboundRepoDests,
+  workspaceMatchesBoundRepos,
+} from "../scm/workspace.js";
 import { controlPlaneSecrets, rememberSecret } from "../security/secrets.js";
 import {
   backfillPersistedEventImages,
@@ -203,6 +209,9 @@ const RUN_COMMITS_MAX = 50;
 const WORKER_LEASE_WATCH_MS = 2_000;
 const WORKER_HEARTBEAT_TIMEOUT_MS_DEFAULT = 20_000;
 const SETUP_PROGRESS_INTERVAL_MS = 5_000;
+const WORKSPACE_PREPARE_TITLE = "Preparing workspace";
+const WORKSPACE_READY_TITLE = "Workspace ready";
+const WORKSPACE_PREPARE_FAILED = "workspace prepare failed";
 /** This process is still cloning or installing; not a dead worker. */
 const preparing = new Set<string>();
 let startingQueued = false;
@@ -1435,7 +1444,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
         flushRun(run.id);
       } else {
         publish(
-          event(run.id, "scm.clone_started", "Preparing workspace", {
+          event(run.id, "scm.clone_started", WORKSPACE_PREPARE_TITLE, {
             data: { repoUrls: run.repoUrls },
           }),
         );
@@ -1447,7 +1456,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
           },
         });
         publish(
-          event(run.id, "scm.clone_succeeded", "Workspace ready", {
+          event(run.id, "scm.clone_succeeded", WORKSPACE_READY_TITLE, {
             data: {
               dests: placed.map((item) => ({ name: item.ref.name, kind: item.ref.kind, source: item.ref.raw })),
             },
@@ -1458,7 +1467,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
       rememberEgress(run, workspaceFor(run.id));
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "workspace prepare failed";
+    const message = error instanceof Error ? error.message : WORKSPACE_PREPARE_FAILED;
     failRun(run, message, "scm.clone_failed", formatCloneFailedTitle(message, run.repoUrls));
     return run;
   }
@@ -1606,6 +1615,57 @@ async function startPendingLoopTurn(run: Run): Promise<void> {
   }
 }
 
+/** Checkout the bound repos before attaching a worker. Fail closed — no empty slot. */
+async function ensureBoundWorkspace(run: Run): Promise<boolean> {
+  if (run.repoUrls.length === 0) {
+    return true;
+  }
+  const workspaceDir = hostWorkspaceFor(run.id);
+  const root = repoRoot();
+  if (await workspaceMatchesBoundRepos(workspaceDir, run.repoUrls, root)) {
+    return true;
+  }
+
+  preparing.add(run.id);
+  if (run.status === "IDLE" || run.status === "ERROR") {
+    run.status = "PROVISIONING";
+    run.updatedAt = now();
+    flushRun(run.id);
+  }
+
+  try {
+    await resetUnboundRepoDests(workspaceDir, run.repoUrls, root);
+    publish(
+      event(run.id, "scm.clone_started", WORKSPACE_PREPARE_TITLE, {
+        data: { repoUrls: run.repoUrls },
+      }),
+    );
+    const placed = await materializeRepos(run.repoUrls, workspaceDir, root, {
+      token: (await resolveScmPushToken(run.userId).catch(() => null)) ?? undefined,
+      onProgress: () => {
+        run.updatedAt = now();
+        flushRun(run.id);
+      },
+    });
+    markWorkspacePresent(run.id, measureWorkspaceBytes(workspaceDir));
+    publish(
+      event(run.id, "scm.clone_succeeded", WORKSPACE_READY_TITLE, {
+        data: {
+          dests: placed.map((item) => ({ name: item.ref.name, kind: item.ref.kind, source: item.ref.raw })),
+        },
+      }),
+    );
+    flushRun(run.id);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : WORKSPACE_PREPARE_FAILED;
+    failRun(run, message, "scm.clone_failed", formatCloneFailedTitle(message, run.repoUrls));
+    return false;
+  } finally {
+    preparing.delete(run.id);
+  }
+}
+
 export async function resumeRun(runId: string): Promise<Run> {
   const run = requireRun(runId);
   if (isWorkerAttached(runId)) {
@@ -1618,22 +1678,9 @@ export async function resumeRun(runId: string): Promise<Run> {
     dispatchToDesk(run);
     return run;
   }
-  if (loadWorkspaceMeta(runId)?.state === "evicted" && run.repoUrls.length > 0) {
-    try {
-      await materializeRepos(run.repoUrls, hostWorkspaceFor(runId), repoRoot(), {
-        token: (await resolveScmPushToken(run.userId).catch(() => null)) ?? undefined,
-      });
-      markWorkspacePresent(runId, measureWorkspaceBytes(hostWorkspaceFor(runId)));
-      publish(event(runId, "workspace.restored", "Workspace restored from repo after reclaim"));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "workspace restore failed";
-      publish(
-        event(runId, "workspace.persist_failed", "Failed to restore workspace from repo", {
-          level: "warn",
-          data: { error: message },
-        }),
-      );
-    }
+  const bound = await ensureBoundWorkspace(run);
+  if (!bound) {
+    return requireRun(runId);
   }
   restoreSessionToDir(runId, path.join(workspaceFor(runId), "sessions"));
   run.status = "PROVISIONING";
@@ -2314,6 +2361,12 @@ export async function enqueueFollowUp(
   );
   flushRun(runId);
   if (!isWorkerAttached(runId)) {
+    if (run.status === "ERROR" && isSetupFailureMessage(run.errorMessage)) {
+      const bound = await ensureBoundWorkspace(run);
+      if (!bound) {
+        return item;
+      }
+    }
     try {
       await resumeRun(runId);
     } catch {

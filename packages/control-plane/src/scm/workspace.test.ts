@@ -23,8 +23,10 @@ import {
   persistDurableWorkspace,
   persistWorkspaceTree,
   repoName,
+  resetUnboundRepoDests,
   resolveRepoRef,
   skipCopy,
+  workspaceMatchesBoundRepos,
 } from "./workspace.js";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
@@ -141,6 +143,35 @@ test("materializeRepos clones into a dest that already has Neo overlay", async (
     assert.equal(readFileSync(path.join(dest, "hello.txt"), "utf8").includes("toy repo"), true);
   } finally {
     remote.cleanup();
+    rmSync(dest, { recursive: true, force: true });
+  }
+});
+
+test("workspaceMatchesBoundRepos checks origin for remotes and files for local", async () => {
+  const dest = mkdtempSync(path.join(tmpdir(), "neo-ws-match-"));
+  try {
+    assert.equal(await workspaceMatchesBoundRepos(dest, [], root), true);
+    assert.equal(await workspaceMatchesBoundRepos(dest, ["fixtures/toy-repo"], root), false);
+    await materializeRepos(["fixtures/toy-repo"], dest, root);
+    assert.equal(await workspaceMatchesBoundRepos(dest, ["fixtures/toy-repo"], root), true);
+
+    const remote = await fileRemoteFromToy();
+    const remoteDest = mkdtempSync(path.join(tmpdir(), "neo-ws-origin-"));
+    try {
+      rmSync(remoteDest, { recursive: true, force: true });
+      await gitClone(remote.url, remoteDest);
+      assert.equal(await workspaceMatchesBoundRepos(remoteDest, [remote.url], root), true);
+      assert.equal(
+        await workspaceMatchesBoundRepos(remoteDest, ["https://github.com/acme/other.git"], root),
+        false,
+      );
+      await resetUnboundRepoDests(remoteDest, ["https://github.com/acme/other.git"], root);
+      assert.equal(existsSync(path.join(remoteDest, ".git")), false);
+    } finally {
+      remote.cleanup();
+      rmSync(remoteDest, { recursive: true, force: true });
+    }
+  } finally {
     rmSync(dest, { recursive: true, force: true });
   }
 });

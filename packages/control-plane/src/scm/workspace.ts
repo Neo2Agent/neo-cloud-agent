@@ -199,6 +199,61 @@ async function originMatches(dest: string, url: string): Promise<boolean> {
   }
 }
 
+function destForBoundRepo(workspaceDir: string, refs: RepoRef[], ref: RepoRef): string {
+  return refs.length === 1 ? workspaceDir : path.join(workspaceDir, ref.name);
+}
+
+async function destMatchesBoundRepo(dest: string, ref: RepoRef): Promise<boolean> {
+  if (!existsSync(dest) || !statSync(dest).isDirectory()) {
+    return false;
+  }
+  if (isNeoOverlayOnly(dest)) {
+    return false;
+  }
+  if (ref.kind === "remote") {
+    return originMatches(dest, ref.source);
+  }
+  return readdirSync(dest).some((name) => name !== ".neo");
+}
+
+/** True when every bound repo is already checked out at dest. */
+export async function workspaceMatchesBoundRepos(
+  workspaceDir: string,
+  repoUrls: string[],
+  root: string,
+): Promise<boolean> {
+  if (repoUrls.length === 0) {
+    return true;
+  }
+  const refs = repoUrls.map((item) => resolveRepoRef(item, root));
+  for (const ref of refs) {
+    const dest = destForBoundRepo(workspaceDir, refs, ref);
+    if (!(await destMatchesBoundRepo(dest, ref))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Drop leftover dests that are not the bound repo so rematerialize can clone. */
+export async function resetUnboundRepoDests(
+  workspaceDir: string,
+  repoUrls: string[],
+  root: string,
+): Promise<void> {
+  if (repoUrls.length === 0) {
+    return;
+  }
+  const refs = repoUrls.map((item) => resolveRepoRef(item, root));
+  for (const ref of refs) {
+    const dest = destForBoundRepo(workspaceDir, refs, ref);
+    if (await destMatchesBoundRepo(dest, ref)) {
+      continue;
+    }
+    resetFailedCloneDest(dest);
+  }
+}
+
 async function cloneIntoEmpty(
   url: string,
   dest: string,

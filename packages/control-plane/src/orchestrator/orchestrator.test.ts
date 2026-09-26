@@ -701,6 +701,75 @@ test("cloud createRun drops a missing host folder instead of failing prepare", a
   assert.deepEqual(run.repoUrls, []);
 });
 
+test("follow-up after clone fail rematerializes before attaching a worker", async () => {
+  const run = await createRun({
+    prompt: "clone then retry",
+    repoUrls: ["fixtures/does-not-exist"],
+  });
+  assert.equal(run.status, "ERROR");
+  assert.equal(isWorkerAttached(run.id), false);
+  const firstFails = listEvents(run.id).filter((item) => item.kind === "scm.clone_failed");
+  assert.equal(firstFails.length, 1);
+
+  const live = getRun(run.id);
+  assert.ok(live);
+  live.repoUrls = ["fixtures/toy-repo"];
+  const follow = await enqueueFollowUp(run.id, { text: "try again with the bound repo" });
+  assert.equal(follow.text, "try again with the bound repo");
+  const resumed = getRun(run.id);
+  assert.ok(resumed);
+  assert.notEqual(resumed.status, "ERROR");
+  assert.equal(isWorkerAttached(run.id), true);
+  assert.equal(existsSync(path.join(getBootstrap(run.id).workspaceDir, "hello.txt")), true);
+  assert.ok(listEvents(run.id).filter((item) => item.kind === "scm.clone_started").length >= 2);
+  assert.ok(listEvents(run.id).some((item) => item.kind === "scm.clone_succeeded"));
+});
+
+test("follow-up after clone fail stays ERROR when rematerialize still fails", async () => {
+  const run = await createRun({
+    prompt: "clone stays broken",
+    repoUrls: ["fixtures/does-not-exist"],
+  });
+  assert.equal(run.status, "ERROR");
+  assert.equal(isWorkerAttached(run.id), false);
+  await enqueueFollowUp(run.id, { text: "retry the same missing folder" });
+  const after = getRun(run.id);
+  assert.ok(after);
+  assert.equal(after.status, "ERROR");
+  assert.equal(isWorkerAttached(run.id), false);
+  assert.ok(after.workerHandle == null);
+  const failed = listEvents(run.id).filter((item) => item.kind === "scm.clone_failed");
+  assert.ok(failed.length >= 2);
+  assert.equal(isWaitingForCloudVm(after), false);
+});
+
+test("follow-up skips rematerialize when dest origin already matches", async () => {
+  const run = await createRun({
+    prompt: "already bound",
+    repoUrls: ["fixtures/toy-repo"],
+  });
+  assert.equal(run.status, "RUNNING");
+  takeInbound(run.id);
+  ingestEvents(run.id, [
+    {
+      id: "agent-end-bound",
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+      category: "agent_run",
+      level: "info",
+      kind: "agent.end",
+      title: "done",
+    },
+  ]);
+  assert.equal(getRun(run.id)?.status, "IDLE");
+  const startedBefore = listEvents(run.id).filter((item) => item.kind === "scm.clone_started").length;
+  await enqueueFollowUp(run.id, { text: "continue on the same repo" });
+  assert.notEqual(getRun(run.id)?.status, "ERROR");
+  assert.equal(isWorkerAttached(run.id), true);
+  assert.equal(listEvents(run.id).filter((item) => item.kind === "scm.clone_started").length, startedBefore);
+  assert.equal(listEvents(run.id).some((item) => item.kind === "scm.clone_failed"), false);
+});
+
 test("createRun fails when the local repo path does not exist", async () => {
   const run = await createRun({
     prompt: "nope",
