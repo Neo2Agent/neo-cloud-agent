@@ -136,6 +136,10 @@ export const GIT_CLONE_MAX_ATTEMPTS = 2;
 const GIT_CLONE_STDERR_TAIL = 400;
 const MS_PER_SECOND = 1000;
 const GIT_CLONE_KILL_GRACE_MS = 200;
+/** GitHub from Beijing often resets HTTP/2 mid-pack. Force HTTP/1.1. */
+export const GIT_CLONE_HTTP_VERSION = "HTTP/1.1";
+const TRANSIENT_CLONE_ERROR =
+  /Failure when receiving data from the peer|GnuTLS recv error|TLS connection|Couldn't connect to server|Connection reset|Empty reply from server|HTTP\/2 stream/i;
 
 export function gitCloneTimeoutMs(): number {
   const raw = Number(process.env.NEO_GIT_CLONE_TIMEOUT_MS);
@@ -155,7 +159,19 @@ export function formatCloneFailedTitle(message: string, repoUrls: string[]): str
     const seconds = Math.max(1, Math.round(Number(timeout[1]) / MS_PER_SECOND));
     return `仓库克隆超时：${repo}，已等待 ${seconds} 秒。`;
   }
+  if (isTransientGitCloneError(message)) {
+    return `仓库克隆中断：${repo}，GitHub 连接被重置，请重试。`;
+  }
   return `仓库准备失败：${repo}`;
+}
+
+/** TLS / peer-reset failures that are worth a second clone attempt. */
+export function isTransientGitCloneError(message: string): boolean {
+  return TRANSIENT_CLONE_ERROR.test(message);
+}
+
+export function gitCloneArgs(url: string, dest: string): string[] {
+  return ["-c", `http.version=${GIT_CLONE_HTTP_VERSION}`, "clone", "--depth", "1", url, dest];
 }
 
 export function isNeoOverlayOnly(dest: string): boolean {
@@ -199,7 +215,7 @@ async function cloneIntoEmpty(
 
   const run = (env?: NodeJS.ProcessEnv) =>
     new Promise<void>((resolve, reject) => {
-      const child = spawn("git", ["clone", "--depth", "1", url, dest], {
+      const child = spawn("git", gitCloneArgs(url, dest), {
         stdio: ["ignore", "pipe", "pipe"],
         env: env ? { ...process.env, ...env } : undefined,
       });

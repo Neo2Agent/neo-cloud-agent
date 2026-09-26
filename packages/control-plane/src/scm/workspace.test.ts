@@ -10,8 +10,11 @@ import {
   CLONE_DEST_BUSY,
   formatCloneFailedTitle,
   formatGitCloneTimeoutError,
+  gitCloneArgs,
+  GIT_CLONE_HTTP_VERSION,
   GIT_CLONE_MAX_ATTEMPTS,
   GIT_CLONE_TIMEOUT_MS,
+  isTransientGitCloneError,
   copyTreeAll,
   gitClone,
   gitCloneTimeoutMs,
@@ -178,6 +181,25 @@ test("clone timeout errors name the repo, budget, and stderr", () => {
   assert.match(error.message, /github.com\/acme\/app/);
   assert.match(error.message, /unable to access/);
   assert.equal(formatCloneFailedTitle(error.message, ["https://github.com/acme/app.git"]), "仓库克隆超时：app，已等待 180 秒。");
+});
+
+test("transient GitHub peer resets get a retry title and HTTP/1.1 clone args", () => {
+  assert.equal(isTransientGitCloneError("fatal: Failure when receiving data from the peer"), true);
+  assert.equal(isTransientGitCloneError("GnuTLS recv error (-110): The TLS connection was non-properly terminated."), true);
+  assert.equal(isTransientGitCloneError("permission denied"), false);
+  assert.equal(
+    formatCloneFailedTitle("fatal: Failure when receiving data from the peer", ["https://github.com/kaibairen/my-working-party.git"]),
+    "仓库克隆中断：my-working-party，GitHub 连接被重置，请重试。",
+  );
+  assert.deepEqual(gitCloneArgs("https://github.com/acme/app.git", "/tmp/app"), [
+    "-c",
+    `http.version=${GIT_CLONE_HTTP_VERSION}`,
+    "clone",
+    "--depth",
+    "1",
+    "https://github.com/acme/app.git",
+    "/tmp/app",
+  ]);
 });
 
 test("gitClone retries a hung remote once before timing out", async () => {
