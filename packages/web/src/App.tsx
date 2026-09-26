@@ -2361,8 +2361,6 @@ export function App() {
                               experts.find((item) => item.id === expertPick.expertId)?.name ||
                               "已选"
                             }`
-                          : activeProject
-                          ? `项目 · ${activeProject.name}`
                           : "新对话"}
                 </p>
                 <h1 id="run-title">
@@ -2388,8 +2386,6 @@ export function App() {
                               experts.find((item) => item.id === expertPick.expertId)?.name ||
                               "专家"
                             }」开对话`
-                          : activeProject
-                          ? `在「${activeProject.name}」里开对话`
                           : "和云端 Agent 说话"}
                 </h1>
               </div>
@@ -2653,13 +2649,8 @@ export function App() {
               </ChatErrorBoundary>
             )}
           </div>
-          {mainTab === "chat" && ((!runId && activeProject) || expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
+          {mainTab === "chat" && (expertPick.expertId || expertPick.expertTeamId || pluginPick) ? (
             <div className="proj-chip-bar" id="project-chip">
-              {!runId && activeProject ? (
-                <span className="proj-chip">
-                  {`将在项目「${activeProject.name}」中开对话`}
-                </span>
-              ) : null}
               {expertPick.expertTeamId || expertPick.expertId ? (
                 <span className="proj-chip">
                   {expertPick.expertTeamId
@@ -2669,11 +2660,6 @@ export function App() {
               ) : null}
               {pluginPick ? (
                 <span className="proj-chip">技能 · {pluginPickerLabel(pluginPick)}</span>
-              ) : null}
-              {!runId && activeProject ? (
-                <button type="button" className="ghost" onClick={() => setActiveProject(null)}>
-                  不用项目
-                </button>
               ) : null}
               {!runId && (expertPick.expertId || expertPick.expertTeamId) ? (
                 <button type="button" className="ghost" onClick={() => setExpertPick({})}>
