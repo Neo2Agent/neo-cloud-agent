@@ -33,9 +33,9 @@ function withWindow(neoDesk: unknown, run: () => void): void {
   }
 }
 
-test("packaged Desk keeps /v1 on the renderer origin", () => {
+test("packaged Desk keeps /v1 on the renderer origin and marks client=desk", () => {
   withWindow({ proxyApi: true, apiBase: "https://neorun.cloud" }, () => {
-    assert.equal(withApiBase("/v1/runs"), "/v1/runs");
+    assert.equal(withApiBase("/v1/runs"), "/v1/runs?client=desk");
   });
 });
 

@@ -261,7 +261,7 @@ export function targetPickerOptions(input: { canRunLocal: boolean; remoteAvailab
     {
       value: TARGET_REMOTE,
       label: input.remoteAvailable ? "Remote Control" : "Remote Control（neo-loop 未就绪）",
-      disabled: !input.remoteAvailable,
+      ...(input.remoteAvailable ? {} : { disabled: true }),
     },
   ];
 }
