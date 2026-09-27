@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
-import { CHAT_MODELS, chatModelLabel, resolveChatModel } from "../format";
+import { CHAT_MODELS, chatModelShort, resolveChatModel } from "../format";
 import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
 import { MicIcon, PhotoIcon, SendIcon } from "./composer-icons";
@@ -29,6 +29,7 @@ type Props = {
   onStop?: () => void;
   usageLabel?: string;
   repo?: string;
+  branch?: string;
   repos?: Array<{ fullName: string; url: string }>;
   repoLocked?: boolean;
   onRepo?: (url: string) => void;
@@ -246,18 +247,15 @@ export function Composer(props: Props) {
                 </View>
               ) : null}
               <Pressable onPress={() => setMenuOpen((open) => !open)} style={styles.modelChip} accessibilityLabel="选择模型">
-                <Text style={styles.model}>{chatModelLabel(props.model)} ▴</Text>
+                <Text style={styles.model}>{chatModelShort(props.model)} ▴</Text>
               </Pressable>
             </View>
+            {props.branch ? <Text style={styles.branchLock} numberOfLines={1}>{props.branch}</Text> : null}
           </View>
           <View style={styles.sendGroup}>
-            {props.usageLabel ? (
-              <View style={styles.usageChip} accessibilityLabel="上下文用量">
-                <Text style={styles.usageText}>{props.usageLabel}</Text>
-              </View>
-            ) : null}
+            {!props.locked ? (
             <Pressable
-              disabled={props.locked || props.sending}
+              disabled={props.sending}
               onPressIn={() => void beginHold()}
               onPressOut={() => void endHold()}
               style={[styles.mic, listening ? styles.micOn : null]}
@@ -265,6 +263,7 @@ export function Composer(props: Props) {
             >
               <MicIcon color={listening ? colors.cream : props.locked || props.sending ? colors.muted : colors.ink} />
             </Pressable>
+            ) : null}
             {props.canStop && props.onQueue && canSend && !props.locked ? (
               <Pressable onPress={props.onQueue} style={styles.send} accessibilityLabel="排队发送">
                 <SendIcon color={colors.cream} />
@@ -352,8 +351,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     elevation: 6,
   },
-  modelChip: { backgroundColor: colors.hover, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  modelChip: { backgroundColor: colors.hover, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   model: { color: colors.ink, fontWeight: "600", fontSize: 13 },
+  branchLock: { color: colors.muted, fontSize: 13, maxWidth: 96 },
   option: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
   optionOn: { backgroundColor: colors.hover },
   steer: { borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 10, paddingVertical: 6 },

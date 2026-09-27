@@ -5,7 +5,7 @@ import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-us
 import { composerKeyAction } from "@neo-cloud-agent/contracts/composer-keys";
 import { ContextUsageControl } from "@neo-cloud-agent/ui";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
-import { CHAT_MODELS, chatModelLabel, resolveChatModel, runListTitle } from "../format";
+import { CHAT_MODELS, chatModelShort, resolveChatModel, runListTitle } from "../format";
 import { dayGreeting } from "../island-theme";
 import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
@@ -315,6 +315,7 @@ export function IslandComposer(props: {
   onStop?: () => void;
   contextUsage?: ContextUsageSnapshot | null;
   repo?: string;
+  branch?: string;
   repos?: Array<{ fullName: string; url: string }>;
   repoLocked?: boolean;
   onRepo?: (url: string) => void;
@@ -516,6 +517,8 @@ export function IslandComposer(props: {
                   ))}
                 </select>
               </label>
+            ) : props.branch ? (
+              <span className="composer-repo-lock">{props.branch}</span>
             ) : props.repo && /^(https?:\/\/|git@|github\.com\/)/i.test(props.repo) ? (
               <span className="composer-repo-lock">{props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/")}</span>
             ) : null}
@@ -551,7 +554,7 @@ export function IslandComposer(props: {
                 aria-label="选择模型"
                 onClick={() => setMenuOpen((open) => !open)}
               >
-                {chatModelLabel(props.model)}
+                {chatModelShort(props.model)}
                 <span aria-hidden="true">▴</span>
               </button>
               {menuOpen ? (
@@ -576,19 +579,20 @@ export function IslandComposer(props: {
             </div>
           </div>
           <div className="composer-send-group buddy-composer-bar-end">
-            {props.contextUsage ? (
+            {props.contextUsage && !props.locked ? (
               <ContextUsageControl
                 usage={props.contextUsage}
                 open={usageOpen}
                 onToggle={() => setUsageOpen((open) => !open)}
               />
             ) : null}
+            {!props.locked ? (
             <button
               type="button"
               className={listening ? "composer-mic is-on" : "composer-mic"}
               aria-label={listening ? "松手出字" : "按住说话"}
               aria-pressed={listening}
-              disabled={props.locked || props.sending}
+              disabled={props.sending}
               title={listening ? "松手出字" : "按住说话"}
               onPointerDown={(event) => {
                 if (event.button !== 0) return;
@@ -606,6 +610,7 @@ export function IslandComposer(props: {
                 />
               </svg>
             </button>
+            ) : null}
             {props.canStop && props.onQueue && canSend && !props.locked ? (
               <button type="button" className="composer-send" aria-label="排队发送" title="这轮结束后再发" onClick={props.onQueue}>
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">

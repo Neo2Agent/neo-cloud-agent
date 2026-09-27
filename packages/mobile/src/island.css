@@ -220,19 +220,22 @@ button:disabled { opacity: 0.4; cursor: default; }
 .remote-offline-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 10px;
   width: auto;
   margin: 0 12px 8px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow);
+  flex: none;
   flex-shrink: 0;
 }
 
 .remote-offline-copy {
   min-width: 0;
+  flex: none;
 }
 
 .remote-offline-card h2,
@@ -417,6 +420,29 @@ button:disabled { opacity: 0.4; cursor: default; }
   padding: 4px 10px;
   border-radius: 999px;
   background: var(--hover);
+  max-width: 12ch;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app.is-buddy .composer-model {
+  max-width: 10ch;
+  font-weight: 650;
+  padding: 4px 8px;
+}
+
+.app.is-buddy .composer-pickers {
+  gap: 2px;
+  overflow: hidden;
+}
+
+.app.is-buddy .composer-send-group {
+  gap: 4px;
+  flex: none;
+}
+
+.app.is-buddy .context-usage-chip {
+  display: none;
 }
 
 .composer-model-menu {

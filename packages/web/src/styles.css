@@ -6115,6 +6115,12 @@ button.composer-mic.is-listening,
     max-width: none;
     margin: 0 8px 8px;
     flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+
+  .remote-offline-copy {
+    flex: none;
   }
 
   .remote-offline-actions {
@@ -7728,6 +7734,15 @@ html.is-narrow,
 
 .app.is-buddy .buddy-home {
   height: 100%;
+}
+
+.app.is-buddy .remote-offline-card {
+  justify-content: flex-start;
+  align-items: stretch;
+}
+
+.app.is-buddy .remote-offline-copy {
+  flex: none;
 }
 
 .app.is-buddy .composer.buddy-composer {

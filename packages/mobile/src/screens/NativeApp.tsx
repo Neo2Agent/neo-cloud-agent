@@ -5,7 +5,7 @@ import { isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { runCloneBranch, runGitContext } from "@neo-cloud-agent/contracts/git";
 import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
 import { attachUserListStream } from "../list-live";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
@@ -854,6 +854,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       onStop={current ? () => void client.abort(current.id) : undefined}
       usageLabel={formatContextPercent(contextUsage.percent) ?? "用量"}
       repo={current?.repoUrls?.[0] || cloudRepo}
+      branch={current ? runCloneBranch(current) ?? undefined : undefined}
       repos={githubRepos}
       repoLocked={Boolean(current)}
       onRepo={setCloudRepo}

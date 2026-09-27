@@ -20,8 +20,8 @@ const styles = StyleSheet.create({
   card: {
     marginHorizontal: 12,
     marginBottom: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderRadius: 14,
     backgroundColor: colors.card,
     borderWidth: 1,

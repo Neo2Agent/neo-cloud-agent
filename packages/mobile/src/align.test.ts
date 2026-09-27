@@ -39,6 +39,8 @@ test("mobile conversion card and chat shell match Web phone buddy chrome", () =>
   assert.doesNotMatch(app, /place-chip/);
   assert.match(composer, /buddy-composer/);
   assert.match(composer, /buddy-footer/);
+  assert.match(composer, /chatModelShort/);
+  assert.match(css, /justify-content:\s*flex-start/);
   assert.doesNotMatch(composer, /composer-context/);
   assert.match(composer, /github\\.com/);
 });

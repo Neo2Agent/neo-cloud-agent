@@ -9,7 +9,7 @@ import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contrac
 import { displaySetupText, isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { runCloneBranch, runGitContext } from "@neo-cloud-agent/contracts/git";
 import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
@@ -919,6 +919,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       onStop={current ? () => void client.abort(current.id) : undefined}
       contextUsage={contextUsage}
       repo={current?.repoUrls?.[0] || cloudRepo}
+      branch={current ? runCloneBranch(current) ?? undefined : undefined}
       repos={githubRepos}
       repoLocked={Boolean(current)}
       onRepo={setCloudRepo}
