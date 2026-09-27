@@ -246,11 +246,15 @@ async function main(): Promise<void> {
     });
 
     await check("desk.authorizeFolder", "desk-local", async () => {
-      const result = await desk.evaluate(async (folder) => {
-        const bridge = (window as unknown as { neoDesk?: { authorizeFolder?: (p: string) => Promise<unknown> } }).neoDesk;
-        if (!bridge?.authorizeFolder) return { error: "authorizeFolder missing — restart Electron" };
-        return bridge.authorizeFolder(folder);
-      }, WS);
+      const result = await desk.evaluate(
+        async (folder) => {
+          const bridge = (window as unknown as { neoDesk?: { authorizeFolder?: (p: string) => Promise<unknown> } }).neoDesk;
+          if (!bridge?.authorizeFolder) return { error: "authorizeFolder missing — restart Electron" };
+          return bridge.authorizeFolder(folder);
+        },
+        WS,
+        { timeout: 15_000 },
+      );
       const rec = result && typeof result === "object" ? (result as Record<string, unknown>) : {};
       if (rec.error) throw new Error(String(rec.error));
       if (!rec.folder && !rec.id) throw new Error(JSON.stringify(result));
