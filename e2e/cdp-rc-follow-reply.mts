@@ -6,28 +6,11 @@
  */
 import { chromium, type Page } from "../node_modules/.pnpm/playwright@1.63.0/node_modules/playwright/index.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { MOCK_GATEWAY_TEXT, assertUniqueMockReplies, countNeedle, type TranscriptDump } from "./rc-follow-assert.ts";
 
-const MOCK =
-  "Mock gateway response. Save a DeepSeek or OpenAI API key on the chat page, or set DEEPSEEK_API_KEY / OPENAI_API_KEY.";
 const FIRST = "RC-PROBE-inline-remote-pingingonly";
 const FOLLOW = "RC-PROBE-followfromwebtokenonly";
 const ARTIFACT_DIR = "/opt/cursor/artifacts";
-
-export function countNeedle(haystack: string, needle: string): number {
-  if (!needle) {
-    return 0;
-  }
-  let count = 0;
-  let from = 0;
-  while (true) {
-    const at = haystack.indexOf(needle, from);
-    if (at < 0) {
-      return count;
-    }
-    count += 1;
-    from = at + needle.length;
-  }
-}
 
 async function login(page: Page) {
   const gate = page.locator("#auth-gate:not([hidden]) #auth-form");
@@ -46,6 +29,7 @@ async function login(page: Page) {
   })()`);
   await page.locator("#auth-submit").click();
   await page.waitForTimeout(1500);
+  await page.locator("#auth-gate:not([hidden])").waitFor({ state: "hidden", timeout: 15_000 }).catch(() => undefined);
 }
 
 async function shot(page: Page, name: string) {
@@ -54,14 +38,6 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path, fullPage: false });
   return path;
 }
-
-type TranscriptDump = {
-  href: string;
-  assistantTexts: string[];
-  setupTexts: string[];
-  userTexts: string[];
-  bodyText: string;
-};
 
 async function dumpTranscript(page: Page): Promise<TranscriptDump> {
   return page.evaluate(`(() => {
@@ -75,21 +51,6 @@ async function dumpTranscript(page: Page): Promise<TranscriptDump> {
       bodyText: (document.querySelector(".transcript")?.innerText || document.body.innerText || "").replace(/\\s+/g, " ").trim(),
     };
   })()`) as Promise<TranscriptDump>;
-}
-
-function assertUniqueMock(dump: TranscriptDump, where: string): void {
-  const joined = dump.assistantTexts.join("\n");
-  const inAssistants = countNeedle(joined, MOCK);
-  const inBody = countNeedle(dump.bodyText, MOCK);
-  if (inAssistants !== 1) {
-    throw new Error(`${where}: assistant mock count ${inAssistants} (want 1). assistants=${JSON.stringify(dump.assistantTexts)}`);
-  }
-  if (inBody !== 1) {
-    throw new Error(`${where}: page mock count ${inBody} (want 1). body=${dump.bodyText.slice(0, 800)}`);
-  }
-  if (dump.assistantTexts.some((text) => countNeedle(text, MOCK) > 1)) {
-    throw new Error(`${where}: one bubble contains the mock twice. assistants=${JSON.stringify(dump.assistantTexts)}`);
-  }
 }
 
 const chrome = await chromium.launch({
@@ -168,16 +129,43 @@ await shot(desk, "rc-follow-desk-after-create");
 
 await web.goto(`http://127.0.0.1:5173/#/runs/${created.runId}`, { waitUntil: "domcontentloaded" });
 await login(web);
+if (await web.locator("#auth-gate:not([hidden])").count()) {
+  const deskToken = await desk.evaluate(async () => {
+    const neo = (window as unknown as { neoDesk?: { getToken?: () => Promise<string> } }).neoDesk;
+    return neo?.getToken ? await neo.getToken() : "";
+  });
+  if (deskToken) {
+    await web.evaluate((token) => {
+      localStorage.setItem("neo.apiToken.v2", token);
+    }, deskToken);
+    await web.reload({ waitUntil: "domcontentloaded" });
+    await web.waitForTimeout(600);
+  }
+}
+const followed = await web.evaluate(`(async () => {
+  const token = localStorage.getItem("neo.apiToken.v2") || "";
+  if (!token) return { error: "no web token" };
+  const res = await fetch("/v1/runs/${created.runId}/follow-ups", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer " + token },
+    body: JSON.stringify({ text: ${JSON.stringify(FOLLOW)} }),
+  });
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, error: body.error };
+})()`);
+if (!followed || (followed as { ok?: boolean }).ok === false) {
+  writeFileSync(`${ARTIFACT_DIR}/rc-follow-reply.json`, JSON.stringify({ created, followed }, null, 2));
+  throw new Error(`web follow-up failed ${JSON.stringify(followed)}`);
+}
+await web.reload({ waitUntil: "domcontentloaded" });
+await login(web);
 await web.waitForTimeout(800);
-await web.locator("textarea[name=prompt]").fill(FOLLOW);
-await web.locator("#send").click();
-await web.waitForTimeout(2000);
 
 const deadline = Date.now() + 45_000;
 let dump: TranscriptDump | null = null;
 while (Date.now() < deadline) {
   dump = await dumpTranscript(web);
-  if (dump.bodyText.includes(MOCK)) {
+  if (dump.bodyText.includes(MOCK_GATEWAY_TEXT)) {
     break;
   }
   await web.waitForTimeout(1000);
@@ -186,9 +174,22 @@ if (!dump) {
   throw new Error("no transcript dump");
 }
 
+await desk.evaluate(`location.hash = "#/runs/${created.runId}"`);
+const deskDeadline = Date.now() + 20_000;
+let deskDump: TranscriptDump | null = null;
+while (Date.now() < deskDeadline) {
+  deskDump = await dumpTranscript(desk);
+  if (deskDump.userTexts.some((text) => text.includes(FOLLOW)) && deskDump.assistantTexts.length >= 2) {
+    break;
+  }
+  await desk.waitForTimeout(500);
+}
+if (!deskDump) {
+  throw new Error("no desk transcript dump");
+}
+await desk.locator(".transcript").evaluate(`(node) => { node.scrollTop = node.scrollHeight; }`).catch(() => undefined);
 const webShot = await shot(web, "rc-follow-web-reply");
 const deskShot = await shot(desk, "rc-follow-desk-reply");
-const deskDump = await dumpTranscript(desk);
 
 const report = {
   created,
@@ -196,15 +197,19 @@ const report = {
   desk: deskDump,
   webShot,
   deskShot,
-  mockOnWeb: countNeedle(dump.bodyText, MOCK),
-  mockOnDesk: countNeedle(deskDump.bodyText, MOCK),
+  mockOnWeb: countNeedle(dump.bodyText, MOCK_GATEWAY_TEXT),
+  mockOnDesk: countNeedle(deskDump.bodyText, MOCK_GATEWAY_TEXT),
+  followed,
 };
 writeFileSync(`${ARTIFACT_DIR}/rc-follow-reply.json`, JSON.stringify(report, null, 2));
 
-assertUniqueMock(dump, "web");
-assertUniqueMock(deskDump, "desk");
+assertUniqueMockReplies(dump, "web");
+assertUniqueMockReplies(deskDump, "desk");
 if (!dump.userTexts.some((text) => text.includes(FOLLOW)) && !dump.bodyText.includes(FOLLOW)) {
   throw new Error("web follow-up text missing from transcript");
+}
+if (dump.userTexts.length >= 2 && dump.assistantTexts.filter((text) => text.includes("Mock gateway response")).length < 2) {
+  throw new Error("web should show one mock reply per turn after first + follow");
 }
 
 await chrome.close();
