@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isSetupFailureMessage, transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import { describeVmHint } from "@neo-cloud-agent/contracts/vm-hint";
-import { CloudAccountSettings, SetupFailBanner } from "@neo-cloud-agent/ui";
+import { CloudAccountSettings } from "@neo-cloud-agent/ui/cloud-settings";
+import { SetupFailBanner } from "@neo-cloud-agent/ui";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";

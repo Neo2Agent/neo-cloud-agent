@@ -17,6 +17,7 @@
     "./git-panel.css": "./src/git-panel.css",
     "./context-usage.css": "./src/context-usage.css",
     "./setup-fail.css": "./src/setup-fail.css",
+    "./cloud-settings": "./src/cloud-settings.tsx",
     "./cloud-settings.css": "./src/cloud-settings.css",
     "./workspace-term": "./src/workspace-term.ts",
     "./workspace-fs": "./src/workspace-fs.ts"

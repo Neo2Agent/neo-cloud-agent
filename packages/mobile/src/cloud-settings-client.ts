@@ -1,4 +1,4 @@
-import type { CloudSettingsClient } from "@neo-cloud-agent/ui";
+import type { CloudSettingsClient } from "@neo-cloud-agent/ui/cloud-settings";
 import type { MobileClient } from "./api/client.js";
 
 export function cloudSettingsFromMobile(client: MobileClient): CloudSettingsClient {

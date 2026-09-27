@@ -67,7 +67,7 @@ export function WorkspaceSheet({
 
   useEffect(() => {
     if (tab !== "term") return;
-    let unsub = () => undefined;
+    let unsub: () => void = () => undefined;
     void termApi
       .ensureWorkspaceTerms(runId)
       .then((sessions) => {
