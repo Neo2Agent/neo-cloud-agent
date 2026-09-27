@@ -74,7 +74,7 @@ export function isLocalDeskKind(kind?: DeskTargetKind | null): boolean {
 
 /** Folder picker keeps Remote Control; Cloud falls back to This Computer. */
 export function pickedLocalKind(kind?: DeskTargetKind | null): DeskTargetKind {
-  return isLocalDeskKind(kind) ? kind : TARGET_DESK;
+  return kind === TARGET_REMOTE ? TARGET_REMOTE : TARGET_DESK;
 }
 
 /**

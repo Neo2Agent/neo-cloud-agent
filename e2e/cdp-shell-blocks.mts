@@ -101,6 +101,10 @@ if (await desk.locator("#auth-gate:not([hidden])").count()) {
   await shot(desk, "block-desk-login");
 }
 await login(desk);
+await desk.evaluate(`location.hash = "#/"`);
+await desk.waitForTimeout(400);
+await desk.locator("#new-chat").click().catch(() => undefined);
+await desk.waitForTimeout(600);
 await shot(desk, "block-desk-home");
 await desk.locator("#execution-target").click().catch(() => undefined);
 await desk.waitForTimeout(300);
