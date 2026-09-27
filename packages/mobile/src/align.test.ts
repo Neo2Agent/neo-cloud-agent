@@ -40,6 +40,7 @@ test("mobile conversion card and chat shell match Web phone buddy chrome", () =>
   assert.match(composer, /buddy-composer/);
   assert.match(composer, /buddy-footer/);
   assert.doesNotMatch(composer, /composer-context/);
+  assert.match(composer, /github\\.com/);
 });
 
 test("mobile web App keeps hooks before login returns", () => {

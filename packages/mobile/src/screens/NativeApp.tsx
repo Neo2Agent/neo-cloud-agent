@@ -833,7 +833,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       locked={gate.locked}
       placeholder={gate.archived ? "对话已归档。" : gate.hint || "说说你要做什么"}
       sending={sending}
-      canStop={Boolean(current) && gate.running}
+      canStop={Boolean(current) && gate.running && !gate.locked}
       model={model}
       models={chatModels}
       images={images}

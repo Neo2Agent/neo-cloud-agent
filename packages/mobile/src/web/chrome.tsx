@@ -516,7 +516,7 @@ export function IslandComposer(props: {
                   ))}
                 </select>
               </label>
-            ) : props.repo ? (
+            ) : props.repo && /^(https?:\/\/|git@|github\.com\/)/i.test(props.repo) ? (
               <span className="composer-repo-lock">{props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/")}</span>
             ) : null}
             {props.onExpert && !props.expertLocked ? (
