@@ -494,12 +494,13 @@ async function runUiSuite(token: string): Promise<void> {
       return page.url();
     });
 
-    const marker = `三端同步-${Date.now()}`;
+    // Prefix the unique token so truncated sidebar titles still match.
+    const marker = `S${Date.now().toString().slice(-6)}`;
     let createdId = "";
 
     await check("sync.create-from-web", "sync", async () => {
       await web.locator("#new-chat").click().catch(() => undefined);
-      await web.locator("#prompt").fill(`只回复一个词：pong。不要调用工具。${marker}`);
+      await web.locator("#prompt").fill(`${marker} 只回复一个词：pong。不要调用工具。`);
       await web.locator("#send").click();
       const id = await waitFor("web hash run id", async () => {
         const hash = new URL(web.url()).hash;
@@ -538,6 +539,7 @@ async function runUiSuite(token: string): Promise<void> {
     if (deskElectron) {
       await check("sync.list-on-desk-electron", "sync", async () => {
         const page = deskElectron!.page;
+        await page.getByRole("button", { name: "新对话" }).click().catch(() => undefined);
         const seen = await waitFor("desk electron list has run", async () => {
           const body = await pageText(page);
           if (body.includes(marker) || (createdId && body.includes(createdId.slice(0, 8)))) return "visible";
