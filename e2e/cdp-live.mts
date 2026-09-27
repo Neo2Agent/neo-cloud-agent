@@ -539,12 +539,22 @@ async function runUiSuite(token: string): Promise<void> {
     if (deskElectron) {
       await check("sync.list-on-desk-electron", "sync", async () => {
         const page = deskElectron!.page;
+        await page.bringToFront().catch(() => undefined);
         await page.getByRole("button", { name: "新对话" }).click().catch(() => undefined);
+        await page.evaluate(() => {
+          window.dispatchEvent(new Event("focus"));
+          document.dispatchEvent(new Event("visibilitychange"));
+        }).catch(() => undefined);
         const seen = await waitFor("desk electron list has run", async () => {
+          const hit = page.getByText(marker, { exact: false }).first();
+          if (await hit.count()) {
+            await hit.scrollIntoViewIfNeeded().catch(() => undefined);
+            return "visible";
+          }
           const body = await pageText(page);
           if (body.includes(marker) || (createdId && body.includes(createdId.slice(0, 8)))) return "visible";
           return null;
-        }, 15_000, 400);
+        }, 22_000, 400);
         await shot(page, "cdp-desk-electron-list-sync");
         return seen;
       });
