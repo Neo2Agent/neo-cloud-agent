@@ -11,6 +11,8 @@ import { spawnSync } from "node:child_process";
 const ARTIFACT_DIR = "/opt/cursor/artifacts";
 const API = process.env.NEO_E2E_API ?? "http://127.0.0.1:8080";
 const WEB = process.env.NEO_E2E_WEB ?? "http://127.0.0.1:5173";
+const MOBILE = process.env.NEO_E2E_MOBILE;
+const MOBILE_API = process.env.NEO_E2E_MOBILE_API ?? "http://127.0.0.1:8080";
 
 function initRepo(): string {
   const dir = mkdtempSync(path.join(tmpdir(), "neo-rc-cdp-"));
@@ -25,6 +27,55 @@ function initRepo(): string {
   spawnSync("git", ["add", "."], { cwd: dir });
   spawnSync("git", ["commit", "-m", "feat"], { cwd: dir });
   return dir;
+}
+
+async function loginMobile(page: Page) {
+  const account = page.locator('input[name="account"]');
+  if ((await account.count()) === 0) return;
+  await account.fill("admin");
+  await page.locator('input[name="secret"]').fill("123456");
+  await page.getByRole("button", { name: /Continue|登录/ }).click();
+  await page.locator('input[name="account"]').waitFor({ state: "hidden", timeout: 15_000 }).catch(() => undefined);
+}
+
+async function seedOfflineRemote(api: string) {
+  const session = await json<{ token: string }>(`${api}/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "admin", password: "123456" }),
+  });
+  const headers = { "content-type": "application/json", authorization: `Bearer ${session.token}` };
+  const registered = await json<{ desk: { id: string }; token: string }>(`${api}/v1/desks`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name: "cdp-box", hostname: "cdp", platform: "linux" }),
+  });
+  const remote = await json<{ id: string }>(`${api}/v1/runs?client=desk`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      prompt: "CDP offline remote continue",
+      repoUrls: [repo],
+      source: "desk",
+      start: "inline",
+      kernel: "agentscope",
+      target: { loop: "cloud", tools: "desk", deskId: registered.desk.id, remoteControl: true },
+    }),
+  });
+  const claimed = await json<{ remoteUrl?: string; baseBranch?: string }>(`${api}/v1/desks/${registered.desk.id}/claim`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${registered.token}` },
+    body: JSON.stringify({
+      runId: remote.id,
+      workspaceDir: repo,
+      remoteUrl: "https://github.com/acme/app.git",
+      branch: "feat/login",
+    }),
+  });
+  if (claimed.remoteUrl !== "https://github.com/acme/app.git" || claimed.baseBranch !== "feat/login") {
+    throw new Error(`claim did not record origin/branch: ${JSON.stringify(claimed)}`);
+  }
+  return { headers, registered, remote };
 }
 
 async function login(page: Page) {
@@ -61,42 +112,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 const repo = initRepo();
-const session = await json<{ token: string }>(`${API}/v1/auth/login`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ email: "admin", password: "123456" }),
-});
-const headers = { "content-type": "application/json", authorization: `Bearer ${session.token}` };
-const registered = await json<{ desk: { id: string }; token: string }>(`${API}/v1/desks`, {
-  method: "POST",
-  headers,
-  body: JSON.stringify({ name: "cdp-box", hostname: "cdp", platform: "linux" }),
-});
-const remote = await json<{ id: string; executionTarget?: { remoteControl?: boolean } }>(`${API}/v1/runs?client=desk`, {
-  method: "POST",
-  headers,
-  body: JSON.stringify({
-    prompt: "CDP offline remote continue",
-    repoUrls: [repo],
-    source: "desk",
-    start: "inline",
-    kernel: "agentscope",
-    target: { loop: "cloud", tools: "desk", deskId: registered.desk.id, remoteControl: true },
-  }),
-});
-const claimed = await json<{ remoteUrl?: string; baseBranch?: string }>(`${API}/v1/desks/${registered.desk.id}/claim`, {
-  method: "POST",
-  headers: { "content-type": "application/json", authorization: `Bearer ${registered.token}` },
-  body: JSON.stringify({
-    runId: remote.id,
-    workspaceDir: repo,
-    remoteUrl: "https://github.com/acme/app.git",
-    branch: "feat/login",
-  }),
-});
-if (claimed.remoteUrl !== "https://github.com/acme/app.git" || claimed.baseBranch !== "feat/login") {
-  throw new Error(`claim did not record origin/branch: ${JSON.stringify(claimed)}`);
-}
+const { headers, registered, remote } = await seedOfflineRemote(API);
 
 const chrome = await chromium.launch({
   executablePath: "/usr/local/bin/google-chrome",
@@ -167,9 +183,47 @@ if (listed.runs.some((item) => item.id === local.id)) {
   throw new Error("This Computer run leaked into the web list");
 }
 
+let mobileId = "";
+if (MOBILE) {
+  const phoneSeed = await seedOfflineRemote(MOBILE_API);
+  const phone = await chrome.newPage({ viewport: { width: 390, height: 844 } });
+  await phone.goto(`${MOBILE}/`, { waitUntil: "domcontentloaded" });
+  await loginMobile(phone);
+  await phone.evaluate(`location.hash = "#/runs/${phoneSeed.remote.id}"`);
+  await phone.waitForTimeout(1500);
+  await shot(phone, "rc-offline-mobile-before-continue");
+  const phoneCard = phone.locator(".remote-offline-card");
+  const phoneText = ((await phoneCard.count()) > 0 ? await phoneCard.innerText() : "") + (await phone.locator("#continue-remote-cloud").innerText().catch(() => ""));
+  if ((await phone.locator("#continue-remote-cloud").count()) === 0) {
+    throw new Error("mobile continue-in-cloud button missing while Desk is offline");
+  }
+  if (!phoneText.includes("Desk 离线") || !phoneText.includes("acme/app") || !phoneText.includes("feat/login") || !phoneText.includes("未 push")) {
+    throw new Error(`mobile offline card copy is incomplete: ${phoneText}`);
+  }
+  if ((await phone.locator(".composer-send-group #continue-remote-cloud").count()) > 0) {
+    throw new Error("mobile continue button is still inside the send group");
+  }
+  await phone.locator("#continue-remote-cloud").click();
+  await phone.waitForTimeout(1500);
+  await shot(phone, "rc-offline-mobile-after-continue");
+  const phoneMoved = await json<{
+    executionTarget?: { tools?: string; remoteControl?: boolean };
+  }>(`${MOBILE_API}/v1/runs/${phoneSeed.remote.id}`, { headers: phoneSeed.headers });
+  if (phoneMoved.executionTarget?.tools !== "cloud" || phoneMoved.executionTarget?.remoteControl) {
+    throw new Error(`mobile run did not become cloud: ${JSON.stringify(phoneMoved.executionTarget)}`);
+  }
+  if ((await phone.locator("#continue-remote-cloud").count()) > 0) {
+    throw new Error("mobile continue-in-cloud button still visible after handoff");
+  }
+  if ((await phone.getByText("正在 Desk 上启动 Agent").count()) > 0) {
+    throw new Error("mobile still shows Desk handshake after handoff");
+  }
+  mobileId = phoneSeed.remote.id;
+}
+
 writeFileSync(
   `${ARTIFACT_DIR}/rc-offline-cloud.json`,
-  `${JSON.stringify({ remoteId: remote.id, tools: moved.executionTarget?.tools, branch: moved.branchName }, null, 2)}\n`,
+  `${JSON.stringify({ remoteId: remote.id, tools: moved.executionTarget?.tools, branch: moved.branchName, mobileId }, null, 2)}\n`,
 );
 await chrome.close();
-console.log("ok", remote.id, moved.executionTarget?.tools);
+console.log("ok", remote.id, moved.executionTarget?.tools, mobileId || "no-mobile");

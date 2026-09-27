@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
-import type { Desk } from "@neo-cloud-agent/contracts/desk";
+import { isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -894,7 +894,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
           running={turnBusy && !gate.locked}
           messages={visible}
           thinking={thinking}
-          hideHandshake={gate.locked}
+          hideHandshake={gate.locked || !isDeskHostedTarget(current?.executionTarget)}
           canLoadOlder={canLoadOlder(older)}
           loadingOlder={loadingOlder}
           onLoadOlder={() => void loadOlder()}

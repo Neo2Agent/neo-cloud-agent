@@ -6,7 +6,7 @@ import { transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contrac
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import type { Desk } from "@neo-cloud-agent/contracts/desk";
+import { isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import { runGitContext } from "@neo-cloud-agent/contracts/git";
@@ -1022,7 +1022,9 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           {visible.length === 0 ? <p className="empty">还没有消息。</p> : null}
           {visible.map((message, messageIndex) => {
             if (isStartupWhisper(message)) {
-              if (gate.locked || generationStarted(visible) || thinking) return null;
+              if (gate.locked || !isDeskHostedTarget(current?.executionTarget) || generationStarted(visible) || thinking) {
+                return null;
+              }
               return (
                 <p key={message.id} className="whisper">
                   {message.text}
