@@ -1,5 +1,5 @@
 /**
- * Vite :5175 visual lab. Island chrome + the same /v1 client as Expo.
+ * Vite :5175 visual lab. Buddy chrome (same as Web phone) + the same /v1 client as Expo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isSetupFailureMessage, transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
@@ -30,7 +30,6 @@ import { avatarLetter, CHAT_MODELS, chatModelShort, resolveChatModel, runListTit
 import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
 import { attachUserListStream } from "../list-live";
 import { messageTimeLabel, userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
-import { runPlaceLabel } from "../place";
 import { chatStatusText, composerGate } from "../session";
 import {
   appendPendingUser,
@@ -69,7 +68,6 @@ import { RunInvite } from "./RunInvite";
 import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
-import { IslandButton } from "./island";
 import { RemoteOfflineCard } from "./RemoteOfflineCard";
 import { MarkdownBody } from "@neo-cloud-agent/ui";
 
@@ -993,26 +991,29 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       : null;
   if (route.screen === "chat" || sending || pendingTurn || visible.length > 0) {
     return (
-      <div className="app">
+      <div className="app is-buddy">
         <header className="topbar">
-          <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
+          <button className="icon-btn buddy-menu" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
           {current ? <span className="chat-title">{runListTitle(current)}</span> : null}
-          <span className={turnBusy && !gate.locked ? "status-chip is-busy" : "status-chip"}>{chatStatusText(current, desks)}</span>
-          {current ? <span className="place-chip">{runPlaceLabel(current)}</span> : null}
+          <span className={turnBusy && !gate.locked ? "buddy-status-pill is-busy" : "buddy-status-pill"}>{chatStatusText(current, desks)}</span>
           {current && runGitContext(current) !== "none" ? (
             <button className="icon-btn" type="button" onClick={() => setPanel("git")} aria-label="Git">
               Git
             </button>
           ) : null}
+          {current ? (
+            <button className="icon-btn" type="button" onClick={openArtifacts} aria-label="产物">
+              产物
+            </button>
+          ) : null}
+          {current?.status === "ERROR" ? (
+            <button className="icon-btn" type="button" onClick={openDiagnostics} aria-label="查看诊断">
+              诊断
+            </button>
+          ) : null}
           {current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         </header>
         {pageError ? <p className="page-error">{pageError}</p> : null}
-        {current ? (
-          <div className="chat-actions">
-            <IslandButton onClick={openArtifacts}>产物</IslandButton>
-            {current.status === "ERROR" ? <IslandButton onClick={openDiagnostics}>查看诊断</IslandButton> : null}
-          </div>
-        ) : null}
         <div className="transcript" ref={transcriptRef}>
           {canLoadOlder(older) ? (
             <button type="button" className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
@@ -1046,7 +1047,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             if (!hasVisibleTranscript(message)) return null;
             const author = message.role === "user" ? userMessageAuthor(message, { id: userId, email }) : null;
             const live = message.role === "assistant" && (liveId === message.id || (turnBusy && messageIndex > lastUserIndex));
-            const when = message.role === "setup" ? null : messageTimeLabel(message, { live });
+            const when = messageTimeLabel(message, { live });
             return (
             <div key={message.id} className={`msg-row ${message.role}`} data-images={message.images?.length ? "1" : undefined}>
               {message.role === "user" && userAvatar && !author ? (
@@ -1142,9 +1143,9 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   }
 
   return (
-    <div className="app">
+    <div className="app is-buddy">
       <header className="topbar">
-        <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
+        <button className="icon-btn buddy-menu" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
       </header>
       {pageError ? <p className="page-error">{pageError}</p> : null}
       <IslandHome expertName={expertName} onPickRecipe={applyRecipe} />

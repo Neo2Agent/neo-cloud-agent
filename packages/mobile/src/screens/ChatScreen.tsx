@@ -10,8 +10,7 @@ import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { MarkdownNative } from "./MarkdownNative";
 import { WorkFold } from "./WorkFold";
-import { avatarLetter, runListTitle, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
-import { runPlaceLabel } from "../place";
+import { runListTitle, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { generationStarted, hasVisibleTranscript, isStartupWhisper } from "../turn";
 import { colors } from "./theme";
 
@@ -35,14 +34,6 @@ type Props = {
   userId?: string;
   invite?: ReactNode;
 };
-
-function Avatar({ src, letter, neo }: { src?: string | null; letter: string; neo?: boolean }) {
-  return (
-    <View style={[styles.avatar, neo ? styles.avatarNeo : styles.avatarUser]}>
-      {src ? <Image source={{ uri: src }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{letter}</Text>}
-    </View>
-  );
-}
 
 function ToolCard({ tool }: { tool: TranscriptTool }) {
   const running = tool.status === "running";
@@ -84,7 +75,6 @@ function ThinkingRow({ hint, neoAvatar }: { hint: string; neoAvatar?: string | n
   }, []);
   return (
     <View style={[styles.row, styles.rowAgent]}>
-      <Avatar src={neoAvatar} letter="N" neo />
       <View style={styles.thinkBox}>
         <View style={styles.thinkDots}>
           {[0, 1, 2].map((index) => (
@@ -118,7 +108,6 @@ export function ChatScreen({
   invite,
 }: Props) {
   const liveId = liveAssistantId(messages, running);
-  const mine = avatarLetter(userEmail);
   const started = generationStarted(messages);
   const scrollRef = useRef<ScrollView>(null);
   const tail = messages.at(-1);
@@ -133,33 +122,26 @@ export function ChatScreen({
           <Text style={styles.menu}>☰</Text>
         </Pressable>
         {run ? <Text style={styles.title} numberOfLines={1}>{runListTitle(run)}</Text> : <View style={styles.title} />}
-        <View style={[styles.chip, running ? styles.pillBusy : null]}>
-          <Text style={styles.chipText} numberOfLines={1}>{status}</Text>
+        <View style={[styles.statusPill, running ? styles.pillBusy : null]}>
+          <Text style={styles.statusText} numberOfLines={1}>{status}</Text>
         </View>
-        {run ? (
-          <View style={styles.chip}>
-            <Text style={styles.chipText}>{runPlaceLabel(run)}</Text>
-          </View>
+        {onOpenGit ? (
+          <Pressable onPress={onOpenGit} hitSlop={8} accessibilityLabel="Git">
+            <Text style={styles.actionText}>Git</Text>
+          </Pressable>
         ) : null}
-      </View>
-      {run && onOpenArtifacts ? (
-        <View style={styles.actions}>
-          <Pressable onPress={onOpenArtifacts} style={styles.action}>
+        {run && onOpenArtifacts ? (
+          <Pressable onPress={onOpenArtifacts} hitSlop={8} accessibilityLabel="产物">
             <Text style={styles.actionText}>产物</Text>
           </Pressable>
-          {onOpenGit ? (
-            <Pressable onPress={onOpenGit} style={styles.action}>
-              <Text style={styles.actionText}>Git</Text>
-            </Pressable>
-          ) : null}
-          {invite}
-          {run.status === "ERROR" && onOpenDiagnostics ? (
-            <Pressable onPress={onOpenDiagnostics} style={[styles.action, styles.actionWarn]}>
-              <Text style={styles.actionText}>查看诊断</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
+        ) : null}
+        {run?.status === "ERROR" && onOpenDiagnostics ? (
+          <Pressable onPress={onOpenDiagnostics} hitSlop={8} accessibilityLabel="查看诊断">
+            <Text style={styles.actionText}>诊断</Text>
+          </Pressable>
+        ) : null}
+        {invite}
+      </View>
       <ScrollView ref={scrollRef} contentContainerStyle={styles.list}>
         {canLoadOlder && onLoadOlder ? (
           <Pressable onPress={onLoadOlder} disabled={loadingOlder} style={styles.older}>
@@ -192,16 +174,11 @@ export function ChatScreen({
           const mineMsg = message.role === "user";
           const author = mineMsg ? userMessageAuthor(message, { id: userId, email: userEmail }) : null;
           const live = !mineMsg && (liveId === message.id || Boolean(running && message.streaming));
-          const when = message.role === "setup" ? null : messageTimeLabel(message, { live });
+          const when = messageTimeLabel(message, { live });
           const groups = transcriptGroups(message);
           return (
             <View key={message.id} style={[styles.row, mineMsg ? styles.rowUser : styles.rowAgent]}>
-              <Avatar
-                src={mineMsg ? userAvatar : neoAvatar}
-                letter={mineMsg ? mine : "N"}
-                neo={!mineMsg}
-              />
-              <View style={styles.col}>
+              <View style={mineMsg ? styles.colUser : styles.col}>
                 {author ? <Text style={styles.author}>{author}</Text> : null}
                 {message.images?.length ? (
                   <View style={styles.imageRow}>
@@ -271,24 +248,14 @@ const styles = StyleSheet.create({
   topbar: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
   menu: { fontSize: 20, color: colors.ink, width: 28 },
   title: { flex: 1, minWidth: 0, color: colors.ink, fontSize: 15, fontWeight: "600" },
-  chip: { borderRadius: 999, backgroundColor: colors.paper, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: colors.line },
-  pillBusy: { backgroundColor: colors.hover },
+  statusPill: { borderRadius: 999, backgroundColor: colors.statusBg, paddingHorizontal: 10, minHeight: 28, justifyContent: "center" },
+  pillBusy: { backgroundColor: colors.statusBg },
   author: { color: colors.muted, fontSize: 12 },
   when: { color: colors.muted, fontSize: 11 },
-  chipText: { color: colors.ink, fontSize: 12 },
+  statusText: { color: colors.status, fontSize: 12, fontWeight: "600" },
   older: { alignSelf: "center", paddingHorizontal: 14, paddingVertical: 6 },
   olderText: { color: colors.muted, fontSize: 12 },
-  actions: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
-  action: {
-    borderRadius: 999,
-    backgroundColor: colors.paper,
-    borderWidth: 1,
-    borderColor: colors.line,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  actionWarn: { backgroundColor: "#fdecec", borderColor: "#e8b4b4" },
-  actionText: { color: colors.ink, fontSize: 12, fontWeight: "700" },
+  actionText: { color: colors.ink, fontSize: 13, fontWeight: "600" },
   list: { padding: 14, gap: 12, paddingBottom: 24 },
   empty: { color: colors.muted, textAlign: "center", marginTop: 24 },
   whisper: { color: colors.muted, fontSize: 12, textAlign: "center", paddingHorizontal: 24, lineHeight: 18 },
@@ -296,7 +263,7 @@ const styles = StyleSheet.create({
   setup: { color: colors.muted, fontSize: 12, lineHeight: 18, flexShrink: 1 },
   setupErr: { color: colors.error, fontSize: 12, lineHeight: 18, flexShrink: 1 },
   setupTime: { color: colors.muted, fontSize: 11 },
-  thinkBox: { flexShrink: 1, maxWidth: "78%", gap: 8, paddingTop: 6 },
+  thinkBox: { flexShrink: 1, maxWidth: "100%", gap: 8, paddingTop: 6 },
   thinkDots: { flexDirection: "row", alignItems: "center", gap: 5 },
   thinkDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.hover },
   artifact: {
@@ -316,16 +283,17 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "flex-start", gap: 8, maxWidth: "100%" },
   rowUser: { alignSelf: "flex-end", flexDirection: "row-reverse" },
   rowAgent: { alignSelf: "flex-start" },
-  col: { flexShrink: 1, maxWidth: "78%", gap: 8 },
+  col: { flexShrink: 1, maxWidth: "100%", gap: 8 },
+  colUser: { flexShrink: 1, maxWidth: "86%", gap: 8, alignItems: "flex-end" },
   avatar: { width: 32, height: 32, borderRadius: 16, overflow: "hidden", alignItems: "center", justifyContent: "center" },
   avatarImage: { width: 32, height: 32 },
   avatarUser: { backgroundColor: colors.ink },
   avatarNeo: { backgroundColor: colors.accent },
   avatarText: { color: colors.cream, fontWeight: "800", fontSize: 13 },
-  bubble: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1, borderColor: colors.line },
+  bubble: { borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10 },
   user: { backgroundColor: colors.bubbleUser },
-  agent: { backgroundColor: colors.bubbleAgent },
-  body: { color: colors.ink, fontSize: 13, lineHeight: 20 },
+  agent: { backgroundColor: colors.bubbleAgent, paddingHorizontal: 8, paddingVertical: 2 },
+  body: { color: colors.ink, fontSize: 16, lineHeight: 26 },
   imageRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   userImage: { width: 120, height: 120, borderRadius: 12, borderWidth: 1, borderColor: colors.line },
   toolStack: { gap: 8 },

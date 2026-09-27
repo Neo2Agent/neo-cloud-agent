@@ -18,10 +18,11 @@ export function RemoteOfflineCard({ copy, onContinue }: { copy: RemoteCloudConti
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 14,
-    borderRadius: 16,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
@@ -35,7 +36,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     minHeight: 36,
     borderRadius: 999,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.ink,
     alignItems: "center",
     justifyContent: "center",
   },

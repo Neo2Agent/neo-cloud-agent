@@ -434,52 +434,7 @@ export function IslandComposer(props: {
 
   return (
     <div className="composer-dock">
-      <div className="composer-context">
-        <span>云端</span>
-        {props.onRepo && !props.repoLocked ? (
-          <label className="composer-repo">
-            <span className="sr-only">仓库</span>
-            <select
-              aria-label="绑定仓库"
-              value={props.repo ?? ""}
-              onChange={(event) => props.onRepo?.(event.target.value)}
-            >
-              <option value="">无仓库</option>
-              {(props.repos ?? []).map((item) => (
-                <option key={item.url} value={item.url}>
-                  {item.fullName}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <span>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</span>
-        )}
-        {props.onExpert ? (
-          <label className="composer-repo">
-            <span className="sr-only">专家</span>
-            <select
-              aria-label="专家"
-              value={expertValue}
-              disabled={props.expertLocked || props.locked}
-              onChange={(event) => props.onExpert?.(event.target.value)}
-            >
-              <option value={encodeExpertPick({})}>Neo</option>
-              {(props.experts ?? []).map((item) => (
-                <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
-                  {expertPickerLabel(item)}
-                </option>
-              ))}
-              {(props.teams ?? []).map((item) => (
-                <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
-      <div className="composer-box composer-bar">
+      <div className="composer-box composer-bar buddy-composer">
         {images.length > 0 ? (
           <div className="composer-thumbs">
             {images.map((image, index) => (
@@ -525,8 +480,8 @@ export function IslandComposer(props: {
             else if (!props.sending) props.onSend();
           }}
         />
-        <div className="composer-tools composer-bar-inner">
-          <div className="composer-pickers">
+        <div className="composer-tools composer-bar-inner buddy-composer-bar">
+          <div className="composer-pickers buddy-composer-bar-start">
             {props.onPickImages ? (
               <label className="composer-attach" title="添加图片">
                 <input
@@ -545,7 +500,49 @@ export function IslandComposer(props: {
                 </svg>
               </label>
             ) : null}
-            <div className="composer-model-wrap">
+            {props.onRepo && !props.repoLocked ? (
+              <label className="composer-repo">
+                <span className="sr-only">仓库</span>
+                <select
+                  aria-label="绑定仓库"
+                  value={props.repo ?? ""}
+                  onChange={(event) => props.onRepo?.(event.target.value)}
+                >
+                  <option value="">无仓库</option>
+                  {(props.repos ?? []).map((item) => (
+                    <option key={item.url} value={item.url}>
+                      {item.fullName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : props.repo ? (
+              <span className="composer-repo-lock">{props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/")}</span>
+            ) : null}
+            {props.onExpert && !props.expertLocked ? (
+              <label className="composer-repo">
+                <span className="sr-only">专家</span>
+                <select
+                  aria-label="专家"
+                  value={expertValue}
+                  disabled={props.expertLocked || props.locked}
+                  onChange={(event) => props.onExpert?.(event.target.value)}
+                >
+                  <option value={encodeExpertPick({})}>Neo</option>
+                  {(props.experts ?? []).map((item) => (
+                    <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
+                      {expertPickerLabel(item)}
+                    </option>
+                  ))}
+                  {(props.teams ?? []).map((item) => (
+                    <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div className="composer-model-wrap buddy-model">
               <button
                 type="button"
                 className="composer-model"
@@ -578,7 +575,7 @@ export function IslandComposer(props: {
               ) : null}
             </div>
           </div>
-          <div className="composer-send-group">
+          <div className="composer-send-group buddy-composer-bar-end">
             {props.contextUsage ? (
               <ContextUsageControl
                 usage={props.contextUsage}
@@ -652,7 +649,7 @@ export function IslandComposer(props: {
           </div>
         </div>
       </div>
-      {voiceHint ? <p className="composer-legal">{voiceHint}</p> : <p className="composer-legal">内容由 AI 生成</p>}
+      {voiceHint ? <p className="buddy-footer">{voiceHint}</p> : <p className="buddy-footer">内容由 AI 生成</p>}
     </div>
   );
 }
