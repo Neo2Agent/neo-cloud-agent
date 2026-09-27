@@ -27,17 +27,17 @@ export function IslandSwitch(props: { value: boolean; onChange: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  btn: { minHeight: 40, paddingHorizontal: 14, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  btn: { minHeight: 36, paddingHorizontal: 12, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   primary: { backgroundColor: colors.accent },
-  ghost: { backgroundColor: colors.paper },
+  ghost: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.line },
   disabled: { opacity: 0.4 },
-  primaryText: { color: colors.cream, fontWeight: "700" },
-  ghostText: { color: colors.ink, fontWeight: "700" },
+  primaryText: { color: "#ffffff", fontWeight: "600" },
+  ghostText: { color: colors.ink, fontWeight: "600" },
   input: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.paper,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: colors.ink,
@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderColor: colors.line,
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 12,
     padding: 16,
   },
 });

@@ -1,6 +1,6 @@
 # Neo Mobile
 
-Expo 壳 + 同一套 `/v1`。视觉对齐 Desk 动森纸卡（茶色墨 / 青绿按钮）。新开只发云端；列表能看到 Desk Remote，看不到 This Computer。抽屉里有定时任务、项目、专家。
+Expo 壳 + 同一套 `/v1`。视觉对齐 Web / Cursor（Geist 冷灰、`packages/ui` tokens）。新开只发云端；列表能看到 Desk Remote，看不到 This Computer。抽屉里有定时任务、项目、专家。
 
 ## 两轨开发
 

@@ -1,3 +1,4 @@
+import { THEME } from "@neo-cloud-agent/ui/tokens";
 import { ISLAND } from "../island-theme";
 
 export const colors = {
@@ -13,6 +14,6 @@ export const colors = {
   hover: ISLAND.hover,
   send: ISLAND.accent,
   error: ISLAND.red,
-  bubbleUser: ISLAND.raised,
-  bubbleAgent: ISLAND.card,
+  bubbleUser: THEME.user,
+  bubbleAgent: "transparent",
 };

@@ -202,7 +202,7 @@ export function Drawer(props: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(61, 52, 40, 0.34)" },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0, 0, 0, 0.28)" },
   panel: {
     position: "absolute",
     left: 0,

@@ -21,7 +21,7 @@ export const frameStyles = StyleSheet.create({
   empty: { color: colors.muted, textAlign: "center", marginTop: 16 },
   error: { color: colors.error },
   section: { color: colors.muted, marginTop: 8, fontWeight: "600" },
-  card: { backgroundColor: colors.card, borderColor: colors.line, borderWidth: 1, borderRadius: 16, padding: 14 },
+  card: { backgroundColor: colors.card, borderColor: colors.line, borderWidth: 1, borderRadius: 12, padding: 14 },
   cardTitle: { color: colors.ink, fontWeight: "700" },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
 });

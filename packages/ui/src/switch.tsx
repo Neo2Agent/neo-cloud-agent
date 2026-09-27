@@ -8,9 +8,10 @@ type Props = {
   label?: ReactNode;
   id?: string;
   className?: string;
+  "aria-label"?: string;
 };
 
-export function Switch({ checked, onCheckedChange, disabled, label, id, className }: Props) {
+export function Switch({ checked, onCheckedChange, disabled, label, id, className, "aria-label": ariaLabel }: Props) {
   const autoId = useId();
   const inputId = id ?? autoId;
   return (
@@ -25,6 +26,7 @@ export function Switch({ checked, onCheckedChange, disabled, label, id, classNam
         className="neo-switch-root"
         checked={checked}
         disabled={disabled}
+        aria-label={ariaLabel}
         onCheckedChange={onCheckedChange}
       >
         <SwitchPrimitive.Thumb className="neo-switch-thumb" />

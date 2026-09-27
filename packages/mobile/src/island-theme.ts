@@ -1,6 +1,6 @@
 import { THEME } from "@neo-cloud-agent/ui/tokens";
 
-/** Same Web monochrome tokens Desk and the lab now share. */
+/** Shared Web / Cursor monochrome tokens. Name is leftover; values are THEME. */
 export const ISLAND = {
   bg: THEME.bg,
   rail: THEME.rail,

@@ -14,7 +14,19 @@ test("desk chrome imports the shared Web monochrome tokens", () => {
   assert.match(css, /font-family:\s*var\(--font-sans\)/);
   assert.doesNotMatch(css, /--accent:\s*#19c8b9/);
   assert.doesNotMatch(css, /#794f27/);
+  assert.doesNotMatch(css, /#3dd4c6|#e6f9f6|#fff9e3|#ffcc00/);
+  assert.doesNotMatch(css, /animal-island|animal-wrapper|animal-btn/);
   assert.match(tokens, /--bg:\s*#f4f4f5/);
+});
+
+test("desk no longer depends on animal-island-ui", () => {
+  const pkg = readFileSync(path.join(here, "../package.json"), "utf8");
+  const main = readFileSync(path.join(here, "main.tsx"), "utf8");
+  const island = readFileSync(path.join(here, "island.tsx"), "utf8");
+  assert.doesNotMatch(pkg, /animal-island-ui/);
+  assert.doesNotMatch(main, /animal-island-ui/);
+  assert.doesNotMatch(island, /animal-island-ui/);
+  assert.match(island, /from "@neo-cloud-agent\/ui"/);
 });
 
 test("desk composer is the Cursor / Web box: + pickers left, circular send", () => {

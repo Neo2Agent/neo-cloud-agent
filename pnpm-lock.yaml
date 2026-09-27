@@ -99,21 +99,12 @@ importers:
       '@fontsource/noto-sans-sc':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource/nunito':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@neo-cloud-agent/contracts':
         specifier: workspace:*
         version: link:../contracts
       '@neo-cloud-agent/ui':
         specifier: workspace:*
         version: link:../ui
-      animal-island-ui:
-        specifier: ^1.7.0
-        version: 1.7.0(classnames@2.5.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      classnames:
-        specifier: ^2.5.1
-        version: 2.5.1
       lucide-react:
         specifier: ^1.34.0
         version: 1.34.0(react@18.3.1)
@@ -1491,9 +1482,6 @@ packages:
   '@fontsource/noto-sans-sc@5.3.0':
     resolution: {integrity: sha512-HeqIlGm0+ohOKxZLuHj1qW6r6avHH0OWdKERAcSDI0RQ+MXrteuLKA+M+5eOA8rYy0MFvOR5AT0fQo2rUkye0Q==}
 
-  '@fontsource/nunito@5.3.0':
-    resolution: {integrity: sha512-vw9TaTQJ/zpEpKrsODuPmOvaVjXgdda6B+xXA4YqjrdeJ62MLgVoDerdRXFQHyBnSCt2yQ2nHKCHPP/Pv7Xq4Q==}
-
   '@gar/promisify@1.1.3':
     resolution: {integrity: sha512-k2Ty1JcVojjJFwrg/ThKi2ujJ7XNLYaFGNB/bWT9wGR+oSMJHMa5w+CUq6p/pVrKeNNgA7pCqEcjSnHVoqJQFw==}
 
@@ -2514,14 +2502,6 @@ packages:
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
 
-  animal-island-ui@1.7.0:
-    resolution: {integrity: sha512-KVqjaZBHQuoEYjswuRfnyB0aLQfnUM6H0tJqeXXrzwL1UQI0qXjDMNPEwIrUb8cyIt9nwwIW1NAxEiBwMVbStw==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      classnames: ^2.5.1
-      react: '>=17.0.0'
-      react-dom: '>=17.0.0'
-
   anser@1.4.10:
     resolution: {integrity: sha512-hCv9AqTQ8ycjpSd3upOJd7vFwW1JaoYQ7tpham03GJ1ca8/65rqn0RpaWpItOAd6ylW9wAw6luXYPJIyPFVOww==}
 
@@ -2850,9 +2830,6 @@ packages:
   ci-info@3.9.0:
     resolution: {integrity: sha512-NIxF55hv4nSqQswkAeiOi1r83xy8JldOFDTWiug55KBu9Jnblncd2U6ViHmYgHf01TPZS77NJBhBMKdWj9HQMQ==}
     engines: {node: '>=8'}
-
-  classnames@2.5.1:
-    resolution: {integrity: sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==}
 
   clean-stack@2.2.0:
     resolution: {integrity: sha512-4diC9HaTE+KRAMWhDhrGOECgWZxoevMc5TlkObMqNSsVU62PYzXZ/SMTjzyGAFF1YusgxGcSWTEXBhp0CPwQ1A==}
@@ -6996,8 +6973,6 @@ snapshots:
 
   '@fontsource/noto-sans-sc@5.3.0': {}
 
-  '@fontsource/nunito@5.3.0': {}
-
   '@gar/promisify@1.1.3': {}
 
   '@google/genai@1.52.0':
@@ -8037,12 +8012,6 @@ snapshots:
       json-schema-traverse: 0.4.1
       uri-js: 4.4.1
 
-  animal-island-ui@1.7.0(classnames@2.5.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
-    dependencies:
-      classnames: 2.5.1
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
-
   anser@1.4.10: {}
 
   ansi-escapes@4.3.2:
@@ -8527,8 +8496,6 @@ snapshots:
   ci-info@2.0.0: {}
 
   ci-info@3.9.0: {}
-
-  classnames@2.5.1: {}
 
   clean-stack@2.2.0: {}
 
