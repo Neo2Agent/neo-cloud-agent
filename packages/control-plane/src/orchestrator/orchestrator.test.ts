@@ -1719,6 +1719,14 @@ test("an offline Remote Control conversation can continue in the cloud on the re
   online();
 
   const moved = await handoffRun(run.id, { target: { loop: "cloud", tools: "cloud" } });
+  assert.match(
+    listEvents(moved.id).find((item) => item.kind === "scm.clone_started")?.title ?? "",
+    /在云端物化工作区/,
+  );
+  assert.match(
+    listEvents(moved.id).find((item) => item.kind === "scm.clone_succeeded")?.title ?? "",
+    /已转到云端 · 工作区就绪/,
+  );
   assert.equal(moved.executionTarget?.loop, "cloud");
   assert.equal(moved.executionTarget?.tools, "cloud");
   assert.equal(moved.executionTarget?.remoteControl, undefined);
