@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("neoDesk", {
   setToken: (token) => ipcRenderer.invoke("desk:setToken", token),
   clearToken: () => ipcRenderer.invoke("desk:clearToken"),
   pickFolder: () => ipcRenderer.invoke("desk:pickFolder"),
+  authorizeFolder: (folder) => ipcRenderer.invoke("desk:authorizeFolder", folder),
   listWorkspaces: () => ipcRenderer.invoke("desk:listWorkspaces"),
   unbindWorkspace: (workspaceId) => ipcRenderer.invoke("desk:unbindWorkspace", workspaceId),
   getTarget: () => ipcRenderer.invoke("desk:getTarget"),

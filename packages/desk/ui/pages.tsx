@@ -328,6 +328,10 @@ export function SettingsPage({
   onSection,
   maxLocalRuns,
   onMaxLocalRuns,
+  requireApproval,
+  onRequireApproval,
+  allowRemote,
+  onAllowRemote,
   user,
   userAvatar,
   neoAvatar,
@@ -353,6 +357,10 @@ export function SettingsPage({
   onSection: (section: SettingsSection) => void;
   maxLocalRuns: number;
   onMaxLocalRuns: (value: number) => void;
+  requireApproval?: boolean;
+  onRequireApproval?: (value: boolean) => void;
+  allowRemote?: boolean;
+  onAllowRemote?: (value: boolean) => void;
   user: string;
   userAvatar: string | null;
   neoAvatar: string | null;
@@ -472,6 +480,44 @@ export function SettingsPage({
               <p className="hint">
                 不同文件夹可以同时跑。每条都是一个独立进程，开太多会吃满内存和 CPU。
               </p>
+              {onAllowRemote ? (
+                <label className="desk-pref-toggle">
+                  <span>允许网页和手机在这台电脑开对话</span>
+                  <button
+                    id="toggle-allow-remote"
+                    type="button"
+                    role="switch"
+                    aria-checked={allowRemote ? "true" : "false"}
+                    aria-label="允许网页和手机在这台电脑开对话"
+                    className={allowRemote ? "on" : ""}
+                    onClick={() => onAllowRemote(!allowRemote)}
+                  >
+                    {allowRemote ? "开" : "关"}
+                  </button>
+                  <p className="hint">
+                    对齐 Cursor My Machines：打开后把已绑文件夹的短名报到控制面（不含绝对路径），Web / 手机就能选这台电脑。对话是 Remote Control，三端都能跟进。
+                  </p>
+                </label>
+              ) : null}
+              {onRequireApproval ? (
+                <label className="desk-pref-toggle">
+                  <span>远程派活先确认</span>
+                  <button
+                    id="toggle-require-approval"
+                    type="button"
+                    role="switch"
+                    aria-checked={requireApproval ? "true" : "false"}
+                    aria-label="远程派活先确认"
+                    className={requireApproval ? "on" : ""}
+                    onClick={() => onRequireApproval(!requireApproval)}
+                  >
+                    {requireApproval ? "开" : "关"}
+                  </button>
+                  <p className="hint">
+                    打开后，别人或网页派到这台电脑的任务会先弹出确认，对齐 Cursor 对本机执行的确认。
+                  </p>
+                </label>
+              ) : null}
               {onOpenMemories ? (
                 <IslandButton type="default" onClick={onOpenMemories}>
                   打开记忆
@@ -842,6 +888,7 @@ export function ContextBar({
       <div className="context-item-wrap">
         <button
           type="button"
+          id="desk-target"
           className="context-item"
           disabled={locked}
           onClick={() => setOpen(open === "target" ? null : "target")}
@@ -854,6 +901,7 @@ export function ContextBar({
           <div className="context-menu" role="menu">
             <button
               type="button"
+              data-desk-target="cloud"
               className={targetKind === TARGET_CLOUD ? "on" : ""}
               onClick={() => {
                 onTarget(TARGET_CLOUD);
@@ -865,6 +913,7 @@ export function ContextBar({
             </button>
             <button
               type="button"
+              data-desk-target="desk"
               className={targetKind === TARGET_DESK ? "on" : ""}
               disabled={!canRunLocal}
               onClick={() => {
@@ -877,6 +926,7 @@ export function ContextBar({
             </button>
             <button
               type="button"
+              data-desk-target="remote"
               className={targetKind === TARGET_REMOTE ? "on" : ""}
               disabled={remoteDisabled}
               onClick={() => {
@@ -1115,6 +1165,7 @@ export function ChatComposer({
         </div>
       ) : null}
       <textarea
+        id="desk-composer"
         ref={taRef}
         value={prompt}
         placeholder={placeholder}

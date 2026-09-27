@@ -351,6 +351,8 @@ export function App() {
   const [localStatuses, setLocalStatuses] = useState<Record<string, DeskRunStatus>>({});
   const [workspaces, setWorkspaces] = useState<DeskWorkspaceRef[]>([]);
   const [maxLocalRuns, setMaxLocalRuns] = useState(DEFAULT_MAX_LOCAL_RUNS);
+  const [requireApproval, setRequireApproval] = useState(false);
+  const [allowRemote, setAllowRemote] = useState(false);
   /** Said once when a new run joins a folder someone else is already editing. */
   const [localNotice, setLocalNotice] = useState("");
   const [copied, setCopied] = useState("");
@@ -1135,6 +1137,8 @@ export function App() {
       .getPrefs?.()
       .then((value) => {
         setMaxLocalRuns(normalizeMaxLocalRuns(value.maxLocalRuns));
+        setRequireApproval(Boolean(value.requireApproval));
+        setAllowRemote(Boolean(value.allowRemote));
         if (value.deskId) {
           deskIdRef.current = value.deskId;
           setTarget((prev) => mergeDeskTarget(prev, value.deskId));
@@ -2301,6 +2305,16 @@ export function App() {
             section={settingsSection}
             onSection={setSettingsSection}
             maxLocalRuns={maxLocalRuns}
+            requireApproval={requireApproval}
+            onRequireApproval={(value) => {
+              setRequireApproval(value);
+              void deskBridge()?.setPrefs?.({ requireApproval: value });
+            }}
+            allowRemote={allowRemote}
+            onAllowRemote={(value) => {
+              setAllowRemote(value);
+              void deskBridge()?.setPrefs?.({ allowRemote: value });
+            }}
             user={user}
             userAvatar={userAvatar}
             neoAvatar={neoAvatar}

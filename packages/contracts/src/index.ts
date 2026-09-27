@@ -118,7 +118,7 @@ export type {
   HandoffRequest,
   UpdateDeskRequest,
 } from "./desk.js";
-export { isDeskHostedTarget, remoteControlSendLock } from "./desk.js";
+export { isDeskHostedTarget, remoteControlSendLock, remoteMachineExecutionTarget } from "./desk.js";
 export { deskRepoKey, deskWorkspaceShortName } from "./desk-workspace.js";
 
 export type {

@@ -30,6 +30,11 @@ import {
 import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink } from "../src/protocol.js";
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import { deskAssignmentAlert } from "../src/notify-assignment.js";
+import {
+  REMOTE_DISPATCH_OFF_REASON,
+  dispatchedAssignmentDecision,
+  matchBoundWorkspace,
+} from "../src/remote-dispatch.js";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { publicizeWorkerUrls } from "../src/worker-urls.js";
 import {
@@ -55,10 +60,19 @@ protocol.registerSchemesAsPrivileged([
 
 type DeskTarget = { kind: "cloud" | "desk" | "remote"; folder?: string; deskId?: string; workspaceId?: string };
 
-type BoundWorkspace = { id: string; folder: string; name: string; repoKey: string; git: boolean };
+type BoundWorkspace = {
+  id: string;
+  folder: string;
+  name: string;
+  repoKey: string;
+  git: boolean;
+  /** Control-plane catalog id after this folder is published for remote dispatch. */
+  remoteId?: string;
+};
 
 type DeskPrefs = {
   requireApproval?: boolean;
+  allowRemote?: boolean;
   maxLocalRuns?: number;
   /** Desk-only. Cloud never reads this. Today only `deny` is honored. */
   outOfWorkspacePolicy?: OutOfWorkspacePolicy;
@@ -245,15 +259,50 @@ function saveBoundWorkspaces(items: BoundWorkspace[]): void {
 }
 
 function findBound(selector: { workspaceId?: string | null; folder?: string }): BoundWorkspace | undefined {
-  const items = boundWorkspaces();
-  if (selector.workspaceId) {
-    return items.find((item) => item.id === selector.workspaceId);
+  return matchBoundWorkspace(boundWorkspaces(), selector, (folder) => path.resolve(folder));
+}
+
+async function publishBoundWorkspace(record: BoundWorkspace): Promise<BoundWorkspace> {
+  if (!deskId || !deskToken) {
+    return record;
   }
-  if (selector.folder) {
-    const folder = path.resolve(selector.folder);
-    return items.find((item) => path.resolve(item.folder) === folder);
+  try {
+    const published = await leaseClient().bindWorkspace({
+      deskId,
+      deskToken,
+      name: record.name,
+      repoKey: record.repoKey,
+      git: record.git,
+    });
+    if (published.id && published.id !== record.remoteId) {
+      const next = { ...record, remoteId: published.id };
+      saveBoundWorkspaces(boundWorkspaces().map((item) => (item.id === record.id ? next : item)));
+      return next;
+    }
+  } catch (error) {
+    deskLog.error("could not publish the workspace catalog", error, { folder: record.folder });
   }
-  return undefined;
+  return record;
+}
+
+async function publishBoundWorkspaces(): Promise<void> {
+  for (const item of boundWorkspaces()) {
+    await publishBoundWorkspace(item);
+  }
+}
+
+async function syncAllowRemote(allowRemote: boolean): Promise<void> {
+  const userToken = getToken();
+  if (userToken && deskId) {
+    try {
+      await leaseClient().setAllowRemote(userToken, deskId, allowRemote);
+    } catch (error) {
+      deskLog.error("could not update allowRemote", error, { deskId, allowRemote });
+    }
+  }
+  if (allowRemote) {
+    await publishBoundWorkspaces();
+  }
 }
 
 /**
@@ -463,14 +512,15 @@ async function confirmFolder(folder: string): Promise<string | null> {
 }
 
 /**
- * Bind a folder for local runs. Folder identity stays on this machine; the
- * control-plane workspace catalog is phase 2 (web starting a new chat here).
+ * Bind a folder for local runs. The absolute path stays on this machine.
+ * When remote dispatch is on, the short name + repoKey go to the catalog so
+ * Web / Mobile can start a chat on this checkout (Cursor My Machines).
  */
 async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
   const resolved = path.resolve(folder);
   const existing = findBound({ folder: resolved });
   if (existing) {
-    return existing;
+    return prefs().allowRemote ? publishBoundWorkspace(existing) : existing;
   }
   const identity = await readRepoIdentity(resolved);
   const id = `dws_local_${Buffer.from(resolved).toString("hex").slice(0, LOCAL_WORKSPACE_ID_HEX_LEN)}`;
@@ -479,7 +529,29 @@ async function bindWorkspace(folder: string): Promise<BoundWorkspace> {
     ...boundWorkspaces().filter((item) => path.resolve(item.folder) !== resolved && item.id !== id),
     record,
   ]);
-  return record;
+  return prefs().allowRemote ? publishBoundWorkspace(record) : record;
+}
+
+async function authorizeAndBindFolder(folder: string): Promise<{
+  id: string;
+  folder: string;
+  name: string;
+  git: boolean;
+  remoteId?: string;
+  error?: string;
+} | null> {
+  if (typeof folder !== "string" || !folder.trim()) {
+    return { id: "", folder: "", name: "", git: false, error: "需要文件夹路径" };
+  }
+  const authorized = await confirmFolder(folder);
+  if (!authorized) {
+    return null;
+  }
+  const bound = await bindWorkspace(authorized);
+  const target = { kind: "desk" as const, folder: bound.folder, deskId, workspaceId: bound.id };
+  writeJson(stateFile(TARGET_STATE_FILE), target);
+  toRenderer("desk:target", target);
+  return { id: bound.id, folder: bound.folder, name: bound.name, git: bound.git, remoteId: bound.remoteId };
 }
 
 /**
@@ -837,9 +909,13 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
   }
   const bound = findBound({ workspaceId: assignment.workspaceId });
   const label = bound?.name ?? "本机工作区";
-  const dispatched = Boolean(assignment.requestedBy) || Boolean(assignment.workspaceId);
-  if (dispatched) {
-    await rejectRun(assignment.runId, "这台电脑没有开启远程派活");
+  const decision = dispatchedAssignmentDecision({
+    allowRemote: Boolean(prefs().allowRemote),
+    requestedBy: assignment.requestedBy,
+    workspaceId: assignment.workspaceId,
+  });
+  if (decision === "reject") {
+    await rejectRun(assignment.runId, REMOTE_DISPATCH_OFF_REASON);
     return;
   }
   const alert = deskAssignmentAlert({
@@ -1009,6 +1085,9 @@ async function connectInboxOnce(): Promise<void> {
     toRenderer("desk:target", currentTarget());
     reportPresence(true);
     startLeaseLoop();
+    if (prefs().allowRemote) {
+      void syncAllowRemote(true);
+    }
   } catch (error) {
     lastRegisterError = errorText(error, "desk register failed");
     deskLog.error("could not register this machine", error, { controlPlaneUrl });
@@ -1073,30 +1152,26 @@ function wireIpc(): void {
     if (!folder) {
       return null;
     }
-    const authorized = await confirmFolder(folder);
-    if (!authorized) {
-      return null;
-    }
-    const bound = await bindWorkspace(authorized);
-    const target = { kind: "desk" as const, folder: bound.folder, deskId, workspaceId: bound.id };
-    writeJson(stateFile(TARGET_STATE_FILE), target);
-    toRenderer("desk:target", target);
-    return { id: bound.id, folder: bound.folder, name: bound.name, git: bound.git };
+    return authorizeAndBindFolder(folder);
   });
+  ipcMain.handle("desk:authorizeFolder", async (_event, folder: string) => authorizeAndBindFolder(folder));
   ipcMain.handle("desk:listWorkspaces", () =>
     boundWorkspaces().map((item) => ({
       id: item.id,
       folder: item.folder,
       name: item.name,
       git: item.git,
+      remoteId: item.remoteId,
     })),
   );
   ipcMain.handle("desk:unbindWorkspace", async (_event, workspaceId: string) => {
-    saveBoundWorkspaces(boundWorkspaces().filter((item) => item.id !== workspaceId));
-    if (deskId && deskToken) {
+    const bound = findBound({ workspaceId });
+    saveBoundWorkspaces(boundWorkspaces().filter((item) => item.id !== workspaceId && item.remoteId !== workspaceId));
+    const catalogId = bound?.remoteId || workspaceId;
+    if (deskId && deskToken && catalogId) {
       await leaseClient()
-        .unbindWorkspace({ deskId, deskToken, workspaceId })
-        .catch((error) => deskLog.error("could not unbind the workspace", error, { workspaceId }));
+        .unbindWorkspace({ deskId, deskToken, workspaceId: catalogId })
+        .catch((error) => deskLog.error("could not unbind the workspace", error, { workspaceId: catalogId }));
     }
     return true;
   });
@@ -1111,8 +1186,13 @@ function wireIpc(): void {
   });
   ipcMain.handle("desk:getPrefs", () => ({ ...prefs(), deskId }));
   ipcMain.handle("desk:setPrefs", async (_event, next: DeskPrefs) => {
+    const previous = prefs();
     setPrefs(next);
-    return prefs();
+    const merged = prefs();
+    if (typeof next.allowRemote === "boolean" && next.allowRemote !== Boolean(previous.allowRemote)) {
+      await syncAllowRemote(merged.allowRemote === true);
+    }
+    return { ...merged, deskId };
   });
   ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment, folder?: string) => {
     return withStartingHere(assignment.runId, () => startAssignment(assignment, folder));

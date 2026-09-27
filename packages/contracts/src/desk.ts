@@ -1,6 +1,25 @@
 import type { ExecutionTarget } from "./run.js";
 
 /**
+ * Browser / phone "run on my machine": Cursor My Machines / Remote Control.
+ * Loop stays in neo-loop so Web and Mobile can keep the conversation; tools
+ * stay on the laptop. This Computer (`loop:desk`) is Desk-only and would
+ * vanish from other clients after create.
+ */
+export function remoteMachineExecutionTarget(input: {
+  deskId: string;
+  deskWorkspaceId?: string;
+}): ExecutionTarget & { loop: "cloud"; tools: "desk"; deskId: string; remoteControl: true } {
+  return {
+    loop: "cloud",
+    tools: "desk",
+    deskId: input.deskId,
+    deskWorkspaceId: input.deskWorkspaceId,
+    remoteControl: true,
+  };
+}
+
+/**
  * One folder this desk agreed to run agents in. The absolute path stays on the
  * machine; the control plane only keeps an identity other clients can pick.
  */

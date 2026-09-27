@@ -181,6 +181,7 @@ export function SidePanel({
             className="wb-tile"
             role="button"
             tabIndex={0}
+            aria-label="打开 Terminal"
             onClick={openTerminal}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
@@ -197,6 +198,7 @@ export function SidePanel({
             className="wb-tile"
             role="button"
             tabIndex={0}
+            aria-label="打开 Files"
             onClick={openFiles}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {

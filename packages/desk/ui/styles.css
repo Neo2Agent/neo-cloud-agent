@@ -3058,6 +3058,41 @@ img.avatar {
   font-size: 15px;
 }
 
+.settings-card .desk-pref-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 6px;
+}
+
+.settings-card .desk-pref-toggle > span {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.settings-card .desk-pref-toggle > button {
+  min-width: 44px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 50px;
+  background: var(--bg-raised);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.settings-card .desk-pref-toggle > button.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+
+.settings-card .desk-pref-toggle > .hint {
+  grid-column: 1 / -1;
+}
+
 .settings-card label {
   display: grid;
   gap: 6px;

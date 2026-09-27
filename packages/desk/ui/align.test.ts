@@ -28,6 +28,13 @@ test("desk composer is the Cursor / Web box: + pickers left, circular send", () 
   assert.match(css, /@import "@neo-cloud-agent\/ui\/cloud-settings\.css"/);
 });
 
+test("desk basics settings expose Cursor-like remote dispatch switches", () => {
+  const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
+  assert.match(pages, /toggle-allow-remote/);
+  assert.match(pages, /toggle-require-approval/);
+  assert.match(pages, /允许网页和手机在这台电脑开对话/);
+});
+
 test("desk expert picker sits in the context bar like Web", () => {
   const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
   const app = readFileSync(path.join(here, "App.tsx"), "utf8");

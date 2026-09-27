@@ -146,6 +146,8 @@ export type NeoDeskBridge = {
   setToken(token: string): Promise<{ deskId?: string; error?: string } | void>;
   clearToken(): Promise<void>;
   pickFolder(): Promise<DeskWorkspaceRef | string | null>;
+  /** Bind a known path without the native picker. Same auth rules as pickFolder. */
+  authorizeFolder?(folder: string): Promise<(DeskWorkspaceRef & { error?: string }) | null>;
   getTarget(): Promise<DeskTarget>;
   setTarget(target: DeskTarget): Promise<void>;
   openPath(filePath: string): Promise<void>;
@@ -153,13 +155,15 @@ export type NeoDeskBridge = {
   unbindWorkspace?(workspaceId: string): Promise<boolean>;
   getPrefs?(): Promise<{
     requireApproval?: boolean;
+    allowRemote?: boolean;
     maxLocalRuns?: number;
     deskId?: string;
   }>;
   setPrefs?(next: {
     requireApproval?: boolean;
+    allowRemote?: boolean;
     maxLocalRuns?: number;
-  }): Promise<{ requireApproval?: boolean; maxLocalRuns?: number }>;
+  }): Promise<{ requireApproval?: boolean; allowRemote?: boolean; maxLocalRuns?: number }>;
   /** `folder` pins this run to a folder so parallel runs cannot follow the picker. */
   startRun?(assignment: DeskAssignment, folder?: string): Promise<boolean>;
   takeAssignment?(runId?: string, folder?: string): Promise<{ started?: boolean; runId?: string }>;
