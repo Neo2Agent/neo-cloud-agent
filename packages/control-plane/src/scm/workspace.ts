@@ -170,8 +170,14 @@ export function isTransientGitCloneError(message: string): boolean {
   return TRANSIENT_CLONE_ERROR.test(message);
 }
 
-export function gitCloneArgs(url: string, dest: string): string[] {
-  return ["-c", `http.version=${GIT_CLONE_HTTP_VERSION}`, "clone", "--depth", "1", url, dest];
+export function gitCloneArgs(url: string, dest: string, ref?: string | null): string[] {
+  const args = ["-c", `http.version=${GIT_CLONE_HTTP_VERSION}`, "clone", "--depth", "1"];
+  const branch = ref?.trim();
+  if (branch) {
+    args.push("--branch", branch);
+  }
+  args.push(url, dest);
+  return args;
 }
 
 export function isNeoOverlayOnly(dest: string): boolean {
@@ -259,6 +265,7 @@ async function cloneIntoEmpty(
   dest: string,
   timeoutMs: number,
   token?: string,
+  ref?: string | null,
 ): Promise<void> {
   if (existsSync(dest)) {
     if (readdirSync(dest).length > 0) {
@@ -270,7 +277,7 @@ async function cloneIntoEmpty(
 
   const run = (env?: NodeJS.ProcessEnv) =>
     new Promise<void>((resolve, reject) => {
-      const child = spawn("git", gitCloneArgs(url, dest), {
+      const child = spawn("git", gitCloneArgs(url, dest, ref), {
         stdio: ["ignore", "pipe", "pipe"],
         env: env ? { ...process.env, ...env } : undefined,
       });
@@ -305,10 +312,16 @@ async function cloneIntoEmpty(
   await run();
 }
 
-async function cloneBesideOverlay(url: string, dest: string, timeoutMs: number, token?: string): Promise<void> {
+async function cloneBesideOverlay(
+  url: string,
+  dest: string,
+  timeoutMs: number,
+  token?: string,
+  ref?: string | null,
+): Promise<void> {
   const tmp = mkdtempSync(path.join(path.dirname(dest), ".neo-clone-"));
   try {
-    await cloneIntoEmpty(url, tmp, timeoutMs, token);
+    await cloneIntoEmpty(url, tmp, timeoutMs, token, ref);
     for (const name of readdirSync(tmp)) {
       const from = path.join(tmp, name);
       const to = path.join(dest, name);
@@ -378,7 +391,12 @@ export async function gitClone(
   dest: string,
   timeoutMs = gitCloneTimeoutMs(),
   token?: string,
+  ref?: string | null,
 ): Promise<void> {
+  const intoEmpty = (nextUrl: string, nextDest: string, nextTimeout: number, nextToken?: string) =>
+    cloneIntoEmpty(nextUrl, nextDest, nextTimeout, nextToken, ref);
+  const beside = (nextUrl: string, nextDest: string, nextTimeout: number, nextToken?: string) =>
+    cloneBesideOverlay(nextUrl, nextDest, nextTimeout, nextToken, ref);
   if (existsSync(dest)) {
     if (!statSync(dest).isDirectory()) {
       throw new Error(CLONE_DEST_BUSY);
@@ -388,13 +406,13 @@ export async function gitClone(
     } else if (await originMatches(dest, url)) {
       return;
     } else if (isNeoOverlayOnly(dest)) {
-      await cloneWithRetry(url, dest, timeoutMs, token, cloneBesideOverlay);
+      await cloneWithRetry(url, dest, timeoutMs, token, beside);
       return;
     } else {
       throw new Error(CLONE_DEST_BUSY);
     }
   }
-  await cloneWithRetry(url, dest, timeoutMs, token, cloneIntoEmpty);
+  await cloneWithRetry(url, dest, timeoutMs, token, intoEmpty);
 }
 
 export async function copyWorkspaceTree(src: string, dest: string): Promise<void> {
@@ -482,7 +500,7 @@ export async function materializeRepos(
   repoUrls: string[],
   workspaceDir: string,
   root: string,
-  options?: { token?: string; onProgress?: () => void },
+  options?: { token?: string; onProgress?: () => void; ref?: string | null },
 ): Promise<Array<{ dest: string; ref: RepoRef }>> {
   mkdirSync(workspaceDir, { recursive: true });
   const refs = repoUrls.map((item) => resolveRepoRef(item, root));
@@ -491,7 +509,7 @@ export async function materializeRepos(
   for (const ref of refs) {
     const dest = refs.length === 1 ? workspaceDir : path.join(workspaceDir, ref.name);
     if (ref.kind === "remote") {
-      await gitClone(ref.source, dest, gitCloneTimeoutMs(), options?.token);
+      await gitClone(ref.source, dest, gitCloneTimeoutMs(), options?.token, options?.ref);
       options?.onProgress?.();
     } else {
       if (!existsSync(ref.source) || !statSync(ref.source).isDirectory()) {

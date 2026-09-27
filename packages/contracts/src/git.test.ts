@@ -10,9 +10,31 @@ import {
   parseHunkLines,
   parseNameStatus,
   parseNumstat,
+  looksRemoteRepo,
+  sanitizeRemoteUrl,
+  runCloneBranch,
+  runCloneRemoteUrl,
   runGitContext,
   splitPatchByFile,
 } from "./git.js";
+
+test("a Remote run clones the recorded origin and laptop branch, not neo/", () => {
+  assert.equal(looksRemoteRepo("https://github.com/acme/app.git"), true);
+  assert.equal(looksRemoteRepo("git@github.com:acme/app.git"), true);
+  assert.equal(looksRemoteRepo("/Users/me/app"), false);
+  assert.equal(
+    sanitizeRemoteUrl("https://x-access-token:secret@github.com/acme/app.git"),
+    "https://github.com/acme/app.git",
+  );
+  assert.equal(
+    runCloneRemoteUrl({ remoteUrl: "https://github.com/acme/app.git", repoUrls: ["/Users/me/app"] }),
+    "https://github.com/acme/app.git",
+  );
+  assert.equal(runCloneRemoteUrl({ repoUrls: ["/Users/me/app", "https://github.com/acme/app.git"] }), "https://github.com/acme/app.git");
+  assert.equal(runCloneBranch({ baseBranch: "feat/login", branchName: "neo/fix-abcd1234" }), "feat/login");
+  assert.equal(runCloneBranch({ branchName: "feat/login" }), "feat/login");
+  assert.equal(runCloneBranch({ branchName: "neo/fix-abcd1234" }), null);
+});
 
 test("runGitContext hides Git for plain chats and splits cloud from desk", () => {
   assert.equal(runGitContext({ repoUrls: [], branchName: null, pullRequests: [] }), "none");

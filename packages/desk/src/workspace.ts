@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { DeskAssignment, RunCommitRef } from "@neo-cloud-agent/contracts";
+import { looksRemoteRepo, sanitizeRemoteUrl } from "@neo-cloud-agent/contracts";
 import { deskRepoKey, deskWorkspaceShortName } from "@neo-cloud-agent/contracts/desk-workspace";
 import {
   collectCommits,
@@ -191,6 +192,27 @@ export async function readRepoIdentity(folder: string): Promise<{ repoKey: strin
   return { repoKey: deskRepoKey({ remoteUrl: remote, folder }), name, git: true };
 }
 
+/** Origin + branch the control plane needs if this Remote later continues in the cloud. */
+export async function readRepoCloneIdentity(folder: string): Promise<{
+  repoKey: string;
+  name: string;
+  git: boolean;
+  remoteUrl: string | null;
+  branch: string | null;
+}> {
+  const identity = await readRepoIdentity(folder);
+  if (!identity.git) {
+    return { ...identity, remoteUrl: null, branch: null };
+  }
+  const remote = await gitOutput(folder, ["remote", "get-url", "origin"]).catch(() => "");
+  const branch = await gitOutput(folder, ["symbolic-ref", "--short", "-q", "HEAD"]).catch(() => "");
+  return {
+    ...identity,
+    remoteUrl: looksRemoteRepo(remote) ? sanitizeRemoteUrl(remote) : null,
+    branch: branch || null,
+  };
+}
+
 /** Uncommitted-aware change counts for the folder the agent is working in. */
 export async function localWorkspaceDiffStat(folder: string): Promise<{ added: number; removed: number } | null> {
   if (!isGitRepo(folder)) {
@@ -244,7 +266,14 @@ export async function localGitSnapshot(folder: string, since?: string | null): P
     }
   }
   const branch = (await git(["symbolic-ref", "--short", "-q", "HEAD"])).stdout.trim();
-  return { branch: branch || null, baseBranch: null, commits, ...(await collectWorkspaceDiff(git, base)) };
+  const remote = (await git(["remote", "get-url", "origin"])).stdout.trim();
+  return {
+    branch: branch || null,
+    baseBranch: null,
+    remoteUrl: looksRemoteRepo(remote) ? sanitizeRemoteUrl(remote) : null,
+    commits,
+    ...(await collectWorkspaceDiff(git, base)),
+  };
 }
 
 function gitOutput(cwd: string, args: string[]): Promise<string> {

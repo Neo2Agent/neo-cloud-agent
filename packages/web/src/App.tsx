@@ -11,7 +11,13 @@ import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { isRemoteControlTarget, type ImageRef, type PullRequestRef, type Run } from "@neo-cloud-agent/contracts/run";
 import { runGitContext } from "@neo-cloud-agent/contracts/git";
-import { isDeskHostedTarget, type Desk, type DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
+import {
+  isDeskHostedTarget,
+  REMOTE_CLOUD_CONTINUE_HINT,
+  remoteCloudContinueOffer,
+  type Desk,
+  type DeskWorkspace,
+} from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
 import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
@@ -1324,6 +1330,33 @@ export function App() {
     [confirm, deskTarget.deskId, runId],
   );
 
+  const continueRemoteInCloud = useCallback(async () => {
+    if (!runId) return;
+    if (
+      !(await confirm({
+        title: "在云端续聊？",
+        message: REMOTE_CLOUD_CONTINUE_HINT,
+        confirmLabel: "在云端续聊",
+      }))
+    ) {
+      return;
+    }
+    setHandoffError("");
+    try {
+      const body = await readJson<Run & { error?: string }>(
+        await api(tokenRef.current, `/v1/runs/${runId}/handoff`, {
+          method: "POST",
+          body: JSON.stringify({ target: { loop: "cloud", tools: "cloud" } }),
+        }),
+      );
+      if (body.error) throw new Error(body.error);
+      setCurrentRun(body);
+      setRuns((prev) => prev.map((item) => (item.id === body.id ? { ...item, ...body } : item)));
+    } catch (error) {
+      setHandoffError(error instanceof Error ? error.message : "切到云端失败");
+    }
+  }, [confirm, runId]);
+
   const applyTarget = useCallback((next: DeskTarget) => {
     setDeskTarget(next);
     if (next.folder) setDeskFolder(next.folder);
@@ -1678,6 +1711,11 @@ export function App() {
   const archived = isComposerClosed(currentRun?.status);
   const projectCloudLock = Boolean(activeProject) && !isDeskHostedTarget(currentRun?.executionTarget);
   const hostLock = remoteControlSendLock(
+    currentRun,
+    desks,
+    deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
+  );
+  const cloudContinue = remoteCloudContinueOffer(
     currentRun,
     desks,
     deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
@@ -2714,6 +2752,17 @@ export function App() {
               }
               blocked={hostLock.locked}
               blockedHint={hostLock.hint}
+              blockedAction={
+                cloudContinue.show
+                  ? {
+                      id: "continue-remote-cloud",
+                      label: cloudContinue.branch
+                        ? `在云端续聊 · ${cloudContinue.branch}`
+                        : "在云端续聊",
+                      onClick: () => void continueRemoteInCloud(),
+                    }
+                  : undefined
+              }
               model={selectedModel}
               experts={experts}
               teams={teams}

@@ -1,4 +1,6 @@
 import type { ExecutionTarget } from "./run.js";
+import { isRemoteControlTarget } from "./run.js";
+import { runCloneBranch, runCloneRemoteUrl } from "./git.js";
 
 /**
  * One folder this desk agreed to run agents in. The absolute path stays on the
@@ -85,6 +87,10 @@ export interface DeskClaimRequest {
   runId: string;
   workspaceDir: string;
   pid?: number;
+  /** Laptop `origin` so an offline Remote can clone in the cloud. */
+  remoteUrl?: string;
+  /** Current branch on that laptop. */
+  branch?: string;
 }
 
 export interface DeskRejectRequest {
@@ -148,4 +154,39 @@ export function remoteControlSendLock(
     return { locked: false, hint: "" };
   }
   return { locked: true, hint: DESK_HOST_OFFLINE_MESSAGE };
+}
+
+export const REMOTE_CLOUD_CONTINUE_ONLINE = "电脑在线时请在这条 Remote 上继续。";
+export const REMOTE_CLOUD_CONTINUE_NO_REMOTE =
+  "这条 Remote 没有可 clone 的远端仓库。未 push 的改动也不会上去。";
+export const REMOTE_CLOUD_CONTINUE_HINT = "未 push 的本机改动不会上去。云端按已记录的仓库和分支继续这条对话。";
+
+/**
+ * Offer "continue this Remote in the cloud" only when the host is offline and
+ * we already recorded a cloneable origin. This Computer never qualifies.
+ */
+export function remoteCloudContinueOffer(
+  run: {
+    status?: string | null;
+    remoteUrl?: string | null;
+    repoUrls?: string[] | null;
+    branchName?: string | null;
+    baseBranch?: string | null;
+    executionTarget?: ExecutionTarget | null;
+  } | null | undefined,
+  desks: Array<Pick<Desk, "id" | "online">>,
+  options?: RemoteControlSendLockOptions,
+): { show: boolean; remoteUrl: string; branch: string } {
+  if (!run || !isRemoteControlTarget(run.executionTarget)) {
+    return { show: false, remoteUrl: "", branch: "" };
+  }
+  if (run.status === "ARCHIVED" || run.status === "EXPIRED") {
+    return { show: false, remoteUrl: "", branch: "" };
+  }
+  if (!remoteControlSendLock(run, desks, options).locked) {
+    return { show: false, remoteUrl: "", branch: "" };
+  }
+  const remoteUrl = runCloneRemoteUrl(run) ?? "";
+  const branch = runCloneBranch(run) ?? "";
+  return { show: Boolean(remoteUrl), remoteUrl, branch };
 }

@@ -37,6 +37,7 @@ import {
   localGitSnapshot,
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
+  readRepoCloneIdentity,
   readRepoIdentity,
   runScratchDir,
   runStateDir,
@@ -698,8 +699,17 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
     // Claim last. A worker the control plane never learned about would keep
     // editing the folder while the run looks unstarted, so a failure here has
     // to take the process down with it.
-    await leaseClient().claim({ deskId, deskToken, runId, workspaceDir, pid: child.pid ?? undefined });
-    runLog.info("worker claimed", { runId, folder: workspaceDir });
+    const cloneId = await readRepoCloneIdentity(workspaceDir).catch(() => null);
+    await leaseClient().claim({
+      deskId,
+      deskToken,
+      runId,
+      workspaceDir,
+      pid: child.pid ?? undefined,
+      remoteUrl: cloneId?.remoteUrl ?? undefined,
+      branch: cloneId?.branch ?? undefined,
+    });
+    runLog.info("worker claimed", { runId, folder: workspaceDir, remoteUrl: cloneId?.remoteUrl, branch: cloneId?.branch });
     reportRunStatus({ runId, state: "running", workspace: workspaceDir });
     return true;
   } catch (error) {

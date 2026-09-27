@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DESK_HOST_OFFLINE_MESSAGE, DESK_HOST_UNBOUND_MESSAGE, remoteControlSendLock } from "./desk.js";
+import {
+  DESK_HOST_OFFLINE_MESSAGE,
+  DESK_HOST_UNBOUND_MESSAGE,
+  remoteCloudContinueOffer,
+  remoteControlSendLock,
+} from "./desk.js";
 
 test("cloud chats are never locked by desk presence", () => {
   assert.deepEqual(remoteControlSendLock({ executionTarget: { loop: "cloud" } }, []), {
@@ -38,4 +43,35 @@ test("a Remote Control chat sends only while that desk's inbox is live", () => {
     locked: false,
     hint: "",
   });
+});
+
+test("continue-in-cloud is only for an offline Remote with a recorded origin", () => {
+  const remote = {
+    remoteUrl: "https://github.com/acme/app.git",
+    baseBranch: "feat/login",
+    executionTarget: {
+      loop: "cloud" as const,
+      tools: "desk" as const,
+      deskId: "desk_1",
+      remoteControl: true,
+    },
+  };
+  assert.deepEqual(remoteCloudContinueOffer(remote, [{ id: "desk_1", online: true }]), {
+    show: false,
+    remoteUrl: "",
+    branch: "",
+  });
+  assert.deepEqual(remoteCloudContinueOffer(remote, [{ id: "desk_1", online: false }]), {
+    show: true,
+    remoteUrl: "https://github.com/acme/app.git",
+    branch: "feat/login",
+  });
+  assert.equal(
+    remoteCloudContinueOffer(
+      { ...remote, executionTarget: { loop: "desk", tools: "desk", deskId: "desk_1" } },
+      [{ id: "desk_1", online: false }],
+    ).show,
+    false,
+  );
+  assert.equal(remoteCloudContinueOffer({ ...remote, remoteUrl: null, repoUrls: ["/tmp/app"] }, []).show, false);
 });

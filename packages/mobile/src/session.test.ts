@@ -8,6 +8,8 @@ const remote: Run = {
   id: "r1",
   prompt: "follow desk",
   status: "IDLE",
+  remoteUrl: "https://github.com/acme/app.git",
+  baseBranch: "feat/login",
   executionTarget: { loop: "cloud", tools: "desk", deskId: "desk_1", remoteControl: true },
 } as Run;
 
@@ -15,6 +17,8 @@ test("composerGate locks Remote follow-up when the host is offline", () => {
   const gate = composerGate(remote, [{ id: "desk_1", online: false }]);
   assert.equal(gate.locked, true);
   assert.equal(gate.hint, DESK_HOST_OFFLINE_MESSAGE);
+  assert.equal(gate.cloudContinue.show, true);
+  assert.equal(gate.cloudContinue.branch, "feat/login");
 });
 
 test("composerGate stays open for cloud runs", () => {

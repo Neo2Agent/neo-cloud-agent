@@ -810,7 +810,26 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         remoteControl: current?.executionTarget?.remoteControl,
       })
     : null;
+  const continueRemoteInCloud = async () => {
+    if (!current) return;
+    try {
+      const moved = await client.handoff(current.id, { loop: "cloud", tools: "cloud" });
+      setCurrent(moved);
+      setRuns((prev) => prev.map((item) => (item.id === moved.id ? { ...item, ...moved } : item)));
+      setPageError("");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "切到云端失败");
+    }
+  };
   const composer = (
+    <View>
+    {gate.cloudContinue.show ? (
+      <Pressable testID="continue-remote-cloud" onPress={() => void continueRemoteInCloud()} style={styles.cloudContinue}>
+        <Text style={styles.cloudContinueText}>
+          {gate.cloudContinue.branch ? `在云端续聊 · ${gate.cloudContinue.branch}` : "在云端续聊"}
+        </Text>
+      </Pressable>
+    ) : null}
     <Composer
       prompt={prompt}
       locked={gate.locked}
@@ -865,6 +884,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       }}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
     />
+    </View>
   );
 
   return (
@@ -953,4 +973,6 @@ const styles = StyleSheet.create({
   home: { flex: 1 },
   topbar: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
   menu: { fontSize: 20, color: colors.ink },
+  cloudContinue: { marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, alignItems: "center" },
+  cloudContinueText: { color: colors.ink, fontSize: 14 },
 });

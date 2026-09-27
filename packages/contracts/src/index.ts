@@ -71,10 +71,14 @@ export {
   feedbackFollowUpText,
   gitDiffBase,
   groupCommitsByDay,
+  looksRemoteRepo,
+  sanitizeRemoteUrl,
   mergeFileChanges,
   parseGitLog,
   parseNameStatus,
   parseNumstat,
+  runCloneBranch,
+  runCloneRemoteUrl,
   runGitContext,
   splitPatchByFile,
 } from "./git.js";
@@ -118,7 +122,16 @@ export type {
   HandoffRequest,
   UpdateDeskRequest,
 } from "./desk.js";
-export { isDeskHostedTarget, remoteControlSendLock } from "./desk.js";
+export {
+  DESK_HOST_OFFLINE_MESSAGE,
+  DESK_HOST_UNBOUND_MESSAGE,
+  REMOTE_CLOUD_CONTINUE_HINT,
+  REMOTE_CLOUD_CONTINUE_NO_REMOTE,
+  REMOTE_CLOUD_CONTINUE_ONLINE,
+  isDeskHostedTarget,
+  remoteCloudContinueOffer,
+  remoteControlSendLock,
+} from "./desk.js";
 export { deskRepoKey, deskWorkspaceShortName } from "./desk-workspace.js";
 
 export type {

@@ -23,6 +23,8 @@ export type LeaseClient = {
     runId: string;
     workspaceDir: string;
     pid?: number;
+    remoteUrl?: string;
+    branch?: string;
   }): Promise<void>;
   reject(input: { deskId: string; deskToken: string; runId: string; reason?: string }): Promise<void>;
   /** Tell the control plane this machine's worker for a run has exited. */
@@ -114,7 +116,13 @@ export function createLeaseClient(baseUrl: string, fetchImpl: typeof fetch = fet
         input.deskId,
         input.deskToken,
         "claim",
-        { runId: input.runId, workspaceDir: input.workspaceDir, pid: input.pid },
+        {
+          runId: input.runId,
+          workspaceDir: input.workspaceDir,
+          pid: input.pid,
+          remoteUrl: input.remoteUrl,
+          branch: input.branch,
+        },
         "desk claim failed",
       );
     },

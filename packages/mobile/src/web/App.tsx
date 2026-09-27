@@ -879,7 +879,29 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   }
 
   const gate = composerGate(current, desks);
+  const continueRemoteInCloud = async () => {
+    if (!current) return;
+    try {
+      const moved = await client.handoff(current.id, { loop: "cloud", tools: "cloud" });
+      setCurrent(moved);
+      setRuns((prev) => prev.map((item) => (item.id === moved.id ? { ...item, ...moved } : item)));
+      setPageError("");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "切到云端失败");
+    }
+  };
   const composer = (
+    <>
+    {gate.cloudContinue.show ? (
+      <button
+        type="button"
+        id="continue-remote-cloud"
+        className="ghost"
+        onClick={() => void continueRemoteInCloud()}
+      >
+        {gate.cloudContinue.branch ? `在云端续聊 · ${gate.cloudContinue.branch}` : "在云端续聊"}
+      </button>
+    ) : null}
     <IslandComposer
       prompt={prompt}
       locked={gate.locked}
@@ -933,6 +955,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       }}
       startVoice={(onPreview, onError, onEnded) => startAppVoice(client, onPreview, onError, onEnded)}
     />
+    </>
   );
   const drawer = (
     <IslandDrawer

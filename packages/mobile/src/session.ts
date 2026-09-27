@@ -1,4 +1,4 @@
-import { remoteControlSendLock, type Desk } from "@neo-cloud-agent/contracts/desk";
+import { remoteCloudContinueOffer, remoteControlSendLock, type Desk } from "@neo-cloud-agent/contracts/desk";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { STATUS_LABELS } from "./format.js";
 import { runPlaceLabel } from "./place.js";
@@ -7,7 +7,13 @@ import { isComposerClosed } from "@neo-cloud-agent/contracts/turn-state";
 export function composerGate(
   run: Run | null | undefined,
   desks: Array<Pick<Desk, "id" | "online">>,
-): { locked: boolean; hint: string; archived: boolean; running: boolean } {
+): {
+  locked: boolean;
+  hint: string;
+  archived: boolean;
+  running: boolean;
+  cloudContinue: { show: boolean; remoteUrl: string; branch: string };
+} {
   const archived = isComposerClosed(run?.status);
   const host = remoteControlSendLock(run, desks);
   const locked = Boolean(run) && (archived || host.locked);
@@ -16,6 +22,7 @@ export function composerGate(
     hint: archived ? "对话已归档。" : host.hint,
     archived,
     running: run?.status === "RUNNING",
+    cloudContinue: remoteCloudContinueOffer(run, desks),
   };
 }
 

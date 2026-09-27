@@ -10,6 +10,7 @@ import {
   localGitSnapshot,
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
+  readRepoCloneIdentity,
   readRepoIdentity,
   resolveAuthorizedFolder,
   runScratchDir,
@@ -176,4 +177,16 @@ test("git snapshot covers the run's commits plus uncommitted and untracked files
   assert.deepEqual(noRun?.commits, []);
   assert.equal(noRun?.files.some((item) => item.path === "FEATURE.md"), false);
   assert.equal(await localGitSnapshot(mkdtempSync(path.join(tmpdir(), "neo-desk-nogit-"))), null);
+});
+
+test("a Remote folder reports a cloneable origin and the current branch", async () => {
+  const dir = initRepo();
+  spawnSync("git", ["remote", "add", "origin", "https://github.com/acme/app.git"], { cwd: dir });
+  spawnSync("git", ["checkout", "-b", "feat/login"], { cwd: dir });
+  const identity = await readRepoCloneIdentity(dir);
+  assert.equal(identity.remoteUrl, "https://github.com/acme/app.git");
+  assert.equal(identity.branch, "feat/login");
+  const snapshot = await localGitSnapshot(dir);
+  assert.equal(snapshot?.remoteUrl, "https://github.com/acme/app.git");
+  assert.equal(snapshot?.branch, "feat/login");
 });

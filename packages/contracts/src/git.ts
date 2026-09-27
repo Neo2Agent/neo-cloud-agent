@@ -59,12 +59,66 @@ export interface RunCommitsResponse {
 export interface DeskGitSnapshot {
   branch: string | null;
   baseBranch: string | null;
+  /** `git remote get-url origin` when the folder is a real remote. */
+  remoteUrl?: string | null;
   stat: string;
   patch: string;
   files: GitFileChange[];
   truncated: boolean;
   dirty?: boolean;
   commits: RunCommitRef[];
+}
+
+/** GitHub / HTTPS / SSH remotes the control plane can clone after Desk is gone. */
+export function looksRemoteRepo(url: string): boolean {
+  return /^(https?:\/\/|git:\/\/|git@|github\.com\/)/i.test(url.trim());
+}
+
+/** Drop embedded credentials so a Desk origin never stores a token on the run. */
+export function sanitizeRemoteUrl(url: string): string {
+  const trimmed = url.trim();
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      const parsed = new URL(trimmed);
+      parsed.username = "";
+      parsed.password = "";
+      return parsed.toString().replace(/\/$/, "") || trimmed;
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
+}
+
+/** Prefer the recorded origin; fall back to a remote already in `repoUrls`. */
+export function runCloneRemoteUrl(run: {
+  remoteUrl?: string | null;
+  repoUrls?: string[] | null;
+}): string | null {
+  const recorded = sanitizeRemoteUrl(run.remoteUrl ?? "");
+  if (looksRemoteRepo(recorded)) {
+    return recorded;
+  }
+  return (run.repoUrls ?? []).map((item) => item.trim()).find((item) => looksRemoteRepo(item)) ?? null;
+}
+
+/**
+ * Branch to clone when continuing a Remote run in the cloud.
+ * Prefer the laptop branch (`baseBranch`) over a later `neo/` working branch.
+ */
+export function runCloneBranch(run: {
+  baseBranch?: string | null;
+  branchName?: string | null;
+}): string | null {
+  const base = (run.baseBranch ?? "").trim();
+  if (base && base !== "HEAD") {
+    return base;
+  }
+  const branch = (run.branchName ?? "").trim();
+  if (branch && branch !== "HEAD" && !branch.startsWith("neo/")) {
+    return branch;
+  }
+  return null;
 }
 
 export interface PullRequestReview {
