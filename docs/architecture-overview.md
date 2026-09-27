@@ -54,7 +54,7 @@
 flowchart TB
   subgraph clients [Clients — 只打 /v1]
     Web["Web :5173 / :8080"]
-    Desk["Desk Electron :5174"]
+    Desk["Desk Electron → Web :5173"]
     CLI["CLI neo"]
     Mobile["Mobile :5175"]
     IM["Telegram / 微信 / GitHub webhook"]
@@ -170,9 +170,9 @@ neo-cloud-agent/
 | `ui` | 共享 Radix 控件 | 无进程；只被四个前端 import |
 | `web` | 对话页 | 开发 `:5173`；生产由 `:8080` 托管 |
 | `admin-api` + `admin-web` | 平台管理台 | `:8090` + `:5176`；现网 `/admin/` |
-| `desk` | 桌面壳 + 本机执行目标 | UI `:5174` + Electron（无 `:8082` 浏览器预览） |
+| `desk` | 桌面壳 + 本机执行目标 | Electron 套 Web `:5173`（无 `:8082` 浏览器预览） |
 | `cli` | headless `/v1` 宿主 | `pnpm neo` |
-| `mobile` | 手机 `/v1` 宿主 | Expo Go；实验室 `:5175` |
+| `mobile` | 手机 `/v1` 宿主 | 实验室是 Web 手机形态 `:5175`；Expo 仍可订 `/v1` |
 
 `orchestrator` / `scm` / `env` 是 `control-plane` 的目录，不是新仓库，也不是新 Deployment。
 
@@ -895,8 +895,8 @@ export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"   # 必须，见
 pnpm dev                 # control-plane :8080 + llm-gateway :8081
 pnpm dev:web             # 对话页 :5173（后端已在则复用）
 pnpm dev:admin           # 管理台 :8090 + :5176
-pnpm dev:desk            # Desk UI :5174 + Electron
-pnpm dev:mobile          # 手机 :5175
+pnpm dev:desk            # Electron 套 Web :5173
+pnpm dev:mobile          # Web 手机形态 :5175
 pnpm neo -p "…"          # CLI 打同一套 /v1
 pnpm typecheck && pnpm test
 pnpm dev:loop            # 可选：Java neo-loop :8082（要测 agentscope 才开）

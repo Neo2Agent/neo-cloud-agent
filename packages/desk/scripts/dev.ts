@@ -1,14 +1,13 @@
+import { deskClientOrigin, isLoopbackOrigin } from "../src/ports.ts";
+import { ensureBackend, waitForHttp } from "../../../scripts/ensure-backend.ts";
+import { ensureWebUi } from "../../../scripts/ensure-web.ts";
+import { spawnPnpm, killSpawned } from "../../../scripts/spawn-pnpm.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_DESK_UI_PORT, deskClientOrigin, isLoopbackOrigin } from "../src/ports.ts";
-import { ensureBackend, waitForHttp } from "../../../scripts/ensure-backend.ts";
-import { spawnPnpm, killSpawned } from "../../../scripts/spawn-pnpm.ts";
 
 const deskRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 async function main(): Promise<void> {
-  const uiPort = Number(process.env.NEO_DESK_UI_PORT || DEFAULT_DESK_UI_PORT);
-  const uiUrl = `http://127.0.0.1:${uiPort}`;
   const production = process.argv.includes("--prod");
   const apiBase = deskClientOrigin(process.env, { production });
   if (isLoopbackOrigin(apiBase)) {
@@ -17,13 +16,12 @@ async function main(): Promise<void> {
     console.log(`desk client → ${apiBase} (not starting local :8080)`);
   }
 
-  const vite = spawnPnpm(["exec", "vite", "--config", "ui/vite.config.ts"], {
-    cwd: deskRoot,
-    stdio: "inherit",
-    env: { ...process.env, NEO_DESK_UI_PORT: String(uiPort), NEO_CONTROL_PLANE_URL: apiBase },
-  });
+  const override = (process.env.NEO_DESK_URL || "").replace(/\/$/, "");
+  const { url: uiUrl, child: vite } = override
+    ? { url: override, child: null }
+    : await ensureWebUi({ apiBase });
   await waitForHttp(uiUrl);
-  console.log(`desk UI vite on ${uiUrl}; opening Electron (not a browser tab)`);
+  console.log(`desk Electron wraps Web UI ${uiUrl}`);
 
   const cdpPort = process.env.NEO_DESK_CDP_PORT;
   const electron = spawnPnpm(["exec", "electron", ...(cdpPort ? [`--remote-debugging-port=${cdpPort}`] : []), "app/main.cjs"], {
@@ -39,12 +37,12 @@ async function main(): Promise<void> {
 
   const stop = () => {
     killSpawned(electron);
-    killSpawned(vite);
+    if (vite) killSpawned(vite);
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
   electron.on("exit", (code) => {
-    killSpawned(vite);
+    if (vite) killSpawned(vite);
     process.exit(code ?? 0);
   });
 }

@@ -1,6 +1,6 @@
 # Neo Mobile
 
-Expo 壳 + 同一套 `/v1`。视觉对齐 Web / Cursor（Geist 冷灰、`packages/ui` tokens）。新开只发云端；列表能看到 Desk Remote，看不到 This Computer。抽屉里有定时任务、项目、专家。
+浏览器实验室是 **Web 的手机形态**（`packages/web` + `data-neo-shell=mobile`，`:5175`）。真机仍可用 Expo 壳订同一套 `/v1`。新开只发云端；列表能看到 Desk Remote，看不到 This Computer。
 
 ## 两轨开发
 

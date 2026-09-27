@@ -70,7 +70,7 @@ pnpm dev:loop            # Java neo-loop :8082（可选；AGENT_KERNEL=agentscop
 pnpm test:loop           # mvn test + agentscope toy-repo e2e
 pnpm dev:web             # Web UI :5173（后端已在则复用 :8080）
 pnpm dev:admin           # 独立管理台：admin-api :8090 + admin-web :5176（现网是 /admin/）
-pnpm dev:desk            # Desk UI :5174 + Electron 窗口（另一套 UI，共用后端）
+pnpm dev:desk            # Electron 套 Web :5173（本机能力走 neoDesk）
 pnpm dev:mobile          # 手机客户端 :5175（共用 :8080）
 pnpm deploy:lighthouse   # 把当前 checkout 发到腾讯云轻量应用机
 ```

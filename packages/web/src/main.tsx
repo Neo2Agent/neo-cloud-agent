@@ -12,6 +12,10 @@ import "@neo-cloud-agent/ui/styles.css";
 import "@neo-cloud-agent/ui/buddy.css";
 import "./styles.css";
 
+if (import.meta.env.NEO_SHELL === "mobile") {
+  document.documentElement.dataset.neoShell = "mobile";
+}
+
 bindVisualViewport(document, window);
 
 const root = document.getElementById("root");

@@ -1,5 +1,6 @@
-/** Desk's own Vite port. Deliberately not the Web UI's 5173, so both can run. */
+/** Legacy Desk-only Vite port. `pnpm dev:desk` now wraps Web on 5173. */
 export const DEFAULT_DESK_UI_PORT = 5174;
+export const DEFAULT_WEB_UI_PORT = 5173;
 
 /**
  * The packaged app talks to the production HTTPS origin.

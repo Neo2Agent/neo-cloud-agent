@@ -14,6 +14,7 @@ function on(channel, cb) {
 }
 
 contextBridge.exposeInMainWorld("neoDesk", {
+  platform: process.platform,
   apiBase,
   canRunLocal: true,
   proxyApi: packaged,

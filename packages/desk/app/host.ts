@@ -364,7 +364,7 @@ function rendererEntry(): string {
   if (existsSync(path.join(uiDist(), "index.html"))) {
     return "neo-desk://app/";
   }
-  throw new Error("Desk UI is missing. Use pnpm dev:desk or build packages/desk/ui first.");
+  throw new Error("Desk UI is missing. Use pnpm dev:desk (Electron wraps Web on :5173) or pack the Web dist.");
 }
 
 function createWindow(): void {

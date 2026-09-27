@@ -1,8 +1,15 @@
 export const NARROW_MQ = "(max-width: 860px)";
 
+export function isMobileShell(
+  doc: { documentElement?: { dataset?: { neoShell?: string } } } | undefined = typeof document === "undefined" ? undefined : document,
+): boolean {
+  return doc?.documentElement?.dataset?.neoShell === "mobile";
+}
+
 export function isNarrowViewport(
   win: Pick<Window, "innerWidth"> & { matchMedia?: Window["matchMedia"] } = window,
 ): boolean {
+  if (isMobileShell()) return true;
   if (typeof win.matchMedia === "function") {
     return win.matchMedia(NARROW_MQ).matches;
   }

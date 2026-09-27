@@ -1,8 +1,8 @@
 # Neo Desk
 
-独立 Electron 客户端。和 Web **共用控制面 / gateway / worker**，UI 在 `packages/desk/ui`，**不复用** `packages/web` 那套浅色壳。
+独立 Electron 客户端。和 Web **共用控制面 / gateway / worker**，界面是 **Electron 套 Web**（`packages/web`）。本机能力（This Computer、选文件夹、本地 worker）仍走 Desk 主进程 / `window.neoDesk`。
 
-对标 Cursor **Agents Window**（This Computer / Cloud / Remote），不是对话页的 Diff / 终端 / 产物三标签。
+对标 Cursor **Agents Window**（This Computer / Cloud / Remote）。对话、侧栏、composer 与浏览器 Web 同一套。
 
 项目协同的对象和阶段见 [desk-project-design.md](./desk-project-design.md)。This Computer 工作区一期见 [desk-this-computer.md](./desk-this-computer.md)。总图见 [architecture-overview.md](./architecture-overview.md)。
 
@@ -19,25 +19,18 @@
 
 | 路径 | 做什么 |
 | --- | --- |
-| `pnpm dev:desk` | Vite `:5174` + Electron，API 打本地 `:8080` |
+| `pnpm dev:desk` | Electron 加载 Web `:5173`（没有就拉起），API 打本地 `:8080` |
 | `pnpm dev:desk:prod` | 同一窗口，API 打现网控制面，不启本地后端 |
 | `pnpm dev:desk:two` | 两个 Electron 窗（两套 `userData`），方便测协作 |
-| 打好的 `ui/dist` | 主进程用 `neo-desk://app/` 加载，不再回退到控制面或浏览器预览 |
+| 打好的 `ui/dist` | 打包时拷贝 `packages/web/dist`，主进程用 `neo-desk://app/` 加载 |
 
-旧的 `pnpm preview:desk`（`:8082` 把 `packages/web/dist` 注入假 `neoDesk`）已删除。没有 `NEO_DESK_URL` 且没有 `ui/dist` 时，窗口直接报错。
+没有 `NEO_DESK_URL` 且没有 Web dist 时，窗口直接报错。覆盖渲染地址：`NEO_DESK_URL=http://127.0.0.1:5173`。
 
 登录账号和 Web 相同，必须手输，不预填。
 
 ## 已落地的界面
 
-主舞台是 **一条 transcript + 底部 composer**，没有 Web 那种 Diff / 终端 / 产物顶栏。
-
-左侧 rail：
-
-- New Chat / Search / Automations / Projects
-- **对话**：没有项目、也没有仓库路径的 Inbox
-- **空间**：按云项目 / 本机目录 / git remote 分组
-- 底栏：账号、收件箱小点、设置（Cloud / This Computer / 选 git 文件夹）
+主舞台就是 Web：侧栏 + transcript + 底部 composer。空首页是「有什么可以帮你的？」和做法卡片。Desk 多出来的只是本机目标（This Computer / 选文件夹）和右侧 Files / Terminal / Git（有对话时）。
 
 点项目进入工作台，默认停在 **任务**（不是单独的「概览」页）。标签是：任务 / 对话 / 资产 / 动态（含留言）/ 设置。
 
@@ -220,7 +213,7 @@ Web / 手机跟进（Desk 必须在线）
 
 ```bash
 pnpm dev:web        # Web UI :5173，API :8080
-pnpm dev:desk       # Desk UI :5174 + Electron → 本地 :8080
-pnpm dev:desk:prod  # 同一套 Desk UI → 线上控制面
+pnpm dev:desk       # Electron 套 Web :5173 → 本地 :8080
+pnpm dev:desk:prod  # 同一窗口 → 线上控制面
 pnpm pack:desk      # 打 mac / Windows / Linux zip，默认连 https://neorun.cloud
 ```

@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,10 +55,15 @@ async function main(): Promise<void> {
   mkdirSync(outDir, { recursive: true });
   mkdirSync(path.join(deskRoot, "build"), { recursive: true });
 
-  await run("pnpm", ["exec", "vite", "build", "--config", "ui/vite.config.ts"], {
-    cwd: deskRoot,
+  await run("pnpm", ["--filter", "@neo-cloud-agent/web", "build"], {
+    cwd: repoRoot,
     env: { ...process.env, NEO_CONTROL_PLANE_URL: DEFAULT_PRODUCTION_CONTROL_PLANE },
   });
+  const webDist = path.join(repoRoot, "packages/web/dist");
+  const uiDist = path.join(deskRoot, "ui/dist");
+  rmSync(uiDist, { recursive: true, force: true });
+  mkdirSync(uiDist, { recursive: true });
+  cpSync(webDist, uiDist, { recursive: true });
 
   await run(
     "pnpm",

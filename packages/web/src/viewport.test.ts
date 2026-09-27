@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyVisualViewport, closeMobileSidebar, isNarrowViewport } from "./viewport.js";
+import { applyVisualViewport, closeMobileSidebar, isMobileShell, isNarrowViewport } from "./viewport.js";
+
+test("isMobileShell reads data-neo-shell on the document", () => {
+  assert.equal(isMobileShell({ documentElement: { dataset: {} } }), false);
+  assert.equal(isMobileShell({ documentElement: { dataset: { neoShell: "mobile" } } }), true);
+});
 
 test("isNarrowViewport follows the 860px chat breakpoint", () => {
   assert.equal(isNarrowViewport({ innerWidth: 390 }), true);

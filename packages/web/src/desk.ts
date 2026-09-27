@@ -12,6 +12,8 @@ export type NeoDeskBridge = {
   platform: string;
   apiBase: string;
   canRunLocal: boolean;
+  /** Packaged Electron must keep /v1 on the neo-desk:// renderer origin. */
+  proxyApi?: boolean;
   getToken(): Promise<string>;
   setToken(token: string): Promise<void>;
   clearToken(): Promise<void>;
@@ -30,7 +32,7 @@ declare global {
 }
 
 export function deskBridge(): NeoDeskBridge | undefined {
-  return typeof window === "undefined" ? undefined : window.neoDesk;
+  return globalThis.window?.neoDesk;
 }
 
 export function isDeskApp(): boolean {
@@ -45,6 +47,9 @@ export function apiBase(): string {
 export function withApiBase(path: string): string {
   if (/^https?:\/\//i.test(path)) {
     return path;
+  }
+  if (deskBridge()?.proxyApi) {
+    return path.startsWith("/") ? path : `/${path}`;
   }
   const origin = apiBase();
   if (!origin) {
