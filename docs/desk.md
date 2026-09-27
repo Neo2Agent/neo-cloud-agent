@@ -30,7 +30,7 @@
 
 ## 已落地的界面
 
-主舞台就是 Web：侧栏 + transcript + 底部 composer。空首页是「有什么可以帮你的？」和做法卡片。Desk 多出来的只是本机目标（This Computer / 选文件夹）和右侧 Files / Terminal / Git（有对话时）。
+主舞台就是 Web：侧栏 + transcript + 底部 composer。空首页是「有什么可以帮你的？」和做法卡片。Desk 多出来的只是本机目标（Cloud / This Computer / Remote Control + 选文件夹）和右侧 Files / Terminal / Git（有对话时）。Web / 手机新开只走云端，可跟进 Desk 已开的 Remote Control。
 
 点项目进入工作台，默认停在 **任务**（不是单独的「概览」页）。标签是：任务 / 对话 / 资产 / 动态（含留言）/ 设置。
 
@@ -136,7 +136,7 @@ This Computer（pi）worker **一回合跑完就退**（`WORKER_EXIT_AFTER_TURN=
 
 ### B Remote Control
 
-对标 Cursor 的 **My Machines / Remote Control**（[docs](https://cursor.com/docs/cloud-agent/my-machines)）。loop 在应用机 `neo-loop`，工具在这台电脑。控制面打不进 NAT，所以 Desk **只出向**：inbox SSE + 工具 WSS。
+对标 Cursor **Remote Control**（Agents Window `/remote-control`：桌面开场，网页 / 手机只跟进）。不是 Cursor **My Machines**（网页也能新开派到一台 worker）。loop 在应用机 `neo-loop`，工具在这台电脑。控制面打不进 NAT，所以 Desk **只出向**：inbox SSE + 工具 WSS。
 
 ```text
 Desk 开场
@@ -157,7 +157,7 @@ Web / 手机跟进（Desk 必须在线）
 
 公网 assignment **不**带 `neoLoopUrl=http://127.0.0.1:8082`。`:8082` 不进 Caddy。匹配失败 fail closed，不回落云盘。规格见 [server-side-agent-loop.md](./server-side-agent-loop.md)。
 
-网页 composer 上的「远程机（P3）」仍禁用。Remote 开场在 Desk；Web / 手机只跟进已有 Remote 对话。
+网页 / 手机 composer 只有「云端」。Remote Control 开场在 Desk；Web / 手机只跟进已有 Remote 对话。P3 SSH「远程机」入口已删。
 
 匹配失败一律**明确报错**，不回落云端、不留一条永远排队的 Run：
 

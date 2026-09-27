@@ -11,15 +11,22 @@ import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { isRemoteControlTarget, type ImageRef, type PullRequestRef, type Run } from "@neo-cloud-agent/contracts/run";
 import { runGitContext } from "@neo-cloud-agent/contracts/git";
-import { isDeskHostedTarget, type Desk, type DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
+import { isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
 import {
+  STALE_DESK_HINT,
   asWorkspaceRef,
   deskBridge,
+  gateLocalCreate,
+  hostCreateRunFields,
   isDeskApp,
+  isLocalDeskKind,
+  localCreateHint,
+  mergeDeskTarget,
   normalizeDeskTarget,
   notifyDesk,
+  pickedLocalKind,
   subscribeDeskDeepLink,
   subscribeDeskDispatched,
   subscribeDeskTarget,
@@ -592,7 +599,7 @@ export function App() {
     }
   }, [applyVms]);
 
-  /** Machines the user registered from Desk, so a run can be sent to one. */
+  /** Online desks for Remote Control follow lock. Web / phone do not start onto a machine. */
   const refreshDesks = useCallback(async () => {
     if (!tokenRef.current) return;
     try {
@@ -600,25 +607,6 @@ export function App() {
       if (!response.ok) return;
       const list = (await readJson<{ desks?: Desk[] }>(response)).desks ?? [];
       setDesks(list);
-      // A machine re-registers with a new id, so a target saved in this browser
-      // can point at one that no longer exists. Sending to it fails with
-      // 本机未登记, which reads like a bug rather than a stale pick.
-      setDeskTarget((prev) => {
-        if (prev.kind !== "desk" || !prev.deskId || deskBridge()?.canRunLocal) {
-          return prev;
-        }
-        const stillThere = list.some(
-          (desk) =>
-            desk.id === prev.deskId &&
-            (!prev.workspaceId || (desk.workspaces ?? []).some((ws) => ws.id === prev.workspaceId)),
-        );
-        if (stillThere) {
-          return prev;
-        }
-        const next = { ...prev, deskId: undefined, workspaceId: undefined };
-        writeLastTarget(next);
-        return next;
-      });
     } catch {
       // keep the last list
     }
@@ -1134,13 +1122,25 @@ export function App() {
     }
     const projectCloud = Boolean(activeProject && !runId);
     const effectiveTarget = projectCloud ? { kind: "cloud" as const } : deskTarget;
-    // A browser cannot pick a folder, so 本机 needs a machine chosen first.
-    if (!runId && effectiveTarget.kind === "desk" && !deskBridge()?.canRunLocal && !deskTarget.deskId) {
-      setMessages((prev) => [
-        ...prev,
-        localErrorMessage(runId, "先选一台电脑。要出现在这里，那台电脑得打开 Desk 并在设置里开启 Remote control。"),
-      ]);
-      return;
+    const canRunLocal = Boolean(deskBridge()?.canRunLocal);
+    const remoteAvailable = Boolean(health?.neoLoop?.available);
+    if (!runId && canRunLocal && isLocalDeskKind(effectiveTarget.kind)) {
+      const prefs = await deskBridge()?.getPrefs?.().catch(() => undefined);
+      const deskId = effectiveTarget.deskId || prefs?.deskId || "";
+      if (deskId && deskId !== deskTarget.deskId) {
+        applyTarget(mergeDeskTarget(deskTarget, deskId));
+      }
+      const gate = gateLocalCreate({
+        canRunLocal,
+        kind: effectiveTarget.kind,
+        deskId: deskId || deskTarget.deskId,
+        folder: deskFolder,
+        remoteAvailable,
+      });
+      if (gate) {
+        toast(gate, "err");
+        return;
+      }
     }
     setRepoPickerOpen(false);
     const attached = images;
@@ -1159,50 +1159,59 @@ export function App() {
       patchRun(runId, (run) => ({ ...run, status: "RUNNING" }));
     }
     const skipRepoDefaults = !runId && repoMode === "none";
-    const repoUrls =
-      skipRepoDefaults
-        ? []
-        : effectiveTarget.kind === "desk"
-          ? (repo.trim() ? [repo.trim()] : deskFolder ? [deskFolder] : [])
-          : cloudSafeRepoUrls(repo.trim() ? [normalizeRepoUrl(repo)] : []);
+    const cloudRepoUrls = skipRepoDefaults
+      ? []
+      : cloudSafeRepoUrls(repo.trim() ? [normalizeRepoUrl(repo)] : []);
     const model = resolveChatModel(llm.upstream, llm.model, attached.length > 0);
     const buildPayload = buildId === "cold" ? { reuseBuild: false } : buildId ? { buildId, reuseBuild: true } : { reuseBuild: true };
     try {
       if (!runId) {
-        const created = await readJson<Run & { error?: string }>(
+        const prefs = canRunLocal
+          ? await deskBridge()?.getPrefs?.().catch(() => undefined)
+          : undefined;
+        const createFields = hostCreateRunFields({
+          canRunLocal,
+          target: effectiveTarget,
+          deskId: effectiveTarget.deskId || prefs?.deskId,
+          folder: deskFolder,
+          cloudRepoUrls,
+          skipCloudRepoDefaults: skipRepoDefaults,
+        });
+        const created = await readJson<Run & { assignment?: unknown; error?: string }>(
           await api(tokenRef.current, "/v1/runs", {
             method: "POST",
             body: JSON.stringify({
               prompt: text || "（图片）",
-              repoUrls,
-              skipRepoDefaults,
-              source: effectiveTarget.kind === "desk" ? "desk" : "web",
-              envId: envId || undefined,
+              ...createFields,
+              envId: canRunLocal && isLocalDeskKind(effectiveTarget.kind) ? undefined : envId || undefined,
               model,
               images: attached.length ? attached : undefined,
               projectId: activeProject?.id,
               expertId: expertPick.expertId,
               expertTeamId: expertPick.expertTeamId,
               pluginIds: pluginPick ? [pluginPick.id] : undefined,
-              deskWorkspaceId: effectiveTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
-              target:
-                effectiveTarget.kind === "desk"
-                  ? {
-                      loop: "desk",
-                      tools: "desk",
-                      deskId: deskTarget.deskId,
-                      deskWorkspaceId: deskTarget.workspaceId,
-                    }
-                  : { loop: "cloud", tools: "cloud" },
-              ...buildPayload,
+              ...(canRunLocal && isLocalDeskKind(effectiveTarget.kind) ? {} : buildPayload),
             }),
           }),
         );
         if (created.error) throw new Error(created.error);
-        if (repoUrls[0] && !isLocalFolderRef(repoUrls[0])) {
-          setRecentRepos(rememberRecentRepo(repoUrls[0]));
+        if (createFields.repoUrls[0] && !isLocalFolderRef(createFields.repoUrls[0])) {
+          setRecentRepos(rememberRecentRepo(createFields.repoUrls[0]));
         }
         setRuns((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+        if (canRunLocal && isLocalDeskKind(effectiveTarget.kind)) {
+          const bridge = deskBridge();
+          if (created.assignment) {
+            const start = bridge?.startRun;
+            if (start) {
+              await start(created.assignment, deskFolder || undefined);
+            } else {
+              toast(STALE_DESK_HINT, "err");
+            }
+          } else {
+            await bridge?.takeAssignment?.(created.id, deskFolder || undefined);
+          }
+        }
         keepPendingRef.current = true;
         try {
           const opened = await openRun(created.id);
@@ -1233,7 +1242,7 @@ export function App() {
     } finally {
       setSending(false);
     }
-  }, [activeProject?.id, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, repoMode, runId, messages, stopping]);
+  }, [activeProject?.id, buildId, currentRun, desks, deskFolder, deskTarget, envId, expertPick.expertId, expertPick.expertTeamId, health?.neoLoop?.available, images, llm.model, llm.upstream, openRun, patchRun, pluginPick, prompt, repo, repoMode, runId, messages, stopping]);
 
   const followUpWhileBusy = useCallback(async (delivery: "follow_up" | "steer") => {
     const text = prompt.trim();
@@ -1363,11 +1372,13 @@ export function App() {
       const remembered = normalizeDeskTarget(
         (await deskBridge()?.getTarget().catch(() => undefined)) ?? readLastTarget() ?? undefined,
       );
+      const prefs = await deskBridge()?.getPrefs?.().catch(() => undefined);
+      const hydrated = mergeDeskTarget(remembered, prefs?.deskId);
       if (cancelled) return;
-      setDeskTarget(remembered);
-      if (remembered.folder) setDeskFolder(remembered.folder);
-      writeLastTarget(remembered);
-      void deskBridge()?.setTarget(remembered);
+      setDeskTarget(hydrated);
+      if (hydrated.folder) setDeskFolder(hydrated.folder);
+      writeLastTarget(hydrated);
+      void deskBridge()?.setTarget(hydrated);
       const session = (await hydrateDeskToken()) || saved;
       if (cancelled) return;
       persistToken(session);
@@ -1900,22 +1911,10 @@ export function App() {
     setMainTab("context");
   };
 
-  const localTargetHint = deskBridge()?.canRunLocal
-    ? deskFolder
-      ? `本机 · ${deskFolder}`
-      : "本机执行需要先选一个文件夹。"
-    : (() => {
-        const picked = desks
-          .flatMap((desk) => (desk.workspaces ?? []).map((ws: DeskWorkspace) => ({ desk, ws })))
-          .find((item) => item.ws.id === deskTarget.workspaceId);
-        if (picked) {
-          return `会在 ${picked.desk.name} 的 ${picked.ws.name} 里跑。`;
-        }
-        const available = desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0);
-        return available
-          ? "选一台已打开 Desk 的电脑。"
-          : "没有可用的电脑。先打开 Desk 并在设置里绑定一个文件夹。";
-      })();
+  const localTargetHint =
+    deskBridge()?.canRunLocal && isLocalDeskKind(deskTarget.kind)
+      ? localCreateHint(deskTarget.kind, deskFolder)
+      : "";
 
   const composerMentions = useMemo<ComposerMention[]>(() => {
     const expertItems: ComposerMention[] = experts.map((expert) => ({
@@ -2248,13 +2247,6 @@ export function App() {
           pinnedIds={pinnedIds}
           projectNames={projectNames}
           buddy={narrow}
-          target={deskTarget.kind === "desk" ? "desk" : "cloud"}
-          deskDisabled={!deskBridge()?.canRunLocal && !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0)}
-          onTarget={
-            deskBridge()?.canRunLocal
-              ? (value) => applyTarget({ ...deskTarget, kind: value })
-              : undefined
-          }
           nav={mainTab}
           searchOpen={searchOpen}
           onOpenSearch={() => setSearchOpen((open) => !open)}
@@ -2640,15 +2632,7 @@ export function App() {
                 }) ? (
                   <BuddyHome
                     moreOpen={moreOpen}
-                    target={deskTarget.kind === "desk" ? "desk" : "cloud"}
-                    deskDisabled={!deskBridge()?.canRunLocal && !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0)}
-                    showTarget={Boolean(deskBridge()?.canRunLocal)}
                     skills={buddySkillsFromRecipes(BUNDLED_RECIPES)}
-                    onTarget={
-                      deskBridge()?.canRunLocal
-                        ? (value) => applyTarget({ ...deskTarget, kind: value })
-                        : undefined
-                    }
                     onShortcut={(id) => {
                       if (id === "more") setMoreOpen((value) => !value);
                       if (id === "experts") openExperts();
@@ -2722,7 +2706,7 @@ export function App() {
             <Composer
               prompt={prompt}
               images={images}
-              vmHint={deskTarget.kind === "desk" ? localTargetHint : vmHint}
+              vmHint={localTargetHint || vmHint}
               busy={busy}
               stopping={stopping}
               archived={archived}
@@ -2732,7 +2716,7 @@ export function App() {
               target={deskTarget}
               canRunLocal={Boolean(deskBridge()?.canRunLocal)}
               folder={deskFolder}
-              desks={desks}
+              remoteAvailable={Boolean(health?.neoLoop?.available)}
               targetLocked={isDeskHostedTarget(currentRun?.executionTarget) || projectCloudLock}
               targetLockLabel={
                 isDeskHostedTarget(currentRun?.executionTarget)
@@ -2770,9 +2754,9 @@ export function App() {
                     if (!ref) return;
                     applyTarget({
                       ...deskTarget,
-                      kind: "desk",
+                      kind: pickedLocalKind(deskTarget.kind),
                       folder: ref.folder,
-                      workspaceId: ref.id || deskTarget.workspaceId,
+                      workspaceId: ref.id || undefined,
                     });
                   });
               }}

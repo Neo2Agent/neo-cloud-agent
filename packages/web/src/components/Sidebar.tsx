@@ -4,7 +4,7 @@ import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode } from "@neo-cloud-agen
 import { formatListWhen, formatSidebarAge, runListPlaceSuffix, runListTitle, STATUS_LABELS } from "../format";
 import { BuddyMascot } from "@neo-cloud-agent/ui";
 import { IconArchive, IconAutomations, IconExperts, IconFolderClosed, IconFolderOpen, IconFolderPlus, IconLogout, IconMemory, IconMore, IconPlus, IconProjects, IconSearch, IconSidebarClose, IconSidebarOpen, IconSkills, IconSort, IconStar, IconTrash } from "../icons";
-import { BuddyIcon, BuddyTargetToggle } from "@neo-cloud-agent/ui";
+import { BuddyIcon } from "@neo-cloud-agent/ui";
 import { filterRuns, folderKindLabel, groupSidebarRuns, isShelvedRun, splitShelvedRuns } from "../pins";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { initials } from "../catalog";
@@ -50,9 +50,6 @@ type Props = {
   onToggle?: () => void;
   onClose?: () => void;
   buddy?: boolean;
-  target?: "cloud" | "desk";
-  deskDisabled?: boolean;
-  onTarget?: (value: "cloud" | "desk") => void;
   nav?: "chat" | "projects" | "experts" | "skills" | "memories" | "automations" | "settings" | "context";
   onOpenNav?: (id: "automations" | "experts" | "projects" | "skills" | "memories") => void;
   searchOpen?: boolean;
@@ -90,9 +87,6 @@ export function Sidebar({
   onToggle,
   onClose,
   buddy = false,
-  target = "cloud",
-  deskDisabled = false,
-  onTarget,
   nav = "chat",
   onOpenNav,
   searchOpen = false,
@@ -606,7 +600,6 @@ export function Sidebar({
       </div>
       {buddy ? (
         <>
-          {onTarget ? <BuddyTargetToggle value={target} deskDisabled={deskDisabled} wide onChange={onTarget} /> : null}
           <nav className="buddy-nav" aria-label="目录">
             {(
               [

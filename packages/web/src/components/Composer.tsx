@@ -5,7 +5,6 @@ import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import { matchIntentCapsules } from "@neo-cloud-agent/contracts/recipe";
 import { CHAT_MODELS } from "@neo-cloud-agent/contracts/llm-ids";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
-import type { Desk } from "@neo-cloud-agent/contracts/desk";
 import { pageAllowsLiveMic, type VoiceSession } from "@neo-cloud-agent/ui/speech";
 import { BuddyVoiceFileSheet, Select, holdPadLabel, modelShortLabel } from "@neo-cloud-agent/ui";
 import { readToken } from "../api";
@@ -34,7 +33,7 @@ type Props = {
   target: DeskTarget;
   canRunLocal?: boolean;
   folder?: string;
-  desks?: Desk[];
+  remoteAvailable?: boolean;
   targetLocked?: boolean;
   targetLockLabel?: string;
   /** Remote Control host is offline; send is blocked until that Desk's inbox is live. */
@@ -97,7 +96,7 @@ export function Composer({
   target,
   canRunLocal = false,
   folder,
-  desks,
+  remoteAvailable = false,
   targetLocked = false,
   targetLockLabel,
   blocked = false,
@@ -450,7 +449,7 @@ export function Composer({
           target={target}
           canRunLocal={canRunLocal}
           folder={folder}
-          desks={desks}
+          remoteAvailable={remoteAvailable}
           locked={targetLocked}
           lockLabel={targetLockLabel}
           onTarget={onTarget}

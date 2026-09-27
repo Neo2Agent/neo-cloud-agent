@@ -40,6 +40,7 @@ async function shot(page: Page, name: string) {
     contextBar: Boolean(document.querySelector(".context-bar, .home-greeting")),
     deskBadge: Boolean(document.querySelector(".desk-badge")),
     targetText: document.querySelector("#execution-target")?.textContent || "",
+    targetOptions: [...document.querySelectorAll(".neo-select-item")].map((item) => item.textContent || ""),
     composer: (document.querySelector("form.composer, .composer-box")?.innerText || "").slice(0, 240),
     settings: Boolean(document.querySelector(".settings, #settings, [data-page=settings]")),
     sidebarOpen: Boolean(document.querySelector(".sidebar")),
@@ -117,7 +118,22 @@ if (!webHome?.recipe || webHome.rail || webHome.contextBar) errors.push("web hom
 if (!deskHome?.recipe || deskHome.emptyText !== webHome?.emptyText) errors.push("desk home != web home");
 if (deskHome?.targetText && String(deskHome.targetText).includes("远程机")) errors.push("desk still on leftover P3 remote");
 if (!deskHome?.neoDesk || !deskHome.canRunLocal) errors.push("desk missing neoDesk");
+const deskComposer = shots["block-desk-composer"] as Record<string, unknown> | undefined;
+const webComposer = shots["block-web-composer"] as Record<string, unknown> | undefined;
+const webOptions = Array.isArray(webComposer?.targetOptions) ? (webComposer.targetOptions as string[]) : [];
+const deskOptions = Array.isArray(deskComposer?.targetOptions) ? (deskComposer.targetOptions as string[]) : [];
+if (webComposer && !String(webComposer.targetText || "").includes("云端")) errors.push("web composer missing 云端");
+if (webOptions.some((item) => item.includes("This Computer") || item.includes("Remote Control"))) {
+  errors.push("web offered local start");
+}
+if (deskHome?.canRunLocal && !deskOptions.some((item) => item.includes("This Computer"))) {
+  errors.push("desk composer missing This Computer");
+}
+if (deskHome?.canRunLocal && !deskOptions.some((item) => item.includes("Remote Control"))) {
+  errors.push("desk composer missing Remote Control");
+}
 if (mobileHome?.buddyToggle) errors.push("mobile still has 电脑 toggle");
+if (deskHome?.buddyToggle) errors.push("desk still has leftover 电脑 toggle");
 if (mobileHome && !mobileHome.buddyHome) errors.push("mobile not BuddyHome");
 if (shots.electronPageError) errors.push(`electron pageerror ${shots.electronPageError}`);
 if (errors.length) {

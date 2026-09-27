@@ -20,17 +20,27 @@ test("Web vite can serve the phone shell on another port", () => {
 
 test("Web mounts in Electron without calling missing preload methods", () => {
   const app = readFileSync(path.join(here, "App.tsx"), "utf8");
+  const sidebar = readFileSync(path.join(here, "components/Sidebar.tsx"), "utf8");
   assert.match(app, /subscribeDeskDeepLink/);
   assert.match(app, /notifyDesk\(/);
   assert.match(app, /asWorkspaceRef/);
   assert.doesNotMatch(app, /deskBridge\(\)\?\.onDeepLink\(/);
   assert.doesNotMatch(app, /deskBridge\(\)\?\.notify\(/);
   assert.doesNotMatch(app, /desk-badge/);
-  assert.match(app, /showTarget=\{Boolean\(deskBridge\(\)\?\.canRunLocal\)\}/);
+  assert.doesNotMatch(app, /showTarget=/);
+  assert.doesNotMatch(app, /deskDisabled=/);
+  assert.doesNotMatch(app, /先选一台/);
+  assert.doesNotMatch(sidebar, /BuddyTargetToggle/);
 });
 
-test("composer target picker no longer lists retired P3 remote", () => {
+test("composer target picker lists Remote Control only on Desk", () => {
   const picker = readFileSync(path.join(here, "components/TargetPicker.tsx"), "utf8");
+  const desk = readFileSync(path.join(here, "desk.ts"), "utf8");
+  assert.match(picker, /targetPickerOptions/);
+  assert.match(desk, /This Computer/);
+  assert.match(desk, /Remote Control/);
+  assert.match(desk, /TARGET_REMOTE/);
   assert.doesNotMatch(picker, /远程机/);
-  assert.doesNotMatch(picker, /value: "remote"/);
+  assert.doesNotMatch(desk, /远程机/);
+  assert.doesNotMatch(desk, /label: "本机/);
 });

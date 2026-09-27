@@ -257,15 +257,13 @@ function findBound(selector: { workspaceId?: string | null; folder?: string }): 
 }
 
 /**
- * The saved target, with a kind this build actually handles.
- *
- * `target.json` is a file on the user's disk that older builds also wrote, so a
- * value like the retired `remote` can still be in there. Anything unknown falls
- * back to cloud rather than leaving the composer pointed at nothing.
+ * Persist Cloud / This Computer / Remote Control.
+ * `target.json` is on disk across upgrades; unknown kinds fall back to cloud.
  */
 function currentTarget(): DeskTarget {
   const saved = readJson<DeskTarget>(stateFile(TARGET_STATE_FILE), { kind: "cloud" });
-  const kind: DeskTarget["kind"] = saved.kind === "desk" ? "desk" : "cloud";
+  const kind: DeskTarget["kind"] =
+    saved.kind === "desk" || saved.kind === "remote" ? saved.kind : "cloud";
   return { ...saved, kind, deskId: saved.deskId || deskId || undefined };
 }
 
@@ -1077,7 +1075,13 @@ function wireIpc(): void {
       return null;
     }
     const bound = await bindWorkspace(authorized);
-    const target = { kind: "desk" as const, folder: bound.folder, deskId, workspaceId: bound.id };
+    const saved = currentTarget();
+    const target: DeskTarget = {
+      ...saved,
+      folder: bound.folder,
+      deskId: deskId || saved.deskId,
+      workspaceId: bound.id,
+    };
     writeJson(stateFile(TARGET_STATE_FILE), target);
     toRenderer("desk:target", target);
     return { id: bound.id, folder: bound.folder, name: bound.name, git: bound.git };
