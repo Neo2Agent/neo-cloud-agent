@@ -178,6 +178,9 @@ if ((await web.locator(".bubble.assistant").filter({ hasText: /Handoff:|Workspac
 if ((await web.locator("p.setup").filter({ hasText: /已转到云端|物化工作区/ }).count()) === 0) {
   throw new Error("web handoff setup line missing after continue");
 }
+if ((await web.locator("p.setup").filter({ hasText: /acme\/app/ }).count()) === 0) {
+  throw new Error("web handoff setup line missing recorded repo");
+}
 
 const local = await json<{ id: string }>(`${API}/v1/runs?client=desk`, {
   method: "POST",
@@ -241,6 +244,9 @@ if (MOBILE) {
   }
   if ((await phone.locator("p.setup").filter({ hasText: /已转到云端|物化工作区/ }).count()) === 0) {
     throw new Error("mobile handoff setup line missing after continue");
+  }
+  if ((await phone.locator("p.setup").filter({ hasText: /acme\/app/ }).count()) === 0) {
+    throw new Error("mobile handoff setup line missing recorded repo");
   }
   mobileId = phoneSeed.remote.id;
 }

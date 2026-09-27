@@ -1689,7 +1689,7 @@ test("an offline Remote Control conversation can continue in the cloud on the re
   const registered = newDesk("rc-offline-box");
   const run = await createRun({
     prompt: "continue later",
-    repoUrls: ["/tmp/rc-offline"],
+    repoUrls: [dir],
     source: "desk",
     start: "inline",
     kernel: "agentscope",
@@ -1702,14 +1702,11 @@ test("an offline Remote Control conversation can continue in the cloud on the re
   });
   await claimDeskRun(registered.desk.id, {
     runId: run.id,
-    workspaceDir: "/tmp/rc-offline",
+    workspaceDir: dir,
     pid: 4243,
     remoteUrl: "https://github.com/acme/app.git",
     branch: "feat/login",
   });
-  const live = getRun(run.id);
-  assert.ok(live);
-  live.remoteUrl = dir;
 
   const online = openDeskInbox(registered.desk.id, () => undefined);
   await assert.rejects(
@@ -1721,16 +1718,17 @@ test("an offline Remote Control conversation can continue in the cloud on the re
   const moved = await handoffRun(run.id, { target: { loop: "cloud", tools: "cloud" } });
   assert.match(
     listEvents(moved.id).find((item) => item.kind === "scm.clone_started")?.title ?? "",
-    /在云端物化工作区/,
+    /正在按 acme\/app · feat\/login 在云端物化工作区/,
   );
   assert.match(
     listEvents(moved.id).find((item) => item.kind === "scm.clone_succeeded")?.title ?? "",
-    /已转到云端 · 工作区就绪/,
+    /已转到云端 · 工作区就绪 · acme\/app · feat\/login · 未 push/,
   );
   assert.equal(moved.executionTarget?.loop, "cloud");
   assert.equal(moved.executionTarget?.tools, "cloud");
   assert.equal(moved.executionTarget?.remoteControl, undefined);
   assert.equal(moved.branchName, "feat/login");
+  assert.equal(moved.remoteUrl, "https://github.com/acme/app.git");
   assert.equal(moved.repoUrls[0], dir);
   const workspace = getBootstrap(moved.id).workspaceDir;
   assert.equal(readFileSync(path.join(workspace, "FEATURE.md"), "utf8"), "on feat\n");

@@ -11,6 +11,7 @@ import {
   remoteCloudContinueCopy,
   remoteCloudContinueOffer,
   remoteCloudHandoffCloneReady,
+  remoteCloudHandoffRepoLine,
   remoteControlSendLock,
 } from "./desk.js";
 
@@ -110,4 +111,12 @@ test("handoff setup lines name the repo and keep the unpushed warning", () => {
   );
   assert.equal(displaySetupText({ kind: "scm.clone_succeeded", text: "Workspace ready" }, run), "Workspace ready");
   assert.match(remoteCloudHandoffCloneReady("acme/app · feat/login"), /未 push/);
+  assert.equal(
+    remoteCloudHandoffRepoLine({
+      remoteUrl: "/tmp/rematerialized",
+      repoUrls: ["/tmp/rematerialized", "https://github.com/acme/app.git"],
+      baseBranch: "feat/login",
+    }),
+    "acme/app · feat/login",
+  );
 });

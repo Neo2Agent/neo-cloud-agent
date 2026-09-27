@@ -130,6 +130,14 @@ test("offline Remote Control handoff clones the recorded branch and stays the sa
   assert.equal(moved.executionTarget?.tools, "cloud");
   assert.equal(moved.executionTarget?.remoteControl, undefined);
   assert.equal(moved.branchName, "feat/login");
+  assert.equal(moved.remoteUrl, "https://github.com/acme/app.git");
+
+  const transcript = (await (
+    await fetch(`${base}/v1/runs/${remote.id}/transcript`, { headers: auth(token) })
+  ).json()) as { snapshot?: { messages?: Array<{ text?: string; kind?: string }> } };
+  const setup = (transcript.snapshot?.messages ?? []).map((item) => item.text ?? "").join("\n");
+  assert.match(setup, /正在按 acme\/app · feat\/login 在云端物化工作区/);
+  assert.match(setup, /已转到云端 · 工作区就绪 · acme\/app · feat\/login · 未 push/);
 
   const follow = await fetch(`${base}/v1/runs/${remote.id}/follow-ups`, {
     method: "POST",
