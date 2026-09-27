@@ -109,9 +109,27 @@ await web.evaluate(`location.hash = "#/runs/${remote.id}"`);
 await web.waitForTimeout(1200);
 await shot(web, "rc-offline-before-continue");
 
+const card = web.locator("#remote-offline-card");
+if ((await card.count()) === 0) {
+  throw new Error("offline continue card missing while Desk is offline");
+}
+const cardText = await card.innerText();
+if (!cardText.includes("Desk 离线") || !cardText.includes("acme/app") || !cardText.includes("feat/login") || !cardText.includes("未 push")) {
+  throw new Error(`offline continue card copy is incomplete: ${cardText}`);
+}
 const button = web.locator("#continue-remote-cloud");
 if ((await button.count()) === 0) {
   throw new Error("continue-in-cloud button missing while Desk is offline");
+}
+if ((await web.locator(".composer-send-group #continue-remote-cloud").count()) > 0) {
+  throw new Error("continue-in-cloud button is still inside the send group");
+}
+const status = (await web.locator("#status").innerText()).trim();
+if (status !== "Desk 离线") {
+  throw new Error(`status should be Desk 离线, got ${status}`);
+}
+if ((await web.getByText("正在思考").count()) > 0) {
+  throw new Error("thinking line still visible while Desk is offline");
 }
 await button.click();
 await web.getByRole("button", { name: "在云端续聊" }).last().click();
@@ -128,6 +146,9 @@ if (moved.executionTarget?.tools !== "cloud" || moved.executionTarget?.remoteCon
 }
 if ((await web.locator("#continue-remote-cloud").count()) > 0) {
   throw new Error("continue-in-cloud button still visible after handoff");
+}
+if ((await web.locator("#remote-offline-card").count()) > 0) {
+  throw new Error("offline continue card still visible after handoff");
 }
 
 const local = await json<{ id: string }>(`${API}/v1/runs?client=desk`, {

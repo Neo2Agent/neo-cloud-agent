@@ -163,7 +163,7 @@ Web / 手机跟进（Desk 必须在线）
 
 Desk 离线
   跟进 409，不自动落到云盘
-  人点「在云端续聊」→ 同一条 run 改成 {loop:cloud, tools:cloud}
+  人点说明卡上的「在云端继续这条对话」→ 同一条 run 改成 {loop:cloud, tools:cloud}
   → clone claim / snapshot 记下的 origin + 分支
   → 未 push 的本机改动不会上去
   This Computer 仍然看不见，也不能转
@@ -204,7 +204,7 @@ Desk 离线
 - 一期不允许 Automation 派到本机。
 - 本机 Run **没有**「邀请加入这条对话」。一起干活要开 Cloud，或各开各的云端 Run。
 - **本机对话不能切到云端。** 活儿在你自己的文件夹里，通常还没提交，「搬到云端」只会把真正的改动留在原地。要在云端跑就另开一条云端对话。反向（云端 → 本机）仍然可以，且要求该仓库已在那台机器上绑定。
-- **Remote 离线可以显式转云端。** 电脑在线时继续同一条 Remote。Desk 离线且 claim/snapshot 记下了 origin 时，Web / 手机 / Desk 才出「在云端续聊」；同一条对话改 `tools:cloud`，按记录的仓库和分支 clone。没有 origin 就不出按钮。This Computer 永远不出现这条。
+- **Remote 离线可以显式转云端。** 电脑在线时继续同一条 Remote。Desk 离线且 claim/snapshot 记下了 origin 时，Web / 手机在 composer 上方出独立说明卡（Desk 离线、仓库·分支、未 push 警告、「在云端继续这条对话」），不把动作塞进发送区。同一条对话改 `tools:cloud`，按记录的仓库和分支 clone。没有 origin 就不出卡。This Computer 永远不出现这条。
 - **一个回合就是一个回复气泡。** 模型在一轮里可能多次在文字和工具之间来回，这些是同一条消息里的 blocks，不是多条「Neo 已完成」。pi 每个 LLM 回合都会 `agent_end`，那不是对话结束；worker 只在 `session.prompt` 返回后发一次 `agent.end`。
 - **跟进是对话，不是排队条。** 当前这条没有未完成回合时，发出去立刻出用户气泡，下面跟 Web 一样的「正在思考…」。本机 FIFO（同一文件夹同时只跑一轮）仍在控制面执行，不再用「排队中 · 用户 · 正文」挡着。
 - **自己在这扇窗口里发的，不弹系统通知。** 本机 worker 一回合一进程，跟进会再拉起进程；那是预期，不是「远程派活」。只有窗口不在前台、或 Remote control 派来的活，才用「本机开始一条对话」。

@@ -80,6 +80,7 @@ export {
   runCloneBranch,
   runCloneRemoteUrl,
   runGitContext,
+  shortCloneRepo,
   splitPatchByFile,
 } from "./git.js";
 export type { KernelEnv, WorkerRole } from "./kernel.js";
@@ -120,15 +121,23 @@ export type {
   DeskRejectRequest,
   DeskWorkspace,
   HandoffRequest,
+  RemoteCloudContinueCopy,
+  RemoteCloudContinueOffer,
   UpdateDeskRequest,
 } from "./desk.js";
 export {
   DESK_HOST_OFFLINE_MESSAGE,
   DESK_HOST_UNBOUND_MESSAGE,
+  REMOTE_CLOUD_CONTINUE_ACTION,
+  REMOTE_CLOUD_CONTINUE_COMPOSER,
   REMOTE_CLOUD_CONTINUE_HINT,
   REMOTE_CLOUD_CONTINUE_NO_REMOTE,
   REMOTE_CLOUD_CONTINUE_ONLINE,
+  REMOTE_CLOUD_CONTINUE_STATUS,
+  REMOTE_CLOUD_CONTINUE_TITLE,
+  REMOTE_CLOUD_CONTINUE_WARNING,
   isDeskHostedTarget,
+  remoteCloudContinueCopy,
   remoteCloudContinueOffer,
   remoteControlSendLock,
 } from "./desk.js";

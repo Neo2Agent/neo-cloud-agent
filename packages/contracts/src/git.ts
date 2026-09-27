@@ -90,6 +90,31 @@ export function sanitizeRemoteUrl(url: string): string {
   return trimmed;
 }
 
+/** `https://github.com/acme/app.git` / `git@github.com:acme/app.git` → `acme/app`. */
+export function shortCloneRepo(url: string): string {
+  const clean = sanitizeRemoteUrl(url).replace(/\/+$/, "");
+  if (!clean) return "";
+  let path = clean;
+  const ssh = /^git@[^:]+:(.+)$/.exec(clean);
+  if (ssh?.[1]) {
+    path = ssh[1];
+  } else {
+    try {
+      if (/^(https?:|git:)\/\//i.test(clean)) {
+        path = new URL(clean).pathname.replace(/^\/+/, "");
+      } else if (/^github\.com\//i.test(clean)) {
+        path = clean.replace(/^github\.com\//i, "");
+      }
+    } catch {
+      path = clean;
+    }
+  }
+  path = path.replace(/\.git$/i, "");
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
+  return path || clean;
+}
+
 /** Prefer the recorded origin; fall back to a remote already in `repoUrls`. */
 export function runCloneRemoteUrl(run: {
   remoteUrl?: string | null;

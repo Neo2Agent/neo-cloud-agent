@@ -29,6 +29,7 @@ import { listenNeoDeepLinks } from "../native/linking";
 import { attachForegroundPushPolicy, listenNotificationOpen, registerExpoPushDevice } from "../native/push";
 import { DEFAULT_API_URL } from "../place";
 import { chatStatusText, composerGate } from "../session";
+import { RemoteOfflineCard } from "./RemoteOfflineCard";
 import {
   appendPendingUser,
   isActiveRunStatus,
@@ -803,13 +804,14 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   }
 
   const gate = composerGate(current, desks);
-  const thinking = shouldShowThinking(turnBusy, visible)
-    ? thinkingHint({
-        status: current?.status,
-        loop: current?.executionTarget?.loop,
-        remoteControl: current?.executionTarget?.remoteControl,
-      })
-    : null;
+  const thinking =
+    !gate.locked && shouldShowThinking(turnBusy, visible)
+      ? thinkingHint({
+          status: current?.status,
+          loop: current?.executionTarget?.loop,
+          remoteControl: current?.executionTarget?.remoteControl,
+        })
+      : null;
   const continueRemoteInCloud = async () => {
     if (!current) return;
     try {
@@ -824,11 +826,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const composer = (
     <View>
     {gate.cloudContinue.show ? (
-      <Pressable testID="continue-remote-cloud" onPress={() => void continueRemoteInCloud()} style={styles.cloudContinue}>
-        <Text style={styles.cloudContinueText}>
-          {gate.cloudContinue.branch ? `在云端续聊 · ${gate.cloudContinue.branch}` : "在云端续聊"}
-        </Text>
-      </Pressable>
+      <RemoteOfflineCard copy={gate.continueCopy} onContinue={() => void continueRemoteInCloud()} />
     ) : null}
     <Composer
       prompt={prompt}
@@ -893,9 +891,10 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         <ChatScreen
           run={current}
           status={chatStatusText(current, desks)}
-          running={turnBusy}
+          running={turnBusy && !gate.locked}
           messages={visible}
           thinking={thinking}
+          hideHandshake={gate.locked}
           canLoadOlder={canLoadOlder(older)}
           loadingOlder={loadingOlder}
           onLoadOlder={() => void loadOlder()}
@@ -973,6 +972,4 @@ const styles = StyleSheet.create({
   home: { flex: 1 },
   topbar: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
   menu: { fontSize: 20, color: colors.ink },
-  cloudContinue: { marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, alignItems: "center" },
-  cloudContinueText: { color: colors.ink, fontSize: 14 },
 });

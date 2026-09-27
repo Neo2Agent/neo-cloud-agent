@@ -40,8 +40,6 @@ type Props = {
   /** Remote Control host is offline; send is blocked until that Desk's inbox is live. */
   blocked?: boolean;
   blockedHint?: string;
-  /** Offline Remote with a recorded origin: continue the same chat in the cloud. */
-  blockedAction?: { id?: string; label: string; onClick: () => void };
   model: string;
   models?: Array<{ id: string; label: string }>;
   experts?: Expert[];
@@ -104,7 +102,6 @@ export function Composer({
   targetLockLabel,
   blocked = false,
   blockedHint,
-  blockedAction,
   model,
   models = CHAT_MODELS.map((item) => ({ ...item })),
   experts = [],
@@ -521,22 +518,10 @@ export function Composer({
               />
             ) : null}
             {showLiveHint ? (
-              <>
-                <p className="hint" id="vm-status" data-busy={voiceActive ? "true" : "false"}>
-                  {voiceActive ? <span className="pulse-dot" aria-hidden="true" /> : null}
-                  {listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : hint}
-                </p>
-                {blocked && blockedAction ? (
-                  <button
-                    type="button"
-                    className="ghost"
-                    id={blockedAction.id ?? "continue-remote-cloud"}
-                    onClick={blockedAction.onClick}
-                  >
-                    {blockedAction.label}
-                  </button>
-                ) : null}
-              </>
+              <p className="hint" id="vm-status" data-busy={voiceActive ? "true" : "false"}>
+                {voiceActive ? <span className="pulse-dot" aria-hidden="true" /> : null}
+                {listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : hint}
+              </p>
             ) : (
               <span className="composer-hint" id="vm-status" title={hint} aria-label={hint}>
                 <IconInfo size={14} />

@@ -3,6 +3,10 @@ import test from "node:test";
 import {
   DESK_HOST_OFFLINE_MESSAGE,
   DESK_HOST_UNBOUND_MESSAGE,
+  REMOTE_CLOUD_CONTINUE_ACTION,
+  REMOTE_CLOUD_CONTINUE_STATUS,
+  REMOTE_CLOUD_CONTINUE_WARNING,
+  remoteCloudContinueCopy,
   remoteCloudContinueOffer,
   remoteControlSendLock,
 } from "./desk.js";
@@ -74,4 +78,18 @@ test("continue-in-cloud is only for an offline Remote with a recorded origin", (
     false,
   );
   assert.equal(remoteCloudContinueOffer({ ...remote, remoteUrl: null, repoUrls: ["/tmp/app"] }, []).show, false);
+});
+
+test("offline continue copy names the repo and keeps the unpushed warning off the send bar", () => {
+  const copy = remoteCloudContinueCopy({
+    remoteUrl: "https://github.com/acme/app.git",
+    branch: "feat/login",
+  });
+  assert.equal(copy.title, "Desk 离线");
+  assert.equal(copy.repoLine, "acme/app · feat/login");
+  assert.equal(copy.warning, REMOTE_CLOUD_CONTINUE_WARNING);
+  assert.equal(copy.action, REMOTE_CLOUD_CONTINUE_ACTION);
+  assert.equal(copy.status, REMOTE_CLOUD_CONTINUE_STATUS);
+  assert.match(copy.confirmMessage, /acme\/app · feat\/login/);
+  assert.match(copy.composerHint, /Desk 离线/);
 });

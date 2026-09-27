@@ -1866,7 +1866,8 @@ button.tool-file-more:hover {
 
   .transcript-col,
   .chat-column .composer,
-  .chat-column .proj-chip-bar {
+  .chat-column .proj-chip-bar,
+  .chat-column .remote-offline-card {
     box-sizing: border-box;
     width: min(var(--session-w), calc(100% - 48px));
     max-width: none;
@@ -2579,6 +2580,7 @@ button.send:disabled {
   .transcript-col,
   .chat-column .composer,
   .chat-column .proj-chip-bar,
+  .chat-column .remote-offline-card,
   .work-fold-body,
   .work-chevron {
     transition: none;
@@ -2681,7 +2683,8 @@ button.send:disabled {
 }
 
 .chat-column .composer,
-.chat-column .proj-chip-bar {
+.chat-column .proj-chip-bar,
+.chat-column .remote-offline-card {
   grid-area: auto;
 }
 
@@ -5048,6 +5051,75 @@ a.git-check-name:hover {
   background: color-mix(in srgb, var(--accent) 6%, #ffffff);
 }
 
+.remote-offline-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+  width: min(768px, calc(100% - 32px));
+  margin: 0 auto 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  flex-shrink: 0;
+}
+
+.remote-offline-copy {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.remote-offline-card h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.remote-offline-meta {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.remote-offline-warn,
+.remote-offline-err {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.remote-offline-err {
+  flex-basis: 100%;
+  color: var(--err);
+}
+
+.remote-offline-actions {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.remote-offline-go {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--text);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.remote-offline-go:hover {
+  opacity: 0.92;
+}
+
 .proj-chip {
   font-size: 13px;
   font-weight: 600;
@@ -6027,6 +6099,21 @@ button.composer-mic.is-listening,
     overflow-x: hidden;
     overflow-y: auto;
     border-radius: 20px;
+  }
+
+  .remote-offline-card {
+    width: auto;
+    max-width: none;
+    margin: 0 8px 8px;
+    flex-direction: column;
+  }
+
+  .remote-offline-actions {
+    align-self: stretch;
+  }
+
+  .remote-offline-go {
+    width: 100%;
   }
 
   .composer textarea,

@@ -20,6 +20,7 @@ type Props = {
   running: boolean;
   messages: TranscriptMessage[];
   thinking?: string | null;
+  hideHandshake?: boolean;
   canLoadOlder?: boolean;
   loadingOlder?: boolean;
   onLoadOlder?: () => void;
@@ -101,6 +102,7 @@ export function ChatScreen({
   running,
   messages,
   thinking,
+  hideHandshake = false,
   canLoadOlder,
   loadingOlder,
   onLoadOlder,
@@ -161,7 +163,7 @@ export function ChatScreen({
         {messages.length === 0 ? <Text style={styles.empty}>还没有消息。</Text> : null}
         {messages.map((message) => {
           if (isStartupWhisper(message)) {
-            if (started || thinking) return null;
+            if (hideHandshake || started || thinking) return null;
             return (
               <Text key={message.id} style={styles.whisper}>
                 {message.text}

@@ -15,6 +15,7 @@ import {
   runCloneBranch,
   runCloneRemoteUrl,
   runGitContext,
+  shortCloneRepo,
   splitPatchByFile,
 } from "./git.js";
 
@@ -34,6 +35,9 @@ test("a Remote run clones the recorded origin and laptop branch, not neo/", () =
   assert.equal(runCloneBranch({ baseBranch: "feat/login", branchName: "neo/fix-abcd1234" }), "feat/login");
   assert.equal(runCloneBranch({ branchName: "feat/login" }), "feat/login");
   assert.equal(runCloneBranch({ branchName: "neo/fix-abcd1234" }), null);
+  assert.equal(shortCloneRepo("https://github.com/acme/app.git"), "acme/app");
+  assert.equal(shortCloneRepo("git@github.com:acme/app.git"), "acme/app");
+  assert.equal(shortCloneRepo("https://x-access-token:secret@github.com/acme/app.git"), "acme/app");
 });
 
 test("runGitContext hides Git for plain chats and splits cloud from desk", () => {

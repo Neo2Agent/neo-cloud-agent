@@ -187,6 +187,35 @@ button:disabled { opacity: 0.4; cursor: default; }
 .recipe-card b { display: block; color: var(--ink); }
 .recipe-card small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 
+.remote-offline-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 16px 10px;
+}
+
+.remote-offline-card h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.remote-offline-meta {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.remote-offline-warn {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.remote-offline-card .island-btn-primary {
+  align-self: stretch;
+}
+
 .composer-dock {
   padding: 8px 16px 16px;
 }

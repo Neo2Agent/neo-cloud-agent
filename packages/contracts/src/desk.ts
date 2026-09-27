@@ -1,6 +1,6 @@
 import type { ExecutionTarget } from "./run.js";
 import { isRemoteControlTarget } from "./run.js";
-import { runCloneBranch, runCloneRemoteUrl } from "./git.js";
+import { runCloneBranch, runCloneRemoteUrl, shortCloneRepo } from "./git.js";
 
 /**
  * One folder this desk agreed to run agents in. The absolute path stays on the
@@ -160,6 +160,50 @@ export const REMOTE_CLOUD_CONTINUE_ONLINE = "电脑在线时请在这条 Remote 
 export const REMOTE_CLOUD_CONTINUE_NO_REMOTE =
   "这条 Remote 没有可 clone 的远端仓库。未 push 的改动也不会上去。";
 export const REMOTE_CLOUD_CONTINUE_HINT = "未 push 的本机改动不会上去。云端按已记录的仓库和分支继续这条对话。";
+export const REMOTE_CLOUD_CONTINUE_TITLE = "Desk 离线";
+export const REMOTE_CLOUD_CONTINUE_ACTION = "在云端继续这条对话";
+export const REMOTE_CLOUD_CONTINUE_STATUS = "Desk 离线";
+export const REMOTE_CLOUD_CONTINUE_COMPOSER = "Desk 离线，发送已锁定。";
+export const REMOTE_CLOUD_CONTINUE_WARNING = "未 push 的本机改动不会上去。";
+
+export type RemoteCloudContinueOffer = {
+  show: boolean;
+  remoteUrl: string;
+  branch: string;
+};
+
+export type RemoteCloudContinueCopy = {
+  title: string;
+  repoLine: string;
+  warning: string;
+  action: string;
+  confirmTitle: string;
+  confirmMessage: string;
+  confirmAction: string;
+  composerHint: string;
+  status: string;
+};
+
+/** Shared Web / Mobile copy for the offline Remote → cloud card. */
+export function remoteCloudContinueCopy(
+  offer: Pick<RemoteCloudContinueOffer, "remoteUrl" | "branch">,
+): RemoteCloudContinueCopy {
+  const repo = shortCloneRepo(offer.remoteUrl);
+  const repoLine = [repo, offer.branch].filter(Boolean).join(" · ");
+  return {
+    title: REMOTE_CLOUD_CONTINUE_TITLE,
+    repoLine,
+    warning: REMOTE_CLOUD_CONTINUE_WARNING,
+    action: REMOTE_CLOUD_CONTINUE_ACTION,
+    confirmTitle: "在云端继续这条对话？",
+    confirmMessage: repoLine
+      ? `云端会按 ${repoLine} clone 后继续这条对话。未 push 的本机改动不会上去。`
+      : REMOTE_CLOUD_CONTINUE_HINT,
+    confirmAction: "在云端续聊",
+    composerHint: REMOTE_CLOUD_CONTINUE_COMPOSER,
+    status: REMOTE_CLOUD_CONTINUE_STATUS,
+  };
+}
 
 /**
  * Offer "continue this Remote in the cloud" only when the host is offline and
@@ -176,7 +220,7 @@ export function remoteCloudContinueOffer(
   } | null | undefined,
   desks: Array<Pick<Desk, "id" | "online">>,
   options?: RemoteControlSendLockOptions,
-): { show: boolean; remoteUrl: string; branch: string } {
+): RemoteCloudContinueOffer {
   if (!run || !isRemoteControlTarget(run.executionTarget)) {
     return { show: false, remoteUrl: "", branch: "" };
   }

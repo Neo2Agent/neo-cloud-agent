@@ -70,6 +70,7 @@ import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome"
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
 import { IslandButton, IslandTag } from "./island";
+import { RemoteOfflineCard } from "./RemoteOfflineCard";
 import { MarkdownBody } from "@neo-cloud-agent/ui";
 
 function hashScreen() {
@@ -893,14 +894,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const composer = (
     <>
     {gate.cloudContinue.show ? (
-      <button
-        type="button"
-        id="continue-remote-cloud"
-        className="ghost"
-        onClick={() => void continueRemoteInCloud()}
-      >
-        {gate.cloudContinue.branch ? `在云端续聊 · ${gate.cloudContinue.branch}` : "在云端续聊"}
-      </button>
+      <RemoteOfflineCard copy={gate.continueCopy} onContinue={() => void continueRemoteInCloud()} />
     ) : null}
     <IslandComposer
       prompt={prompt}
@@ -989,20 +983,21 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   );
 
   const lastUserIndex = visible.map((message) => message.role).lastIndexOf("user");
-  const thinking = shouldShowThinking(turnBusy, visible)
-    ? thinkingHint({
-        status: current?.status,
-        loop: current?.executionTarget?.loop,
-        remoteControl: current?.executionTarget?.remoteControl,
-      })
-    : null;
+  const thinking =
+    !gate.locked && shouldShowThinking(turnBusy, visible)
+      ? thinkingHint({
+          status: current?.status,
+          loop: current?.executionTarget?.loop,
+          remoteControl: current?.executionTarget?.remoteControl,
+        })
+      : null;
   if (route.screen === "chat" || sending || pendingTurn || visible.length > 0) {
     return (
       <div className="app">
         <header className="topbar">
           <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
           {current ? <span className="chat-title">{runListTitle(current)}</span> : null}
-          <span className={turnBusy ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
+          <span className={turnBusy && !gate.locked ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
           {current ? <IslandTag>{runPlaceLabel(current)}</IslandTag> : null}
           {current && runGitContext(current) !== "none" ? (
             <button className="icon-btn" type="button" onClick={() => setPanel("git")} aria-label="Git">
@@ -1027,7 +1022,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           {visible.length === 0 ? <p className="empty">还没有消息。</p> : null}
           {visible.map((message, messageIndex) => {
             if (isStartupWhisper(message)) {
-              if (generationStarted(visible) || thinking) return null;
+              if (gate.locked || generationStarted(visible) || thinking) return null;
               return (
                 <p key={message.id} className="whisper">
                   {message.text}

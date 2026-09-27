@@ -10,10 +10,11 @@ import { CHAT_MODELS, resolveCatalogSelection } from "@neo-cloud-agent/contracts
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { isRemoteControlTarget, type ImageRef, type PullRequestRef, type Run } from "@neo-cloud-agent/contracts/run";
-import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { runCloneBranch, runCloneRemoteUrl, runGitContext } from "@neo-cloud-agent/contracts/git";
 import {
   isDeskHostedTarget,
-  REMOTE_CLOUD_CONTINUE_HINT,
+  REMOTE_CLOUD_CONTINUE_STATUS,
+  remoteCloudContinueCopy,
   remoteCloudContinueOffer,
   type Desk,
   type DeskWorkspace,
@@ -58,6 +59,7 @@ import { InboxBell } from "./components/InboxBell";
 import { RunInvite } from "./components/RunInvite";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
+import { RemoteOfflineCard } from "./components/RemoteOfflineCard";
 import { useConfirm, toast } from "./feedback";
 import {
   IconArchive,
@@ -1332,11 +1334,15 @@ export function App() {
 
   const continueRemoteInCloud = useCallback(async () => {
     if (!runId) return;
+    const copy = remoteCloudContinueCopy({
+      remoteUrl: runCloneRemoteUrl(currentRun ?? {}) ?? "",
+      branch: runCloneBranch(currentRun ?? {}) ?? "",
+    });
     if (
       !(await confirm({
-        title: "在云端续聊？",
-        message: REMOTE_CLOUD_CONTINUE_HINT,
-        confirmLabel: "在云端续聊",
+        title: copy.confirmTitle,
+        message: copy.confirmMessage,
+        confirmLabel: copy.confirmAction,
       }))
     ) {
       return;
@@ -1355,7 +1361,7 @@ export function App() {
     } catch (error) {
       setHandoffError(error instanceof Error ? error.message : "切到云端失败");
     }
-  }, [confirm, runId]);
+  }, [confirm, currentRun, runId]);
 
   const applyTarget = useCallback((next: DeskTarget) => {
     setDeskTarget(next);
@@ -1698,18 +1704,6 @@ export function App() {
   }, [currentRun?.id, currentRun?.status]);
 
   const viewMessages = withPendingUser(messages, pendingTurn);
-  const displayMessages = displayTranscriptMessages(viewMessages, {
-    hideStaleRestart: true,
-  });
-  const busy = isTurnBusy({
-    sending,
-    stopping,
-    pending: Boolean(pendingTurn),
-    status: currentRun?.status,
-    messages: viewMessages,
-  });
-  const archived = isComposerClosed(currentRun?.status);
-  const projectCloudLock = Boolean(activeProject) && !isDeskHostedTarget(currentRun?.executionTarget);
   const hostLock = remoteControlSendLock(
     currentRun,
     desks,
@@ -1720,14 +1714,33 @@ export function App() {
     desks,
     deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
   );
-  const activity = activityLabel({
+  const continueCopy = remoteCloudContinueCopy(cloudContinue);
+  const displayMessages = displayTranscriptMessages(viewMessages, {
+    hideStaleRestart: true,
+    hideDeskHandshake: hostLock.locked || !isDeskHostedTarget(currentRun?.executionTarget),
+  });
+  const turnBusy = isTurnBusy({
     sending,
     stopping,
+    pending: Boolean(pendingTurn),
     status: currentRun?.status,
-    streaming: isAssistantStreaming(viewMessages),
-    runningTool: runningToolName(viewMessages),
+    messages: viewMessages,
   });
-  const statusView = turnStatusLabel({ sending, stopping, status: currentRun?.status });
+  const busy = hostLock.locked ? false : turnBusy;
+  const archived = isComposerClosed(currentRun?.status);
+  const projectCloudLock = Boolean(activeProject) && !isDeskHostedTarget(currentRun?.executionTarget);
+  const activity = hostLock.locked
+    ? ""
+    : activityLabel({
+        sending,
+        stopping,
+        status: currentRun?.status,
+        streaming: isAssistantStreaming(viewMessages),
+        runningTool: runningToolName(viewMessages),
+      });
+  const statusView = hostLock.locked
+    ? { state: "IDLE", label: REMOTE_CLOUD_CONTINUE_STATUS }
+    : turnStatusLabel({ sending, stopping, status: currentRun?.status });
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
   const gitContext = currentRun ? runGitContext(currentRun) : "none";
   const gitRefreshKey = `${runId ?? ""}:${busy ? "busy" : "idle"}:${currentRun?.pullRequests?.length ?? 0}`;
@@ -2725,6 +2738,14 @@ export function App() {
               ) : null}
             </div>
           ) : null}
+          {mainTab === "chat" && cloudContinue.show ? (
+            <RemoteOfflineCard
+              remoteUrl={cloudContinue.remoteUrl}
+              branch={cloudContinue.branch}
+              error={handoffError}
+              onContinue={() => void continueRemoteInCloud()}
+            />
+          ) : null}
           {mainTab === "chat" ? (
             <Composer
               prompt={prompt}
@@ -2751,18 +2772,7 @@ export function App() {
                     : undefined
               }
               blocked={hostLock.locked}
-              blockedHint={hostLock.hint}
-              blockedAction={
-                cloudContinue.show
-                  ? {
-                      id: "continue-remote-cloud",
-                      label: cloudContinue.branch
-                        ? `在云端续聊 · ${cloudContinue.branch}`
-                        : "在云端续聊",
-                      onClick: () => void continueRemoteInCloud(),
-                    }
-                  : undefined
-              }
+              blockedHint={cloudContinue.show ? continueCopy.composerHint : hostLock.hint}
               model={selectedModel}
               experts={experts}
               teams={teams}
