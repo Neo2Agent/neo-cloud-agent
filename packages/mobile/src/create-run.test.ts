@@ -52,6 +52,15 @@ test("enabled skills ride along, and an empty list stays undefined", () => {
   assert.equal(cloudRunRequest({ prompt: "hi", source: "ios", pluginIds: [] }).pluginIds, undefined);
 });
 
+test("a named snapshot reuses the build and cold skips reuse", () => {
+  const reuse = cloudRunRequest({ prompt: "hi", source: "ios", buildId: "bld_1" });
+  assert.equal(reuse.buildId, "bld_1");
+  assert.equal(reuse.reuseBuild, true);
+  const cold = cloudRunRequest({ prompt: "hi", source: "ios", buildId: "cold" });
+  assert.equal(cold.buildId, undefined);
+  assert.equal(cold.reuseBuild, false);
+});
+
 test("prompts go through untouched and follow-ups carry queue / steer", () => {
   const body = cloudRunRequest({ prompt: "这段鉴权怎么走", source: "ios" });
   assert.equal(body.prompt, "这段鉴权怎么走");

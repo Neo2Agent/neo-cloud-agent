@@ -5,6 +5,7 @@ import { runListTitle } from "../format";
 import { runRowMeta } from "../session";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { splitShelvedRuns, toggleSelected } from "../cloud";
+import { mobileSidebarGroups } from "../sidebar-folders";
 import { SettingsIcon } from "./composer-icons";
 import { IslandButton } from "./island";
 import { drawerTopInset } from "./safe-area";
@@ -26,6 +27,7 @@ type Props = {
   onArchiveMany?: (ids: string[]) => Promise<void>;
   /** Archived and expired runs only; the control plane rejects the rest. */
   onDeleteRun?: (id: string) => Promise<void>;
+  projectNames?: Record<string, string>;
 };
 
 const PANEL_W = 280;
@@ -47,6 +49,7 @@ export function Drawer(props: Props) {
   const shownShelved = q
     ? shelved.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
     : shelved;
+  const groups = mobileSidebarGroups(shownLive, props.projectNames ?? {});
 
   useEffect(() => {
     if (props.open) {
@@ -152,7 +155,44 @@ export function Drawer(props: Props) {
           <ScrollView>
             {props.runs.length === 0 ? <Text style={styles.empty}>暂无近期任务</Text> : null}
             {q && shownLive.length === 0 && shownShelved.length === 0 ? <Text style={styles.empty}>没有匹配的对话。</Text> : null}
-            {shownLive.map((run) => (
+            {groups.folders.map((folder) => (
+              <View key={`p-${folder.key}`}>
+                <Text style={styles.section}>{folder.label}</Text>
+                {[...folder.active, ...folder.recent].map((run) => (
+                  <Pressable
+                    key={run.id}
+                    onPress={() => (selecting ? setSelected((prev) => toggleSelected(prev, run.id)) : props.onOpenRun(run.id))}
+                    style={styles.row}
+                  >
+                    <Text style={styles.rowTitle} numberOfLines={2}>
+                      {selecting ? (selected.includes(run.id) ? "☑ " : "☐ ") : isActiveRunStatus(run.status) ? "● " : ""}
+                      {runListTitle(run)}
+                    </Text>
+                    <Text style={styles.rowMeta}>{runRowMeta(run)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ))}
+            {groups.repos.map((folder) => (
+              <View key={`r-${folder.key}`}>
+                <Text style={styles.section}>仓 · {folder.label}</Text>
+                {[...folder.active, ...folder.recent].map((run) => (
+                  <Pressable
+                    key={run.id}
+                    onPress={() => (selecting ? setSelected((prev) => toggleSelected(prev, run.id)) : props.onOpenRun(run.id))}
+                    style={styles.row}
+                  >
+                    <Text style={styles.rowTitle} numberOfLines={2}>
+                      {selecting ? (selected.includes(run.id) ? "☑ " : "☐ ") : isActiveRunStatus(run.status) ? "● " : ""}
+                      {runListTitle(run)}
+                    </Text>
+                    <Text style={styles.rowMeta}>{runRowMeta(run)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ))}
+            {groups.chat.length > 0 ? <Text style={styles.section}>日常</Text> : null}
+            {groups.chat.map((run) => (
               <Pressable
                 key={run.id}
                 onPress={() => (selecting ? setSelected((prev) => toggleSelected(prev, run.id)) : props.onOpenRun(run.id))}

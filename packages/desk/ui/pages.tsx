@@ -4,7 +4,8 @@ import { matchIntentCapsules, type IntentCapsule } from "@neo-cloud-agent/contra
 import { isImeComposing } from "@neo-cloud-agent/contracts/composer-keys";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
-import { ContextUsageControl, Select } from "@neo-cloud-agent/ui";
+import { repoShortLabel } from "@neo-cloud-agent/contracts/repo-label";
+import { CloudAccountSettings, cloudSettingsFromFetch, ContextUsageControl, Select } from "@neo-cloud-agent/ui";
 import { Avatar } from "./Avatar";
 import { IslandButton, IslandInput, IslandSwitch } from "./island";
 import type { Project } from "@neo-cloud-agent/contracts/project";
@@ -266,12 +267,13 @@ export function SearchPalette({
   );
 }
 
-export type SettingsSection = "basics" | "avatars" | "models";
+export type SettingsSection = "basics" | "avatars" | "models" | "cloud";
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string; hint: string }> = [
   { id: "basics", label: "基础配置", hint: "这台电脑上的本机对话怎么跑。" },
   { id: "avatars", label: "头像", hint: "换设备登录同一账号也能看到。" },
   { id: "models", label: "模型配置", hint: "选对外型号。渠道和 Key 在 New API。" },
+  { id: "cloud", label: "云端账号", hint: "GitHub、额度、MCP 和预热环境，与 Web 同一套控制面。" },
 ];
 
 function AvatarSettingRow({
@@ -345,6 +347,7 @@ export function SettingsPage({
   onSave,
   newApi,
   onOpenMemories,
+  cloud,
 }: {
   section: SettingsSection;
   onSection: (section: SettingsSection) => void;
@@ -369,6 +372,21 @@ export function SettingsPage({
   onSave: () => void;
   newApi?: { url: string | null; consoleUrl: string | null } | null;
   onOpenMemories?: () => void;
+  cloud?: {
+    token: string;
+    authorizeHref: string;
+    repo: string;
+    envId: string;
+    buildId: string;
+    environments: Array<{ id: string; name?: string }>;
+    builds: Array<{ id: string; envId?: string; status: string; draft?: boolean }>;
+    onRepo: (value: string) => void;
+    onEnv: (value: string) => void;
+    onBuild: (value: string) => void;
+    onWarm: () => void;
+    onNotice: (message: string, kind?: "ok" | "err") => void;
+    request: (path: string, init?: RequestInit) => Promise<Response>;
+  };
 }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -422,6 +440,23 @@ export function SettingsPage({
               />
               <p className="hint">选图后立刻保存到账号。最长边会压到 256px。</p>
               {avatarError ? <p className="error">{avatarError}</p> : null}
+            </div>
+          ) : section === "cloud" && cloud ? (
+            <div className="settings-card">
+              <CloudAccountSettings
+                client={cloudSettingsFromFetch(cloud.request)}
+                authorizeHref={cloud.authorizeHref}
+                repo={cloud.repo}
+                envId={cloud.envId}
+                buildId={cloud.buildId}
+                environments={cloud.environments}
+                builds={cloud.builds}
+                onRepo={cloud.onRepo}
+                onEnv={cloud.onEnv}
+                onBuild={cloud.onBuild}
+                onWarm={cloud.onWarm}
+                onNotice={cloud.onNotice}
+              />
             </div>
           ) : section === "basics" ? (
             <div className="settings-card">
@@ -656,11 +691,13 @@ export function ContextBar({
   cloudRepo = "",
   githubRepos = [],
   onCloudRepo,
+  onOpenCloudSettings,
   experts = [],
   teams = [],
   expertValue = "",
   expertLocked = false,
   onExpert,
+  vmHint,
 }: {
   workspaces: Array<{ id: string; folder: string; name: string; git: boolean }>;
   folder: string;
@@ -679,11 +716,13 @@ export function ContextBar({
   cloudRepo?: string;
   githubRepos?: Array<{ fullName: string; url: string }>;
   onCloudRepo?: (url: string) => void;
+  onOpenCloudSettings?: () => void;
   experts?: Expert[];
   teams?: ExpertTeam[];
   expertValue?: string;
   expertLocked?: boolean;
   onExpert?: (value: string) => void;
+  vmHint?: string;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(open !== null && !locked, () => setOpen(null), barRef);
@@ -696,7 +735,7 @@ export function ContextBar({
   const workspaceLabel = local
     ? activeFolder?.name || (folder ? lastSegment(folder) : targetKind === TARGET_REMOTE ? "选择文件夹" : "不绑定文件夹")
     : cloudRepo
-      ? lastSegment(cloudRepo.replace(/\.git$/, ""))
+      ? repoShortLabel(cloudRepo) || lastSegment(cloudRepo.replace(/\.git$/, ""))
       : "无仓库";
 
   return (
@@ -766,7 +805,19 @@ export function ContextBar({
             >
               无仓库
             </button>
-            {githubRepos.length === 0 ? <p className="context-menu-label">设置里绑定 GitHub 后可选仓库</p> : <p className="context-menu-label">GitHub</p>}
+            {githubRepos.length === 0 ? (
+              <p className="context-menu-label">
+                {onOpenCloudSettings ? (
+                  <button type="button" onClick={() => { onOpenCloudSettings(); setOpen(null); }}>
+                    去设置绑定 GitHub
+                  </button>
+                ) : (
+                  "设置里绑定 GitHub 后可选仓库"
+                )}
+              </p>
+            ) : (
+              <p className="context-menu-label">GitHub</p>
+            )}
             {githubRepos.map((item) => (
               <button
                 key={item.url}
@@ -863,6 +914,7 @@ export function ContextBar({
           />
         </label>
       ) : null}
+      {vmHint ? <span className="vm-hint">{vmHint}</span> : null}
     </div>
   );
 }

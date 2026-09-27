@@ -7,6 +7,7 @@ export function cloudRunRequest(input: {
   prompt: string;
   source: Extract<RunSource, "ios" | "android">;
   envId?: string;
+  buildId?: string;
   model?: string;
   expert?: ExpertPick;
   pluginIds?: string[];
@@ -23,6 +24,11 @@ export function cloudRunRequest(input: {
     repoUrls: input.repoUrls?.length ? input.repoUrls : [],
     skipRepoDefaults: !input.repoUrls?.length,
     envId: input.envId || undefined,
+    ...(input.buildId === "cold"
+      ? { reuseBuild: false }
+      : input.buildId
+        ? { buildId: input.buildId, reuseBuild: true }
+        : {}),
     source: input.source,
     model: input.model,
     expertId,

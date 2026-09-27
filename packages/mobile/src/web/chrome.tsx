@@ -11,6 +11,7 @@ import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
 import { runRowMeta } from "../session";
 import { splitShelvedRuns, toggleSelected } from "../cloud";
+import { mobileSidebarGroups } from "../sidebar-folders";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { IslandButton, IslandCard, IslandInput, IslandTitle } from "./island";
 
@@ -120,6 +121,7 @@ export function IslandDrawer(props: {
   onArchiveMany?: (ids: string[]) => Promise<void>;
   /** Archived and expired runs only; the control plane rejects the rest. */
   onDeleteRun?: (id: string) => Promise<void>;
+  projectNames?: Record<string, string>;
 }) {
   const [mounted, setMounted] = useState(props.open);
   const [entered, setEntered] = useState(false);
@@ -127,7 +129,7 @@ export function IslandDrawer(props: {
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
-  const { live, shelved } = splitShelvedRuns(props.runs.slice(0, 20));
+  const { live, shelved } = splitShelvedRuns(props.runs);
   const q = query.trim().toLowerCase();
   const shownLive = q
     ? live.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
@@ -135,6 +137,7 @@ export function IslandDrawer(props: {
   const shownShelved = q
     ? shelved.filter((run) => runListTitle(run).toLowerCase().includes(q) || run.prompt.toLowerCase().includes(q))
     : shelved;
+  const groups = mobileSidebarGroups(shownLive, props.projectNames ?? {});
 
   useEffect(() => {
     let cancelled = false;
@@ -225,7 +228,46 @@ export function IslandDrawer(props: {
         ) : null}
         {props.runs.length === 0 ? <p className="empty">暂无近期任务</p> : null}
         {q && shownLive.length === 0 && shownShelved.length === 0 ? <p className="empty">没有匹配的对话。</p> : null}
-        {shownLive.map((run) => (
+        {groups.folders.map((folder) => (
+          <div key={`p-${folder.key}`} className="run-folder">
+            <div className="section">{folder.label}</div>
+            {[...folder.active, ...folder.recent].map((run) => (
+              <button
+                key={run.id}
+                className="run-row"
+                type="button"
+                onClick={() => (selecting ? setSelected((prev) => toggleSelected(prev, run.id)) : props.onOpenRun(run.id))}
+              >
+                <b>
+                  {selecting ? (selected.includes(run.id) ? "☑ " : "☐ ") : isActiveRunStatus(run.status) ? "● " : ""}
+                  {runListTitle(run)}
+                </b>
+                <span>{runRowMeta(run)}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+        {groups.repos.map((folder) => (
+          <div key={`r-${folder.key}`} className="run-folder">
+            <div className="section">仓 · {folder.label}</div>
+            {[...folder.active, ...folder.recent].map((run) => (
+              <button
+                key={run.id}
+                className="run-row"
+                type="button"
+                onClick={() => (selecting ? setSelected((prev) => toggleSelected(prev, run.id)) : props.onOpenRun(run.id))}
+              >
+                <b>
+                  {selecting ? (selected.includes(run.id) ? "☑ " : "☐ ") : isActiveRunStatus(run.status) ? "● " : ""}
+                  {runListTitle(run)}
+                </b>
+                <span>{runRowMeta(run)}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+        {groups.chat.length > 0 ? <div className="section">日常</div> : null}
+        {groups.chat.map((run) => (
           <button
             key={run.id}
             className="run-row"
@@ -323,6 +365,8 @@ export function IslandComposer(props: {
   expertValue?: string;
   expertLocked?: boolean;
   onExpert?: (value: string) => void;
+  vmHint?: string;
+  onOpenSettings?: () => void;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
@@ -455,6 +499,12 @@ export function IslandComposer(props: {
         ) : (
           <span>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</span>
         )}
+        {props.onOpenSettings && !props.repoLocked && !(props.repos ?? []).length ? (
+          <button type="button" className="text-link" onClick={props.onOpenSettings}>
+            去设置绑定 GitHub
+          </button>
+        ) : null}
+        {props.vmHint ? <span className="vm-hint">{props.vmHint}</span> : null}
         {props.onExpert ? (
           <label className="composer-repo">
             <span className="sr-only">专家</span>

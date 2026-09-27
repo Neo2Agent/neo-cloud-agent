@@ -1,131 +1,53 @@
-import { api, readJson } from "./api";
+import { createWorkspaceTermApi } from "@neo-cloud-agent/ui/workspace-term";
+import { api } from "./api";
 import { withApiBase } from "./desk";
 
-export type WorkspaceTermInfo = {
-  id: string;
-  cwd: string;
-  shell: string;
-  alive?: boolean;
-  pty?: boolean;
-};
+export type { WorkspaceTermEvent, WorkspaceTermInfo } from "@neo-cloud-agent/ui/workspace-term";
+export { parseTermSseData } from "@neo-cloud-agent/ui/workspace-term";
 
-export type WorkspaceTermEvent =
-  | { type: "ready"; id: string; cwd: string; shell: string }
-  | { type: "data"; chunk: string }
-  | { type: "exit"; code: number | null };
+const termApis = new Map<string, ReturnType<typeof createWorkspaceTermApi>>();
 
-export async function listWorkspaceTerms(token: string, runId: string): Promise<WorkspaceTermInfo[]> {
-  const response = await api(token, `/v1/runs/${runId}/term`);
-  const body = await readJson<{ sessions?: WorkspaceTermInfo[]; error?: string }>(response);
-  if (!response.ok) {
-    throw new Error(body.error || "读取终端失败");
-  }
-  return body.sessions ?? [];
-}
-
-export async function openWorkspaceTerm(token: string, runId: string): Promise<WorkspaceTermInfo> {
-  const response = await api(token, `/v1/runs/${runId}/term`, { method: "POST" });
-  const body = await readJson<WorkspaceTermInfo & { error?: string }>(response);
-  if (!response.ok) {
-    throw new Error(body.error || "打不开终端");
-  }
-  return body;
-}
-
-export async function writeWorkspaceTerm(token: string, runId: string, id: string, data: string): Promise<void> {
-  const response = await api(token, `/v1/runs/${runId}/term/${id}`, {
-    method: "POST",
-    body: JSON.stringify({ data }),
+function termApi(token: string) {
+  const current = termApis.get(token);
+  if (current) return current;
+  const created = createWorkspaceTermApi({
+    request: (path, init) => api(token, path, init),
+    eventsUrl: (path) => {
+      const params = new URLSearchParams();
+      if (token) params.set("access_token", token);
+      const query = params.toString() ? `?${params}` : "";
+      return withApiBase(`${path}${query}`);
+    },
   });
-  if (!response.ok) {
-    const body = await readJson<{ error?: string }>(response);
-    throw new Error(body.error || "写入失败");
-  }
+  termApis.set(token, created);
+  return created;
 }
 
-export async function closeWorkspaceTerm(token: string, runId: string, id: string): Promise<void> {
-  const response = await api(token, `/v1/runs/${runId}/term/${id}`, { method: "DELETE" });
-  if (!response.ok && response.status !== 404) {
-    const body = await readJson<{ error?: string }>(response);
-    throw new Error(body.error || "关闭失败");
-  }
+export function listWorkspaceTerms(token: string, runId: string) {
+  return termApi(token).listWorkspaceTerms(runId);
 }
 
-export function parseTermSseData(raw: string): WorkspaceTermEvent | null {
-  try {
-    const parsed = JSON.parse(raw) as WorkspaceTermEvent;
-    if (parsed && (parsed.type === "ready" || parsed.type === "data" || parsed.type === "exit")) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+export function openWorkspaceTerm(token: string, runId: string) {
+  return termApi(token).openWorkspaceTerm(runId);
 }
 
-type LiveTerm = {
-  source: EventSource;
-  listeners: Set<(event: WorkspaceTermEvent) => void>;
-};
+export function ensureWorkspaceTerms(token: string, runId: string) {
+  return termApi(token).ensureWorkspaceTerms(runId);
+}
 
-const liveTerms = new Map<string, LiveTerm>();
+export function writeWorkspaceTerm(token: string, runId: string, id: string, data: string) {
+  return termApi(token).writeWorkspaceTerm(runId, id, data);
+}
+
+export function closeWorkspaceTerm(token: string, runId: string, id: string) {
+  return termApi(token).closeWorkspaceTerm(runId, id);
+}
 
 export function subscribeWorkspaceTerm(
   token: string,
   runId: string,
   id: string,
-  onEvent: (event: WorkspaceTermEvent) => void,
-): () => void {
-  const key = `${runId}\0${id}\0${token}`;
-  let live = liveTerms.get(key);
-  if (!live) {
-    const params = new URLSearchParams();
-    if (token) {
-      params.set("access_token", token);
-    }
-    const query = params.toString() ? `?${params}` : "";
-    const source = new EventSource(withApiBase(`/v1/runs/${runId}/term/${id}/events${query}`));
-    const created: LiveTerm = { source, listeners: new Set() };
-    source.onmessage = (message) => {
-      const event = parseTermSseData(message.data);
-      if (!event) {
-        return;
-      }
-      for (const listener of created.listeners) {
-        listener(event);
-      }
-    };
-    liveTerms.set(key, created);
-    live = created;
-  }
-  live.listeners.add(onEvent);
-  return () => {
-    live.listeners.delete(onEvent);
-    if (live.listeners.size === 0) {
-      live.source.close();
-      liveTerms.delete(key);
-    }
-  };
-}
-
-const ensureLocks = new Map<string, Promise<WorkspaceTermInfo[]>>();
-
-export function ensureWorkspaceTerms(token: string, runId: string): Promise<WorkspaceTermInfo[]> {
-  const current = ensureLocks.get(runId);
-  if (current) {
-    return current;
-  }
-  const next = (async () => {
-    const existing = await listWorkspaceTerms(token, runId);
-    if (existing.length > 0) {
-      return existing;
-    }
-    return [await openWorkspaceTerm(token, runId)];
-  })().finally(() => {
-    if (ensureLocks.get(runId) === next) {
-      ensureLocks.delete(runId);
-    }
-  });
-  ensureLocks.set(runId, next);
-  return next;
+  onEvent: Parameters<ReturnType<typeof createWorkspaceTermApi>["subscribeWorkspaceTerm"]>[3],
+) {
+  return termApi(token).subscribeWorkspaceTerm(runId, id, token, onEvent);
 }

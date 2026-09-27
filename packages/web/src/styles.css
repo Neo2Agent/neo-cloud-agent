@@ -1,5 +1,7 @@
 @import "@neo-cloud-agent/ui/tokens.css";
 @import "@neo-cloud-agent/ui/context-usage.css";
+@import "@neo-cloud-agent/ui/setup-fail.css";
+@import "@neo-cloud-agent/ui/cloud-settings.css";
 
 html {
   -webkit-text-size-adjust: 100%;
@@ -1809,31 +1811,6 @@ button.tool-file-more:hover {
 
 .setup.err {
   color: var(--err);
-}
-
-.setup-fail {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.setup-fail > .setup.err {
-  margin: 0;
-}
-
-.setup-fail-log {
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  max-height: 220px;
-  overflow: auto;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--err) 6%, #ffffff);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .composer {

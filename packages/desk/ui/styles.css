@@ -1,6 +1,8 @@
 @import "@neo-cloud-agent/ui/tokens.css";
 @import "@neo-cloud-agent/ui/git-panel.css";
 @import "@neo-cloud-agent/ui/context-usage.css";
+@import "@neo-cloud-agent/ui/setup-fail.css";
+@import "@neo-cloud-agent/ui/cloud-settings.css";
 
 :root {
   --transcript-max: 860px;
@@ -2539,6 +2541,11 @@ img.avatar {
   padding: 0 2px;
   gap: 8px;
   border-bottom: 0;
+}
+
+.context-bar .vm-hint {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .home-composer .context-item-wrap:first-child .context-menu {

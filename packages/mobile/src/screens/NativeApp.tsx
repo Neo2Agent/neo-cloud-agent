@@ -54,7 +54,10 @@ import {
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
 import { formatContextPercent } from "@neo-cloud-agent/contracts/context-usage";
+import { describeVmHint } from "@neo-cloud-agent/contracts/vm-hint";
+import { projectNameMap } from "../sidebar-folders";
 import { ChatScreen } from "./ChatScreen";
+import { FilesScreen } from "./FilesScreen";
 import { GitScreen } from "./GitScreen";
 import { RunInvite } from "./RunInvite";
 import { startNativeVoice } from "../native/speech";
@@ -78,6 +81,7 @@ type Screen =
   | "memories"
   | "inbox"
   | "skills"
+  | "workspace"
   | "artifacts"
   | "diagnostics"
   | "git";
@@ -98,6 +102,14 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [screen, setScreen] = useState<Screen>("home");
   const [runs, setRuns] = useState<Run[]>([]);
   const [envId, setEnvId] = useState("");
+  const [buildId, setBuildId] = useState("");
+  const [environments, setEnvironments] = useState<Array<{ id: string; name?: string }>>([]);
+  const [builds, setBuilds] = useState<Array<{ id: string; envId?: string; status: string }>>([]);
+  const [vms, setVms] = useState<{ total: number; busy: number; backend?: string; slots: Array<{ id: string; status: string; runId?: string | null }> }>({
+    total: 0,
+    busy: 0,
+    slots: [],
+  });
   const [model, setModel] = useState("deepseek-flash");
   const [chatModels, setChatModels] = useState(CHAT_MODELS);
   const [current, setCurrent] = useState<Run | null>(null);
@@ -165,7 +177,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
 
   const refreshList = useCallback(async () => {
     if (!token) return;
-    const [listed, environments, settings, deskList, expertList, teamList, projectList, autoList, me, pluginList, inbox, memoryList, memoryPref] =
+    const [listed, environmentList, settings, deskList, expertList, teamList, projectList, autoList, me, pluginList, inbox, memoryList, memoryPref, vmList, buildList] =
       await Promise.all([
         client.listRuns(),
         client.listEnvironments().catch(() => ({ environments: [] })),
@@ -181,6 +193,8 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         // Mem0 is optional; an unconfigured control plane answers `configured: false`.
         client.listMemories().catch(() => ({ configured: false, memories: [] })),
         client.memorySettings().catch(() => ({ enabled: true, configured: false })),
+        client.listVms().catch(() => ({ total: 0, busy: 0, slots: [], backend: "" })),
+        client.listBuilds().catch(() => ({ builds: [] })),
       ]);
     setRuns(runsNewestFirst(listed.runs));
     setDesks(deskList.desks);
@@ -204,7 +218,10 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     if (settings?.models?.length) {
       setChatModels(settings.models.map((item) => ({ ...item, short: chatModelShort(item.id) })));
     }
-    setEnvId((current) => nextEnvId(current, environments.environments));
+    setEnvironments(environmentList.environments);
+    setBuilds(buildList.builds);
+    setVms({ total: vmList.total, busy: vmList.busy, backend: vmList.backend, slots: vmList.slots });
+    setEnvId((current) => nextEnvId(current, environmentList.environments));
   }, [client, token]);
 
   const persistTokenRef = useRef(persistToken);
@@ -502,6 +519,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
             prompt: text,
             source,
             envId,
+            buildId,
             model: resolveChatModel(model),
             expert: expertPick,
             pluginIds,
@@ -573,6 +591,13 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   if (screen === "settings") {
     return (
       <SettingsScreen
+        client={client}
+        envId={envId}
+        buildId={buildId}
+        environments={environments}
+        builds={builds}
+        onEnv={setEnvId}
+        onBuild={setBuildId}
         onBack={() => setScreen("home")}
         onLogout={() => {
           void client.logout().catch(() => undefined);
@@ -792,6 +817,10 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     return <GitScreen client={client} runId={current.id} busy={isActiveRunStatus(current.status)} onBack={() => setScreen("chat")} />;
   }
 
+  if (screen === "workspace" && current) {
+    return <FilesScreen client={client} runId={current.id} onBack={() => setScreen("chat")} />;
+  }
+
   if (screen === "diagnostics") {
     return (
       <DiagnosticsScreen
@@ -864,6 +893,14 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         );
       }}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
+      vmHint={describeVmHint({
+        total: vms.total,
+        busy: vms.busy,
+        slotCount: vms.slots.length,
+        backend: vms.backend,
+        currentSlot: vms.slots.find((slot) => slot.runId === current?.id && slot.status === "busy")?.id ?? current?.vmSlotId,
+      })}
+      onOpenSettings={() => setScreen("settings")}
     />
   );
 
@@ -902,6 +939,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
               .catch(() => setDiagnosticLogs([]));
           }}
           onOpenGit={current && runGitContext(current) !== "none" ? () => setScreen("git") : undefined}
+          onOpenWorkspace={current ? () => setScreen("workspace") : undefined}
           userId={userId}
           invite={current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         />
@@ -919,6 +957,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       <Drawer
         open={drawerOpen}
         runs={runs}
+        projectNames={projectNameMap(projects)}
         userEmail={email}
         health={`在线 · ${chatModelShort(model)}`}
         unread={unreadBadge(unread)}

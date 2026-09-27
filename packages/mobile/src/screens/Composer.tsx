@@ -37,6 +37,8 @@ type Props = {
   expertValue?: string;
   expertLocked?: boolean;
   onExpert?: (value: string) => void;
+  vmHint?: string;
+  onOpenSettings?: () => void;
   startVoice: (
     onPreview: (text: string) => void,
     onError?: (message: string) => void,
@@ -149,10 +151,16 @@ export function Composer(props: Props) {
                 <Text style={styles.repoOpt}>无仓库</Text>
               </Pressable>
             ) : null}
+            {props.onOpenSettings && !(props.repos ?? []).length ? (
+              <Pressable onPress={props.onOpenSettings} accessibilityLabel="去设置绑定 GitHub">
+                <Text style={styles.settingsLink}>去设置绑定 GitHub</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : (
           <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
         )}
+        {props.vmHint ? <Text style={styles.context}>{props.vmHint}</Text> : null}
         {props.onExpert ? (
           <View style={styles.repoWrap}>
             <Pressable
@@ -301,6 +309,7 @@ const styles = StyleSheet.create({
   dock: { paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8, backgroundColor: colors.bg, overflow: "visible", zIndex: 2 },
   contextRow: { gap: 4, marginBottom: 6 },
   context: { color: colors.muted, fontSize: 12 },
+  settingsLink: { color: colors.ink, fontSize: 12, fontWeight: "700" },
   repoWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   repoOpt: { color: colors.ink, fontSize: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.hover },
   repoOn: { backgroundColor: colors.accent, color: colors.cream },

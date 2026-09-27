@@ -24,6 +24,8 @@ test("desk composer is the Cursor / Web box: + pickers left, circular send", () 
   assert.match(css, /\.composer-queue\s*\{/);
   assert.match(css, /\.send-btn\s*\{[^}]*border-radius:\s*50%/);
   assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);
+  assert.match(css, /@import "@neo-cloud-agent\/ui\/setup-fail\.css"/);
+  assert.match(css, /@import "@neo-cloud-agent\/ui\/cloud-settings\.css"/);
 });
 
 test("desk expert picker sits in the context bar like Web", () => {
@@ -34,4 +36,17 @@ test("desk expert picker sits in the context bar like Web", () => {
   assert.doesNotMatch(pages, /experts,\s*teams,\s*expertValue/);
   assert.match(app, /className=\{current \? "composer-follow" : "home-composer"\}/);
   assert.match(app, /<ContextBar/);
+});
+
+test("desk cloud settings and vm hint match the Web control-plane surface", () => {
+  const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
+  const app = readFileSync(path.join(here, "App.tsx"), "utf8");
+  assert.match(pages, /CloudAccountSettings/);
+  assert.match(pages, /id: "cloud"/);
+  assert.match(pages, /去设置绑定 GitHub/);
+  assert.match(pages, /vmHint/);
+  assert.match(app, /describeVmHint|cloudVmHint/);
+  assert.match(app, /\/v1\/vms/);
+  assert.match(app, /reuseBuild/);
+  assert.match(css, /\.vm-hint/);
 });

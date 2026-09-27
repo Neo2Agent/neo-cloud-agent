@@ -22,8 +22,35 @@ test("mobile lab uses the shared Web monochrome tokens", () => {
   assert.match(css, /\.chat-head-pop/);
   assert.match(css, /\.work-fold\s*,/);
   assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);
+  assert.match(css, /@import "@neo-cloud-agent\/ui\/setup-fail\.css"/);
+  assert.match(css, /@import "@neo-cloud-agent\/ui\/cloud-settings\.css"/);
   assert.match(css, /\.work-fold-body\s*\{/);
   assert.match(css, /\.artifact-chip\s*\{/);
+  assert.match(css, /\.workspace-sheet\s*\{/);
+  assert.match(css, /\.vm-hint\s*\{/);
+});
+
+test("mobile web and native share Web cloud settings, folders, vm hint, and workspace", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const webApp = readFileSync(path.join(here, "web/App.tsx"), "utf8");
+  const chrome = readFileSync(path.join(here, "web/chrome.tsx"), "utf8");
+  const native = readFileSync(path.join(here, "screens/NativeApp.tsx"), "utf8");
+  const composer = readFileSync(path.join(here, "screens/Composer.tsx"), "utf8");
+  const settings = readFileSync(path.join(here, "screens/SettingsScreen.tsx"), "utf8");
+  assert.match(webApp, /CloudAccountSettings/);
+  assert.match(webApp, /SetupFailBanner/);
+  assert.match(webApp, /WorkspaceSheet/);
+  assert.match(webApp, /describeVmHint/);
+  assert.match(webApp, /projectNameMap/);
+  assert.match(chrome, /去设置绑定 GitHub/);
+  assert.match(chrome, /vmHint/);
+  assert.match(native, /describeVmHint/);
+  assert.match(native, /projectNameMap/);
+  assert.match(native, /FilesScreen/);
+  assert.match(composer, /onOpenSettings/);
+  assert.match(composer, /去设置绑定 GitHub/);
+  assert.match(settings, /saveNotify/);
+  assert.match(settings, /disconnectGithub/);
 });
 
 test("mobile web App keeps hooks before login returns", () => {

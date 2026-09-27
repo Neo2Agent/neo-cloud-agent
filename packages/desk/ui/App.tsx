@@ -7,6 +7,8 @@ import type { PluginCatalogItem } from "@neo-cloud-agent/contracts/plugin";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { IntentCapsule } from "@neo-cloud-agent/contracts/recipe";
 import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { repoShortLabel } from "@neo-cloud-agent/contracts/repo-label";
+import { describeVmHint } from "@neo-cloud-agent/contracts/vm-hint";
 import {
   baselineContextUsage,
   overlayContextUsage,
@@ -179,15 +181,26 @@ function runListTitle(run: Run, n = 56): string {
 }
 
 function repoLabel(url?: string): string {
-  if (!url) return "Inbox";
-  try {
-    const path = new URL(url).pathname.replace(/\.git$/, "");
-    const name = path.split("/").filter(Boolean).pop();
-    return name || url;
-  } catch {
-    const clean = url.replace(/\/$/, "").replace(/\.git$/, "");
-    return clean.split("/").filter(Boolean).pop() || clean;
-  }
+  return url ? repoShortLabel(url) || url : "Inbox";
+}
+
+function cloudVmHint(
+  vms: {
+    total: number;
+    busy: number;
+    backend?: string;
+    slots: Array<{ id: string; status: string; runId?: string | null }>;
+  },
+  runId?: string | null,
+  currentSlotId?: string | null,
+): string {
+  return describeVmHint({
+    total: vms.total,
+    busy: vms.busy,
+    slotCount: vms.slots.length,
+    backend: vms.backend,
+    currentSlot: vms.slots.find((slot) => slot.runId === runId && slot.status === "busy")?.id ?? currentSlotId,
+  });
 }
 
 /**
@@ -310,6 +323,17 @@ export function App() {
   const [modelBusy, setModelBusy] = useState(false);
   const [modelError, setModelError] = useState("");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("basics");
+  const [envId, setEnvId] = useState("");
+  const [buildId, setBuildId] = useState("");
+  const [warmRepo, setWarmRepo] = useState("");
+  const [environments, setEnvironments] = useState<Array<{ id: string; name?: string }>>([]);
+  const [builds, setBuilds] = useState<Array<{ id: string; envId?: string; status: string; draft?: boolean }>>([]);
+  const [vms, setVms] = useState<{
+    total: number;
+    busy: number;
+    backend?: string;
+    slots: Array<{ id: string; status: string; runId?: string | null }>;
+  }>({ total: 0, busy: 0, slots: [] });
   const [contextOpen, setContextOpen] = useState<ContextMenuId>(null);
   const [repoOpen, setRepoOpen] = useState<Record<string, boolean>>({});
   const [railInboxOpen, setRailInboxOpen] = useState(true);
@@ -447,6 +471,39 @@ export function App() {
     setSelectedModel((cur) => (cur && names.includes(cur) ? cur : names[0] || ""));
     if (next.model) setModelName(next.model);
     if (next.baseUrl) setModelBaseUrl(next.baseUrl);
+  }, []);
+
+  const refreshCloudEnv = useCallback(async () => {
+    if (!tokenRef.current) return;
+    const [envRes, buildRes, vmRes] = await Promise.all([
+      api(tokenRef.current, "/v1/environments"),
+      api(tokenRef.current, "/v1/builds"),
+      api(tokenRef.current, "/v1/vms"),
+    ]);
+    const envBody = await readJson<{ environments?: Array<{ id: string; name?: string }>; error?: string }>(envRes);
+    const buildBody = await readJson<{
+      builds?: Array<{ id: string; envId?: string; status: string; draft?: boolean }>;
+      error?: string;
+    }>(buildRes);
+    const vmBody = await readJson<{
+      total?: number;
+      busy?: number;
+      backend?: string;
+      slots?: Array<{ id: string; status: string; runId?: string | null }>;
+      error?: string;
+    }>(vmRes);
+    if (envBody.error) throw new Error(envBody.error);
+    if (buildBody.error) throw new Error(buildBody.error);
+    setEnvironments(envBody.environments ?? []);
+    setBuilds(buildBody.builds ?? []);
+    if (!vmBody.error) {
+      setVms({
+        total: vmBody.total ?? 0,
+        busy: vmBody.busy ?? 0,
+        backend: vmBody.backend,
+        slots: vmBody.slots ?? [],
+      });
+    }
   }, []);
 
   const refreshHealth = useCallback(async () => {
@@ -678,10 +735,13 @@ export function App() {
       refreshExperts(),
       refreshPlugins(),
       refreshLlm(),
+      refreshCloudEnv().catch((error) => {
+        setAuthError(error instanceof Error ? error.message : "读取环境失败");
+      }),
       refreshInbox(),
       refreshHealth(),
     ]);
-  }, [refreshAutomations, refreshExperts, refreshHealth, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
+  }, [refreshAutomations, refreshCloudEnv, refreshExperts, refreshHealth, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     if (!authed) return;
@@ -948,6 +1008,14 @@ export function App() {
                   ? [cloudRepo]
                   : [],
               skipRepoDefaults: !local && !cloudRepo,
+              envId: local ? undefined : envId || undefined,
+              ...(local
+                ? {}
+                : buildId === "cold"
+                  ? { reuseBuild: false }
+                  : buildId
+                    ? { buildId, reuseBuild: true }
+                    : { reuseBuild: true }),
               target: local ? localRunTarget(target, localDeskId) : { loop: "cloud", tools: "cloud" },
             }),
           }),
@@ -2256,6 +2324,39 @@ export function App() {
             newApi={llm.newApi}
             onSave={() => void saveModel()}
             onOpenMemories={openMemories}
+            cloud={{
+              token,
+              authorizeHref: withApiBase("/v1/integrations/github/authorize"),
+              repo: warmRepo,
+              envId,
+              buildId,
+              environments,
+              builds,
+              onRepo: setWarmRepo,
+              onEnv: setEnvId,
+              onBuild: setBuildId,
+              onWarm: () => {
+                void (async () => {
+                  const response = await api(token, "/v1/builds", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      envId: envId || undefined,
+                      repoUrl: warmRepo || undefined,
+                    }),
+                  });
+                  const body = await readJson<{ error?: string }>(response);
+                  if (body.error) throw new Error(body.error);
+                  await refreshCloudEnv();
+                  setAuthError("");
+                })().catch((error) => {
+                  setAuthError(error instanceof Error ? error.message : "预热失败");
+                });
+              },
+              onNotice: (message, kind) => {
+                setAuthError(kind === "err" ? message : "");
+              },
+              request: (path, init) => api(token, path, init),
+            }}
           />
         ) : (
           <section
@@ -2428,6 +2529,7 @@ export function App() {
                 cloudRepo={current?.repoUrls?.[0] || cloudRepo}
                 githubRepos={githubRepos}
                 onCloudRepo={setCloudRepo}
+                onOpenCloudSettings={() => openSettings("cloud")}
                 experts={experts}
                 teams={teams}
                 expertValue={
@@ -2440,6 +2542,15 @@ export function App() {
                 }
                 expertLocked={Boolean(current)}
                 onExpert={(value) => setExpertPick(decodeExpertPick(value))}
+                vmHint={
+                  current
+                    ? isDeskBoundRun(current) && !isRemoteControlRun(current)
+                      ? undefined
+                      : cloudVmHint(vms, current.id, current.vmSlotId)
+                    : target.kind === TARGET_CLOUD
+                      ? cloudVmHint(vms)
+                      : undefined
+                }
               />
               {current ? (
                 <ChatComposer

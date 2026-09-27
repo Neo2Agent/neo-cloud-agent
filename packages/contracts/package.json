@@ -35,7 +35,10 @@
     "./desk-workspace": "./src/desk-workspace.ts",
     "./device": "./src/device.ts",
     "./environment": "./src/environment.ts",
-    "./git": "./src/git.ts"
+    "./git": "./src/git.ts",
+    "./repo-label": "./src/repo-label.ts",
+    "./sidebar-runs": "./src/sidebar-runs.ts",
+    "./vm-hint": "./src/vm-hint.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -2,32 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   filterRuns,
+  folderKindLabel,
   groupRuns,
   groupSidebarRuns,
-  readPinnedRuns,
-  folderKindLabel,
   runKindLabel,
   runRepoKey,
   splitShelvedRuns,
-  togglePinnedRun,
-} from "./pins.js";
-
-function memoryStorage(start: Record<string, string> = {}) {
-  const data = { ...start };
-  return {
-    getItem: (key: string) => data[key] ?? null,
-    setItem: (key: string, value: string) => {
-      data[key] = value;
-    },
-  };
-}
-
-test("togglePinnedRun adds then removes", () => {
-  const storage = memoryStorage();
-  assert.deepEqual(togglePinnedRun("a", storage), ["a"]);
-  assert.deepEqual(readPinnedRuns(storage), ["a"]);
-  assert.deepEqual(togglePinnedRun("a", storage), []);
-});
+} from "./sidebar-runs.js";
 
 test("groupRuns splits pinned, active, and recent", () => {
   const runs = [
@@ -101,12 +82,6 @@ test("splitShelvedRuns keeps archived and expired out of the live list", () => {
     { id: "3", status: "EXPIRED" },
     { id: "4", status: "RUNNING" },
   ]);
-  assert.deepEqual(
-    split.live.map((item) => item.id),
-    ["1", "4"],
-  );
-  assert.deepEqual(
-    split.shelved.map((item) => item.id),
-    ["2", "3"],
-  );
+  assert.deepEqual(split.live.map((item) => item.id), ["1", "4"]);
+  assert.deepEqual(split.shelved.map((item) => item.id), ["2", "3"]);
 });

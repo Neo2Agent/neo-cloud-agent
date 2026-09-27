@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { isSetupFailureMessage, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
-import { setupDiagToggleLabel, setupFailLogText, setupFailureTitle } from "@neo-cloud-agent/contracts/setup-fail";
+import { MarkdownBody, SetupFailBanner } from "@neo-cloud-agent/ui";
 import { currentTurnMessages, liveAssistantId } from "@neo-cloud-agent/contracts/turn-state";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
@@ -24,7 +24,6 @@ import {
   workGroupLabel,
 } from "../format";
 import { IconCheck, IconChevronRight, IconError, IconFileKind, IconSpinner, IconTool } from "../icons";
-import { MarkdownBody } from "@neo-cloud-agent/ui";
 import { userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
 import { shouldShowThinking } from "../turn";
 import { transcriptUserImageSrc } from "../user-image";
@@ -372,47 +371,6 @@ function WorkFold({ message, live }: { message: TranscriptMessage; live: boolean
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function SetupFailBanner({
-  message,
-  highlight = false,
-}: {
-  message: TranscriptMessage;
-  highlight?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const title = setupFailureTitle(message);
-  const logText = setupFailLogText(message);
-  const logId = `setup-fail-log-${message.id}`;
-  return (
-    <div
-      id={`msg-${message.id}`}
-      className="setup-fail"
-      data-highlight={highlight ? "true" : undefined}
-    >
-      <p className="setup err">
-        <span>{title}</span>
-        <button
-          type="button"
-          className="ghost diag-link"
-          aria-expanded={open}
-          aria-controls={logId}
-          onClick={() => setOpen((current) => !current)}
-        >
-          {setupDiagToggleLabel(open)}
-        </button>
-        <time className="bubble-time setup-time" dateTime={message.createdAt}>
-          {formatWhen(message.createdAt)}
-        </time>
-      </p>
-      {open ? (
-        <pre id={logId} className="setup-fail-log">
-          {logText}
-        </pre>
-      ) : null}
     </div>
   );
 }

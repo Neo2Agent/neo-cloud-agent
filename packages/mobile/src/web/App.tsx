@@ -2,7 +2,9 @@
  * Vite :5175 visual lab. Island chrome + the same /v1 client as Expo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { isSetupFailureMessage, transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { describeVmHint } from "@neo-cloud-agent/contracts/vm-hint";
+import { CloudAccountSettings, SetupFailBanner } from "@neo-cloud-agent/ui";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
@@ -18,6 +20,9 @@ import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { MobileApiError, MobileClient, type RunArtifact } from "../api/client";
 import { canLoadOlder, inboxTarget, saveArtifactHint, unreadBadge } from "../cloud";
+import { cloudSettingsFromMobile, githubAuthorizeHref } from "../cloud-settings-client";
+import { projectNameMap } from "../sidebar-folders";
+import { WorkspaceSheet } from "./WorkspaceSheet";
 import { ArtifactsPage, DiagnosticsPage, InboxPage, MemoriesPage, SkillsPage } from "./CloudPages";
 import { sharedWebCredentials, type CredentialStore } from "../api/credentials";
 import { nextEnvId } from "../api/shell";
@@ -115,6 +120,15 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [route, setRoute] = useState(hashScreen);
   const [runs, setRuns] = useState<Run[]>([]);
   const [envId, setEnvId] = useState("");
+  const [buildId, setBuildId] = useState("");
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [builds, setBuilds] = useState<Array<{ id: string; envId?: string; status: string; draft?: boolean }>>([]);
+  const [vms, setVms] = useState<{ total: number; busy: number; backend?: string; slots: Array<{ id: string; status: string; runId?: string | null }> }>({
+    total: 0,
+    busy: 0,
+    slots: [],
+  });
+  const [warmRepo, setWarmRepo] = useState("");
   const [model, setModel] = useState("deepseek-flash");
   const [chatModels, setChatModels] = useState(CHAT_MODELS);
   const [current, setCurrent] = useState<Run | null>(null);
@@ -138,7 +152,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
   const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{ name: string; content: string }>>([]);
   // Sub-views of the open chat, so they stay local instead of taking a hash route.
-  const [panel, setPanel] = useState<"artifacts" | "diagnostics" | "git" | null>(null);
+  const [panel, setPanel] = useState<"artifacts" | "diagnostics" | "git" | "workspace" | null>(null);
   const [history, setHistory] = useState<TranscriptMessage[]>([]);
   const [older, setOlder] = useState<{ remaining: number; nextBefore: string | null }>({ remaining: 0, nextBefore: null });
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -192,7 +206,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
 
   const refreshList = useCallback(async () => {
     if (!token) return;
-    const [listed, environments, settings, deskList, expertList, teamList, projectList, autoList, me, pluginList, inbox, memoryList, memoryPref] =
+    const [listed, environmentList, settings, deskList, expertList, teamList, projectList, autoList, me, pluginList, inbox, memoryList, memoryPref, vmList, buildList] =
       await Promise.all([
         client.listRuns(),
         client.listEnvironments().catch(() => ({ environments: [] as Environment[] })),
@@ -208,6 +222,8 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
         // Mem0 is optional; an unconfigured control plane answers `configured: false`.
         client.listMemories().catch(() => ({ configured: false, memories: [] })),
         client.memorySettings().catch(() => ({ enabled: true, configured: false })),
+        client.listVms().catch(() => ({ total: 0, busy: 0, slots: [], backend: "" })),
+        client.listBuilds().catch(() => ({ builds: [] })),
       ]);
     setRuns(runsNewestFirst(listed.runs));
     setDesks(deskList.desks);
@@ -231,7 +247,10 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     if (settings?.models?.length) {
       setChatModels(settings.models.map((item) => ({ ...item, short: chatModelShort(item.id) })));
     }
-    setEnvId((current) => nextEnvId(current, environments.environments));
+    setEnvironments(environmentList.environments);
+    setBuilds(buildList.builds);
+    setVms({ total: vmList.total, busy: vmList.busy, backend: vmList.backend, slots: vmList.slots });
+    setEnvId((current) => nextEnvId(current, environmentList.environments));
   }, [client, token]);
 
   const persistTokenRef = useRef(persistToken);
@@ -540,6 +559,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             prompt: text,
             source,
             envId,
+            buildId,
             model: resolveChatModel(model),
             expert: expertPick,
             pluginIds,
@@ -608,6 +628,19 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           <h1>设置</h1>
         </header>
         <div className="page-body">
+          <CloudAccountSettings
+            client={cloudSettingsFromMobile(client)}
+            authorizeHref={githubAuthorizeHref(client.url)}
+            repo={warmRepo}
+            envId={envId}
+            buildId={buildId}
+            environments={environments}
+            builds={builds}
+            onRepo={setWarmRepo}
+            onEnv={setEnvId}
+            onBuild={setBuildId}
+            onNotice={(message, kind) => setPageError(kind === "err" ? message : "")}
+          />
           <div className="island-card settings-card">
             <button
               className="island-btn island-btn-primary"
@@ -857,6 +890,20 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     );
   }
 
+  if (panel === "workspace" && current) {
+    return (
+      <div className="app git-sheet">
+        <header className="topbar">
+          <button className="icon-btn" type="button" onClick={() => setPanel(null)} aria-label="返回">
+            ←
+          </button>
+          <h1>工作区</h1>
+        </header>
+        <WorkspaceSheet client={client} runId={current.id} onClose={() => setPanel(null)} />
+      </div>
+    );
+  }
+
   if (panel === "git" && current && openGitContext !== "none") {
     return (
       <div className="app git-sheet">
@@ -908,6 +955,14 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       repos={githubRepos}
       repoLocked={Boolean(current)}
       onRepo={setCloudRepo}
+      vmHint={describeVmHint({
+        total: vms.total,
+        busy: vms.busy,
+        slotCount: vms.slots.length,
+        backend: vms.backend,
+        currentSlot: vms.slots.find((slot) => slot.runId === current?.id && slot.status === "busy")?.id ?? current?.vmSlotId,
+      })}
+      onOpenSettings={() => go("/settings")}
       experts={experts}
       teams={teams}
       expertValue={
@@ -938,6 +993,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     <IslandDrawer
       open={sidebarOpen}
       runs={runs}
+      projectNames={projectNameMap(projects)}
       userEmail={email}
       health={`在线 · ${chatModelShort(model)}`}
       unread={unreadBadge(unread)}
@@ -986,6 +1042,11 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
               Git
             </button>
           ) : null}
+          {current ? (
+            <button className="icon-btn" type="button" onClick={() => setPanel("workspace")} aria-label="文件">
+              文件
+            </button>
+          ) : null}
           {current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         </header>
         {pageError ? <p className="page-error">{pageError}</p> : null}
@@ -1003,6 +1064,9 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           ) : null}
           {visible.length === 0 ? <p className="empty">还没有消息。</p> : null}
           {visible.map((message, messageIndex) => {
+            if (isSetupFailureMessage(message)) {
+              return <SetupFailBanner key={message.id} message={message} />;
+            }
             if (isStartupWhisper(message)) {
               if (generationStarted(visible) || thinking) return null;
               return (

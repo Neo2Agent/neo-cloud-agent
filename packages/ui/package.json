@@ -15,7 +15,11 @@
     "./markdown.css": "./src/markdown.css",
     "./buddy.css": "./src/buddy/styles.css",
     "./git-panel.css": "./src/git-panel.css",
-    "./context-usage.css": "./src/context-usage.css"
+    "./context-usage.css": "./src/context-usage.css",
+    "./setup-fail.css": "./src/setup-fail.css",
+    "./cloud-settings.css": "./src/cloud-settings.css",
+    "./workspace-term": "./src/workspace-term.ts",
+    "./workspace-fs": "./src/workspace-fs.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

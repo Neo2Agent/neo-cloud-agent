@@ -1,6 +1,8 @@
 @import "@neo-cloud-agent/ui/tokens.css";
 @import "@neo-cloud-agent/ui/git-panel.css";
 @import "@neo-cloud-agent/ui/context-usage.css";
+@import "@neo-cloud-agent/ui/setup-fail.css";
+@import "@neo-cloud-agent/ui/cloud-settings.css";
 
 * { box-sizing: border-box; }
 
@@ -194,10 +196,15 @@ button:disabled { opacity: 0.4; cursor: default; }
 .composer-context {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 0 2px 8px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.vm-hint {
+  color: var(--muted);
 }
 
 .composer-repo select {
@@ -774,4 +781,66 @@ button:disabled { opacity: 0.4; cursor: default; }
   display: flex;
   flex-direction: column;
   background: var(--stage);
+}
+
+.workspace-sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  padding: 0 16px 16px;
+  gap: 12px;
+}
+
+.workspace-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workspace-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.workspace-tabs button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.workspace-tabs button.is-on {
+  color: var(--ink);
+  background: var(--hover);
+  font-weight: 700;
+}
+
+.workspace-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-list button,
+.workspace-files-lite .nav {
+  display: block;
+  width: 100%;
+  padding: 10px 0;
+  text-align: left;
+}
+
+.workspace-term-lite form {
+  display: flex;
+  margin-top: 8px;
+}
+
+.workspace-term-lite input {
+  flex: 1;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--raised);
 }

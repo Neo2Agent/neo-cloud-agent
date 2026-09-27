@@ -40,7 +40,7 @@ export type RunArtifact = {
   url?: string;
 };
 
-/** `GET /v1/quota`. Read-only on mobile; limits are written from the web settings page. */
+/** `GET /v1/quota`. Limits are written from the shared cloud settings page. */
 export type QuotaView = {
   maxTokensMonth: number;
   maxConcurrentRuns: number;
@@ -288,6 +288,69 @@ export class MobileClient {
 
   quota(): Promise<QuotaView> {
     return this.request("GET", "/v1/quota");
+  }
+
+  saveQuota(input: { maxTokensMonth: number; maxConcurrentRuns: number }): Promise<QuotaView> {
+    return this.request("POST", "/v1/settings/quota", input);
+  }
+
+  githubAccount(): Promise<{ connected: boolean; login: string | null; oauthConfigured: boolean }> {
+    return this.request("GET", "/v1/integrations/github");
+  }
+
+  disconnectGithub(): Promise<{ connected: boolean; oauthConfigured: boolean }> {
+    return this.request("DELETE", "/v1/integrations/github");
+  }
+
+  listMcp(): Promise<{ servers?: Array<{ name: string; connected?: boolean }> }> {
+    return this.request("GET", "/v1/settings/mcp");
+  }
+
+  saveMcp(input: { name: string; bearer: string }): Promise<{ servers?: Array<{ name: string }> }> {
+    return this.request("POST", "/v1/settings/mcp", input);
+  }
+
+  notifySettings(): Promise<{ email?: { configured?: boolean } }> {
+    return this.request("GET", "/v1/settings/notify");
+  }
+
+  saveNotify(input: {
+    emailTo: string;
+    smtpHost: string;
+    smtpUser: string;
+    smtpPass: string;
+    smtpFrom: string;
+  }): Promise<{ email?: { configured?: boolean } }> {
+    return this.request("POST", "/v1/settings/notify", input);
+  }
+
+  listBuilds(): Promise<{ builds: Array<{ id: string; envId?: string; status: string; draft?: boolean }> }> {
+    return this.request("GET", "/v1/builds");
+  }
+
+  workspaceFs(id: string, path = "", content = false): Promise<{
+    path: string;
+    type: "file" | "dir";
+    entries?: Array<{ name: string; path: string; type: "file" | "dir"; size?: number }>;
+    content?: string;
+    truncated?: boolean;
+  }> {
+    const query = new URLSearchParams();
+    if (path) query.set("path", path);
+    query.set("content", content ? "1" : "0");
+    return this.request("GET", `/v1/runs/${id}/fs?${query.toString()}`);
+  }
+
+  listTerms(id: string): Promise<{ sessions: Array<{ id: string; cwd: string; shell: string; alive?: boolean }> }> {
+    return this.request("GET", `/v1/runs/${id}/term`);
+  }
+
+  openTerm(id: string): Promise<{ id: string; cwd: string; shell: string }> {
+    return this.request("POST", `/v1/runs/${id}/term`, {});
+  }
+
+  writeTerm(runId: string, termId: string, data: string): Promise<{ ok?: boolean }> {
+    return this.request("POST", `/v1/runs/${runId}/term/${termId}`, { data });
   }
 
   listVms(): Promise<VmSlotsView> {

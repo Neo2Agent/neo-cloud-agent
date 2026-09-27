@@ -181,6 +181,58 @@ test("project collaboration and plugin toggles match the web bodies", async () =
   assert.equal(calls[5]?.body, JSON.stringify({ enabled: false, scope: "user" }));
 });
 
+test("account and workspace routes match the Web control plane", async () => {
+  const { calls, client } = recorder({
+    connected: false,
+    oauthConfigured: true,
+    environments: [],
+    builds: [],
+    sessions: [],
+    entries: [],
+    slots: [],
+    servers: [],
+  });
+  await client.githubAccount();
+  await client.disconnectGithub();
+  await client.quota();
+  await client.saveQuota({ maxTokensMonth: 1, maxConcurrentRuns: 2 });
+  await client.listMcp();
+  await client.saveMcp({ name: "env", bearer: "tok" });
+  await client.notifySettings();
+  await client.saveNotify({
+    emailTo: "a@b.com",
+    smtpHost: "smtp.example.com",
+    smtpUser: "u",
+    smtpPass: "p",
+    smtpFrom: "n@b.com",
+  });
+  await client.listBuilds();
+  await client.listVms();
+  await client.workspaceFs("r1", "src", true);
+  await client.listTerms("r1");
+  await client.openTerm("r1");
+  await client.writeTerm("r1", "t1", "ls\n");
+  assert.deepEqual(
+    calls.map((call) => `${call.method} ${call.url.replace("http://cp.test", "")}`),
+    [
+      "GET /v1/integrations/github",
+      "DELETE /v1/integrations/github",
+      "GET /v1/quota",
+      "POST /v1/settings/quota",
+      "GET /v1/settings/mcp",
+      "POST /v1/settings/mcp",
+      "GET /v1/settings/notify",
+      "POST /v1/settings/notify",
+      "GET /v1/builds",
+      "GET /v1/vms",
+      "GET /v1/runs/r1/fs?path=src&content=1",
+      "GET /v1/runs/r1/term",
+      "POST /v1/runs/r1/term",
+      "POST /v1/runs/r1/term/t1",
+    ],
+  );
+});
+
 test("artifact urls resolve against the configured API base", () => {
   const client = new MobileClient("http://192.168.1.8:8080", "neo_sess_1");
   assert.equal(

@@ -7,7 +7,10 @@ import {
   sameClockMinute,
   toolArgPreview,
 } from "@neo-cloud-agent/contracts/display";
+import { slotLabel } from "@neo-cloud-agent/contracts/vm-hint";
 import { isRemoteControlTarget, runDisplayTitle, type ExecutionTarget } from "@neo-cloud-agent/contracts/run";
+
+export { slotLabel };
 
 export { formatDuration, formatWhen, toolArgPreview };
 
@@ -52,13 +55,6 @@ export function preview(text: string): string {
 
 export function runListTitle(run: { title?: string | null; prompt?: string }): string {
   return preview(runDisplayTitle(run));
-}
-
-export function slotLabel(id?: string | null): string {
-  const raw = String(id || "");
-  const match = /^slot-(\d+)$/.exec(raw);
-  if (match) return `VM ${Number(match[1]) + 1}`;
-  return raw || "未分配";
 }
 
 export function runListPlaceSuffix(run: {

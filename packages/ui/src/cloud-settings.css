@@ -1,0 +1,67 @@
+.cloud-settings,
+.settings-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-group {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line, #e8e8e8);
+  border-radius: 16px;
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow, none);
+}
+
+.settings-group header {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-group h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.settings-group > .hint,
+.settings-group .hint {
+  margin: 0;
+  color: var(--muted, #5c5c5c);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.env-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.repo-row,
+.env-row label {
+  display: grid;
+  gap: 6px;
+}
+
+.repo-row span,
+.env-row label > span {
+  font-size: 12px;
+  color: var(--muted, #5c5c5c);
+}
+
+.cloud-settings input,
+.settings-panel input {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line, #e8e8e8);
+  border-radius: 10px;
+  background: var(--panel, #fff);
+  color: inherit;
+}

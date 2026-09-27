@@ -548,4 +548,25 @@ export type {
   RunDiagnosticsLog,
   RunDiagnosticsSummary,
 } from "./diagnostics.js";
+export {
+  cloudSafeRepoUrls,
+  isLocalFolderRef,
+  normalizeRepoUrl,
+  repoShortLabel,
+  splitRepoLabel,
+} from "./repo-label.js";
+export type { SidebarFolder } from "./sidebar-runs.js";
+export {
+  filterRuns,
+  folderKindLabel,
+  groupRuns,
+  groupSidebarRuns,
+  isShelvedRun,
+  runKindLabel,
+  runRepoKey,
+  runRepoLabel,
+  runRepoSource,
+  splitShelvedRuns,
+} from "./sidebar-runs.js";
+export { describeVmBackend, describeVmHint, slotLabel } from "./vm-hint.js";
 

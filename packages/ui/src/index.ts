@@ -24,3 +24,20 @@ export {
   type TermKeyAction,
   type TermKeyInput,
 } from "./term-keys";
+export { SetupFailBanner } from "./setup-fail";
+export {
+  CloudAccountSettings,
+  cloudSettingsFromFetch,
+  type CloudSettingsBuild,
+  type CloudSettingsClient,
+  type CloudSettingsEnv,
+  type GithubAccount,
+} from "./cloud-settings";
+export {
+  createWorkspaceTermApi,
+  parseTermSseData,
+  type WorkspaceTermEvent,
+  type WorkspaceTermInfo,
+  type WorkspaceTermTransport,
+} from "./workspace-term";
+export { readWorkspaceFs, type WorkspaceFsEntry, type WorkspaceFsListing } from "./workspace-fs";

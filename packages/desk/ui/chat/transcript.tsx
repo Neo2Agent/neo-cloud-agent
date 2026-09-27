@@ -5,7 +5,8 @@ import { assistantIsLive } from "@neo-cloud-agent/contracts/turn-state";
 import { messageTimeLabel, shouldShowThinking, userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
 import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
 import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/artifact";
-import { MarkdownBody } from "@neo-cloud-agent/ui";
+import { isSetupFailureMessage } from "@neo-cloud-agent/contracts/transcript";
+import { MarkdownBody, SetupFailBanner } from "@neo-cloud-agent/ui";
 import type { Ref } from "react";
 import { shouldShowAssistantActions } from "../../src/stream";
 import { Avatar } from "../Avatar";
@@ -112,6 +113,9 @@ export function ChatTranscript({
               <IslandCollapse question="思考过程" answer={<p>{message.text}</p>} />
             </div>
           );
+        }
+        if (isSetupFailureMessage(message)) {
+          return <SetupFailBanner key={message.id} message={message} />;
         }
         if (isStatus(message) || looksLikeCi(message.text)) {
           return (

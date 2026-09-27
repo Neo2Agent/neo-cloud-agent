@@ -48,7 +48,7 @@
 
 ---
 
-## 3. 三端能力矩阵（2026-09-23，本次改完后）
+## 3. 三端能力矩阵（2026-09-26，本次改完后）
 
 ✓ 有；△ 有但和其他端不一样；✗ 没有。括号里是本次改动前的状态。
 
@@ -64,9 +64,12 @@
 | 共享对话里的发送人 | ✓（✗ 不显示） | ✓（✗ 首条算成自己） | ✓（✗ 全用自己的头像） |
 | 运行列表后台刷新 | ✓ 8s + 聚焦（△ 只在打开对话时） | ✓ 8s + 聚焦（△ 只在聚焦时） | ✓ 8s + 可见（✗ 从不） |
 | 执行模式标签 | Remote / 本机（✗ 无） | 云端 / Remote / 本机（△ 英文小写） | 云端 / Remote（△ 英文小写） |
-| Agent / Ask 模式 | 已删除 | 已删除（△ 前缀代码还在） | 已删除（△ `askPrompt` 还在） |
+| Agent / Ask 模式 | 已删除 | 已删除 | 已删除 |
 | Diff / 提交 / PR | ✓ Git 面板（头栏 ready / squash merge、点选文件、行号、审查页 CI） | ✓ 右侧栏 Git 页（本机 + 云端） | ✓ 只读 PR / 改动 / 提交 |
-| 文件 / 终端 / 产物 | ✓ | ✓（本机 + 云端） | △ 只有产物 |
+| 文件 / 终端 / 产物 | ✓ | ✓（本机 + 云端） | ✓ 产物 + 工作区文件 / 终端（实验室 SSE，原生写入） |
+| GitHub / 额度 / MCP / 通知 / 环境快照 | ✓ 设置里同一套 `CloudAccountSettings` | ✓ 设置「云端账号」同一套 | ✓ 实验室同一套；原生独立设置页打同一组 `/v1` |
+| 侧栏项目 / 仓库 / 日常 | ✓ `groupSidebarRuns` | ✓ Desk 轨道另有本机文件夹（`groupRailSessions`） | ✓ 同一套 `groupSidebarRuns` |
+| VM 槽提示 | ✓ `describeVmHint` | ✓ 云端 / Remote 显示 | ✓ 实验室 + 原生 |
 | 会话搜索 | ✓ Cmd+K 全局搜索面板 | ✓ 搜索面板 | ✓ 侧栏搜索 |
 | 推送 | ✗ | 系统通知（派活） | ✓ Expo 推送 |
 | 视觉 | 冷灰单色、Geist | 冷灰单色、Geist（与 Web 同一套 `packages/ui` token） | 冷灰单色、Geist（实验室）/ 同色 RN token |
@@ -82,6 +85,12 @@
 | 执行模式叫法 | `contracts/run`（`runMode`、`RUN_MODE_LABELS`、`RUN_MODE_SHORT_LABELS`） | 三端各写各的 |
 | 运行列表刷新和排序 | `contracts/client-stream`（`RUN_LIST_REFRESH_MS`、`runsNewestFirst`） | 无 |
 | Markdown | `packages/ui` 的 `MarkdownBody` + `ui/markdown.css` | 只有 `web/src/markdown.tsx` |
+| 侧栏项目 / 仓库 / 日常 | `contracts/sidebar-runs`（`groupSidebarRuns`） | Web `pins.ts` 自写；Desk 本机轨道仍用 `groupRailSessions` |
+| 仓库短名、云端安全仓 | `contracts/repo-label` | Web `repo.ts` 自写 |
+| VM 槽文案 | `contracts/vm-hint`（`describeVmHint`、`slotLabel`） | 只有 Web |
+| 设置失败条 | `packages/ui` `SetupFailBanner` | 只有 Web 粘在回合外 |
+| 云端账号设置 | `packages/ui` `CloudAccountSettings` | Web SettingsPanel 手写一份 |
+| 工作区文件 / 终端 | `packages/ui` `workspace-fs` / `workspace-term` | Web / Desk 各写一套 |
 
 ---
 
@@ -132,7 +141,7 @@
 3. **共享客户端核心**：§3.1 的模块放进 `packages/contracts` 子路径，`MarkdownBody` 移到 `packages/ui`，三端的旧文件删掉或改成转出，单测跟着搬到 contracts。
 4. **运行中的发送语义统一成 Cursor 那套**：空闲时 Enter 发送；运行中 Enter 排队（`delivery: "follow_up"`），Cmd/Ctrl+Enter 立即插话（`delivery: "steer"`）；组词中不处理；手机上回车换行，箭头按钮在运行中排队。
 5. **Desk 补齐**：输入法保护、Markdown、工作折叠和转圈、进行中不显示时间、删掉 Ask 残留。
-6. **Mobile 补齐**：消息时间、运行中排队（实验室和原生）、实验室 Markdown、统一「正在思考」、删掉 `askPrompt`。
+6. **Mobile 补齐**：消息时间、运行中排队（实验室和原生）、实验室 Markdown、统一「正在思考」。Ask / `askPrompt` 已清干净。
 7. **Web Git 面板**（单独的 PR）：普通对话不显示 Git；绑了仓库或本机目录的对话显示 PR 头 + Diff / 审查 / 提交记录；本机工作区由 Desk 回传快照。展示对齐 cursor.com/agents 右栏：头栏状态机、选中文件 + 双 gutter、工作区 dirty 才出提交底栏、审查页分组 CI，失败时才出查找问题。
 
 ### 5.1 Cursor 的两套 Git 皮（2026-09-24 补）

@@ -1,0 +1,24 @@
+.setup-fail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.setup-fail > .setup.err {
+  margin: 0;
+}
+
+.setup-fail-log {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--err, #b42318) 6%, #ffffff);
+  color: var(--text, #1c1c1c);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

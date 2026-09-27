@@ -11,7 +11,9 @@ import { MarkdownNative } from "./MarkdownNative";
 import { WorkFold } from "./WorkFold";
 import { avatarLetter, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { runPlaceLabel } from "../place";
+import { isSetupFailureMessage } from "@neo-cloud-agent/contracts/transcript";
 import { generationStarted, hasVisibleTranscript, isStartupWhisper } from "../turn";
+import { SetupFailBanner } from "./SetupFailBanner";
 import { colors } from "./theme";
 
 type Props = {
@@ -30,6 +32,7 @@ type Props = {
   onOpenArtifacts?: () => void;
   onOpenDiagnostics?: () => void;
   onOpenGit?: () => void;
+  onOpenWorkspace?: () => void;
   userId?: string;
   invite?: ReactNode;
 };
@@ -111,6 +114,7 @@ export function ChatScreen({
   onOpenArtifacts,
   onOpenDiagnostics,
   onOpenGit,
+  onOpenWorkspace,
   userId,
   invite,
 }: Props) {
@@ -144,6 +148,11 @@ export function ChatScreen({
               <Text style={styles.actionText}>Git</Text>
             </Pressable>
           ) : null}
+          {onOpenWorkspace ? (
+            <Pressable onPress={onOpenWorkspace} style={styles.action}>
+              <Text style={styles.actionText}>文件</Text>
+            </Pressable>
+          ) : null}
           {invite}
           {run.status === "ERROR" && onOpenDiagnostics ? (
             <Pressable onPress={onOpenDiagnostics} style={[styles.action, styles.actionWarn]}>
@@ -160,6 +169,9 @@ export function ChatScreen({
         ) : null}
         {messages.length === 0 ? <Text style={styles.empty}>还没有消息。</Text> : null}
         {messages.map((message) => {
+          if (isSetupFailureMessage(message)) {
+            return <SetupFailBanner key={message.id} message={message} />;
+          }
           if (isStartupWhisper(message)) {
             if (started || thinking) return null;
             return (
