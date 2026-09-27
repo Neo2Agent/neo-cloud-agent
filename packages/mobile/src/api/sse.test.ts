@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { consumeSseBuffer, parseSseChunk, parseSseData } from "./sse.js";
+import { consumeSseBuffer, consumeSseFrames, parseSseChunk, parseSseData } from "./sse.js";
 import { detectMobileSource, parseRunIdFromHref } from "./source.js";
 
 test("parseSseChunk keeps Last-Event-ID frames", () => {
@@ -16,6 +16,12 @@ test("consumeSseBuffer yields complete events and keeps a partial frame", () => 
   );
   assert.equal(first.events[0]?.kind, "message.delta");
   assert.match(first.rest, /e2/);
+});
+
+test("consumeSseFrames keeps term payloads that have no run id", () => {
+  const parsed = consumeSseFrames('data: {"type":"data","chunk":"hi"}\n\npartial');
+  assert.deepEqual(parsed.frames, ['{"type":"data","chunk":"hi"}']);
+  assert.equal(parsed.rest, "partial");
 });
 
 test("mobile source and deep links", () => {

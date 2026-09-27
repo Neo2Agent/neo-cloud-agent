@@ -66,7 +66,7 @@
 | 执行模式标签 | Remote / 本机（✗ 无） | 云端 / Remote / 本机（△ 英文小写） | 云端 / Remote（△ 英文小写） |
 | Agent / Ask 模式 | 已删除 | 已删除 | 已删除 |
 | Diff / 提交 / PR | ✓ Git 面板（头栏 ready / squash merge、点选文件、行号、审查页 CI） | ✓ 右侧栏 Git 页（本机 + 云端） | ✓ 只读 PR / 改动 / 提交 |
-| 文件 / 终端 / 产物 | ✓ | ✓（本机 + 云端） | ✓ 产物 + 工作区文件 / 终端（实验室 SSE，原生写入） |
+| 文件 / 终端 / 产物 | ✓ | ✓（本机 + 云端） | ✓ 产物 + 工作区文件 / 终端（实验室 EventSource，原生 XHR SSE） |
 | GitHub / 额度 / MCP / 通知 / 环境快照 | ✓ 设置里同一套 `CloudAccountSettings` | ✓ 设置「云端账号」同一套 | ✓ 实验室同一套；原生独立设置页打同一组 `/v1` |
 | 侧栏项目 / 仓库 / 日常 | ✓ `groupSidebarRuns` | ✓ Desk 轨道另有本机文件夹（`groupRailSessions`） | ✓ 同一套 `groupSidebarRuns` |
 | VM 槽提示 | ✓ `describeVmHint` | ✓ 云端 / Remote 显示 | ✓ 实验室 + 原生 |

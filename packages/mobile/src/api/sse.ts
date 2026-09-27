@@ -49,6 +49,14 @@ export function consumeSseBuffer<T extends { id?: string; kind?: string }>(buffe
   return { events, rest: parsed.rest };
 }
 
+export function consumeSseFrames(buffer: string): { frames: string[]; rest: string } {
+  const parsed = parseSseChunk(buffer);
+  return {
+    frames: parsed.frames.map((frame) => frame.data ?? "").filter(Boolean),
+    rest: parsed.rest,
+  };
+}
+
 export function shouldUseXhrSse(): boolean {
   return typeof navigator !== "undefined" && navigator.product === "ReactNative";
 }
@@ -108,6 +116,59 @@ export function streamSseWithXhr<T extends { id?: string; kind?: string }>(
   });
 }
 
+export function streamSseFramesWithXhr(
+  url: string,
+  headers: Record<string, string>,
+  onFrame: (data: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let buffer = "";
+    let seen = 0;
+    const flush = () => {
+      const chunk = xhr.responseText.slice(seen);
+      if (!chunk) return;
+      seen = xhr.responseText.length;
+      buffer += chunk;
+      const parsed = consumeSseFrames(buffer);
+      buffer = parsed.rest;
+      for (const frame of parsed.frames) onFrame(frame);
+    };
+    const onAbort = () => {
+      xhr.abort();
+    };
+    xhr.open("GET", url);
+    for (const [key, value] of Object.entries(headers)) {
+      xhr.setRequestHeader(key, value);
+    }
+    xhr.onprogress = flush;
+    xhr.onload = () => {
+      flush();
+      signal?.removeEventListener("abort", onAbort);
+      if (xhr.status >= 400) {
+        reject(new Error(`sse ${xhr.status}`));
+        return;
+      }
+      resolve();
+    };
+    xhr.onerror = () => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error("sse network"));
+    };
+    xhr.onabort = () => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort);
+    xhr.send();
+  });
+}
+
 export async function* readSseEvents<T extends { id?: string; kind?: string }>(
   response: Response,
 ): AsyncGenerator<T> {
@@ -132,6 +193,25 @@ export async function* readSseEvents<T extends { id?: string; kind?: string }>(
           yield event;
         }
       }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export async function* readSseFrames(response: Response): AsyncGenerator<string> {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parsed = consumeSseFrames(buffer);
+      buffer = parsed.rest;
+      for (const frame of parsed.frames) yield frame;
     }
   } finally {
     reader.releaseLock();

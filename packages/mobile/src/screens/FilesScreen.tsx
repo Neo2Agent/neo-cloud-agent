@@ -8,7 +8,7 @@ import { colors } from "./theme";
 const FS_READ_FAILED = "读取工作区失败";
 const TERM_OPEN_FAILED = "打不开终端";
 const TERM_WRITE_FAILED = "写入失败";
-const TERM_EMPTY = "输入命令后发送。输出在下一轮跟进里也能从诊断看到。";
+const TERM_EMPTY = "终端已连接。输入命令后发送。";
 
 function asErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -57,16 +57,28 @@ export function FilesScreen({
   useEffect(() => {
     if (tab !== "term") return;
     let cancelled = false;
+    const abort = new AbortController();
     void (async () => {
       const listed = await client.listTerms(runId);
       const first = listed.sessions[0] ?? (await client.openTerm(runId));
       if (cancelled) return;
       setTermId(first.id);
+      await client.streamTerm(
+        runId,
+        first.id,
+        (event) => {
+          if (event.type === "data") setTermText((current) => `${current}${event.chunk}`);
+        },
+        abort.signal,
+      );
     })().catch((caught) => {
-      if (!cancelled) setError(asErrorMessage(caught, TERM_OPEN_FAILED));
+      if (!cancelled && caught instanceof Error && caught.name !== "AbortError") {
+        setError(asErrorMessage(caught, TERM_OPEN_FAILED));
+      }
     });
     return () => {
       cancelled = true;
+      abort.abort();
     };
   }, [client, runId, tab]);
 

@@ -233,6 +233,24 @@ test("account and workspace routes match the Web control plane", async () => {
   );
 });
 
+test("streamTerm paints workspace term chunks from SSE", async () => {
+  const calls: string[] = [];
+  const chunks: string[] = [];
+  const fetchImpl = (async (input: RequestInfo | URL) => {
+    calls.push(String(input));
+    return new Response('data: {"type":"data","chunk":"$ ls\\n"}\n\n', {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }) as typeof fetch;
+  const client = new MobileClient("http://cp.test", "neo_sess_1", fetchImpl);
+  await client.streamTerm("r1", "t1", (event) => {
+    if (event.type === "data") chunks.push(event.chunk);
+  });
+  assert.deepEqual(chunks, ["$ ls\n"]);
+  assert.match(calls[0] ?? "", /\/v1\/runs\/r1\/term\/t1\/events$/);
+});
+
 test("artifact urls resolve against the configured API base", () => {
   const client = new MobileClient("http://192.168.1.8:8080", "neo_sess_1");
   assert.equal(

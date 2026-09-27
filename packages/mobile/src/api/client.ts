@@ -21,7 +21,8 @@ import { RUN_LIST_STREAM_PATH } from "@neo-cloud-agent/contracts/client-stream";
 import type { CreateFollowUpRequest, CreateRunRequest, FollowUp, PatchRunRequest, Run } from "@neo-cloud-agent/contracts/run";
 import { DEFAULT_TRANSCRIPT_PAGE } from "@neo-cloud-agent/contracts/transcript";
 
-import { readSseEvents, shouldUseXhrSse, streamSseWithXhr } from "./sse.js";
+import { parseTermSseData, type WorkspaceTermEvent } from "@neo-cloud-agent/ui/workspace-term";
+import { readSseEvents, readSseFrames, shouldUseXhrSse, streamSseFramesWithXhr, streamSseWithXhr } from "./sse.js";
 
 export type PublicLlmSettings = {
   configured: boolean;
@@ -351,6 +352,35 @@ export class MobileClient {
 
   writeTerm(runId: string, termId: string, data: string): Promise<{ ok?: boolean }> {
     return this.request("POST", `/v1/runs/${runId}/term/${termId}`, { data });
+  }
+
+  async streamTerm(
+    runId: string,
+    termId: string,
+    onEvent: (event: WorkspaceTermEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const path = `/v1/runs/${runId}/term/${termId}/events`;
+    const headers = this.headers(false, { accept: "text/event-stream" });
+    const deliver = (raw: string) => {
+      const event = parseTermSseData(raw);
+      if (event) onEvent(event);
+    };
+    if (!this.injectedFetch && shouldUseXhrSse()) {
+      await streamSseFramesWithXhr(this.resolve(path), headers, deliver, signal);
+      return;
+    }
+    const response = await this.fetchImpl(this.resolve(path), {
+      method: "GET",
+      headers,
+      signal,
+    });
+    if (!response.ok) {
+      throw new MobileApiError(`sse ${response.status}`, response.status);
+    }
+    for await (const frame of readSseFrames(response)) {
+      deliver(frame);
+    }
   }
 
   listVms(): Promise<VmSlotsView> {
