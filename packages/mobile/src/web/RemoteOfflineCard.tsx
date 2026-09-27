@@ -11,6 +11,7 @@ export function RemoteOfflineCard({ copy, onContinue }: Props) {
     <IslandCard className="remote-offline-card">
       <div className="remote-offline-copy">
         <h2>{copy.title}</h2>
+        <p className="remote-offline-body">{copy.body}</p>
         {copy.repoLine ? <p className="remote-offline-meta">{copy.repoLine}</p> : null}
         <p className="remote-offline-warn">{copy.warning}</p>
       </div>

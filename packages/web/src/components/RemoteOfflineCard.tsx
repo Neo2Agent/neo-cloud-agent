@@ -13,6 +13,7 @@ export function RemoteOfflineCard({ remoteUrl, branch, error, onContinue }: Prop
     <aside className="remote-offline-card" id="remote-offline-card" aria-label={copy.title}>
       <div className="remote-offline-copy">
         <h2>{copy.title}</h2>
+        <p className="remote-offline-body">{copy.body}</p>
         {copy.repoLine ? <p className="remote-offline-meta">{copy.repoLine}</p> : null}
         <p className="remote-offline-warn">{copy.warning}</p>
       </div>

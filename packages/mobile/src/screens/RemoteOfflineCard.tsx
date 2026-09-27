@@ -6,6 +6,7 @@ export function RemoteOfflineCard({ copy, onContinue }: { copy: RemoteCloudConti
   return (
     <View style={styles.card} accessibilityLabel={copy.title}>
       <Text style={styles.title}>{copy.title}</Text>
+      <Text style={styles.body}>{copy.body}</Text>
       {copy.repoLine ? <Text style={styles.meta}>{copy.repoLine}</Text> : null}
       <Text style={styles.warn}>{copy.warning}</Text>
       <Pressable testID="continue-remote-cloud" onPress={onContinue} style={styles.go}>
@@ -26,16 +27,17 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     gap: 6,
   },
-  title: { color: colors.ink, fontSize: 16, fontWeight: "700" },
+  title: { color: colors.ink, fontSize: 13, fontWeight: "700" },
+  body: { color: colors.ink, fontSize: 13, lineHeight: 20 },
   meta: { color: colors.ink, fontSize: 13, fontWeight: "600" },
-  warn: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+  warn: { color: colors.muted, fontSize: 13, lineHeight: 20 },
   go: {
     marginTop: 8,
-    minHeight: 40,
-    borderRadius: 14,
+    minHeight: 36,
+    borderRadius: 999,
     backgroundColor: colors.accent,
     alignItems: "center",
     justifyContent: "center",
   },
-  goText: { color: colors.cream, fontSize: 14, fontWeight: "700" },
+  goText: { color: colors.cream, fontSize: 13, fontWeight: "700" },
 });

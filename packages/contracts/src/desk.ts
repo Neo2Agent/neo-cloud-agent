@@ -161,6 +161,7 @@ export const REMOTE_CLOUD_CONTINUE_NO_REMOTE =
   "这条 Remote 没有可 clone 的远端仓库。未 push 的改动也不会上去。";
 export const REMOTE_CLOUD_CONTINUE_HINT = "未 push 的本机改动不会上去。云端按已记录的仓库和分支继续这条对话。";
 export const REMOTE_CLOUD_CONTINUE_TITLE = "Desk 离线";
+export const REMOTE_CLOUD_CONTINUE_BODY = "同一条对话转到云端继续。";
 export const REMOTE_CLOUD_CONTINUE_ACTION = "在云端继续这条对话";
 export const REMOTE_CLOUD_CONTINUE_STATUS = "Desk 离线";
 export const REMOTE_CLOUD_CONTINUE_COMPOSER = "Desk 离线，发送已锁定。";
@@ -174,6 +175,7 @@ export type RemoteCloudContinueOffer = {
 
 export type RemoteCloudContinueCopy = {
   title: string;
+  body: string;
   repoLine: string;
   warning: string;
   action: string;
@@ -192,6 +194,7 @@ export function remoteCloudContinueCopy(
   const repoLine = [repo, offer.branch].filter(Boolean).join(" · ");
   return {
     title: REMOTE_CLOUD_CONTINUE_TITLE,
+    body: REMOTE_CLOUD_CONTINUE_BODY,
     repoLine,
     warning: REMOTE_CLOUD_CONTINUE_WARNING,
     action: REMOTE_CLOUD_CONTINUE_ACTION,
@@ -233,4 +236,65 @@ export function remoteCloudContinueOffer(
   const remoteUrl = runCloneRemoteUrl(run) ?? "";
   const branch = runCloneBranch(run) ?? "";
   return { show: Boolean(remoteUrl), remoteUrl, branch };
+}
+
+export function remoteCloudHandoffRepoLine(input?: {
+  remoteUrl?: string | null;
+  repoUrls?: string[] | null;
+  baseBranch?: string | null;
+  branchName?: string | null;
+  ref?: string | null;
+}): string {
+  const repo = shortCloneRepo(runCloneRemoteUrl(input ?? {}) ?? "");
+  const branch = runCloneBranch(input ?? {}) ?? (input?.ref ?? "").trim();
+  return [repo, branch].filter(Boolean).join(" · ");
+}
+
+export function remoteCloudHandoffCloneStarted(repoLine = ""): string {
+  return repoLine ? `正在按 ${repoLine} 在云端物化工作区` : "正在按已记录的仓库和分支在云端物化工作区";
+}
+
+export function remoteCloudHandoffCloneReady(repoLine = ""): string {
+  return repoLine
+    ? `已转到云端 · 工作区就绪 · ${repoLine} · 未 push 的本机改动没有上去`
+    : "已转到云端 · 工作区就绪 · 未 push 的本机改动没有上去";
+}
+
+function looksHandoffCloneStart(text: string): boolean {
+  return /Handoff:\s*cloning|cloning clean remote|在云端物化工作区/i.test(text);
+}
+
+function looksHandoffCloneReady(text: string): boolean {
+  return /Handoff workspace ready|^Workspace ready on |已转到云端/i.test(text);
+}
+
+/** Setup line for a Remote → cloud handoff; other setup text is unchanged. */
+export function displaySetupText(
+  message: { kind?: string | null; text?: string | null },
+  run?: {
+    remoteUrl?: string | null;
+    repoUrls?: string[] | null;
+    baseBranch?: string | null;
+    branchName?: string | null;
+  } | null,
+): string {
+  const text = message.text ?? "";
+  const fromReady = /^Workspace ready on (.+)$/.exec(text);
+  const repoLine = remoteCloudHandoffRepoLine({
+    ...run,
+    ref: fromReady?.[1] ?? runCloneBranch(run ?? {}) ?? "",
+  });
+  if (message.kind === "scm.clone_started" && looksHandoffCloneStart(text)) {
+    return remoteCloudHandoffCloneStarted(repoLine);
+  }
+  if (message.kind === "scm.clone_succeeded" && looksHandoffCloneReady(text)) {
+    return remoteCloudHandoffCloneReady(repoLine);
+  }
+  if (!message.kind && looksHandoffCloneStart(text)) {
+    return remoteCloudHandoffCloneStarted(repoLine);
+  }
+  if (!message.kind && looksHandoffCloneReady(text)) {
+    return remoteCloudHandoffCloneReady(repoLine);
+  }
+  return text;
 }

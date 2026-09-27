@@ -130,7 +130,13 @@ if ((await card.count()) === 0) {
   throw new Error("offline continue card missing while Desk is offline");
 }
 const cardText = await card.innerText();
-if (!cardText.includes("Desk 离线") || !cardText.includes("acme/app") || !cardText.includes("feat/login") || !cardText.includes("未 push")) {
+if (
+  !cardText.includes("Desk 离线") ||
+  !cardText.includes("同一条对话转到云端继续") ||
+  !cardText.includes("acme/app") ||
+  !cardText.includes("feat/login") ||
+  !cardText.includes("未 push")
+) {
   throw new Error(`offline continue card copy is incomplete: ${cardText}`);
 }
 const button = web.locator("#continue-remote-cloud");
@@ -166,6 +172,12 @@ if ((await web.locator("#continue-remote-cloud").count()) > 0) {
 if ((await web.locator("#remote-offline-card").count()) > 0) {
   throw new Error("offline continue card still visible after handoff");
 }
+if ((await web.locator(".bubble.assistant").filter({ hasText: /Handoff:|Workspace ready/ }).count()) > 0) {
+  throw new Error("web still paints handoff as an assistant bubble");
+}
+if ((await web.locator("p.setup").filter({ hasText: /已转到云端|物化工作区/ }).count()) === 0) {
+  throw new Error("web handoff setup line missing after continue");
+}
 
 const local = await json<{ id: string }>(`${API}/v1/runs?client=desk`, {
   method: "POST",
@@ -197,7 +209,13 @@ if (MOBILE) {
   if ((await phone.locator("#continue-remote-cloud").count()) === 0) {
     throw new Error("mobile continue-in-cloud button missing while Desk is offline");
   }
-  if (!phoneText.includes("Desk 离线") || !phoneText.includes("acme/app") || !phoneText.includes("feat/login") || !phoneText.includes("未 push")) {
+  if (
+    !phoneText.includes("Desk 离线") ||
+    !phoneText.includes("同一条对话转到云端继续") ||
+    !phoneText.includes("acme/app") ||
+    !phoneText.includes("feat/login") ||
+    !phoneText.includes("未 push")
+  ) {
     throw new Error(`mobile offline card copy is incomplete: ${phoneText}`);
   }
   if ((await phone.locator(".composer-send-group #continue-remote-cloud").count()) > 0) {
@@ -217,6 +235,12 @@ if (MOBILE) {
   }
   if ((await phone.getByText("正在 Desk 上启动 Agent").count()) > 0) {
     throw new Error("mobile still shows Desk handshake after handoff");
+  }
+  if ((await phone.locator(".msg-row.agent, .msg-row.assistant").filter({ hasText: /Handoff:|Workspace ready/ }).count()) > 0) {
+    throw new Error("mobile still paints handoff as a Neo bubble");
+  }
+  if ((await phone.locator("p.setup").filter({ hasText: /已转到云端|物化工作区/ }).count()) === 0) {
+    throw new Error("mobile handoff setup line missing after continue");
   }
   mobileId = phoneSeed.remote.id;
 }

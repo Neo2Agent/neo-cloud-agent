@@ -2691,6 +2691,7 @@ export function App() {
                     busy={busy}
                     activity={activity}
                     highlightId={highlightId}
+                    setupRun={currentRun}
                     onLoadOlder={loadOlder}
                     onOpenArtifact={(name) => {
                       setArtifactFocus(name);

@@ -2,11 +2,11 @@
  * Vite :5175 visual lab. Island chrome + the same /v1 client as Expo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { isSetupFailureMessage, transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import { isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
+import { displaySetupText, isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
 import { runGitContext } from "@neo-cloud-agent/contracts/git";
@@ -69,7 +69,7 @@ import { RunInvite } from "./RunInvite";
 import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
-import { IslandButton, IslandTag } from "./island";
+import { IslandButton } from "./island";
 import { RemoteOfflineCard } from "./RemoteOfflineCard";
 import { MarkdownBody } from "@neo-cloud-agent/ui";
 
@@ -997,8 +997,8 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
         <header className="topbar">
           <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
           {current ? <span className="chat-title">{runListTitle(current)}</span> : null}
-          <span className={turnBusy && !gate.locked ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
-          {current ? <IslandTag>{runPlaceLabel(current)}</IslandTag> : null}
+          <span className={turnBusy && !gate.locked ? "status-chip is-busy" : "status-chip"}>{chatStatusText(current, desks)}</span>
+          {current ? <span className="place-chip">{runPlaceLabel(current)}</span> : null}
           {current && runGitContext(current) !== "none" ? (
             <button className="icon-btn" type="button" onClick={() => setPanel("git")} aria-label="Git">
               Git
@@ -1021,13 +1021,14 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           ) : null}
           {visible.length === 0 ? <p className="empty">还没有消息。</p> : null}
           {visible.map((message, messageIndex) => {
-            if (isStartupWhisper(message)) {
-              if (gate.locked || !isDeskHostedTarget(current?.executionTarget) || generationStarted(visible) || thinking) {
+            if (message.role === "setup") {
+              if (isStartupWhisper(message) && (gate.locked || !isDeskHostedTarget(current?.executionTarget) || generationStarted(visible) || thinking)) {
                 return null;
               }
               return (
-                <p key={message.id} className="whisper">
-                  {message.text}
+                <p key={message.id} className={isSetupFailureMessage(message) ? "setup err" : "setup"}>
+                  <span>{displaySetupText(message, current)}</span>
+                  <time className="setup-time">{messageTimeLabel(message)}</time>
                 </p>
               );
             }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { isSetupFailureMessage, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { displaySetupText } from "@neo-cloud-agent/contracts/desk";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
 import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/artifact";
 import { liveAssistantId } from "@neo-cloud-agent/contracts/turn-state";
@@ -9,7 +10,7 @@ import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { MarkdownNative } from "./MarkdownNative";
 import { WorkFold } from "./WorkFold";
-import { avatarLetter, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
+import { avatarLetter, runListTitle, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { runPlaceLabel } from "../place";
 import { generationStarted, hasVisibleTranscript, isStartupWhisper } from "../turn";
 import { colors } from "./theme";
@@ -131,10 +132,15 @@ export function ChatScreen({
         <Pressable onPress={onOpenDrawer} hitSlop={12}>
           <Text style={styles.menu}>☰</Text>
         </Pressable>
-        <View style={[styles.pill, running ? styles.pillBusy : null]}>
-          <Text style={styles.pillText} numberOfLines={1}>{status}</Text>
+        {run ? <Text style={styles.title} numberOfLines={1}>{runListTitle(run)}</Text> : <View style={styles.title} />}
+        <View style={[styles.chip, running ? styles.pillBusy : null]}>
+          <Text style={styles.chipText} numberOfLines={1}>{status}</Text>
         </View>
-        <Text style={styles.place}>{run ? runPlaceLabel(run) : ""}</Text>
+        {run ? (
+          <View style={styles.chip}>
+            <Text style={styles.chipText}>{runPlaceLabel(run)}</Text>
+          </View>
+        ) : null}
       </View>
       {run && onOpenArtifacts ? (
         <View style={styles.actions}>
@@ -162,12 +168,15 @@ export function ChatScreen({
         ) : null}
         {messages.length === 0 ? <Text style={styles.empty}>还没有消息。</Text> : null}
         {messages.map((message) => {
-          if (isStartupWhisper(message)) {
-            if (hideHandshake || started || thinking) return null;
+          if (message.role === "setup") {
+            if (isStartupWhisper(message) && (hideHandshake || started || thinking)) return null;
             return (
-              <Text key={message.id} style={styles.whisper}>
-                {message.text}
-              </Text>
+              <View key={message.id} style={styles.setupRow}>
+                <Text style={isSetupFailureMessage(message) ? styles.setupErr : styles.setup}>
+                  {displaySetupText(message, run)}
+                </Text>
+                <Text style={styles.setupTime}>{messageTimeLabel(message)}</Text>
+              </View>
             );
           }
           if (message.kind === "artifact.uploaded") {
@@ -261,12 +270,12 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.bg },
   topbar: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
   menu: { fontSize: 20, color: colors.ink, width: 28 },
-  pill: { flex: 1, borderRadius: 999, backgroundColor: colors.paper, paddingHorizontal: 10, paddingVertical: 6 },
+  title: { flex: 1, minWidth: 0, color: colors.ink, fontSize: 15, fontWeight: "600" },
+  chip: { borderRadius: 999, backgroundColor: colors.paper, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: colors.line },
   pillBusy: { backgroundColor: colors.hover },
   author: { color: colors.muted, fontSize: 12 },
   when: { color: colors.muted, fontSize: 11 },
-  pillText: { color: colors.ink, fontSize: 13 },
-  place: { width: 56, color: colors.muted, fontSize: 12, textAlign: "right" },
+  chipText: { color: colors.ink, fontSize: 12 },
   older: { alignSelf: "center", paddingHorizontal: 14, paddingVertical: 6 },
   olderText: { color: colors.muted, fontSize: 12 },
   actions: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
@@ -283,6 +292,10 @@ const styles = StyleSheet.create({
   list: { padding: 14, gap: 12, paddingBottom: 24 },
   empty: { color: colors.muted, textAlign: "center", marginTop: 24 },
   whisper: { color: colors.muted, fontSize: 12, textAlign: "center", paddingHorizontal: 24, lineHeight: 18 },
+  setupRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", gap: 8 },
+  setup: { color: colors.muted, fontSize: 12, lineHeight: 18, flexShrink: 1 },
+  setupErr: { color: colors.error, fontSize: 12, lineHeight: 18, flexShrink: 1 },
+  setupTime: { color: colors.muted, fontSize: 11 },
   thinkBox: { flexShrink: 1, maxWidth: "78%", gap: 8, paddingTop: 6 },
   thinkDots: { flexDirection: "row", alignItems: "center", gap: 5 },
   thinkDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.hover },
@@ -309,10 +322,10 @@ const styles = StyleSheet.create({
   avatarUser: { backgroundColor: colors.ink },
   avatarNeo: { backgroundColor: colors.accent },
   avatarText: { color: colors.cream, fontWeight: "800", fontSize: 13 },
-  bubble: { borderRadius: 16, padding: 12, borderWidth: 1, borderColor: colors.line },
+  bubble: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1, borderColor: colors.line },
   user: { backgroundColor: colors.bubbleUser },
   agent: { backgroundColor: colors.bubbleAgent },
-  body: { color: colors.ink, fontSize: 15, lineHeight: 22 },
+  body: { color: colors.ink, fontSize: 13, lineHeight: 20 },
   imageRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   userImage: { width: 120, height: 120, borderRadius: 12, borderWidth: 1, borderColor: colors.line },
   toolStack: { gap: 8 },

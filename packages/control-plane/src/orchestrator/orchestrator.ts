@@ -50,6 +50,9 @@ import {
   sanitizeRemoteUrl,
   REMOTE_CLOUD_CONTINUE_NO_REMOTE,
   REMOTE_CLOUD_CONTINUE_ONLINE,
+  remoteCloudHandoffCloneReady,
+  remoteCloudHandoffCloneStarted,
+  remoteCloudHandoffRepoLine,
   resolveRunKernel,
   runCloneBranch,
   runCloneRemoteUrl,
@@ -2174,9 +2177,10 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
     throw new Error(REMOTE_CLOUD_CONTINUE_NO_REMOTE);
   }
   const ref = runCloneBranch(run);
+  const repoLine = remoteCloudHandoffRepoLine({ ...run, remoteUrl: remotes[0] ?? run.remoteUrl, ref });
   restoreSessionToDir(runId, path.join(workspaceFor(runId), "sessions"));
   publish(
-    event(run.id, "scm.clone_started", "Handoff: cloning clean remote", {
+    event(run.id, "scm.clone_started", remoteCloudHandoffCloneStarted(repoLine), {
       data: { repoUrls: remotes, ref },
     }),
   );
@@ -2193,7 +2197,7 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
     run.status = "IDLE";
   }
   publish(
-    event(run.id, "scm.clone_succeeded", ref ? `Workspace ready on ${ref}` : "Handoff workspace ready", {
+    event(run.id, "scm.clone_succeeded", remoteCloudHandoffCloneReady(repoLine), {
       data: { repoUrls: remotes, ref, branch: run.branchName, baseBranch: run.baseBranch },
     }),
   );

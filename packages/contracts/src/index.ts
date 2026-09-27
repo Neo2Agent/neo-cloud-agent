@@ -129,6 +129,7 @@ export {
   DESK_HOST_OFFLINE_MESSAGE,
   DESK_HOST_UNBOUND_MESSAGE,
   REMOTE_CLOUD_CONTINUE_ACTION,
+  REMOTE_CLOUD_CONTINUE_BODY,
   REMOTE_CLOUD_CONTINUE_COMPOSER,
   REMOTE_CLOUD_CONTINUE_HINT,
   REMOTE_CLOUD_CONTINUE_NO_REMOTE,
@@ -136,9 +137,13 @@ export {
   REMOTE_CLOUD_CONTINUE_STATUS,
   REMOTE_CLOUD_CONTINUE_TITLE,
   REMOTE_CLOUD_CONTINUE_WARNING,
+  displaySetupText,
   isDeskHostedTarget,
   remoteCloudContinueCopy,
   remoteCloudContinueOffer,
+  remoteCloudHandoffCloneReady,
+  remoteCloudHandoffCloneStarted,
+  remoteCloudHandoffRepoLine,
   remoteControlSendLock,
 } from "./desk.js";
 export { deskRepoKey, deskWorkspaceShortName } from "./desk-workspace.js";

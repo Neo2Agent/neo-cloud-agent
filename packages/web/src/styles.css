@@ -5074,23 +5074,32 @@ a.git-check-name:hover {
 
 .remote-offline-card h2 {
   margin: 0 0 4px;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
 }
 
-.remote-offline-meta {
-  margin: 0 0 6px;
-  font-family: var(--font-mono);
+.remote-offline-body,
+.remote-offline-meta,
+.remote-offline-warn,
+.remote-offline-err {
+  margin: 0 0 4px;
   font-size: 13px;
+  line-height: 1.45;
+}
+
+.remote-offline-body {
+  color: var(--text);
+}
+
+.remote-offline-meta {
+  font-family: var(--font-mono);
   color: var(--text);
 }
 
 .remote-offline-warn,
 .remote-offline-err {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
   color: var(--muted);
 }
 
