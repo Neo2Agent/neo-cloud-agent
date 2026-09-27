@@ -26,4 +26,5 @@ test("Web mounts in Electron without calling missing preload methods", () => {
   assert.doesNotMatch(app, /deskBridge\(\)\?\.onDeepLink\(/);
   assert.doesNotMatch(app, /deskBridge\(\)\?\.notify\(/);
   assert.doesNotMatch(app, /desk-badge/);
+  assert.match(app, /showTarget=\{Boolean\(deskBridge\(\)\?\.canRunLocal\)\}/);
 });

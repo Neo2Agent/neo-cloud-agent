@@ -2245,7 +2245,11 @@ export function App() {
           buddy={narrow}
           target={deskTarget.kind === "desk" ? "desk" : "cloud"}
           deskDisabled={!deskBridge()?.canRunLocal && !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0)}
-          onTarget={(value) => applyTarget({ ...deskTarget, kind: value })}
+          onTarget={
+            deskBridge()?.canRunLocal
+              ? (value) => applyTarget({ ...deskTarget, kind: value })
+              : undefined
+          }
           nav={mainTab}
           searchOpen={searchOpen}
           onOpenSearch={() => setSearchOpen((open) => !open)}
@@ -2633,8 +2637,13 @@ export function App() {
                     moreOpen={moreOpen}
                     target={deskTarget.kind === "desk" ? "desk" : "cloud"}
                     deskDisabled={!deskBridge()?.canRunLocal && !desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0)}
+                    showTarget={Boolean(deskBridge()?.canRunLocal)}
                     skills={buddySkillsFromRecipes(BUNDLED_RECIPES)}
-                    onTarget={(value) => applyTarget({ ...deskTarget, kind: value })}
+                    onTarget={
+                      deskBridge()?.canRunLocal
+                        ? (value) => applyTarget({ ...deskTarget, kind: value })
+                        : undefined
+                    }
                     onShortcut={(id) => {
                       if (id === "more") setMoreOpen((value) => !value);
                       if (id === "experts") openExperts();

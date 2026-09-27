@@ -8,7 +8,7 @@ import { writeFileSync } from "node:fs";
 const shots: Record<string, unknown> = {};
 
 async function login(page: import("playwright").Page) {
-  const gate = page.locator("#auth-form");
+  const gate = page.locator("#auth-gate:not([hidden]) #auth-form");
   if ((await gate.count()) === 0) return;
   await page.evaluate(`(() => {
     const fields = document.querySelectorAll("#auth-form input");
@@ -38,6 +38,7 @@ function pageInfoScript(): string {
       emptyText: document.querySelector(".empty h2")?.textContent || "",
       buddyHome: Boolean(document.querySelector(".buddy-home")),
       buddyHello: document.querySelector(".buddy-home h2, .buddy-hello")?.textContent || "",
+      buddyToggle: Boolean(document.querySelector(".buddy-toggle")),
       sidebar: Boolean(document.querySelector(".sidebar")),
       newChat: Boolean(document.querySelector("#new-chat")),
       composer: Boolean(document.querySelector("form.composer, .composer-box")),
@@ -93,7 +94,6 @@ try {
   } else {
     shots.electron = { skipped: "no page on :9223" };
   }
-  await electron.close();
 } catch (error) {
   shots.electron = { skipped: error instanceof Error ? error.message : String(error) };
 }
@@ -112,6 +112,7 @@ if (mobile.islandHome) errors.push("mobile still shows leftover IslandHome");
 if (!mobile.buddy && !mobile.buddyHome && !mobile.recipe) {
   errors.push("mobile phone shell has neither BuddyHome nor recipe grid");
 }
+if (mobile.buddyToggle) errors.push("mobile phone shell still shows leftover Desk 电脑 toggle");
 if (desk) {
   if (desk.rail || desk.contextBar) errors.push("desk electron still has leftover personal rail/greeting chrome");
   if (!desk.recipe || desk.emptyText !== web.emptyText) errors.push("desk electron home != web desktop");
@@ -124,3 +125,4 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(JSON.stringify({ ok: true, shots }, null, 2));
+process.exit(0);
