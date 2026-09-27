@@ -76,7 +76,11 @@ export function TargetPicker({
           { value: "cloud", label: "云端" },
           {
             value: "desk",
-            label: canGoLocal ? "本机" : "本机（先在 Desk 里绑定文件夹）",
+            label: canGoLocal
+              ? insideDesk
+                ? "本机"
+                : "我的电脑（Remote Control）"
+              : "本机（先在 Desk 绑定文件夹并开启远程派活）",
             disabled: !canGoLocal,
           },
           { value: "remote", label: "远程机（P3）", disabled: true },

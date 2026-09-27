@@ -1,4 +1,17 @@
+import { remoteMachineExecutionTarget } from "@neo-cloud-agent/contracts/desk";
+
 export type DeskTargetKind = "cloud" | "desk" | "remote";
+
+/** Browser composer: pick a live Desk → Remote Control, visible on all clients. */
+export function webMachineRunTarget(target: DeskTarget) {
+  if (!target.deskId) {
+    return null;
+  }
+  return remoteMachineExecutionTarget({
+    deskId: target.deskId,
+    deskWorkspaceId: target.workspaceId,
+  });
+}
 
 export type DeskTarget = {
   kind: DeskTargetKind;

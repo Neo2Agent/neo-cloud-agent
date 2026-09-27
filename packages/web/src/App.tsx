@@ -14,7 +14,7 @@ import { runGitContext } from "@neo-cloud-agent/contracts/git";
 import { isDeskHostedTarget, type Desk, type DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
-import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
+import { deskBridge, isDeskApp, webMachineRunTarget, withApiBase, type DeskTarget } from "./desk";
 import { remoteControlSendLock } from "./desk-live";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, readRecentRepos, rememberRecentRepo, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs";
@@ -1127,7 +1127,7 @@ export function App() {
     if (!runId && effectiveTarget.kind === "desk" && !deskBridge()?.canRunLocal && !deskTarget.deskId) {
       setMessages((prev) => [
         ...prev,
-        localErrorMessage(runId, "先选一台电脑。要出现在这里，那台电脑得打开 Desk 并在设置里开启 Remote control。"),
+        localErrorMessage(runId, "先选一台电脑。要出现在这里，那台电脑得打开 Desk，绑定文件夹，并在设置里开启远程派活。"),
       ]);
       return;
     }
@@ -1147,7 +1147,9 @@ export function App() {
     if (runId && !isActiveRunStatus(currentRun?.status)) {
       patchRun(runId, (run) => ({ ...run, status: "RUNNING" }));
     }
-    const skipRepoDefaults = !runId && repoMode === "none";
+    const browserMachine =
+      !runId && effectiveTarget.kind === "desk" && !deskBridge()?.canRunLocal;
+    const skipRepoDefaults = Boolean(!runId && (repoMode === "none" || browserMachine));
     const repoUrls =
       skipRepoDefaults
         ? []
@@ -1165,7 +1167,7 @@ export function App() {
               prompt: text || "（图片）",
               repoUrls,
               skipRepoDefaults,
-              source: effectiveTarget.kind === "desk" ? "desk" : "web",
+              source: effectiveTarget.kind === "desk" && deskBridge()?.canRunLocal ? "desk" : "web",
               envId: envId || undefined,
               model,
               images: attached.length ? attached : undefined,
@@ -1176,12 +1178,14 @@ export function App() {
               deskWorkspaceId: effectiveTarget.kind === "desk" ? deskTarget.workspaceId : undefined,
               target:
                 effectiveTarget.kind === "desk"
-                  ? {
-                      loop: "desk",
-                      tools: "desk",
-                      deskId: deskTarget.deskId,
-                      deskWorkspaceId: deskTarget.workspaceId,
-                    }
+                  ? deskBridge()?.canRunLocal
+                    ? {
+                        loop: "desk",
+                        tools: "desk",
+                        deskId: deskTarget.deskId,
+                        deskWorkspaceId: deskTarget.workspaceId,
+                      }
+                    : webMachineRunTarget(deskTarget) ?? { loop: "cloud", tools: "cloud" }
                   : { loop: "cloud", tools: "cloud" },
               ...buildPayload,
             }),
@@ -1302,12 +1306,17 @@ export function App() {
       }
       setHandoffError("");
       try {
-        const target = {
-          loop: "desk" as const,
-          tools: "desk" as const,
-          deskId: deskTarget.deskId,
-          deskWorkspaceId: deskTarget.workspaceId,
-        };
+        const target = deskBridge()?.canRunLocal
+          ? {
+              loop: "desk" as const,
+              tools: "desk" as const,
+              deskId: deskTarget.deskId,
+              deskWorkspaceId: deskTarget.workspaceId,
+            }
+          : webMachineRunTarget(deskTarget);
+        if (!target) {
+          throw new Error("先选一台电脑。");
+        }
         const body = await readJson<Run & { error?: string }>(
           await api(tokenRef.current, `/v1/runs/${runId}/handoff`, {
             method: "POST",
@@ -1321,7 +1330,7 @@ export function App() {
         setHandoffError(error instanceof Error ? error.message : "移交失败");
       }
     },
-    [confirm, deskTarget.deskId, runId],
+    [confirm, deskTarget.deskId, deskTarget.workspaceId, runId],
   );
 
   const applyTarget = useCallback((next: DeskTarget) => {
@@ -1887,7 +1896,7 @@ export function App() {
         const available = desks.some((desk) => desk.online && desk.allowRemote === true && (desk.workspaces?.length ?? 0) > 0);
         return available
           ? "选一台已打开 Desk 的电脑。"
-          : "没有可用的电脑。先打开 Desk 并在设置里绑定一个文件夹。";
+          : "没有可用的电脑。先打开 Desk，绑定文件夹，并在设置里开启「允许网页和手机在这台电脑开对话」。";
       })();
 
   const composerMentions = useMemo<ComposerMention[]>(() => {
