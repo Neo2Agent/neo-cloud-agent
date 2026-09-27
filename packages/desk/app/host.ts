@@ -34,6 +34,7 @@ import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
 import { publicizeWorkerUrls } from "../src/worker-urls.js";
 import {
   ignoreNeoDir,
+  localGitCommit,
   localGitSnapshot,
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
@@ -645,13 +646,52 @@ function releaseSleepBlockerIfIdle(): void {
   sleepBlocker = 0;
 }
 
+const startingHere = new Set<string>();
+
+async function withStartingHere<T>(runId: string | undefined, work: () => Promise<T>): Promise<T> {
+  if (runId) {
+    startingHere.add(runId);
+  }
+  try {
+    return await work();
+  } finally {
+    if (runId) {
+      startingHere.delete(runId);
+    }
+  }
+}
+
 /**
  * Start the worker for one run on this machine.
  *
  * Both paths land here: the user sending from this window, and a run dispatched
  * from somewhere else. The only difference is who asked.
  */
-async function startAssignment(assignment: DeskAssignment, folderHint?: string): Promise<boolean> {
+async function startAssignment(
+  assignment: DeskAssignment,
+  folderHint?: string,
+  alreadyHeld = false,
+): Promise<boolean> {
+  const runId = assignment.runId;
+  if (hasLocalRun(runId)) {
+    return true;
+  }
+  if (!alreadyHeld) {
+    if (startingHere.has(runId)) {
+      return true;
+    }
+    startingHere.add(runId);
+  }
+  try {
+    return await spawnAssignmentWorker(assignment, folderHint);
+  } finally {
+    if (!alreadyHeld) {
+      startingHere.delete(runId);
+    }
+  }
+}
+
+async function spawnAssignmentWorker(assignment: DeskAssignment, folderHint?: string): Promise<boolean> {
   const runId = assignment.runId;
   if (hasLocalRun(runId)) {
     return true;
@@ -767,23 +807,8 @@ function stopRun(runId: string, reason?: string): void {
   reportRunStatus({ runId, state: "stopped", detail: reason });
 }
 
-const startingHere = new Set<string>();
-
 function deskWindowFocused(): boolean {
   return BrowserWindow.getAllWindows().some((window) => window.isFocused());
-}
-
-async function withStartingHere<T>(runId: string | undefined, work: () => Promise<T>): Promise<T> {
-  if (runId) {
-    startingHere.add(runId);
-  }
-  try {
-    return await work();
-  } finally {
-    if (runId) {
-      startingHere.delete(runId);
-    }
-  }
 }
 
 /** The folder a run works in, even after its worker is gone. Unbound hints still go through folder auth. */
@@ -832,43 +857,48 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
   if (hasLocalRun(assignment.runId) || startingHere.has(assignment.runId)) {
     return;
   }
-  const bound = findBound({ workspaceId: assignment.workspaceId });
-  const label = bound?.name ?? "本机工作区";
-  const dispatched = Boolean(assignment.requestedBy) || Boolean(assignment.workspaceId);
-  if (dispatched) {
-    await rejectRun(assignment.runId, "这台电脑没有开启远程派活");
-    return;
-  }
-  const alert = deskAssignmentAlert({
-    alreadyLocal: false,
-    startingHere: false,
-    windowFocused: deskWindowFocused(),
-    requireApproval: Boolean(prefs().requireApproval),
-  });
-  if (alert === "approve") {
-    // The binding is the standing permission; this switch is for people who
-    // still want to see every remote task before it touches their disk.
-    const choice = await dialog.showMessageBox({
-      type: "question",
-      buttons: ["开始", "拒绝"],
-      defaultId: 0,
-      cancelId: 1,
-      title: "远程派来一条对话",
-      message: `${assignment.requestedBy || "你"} 要在 ${label} 里跑一条对话。`,
-      detail: assignment.prompt.slice(0, APPROVAL_PROMPT_PREVIEW_LEN),
-    });
-    if (choice.response !== 0) {
-      await rejectRun(assignment.runId, "这台电脑拒绝了这条派活");
+  startingHere.add(assignment.runId);
+  try {
+    const bound = findBound({ workspaceId: assignment.workspaceId });
+    const label = bound?.name ?? "本机工作区";
+    const dispatched = Boolean(assignment.requestedBy) || Boolean(assignment.workspaceId);
+    if (dispatched) {
+      await rejectRun(assignment.runId, "这台电脑没有开启远程派活");
       return;
     }
-  } else if (alert === "notify") {
-    new Notification({
-      title: "本机开始一条对话",
-      body: `${label} · ${assignment.prompt.slice(0, NOTIFICATION_PROMPT_PREVIEW_LEN)}`,
-    }).show();
+    const alert = deskAssignmentAlert({
+      alreadyLocal: false,
+      startingHere: false,
+      windowFocused: deskWindowFocused(),
+      requireApproval: Boolean(prefs().requireApproval),
+    });
+    if (alert === "approve") {
+      // The binding is the standing permission; this switch is for people who
+      // still want to see every remote task before it touches their disk.
+      const choice = await dialog.showMessageBox({
+        type: "question",
+        buttons: ["开始", "拒绝"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "远程派来一条对话",
+        message: `${assignment.requestedBy || "你"} 要在 ${label} 里跑一条对话。`,
+        detail: assignment.prompt.slice(0, APPROVAL_PROMPT_PREVIEW_LEN),
+      });
+      if (choice.response !== 0) {
+        await rejectRun(assignment.runId, "这台电脑拒绝了这条派活");
+        return;
+      }
+    } else if (alert === "notify") {
+      new Notification({
+        title: "本机开始一条对话",
+        body: `${label} · ${assignment.prompt.slice(0, NOTIFICATION_PROMPT_PREVIEW_LEN)}`,
+      }).show();
+    }
+    toRenderer("desk:dispatched", { runId: assignment.runId, workspace: label });
+    await startAssignment(assignment, bound?.folder || localFolderFromRepoUrls(assignment.repoUrls), true);
+  } finally {
+    startingHere.delete(assignment.runId);
   }
-  toRenderer("desk:dispatched", { runId: assignment.runId, workspace: label });
-  await startAssignment(assignment, bound?.folder || localFolderFromRepoUrls(assignment.repoUrls));
 }
 
 let connecting: Promise<void> | null = null;
@@ -1118,7 +1148,7 @@ function wireIpc(): void {
     return prefs();
   });
   ipcMain.handle("desk:startRun", async (_event, assignment: DeskAssignment, folder?: string) => {
-    return withStartingHere(assignment.runId, () => startAssignment(assignment, folder));
+    return startAssignment(assignment, folder);
   });
   ipcMain.handle("desk:takeAssignment", async (_event, runId?: string, folder?: string) => {
     return withStartingHere(runId, async () => {
@@ -1139,7 +1169,7 @@ function wireIpc(): void {
       if (!assignment || (runId && assignment.runId !== runId)) {
         return { started: false, runId: assignment?.runId };
       }
-      await startAssignment(assignment, folder);
+      await startAssignment(assignment, folder, true);
       return { started: true, runId: assignment.runId };
     });
   });
@@ -1186,6 +1216,32 @@ function wireIpc(): void {
       return null;
     }
   });
+  ipcMain.handle(
+    "desk:gitCommit",
+    async (_event, input: { runId: string; folder?: string; message: string }) => {
+      const folder = gitSnapshotFolder(input.runId, { folder: input.folder });
+      if (!folder) {
+        return { error: "找不到本机工作区" };
+      }
+      try {
+        const committed = await localGitCommit(folder, input.message);
+        if (deskId && deskToken) {
+          const snapshot = await localGitSnapshot(folder);
+          if (snapshot) {
+            await leaseClient().uploadGitSnapshot({
+              deskId,
+              deskToken,
+              runId: input.runId,
+              snapshot,
+            });
+          }
+        }
+        return committed;
+      } catch (error) {
+        return { error: errorText(error, "本机提交失败") };
+      }
+    },
+  );
   ipcMain.handle("desk:termOpen", (_event, folder: string) => {
     if (!folder || !existsSync(folder)) {
       return { error: "本机工作区不存在" };

@@ -247,6 +247,31 @@ export async function localGitSnapshot(folder: string, since?: string | null): P
   return { branch: branch || null, baseBranch: null, commits, ...(await collectWorkspaceDiff(git, base)) };
 }
 
+/** Stage everything and commit in the laptop folder. Same as Cursor SCM on This Computer. */
+export async function localGitCommit(
+  folder: string,
+  message: string,
+): Promise<{ sha: string; branch: string; empty: boolean }> {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    throw new Error("commit message is required");
+  }
+  if (!isGitRepo(folder)) {
+    throw new Error("这个文件夹还不是 git 仓库");
+  }
+  await gitOutput(folder, ["add", "-A"]);
+  const dirty = await gitOutput(folder, ["status", "--porcelain"]);
+  if (!dirty) {
+    const sha = await gitOutput(folder, ["rev-parse", "HEAD"]);
+    const branch = await gitOutput(folder, ["symbolic-ref", "--short", "-q", "HEAD"]).catch(() => "");
+    return { sha, branch: branch || "HEAD", empty: true };
+  }
+  await gitOutput(folder, ["commit", "--no-verify", "-m", trimmed]);
+  const sha = await gitOutput(folder, ["rev-parse", "HEAD"]);
+  const branch = await gitOutput(folder, ["symbolic-ref", "--short", "-q", "HEAD"]).catch(() => "");
+  return { sha, branch: branch || "HEAD", empty: false };
+}
+
 function gitOutput(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });

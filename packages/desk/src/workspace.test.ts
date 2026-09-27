@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   ignoreNeoDir,
   isGitRepo,
+  localGitCommit,
   localGitSnapshot,
   localWorkspaceDiffStat,
   prepareDeskWorkspace,
@@ -176,4 +177,22 @@ test("git snapshot covers the run's commits plus uncommitted and untracked files
   assert.deepEqual(noRun?.commits, []);
   assert.equal(noRun?.files.some((item) => item.path === "FEATURE.md"), false);
   assert.equal(await localGitSnapshot(mkdtempSync(path.join(tmpdir(), "neo-desk-nogit-"))), null);
+});
+
+test("localGitCommit stages and commits in the laptop folder", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "neo-desk-commit-"));
+  const git = (args: string[]) => spawnSync("git", args, { cwd: dir });
+  git(["init", "-b", "main"]);
+  git(["config", "user.email", "desk@example.com"]);
+  git(["config", "user.name", "Desk"]);
+  writeFileSync(path.join(dir, "NOTE.md"), "before\n");
+  git(["add", "."]);
+  git(["commit", "-m", "seed"]);
+  writeFileSync(path.join(dir, "NOTE.md"), "after\n");
+  const committed = await localGitCommit(dir, "docs: after");
+  assert.equal(committed.empty, false);
+  assert.equal(committed.branch, "main");
+  assert.match(committed.sha, /^[0-9a-f]{40}$/);
+  const log = spawnSync("git", ["log", "-1", "--pretty=%s"], { cwd: dir });
+  assert.equal(String(log.stdout).trim(), "docs: after");
 });

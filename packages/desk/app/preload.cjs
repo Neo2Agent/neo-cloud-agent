@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("neoDesk", {
   listDir: (input) => ipcRenderer.invoke("desk:listDir", input),
   writeFile: (input) => ipcRenderer.invoke("desk:writeFile", input),
   diffStat: (folder) => ipcRenderer.invoke("desk:diffStat", folder),
+  gitCommit: (input) => ipcRenderer.invoke("desk:gitCommit", input),
   termOpen: (folder) => ipcRenderer.invoke("desk:termOpen", folder),
   termWrite: (id, data) => ipcRenderer.invoke("desk:termWrite", { id, data }),
   termClose: (id) => ipcRenderer.invoke("desk:termClose", id),

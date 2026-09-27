@@ -380,6 +380,25 @@ test("the desk claim handshake never shows on the machine, and disappears elsewh
     { id: "a1", role: "assistant", text: "local-ok", createdAt: "2026-08-27T00:00:05.000Z" },
   ]);
   assert.deepEqual(started.map((item) => item.role), ["assistant"]);
+  const inlineStart: TranscriptMessage = {
+    id: "q2",
+    role: "setup",
+    text: "正在 Desk 上启动 Agent",
+    createdAt: "2026-08-27T00:00:00.000Z",
+    kind: "run.queued",
+  };
+  assert.equal(displayTranscriptMessages([inlineStart], { hideDeskHandshake: true }).length, 0);
+  const afterFollow = displayTranscriptMessages([
+    { id: "u1", role: "user", text: "first", createdAt: "2026-08-27T00:00:00.000Z" },
+    inlineStart,
+    { id: "u2", role: "user", text: "follow from web", createdAt: "2026-08-27T00:00:01.000Z" },
+    { id: "a2", role: "assistant", text: "Mock gateway response. Save a DeepSeek or OpenAI API key on the chat page, or set DEEPSEEK_API_KEY / OPENAI_API_KEY.", createdAt: "2026-08-27T00:00:02.000Z" },
+  ]);
+  assert.deepEqual(
+    afterFollow.map((item) => item.role),
+    ["user", "user", "assistant"],
+  );
+  assert.equal(afterFollow.filter((item) => item.role === "assistant").length, 1);
 });
 
 test("a queued follow-up is a user bubble before the worker delivers it", () => {

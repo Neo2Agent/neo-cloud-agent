@@ -44,6 +44,11 @@ export type NeoDeskBridge = {
   takeAssignment?(runId?: string, folder?: string): Promise<{ started?: boolean; runId?: string }>;
   notify?(title: string, body: string): Promise<void> | void;
   openPath?(filePath: string): Promise<void>;
+  gitCommit?(input: {
+    runId: string;
+    folder?: string;
+    message: string;
+  }): Promise<{ sha?: string; branch?: string; empty?: boolean; error?: string }>;
   onDeepLink?(cb: (url: string) => void): () => void;
   onTarget?(cb: (target: DeskTarget) => void): () => void;
   onDispatched?(cb: (payload: { runId: string; workspace: string }) => void): () => void;

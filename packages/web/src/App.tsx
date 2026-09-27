@@ -1705,6 +1705,7 @@ export function App() {
   const viewMessages = withPendingUser(messages, pendingTurn);
   const displayMessages = displayTranscriptMessages(viewMessages, {
     hideStaleRestart: true,
+    hideDeskHandshake: isDeskApp(),
   });
   const busy = isTurnBusy({
     sending,
@@ -2829,6 +2830,7 @@ export function App() {
                   token={token}
                   runId={runId}
                   context={gitContext}
+                  workspaceFolder={currentRun?.repoUrls?.[0] || deskTarget.folder}
                   refreshKey={gitRefreshKey}
                   busy={busy}
                   onPullRequests={applyPullRequests}

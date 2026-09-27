@@ -136,7 +136,7 @@ This Computer（pi）worker **一回合跑完就退**（`WORKER_EXIT_AFTER_TURN=
 
 ### B Remote Control
 
-对标 Cursor **Remote Control**（Agents Window `/remote-control`：桌面开场，网页 / 手机只跟进）。不是 Cursor **My Machines**（网页也能新开派到一台 worker）。loop 在应用机 `neo-loop`，工具在这台电脑。控制面打不进 NAT，所以 Desk **只出向**：inbox SSE + 工具 WSS。
+对标 Cursor **Remote Control**（Agents Window `/remote-control`：桌面开场，网页 / 手机只跟进）。**不是** Cursor **My Machines** / `cursor.com/agents` 上的 Remote Machines 开场（网页从「我的机器」新开一条派到 worker）。那是另一条产品线；Neo Web / 手机 composer 只有「云端」，不补机器选择器。loop 在应用机 `neo-loop`，工具在这台电脑。控制面打不进 NAT，所以 Desk **只出向**：inbox SSE + 工具 WSS。
 
 ```text
 Desk 开场
@@ -151,9 +151,13 @@ Desk 开场
 
 Web / 手机跟进（Desk 必须在线）
   POST /v1/runs/:id/follow-ups
-  → tools worker 还在就直接 startPendingLoopTurn
+  → 首轮还没 claim：跟进进 FIFO，不覆盖 pending，也不再 dispatchToDesk
+  → 一轮只 start 一次 neo-loop；claim 两次也不会再开一轮
+  → tools worker 已在且本轮结束再 startPendingLoopTurn
   → 否则 inbox 再派，Desk 再 claim
 ```
+
+首轮跟进如果覆盖 `pendingLoopStarts` 或再 `dispatchToDesk`，同一条 mock 回复会拼进一个气泡里出现两次。握手文案「正在 Desk 上启动 Agent」在 Desk 上隐藏，在 Web 上跟进或回复出现后也隐藏。
 
 公网 assignment **不**带 `neoLoopUrl=http://127.0.0.1:8082`。`:8082` 不进 Caddy。匹配失败 fail closed，不回落云盘。规格见 [server-side-agent-loop.md](./server-side-agent-loop.md)。
 
@@ -170,7 +174,7 @@ Web / 手机跟进（Desk 必须在线）
 
 ## 客户端约束（已经写进代码）
 
-- **工作区 = 授权目录本身。** 有 `.git` 才有 commit / PR；没有 git 的文件夹仍可读写、开终端。
+- **工作区 = 授权目录本身。** 有 `.git` 才有 commit / PR；没有 git 的文件夹仍可读写、开终端。Desk 上 Git 面板可以对 This Computer / Remote Control 就地提交（`neoDesk.gitCommit`），对标 Cursor 本机 SCM；网页跟进同一条时仍只读。
 - **一份 `.neo`。** 仓库认什么、worker 读什么，和云端同一套 `createWorkspaceLoader`。不为 This Computer 另做 Cursor Customize，也不单独加载 `.cursor/rules`、`.cursor/commands`、`.cursorignore`。Cursor 兼容只保留云端已经有的（`environment.json` 回落、skills / agents / hooks 文件名）。
 - **本机多的是墙和寻址。** 云端 VM 本身就是盒子；本机才有「用户选的文件夹」和真磁盘出界。`NEO_SANDBOX_ROOT` 只对本机 Run 生效：pi 的 `read` / `write` / `edit` / `ls` / `grep` / `find` 逃出根就拒绝（展开 `~` / `$HOME`，顺着符号链接看真实落点）；`bash` 的重定向（含 `1>` / `2>` / `&>` / `>|`）和 `rm`/`mv`/`cp` 一类写操作也拦。系统临时目录仍可写，否则构建工具会挂，但 `ln` 不准把工作区名字链到 `/tmp` 或家目录。出界默认 `deny`，不问人。`ask` / `allowlist` 若以后做，只进 Desk prefs + `NEO_SANDBOX_*`，云端 worker 不读。
 - **选目录就是授权。** 家目录和磁盘根直接拒；`/tmp`、`/Users` 这类过宽目录要二次确认。确认框文案：只改这个文件夹；`.neo` 和云端同一套，不是另一产品。设置一期分栏是基础配置（并发上限）和模型配置，不加「加载 `.cursor`」开关；composer `/` 不接 Cursor commands。

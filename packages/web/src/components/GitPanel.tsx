@@ -13,7 +13,9 @@ import {
 } from "@neo-cloud-agent/contracts/git";
 import type { PullRequestRef, RunCommitRef } from "@neo-cloud-agent/contracts/run";
 import { api, readJson } from "../api";
+import { deskBridge, isDeskApp, STALE_DESK_HINT } from "../desk";
 import { formatListWhen } from "../format";
+import { gitPanelCanCommit } from "../git-panel";
 import { IconBranch, IconCheck, IconChevronDown, IconCopy, IconError, IconMore, IconSpinner } from "../icons";
 
 export type GitView = "diff" | "review" | "commits";
@@ -22,6 +24,8 @@ type Props = {
   token: string;
   runId: string;
   context: Exclude<RunGitContext, "none">;
+  /** This Computer / Remote Control folder on Desk. Web follow does not send this. */
+  workspaceFolder?: string;
   /** Re-read everything when this changes, e.g. when a turn settles. */
   refreshKey: string;
   busy?: boolean;
@@ -481,7 +485,7 @@ function DiffView({
           {diff?.truncated ? <p className="git-note">改动太大，预览只显示了前一部分。</p> : null}
         </>
       )}
-      {context === "cloud" && dirty ? (
+      {gitPanelCanCommit({ context, deskApp: isDeskApp(), dirty }) ? (
         <form
           className="git-commit"
           onSubmit={(event) => {
@@ -503,7 +507,7 @@ function DiffView({
           {commitError ? <p className="setup err">{commitError}</p> : null}
         </form>
       ) : context === "desk" ? (
-        <p className="git-note git-commit-note">本机对话的改动在这台电脑上提交，这里只读。</p>
+        <p className="git-note git-commit-note">本机对话的改动在这台电脑上提交。打开 Desk 才能从这里提交。</p>
       ) : null}
     </div>
   );
@@ -701,7 +705,7 @@ function ReviewView({
   );
 }
 
-export function GitPanel({ token, runId, context, refreshKey, busy = false, onPullRequests }: Props) {
+export function GitPanel({ token, runId, context, workspaceFolder, refreshKey, busy = false, onPullRequests }: Props) {
   const [view, setView] = useState<GitView>("diff");
   const [diff, setDiff] = useState<RunDiffResponse | null>(null);
   const [commits, setCommits] = useState<RunCommitsResponse | null>(null);
@@ -797,6 +801,18 @@ export function GitPanel({ token, runId, context, refreshKey, busy = false, onPu
     setCommitting(true);
     setCommitError("");
     try {
+      if (context === "desk") {
+        const gitCommit = deskBridge()?.gitCommit;
+        if (!gitCommit) {
+          throw new Error(STALE_DESK_HINT);
+        }
+        const body = await gitCommit({ runId, folder: workspaceFolder, message });
+        if (body.error) {
+          throw new Error(body.error);
+        }
+        await load(false);
+        return;
+      }
       const body = await readJson<{ error?: string }>(
         await api(token, `/v1/runs/${runId}/commit`, { method: "POST", body: JSON.stringify({ message }) }),
       );
