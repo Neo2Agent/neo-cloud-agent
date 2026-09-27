@@ -184,6 +184,18 @@ export type NeoDeskBridge = {
  */
 export const STALE_DESK_HINT = "Desk 主进程还是旧版本，退出 Desk 再重新打开。";
 
+const PRESENCE_ERROR = /本机保活失败|本机登记失败/;
+
+/** Lease ticks send `error` only while down. A later connected tick must clear that banner. */
+export function nextAuthErrorFromPresence(
+  prev: string,
+  state: { connected: boolean; error?: string },
+): string {
+  if (state.error) return state.error;
+  if (state.connected && PRESENCE_ERROR.test(prev)) return "";
+  return prev;
+}
+
 /** Older preloads answered pickFolder with just the path, or `workspaceId` instead of `id`. */
 export function asWorkspaceRef(
   picked: (Partial<DeskWorkspaceRef> & { workspaceId?: string }) | string | null | undefined,

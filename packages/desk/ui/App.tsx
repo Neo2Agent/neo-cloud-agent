@@ -41,6 +41,7 @@ import {
   localRunLabel,
   localRunTarget,
   mergeDeskTarget,
+  nextAuthErrorFromPresence,
   DESK_CLIENT_QUERY,
   TARGET_CLOUD,
   TARGET_DESK,
@@ -1116,7 +1117,7 @@ export function App() {
         deskIdRef.current = state.deskId;
         setTarget((prev) => mergeDeskTarget(prev, state.deskId));
       }
-      if (state.error) setAuthError(state.error);
+      setAuthError((prev) => nextAuthErrorFromPresence(prev, state));
     });
     return () => {
       offStatus?.();

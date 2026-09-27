@@ -877,7 +877,7 @@ async function handleInboxEvent(event: DeskInboxEvent): Promise<void> {
 let connecting: Promise<void> | null = null;
 
 function reportPresence(connected: boolean, error?: string): void {
-  toRenderer("desk:inbox-state", { connected, deskId, error } satisfies InboxState);
+  toRenderer("desk:inbox-state", { connected, deskId, error: error ?? "" } satisfies InboxState);
 }
 
 async function persistRegisteredDesk(registered: { deskId: string; token: string }): Promise<void> {

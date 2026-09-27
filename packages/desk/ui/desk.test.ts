@@ -6,6 +6,7 @@ import {
   localRunLabel,
   localRunTarget,
   mergeDeskTarget,
+  nextAuthErrorFromPresence,
   withApiBase,
   withDeskClient,
 } from "./desk";
@@ -88,4 +89,23 @@ test("withApiBase stays on neo-desk:// when the packaged preload proxies API", (
   } finally {
     (globalThis as { window?: unknown }).window = previous;
   }
+});
+
+test("nextAuthErrorFromPresence clears a recovered lease banner and keeps other errors", () => {
+  assert.equal(
+    nextAuthErrorFromPresence("本机保活失败：ECONNREFUSED", { connected: true }),
+    "",
+  );
+  assert.equal(
+    nextAuthErrorFromPresence("本机登记失败：desk register failed", { connected: true, error: "" }),
+    "",
+  );
+  assert.equal(
+    nextAuthErrorFromPresence("发送失败", { connected: true }),
+    "发送失败",
+  );
+  assert.equal(
+    nextAuthErrorFromPresence("", { connected: false, error: "本机保活失败：ECONNREFUSED" }),
+    "本机保活失败：ECONNREFUSED",
+  );
 });
