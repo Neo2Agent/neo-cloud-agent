@@ -521,9 +521,11 @@ export function Composer({
               />
             ) : null}
             {showLiveHint ? (
-              <p className="hint" id="vm-status" data-busy={voiceActive ? "true" : "false"}>
-                {voiceActive ? <span className="pulse-dot" aria-hidden="true" /> : null}
-                {listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : hint}
+              <>
+                <p className="hint" id="vm-status" data-busy={voiceActive ? "true" : "false"}>
+                  {voiceActive ? <span className="pulse-dot" aria-hidden="true" /> : null}
+                  {listening ? "正在听…再点一下完成" : finishing ? "正在转文字…" : hint}
+                </p>
                 {blocked && blockedAction ? (
                   <button
                     type="button"
@@ -534,7 +536,7 @@ export function Composer({
                     {blockedAction.label}
                   </button>
                 ) : null}
-              </p>
+              </>
             ) : (
               <span className="composer-hint" id="vm-status" title={hint} aria-label={hint}>
                 <IconInfo size={14} />

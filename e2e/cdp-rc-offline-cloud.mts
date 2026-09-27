@@ -9,8 +9,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const ARTIFACT_DIR = "/opt/cursor/artifacts";
-const API = "http://127.0.0.1:8080";
-const WEB = "http://127.0.0.1:5173";
+const API = process.env.NEO_E2E_API ?? "http://127.0.0.1:8080";
+const WEB = process.env.NEO_E2E_WEB ?? "http://127.0.0.1:5173";
 
 function initRepo(): string {
   const dir = mkdtempSync(path.join(tmpdir(), "neo-rc-cdp-"));
