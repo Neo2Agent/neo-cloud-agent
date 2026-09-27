@@ -19,3 +19,4 @@ packages/desk/release/
 **/.neo/llm-upstream.env
 **/.neo/scm-push.env
 infra/firecracker/.assets/
+.tmp-cdp-desk-ws/
