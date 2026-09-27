@@ -48,6 +48,12 @@ test("last target remembers desk folder", () => {
   assert.deepEqual(readLastTarget(storage), { kind: "desk", folder: "/tmp/repo", deskId: "desk_1" });
 });
 
+test("last target coerces leftover remote to cloud", () => {
+  const storage = memory();
+  storage.setItem("neo.lastTarget", JSON.stringify({ kind: "remote", folder: "/tmp/old" }));
+  assert.deepEqual(readLastTarget(storage), { kind: "cloud", folder: "/tmp/old" });
+});
+
 test("recent repos remember the latest first and drop duplicates", () => {
   const storage = memory();
   rememberRecentRepo("https://github.com/acme/a.git", storage);

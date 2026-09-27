@@ -265,8 +265,7 @@ function findBound(selector: { workspaceId?: string | null; folder?: string }): 
  */
 function currentTarget(): DeskTarget {
   const saved = readJson<DeskTarget>(stateFile(TARGET_STATE_FILE), { kind: "cloud" });
-  const kind: DeskTarget["kind"] =
-    saved.kind === "desk" || saved.kind === "remote" ? saved.kind : "cloud";
+  const kind: DeskTarget["kind"] = saved.kind === "desk" ? "desk" : "cloud";
   return { ...saved, kind, deskId: saved.deskId || deskId || undefined };
 }
 

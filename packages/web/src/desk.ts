@@ -109,3 +109,14 @@ export function notifyDesk(title: string, body: string): void {
     void notify(title, body);
   }
 }
+
+/** Retired SSH `remote` is not a composer target anymore. */
+export function normalizeDeskTarget(target: DeskTarget | null | undefined): DeskTarget {
+  if (!target) {
+    return { kind: "cloud" };
+  }
+  if (target.kind === "desk") {
+    return target;
+  }
+  return { ...target, kind: "cloud" };
+}

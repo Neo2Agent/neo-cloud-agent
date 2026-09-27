@@ -19,4 +19,7 @@ test("Desk Electron wraps packages/web instead of the leftover desk/ui Vite", ()
   assert.match(docs, /Electron 套 Web/);
   assert.match(preload, /onDeepLink:/);
   assert.match(preload, /notify:/);
+  const host = readFileSync(path.join(here, "../app/host.ts"), "utf8");
+  assert.match(host, /saved\.kind === "desk" \? "desk" : "cloud"/);
+  assert.doesNotMatch(host, /saved\.kind === "desk" \|\| saved\.kind === "remote"/);
 });

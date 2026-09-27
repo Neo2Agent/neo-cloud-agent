@@ -1,4 +1,4 @@
-import type { DeskTarget } from "./desk";
+import { normalizeDeskTarget, type DeskTarget } from "./desk";
 
 const LAST_RUN_KEY = "neo.lastRunId";
 const LAST_TARGET_KEY = "neo.lastTarget";
@@ -44,7 +44,7 @@ export function readLastTarget(storage: Pick<Storage, "getItem"> = localStorage)
     if (kind !== "cloud" && kind !== "desk" && kind !== "remote") {
       return null;
     }
-    return parsed as DeskTarget;
+    return normalizeDeskTarget(parsed as DeskTarget);
   } catch {
     return null;
   }

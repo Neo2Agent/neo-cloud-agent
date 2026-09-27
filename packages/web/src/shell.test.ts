@@ -28,3 +28,9 @@ test("Web mounts in Electron without calling missing preload methods", () => {
   assert.doesNotMatch(app, /desk-badge/);
   assert.match(app, /showTarget=\{Boolean\(deskBridge\(\)\?\.canRunLocal\)\}/);
 });
+
+test("composer target picker no longer lists retired P3 remote", () => {
+  const picker = readFileSync(path.join(here, "components/TargetPicker.tsx"), "utf8");
+  assert.doesNotMatch(picker, /远程机/);
+  assert.doesNotMatch(picker, /value: "remote"/);
+});

@@ -18,6 +18,7 @@ import {
   asWorkspaceRef,
   deskBridge,
   isDeskApp,
+  normalizeDeskTarget,
   notifyDesk,
   subscribeDeskDeepLink,
   subscribeDeskDispatched,
@@ -1335,10 +1336,11 @@ export function App() {
   );
 
   const applyTarget = useCallback((next: DeskTarget) => {
-    setDeskTarget(next);
-    if (next.folder) setDeskFolder(next.folder);
-    writeLastTarget(next);
-    void deskBridge()?.setTarget(next);
+    const normalized = normalizeDeskTarget(next);
+    setDeskTarget(normalized);
+    if (normalized.folder) setDeskFolder(normalized.folder);
+    writeLastTarget(normalized);
+    void deskBridge()?.setTarget(normalized);
   }, []);
 
   useEffect(() => {
@@ -1358,12 +1360,14 @@ export function App() {
       }
     })();
     void (async () => {
-      const remembered = (await deskBridge()?.getTarget().catch(() => undefined)) ?? readLastTarget();
+      const remembered = normalizeDeskTarget(
+        (await deskBridge()?.getTarget().catch(() => undefined)) ?? readLastTarget() ?? undefined,
+      );
       if (cancelled) return;
-      if (remembered) {
-        setDeskTarget(remembered);
-        if (remembered.folder) setDeskFolder(remembered.folder);
-      }
+      setDeskTarget(remembered);
+      if (remembered.folder) setDeskFolder(remembered.folder);
+      writeLastTarget(remembered);
+      void deskBridge()?.setTarget(remembered);
       const session = (await hydrateDeskToken()) || saved;
       if (cancelled) return;
       persistToken(session);
@@ -1611,8 +1615,9 @@ export function App() {
       void openRun(id);
     });
     const offTarget = subscribeDeskTarget((saved) => {
-      setDeskTarget(saved);
-      if (saved.folder) setDeskFolder(saved.folder);
+      const next = normalizeDeskTarget(saved);
+      setDeskTarget(next);
+      if (next.folder) setDeskFolder(next.folder);
     });
     return () => {
       offLink();

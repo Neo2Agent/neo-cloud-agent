@@ -79,7 +79,6 @@ export function TargetPicker({
             label: canGoLocal ? "本机" : "本机（先在 Desk 里绑定文件夹）",
             disabled: !canGoLocal,
           },
-          { value: "remote", label: "远程机（P3）", disabled: true },
         ]}
       />
       {local && insideDesk ? (

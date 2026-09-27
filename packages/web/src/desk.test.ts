@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   asWorkspaceRef,
+  normalizeDeskTarget,
   notifyDesk,
   subscribeDeskDeepLink,
   subscribeDeskDispatched,
@@ -40,6 +41,18 @@ test("asWorkspaceRef accepts a path or the host folder object", () => {
     git: true,
   });
   assert.equal(asWorkspaceRef({ id: "ws_1" }), null);
+});
+
+test("normalizeDeskTarget drops the retired SSH remote kind", () => {
+  assert.deepEqual(normalizeDeskTarget(undefined), { kind: "cloud" });
+  assert.deepEqual(normalizeDeskTarget({ kind: "remote", folder: "/tmp/old" }), {
+    kind: "cloud",
+    folder: "/tmp/old",
+  });
+  assert.deepEqual(normalizeDeskTarget({ kind: "desk", folder: "/tmp/repo" }), {
+    kind: "desk",
+    folder: "/tmp/repo",
+  });
 });
 
 test("missing preload methods do not throw when Web mounts in Electron", () => {
