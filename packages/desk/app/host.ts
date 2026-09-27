@@ -470,9 +470,12 @@ function reportRunStatus(payload: {
  *
  * Already-bound folders skip the dialogs: the earlier pick was the grant.
  */
-async function confirmFolder(folder: string): Promise<string | null> {
+async function confirmFolder(folder: string, options?: { prompt?: boolean }): Promise<string | null> {
   const authorized = resolveAuthorizedFolder(folder);
   if (!authorized.ok) {
+    if (options?.prompt === false) {
+      return null;
+    }
     await dialog.showMessageBox({
       type: "error",
       buttons: ["好"],
@@ -498,6 +501,9 @@ async function confirmFolder(folder: string): Promise<string | null> {
     if (extra.response !== 0) {
       return null;
     }
+  } else if (options?.prompt === false) {
+    // Programmatic bind (CDP / known path): the caller already named the folder.
+    return authorized.path;
   }
   const result = await dialog.showMessageBox({
     type: "warning",
@@ -543,9 +549,9 @@ async function authorizeAndBindFolder(folder: string): Promise<{
   if (typeof folder !== "string" || !folder.trim()) {
     return { id: "", folder: "", name: "", git: false, error: "需要文件夹路径" };
   }
-  const authorized = await confirmFolder(folder);
+  const authorized = await confirmFolder(folder, { prompt: false });
   if (!authorized) {
-    return null;
+    return { id: "", folder: "", name: "", git: false, error: "未授权该文件夹" };
   }
   const bound = await bindWorkspace(authorized);
   const target = { kind: "desk" as const, folder: bound.folder, deskId, workspaceId: bound.id };
