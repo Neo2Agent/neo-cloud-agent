@@ -176,40 +176,14 @@ export function SidePanel({
       </header>
       {page === "home" ? (
         <div className="wb-home">
-          <IslandCard
-            hoverable
-            className="wb-tile"
-            role="button"
-            tabIndex={0}
-            aria-label="打开 Terminal"
-            onClick={openTerminal}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openTerminal();
-              }
-            }}
-          >
+          <button type="button" className="wb-tile" aria-label="打开 Terminal" onClick={openTerminal}>
             <IconTerminal size={22} />
             <span>Terminal</span>
-          </IslandCard>
-          <IslandCard
-            hoverable
-            className="wb-tile"
-            role="button"
-            tabIndex={0}
-            aria-label="打开 Files"
-            onClick={openFiles}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openFiles();
-              }
-            }}
-          >
+          </button>
+          <button type="button" className="wb-tile" aria-label="打开 Files" onClick={openFiles}>
             <IconFile size={22} />
             <span>File</span>
-          </IslandCard>
+          </button>
           {gitContext !== "none" && runId ? (
             <IslandCard
               hoverable

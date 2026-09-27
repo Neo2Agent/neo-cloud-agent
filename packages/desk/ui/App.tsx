@@ -61,6 +61,7 @@ import { groupRailSessions } from "../src/rail";
 import {
   hashForMemories,
   hashForProject,
+  hashForRun,
   hashForSkills,
   inviteTokenFromDeepLink,
   inviteTokenFromHash,
@@ -644,6 +645,10 @@ export function App() {
       runIdRef.current = id;
       setRunId(id);
       setNav("chats");
+      const nextHash = hashForRun(id);
+      if (location.hash !== nextHash) {
+        history.replaceState(null, "", nextHash);
+      }
       if (opts?.record !== false) {
         setTrail((cur) => {
           const clipped = cur.ids.slice(0, cur.at + 1);

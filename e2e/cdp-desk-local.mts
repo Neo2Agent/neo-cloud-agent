@@ -177,6 +177,21 @@ async function sendDeskPrompt(page: Page, text: string): Promise<void> {
   await page.locator('button[aria-label="发送"]').click();
 }
 
+async function waitDeskRunByMarker(token: string, marker: string, timeoutMs = 25_000): Promise<string> {
+  return waitFor(
+    `desk run ${marker}`,
+    async () => {
+      const res = await api("/v1/runs?client=desk", { token });
+      if (res.status !== 200) throw new Error(`${res.status}`);
+      const payload = asRecord(res.json);
+      const items = Array.isArray(payload.runs) ? payload.runs : [];
+      const hit = (items as Array<Record<string, unknown>>).find((item) => String(item.prompt || "").includes(marker));
+      return hit ? String(hit.id) : null;
+    },
+    timeoutMs,
+  );
+}
+
 async function shot(page: Page, name: string): Promise<void> {
   mkdirSync(ART, { recursive: true });
   await page.screenshot({ path: `${ART}/${name}.png`, fullPage: false });
@@ -266,11 +281,14 @@ async function main(): Promise<void> {
       await selectDeskTarget(desk, "desk");
       const marker = `TC${Date.now().toString().slice(-6)}`;
       await sendDeskPrompt(desk, `${marker} 只回复一个词：pong。不要调用工具。`);
-      const id = await waitFor("this-computer run id", async () => {
-        const hash = new URL(desk.url()).hash;
-        return hash.match(/#\/runs\/([0-9a-f-]{8,})/i)?.[1] ?? null;
-      }, 25_000);
+      const id = await waitDeskRunByMarker(token, marker);
       thisComputerId = id;
+      await waitFor("desk hash or transcript", async () => {
+        const hash = new URL(desk.url()).hash;
+        if (hash.includes(id)) return "hash";
+        const body = await desk.locator("body").innerText();
+        return body.includes(marker) ? "body" : null;
+      }, 20_000);
       const run = await waitFor("this-computer target", async () => {
         const res = await api(`/v1/runs/${id}?client=desk`, { token });
         if (res.status !== 200) throw new Error(`${res.status} ${res.text}`);
@@ -296,9 +314,10 @@ async function main(): Promise<void> {
 
     await check("desk.files.tree", "desk-local", async () => {
       await desk.getByRole("button", { name: "打开右侧栏" }).click().catch(() => undefined);
-      await desk.getByRole("button", { name: "打开 Files" }).click({ timeout: 8_000 });
+      const filesBtn = desk.getByRole("button", { name: "打开 Files" }).or(desk.getByText("File", { exact: true }));
+      await filesBtn.first().click({ timeout: 8_000 });
       const seen = await waitFor("readme in files", async () => {
-        const body = await desk.locator(".side-panel, .wb-files, body").first().innerText();
+        const body = await desk.locator("body").innerText();
         return /README\.md/.test(body) ? "README.md" : null;
       }, 12_000);
       await shot(desk, "cdp-desk-local-files");
@@ -307,9 +326,8 @@ async function main(): Promise<void> {
 
     await check("desk.terminal.echo", "desk-local", async () => {
       await desk.getByRole("button", { name: "打开右侧栏" }).click().catch(() => undefined);
-      await desk.getByRole("button", { name: "打开 Terminal" }).click({ timeout: 8_000 }).catch(async () => {
-        await desk.getByText("Terminal", { exact: true }).first().click();
-      });
+      const termBtn = desk.getByRole("button", { name: "打开 Terminal" }).or(desk.getByText("Terminal", { exact: true }));
+      await termBtn.first().click({ timeout: 8_000 });
       await desk.getByRole("button", { name: "新终端" }).click().catch(() => undefined);
       const input = desk.locator('[aria-label="终端输入"], textarea, .wb-term input').first();
       await input.waitFor({ timeout: 8_000 });
@@ -356,11 +374,14 @@ async function main(): Promise<void> {
         await selectDeskTarget(desk, "remote");
         const marker = `RC${Date.now().toString().slice(-6)}`;
         await sendDeskPrompt(desk, `${marker} 只回复一个词：pong。不要调用工具。`);
-        const id = await waitFor("remote run id", async () => {
-          const hash = new URL(desk.url()).hash;
-          return hash.match(/#\/runs\/([0-9a-f-]{8,})/i)?.[1] ?? null;
-        }, 30_000);
+        const id = await waitDeskRunByMarker(token, marker, 30_000);
         remoteId = id;
+        await waitFor("remote on desk", async () => {
+          const hash = new URL(desk.url()).hash;
+          if (hash.includes(id)) return "hash";
+          const body = await desk.locator("body").innerText();
+          return body.includes(marker) ? "body" : null;
+        }, 20_000);
         const target = await waitFor("remote target", async () => {
           const res = await api(`/v1/runs/${id}`, { token });
           if (res.status !== 200) throw new Error(`${res.status}`);
