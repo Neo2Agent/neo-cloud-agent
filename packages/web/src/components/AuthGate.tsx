@@ -44,15 +44,14 @@ export function AuthGate({
   const narrow = isNarrowViewport();
   const effectiveMode = narrow && mode === "token" ? "login" : mode;
   const registering = effectiveMode === "register";
-  const title =
-    effectiveMode === "token" ? "服务令牌" : registering ? "注册 Neo" : isDeskApp() ? "登录 Desk" : "登录 Neo";
+  const title = effectiveMode === "token" ? "服务令牌" : registering ? "注册 Neo" : "登录 Neo";
   const copy =
     effectiveMode === "token"
       ? "控制面开启了服务令牌。多个设备用同一条 CONTROL_PLANE_TOKEN 即可订阅流。"
       : registering
         ? "用手机号注册，无需验证码。提交后等管理员审核，通过后才能登录；起步额度 ¥5。"
         : isDeskApp()
-          ? "Desk 与 Web 共用账号。登录后可以选本机执行。"
+          ? "用户名或手机号加密码，进入云端 Agent。Desk 还可以选本机执行。"
           : "用户名或手机号加密码，进入云端 Agent。";
   const canSubmit =
     effectiveMode === "token"

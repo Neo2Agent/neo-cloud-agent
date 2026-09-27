@@ -863,16 +863,6 @@ button.account-slot:hover {
   grid-row: 2;
 }
 
-.desk-badge {
-  border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 650;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--muted);
-}
-
 .main {
   display: flex;
   flex-direction: column;
@@ -984,7 +974,6 @@ h1 {
   }
 
   .inbox-bell,
-  .desk-badge,
   .top-actions > .status {
     flex: 0 0 auto;
   }
@@ -5990,8 +5979,7 @@ button.composer-mic.is-listening,
     padding: 2px 0 2px 8px;
   }
 
-  .status,
-  .desk-badge {
+  .status {
     display: none;
   }
 
@@ -7602,8 +7590,7 @@ html.is-narrow,
   grid-area: footer;
 }
 
-.app.is-buddy .topbar-heading,
-.app.is-buddy .desk-badge {
+.app.is-buddy .topbar-heading {
   display: none;
 }
 

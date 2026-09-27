@@ -1144,6 +1144,14 @@ function wireIpc(): void {
     stopRun(runId, "已在这台电脑上停止");
     return true;
   });
+  ipcMain.handle("desk:notify", (_event, title: string, body: string) => {
+    if (!title) return;
+    try {
+      new Notification({ title, body: body || "" }).show();
+    } catch {
+      /* headless / no notification backend */
+    }
+  });
   ipcMain.handle("desk:openPath", async (_event, filePath: string) => {
     if (filePath.startsWith("http")) {
       await shell.openExternal(filePath);
@@ -1240,12 +1248,12 @@ app.whenReady().then(async () => {
 /**
  * A `neo://` link opens the run or invite it names.
  *
- * The renderer routes on the hash, so loading the URL is the whole handoff.
- * There used to be a `desk:deep-link` event alongside it that nothing ever
- * subscribed to.
+ * The Web renderer also listens on `desk:deep-link` so an already-mounted
+ * window can switch runs without waiting on the hash navigation.
  */
 app.on("open-url", (_event, url) => {
   if (!mainWindow) return;
+  toRenderer("desk:deep-link", url);
   const runId = runIdFromDeepLink(url);
   const inviteToken = inviteTokenFromDeepLink(url);
   const hash = runId ? hashForRun(runId) : inviteToken ? hashForInvite(inviteToken) : "";

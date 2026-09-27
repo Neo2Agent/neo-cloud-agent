@@ -38,10 +38,12 @@ contextBridge.exposeInMainWorld("neoDesk", {
   termOpen: (folder) => ipcRenderer.invoke("desk:termOpen", folder),
   termWrite: (id, data) => ipcRenderer.invoke("desk:termWrite", { id, data }),
   termClose: (id) => ipcRenderer.invoke("desk:termClose", id),
+  notify: (title, body) => ipcRenderer.invoke("desk:notify", title, body),
   onRunStatus: (cb) => on("desk:run-status", cb),
   onDispatched: (cb) => on("desk:dispatched", cb),
   onTarget: (cb) => on("desk:target", cb),
   onInboxState: (cb) => on("desk:inbox-state", cb),
   onTermData: (cb) => on("desk:term-data", cb),
   onTermExit: (cb) => on("desk:term-exit", cb),
+  onDeepLink: (cb) => on("desk:deep-link", cb),
 });

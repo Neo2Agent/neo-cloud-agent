@@ -14,7 +14,17 @@ import { runGitContext } from "@neo-cloud-agent/contracts/git";
 import { isDeskHostedTarget, type Desk, type DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
-import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
+import {
+  asWorkspaceRef,
+  deskBridge,
+  isDeskApp,
+  notifyDesk,
+  subscribeDeskDeepLink,
+  subscribeDeskDispatched,
+  subscribeDeskTarget,
+  withApiBase,
+  type DeskTarget,
+} from "./desk";
 import { remoteControlSendLock } from "./desk-live";
 import { readPinnedRuns, togglePinnedRun } from "./pins";
 import { readLastRunId, readLastTarget, readRecentRepos, rememberRecentRepo, resolveStartupRunId, writeLastRunId, writeLastTarget } from "./prefs";
@@ -482,10 +492,10 @@ export function App() {
             setStopping(false);
             setSending(false);
             if (event.kind === "run.idle" || event.kind === "agent.end") {
-              void deskBridge()?.notify("对话已完成", preview(currentRun?.prompt ?? "Neo"));
+              notifyDesk("对话已完成", preview(currentRun?.prompt ?? "Neo"));
             }
             if (event.kind === "run.error" || event.kind === "scm.clone_failed" || event.kind === "run.install_failed") {
-              void deskBridge()?.notify("对话出错", event.title || "Run error");
+              notifyDesk("对话出错", event.title || "Run error");
             }
           }
           if (event.kind === "scm.pr_opened" && event.data?.url) {
@@ -1593,10 +1603,22 @@ export function App() {
   }, [openRun, resetComposer, runId, runs, stopTurn]);
 
   useEffect(() => {
-    return deskBridge()?.onDeepLink((url) => {
+    const offLink = subscribeDeskDeepLink((url) => {
       const match = /runs\/([^/?#]+)/.exec(url);
       if (match?.[1]) void openRun(match[1]);
     });
+    const offDispatch = subscribeDeskDispatched(({ runId: id }) => {
+      void openRun(id);
+    });
+    const offTarget = subscribeDeskTarget((saved) => {
+      setDeskTarget(saved);
+      if (saved.folder) setDeskFolder(saved.folder);
+    });
+    return () => {
+      offLink();
+      offDispatch();
+      offTarget();
+    };
   }, [openRun]);
 
   useEffect(() => {
@@ -2410,11 +2432,6 @@ export function App() {
               {mainTab === "chat" && currentRun?.projectId ? (
                 <RunInvite token={token} run={currentRun} userId={userId} />
               ) : null}
-              {isDeskApp() ? (
-                <span className="desk-badge" title="Desk 预览，本机执行可用">
-                  Desk
-                </span>
-              ) : null}
               <div className="status-menu">
                 {narrow && mainTab === "chat" && (busy || currentRun) ? (
                   <span id="status" className={busy ? "buddy-status-pill is-busy" : "buddy-status-pill"} tabIndex={0} data-state={statusView.state} data-busy={busy ? "true" : "false"}>
@@ -2732,11 +2749,18 @@ export function App() {
               onCapsule={applyCapsule}
               onTarget={applyTarget}
               onPickFolder={() => {
-                void deskBridge()?.pickFolder().then((folder) => {
-                  if (folder) {
-                    applyTarget({ ...deskTarget, kind: "desk", folder });
-                  }
-                });
+                void deskBridge()
+                  ?.pickFolder()
+                  .then((picked) => {
+                    const ref = asWorkspaceRef(picked);
+                    if (!ref) return;
+                    applyTarget({
+                      ...deskTarget,
+                      kind: "desk",
+                      folder: ref.folder,
+                      workspaceId: ref.id || deskTarget.workspaceId,
+                    });
+                  });
               }}
               onExpert={(value) => setExpertPick(decodeExpertPick(value))}
               models={llm.models?.length ? llm.models : CHAT_MODELS}

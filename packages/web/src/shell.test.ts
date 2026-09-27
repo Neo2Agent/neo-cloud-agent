@@ -17,3 +17,13 @@ test("Web vite can serve the phone shell on another port", () => {
   assert.match(mobile, /shell: "mobile"/);
   assert.match(mobile, /DEFAULT_MOBILE_UI_PORT/);
 });
+
+test("Web mounts in Electron without calling missing preload methods", () => {
+  const app = readFileSync(path.join(here, "App.tsx"), "utf8");
+  assert.match(app, /subscribeDeskDeepLink/);
+  assert.match(app, /notifyDesk\(/);
+  assert.match(app, /asWorkspaceRef/);
+  assert.doesNotMatch(app, /deskBridge\(\)\?\.onDeepLink\(/);
+  assert.doesNotMatch(app, /deskBridge\(\)\?\.notify\(/);
+  assert.doesNotMatch(app, /desk-badge/);
+});
