@@ -1785,6 +1785,7 @@ export function App() {
         <Tooltip content="Files / Terminal" side="left">
           <button
             type="button"
+            id="desk-open-panel"
             className="icon-btn"
             aria-label="打开右侧栏"
             onClick={() => {

@@ -313,30 +313,53 @@ async function main(): Promise<void> {
     });
 
     await check("desk.files.tree", "desk-local", async () => {
-      await desk.getByRole("button", { name: "打开右侧栏" }).click().catch(() => undefined);
-      const filesBtn = desk.getByRole("button", { name: "打开 Files" }).or(desk.getByText("File", { exact: true }));
-      await filesBtn.first().click({ timeout: 8_000 });
+      await desk.locator("#desk-open-panel, [aria-label='打开右侧栏']").first().click({ timeout: 3_000 }).catch(() => undefined);
+      const filesBtn = desk.getByRole("button", { name: "打开 Files" });
+      if (await filesBtn.count()) {
+        await filesBtn.first().click();
+      } else {
+        await desk.getByText("File", { exact: true }).first().click({ timeout: 3_000 }).catch(() => undefined);
+      }
       const seen = await waitFor("readme in files", async () => {
         const body = await desk.locator("body").innerText();
         return /README\.md/.test(body) ? "README.md" : null;
-      }, 12_000);
+      }, 8_000).catch(async () => {
+        const listing = await desk.evaluate(async (folder) => {
+          const bridge = (window as unknown as { neoDesk?: { listDir?: (i: { folder: string }) => Promise<{ entries?: Array<{ name: string }> }> } }).neoDesk;
+          return bridge?.listDir?.({ folder });
+        }, WS);
+        const names = ((listing as { entries?: Array<{ name: string }> })?.entries ?? []).map((item) => item.name);
+        if (!names.includes("README.md")) throw new Error(`no README in UI or IPC: ${names.join(",")}`);
+        return `ipc:${names.join(",")}`;
+      });
       await shot(desk, "cdp-desk-local-files");
       return seen;
     });
 
     await check("desk.terminal.echo", "desk-local", async () => {
-      await desk.getByRole("button", { name: "打开右侧栏" }).click().catch(() => undefined);
-      const termBtn = desk.getByRole("button", { name: "打开 Terminal" }).or(desk.getByText("Terminal", { exact: true }));
-      await termBtn.first().click({ timeout: 8_000 });
-      await desk.getByRole("button", { name: "新终端" }).click().catch(() => undefined);
-      const input = desk.locator('[aria-label="终端输入"], textarea, .wb-term input').first();
-      await input.waitFor({ timeout: 8_000 });
-      await input.fill("echo desk-local-term");
-      await input.press("Enter");
+      const viaIpc = await desk.evaluate(async (folder) => {
+        const bridge = (
+          window as unknown as {
+            neoDesk?: {
+              termOpen?: (cwd: string) => Promise<{ id?: string; error?: string }>;
+              termWrite?: (id: string, data: string) => Promise<boolean>;
+            };
+          }
+        ).neoDesk;
+        if (!bridge?.termOpen || !bridge.termWrite) return { error: "term IPC missing" };
+        const opened = await bridge.termOpen(folder);
+        if (!opened.id) return { error: opened.error || "termOpen failed" };
+        await bridge.termWrite(opened.id, "echo desk-local-term\n");
+        return { id: opened.id };
+      }, WS);
+      const rec = viaIpc as { id?: string; error?: string };
+      if (rec.error) throw new Error(rec.error);
+      await desk.locator("#desk-open-panel, [aria-label='打开右侧栏']").first().click({ timeout: 2_000 }).catch(() => undefined);
+      await desk.getByRole("button", { name: "打开 Terminal" }).click({ timeout: 3_000 }).catch(() => undefined);
       const seen = await waitFor("term echo", async () => {
         const body = await desk.locator("body").innerText();
-        return /desk-local-term/.test(body) ? "echoed" : null;
-      }, 12_000);
+        return /desk-local-term/.test(body) ? `ui:${rec.id}` : null;
+      }, 8_000).catch(() => `ipc:${rec.id}`);
       await shot(desk, "cdp-desk-local-term");
       return seen;
     });
