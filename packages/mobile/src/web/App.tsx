@@ -53,12 +53,6 @@ import {
 } from "../turn";
 import { attachRunStream } from "../transcript-live";
 import { applyRunSideEvent } from "../run-events";
-import {
-  baselineContextUsage,
-  overlayContextUsage,
-  parseContextUsage,
-  resolveModelLimits,
-} from "@neo-cloud-agent/contracts/context-usage";
 import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/artifact";
 import { AutomationsPage } from "./AutomationsPage";
 import { startAppVoice } from "../start-voice";
@@ -568,22 +562,6 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
   const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
   const liveId = liveAssistantId(visible, turnBusy);
-  const contextUsage = useMemo(() => {
-    const reported = parseContextUsage(current?.contextUsage ?? null);
-    const base = reported ?? baselineContextUsage(model);
-    const catalogWindow = resolveModelLimits(base.model || model)?.contextWindow ?? null;
-    const contextWindow = base.contextWindow ?? catalogWindow;
-    const streaming = visible.find((message) => message.streaming)?.text ?? "";
-    return overlayContextUsage(
-      {
-        ...base,
-        model: base.model || model,
-        contextWindow,
-        percent: contextWindow ? (base.tokens / contextWindow) * 100 : null,
-      },
-      { draft: prompt, streaming },
-    );
-  }, [current?.contextUsage, model, prompt, visible]);
   const openGitContext = current ? runGitContext(current) : "none";
 
   if (!ready) return <div className="login-shell"><p>正在进入…</p></div>;
@@ -917,7 +895,6 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       onQueue={current ? () => void send("follow_up") : undefined}
       onSteer={current ? () => void send("steer") : undefined}
       onStop={current ? () => void client.abort(current.id) : undefined}
-      contextUsage={contextUsage}
       repo={current?.repoUrls?.[0] || cloudRepo}
       branch={current ? runCloneBranch(current) ?? undefined : undefined}
       repos={githubRepos}

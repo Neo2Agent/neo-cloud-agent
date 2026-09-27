@@ -5055,7 +5055,8 @@ a.git-check-name:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  justify-content: space-between;
+  align-content: flex-start;
+  justify-content: flex-start;
   gap: 12px 16px;
   width: min(768px, calc(100% - 32px));
   margin: 0 auto 10px;
@@ -5064,12 +5065,15 @@ a.git-check-name:hover {
   border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  flex-shrink: 0;
+  height: auto;
+  min-height: 0;
+  flex: 0 0 auto;
 }
 
 .remote-offline-copy {
   min-width: 0;
-  flex: 1 1 220px;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .remote-offline-card h2 {
@@ -6115,12 +6119,19 @@ button.composer-mic.is-listening,
     max-width: none;
     margin: 0 8px 8px;
     flex-direction: column;
+    flex-wrap: nowrap;
     justify-content: flex-start;
     align-items: stretch;
+    align-content: flex-start;
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
   }
 
   .remote-offline-copy {
-    flex: none;
+    flex: 0 0 auto;
+    min-height: 0;
+    height: auto;
   }
 
   .remote-offline-actions {
@@ -7737,12 +7748,20 @@ html.is-narrow,
 }
 
 .app.is-buddy .remote-offline-card {
+  flex-direction: column;
+  flex-wrap: nowrap;
   justify-content: flex-start;
   align-items: stretch;
+  align-content: flex-start;
+  height: auto;
+  min-height: 0;
+  flex: 0 0 auto;
 }
 
 .app.is-buddy .remote-offline-copy {
-  flex: none;
+  flex: 0 0 auto;
+  min-height: 0;
+  height: auto;
 }
 
 .app.is-buddy .composer.buddy-composer {

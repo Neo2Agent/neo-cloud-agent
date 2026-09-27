@@ -1,4 +1,5 @@
 @import "@neo-cloud-agent/ui/tokens.css";
+@import "@neo-cloud-agent/ui/styles.css";
 @import "@neo-cloud-agent/ui/buddy.css";
 @import "@neo-cloud-agent/ui/git-panel.css";
 @import "@neo-cloud-agent/ui/context-usage.css";
@@ -220,7 +221,10 @@ button:disabled { opacity: 0.4; cursor: default; }
 .remote-offline-card {
   display: flex;
   flex-direction: column;
+  flex-wrap: nowrap;
   justify-content: flex-start;
+  align-items: stretch;
+  align-content: flex-start;
   gap: 10px;
   width: auto;
   margin: 0 12px 8px;
@@ -229,13 +233,16 @@ button:disabled { opacity: 0.4; cursor: default; }
   border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  flex: none;
-  flex-shrink: 0;
+  height: auto;
+  min-height: 0;
+  flex: 0 0 auto;
 }
 
 .remote-offline-copy {
   min-width: 0;
-  flex: none;
+  min-height: 0;
+  height: auto;
+  flex: 0 0 auto;
 }
 
 .remote-offline-card h2,
@@ -302,7 +309,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 
 .composer-repo select,
-.composer-repo-lock {
+.composer-repo-lock,
+.repo-bind-lock {
   border: 0;
   background: transparent;
   color: var(--text);
@@ -310,12 +318,28 @@ button:disabled { opacity: 0.4; cursor: default; }
   font-size: 13px;
 }
 
-.composer-repo-lock {
-  max-width: 16ch;
+.composer-repo-lock,
+.repo-bind-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  max-width: min(36ch, 42vw);
+  padding: 0 8px;
+  overflow: hidden;
+  color: var(--muted);
+}
+
+.repo-bind-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--muted);
+}
+
+.repo-bind-row-icon {
+  display: inline-flex;
+  flex: none;
 }
 
 .sr-only {
@@ -425,24 +449,60 @@ button:disabled { opacity: 0.4; cursor: default; }
   white-space: nowrap;
 }
 
-.app.is-buddy .composer-model {
-  max-width: 10ch;
+.app.is-buddy .composer-model,
+.app.is-buddy .buddy-composer-bar .neo-select-pill {
+  max-width: 12ch;
+  min-height: 28px;
+  padding: 0 6px 0 8px;
+  border-color: transparent;
+  background: var(--hover);
+  box-shadow: none;
   font-weight: 650;
-  padding: 4px 8px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-.app.is-buddy .composer-pickers {
+.app.is-buddy .composer-pickers,
+.app.is-buddy .buddy-composer-bar-start {
   gap: 2px;
   overflow: hidden;
 }
 
-.app.is-buddy .composer-send-group {
+.app.is-buddy .composer-send-group,
+.app.is-buddy .buddy-composer-bar-end {
   gap: 4px;
   flex: none;
 }
 
-.app.is-buddy .context-usage-chip {
+.app.is-buddy .context-usage-chip,
+.app.is-buddy .composer-context {
   display: none;
+}
+
+.app.is-buddy .buddy-composer button.send,
+.app.is-buddy .buddy-composer button.stop,
+.app.is-buddy .composer-send {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.app.is-buddy .buddy-composer button.send:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  opacity: 1;
+}
+
+.app.is-buddy .buddy-composer button.stop {
+  background: var(--err, #b3261e);
 }
 
 .composer-model-menu {

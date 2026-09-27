@@ -228,6 +228,18 @@ export function Composer(props: Props) {
                 <PhotoIcon color={props.locked || props.sending ? colors.muted : colors.ink} />
               </Pressable>
             ) : null}
+            {!props.locked ? (
+              <Pressable
+                disabled={props.sending}
+                onPressIn={() => void beginHold()}
+                onPressOut={() => void endHold()}
+                style={[styles.mic, listening ? styles.micOn : null]}
+                accessibilityLabel={listening ? "松手出字" : "按住说话"}
+              >
+                <MicIcon color={listening ? colors.cream : props.sending ? colors.muted : colors.ink} />
+              </Pressable>
+            ) : null}
+            {props.branch ? <Text style={styles.branchLock} numberOfLines={1}>{props.branch}</Text> : null}
             <View style={styles.modelWrap}>
               {menuOpen ? (
                 <View style={styles.modelMenu} accessibilityRole="menu">
@@ -250,20 +262,8 @@ export function Composer(props: Props) {
                 <Text style={styles.model}>{chatModelShort(props.model)} ▴</Text>
               </Pressable>
             </View>
-            {props.branch ? <Text style={styles.branchLock} numberOfLines={1}>{props.branch}</Text> : null}
           </View>
           <View style={styles.sendGroup}>
-            {!props.locked ? (
-            <Pressable
-              disabled={props.sending}
-              onPressIn={() => void beginHold()}
-              onPressOut={() => void endHold()}
-              style={[styles.mic, listening ? styles.micOn : null]}
-              accessibilityLabel={listening ? "松手出字" : "按住说话"}
-            >
-              <MicIcon color={listening ? colors.cream : props.locked || props.sending ? colors.muted : colors.ink} />
-            </Pressable>
-            ) : null}
             {props.canStop && props.onQueue && canSend && !props.locked ? (
               <Pressable onPress={props.onQueue} style={styles.send} accessibilityLabel="排队发送">
                 <SendIcon color={colors.cream} />
