@@ -3582,8 +3582,16 @@ img.avatar {
   width: 120px;
   height: 120px;
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  color: inherit;
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
 }
 
 .wb-tile:hover {
