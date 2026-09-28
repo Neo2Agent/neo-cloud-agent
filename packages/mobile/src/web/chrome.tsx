@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { inspectorTabs, type InspectorTab } from "@neo-cloud-agent/ui";
+import { inspectorTabs, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";

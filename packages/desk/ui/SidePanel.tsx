@@ -14,7 +14,7 @@ import {
   subscribeWorkspaceTerm,
   writeWorkspaceTerm,
 } from "./workspace-term";
-import { inspectorTabs, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui";
+import { inspectorTabs, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { FileGlyph } from "./FileGlyph";
 import { GitPanel } from "./GitPanel";
 import { IconClose, IconExpand, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";

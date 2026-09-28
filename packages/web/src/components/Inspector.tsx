@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { inspectorTabs, type InspectorTab } from "@neo-cloud-agent/ui";
+import { inspectorTabs, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { IconExpand, IconPanelRight } from "../icons";
 import { PANE_MIN } from "../pane-size";
 import { ResizeHandle } from "./ResizeHandle";

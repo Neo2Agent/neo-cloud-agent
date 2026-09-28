@@ -4,7 +4,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { inspectorTabs, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui";
+import { inspectorTabs, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { artifactKindLabel, prettyBytes } from "@neo-cloud-agent/contracts/artifact";
 import {
   MEMORY_SEARCH_DEBOUNCE_MS,

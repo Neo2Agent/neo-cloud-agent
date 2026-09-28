@@ -34,6 +34,7 @@ test("mobile chat opens one inspector with Git / 终端 / 文件", () => {
   const chat = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "screens/ChatScreen.tsx"), "utf8");
   assert.match(web, /打开侧栏/);
   assert.match(web, /openInspector\(lastPane\)/);
+  assert.match(chrome, /@neo-cloud-agent\/ui\/inspector-tabs/);
   assert.match(chrome, /InspectorSheet/);
   assert.match(chrome, /aria-label="对话侧栏"/);
   assert.match(chrome, /产物/);

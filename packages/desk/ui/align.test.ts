@@ -8,6 +8,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const css = readFileSync(path.join(here, "styles.css"), "utf8");
 const tokens = readFileSync(path.join(here, "../../ui/src/tokens.css"), "utf8");
 
+test("desk vite does not prebundle the shared ui barrel", () => {
+  const vite = readFileSync(path.join(here, "vite.config.ts"), "utf8");
+  assert.match(vite, /exclude:\s*\[\s*"@neo-cloud-agent\/ui"\s*\]/);
+});
+
 test("desk chrome imports the shared Web monochrome tokens", () => {
   assert.match(css, /@import "@neo-cloud-agent\/ui\/tokens\.css"/);
   assert.match(css, /@import "@neo-cloud-agent\/ui\/git-panel\.css"/);
@@ -71,6 +76,7 @@ test("desk chrome copies Cursor Agents Window density, not Island candy", () => 
   assert.doesNotMatch(rail, /IslandTag/);
   assert.match(meta, /local-meta-pill/);
   assert.doesNotMatch(meta, /就绪/);
+  assert.match(panel, /@neo-cloud-agent\/ui\/inspector-tabs/);
   assert.match(panel, /inspectorTabs/);
   assert.match(panel, /aria-label="对话侧栏"/);
   assert.match(panel, /产物/);
