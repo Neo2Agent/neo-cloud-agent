@@ -312,9 +312,9 @@ function AvatarSettingRow({
             />
             更换
           </label>
-          <IslandButton type="default" htmlType="button" disabled={busy || !src} onClick={onClear}>
+          <button type="button" className="avatar-setting-pick" disabled={busy || !src} onClick={onClear}>
             恢复默认
-          </IslandButton>
+          </button>
         </div>
       </div>
     </div>
@@ -438,9 +438,9 @@ export function SettingsPage({
                 不同文件夹可以同时跑。每条都是一个独立进程，开太多会吃满内存和 CPU。
               </p>
               {onOpenMemories ? (
-                <IslandButton type="default" onClick={onOpenMemories}>
+                <button type="button" className="settings-action" onClick={onOpenMemories}>
                   打开记忆
-                </IslandButton>
+                </button>
               ) : null}
             </div>
           ) : (
@@ -459,11 +459,11 @@ export function SettingsPage({
                 <>
                   <label>
                     <span>模型名</span>
-                    <IslandInput value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
+                    <input value={name} onChange={(event) => setName(event.target.value)} placeholder="gpt-4o-mini" autoComplete="off" />
                   </label>
                   <label>
                     <span>API Key</span>
-                    <IslandInput
+                    <input
                       type="password"
                       value={apiKey}
                       onChange={(event) => setApiKey(event.target.value)}
@@ -473,7 +473,7 @@ export function SettingsPage({
                   </label>
                   <label>
                     <span>Base URL</span>
-                    <IslandInput
+                    <input
                       value={baseUrl}
                       onChange={(event) => setBaseUrl(event.target.value)}
                       placeholder={OPENAI_BASE_URL}
@@ -487,14 +487,13 @@ export function SettingsPage({
                 </>
               )}
               {error ? <p className="error">{error}</p> : null}
-              <IslandButton
-                type="primary"
-                htmlType="submit"
-                loading={busy}
+              <button
+                type="submit"
+                className="settings-action primary"
                 disabled={busy || !name.trim() || (!managed && !configured && !apiKey.trim())}
               >
                 {busy ? "保存中…" : "保存"}
-              </IslandButton>
+              </button>
             </form>
           )}
         </div>
@@ -709,7 +708,7 @@ export function ContextBar({
           onClick={() => setOpen(open === "repo" ? null : "repo")}
         >
           {local ? folder ? <IconComputer size={13} /> : <IconUnbindFolder size={13} /> : null}
-          <span>{workspaceLabel}</span>
+          <span title={local ? folder || workspaceLabel : workspaceLabel}>{workspaceLabel}</span>
           {locked ? null : <IconChevronDown size={12} />}
         </button>
         {folderPickerOpen ? (

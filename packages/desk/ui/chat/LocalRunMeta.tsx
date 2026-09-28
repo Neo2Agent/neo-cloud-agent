@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { RUN_MODE_LABELS } from "@neo-cloud-agent/contracts/run";
 import { IconCloud, IconComputer } from "../icons";
-import { IslandButton } from "../island";
 import type { LocalRunView } from "./local-run-view";
 
 function folderName(value: string): string {
@@ -22,8 +21,10 @@ export function LocalRunMeta({
   if (!view.isLocal) {
     return (
       <div className="local-meta">
-        <IconCloud size={14} />
-        <span className="local-meta-place">{RUN_MODE_LABELS.cloud}</span>
+        <span className="local-meta-pill">
+          <IconCloud size={13} />
+          <span className="local-meta-place">{RUN_MODE_LABELS.cloud}</span>
+        </span>
       </div>
     );
   }
@@ -31,16 +32,11 @@ export function LocalRunMeta({
   const folder = folderName(view.folder);
   return (
     <div className="local-meta">
-      <IconComputer size={14} />
-      <span className="local-meta-place">{placeLabel}</span>
-      {folder ? (
-        <>
-          <span className="local-meta-sep" aria-hidden>
-            ·
-          </span>
-          <span className="local-meta-folder">{folder}</span>
-        </>
-      ) : null}
+      <span className="local-meta-pill">
+        <IconComputer size={13} />
+        <span className="local-meta-place">{placeLabel}</span>
+        {folder ? <span className="local-meta-folder">{folder}</span> : null}
+      </span>
       {view.status?.state === "starting" ? <span className="local-meta-state is-warn">启动中</span> : null}
       {view.status?.state === "running" ? (
         <span className="local-meta-state is-run">{remote ? "本机工具已连接" : "运行中"}</span>
@@ -48,11 +44,10 @@ export function LocalRunMeta({
       {view.status?.state === "failed" ? (
         <span className="local-meta-state is-fail">{view.status.detail || "启动失败"}</span>
       ) : null}
-      {view.idle ? <span className="local-meta-state">就绪</span> : null}
       {view.needsRestart ? (
-        <IslandButton type="default" title="重新在这台电脑上拉起这条对话的 Agent 进程" onClick={onResume}>
+        <button type="button" className="local-meta-resume" title="重新在这台电脑上拉起这条对话的 Agent 进程" onClick={onResume}>
           在这台电脑上继续
-        </IslandButton>
+        </button>
       ) : null}
       {otherCount > 0 ? <em title="另外这些对话也在这台电脑上改文件">另有 {otherCount} 条在本机跑</em> : null}
     </div>

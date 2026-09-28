@@ -9,6 +9,9 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   root,
   plugins: [react()],
+  optimizeDeps: {
+    exclude: ["@neo-cloud-agent/ui"],
+  },
   base: "/",
   build: {
     outDir: "dist",

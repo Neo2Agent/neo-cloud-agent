@@ -5,8 +5,8 @@ export const PANEL_W_KEY = "neo-desk-panel-w";
 export const RAIL_W_MIN = 248;
 export const RAIL_W_MAX = 360;
 export const RAIL_W_DEFAULT = 248;
-export const PANEL_W_MIN = 360;
-export const PANEL_W_DEFAULT = 560;
+export const PANEL_W_MIN = 280;
+export const PANEL_W_DEFAULT = 360;
 
 export function clampWidth(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -33,7 +33,7 @@ export function writeStoredWidth(key: string, width: number): void {
 }
 
 export function panelWidthMax(vw = typeof window === "undefined" ? 1280 : window.innerWidth): number {
-  return Math.max(PANEL_W_MIN, Math.round(vw * 0.8));
+  return Math.max(PANEL_W_MIN, Math.round(vw * 0.42));
 }
 
 type SplitOpts = {

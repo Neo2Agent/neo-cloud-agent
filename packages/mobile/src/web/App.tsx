@@ -66,11 +66,11 @@ import { startAppVoice } from "../start-voice";
 import { WorkFold } from "../work-fold";
 import { GitPanel } from "./GitPanel";
 import { RunInvite } from "./RunInvite";
-import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
+import { InspectorSheet, IslandComposer, IslandDrawer, IslandHome, IslandLogin, WorkspaceFilesTabs } from "./chrome";
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
-import { IslandButton, IslandTag } from "./island";
-import { MarkdownBody } from "@neo-cloud-agent/ui";
+import { IslandTag } from "./island";
+import { MarkdownBody, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui";
 
 function hashScreen() {
   return parseMobileScreen(location.hash || location.href);
@@ -138,7 +138,9 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
   const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{ name: string; content: string }>>([]);
   // Sub-views of the open chat, so they stay local instead of taking a hash route.
-  const [panel, setPanel] = useState<"artifacts" | "diagnostics" | "git" | null>(null);
+  const [panel, setPanel] = useState<InspectorTab | null>(null);
+  const [filesView, setFilesView] = useState<FilesView>("artifacts");
+  const [lastPane, setLastPane] = useState<InspectorTab>("files");
   const [history, setHistory] = useState<TranscriptMessage[]>([]);
   const [older, setOlder] = useState<{ remaining: number; nextBefore: string | null }>({ remaining: 0, nextBefore: null });
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -473,25 +475,32 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     }
   };
 
-  const openArtifacts = () => {
-    if (!current) return;
-    setPageError("");
-    setPanel("artifacts");
+  const loadArtifacts = (runId: string) => {
     void client
-      .listArtifacts(current.id)
+      .listArtifacts(runId)
       .then((next) => setArtifacts(next.artifacts))
       .catch((error) => setPageError(error instanceof Error ? error.message : "读不到产物"));
   };
 
-  const openDiagnostics = () => {
-    if (!current) return;
-    setPageError("");
-    setPanel("diagnostics");
+  const loadDiagnostics = (runId: string) => {
     void client
-      .diagnostics(current.id)
+      .diagnostics(runId)
       .then((next) => setDiagnosticLogs(next.logs))
       .catch(() => setDiagnosticLogs([]));
   };
+
+  const openInspector = (tab: InspectorTab, view?: FilesView) => {
+    if (!current) return;
+    const next = tab === "git" && runGitContext(current) === "none" ? "files" : tab;
+    setPageError("");
+    if (view) setFilesView(view);
+    if (next === "files") loadArtifacts(current.id);
+    if (next === "terminal") loadDiagnostics(current.id);
+    setLastPane(next);
+    setPanel(next);
+  };
+
+  const openArtifacts = () => openInspector("files", "artifacts");
 
   /** A recipe only prefills the composer; the user still presses send. */
   const applyRecipe = (recipe: Recipe) => {
@@ -827,54 +836,58 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     );
   }
 
-  if (panel === "artifacts") {
+  if (panel && current) {
+    const hasGit = openGitContext !== "none";
+    const tab = panel === "git" && !hasGit ? "files" : panel;
     return (
-      <ArtifactsPage
-        items={artifacts}
-        saveHint={saveArtifactHint(current)}
-        error={pageError}
+      <InspectorSheet
+        tab={tab}
+        hasGit={hasGit}
+        onSelect={(id) => openInspector(id)}
         onBack={() => setPanel(null)}
-        onSave={async (item) => {
-          if (!current) return;
-          setPageError("");
-          try {
-            await client.saveArtifactToProject(current.id, item.name);
-          } catch (error) {
-            setPageError(error instanceof Error ? error.message : "保存失败");
-          }
-        }}
-      />
-    );
-  }
-
-  if (panel === "diagnostics") {
-    return (
-      <DiagnosticsPage
-        logs={diagnosticLogs}
-        errorMessage={current?.errorMessage ?? null}
-        onBack={() => setPanel(null)}
-      />
-    );
-  }
-
-  if (panel === "git" && current && openGitContext !== "none") {
-    return (
-      <div className="app git-sheet">
-        <header className="topbar">
-          <button className="icon-btn" type="button" onClick={() => setPanel(null)} aria-label="返回">
-            ←
-          </button>
-          <h1>Git</h1>
-        </header>
-        <GitPanel
-          token={token}
-          runId={current.id}
-          context={openGitContext}
-          refreshKey={`${current.status}:${current.updatedAt}`}
-          busy={isActiveRunStatus(current.status)}
-          readOnly
-        />
-      </div>
+      >
+        {tab === "git" && hasGit ? (
+          <GitPanel
+            token={token}
+            runId={current.id}
+            context={openGitContext}
+            refreshKey={`${current.status}:${current.updatedAt}`}
+            busy={isActiveRunStatus(current.status)}
+            readOnly
+          />
+        ) : tab === "terminal" ? (
+          <DiagnosticsPage logs={diagnosticLogs} errorMessage={current.errorMessage ?? null} />
+        ) : (
+          <section className="workspace-files">
+            <WorkspaceFilesTabs
+              view={filesView}
+              onView={(view) => {
+                setFilesView(view);
+                if (view === "artifacts") loadArtifacts(current.id);
+              }}
+            />
+            {filesView === "artifacts" ? (
+              <ArtifactsPage
+                items={artifacts}
+                saveHint={saveArtifactHint(current)}
+                error={pageError}
+                onSave={async (item) => {
+                  setPageError("");
+                  try {
+                    await client.saveArtifactToProject(current.id, item.name);
+                  } catch (error) {
+                    setPageError(error instanceof Error ? error.message : "保存失败");
+                  }
+                }}
+              />
+            ) : (
+              <div className="page-body">
+                <p className="empty">发送任务后可以浏览工作区文件。</p>
+              </div>
+            )}
+          </section>
+        )}
+      </InspectorSheet>
     );
   }
 
@@ -981,20 +994,14 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           {current ? <span className="chat-title">{runListTitle(current)}</span> : null}
           <span className={turnBusy ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
           {current ? <IslandTag>{runPlaceLabel(current)}</IslandTag> : null}
-          {current && runGitContext(current) !== "none" ? (
-            <button className="icon-btn" type="button" onClick={() => setPanel("git")} aria-label="Git">
-              Git
+          {current ? (
+            <button className="icon-btn" type="button" onClick={() => openInspector(lastPane)} aria-label="打开侧栏" title="打开侧栏">
+              侧栏
             </button>
           ) : null}
           {current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         </header>
         {pageError ? <p className="page-error">{pageError}</p> : null}
-        {current ? (
-          <div className="chat-actions">
-            <IslandButton onClick={openArtifacts}>产物</IslandButton>
-            {current.status === "ERROR" ? <IslandButton onClick={openDiagnostics}>查看诊断</IslandButton> : null}
-          </div>
-        ) : null}
         <div className="transcript" ref={transcriptRef}>
           {canLoadOlder(older) ? (
             <button type="button" className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>

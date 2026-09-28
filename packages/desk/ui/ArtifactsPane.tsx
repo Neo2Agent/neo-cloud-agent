@@ -81,20 +81,37 @@ export function ArtifactsPane({ token, runId, projectId, refreshKey = 0, onSaved
   };
 
   if (!runId) {
-    return <p className="pane-note">发送任务后可以看产物。</p>;
+    return <p className="hint pane-empty">发送任务后可以看产物。</p>;
   }
 
   return (
-    <div className={`artifacts-pane${preview ? " is-previewing" : ""}`}>
-      <div className="wb-pane-bar">
-        <span className="wb-pane-title">产物</span>
-        {!canSave && !preview ? <span className="hint">只有项目对话才能保存到项目。</span> : null}
-      </div>
-      {loading ? <p className="hint">正在读取…</p> : null}
-      {error ? <p className="error">{error}</p> : null}
-      {saveError ? <p className="error">{saveError}</p> : null}
-      {!loading && !error && items.length === 0 ? <p className="hint">还没有产物。</p> : null}
+    <div className={`artifacts-panel is-split${preview ? " is-previewing" : ""}`}>
+      <header className="workspace-files-head">
+        {preview ? (
+          <span className="workspace-files-title">
+            <strong>{preview.name}</strong>
+          </span>
+        ) : (
+          <span className="hint">{canSave ? "" : "只有项目对话才能保存到项目。"}</span>
+        )}
+        {preview ? (
+          <span className="artifact-preview-actions">
+            {canSave ? (
+              <IslandButton type="primary" disabled={busy} onClick={() => void save(preview)}>
+                {busy ? "保存中…" : "存入项目"}
+              </IslandButton>
+            ) : null}
+            <IslandButton type="text" onClick={() => setPreview(null)}>
+              关闭
+            </IslandButton>
+          </span>
+        ) : null}
+      </header>
       <ul className="artifact-list">
+        {loading ? <li className="hint">正在读取…</li> : null}
+        {error ? <li className="error">{error}</li> : null}
+        {saveError ? <li className="error">{saveError}</li> : null}
+        {!loading && !error && items.length === 0 ? <li className="hint">还没有产物。</li> : null}
         {items.map((item) => {
           const selected = preview?.name === item.name;
           return (
@@ -109,19 +126,6 @@ export function ArtifactsPane({ token, runId, projectId, refreshKey = 0, onSaved
       </ul>
       {preview ? (
         <div className="artifact-preview">
-          <div className="artifact-preview-bar">
-            <strong>{preview.name}</strong>
-            <span className="artifact-preview-actions">
-              {canSave ? (
-                <IslandButton type="primary" disabled={busy} onClick={() => void save(preview)}>
-                  {busy ? "保存中…" : "存入项目"}
-                </IslandButton>
-              ) : null}
-              <IslandButton type="text" onClick={() => setPreview(null)}>
-                关闭
-              </IslandButton>
-            </span>
-          </div>
           {kind === "image" && preview.url ? (
             <div className="artifact-preview-frame">
               <img src={withApiBase(preview.url)} alt={preview.name} />
@@ -139,7 +143,9 @@ export function ArtifactsPane({ token, runId, projectId, refreshKey = 0, onSaved
             </div>
           )}
         </div>
-      ) : null}
+      ) : (
+        <div className="artifact-preview is-empty" />
+      )}
     </div>
   );
 }

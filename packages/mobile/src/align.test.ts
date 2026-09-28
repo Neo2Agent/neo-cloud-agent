@@ -24,6 +24,24 @@ test("mobile lab uses the shared Web monochrome tokens", () => {
   assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);
   assert.match(css, /\.work-fold-body\s*\{/);
   assert.match(css, /\.artifact-chip\s*\{/);
+  assert.match(css, /\.inspector-tabs\s*\{/);
+  assert.match(css, /\.workspace-files-tabs\s*\{/);
+});
+
+test("mobile chat opens one inspector with Git / 终端 / 文件", () => {
+  const web = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "web/App.tsx"), "utf8");
+  const chrome = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "web/chrome.tsx"), "utf8");
+  const chat = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "screens/ChatScreen.tsx"), "utf8");
+  assert.match(web, /打开侧栏/);
+  assert.match(web, /openInspector\(lastPane\)/);
+  assert.match(chrome, /@neo-cloud-agent\/ui\/inspector-tabs/);
+  assert.match(chrome, /InspectorSheet/);
+  assert.match(chrome, /aria-label="对话侧栏"/);
+  assert.match(chrome, /产物/);
+  assert.doesNotMatch(web, /IslandButton onClick=\{openArtifacts\}>产物</);
+  assert.match(chat, /打开侧栏/);
+  assert.match(chat, /onOpenInspector/);
+  assert.doesNotMatch(chat, /onOpenGit/);
 });
 
 test("mobile web App keeps hooks before login returns", () => {

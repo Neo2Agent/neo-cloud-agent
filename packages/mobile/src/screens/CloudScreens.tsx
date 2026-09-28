@@ -2,8 +2,9 @@
  * The cloud surfaces the web chat page already has: personal memory, the inbox
  * bell and the skill catalog. Same `/v1` routes, redrawn for a narrow screen.
  */
-import { useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState, type ReactNode } from "react";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { inspectorTabs, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { artifactKindLabel, prettyBytes } from "@neo-cloud-agent/contracts/artifact";
 import {
   MEMORY_SEARCH_DEBOUNCE_MS,
@@ -26,6 +27,7 @@ import {
 } from "../cloud";
 import { Frame, frameStyles } from "./Frame";
 import { IslandButton, IslandInput } from "./island";
+import { Screen } from "./Screen";
 import { colors } from "./theme";
 
 export function MemoriesScreen(props: {
@@ -235,16 +237,15 @@ export function SkillsScreen(props: {
   );
 }
 
-export function ArtifactsScreen(props: {
+function ArtifactsBody(props: {
   items: RunArtifact[];
   saveHint: string;
   error: string;
-  onBack: () => void;
   onSave: (item: RunArtifact) => Promise<void>;
 }) {
   const [busy, setBusy] = useState("");
   return (
-    <Frame title="产物" onBack={props.onBack}>
+    <>
       {props.saveHint ? <Text style={frameStyles.hint}>{props.saveHint}</Text> : null}
       {props.items.length === 0 ? <Text style={frameStyles.empty}>还没有产物。</Text> : null}
       {props.items.map((item) => (
@@ -269,17 +270,29 @@ export function ArtifactsScreen(props: {
         </View>
       ))}
       {props.error ? <Text style={frameStyles.error}>{props.error}</Text> : null}
+    </>
+  );
+}
+
+export function ArtifactsScreen(props: {
+  items: RunArtifact[];
+  saveHint: string;
+  error: string;
+  onBack?: () => void;
+  onSave: (item: RunArtifact) => Promise<void>;
+}) {
+  const body = <ArtifactsBody items={props.items} saveHint={props.saveHint} error={props.error} onSave={props.onSave} />;
+  if (!props.onBack) return <View style={frameStyles.embed}>{body}</View>;
+  return (
+    <Frame title="产物" onBack={props.onBack}>
+      {body}
     </Frame>
   );
 }
 
-export function DiagnosticsScreen(props: {
-  logs: Array<{ name: string; content: string }>;
-  errorMessage: string | null;
-  onBack: () => void;
-}) {
+function DiagnosticsBody(props: { logs: Array<{ name: string; content: string }>; errorMessage: string | null }) {
   return (
-    <Frame title="诊断" onBack={props.onBack}>
+    <>
       {props.errorMessage ? <Text style={frameStyles.error}>{props.errorMessage}</Text> : null}
       {props.logs.length === 0 ? <Text style={frameStyles.empty}>还没有日志。</Text> : null}
       {props.logs.map((item) => (
@@ -288,11 +301,100 @@ export function DiagnosticsScreen(props: {
           <Text style={styles.log}>{item.content.trim() || "（空）"}</Text>
         </View>
       ))}
+    </>
+  );
+}
+
+export function DiagnosticsScreen(props: {
+  logs: Array<{ name: string; content: string }>;
+  errorMessage: string | null;
+  onBack?: () => void;
+}) {
+  const body = <DiagnosticsBody logs={props.logs} errorMessage={props.errorMessage} />;
+  if (!props.onBack) return <View style={frameStyles.embed}>{body}</View>;
+  return (
+    <Frame title="终端" onBack={props.onBack}>
+      {body}
     </Frame>
+  );
+}
+
+export function InspectorScreen(props: {
+  tab: InspectorTab;
+  hasGit: boolean;
+  filesView: FilesView;
+  onTab: (tab: InspectorTab) => void;
+  onFilesView: (view: FilesView) => void;
+  onBack: () => void;
+  git?: ReactNode;
+  terminal: ReactNode;
+  artifacts: ReactNode;
+}) {
+  return (
+    <Screen>
+      <View style={inspectorStyles.topbar}>
+        <Pressable onPress={props.onBack}>
+          <Text style={inspectorStyles.back}>返回</Text>
+        </Pressable>
+        <View style={inspectorStyles.tabs}>
+          {inspectorTabs(props.hasGit).map((item) => (
+            <Pressable
+              key={item.id}
+              onPress={() => props.onTab(item.id)}
+              style={[inspectorStyles.tab, props.tab === item.id ? inspectorStyles.tabOn : null]}
+            >
+              <Text style={[inspectorStyles.tabText, props.tab === item.id ? inspectorStyles.tabTextOn : null]}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+      {props.tab === "files" ? (
+        <View style={inspectorStyles.filesTabs}>
+          <Pressable
+            onPress={() => props.onFilesView("tree")}
+            style={[inspectorStyles.tab, props.filesView === "tree" ? inspectorStyles.tabOn : null]}
+          >
+            <Text style={[inspectorStyles.tabText, props.filesView === "tree" ? inspectorStyles.tabTextOn : null]}>文件</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => props.onFilesView("artifacts")}
+            style={[inspectorStyles.tab, props.filesView === "artifacts" ? inspectorStyles.tabOn : null]}
+          >
+            <Text style={[inspectorStyles.tabText, props.filesView === "artifacts" ? inspectorStyles.tabTextOn : null]}>产物</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      <View style={inspectorStyles.body}>
+        {props.tab === "git" && props.hasGit ? (
+          props.git
+        ) : (
+          <ScrollView contentContainerStyle={inspectorStyles.scroll}>
+            {props.tab === "terminal"
+              ? props.terminal
+              : props.filesView === "artifacts"
+                ? props.artifacts
+                : <Text style={frameStyles.empty}>发送任务后可以浏览工作区文件。</Text>}
+          </ScrollView>
+        )}
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   unread: { borderColor: colors.accent, borderWidth: 2 },
   log: { color: colors.muted, fontSize: 12, marginTop: 6 },
+});
+
+const inspectorStyles = StyleSheet.create({
+  topbar: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },
+  back: { width: 44, color: colors.ink, fontSize: 15 },
+  tabs: { flex: 1, flexDirection: "row", gap: 4 },
+  filesTabs: { flexDirection: "row", gap: 4, paddingHorizontal: 12, paddingBottom: 8 },
+  tab: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  tabOn: { backgroundColor: colors.hover },
+  tabText: { color: colors.muted, fontSize: 15, fontWeight: "500" },
+  tabTextOn: { color: colors.ink, fontWeight: "600" },
+  body: { flex: 1, minHeight: 0 },
+  scroll: { padding: 16, gap: 10 },
 });
