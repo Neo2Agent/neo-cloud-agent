@@ -1643,6 +1643,121 @@ test("queued follow-ups stay off the transcript until the worker takes them", as
   assert.equal(listEvents(run.id).filter((item) => item.kind === "user.message" && item.data?.followUpId === second.id).length, 1);
 });
 
+test("claiming a Remote run records origin and branch for an offline cloud continue", async () => {
+  const registered = newDesk("rc-origin-box");
+  const run = await createRun({
+    prompt: "remote origin",
+    repoUrls: ["/tmp/rc-origin"],
+    source: "desk",
+    start: "inline",
+    kernel: "agentscope",
+    target: {
+      loop: "cloud",
+      tools: "desk",
+      deskId: registered.desk.id,
+      remoteControl: true,
+    },
+  });
+  await claimDeskRun(registered.desk.id, {
+    runId: run.id,
+    workspaceDir: "/tmp/rc-origin",
+    pid: 4242,
+    remoteUrl: "https://github.com/acme/app.git",
+    branch: "feat/login",
+  });
+  const live = getRun(run.id);
+  assert.equal(live?.remoteUrl, "https://github.com/acme/app.git");
+  assert.equal(live?.branchName, "feat/login");
+  assert.equal(live?.baseBranch, "feat/login");
+  deleteDesk(registered.desk.id);
+});
+
+test("an offline Remote Control conversation can continue in the cloud on the recorded branch", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(path.join(tmpdir(), "neo-rc-cloud-"));
+  spawnSync("git", ["init", "-b", "main"], { cwd: dir });
+  spawnSync("git", ["config", "user.email", "rc@example.com"], { cwd: dir });
+  spawnSync("git", ["config", "user.name", "RC"], { cwd: dir });
+  writeFileSync(path.join(dir, "README.md"), "from laptop branch\n");
+  spawnSync("git", ["add", "."], { cwd: dir });
+  spawnSync("git", ["commit", "-m", "init"], { cwd: dir });
+  spawnSync("git", ["checkout", "-b", "feat/login"], { cwd: dir });
+  writeFileSync(path.join(dir, "FEATURE.md"), "on feat\n");
+  spawnSync("git", ["add", "."], { cwd: dir });
+  spawnSync("git", ["commit", "-m", "feat"], { cwd: dir });
+
+  const registered = newDesk("rc-offline-box");
+  const run = await createRun({
+    prompt: "continue later",
+    repoUrls: [dir],
+    source: "desk",
+    start: "inline",
+    kernel: "agentscope",
+    target: {
+      loop: "cloud",
+      tools: "desk",
+      deskId: registered.desk.id,
+      remoteControl: true,
+    },
+  });
+  await claimDeskRun(registered.desk.id, {
+    runId: run.id,
+    workspaceDir: dir,
+    pid: 4243,
+    remoteUrl: "https://github.com/acme/app.git",
+    branch: "feat/login",
+  });
+
+  const online = openDeskInbox(registered.desk.id, () => undefined);
+  await assert.rejects(
+    () => handoffRun(run.id, { target: { loop: "cloud", tools: "cloud" } }),
+    /电脑在线时/,
+  );
+  online();
+
+  const moved = await handoffRun(run.id, { target: { loop: "cloud", tools: "cloud" } });
+  assert.match(
+    listEvents(moved.id).find((item) => item.kind === "scm.clone_started")?.title ?? "",
+    /正在按 acme\/app · feat\/login 在云端物化工作区/,
+  );
+  assert.match(
+    listEvents(moved.id).find((item) => item.kind === "scm.clone_succeeded")?.title ?? "",
+    /已转到云端 · 工作区就绪 · acme\/app · feat\/login · 未 push/,
+  );
+  assert.equal(moved.executionTarget?.loop, "cloud");
+  assert.equal(moved.executionTarget?.tools, "cloud");
+  assert.equal(moved.executionTarget?.remoteControl, undefined);
+  assert.equal(moved.branchName, "feat/login");
+  assert.equal(moved.remoteUrl, "https://github.com/acme/app.git");
+  assert.equal(moved.repoUrls[0], dir);
+  const workspace = getBootstrap(moved.id).workspaceDir;
+  assert.equal(readFileSync(path.join(workspace, "FEATURE.md"), "utf8"), "on feat\n");
+  deleteDesk(registered.desk.id);
+});
+
+test("an offline Remote without a recorded origin cannot continue in the cloud", async () => {
+  const registered = newDesk("rc-noremote-box");
+  const run = await createRun({
+    prompt: "no origin",
+    repoUrls: ["/tmp/rc-noremote"],
+    source: "desk",
+    start: "inline",
+    kernel: "agentscope",
+    target: {
+      loop: "cloud",
+      tools: "desk",
+      deskId: registered.desk.id,
+      remoteControl: true,
+    },
+  });
+  await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/rc-noremote", pid: 4244 });
+  await assert.rejects(
+    () => handoffRun(run.id, { target: { loop: "cloud", tools: "cloud" } }),
+    /没有可 clone/,
+  );
+  deleteDesk(registered.desk.id);
+});
+
 test("a This Computer conversation cannot be moved to the cloud", async () => {
   const registered = newDesk("box-2");
   const run = await createRun({

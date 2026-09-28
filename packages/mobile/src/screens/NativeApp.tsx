@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
-import type { Desk } from "@neo-cloud-agent/contracts/desk";
+import { isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { runCloneBranch, runGitContext } from "@neo-cloud-agent/contracts/git";
 import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
 import { attachUserListStream } from "../list-live";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
@@ -29,6 +29,7 @@ import { listenNeoDeepLinks } from "../native/linking";
 import { attachForegroundPushPolicy, listenNotificationOpen, registerExpoPushDevice } from "../native/push";
 import { DEFAULT_API_URL } from "../place";
 import { chatStatusText, composerGate } from "../session";
+import { RemoteOfflineCard } from "./RemoteOfflineCard";
 import {
   appendPendingUser,
   isActiveRunStatus,
@@ -827,20 +828,36 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   }
 
   const gate = composerGate(current, desks);
-  const thinking = shouldShowThinking(turnBusy, visible)
-    ? thinkingHint({
-        status: current?.status,
-        loop: current?.executionTarget?.loop,
-        remoteControl: current?.executionTarget?.remoteControl,
-      })
-    : null;
+  const thinking =
+    !gate.locked && shouldShowThinking(turnBusy, visible)
+      ? thinkingHint({
+          status: current?.status,
+          loop: current?.executionTarget?.loop,
+          remoteControl: current?.executionTarget?.remoteControl,
+        })
+      : null;
+  const continueRemoteInCloud = async () => {
+    if (!current) return;
+    try {
+      const moved = await client.handoff(current.id, { loop: "cloud", tools: "cloud" });
+      setCurrent(moved);
+      setRuns((prev) => prev.map((item) => (item.id === moved.id ? { ...item, ...moved } : item)));
+      setPageError("");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "切到云端失败");
+    }
+  };
   const composer = (
+    <View>
+    {gate.cloudContinue.show ? (
+      <RemoteOfflineCard copy={gate.continueCopy} onContinue={() => void continueRemoteInCloud()} />
+    ) : null}
     <Composer
       prompt={prompt}
       locked={gate.locked}
       placeholder={gate.archived ? "对话已归档。" : gate.hint || "说说你要做什么"}
       sending={sending}
-      canStop={Boolean(current) && gate.running}
+      canStop={Boolean(current) && gate.running && !gate.locked}
       model={model}
       models={chatModels}
       images={images}
@@ -861,6 +878,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       onStop={current ? () => void client.abort(current.id) : undefined}
       usageLabel={formatContextPercent(contextUsage.percent) ?? "用量"}
       repo={current?.repoUrls?.[0] || cloudRepo}
+      branch={current ? runCloneBranch(current) ?? undefined : undefined}
       repos={githubRepos}
       repoLocked={Boolean(current)}
       onRepo={setCloudRepo}
@@ -889,6 +907,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       }}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
     />
+    </View>
   );
 
   return (
@@ -897,9 +916,10 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         <ChatScreen
           run={current}
           status={chatStatusText(current, desks)}
-          running={turnBusy}
+          running={turnBusy && !gate.locked}
           messages={visible}
           thinking={thinking}
+          hideHandshake={gate.locked || !isDeskHostedTarget(current?.executionTarget)}
           canLoadOlder={canLoadOlder(older)}
           loadingOlder={loadingOlder}
           onLoadOlder={() => void loadOlder()}

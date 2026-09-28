@@ -36,6 +36,30 @@ test("createLeaseClient can list and prune desks with the user token", async () 
   assert.deepEqual(calls, ["GET http://cp/v1/desks", "DELETE http://cp/v1/desks/desk_old"]);
 });
 
+test("claim sends the laptop origin and branch", async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const fake = (async (url: string | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), body: JSON.parse(String(init?.body ?? "null")) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as typeof fetch;
+  const client = createLeaseClient("http://cp", fake);
+  await client.claim({
+    deskId: "desk_1",
+    deskToken: "desk_tok",
+    runId: "run_1",
+    workspaceDir: "/tmp/app",
+    remoteUrl: "https://github.com/acme/app.git",
+    branch: "feat/login",
+  });
+  assert.equal(calls[0]?.url, "http://cp/v1/desks/desk_1/claim");
+  assert.deepEqual(calls[0]?.body, {
+    runId: "run_1",
+    workspaceDir: "/tmp/app",
+    remoteUrl: "https://github.com/acme/app.git",
+    branch: "feat/login",
+  });
+});
+
 test("createLeaseClient uploads a run's git snapshot with the desk token", async () => {
   const calls: Array<{ url: string; auth: string | null; body: unknown }> = [];
   const fake = (async (url: string | URL, init?: RequestInit) => {

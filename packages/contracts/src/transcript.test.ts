@@ -372,6 +372,14 @@ test("the desk claim handshake never shows on the machine, and disappears elsewh
     kind: "followup.queued",
   };
   assert.equal(displayTranscriptMessages([interrupted], { hideDeskHandshake: true }).length, 0);
+  const starting: TranscriptMessage = {
+    id: "q2",
+    role: "setup",
+    text: "正在 Desk 上启动 Agent",
+    createdAt: "2026-08-27T00:00:00.000Z",
+    kind: "run.queued",
+  };
+  assert.equal(displayTranscriptMessages([starting], { hideDeskHandshake: true }).length, 0);
   // On the web it is real information while the machine has not picked it up.
   assert.equal(displayTranscriptMessages([claim]).length, 1);
   // Once the run actually started it is stale everywhere.

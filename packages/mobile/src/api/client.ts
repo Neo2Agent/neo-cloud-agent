@@ -215,6 +215,10 @@ export class MobileClient {
     return this.request("POST", `/v1/runs/${id}/archive`, {});
   }
 
+  handoff(id: string, target: { loop: "cloud" | "desk"; tools: "cloud" | "desk"; deskId?: string }): Promise<Run> {
+    return this.request("POST", `/v1/runs/${id}/handoff`, { target });
+  }
+
   deleteRun(id: string): Promise<{ ok: boolean; id: string; deletedAt: string }> {
     return this.request("DELETE", `/v1/runs/${id}`);
   }

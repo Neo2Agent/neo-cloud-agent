@@ -10,8 +10,15 @@ import { CHAT_MODELS, resolveCatalogSelection } from "@neo-cloud-agent/contracts
 import type { RunEvent, TranscriptMessage, TranscriptSnapshot } from "@neo-cloud-agent/contracts/events";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { isRemoteControlTarget, type ImageRef, type PullRequestRef, type Run } from "@neo-cloud-agent/contracts/run";
-import { runGitContext } from "@neo-cloud-agent/contracts/git";
-import { isDeskHostedTarget, type Desk, type DeskWorkspace } from "@neo-cloud-agent/contracts/desk";
+import { runCloneBranch, runCloneRemoteUrl, runGitContext } from "@neo-cloud-agent/contracts/git";
+import {
+  isDeskHostedTarget,
+  REMOTE_CLOUD_CONTINUE_STATUS,
+  remoteCloudContinueCopy,
+  remoteCloudContinueOffer,
+  type Desk,
+  type DeskWorkspace,
+} from "@neo-cloud-agent/contracts/desk";
 import { api, hydrateDeskToken, readJson, readToken, writeToken } from "./api";
 import { hasSavedSession } from "./session";
 import { deskBridge, isDeskApp, withApiBase, type DeskTarget } from "./desk";
@@ -52,6 +59,7 @@ import { InboxBell } from "./components/InboxBell";
 import { RunInvite } from "./components/RunInvite";
 import { BuddyHome, BuddyPlusSheet, buddySkillsFromRecipes, type BuddyPlusAction } from "@neo-cloud-agent/ui";
 import { Composer, readImageRef } from "./components/Composer";
+import { RemoteOfflineCard } from "./components/RemoteOfflineCard";
 import { useConfirm, toast } from "./feedback";
 import {
   IconArchive,
@@ -1324,6 +1332,37 @@ export function App() {
     [confirm, deskTarget.deskId, runId],
   );
 
+  const continueRemoteInCloud = useCallback(async () => {
+    if (!runId) return;
+    const copy = remoteCloudContinueCopy({
+      remoteUrl: runCloneRemoteUrl(currentRun ?? {}) ?? "",
+      branch: runCloneBranch(currentRun ?? {}) ?? "",
+    });
+    if (
+      !(await confirm({
+        title: copy.confirmTitle,
+        message: copy.confirmMessage,
+        confirmLabel: copy.confirmAction,
+      }))
+    ) {
+      return;
+    }
+    setHandoffError("");
+    try {
+      const body = await readJson<Run & { error?: string }>(
+        await api(tokenRef.current, `/v1/runs/${runId}/handoff`, {
+          method: "POST",
+          body: JSON.stringify({ target: { loop: "cloud", tools: "cloud" } }),
+        }),
+      );
+      if (body.error) throw new Error(body.error);
+      setCurrentRun(body);
+      setRuns((prev) => prev.map((item) => (item.id === body.id ? { ...item, ...body } : item)));
+    } catch (error) {
+      setHandoffError(error instanceof Error ? error.message : "切到云端失败");
+    }
+  }, [confirm, currentRun, runId]);
+
   const applyTarget = useCallback((next: DeskTarget) => {
     setDeskTarget(next);
     if (next.folder) setDeskFolder(next.folder);
@@ -1665,31 +1704,43 @@ export function App() {
   }, [currentRun?.id, currentRun?.status]);
 
   const viewMessages = withPendingUser(messages, pendingTurn);
+  const hostLock = remoteControlSendLock(
+    currentRun,
+    desks,
+    deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
+  );
+  const cloudContinue = remoteCloudContinueOffer(
+    currentRun,
+    desks,
+    deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
+  );
+  const continueCopy = remoteCloudContinueCopy(cloudContinue);
   const displayMessages = displayTranscriptMessages(viewMessages, {
     hideStaleRestart: true,
+    hideDeskHandshake: hostLock.locked || !isDeskHostedTarget(currentRun?.executionTarget),
   });
-  const busy = isTurnBusy({
+  const turnBusy = isTurnBusy({
     sending,
     stopping,
     pending: Boolean(pendingTurn),
     status: currentRun?.status,
     messages: viewMessages,
   });
+  const busy = hostLock.locked ? false : turnBusy;
   const archived = isComposerClosed(currentRun?.status);
   const projectCloudLock = Boolean(activeProject) && !isDeskHostedTarget(currentRun?.executionTarget);
-  const hostLock = remoteControlSendLock(
-    currentRun,
-    desks,
-    deskBridge()?.canRunLocal ? { thisDeskId: deskTarget.deskId } : undefined,
-  );
-  const activity = activityLabel({
-    sending,
-    stopping,
-    status: currentRun?.status,
-    streaming: isAssistantStreaming(viewMessages),
-    runningTool: runningToolName(viewMessages),
-  });
-  const statusView = turnStatusLabel({ sending, stopping, status: currentRun?.status });
+  const activity = hostLock.locked
+    ? ""
+    : activityLabel({
+        sending,
+        stopping,
+        status: currentRun?.status,
+        streaming: isAssistantStreaming(viewMessages),
+        runningTool: runningToolName(viewMessages),
+      });
+  const statusView = hostLock.locked
+    ? { state: "IDLE", label: REMOTE_CLOUD_CONTINUE_STATUS }
+    : turnStatusLabel({ sending, stopping, status: currentRun?.status });
   const pr = currentRun?.pullRequests?.[0] as PullRequest | undefined;
   const gitContext = currentRun ? runGitContext(currentRun) : "none";
   const gitRefreshKey = `${runId ?? ""}:${busy ? "busy" : "idle"}:${currentRun?.pullRequests?.length ?? 0}`;
@@ -2636,6 +2687,7 @@ export function App() {
                     busy={busy}
                     activity={activity}
                     highlightId={highlightId}
+                    setupRun={currentRun}
                     onLoadOlder={loadOlder}
                     onOpenArtifact={(name) => {
                       setArtifactFocus(name);
@@ -2673,6 +2725,14 @@ export function App() {
               ) : null}
             </div>
           ) : null}
+          {mainTab === "chat" && cloudContinue.show ? (
+            <RemoteOfflineCard
+              remoteUrl={cloudContinue.remoteUrl}
+              branch={cloudContinue.branch}
+              error={handoffError}
+              onContinue={() => void continueRemoteInCloud()}
+            />
+          ) : null}
           {mainTab === "chat" ? (
             <Composer
               prompt={prompt}
@@ -2699,7 +2759,7 @@ export function App() {
                     : undefined
               }
               blocked={hostLock.locked}
-              blockedHint={hostLock.hint}
+              blockedHint={cloudContinue.show ? continueCopy.composerHint : hostLock.hint}
               model={selectedModel}
               experts={experts}
               teams={teams}

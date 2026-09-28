@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
-import { CHAT_MODELS, chatModelLabel, resolveChatModel } from "../format";
+import { CHAT_MODELS, chatModelShort, resolveChatModel } from "../format";
 import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
 import { MicIcon, PhotoIcon, SendIcon } from "./composer-icons";
@@ -29,6 +29,7 @@ type Props = {
   onStop?: () => void;
   usageLabel?: string;
   repo?: string;
+  branch?: string;
   repos?: Array<{ fullName: string; url: string }>;
   repoLocked?: boolean;
   onRepo?: (url: string) => void;
@@ -132,61 +133,59 @@ export function Composer(props: Props) {
     applyHoldResult(heldMs, spoken);
   };
 
+  const showRepoPick = Boolean(props.onRepo && !props.repoLocked);
+  const showExpertPick = Boolean(props.onExpert && !props.expertLocked);
   return (
     <View style={styles.dock}>
-      <View style={styles.contextRow}>
-        <Text style={styles.context}>云端</Text>
-        {props.onRepo && !props.repoLocked ? (
-          <View style={styles.repoWrap}>
-            <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
-            {(props.repos ?? []).slice(0, 8).map((item) => (
-              <Pressable key={item.url} onPress={() => props.onRepo?.(item.url === props.repo ? "" : item.url)}>
-                <Text style={[styles.repoOpt, item.url === props.repo ? styles.repoOn : null]}>{item.fullName}</Text>
-              </Pressable>
-            ))}
-            {props.repo ? (
+      {showRepoPick || showExpertPick ? (
+        <View style={styles.contextRow}>
+          {showRepoPick ? (
+            <View style={styles.repoWrap}>
+              {(props.repos ?? []).slice(0, 8).map((item) => (
+                <Pressable key={item.url} onPress={() => props.onRepo?.(item.url === props.repo ? "" : item.url)}>
+                  <Text style={[styles.repoOpt, item.url === props.repo ? styles.repoOn : null]}>{item.fullName}</Text>
+                </Pressable>
+              ))}
               <Pressable onPress={() => props.onRepo?.("")}>
-                <Text style={styles.repoOpt}>无仓库</Text>
+                <Text style={[styles.repoOpt, !props.repo ? styles.repoOn : null]}>无仓库</Text>
               </Pressable>
-            ) : null}
-          </View>
-        ) : (
-          <Text style={styles.context}>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</Text>
-        )}
-        {props.onExpert ? (
-          <View style={styles.repoWrap}>
-            <Pressable
-              disabled={props.expertLocked || props.locked}
-              onPress={() => props.onExpert?.(encodeExpertPick({}))}
-              accessibilityLabel="专家"
-            >
-              <Text style={[styles.repoOpt, !props.expertValue ? styles.repoOn : null]}>Neo</Text>
-            </Pressable>
-            {(props.experts ?? []).map((item) => (
+            </View>
+          ) : null}
+          {showExpertPick ? (
+            <View style={styles.repoWrap}>
               <Pressable
-                key={item.id}
-                disabled={props.expertLocked || props.locked}
-                onPress={() => props.onExpert?.(encodeExpertPick({ expertId: item.id }))}
+                disabled={props.locked}
+                onPress={() => props.onExpert?.(encodeExpertPick({}))}
+                accessibilityLabel="专家"
               >
-                <Text style={[styles.repoOpt, props.expertValue === encodeExpertPick({ expertId: item.id }) ? styles.repoOn : null]}>
-                  {expertPickerLabel(item)}
-                </Text>
+                <Text style={[styles.repoOpt, !props.expertValue ? styles.repoOn : null]}>Neo</Text>
               </Pressable>
-            ))}
-            {(props.teams ?? []).map((item) => (
-              <Pressable
-                key={item.id}
-                disabled={props.expertLocked || props.locked}
-                onPress={() => props.onExpert?.(encodeExpertPick({ expertTeamId: item.id }))}
-              >
-                <Text style={[styles.repoOpt, props.expertValue === encodeExpertPick({ expertTeamId: item.id }) ? styles.repoOn : null]}>
-                  {item.name}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-      </View>
+              {(props.experts ?? []).map((item) => (
+                <Pressable
+                  key={item.id}
+                  disabled={props.locked}
+                  onPress={() => props.onExpert?.(encodeExpertPick({ expertId: item.id }))}
+                >
+                  <Text style={[styles.repoOpt, props.expertValue === encodeExpertPick({ expertId: item.id }) ? styles.repoOn : null]}>
+                    {expertPickerLabel(item)}
+                  </Text>
+                </Pressable>
+              ))}
+              {(props.teams ?? []).map((item) => (
+                <Pressable
+                  key={item.id}
+                  disabled={props.locked}
+                  onPress={() => props.onExpert?.(encodeExpertPick({ expertTeamId: item.id }))}
+                >
+                  <Text style={[styles.repoOpt, props.expertValue === encodeExpertPick({ expertTeamId: item.id }) ? styles.repoOn : null]}>
+                    {item.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
       <View style={styles.bar}>
         {images.length > 0 ? (
           <View style={styles.thumbs}>
@@ -229,6 +228,18 @@ export function Composer(props: Props) {
                 <PhotoIcon color={props.locked || props.sending ? colors.muted : colors.ink} />
               </Pressable>
             ) : null}
+            {!props.locked ? (
+              <Pressable
+                disabled={props.sending}
+                onPressIn={() => void beginHold()}
+                onPressOut={() => void endHold()}
+                style={[styles.mic, listening ? styles.micOn : null]}
+                accessibilityLabel={listening ? "松手出字" : "按住说话"}
+              >
+                <MicIcon color={listening ? colors.cream : props.sending ? colors.muted : colors.ink} />
+              </Pressable>
+            ) : null}
+            {props.branch ? <Text style={styles.branchLock} numberOfLines={1}>{props.branch}</Text> : null}
             <View style={styles.modelWrap}>
               {menuOpen ? (
                 <View style={styles.modelMenu} accessibilityRole="menu">
@@ -248,25 +259,11 @@ export function Composer(props: Props) {
                 </View>
               ) : null}
               <Pressable onPress={() => setMenuOpen((open) => !open)} style={styles.modelChip} accessibilityLabel="选择模型">
-                <Text style={styles.model}>{chatModelLabel(props.model)} ▴</Text>
+                <Text style={styles.model}>{chatModelShort(props.model)} ▴</Text>
               </Pressable>
             </View>
           </View>
           <View style={styles.sendGroup}>
-            {props.usageLabel ? (
-              <View style={styles.usageChip} accessibilityLabel="上下文用量">
-                <Text style={styles.usageText}>{props.usageLabel}</Text>
-              </View>
-            ) : null}
-            <Pressable
-              disabled={props.locked || props.sending}
-              onPressIn={() => void beginHold()}
-              onPressOut={() => void endHold()}
-              style={[styles.mic, listening ? styles.micOn : null]}
-              accessibilityLabel={listening ? "松手出字" : "按住说话"}
-            >
-              <MicIcon color={listening ? colors.cream : props.locked || props.sending ? colors.muted : colors.ink} />
-            </Pressable>
             {props.canStop && props.onQueue && canSend && !props.locked ? (
               <Pressable onPress={props.onQueue} style={styles.send} accessibilityLabel="排队发送">
                 <SendIcon color={colors.cream} />
@@ -298,7 +295,7 @@ export function Composer(props: Props) {
 }
 
 const styles = StyleSheet.create({
-  dock: { paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8, backgroundColor: colors.bg, overflow: "visible", zIndex: 2 },
+  dock: { paddingHorizontal: 12, paddingBottom: 8, paddingTop: 4, backgroundColor: colors.bg, overflow: "visible", zIndex: 2 },
   contextRow: { gap: 4, marginBottom: 6 },
   context: { color: colors.muted, fontSize: 12 },
   repoWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
@@ -307,16 +304,21 @@ const styles = StyleSheet.create({
   bar: {
     backgroundColor: colors.paper,
     borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingTop: 12,
+    borderWidth: 0,
+    borderRadius: 28,
+    paddingHorizontal: 12,
+    paddingTop: 8,
     paddingBottom: 10,
     gap: 8,
     overflow: "visible",
     zIndex: 2,
+    shadowColor: "#111110",
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
-  field: { minHeight: 52, maxHeight: 140, color: colors.ink, padding: 0, textAlignVertical: "top" },
+  field: { minHeight: 44, maxHeight: 140, color: colors.ink, fontSize: 16, lineHeight: 24, padding: 0, textAlignVertical: "top" },
   thumbs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   thumb: { width: 56, height: 56, borderRadius: 12, overflow: "hidden", borderWidth: 1, borderColor: colors.line },
   thumbImage: { width: "100%", height: "100%" },
@@ -349,8 +351,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     elevation: 6,
   },
-  modelChip: { backgroundColor: colors.hover, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  modelChip: { backgroundColor: colors.hover, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   model: { color: colors.ink, fontWeight: "600", fontSize: 13 },
+  branchLock: { color: colors.muted, fontSize: 13, maxWidth: 96 },
   option: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
   optionOn: { backgroundColor: colors.hover },
   steer: { borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 10, paddingVertical: 6 },
