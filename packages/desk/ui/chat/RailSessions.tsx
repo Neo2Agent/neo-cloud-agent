@@ -2,7 +2,6 @@ import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode, type Run } from "@neo-
 import { isDeskBoundRun, isRemoteControlRun } from "../desk";
 import type { RailSpaceGroup } from "../../src/rail";
 import { IconChevron, IconCloud, IconComputer, IconProjects } from "../icons";
-import { IslandTag } from "../island";
 
 const INBOX_PREVIEW = 8;
 
@@ -59,7 +58,7 @@ export function RailSessions({
         <button type="button" className="rail-block-head" onClick={onToggleInbox}>
           <IconChevron open={inboxOpen} size={13} />
           <span>对话</span>
-          <IslandTag color="brown">{inbox.length}</IslandTag>
+          <span className="rail-count">{inbox.length}</span>
         </button>
         {inboxOpen ? (
           inbox.length === 0 ? (
@@ -90,7 +89,7 @@ export function RailSessions({
         <button type="button" className="rail-block-head" onClick={onToggleSpaces}>
           <IconChevron open={spacesOpen} size={13} />
           <span>空间</span>
-          <IslandTag color="brown">{spaces.length}</IslandTag>
+          <span className="rail-count">{spaces.length}</span>
         </button>
         {spacesOpen ? (
           spaces.length === 0 ? (

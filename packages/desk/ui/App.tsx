@@ -75,7 +75,7 @@ import { ExpertsPage } from "./ExpertsPage";
 import { MemoriesPage } from "./MemoriesPage";
 import { SkillsPage } from "./SkillsPage";
 import { jumpToTranscriptMessage, TranscriptSearch } from "./chat/TranscriptSearch";
-import { IslandButton, IslandCard, IslandInput, IslandTag, IslandTitle } from "./island";
+import { IslandButton, IslandCard, IslandInput, IslandTag } from "./island";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import {
   PANEL_W_DEFAULT,
@@ -1766,9 +1766,7 @@ export function App() {
     return (
       <div className="login-shell">
         <div className="login-scene">
-          <IslandTitle size="large">
-            Neo Desk
-          </IslandTitle>
+          <p className="login-brand">Neo Desk</p>
           <IslandCard className="login-card">
             <form
               className="login-form"
@@ -1877,9 +1875,10 @@ export function App() {
         </div>
 
         <nav className="rail-nav">
-          <IslandButton type="primary" block className="rail-new-chat" icon={<IconNewChat />} onClick={newChat}>
+          <button type="button" className="rail-new-chat" onClick={newChat}>
+            <IconNewChat />
             新对话
-          </IslandButton>
+          </button>
           <button
             type="button"
             className="rail-item"

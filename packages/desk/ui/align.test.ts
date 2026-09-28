@@ -41,6 +41,25 @@ test("desk chat is a reading column; empty Files does not steal it", () => {
   assert.doesNotMatch(transcript, /userAvatar/);
 });
 
+test("desk chrome copies Cursor Agents Window density, not Island candy", () => {
+  const app = readFileSync(path.join(here, "App.tsx"), "utf8");
+  const rail = readFileSync(path.join(here, "chat/RailSessions.tsx"), "utf8");
+  const meta = readFileSync(path.join(here, "chat/LocalRunMeta.tsx"), "utf8");
+  assert.doesNotMatch(css, /#3dd4c6/);
+  assert.doesNotMatch(css, /#ffcc00/);
+  assert.doesNotMatch(css, /#0a7a72/);
+  assert.match(css, /\.rail-count/);
+  assert.match(css, /\.local-meta-pill/);
+  assert.match(css, /\.chat-bubble\.user\s*\{[^}]*border:\s*0/);
+  assert.match(css, /\.rail-nav \.rail-new-chat\s*\{[^}]*border-radius:\s*8px/);
+  assert.match(app, /className="rail-new-chat"/);
+  assert.doesNotMatch(app, /IslandTitle/);
+  assert.match(rail, /rail-count/);
+  assert.doesNotMatch(rail, /IslandTag/);
+  assert.match(meta, /local-meta-pill/);
+  assert.doesNotMatch(meta, /就绪/);
+});
+
 test("desk expert picker sits in the context bar like Web", () => {
   const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
   const app = readFileSync(path.join(here, "App.tsx"), "utf8");
