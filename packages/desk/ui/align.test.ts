@@ -84,7 +84,11 @@ test("desk chrome copies Cursor Agents Window density, not Island candy", () => 
   assert.doesNotMatch(panel, /Changes/);
   assert.doesNotMatch(panel, /wb-tab-label">Files</);
   assert.match(panel, /resolveSidePanelPage/);
-  assert.match(panel, /const \[railOpen, setRailOpen\] = useState\(true\)/);
+  assert.match(panel, /file-split/);
+  assert.match(panel, /term-card-head/);
+  assert.match(panel, /发送任务后可以浏览工作区文件。/);
+  assert.doesNotMatch(panel, /setRailOpen/);
+  assert.doesNotMatch(panel, /wb-rail/);
   assert.doesNotMatch(panel, /wb-home/);
   assert.doesNotMatch(panel, /wb-tile/);
   assert.doesNotMatch(panel, /Island/);
@@ -98,6 +102,8 @@ test("desk reading type matches Web 13px so a line holds the same words", () => 
   assert.match(css, /\.composer textarea\s*\{[^}]*font-size:\s*13px/);
   assert.match(css, /\.chat-title\s*\{[^}]*font-size:\s*12px/);
   assert.match(css, /\.inspector-tabs button\[role="tab"\]\s*\{[^}]*font-size:\s*13px/);
+  assert.match(css, /\.workspace-files\s*\{[^}]*grid-template-columns:\s*220px/);
+  assert.match(css, /\.term-card-head > summary\s*\{[^}]*font-size:\s*13px/);
 });
 
 test("desk expert picker sits in the context bar like Web", () => {

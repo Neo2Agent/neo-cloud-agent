@@ -17,7 +17,7 @@ import {
 import { inspectorTabs, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { FileGlyph } from "./FileGlyph";
 import { GitPanel } from "./GitPanel";
-import { IconClose, IconExpand, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";
+import { IconChevronDown, IconClose, IconExpand, IconPanelRight, IconPlus, IconSync, IconTerminal } from "./icons";
 import type { RunGitContext } from "@neo-cloud-agent/contracts/git";
 import type { PullRequestRef } from "@neo-cloud-agent/contracts/run";
 
@@ -74,7 +74,6 @@ export function SidePanel({
   onPullRequests,
 }: Props) {
   const [maxed, setMaxed] = useState(false);
-  const [railOpen, setRailOpen] = useState(true);
   const term = useTerminalSessions({ folder, token, runId, local });
   const hasGit = gitContext !== "none";
   const page = resolveSidePanelPage(tab);
@@ -96,7 +95,7 @@ export function SidePanel({
   };
 
   return (
-    <aside className={`side-panel inspector-panel${maxed ? " is-max" : ""}${railOpen ? " has-rail" : ""}`}>
+    <aside className={`side-panel inspector-panel${maxed ? " is-max" : ""}`}>
       <div className="inspector-tabs" role="tablist" aria-label="对话侧栏">
         {inspectorTabs(hasGit).map((item) => (
           <button
@@ -139,8 +138,6 @@ export function SidePanel({
             token={token}
             runId={runId}
             refreshKey={refreshKey}
-            railOpen={railOpen}
-            onToggleRail={() => setRailOpen((cur) => !cur)}
             onCloseSession={closeSession}
           />
         ) : (
@@ -175,8 +172,6 @@ export function SidePanel({
                   runId={runId}
                   local={local}
                   refreshKey={refreshKey}
-                  railOpen={railOpen}
-                  onToggleRail={() => setRailOpen((cur) => !cur)}
                   onPickFolder={onPickFolder}
                 />
               )}
@@ -409,31 +404,12 @@ function ChromeTools({ maxed, onMax, onStow }: { maxed: boolean; onMax: () => vo
   );
 }
 
-function PaneBar({ title, railOpen, onToggle }: { title: string; railOpen: boolean; onToggle: () => void }) {
-  return (
-    <div className="wb-pane-bar">
-      <span className="wb-pane-title">{title}</span>
-      <button
-        type="button"
-        className="wb-pane-open"
-        aria-label={railOpen ? "收起附栏" : "打开附栏"}
-        title={railOpen ? "收起附栏" : "打开附栏"}
-        onClick={onToggle}
-      >
-        <IconRailDock size={14} />
-      </button>
-    </div>
-  );
-}
-
 function TerminalView({
   term,
   local,
   token,
   runId,
   refreshKey,
-  railOpen,
-  onToggleRail,
   onCloseSession,
 }: {
   term: ReturnType<typeof useTerminalSessions>;
@@ -441,8 +417,6 @@ function TerminalView({
   token: string;
   runId: string | null;
   refreshKey: number;
-  railOpen: boolean;
-  onToggleRail: () => void;
   onCloseSession: (id: string) => void;
 }) {
   const [focused, setFocused] = useState(false);
@@ -464,23 +438,47 @@ function TerminalView({
 
   const focusTerm = () => ghostRef.current?.focus();
 
+  const sessionLabel = term.sessions.find((item) => item.id === term.activeId)?.label ?? "终端";
+
   return (
-    <>
-      <div className="wb-subbar">
-        <PaneBar
-          title={term.sessions.find((item) => item.id === term.activeId)?.label ?? "Terminal"}
-          railOpen={railOpen}
-          onToggle={onToggleRail}
-        />
-      </div>
-      <div className="wb-body">
-        <div className="wb-main">
-          {term.error ? <p className="error">{term.error}</p> : null}
-          {!term.activeId ? (
-            <p className="wb-empty">{local ? "本机终端需要先选一个文件夹。" : "发送任务后可以打开沙箱终端。"}</p>
-          ) : (
+    <section className="terminal-panel" id="run-terminal">
+      <details className="term-card-head">
+        <summary>
+          {sessionLabel}
+          <IconChevronDown size={14} />
+        </summary>
+        <div className="inspector-more-pop term-menu">
+          {term.sessions.map((item) => (
+            <div key={item.id} className={`term-session-row${item.id === term.activeId ? " is-on" : ""}`}>
+              <button type="button" onClick={() => term.setActiveId(item.id)}>
+                <IconTerminal size={13} />
+                {item.label}
+              </button>
+              {term.sessions.length > 1 ? (
+                <button
+                  type="button"
+                  className="term-session-close"
+                  aria-label={`关闭 ${item.label}`}
+                  onClick={() => onCloseSession(item.id)}
+                >
+                  <IconClose size={11} />
+                </button>
+              ) : null}
+            </div>
+          ))}
+          <div className="term-menu-actions">
+            <button type="button" onClick={() => void term.open()}>
+              新建
+            </button>
+          </div>
+        </div>
+      </details>
+      {term.error ? <p className="error">{term.error}</p> : null}
+      {!term.activeId ? (
+        <p className="pane-empty">{local ? "本机终端需要先选一个文件夹。" : "发送任务后可以打开沙箱终端。"}</p>
+      ) : (
               <div
-                className={`term-out is-flat${focused ? " is-focused" : ""}`}
+                className={`term-out is-flat term-shell${focused ? " is-focused" : ""}`}
                 ref={outRef}
                 onMouseDown={(event) => {
                   if (event.target === ghostRef.current) return;
@@ -589,36 +587,9 @@ function TerminalView({
                   }}
                 />
               </div>
-          )}
-          {!local ? <SetupLogs token={token} runId={runId} refreshKey={refreshKey} /> : null}
-        </div>
-        {railOpen ? (
-          <aside className="wb-rail">
-            <div className="wb-rail-head">
-              <span>
-                {term.sessions.length} Terminal{term.sessions.length === 1 ? "" : "s"}
-              </span>
-              <button type="button" className="icon-btn" aria-label="新终端" onClick={() => void term.open()}>
-                <IconPlus size={14} />
-              </button>
-            </div>
-            <ul className="wb-rail-list">
-              {term.sessions.map((item) => (
-                <li key={item.id} className={item.id === term.activeId ? "on" : ""}>
-                  <button type="button" className="wb-rail-item" onClick={() => term.setActiveId(item.id)}>
-                    <IconTerminal size={13} />
-                    <span className="wb-rail-name">{item.label}</span>
-                  </button>
-                  <button type="button" className="wb-rail-close" aria-label={`关闭 ${item.label}`} onClick={() => onCloseSession(item.id)}>
-                    <IconClose size={11} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </aside>
-        ) : null}
-      </div>
-    </>
+      )}
+      {!local ? <SetupLogs token={token} runId={runId} refreshKey={refreshKey} /> : null}
+    </section>
   );
 }
 
@@ -628,8 +599,6 @@ function FilesView({
   runId,
   local,
   refreshKey,
-  railOpen,
-  onToggleRail,
   onPickFolder,
 }: {
   folder: string;
@@ -637,8 +606,6 @@ function FilesView({
   runId: string | null;
   local: boolean;
   refreshKey: number;
-  railOpen: boolean;
-  onToggleRail: () => void;
   onPickFolder?: () => void;
 }) {
   const [tree, setTree] = useState<Record<string, FsEntry[]>>({});
@@ -721,76 +688,57 @@ function FilesView({
     await openFile(created.path);
   };
 
+  const fileName = preview ? (preview.path.split(/[\\/]/).pop() ?? preview.path) : "";
+
   return (
-    <>
-      <div className="wb-subbar">
-        <PaneBar title={preview?.path || rootName} railOpen={railOpen} onToggle={onToggleRail} />
-      </div>
-      <div className="wb-body">
-        <div className="wb-main">
-          {error ? <p className="error">{error}</p> : null}
-          {!ready ? (
-            <div className="wb-empty">
-              <p>{local ? "还没有本机文件夹。选一个之后，这里会显示文件树。" : "发送任务后可以浏览云端工作区。"}</p>
-              {local && onPickFolder ? (
-                <button type="button" className="wb-empty-action" onClick={onPickFolder}>
-                  选择文件夹
-                </button>
-              ) : null}
-            </div>
-          ) : preview ? (
-            <pre className="wb-preview">
-              {preview.content}
-              {preview.truncated ? "\n…（已截断）" : ""}
-            </pre>
-          ) : (
-            <div className="wb-empty-card">
-              <p>从右侧打开文件预览</p>
-              {local && folder ? (
-                creating ? (
-                  <form
-                    className="wb-new-file"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void createFile();
-                    }}
-                  >
-                    <input
-                      value={newName}
-                      autoFocus
-                      aria-label="文件名"
-                      onChange={(event) => setNewName(event.target.value)}
-                    />
-                    <button type="submit" className="wb-empty-action">
-                      创建
-                    </button>
-                    <button type="button" className="wb-empty-action wb-empty-action-quiet" onClick={() => setCreating(false)}>
-                      取消
-                    </button>
-                  </form>
-                ) : (
-                  <button type="button" className="wb-empty-action" onClick={startCreate}>
-                    New File
+    <section className={`file-tree${ready ? " file-split" : ""}`} id="file-tree">
+      {ready ? (
+        <>
+          <header className="workspace-files-head">
+            {preview ? (
+              <span className="workspace-files-title" title={preview.path}>
+                <strong>{fileName}</strong>
+              </span>
+            ) : (
+              <span className="workspace-files-title" title={local ? folder : undefined}>
+                <strong>{rootName}</strong>
+              </span>
+            )}
+            {local && folder ? (
+              creating ? (
+                <form
+                  className="wb-new-file"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void createFile();
+                  }}
+                >
+                  <input
+                    value={newName}
+                    autoFocus
+                    aria-label="文件名"
+                    onChange={(event) => setNewName(event.target.value)}
+                  />
+                  <button type="submit" className="quiet-btn">
+                    创建
                   </button>
-                )
-              ) : null}
-            </div>
-          )}
-        </div>
-        {railOpen ? (
-          <aside className="wb-rail">
-            <div className="wb-rail-head">
-              <span title={local ? folder : undefined}>{rootName}</span>
-              {local && folder ? (
-                <button type="button" className="icon-btn" aria-label="New File" title="New File" onClick={startCreate}>
+                  <button type="button" className="quiet-btn" onClick={() => setCreating(false)}>
+                    取消
+                  </button>
+                </form>
+              ) : (
+                <button type="button" className="icon-btn" aria-label="新建文件" title="新建文件" onClick={startCreate}>
                   <IconPlus size={14} />
                 </button>
-              ) : null}
-              <button type="button" className="icon-btn" aria-label="刷新" onClick={() => setTick((n) => n + 1)}>
-                <IconSync size={13} />
-              </button>
-            </div>
-            {ready ? (
+              )
+            ) : null}
+            <button type="button" className="icon-btn" aria-label="刷新" onClick={() => setTick((n) => n + 1)}>
+              <IconSync size={13} />
+            </button>
+          </header>
+          <div className="file-split-body">
+            <div className="file-tree-list">
+              {error ? <p className="error">{error}</p> : null}
               <FileTree
                 path=""
                 depth={0}
@@ -800,13 +748,28 @@ function FilesView({
                 onToggle={toggleDir}
                 onFile={openFile}
               />
+            </div>
+            {preview ? (
+              <pre className="file-source">
+                {preview.content}
+                {preview.truncated ? "\n…（已截断）" : ""}
+              </pre>
             ) : (
-              <p className="hint">还没有工作区。</p>
+              <div className="file-source is-empty" />
             )}
-          </aside>
-        ) : null}
-      </div>
-    </>
+          </div>
+        </>
+      ) : (
+        <div className="wb-empty">
+          <p>{local ? "还没有本机文件夹。选一个之后，这里会显示文件树。" : "发送任务后可以浏览工作区文件。"}</p>
+          {local && onPickFolder ? (
+            <button type="button" className="wb-empty-action" onClick={onPickFolder}>
+              选择文件夹
+            </button>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 
