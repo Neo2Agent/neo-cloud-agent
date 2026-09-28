@@ -62,7 +62,7 @@ export function SidePanel({
   onPullRequests,
 }: Props) {
   const [maxed, setMaxed] = useState(false);
-  const [railOpen, setRailOpen] = useState(false);
+  const [railOpen, setRailOpen] = useState(true);
   const [artifactsTab, setArtifactsTab] = useState(tab === "artifacts");
   const term = useTerminalSessions({ folder, token, runId, local });
   const page = resolveSidePanelPage(tab);

@@ -70,6 +70,7 @@ test("desk chrome copies Cursor Agents Window density, not Island candy", () => 
   assert.doesNotMatch(meta, /就绪/);
   assert.match(panel, /wb-tab-label">Changes</);
   assert.match(panel, /resolveSidePanelPage/);
+  assert.match(panel, /const \[railOpen, setRailOpen\] = useState\(true\)/);
   assert.doesNotMatch(panel, /wb-home/);
   assert.doesNotMatch(panel, /wb-tile/);
   assert.doesNotMatch(panel, /Island/);
