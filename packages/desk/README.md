@@ -24,4 +24,4 @@ pnpm pack:desk   # mac / Windows / Linux zip，默认连现网
 
 覆盖地址：`NEO_CONTROL_PLANE_URL=http://host pnpm dev:desk:prod`。`.env` 里的本地 `CONTROL_PLANE_URL` 不会把 prod 模式拽回 8080。
 
-锁定设计里「对齐 Cursor」指 Agents Window 的交互（This Computer / Cloud / Remote），不是复用 Web 那套浅色壳。
+锁定设计里「对齐 Cursor」指 Agents Window 的交互和密度：左侧会话、中间对话为主、右侧可选 Files / Changes，个性化（专家 / 技能 / 记忆）挂在会话列表下面。不是复用 Web 那套浅色壳，也不补 Cursor 有、Neo 没有的能力。

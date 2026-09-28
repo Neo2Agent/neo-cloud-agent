@@ -75,7 +75,6 @@ import { ExpertsPage } from "./ExpertsPage";
 import { MemoriesPage } from "./MemoriesPage";
 import { SkillsPage } from "./SkillsPage";
 import { jumpToTranscriptMessage, TranscriptSearch } from "./chat/TranscriptSearch";
-import { IslandButton, IslandCard, IslandInput, IslandTag } from "./island";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import {
   PANEL_W_DEFAULT,
@@ -137,9 +136,9 @@ import {
   IconBack,
   IconBell,
   IconArtifacts,
+  IconChevron,
   IconExperts,
   IconMemory,
-  IconMore,
   IconSkills,
   IconForward,
   IconGear,
@@ -318,9 +317,11 @@ export function App() {
   const [railInboxExpanded, setRailInboxExpanded] = useState(false);
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<SidePanelTab>(
-    () => (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || "home",
-  );
+  const [panelTab, setPanelTab] = useState<SidePanelTab>(() => {
+    const stored = localStorage.getItem("neo.desk.panelTab") as SidePanelTab | null;
+    return stored && stored !== "home" ? stored : "files";
+  });
+  const [railCustomOpen, setRailCustomOpen] = useState(true);
   const [panelEpoch, setPanelEpoch] = useState(0);
   // Keyed by runId: several local conversations can hold a worker at once, and a
   // single slot would show whichever one reported last.
@@ -1670,6 +1671,14 @@ export function App() {
     setAccountOpen(false);
   }, inboxRef);
 
+  const openPanel = (tab?: SidePanelTab) => {
+    setPanelOpen(true);
+    setPanelTab((cur) => {
+      const next = tab ?? cur;
+      return !next || next === "home" ? "files" : next;
+    });
+  };
+
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const action = composerKeyAction(
       {
@@ -1697,10 +1706,7 @@ export function App() {
             type="button"
             className="icon-btn"
             aria-label="打开 Git"
-            onClick={() => {
-              setPanelOpen(true);
-              setPanelTab("git");
-            }}
+            onClick={() => openPanel("git")}
           >
             <IconGit size={15} />
           </button>
@@ -1711,23 +1717,18 @@ export function App() {
           type="button"
           className="icon-btn"
           aria-label="打开产物"
-          onClick={() => {
-            setPanelOpen(true);
-            setPanelTab("artifacts");
-          }}
+          onClick={() => openPanel("artifacts")}
         >
           <IconArtifacts size={15} />
         </button>
       </Tooltip>
       {!panelOpen ? (
-        <Tooltip content="Files / Terminal" side="left">
+        <Tooltip content="Files / Changes" side="left">
           <button
             type="button"
             className="icon-btn"
             aria-label="打开右侧栏"
-            onClick={() => {
-              setPanelOpen(true);
-            }}
+            onClick={() => openPanel()}
           >
             <IconPanelRight size={15} />
           </button>
@@ -1736,15 +1737,13 @@ export function App() {
     </span>
   );
   const homePanelToggle = !panelOpen ? (
-    <Tooltip content="Files / Terminal" side="left">
+    <Tooltip content="Files / Changes" side="left">
       <span className="panel-toggle-wrap">
         <button
           type="button"
           className="icon-btn"
           aria-label="打开右侧栏"
-          onClick={() => {
-            setPanelOpen(true);
-          }}
+          onClick={() => openPanel()}
         >
           <IconPanelRight size={15} />
         </button>
@@ -1767,7 +1766,7 @@ export function App() {
       <div className="login-shell">
         <div className="login-scene">
           <p className="login-brand">Neo Desk</p>
-          <IslandCard className="login-card">
+          <div className="login-card">
             <form
               className="login-form"
               onSubmit={(event) => {
@@ -1783,22 +1782,23 @@ export function App() {
                 <>
                   <label>
                     用户名
-                    <IslandInput value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+                    <input className="login-field" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
                   </label>
                   <label>
                     手机号
-                    <IslandInput value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" />
+                    <input className="login-field" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" />
                   </label>
                 </>
               ) : (
                 <label>
                   用户名或手机号
-                  <IslandInput value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
+                  <input className="login-field" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
                 </label>
               )}
               <label>
                 密码
-                <IslandInput
+                <input
+                  className="login-field"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -1806,21 +1806,14 @@ export function App() {
                 />
               </label>
               {authError ? <p className="error">{authError}</p> : null}
-              <IslandButton
-                type="primary"
-                htmlType="submit"
-                block
-                className="login-continue"
-                loading={authBusy}
-                disabled={authBusy}
-              >
+              <button type="submit" className="login-continue" disabled={authBusy}>
                 {authBusy ? (authMode === "register" ? "注册中…" : "登录中…") : authMode === "register" ? "注册并登录" : "Continue"}
-              </IslandButton>
+              </button>
               <button type="button" className="text-link" onClick={() => setAuthMode(authMode === "register" ? "login" : "register")}>
                 {authMode === "register" ? "已有账号？去登录" : "没有账号？手机号注册"}
               </button>
             </form>
-          </IslandCard>
+          </div>
         </div>
       </div>
     );
@@ -1929,75 +1922,6 @@ export function App() {
             </span>
             项目
           </button>
-          <div className="rail-more-wrap">
-            <button
-              type="button"
-              className={`rail-item${nav === "experts" || nav === "skills" || nav === "memories" ? " on" : ""}`}
-              aria-haspopup="menu"
-            >
-              <span className="rail-icon">
-                <IconMore />
-              </span>
-              <span className="rail-more-copy">
-                <span>更多</span>
-                {nav === "experts" ? <em>专家</em> : null}
-                {nav === "skills" ? <em>技能</em> : null}
-                {nav === "memories" ? <em>记忆</em> : null}
-              </span>
-            </button>
-            <div className="rail-more-pop" role="menu" aria-label="个性化">
-              <div className="rail-more-pop-card">
-                <p className="rail-more-pop-title">个性化</p>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={nav === "experts" ? "on" : undefined}
-                  onClick={() => {
-                    setSearchOpen(false);
-                    setNav("experts");
-                    clearPageHash();
-                    void refreshExperts(activeProject?.id);
-                  }}
-                >
-                  <span className="rail-more-ico">
-                    <IconExperts size={15} />
-                  </span>
-                  <span>
-                    <strong>专家</strong>
-                    <small>角色和专家团</small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={nav === "skills" ? "on" : undefined}
-                  onClick={() => openSkills()}
-                >
-                  <span className="rail-more-ico">
-                    <IconSkills size={15} />
-                  </span>
-                  <span>
-                    <strong>技能</strong>
-                    <small>安装后写进工作区</small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={nav === "memories" ? "on" : undefined}
-                  onClick={() => openMemories()}
-                >
-                  <span className="rail-more-ico">
-                    <IconMemory size={15} />
-                  </span>
-                  <span>
-                    <strong>记忆</strong>
-                    <small>偏好和长期事实</small>
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
         </nav>
 
         <div className="repo-head">
@@ -2038,6 +1962,44 @@ export function App() {
           />
         </div>
 
+        <div className="rail-custom">
+          <button type="button" className="rail-block-head" onClick={() => setRailCustomOpen((cur) => !cur)}>
+            <IconChevron open={railCustomOpen} size={13} />
+            <span>个性化</span>
+          </button>
+          {railCustomOpen ? (
+            <>
+              <button
+                type="button"
+                className={`rail-item${nav === "experts" ? " on" : ""}`}
+                onClick={() => {
+                  setSearchOpen(false);
+                  setNav("experts");
+                  clearPageHash();
+                  void refreshExperts(activeProject?.id);
+                }}
+              >
+                <span className="rail-icon">
+                  <IconExperts size={15} />
+                </span>
+                专家
+              </button>
+              <button type="button" className={`rail-item${nav === "skills" ? " on" : ""}`} onClick={() => openSkills()}>
+                <span className="rail-icon">
+                  <IconSkills size={15} />
+                </span>
+                技能
+              </button>
+              <button type="button" className={`rail-item${nav === "memories" ? " on" : ""}`} onClick={() => openMemories()}>
+                <span className="rail-icon">
+                  <IconMemory size={15} />
+                </span>
+                记忆
+              </button>
+            </>
+          ) : null}
+        </div>
+
         <div className="rail-foot" ref={inboxRef}>
           <div className="profile">
             <button
@@ -2054,7 +2016,7 @@ export function App() {
             >
               <Avatar src={userAvatar} label={user} />
               <span className="profile-name">{user}</span>
-              {remoteApiHost ? <IslandTag>生产</IslandTag> : null}
+              {remoteApiHost ? <span className="rail-host-pill">生产</span> : null}
             </button>
             <div className="profile-tools">
               <Tooltip content="收件箱" side="top">
@@ -2313,14 +2275,8 @@ export function App() {
                   }
                 }}
                 onCopy={(text) => void copyText(text)}
-                onOpenDiagnostics={() => {
-                  setPanelOpen(true);
-                  setPanelTab("terminal");
-                }}
-                onOpenArtifact={() => {
-                  setPanelOpen(true);
-                  setPanelTab("artifacts");
-                }}
+                onOpenDiagnostics={() => openPanel("terminal")}
+                onOpenArtifact={() => openPanel("artifacts")}
                 queueEpoch={queueEpoch}
                 thinkingHint={
                   localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
@@ -2346,14 +2302,8 @@ export function App() {
                 userId={userId}
                 feedRef={feedRef}
                 onCopy={(text) => void copyText(text)}
-                onOpenDiagnostics={() => {
-                  setPanelOpen(true);
-                  setPanelTab("terminal");
-                }}
-                onOpenArtifact={() => {
-                  setPanelOpen(true);
-                  setPanelTab("artifacts");
-                }}
+                onOpenDiagnostics={() => openPanel("terminal")}
+                onOpenArtifact={() => openPanel("artifacts")}
                 thinkingHint={
                   localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
                 }
@@ -2380,10 +2330,7 @@ export function App() {
                   <button
                     type="button"
                     className="chip"
-                    onClick={() => {
-                      setPanelOpen(true);
-                      setPanelTab("git");
-                    }}
+                    onClick={() => openPanel("git")}
                   >
                     Changes <em className="add">+{diff.added}</em> <em className="del">-{diff.removed}</em>
                   </button>
@@ -2545,9 +2492,9 @@ export function App() {
               {localNotice ? (
                 <p className="toast-inline local-notice">
                   {localNotice}
-                  <IslandButton type="text" onClick={() => setLocalNotice("")}>
+                  <button type="button" className="text-link" onClick={() => setLocalNotice("")}>
                     知道了
-                  </IslandButton>
+                  </button>
                 </p>
               ) : null}
               {copied ? <p className="copied">Copied</p> : null}

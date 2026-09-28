@@ -80,32 +80,15 @@ button:disabled {
 .login-card {
   width: 100%;
   border: 1px solid var(--line);
-  box-shadow: var(--shadow-stack);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: none;
 }
 
 .login-form {
   display: grid;
   gap: 18px;
   padding: 28px 28px 26px;
-}
-
-.login-form [class*="animal-wrapper"] {
-  width: 100%;
-  background: var(--bg-raised);
-  border: 1px solid var(--line);
-  box-shadow: none;
-}
-
-.login-form [class*="animal-wrapper"]:focus-within {
-  border-color: color-mix(in srgb, var(--ink) 50%, var(--line));
-}
-
-.login-form [class*="animal-wrapper"] input,
-.login-form [class*="animal-input"] {
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  outline: none;
 }
 
 .login-card h1 {
@@ -125,15 +108,18 @@ button:disabled {
   text-align: center;
 }
 
-.login-form .text-link {
-  display: block;
-  width: 100%;
-  margin-top: 8px;
+.text-link {
   border: 0;
   background: transparent;
   color: var(--accent);
   cursor: pointer;
   font-size: 13px;
+}
+
+.login-form .text-link {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .login-brand {
@@ -144,23 +130,18 @@ button:disabled {
   letter-spacing: -0.02em;
 }
 
-.login-form .login-continue[class*="animal-btn-primary"] {
+.login-form .login-continue {
+  width: 100%;
+  min-height: 36px;
+  border-radius: 8px;
   background: var(--accent);
   color: #fff;
-  border-color: var(--accent);
-  box-shadow: none;
-  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.login-form .login-continue[class*="animal-btn-primary"]:hover:not(:disabled) {
+.login-form .login-continue:hover:not(:disabled) {
   background: var(--accent-2);
-  border-color: var(--accent-2);
-  box-shadow: none;
-}
-
-.login-form .login-continue[class*="animal-btn-primary"]:active:not(:disabled) {
-  transform: none;
-  box-shadow: none;
 }
 
 .login-card label {
@@ -172,15 +153,15 @@ button:disabled {
   text-align: left;
 }
 
-.login-card input:not([class*="animal-"]),
+.login-field,
 .search {
+  width: 100%;
   border: 1px solid var(--line);
   background: var(--bg-raised);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 9px 11px;
 }
 
-.login-card [class*="animal-wrapper"],
 .settings-card [class*="animal-wrapper"] {
   width: 100%;
 }
@@ -364,141 +345,25 @@ button:disabled {
   color: var(--text);
 }
 
-.rail-more-wrap {
-  position: relative;
-  z-index: 6;
-}
-
-/* Caret is owned by the 更多 row, not the tall card, so it stays on the row midline. */
-.rail-more-wrap::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 100%;
-  z-index: 13;
-  width: 12px;
-  height: 12px;
-  margin-top: -6px;
-  margin-left: 5px;
-  border-left: var(--ink-line);
-  border-bottom: var(--ink-line);
-  background: var(--bg-raised);
-  opacity: 0;
-  pointer-events: none;
-  transform: rotate(45deg);
-  transition: opacity 0.14s ease;
-}
-
-.rail-more-copy {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-
-.rail-more-copy em {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rail-more-pop {
-  position: absolute;
-  left: 100%;
-  top: 0;
-  z-index: 12;
-  display: block;
-  width: max-content;
-  min-width: 220px;
-  margin: 0;
-  padding: 0 0 0 12px;
-  border: 0;
-  background: transparent;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-6px);
-  transition: opacity 0.14s ease, transform 0.14s ease;
-}
-
-.rail-more-pop-card {
-  position: relative;
-  display: grid;
-  gap: 2px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg-raised);
-  box-shadow: var(--shadow);
-}
-
-.rail-more-wrap:hover::after,
-.rail-more-wrap:focus-within::after {
-  opacity: 1;
-}
-
-.rail-more-pop-title {
-  margin: 0 6px 2px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.rail-more-wrap:hover .rail-more-pop,
-.rail-more-wrap:focus-within .rail-more-pop {
-  opacity: 1;
-  pointer-events: auto;
-  transform: none;
-}
-
-.rail-more-pop button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 12px;
-  text-align: left;
-}
-
-.rail-more-pop button span:last-child {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-.rail-more-pop button strong {
-  font-size: 13.5px;
-  font-weight: 750;
-}
-
-.rail-more-pop button small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.rail-more-ico {
-  display: grid;
-  place-items: center;
+.rail-custom {
   flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-  background: var(--rail);
-  color: var(--text);
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--line);
 }
 
-.rail-more-pop button:hover,
-.rail-more-pop button.on {
-  background: var(--hover);
+.rail-custom .rail-item {
+  padding: 6px 8px;
 }
 
-.rail-more-pop button.on .rail-more-ico {
+.rail-host-pill {
+  flex: none;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
   background: var(--active);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .rail-icon {
@@ -671,7 +536,7 @@ button:disabled {
 }
 
 .search:focus,
-.login-card input:not([class*="animal-"]):focus,
+.login-field:focus,
 .term-out.is-focused,
 .settings-card input:not([class*="animal-"]):focus,
 .settings-card select:focus {
@@ -3096,10 +2961,10 @@ img.avatar {
   display: grid;
   gap: 12px;
   margin-bottom: 16px;
-  padding: 18px 18px 16px;
+  padding: 16px;
   background: var(--card);
-  border: var(--ink-line);
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .settings-card h2 {
@@ -3118,9 +2983,26 @@ img.avatar {
 .settings-card select {
   border: 1px solid var(--line);
   background: var(--bg-raised);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 9px 11px;
   color: var(--text);
+}
+
+.settings-action {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.settings-action.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
 }
 
 .avatar-setting {
@@ -3581,33 +3463,6 @@ img.avatar {
   margin-left: auto;
 }
 
-.wb-home {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(3, 120px);
-  gap: 16px;
-  align-content: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.wb-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 120px;
-  height: 120px;
-  box-sizing: border-box;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.wb-tile:hover {
-  color: inherit;
-}
-
 .wb-body {
   display: flex;
   flex: 1;
@@ -3896,6 +3751,12 @@ img.avatar {
   background: var(--accent);
   color: #fff;
   font-size: 13px;
+}
+
+.wb-empty-action-quiet {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--line);
 }
 
 .wb-empty p {

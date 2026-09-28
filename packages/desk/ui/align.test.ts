@@ -45,19 +45,34 @@ test("desk chrome copies Cursor Agents Window density, not Island candy", () => 
   const app = readFileSync(path.join(here, "App.tsx"), "utf8");
   const rail = readFileSync(path.join(here, "chat/RailSessions.tsx"), "utf8");
   const meta = readFileSync(path.join(here, "chat/LocalRunMeta.tsx"), "utf8");
+  const panel = readFileSync(path.join(here, "SidePanel.tsx"), "utf8");
   assert.doesNotMatch(css, /#3dd4c6/);
   assert.doesNotMatch(css, /#ffcc00/);
   assert.doesNotMatch(css, /#0a7a72/);
+  assert.doesNotMatch(css, /rail-more-pop/);
+  assert.doesNotMatch(css, /\.wb-home/);
+  assert.doesNotMatch(css, /\.wb-tile/);
   assert.match(css, /\.rail-count/);
+  assert.match(css, /\.rail-custom/);
   assert.match(css, /\.local-meta-pill/);
+  assert.match(css, /\.login-field/);
   assert.match(css, /\.chat-bubble\.user\s*\{[^}]*border:\s*0/);
   assert.match(css, /\.rail-nav \.rail-new-chat\s*\{[^}]*border-radius:\s*8px/);
+  assert.match(css, /\.settings-card\s*\{[^}]*border-radius:\s*8px/);
   assert.match(app, /className="rail-new-chat"/);
-  assert.doesNotMatch(app, /IslandTitle/);
+  assert.match(app, /className="rail-custom"/);
+  assert.match(app, /个性化/);
+  assert.doesNotMatch(app, /Island/);
+  assert.doesNotMatch(app, /rail-more-wrap/);
   assert.match(rail, /rail-count/);
   assert.doesNotMatch(rail, /IslandTag/);
   assert.match(meta, /local-meta-pill/);
   assert.doesNotMatch(meta, /就绪/);
+  assert.match(panel, /wb-tab-label">Changes</);
+  assert.match(panel, /resolveSidePanelPage/);
+  assert.doesNotMatch(panel, /wb-home/);
+  assert.doesNotMatch(panel, /wb-tile/);
+  assert.doesNotMatch(panel, /Island/);
 });
 
 test("desk expert picker sits in the context bar like Web", () => {

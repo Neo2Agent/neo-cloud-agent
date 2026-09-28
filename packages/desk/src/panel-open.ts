@@ -12,7 +12,7 @@ export function shouldRestoreDeskPanel(input: {
   runId?: string | null;
 }): boolean {
   if (!input.storedOpen) return false;
-  const tab = input.tab || "home";
+  const tab = input.tab && input.tab !== "home" ? input.tab : "files";
   if (tab === "git" || tab === "artifacts" || tab === "terminal") return true;
   return Boolean(input.folder || input.runId);
 }
