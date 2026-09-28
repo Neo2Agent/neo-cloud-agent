@@ -203,6 +203,8 @@ const pendingLoopStarts = new Map<
   string,
   { delivery: FollowUpDelivery; text: string; images?: import("@neo-cloud-agent/contracts").ImageRef[]; followUpId?: string | null }
 >();
+/** In-flight neo-loop POSTs. Two claims or a follow-up must not start a second turn. */
+const startingLoopTurns = new Set<string>();
 const runEgress = new Map<string, EgressPolicy>();
 const releasingIdle = new Set<string>();
 const activeTurns = new Map<string, ActiveTurn>();
@@ -357,6 +359,7 @@ export function reloadPersistedState(): void {
   deskGitSnapshots.clear();
   prRefreshedAt.clear();
   pendingLoopStarts.clear();
+  startingLoopTurns.clear();
   preparing.clear();
   startingQueued = false;
   resetHistory();
@@ -1611,17 +1614,52 @@ async function attachWorker(run: Run, title: string): Promise<void> {
   void startPendingLoopTurn(run);
 }
 
+function parkPendingLoopStart(runId: string): void {
+  const pending = pendingLoopStarts.get(runId);
+  pendingLoopStarts.delete(runId);
+  if (pending?.text?.trim()) {
+    queueLoopFollowUp(runId, {
+      text: pending.text,
+      images: pending.images,
+      followUpId: pending.followUpId ?? undefined,
+    });
+  }
+}
+
+function shouldQueueAgentscopeFollowUp(run: Run): boolean {
+  return (
+    run.status === "RUNNING" ||
+    pendingLoopStarts.has(run.id) ||
+    Boolean(run.currentTurnId) ||
+    startingLoopTurns.has(run.id)
+  );
+}
+
+function deskWaitingForFirstClaim(run: Run): boolean {
+  return isDeskToolsTarget(run.executionTarget) && run.status === "NOT_YET_STARTED";
+}
+
 async function startPendingLoopTurn(run: Run): Promise<void> {
   if ((run.kernel ?? "pi") !== "agentscope") {
     return;
   }
-  const pending = pendingLoopStarts.get(run.id) ?? { delivery: "prompt" as const, text: run.prompt };
-  pendingLoopStarts.delete(run.id);
+  if (startingLoopTurns.has(run.id) || run.currentTurnId) {
+    parkPendingLoopStart(run.id);
+    return;
+  }
+  startingLoopTurns.add(run.id);
   try {
+    const pending = pendingLoopStarts.get(run.id);
+    if (!pending?.text?.trim()) {
+      return;
+    }
+    pendingLoopStarts.delete(run.id);
     await dispatchTurn(run, usableRunJwt(run), pending);
     flushRun(run.id);
   } catch (error) {
     console.error(`neo-loop dispatch failed for ${run.id}`, error);
+  } finally {
+    startingLoopTurns.delete(run.id);
   }
 }
 
@@ -2399,7 +2437,7 @@ export async function enqueueFollowUp(
       void signalTurn(run, { type: "steer", text: input.text, followUpId: item.id }).catch((error) => {
         console.error(`neo-loop steer failed for ${runId}`, error);
       });
-    } else if (run.status === "RUNNING" && delivery === "follow_up") {
+    } else if (shouldQueueAgentscopeFollowUp(run)) {
       queueLoopFollowUp(runId, { text: input.text, images: input.images, followUpId: item.id });
     } else {
       pendingLoopStarts.set(runId, {
@@ -2437,10 +2475,12 @@ export async function enqueueFollowUp(
         return item;
       }
     }
-    try {
-      await resumeRun(runId);
-    } catch {
-      // follow-up stays queued; resumeRun queued or marked ERROR
+    if (!deskWaitingForFirstClaim(run)) {
+      try {
+        await resumeRun(runId);
+      } catch {
+        // follow-up stays queued; resumeRun queued or marked ERROR
+      }
     }
   } else if ((run.kernel ?? "pi") === "agentscope" && run.status !== "RUNNING") {
     // Worker is still leased after IDLE. Dispatch the turn now; do not wait for

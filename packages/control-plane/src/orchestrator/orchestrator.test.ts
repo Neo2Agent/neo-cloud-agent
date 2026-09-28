@@ -1968,6 +1968,66 @@ test("completeLoopTurn marks the run idle and does not use the inbox", async () 
 });
 
 test.describe("agentscope loop dispatch", { concurrency: 1 }, () => {
+test("Remote Control follow-up before claim stays FIFO and a second claim does not start another turn", async () => {
+  const previous = process.env.NEO_LOOP_URL;
+  const loop = await listenLoopMock((_req, body, res) => {
+    res.writeHead(202, { "content-type": "application/json" });
+    res.end(JSON.stringify({ turnId: body.turnId, runId: body.runId, accepted: true }));
+  });
+  process.env.NEO_LOOP_URL = `http://127.0.0.1:${loop.port}`;
+  let deskId = "";
+  try {
+    const registered = newDesk("rc-fifo");
+    deskId = registered.desk.id;
+    const pushed: Array<{ kind: string }> = [];
+    const detach = openDeskInbox(registered.desk.id, (event) => pushed.push(event));
+    const run = await createRun({
+      prompt: "RC-PROBE-inline-first",
+      repoUrls: ["/tmp/rc-fifo"],
+      source: "desk",
+      start: "inline",
+      kernel: "agentscope",
+      target: {
+        loop: "cloud",
+        tools: "desk",
+        deskId: registered.desk.id,
+        remoteControl: true,
+      },
+    });
+    assert.equal(run.status, "NOT_YET_STARTED");
+    await enqueueFollowUp(run.id, { text: "RC-PROBE-follow-from-web" });
+    assert.deepEqual(
+      listEvents(run.id).filter((item) => item.kind === "run.queued").map((item) => item.title),
+      ["正在 Desk 上启动 Agent"],
+    );
+    assert.equal(pushed.some((item) => item.kind === "assignment"), false);
+
+    await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/rc-fifo", pid: 6101 });
+    await claimDeskRun(registered.desk.id, { runId: run.id, workspaceDir: "/tmp/rc-fifo", pid: 6101 });
+    await waitUntil(() => loop.seen.length >= 1);
+    assert.equal(loop.seen.length, 1);
+    assert.equal(loop.seen[0]?.body.text, "RC-PROBE-inline-first");
+
+    const live = getRun(run.id);
+    assert.ok(live?.currentTurnId);
+    completeLoopTurn(run.id, { turnId: live.currentTurnId, status: "idle" });
+    await waitUntil(() => loop.seen.length >= 2);
+    assert.equal(loop.seen.length, 2);
+    assert.equal(loop.seen[1]?.body.text, "RC-PROBE-follow-from-web");
+    detach();
+  } finally {
+    if (deskId) {
+      deleteDesk(deskId);
+    }
+    if (previous === undefined) {
+      delete process.env.NEO_LOOP_URL;
+    } else {
+      process.env.NEO_LOOP_URL = previous;
+    }
+    await loop.close();
+  }
+});
+
 test("agentscope idle follow-up with an attached worker starts a new turn", async () => {
   const previous = process.env.NEO_LOOP_URL;
   const loop = await listenLoopMock((_req, body, res) => {
