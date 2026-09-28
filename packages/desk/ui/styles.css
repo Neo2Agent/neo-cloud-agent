@@ -427,12 +427,12 @@ button:disabled {
 .rail-more-pop-card {
   position: relative;
   display: grid;
-  gap: 4px;
-  padding: 10px;
-  border: var(--ink-line);
-  border-radius: 18px;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--bg-raised);
-  box-shadow: var(--shadow-stack), var(--shadow-soft);
+  box-shadow: var(--shadow);
 }
 
 .rail-more-wrap:hover::after,
@@ -3890,13 +3890,12 @@ img.avatar {
   text-align: center;
 }
 
-.wb-empty [class*="animal-btn-primary"],
-.wb-empty-card [class*="animal-btn-primary"] {
+.wb-empty-action {
+  padding: 6px 12px;
+  border-radius: 8px;
   background: var(--accent);
   color: #fff;
-  border-color: var(--accent);
-  border-radius: 8px;
-  box-shadow: none;
+  font-size: 13px;
 }
 
 .wb-empty p {

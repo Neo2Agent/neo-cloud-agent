@@ -937,9 +937,9 @@ function FilesView({
             <div className="wb-empty">
               <p>{local ? "还没有本机文件夹。选一个之后，这里会显示文件树。" : "发送任务后可以浏览云端工作区。"}</p>
               {local && onPickFolder ? (
-                <IslandButton type="primary" onClick={onPickFolder}>
+                <button type="button" className="wb-empty-action" onClick={onPickFolder}>
                   选择文件夹
-                </IslandButton>
+                </button>
               ) : null}
             </div>
           ) : preview ? (
@@ -973,9 +973,9 @@ function FilesView({
                     </IslandButton>
                   </form>
                 ) : (
-                  <IslandButton type="primary" onClick={startCreate}>
+                  <button type="button" className="wb-empty-action" onClick={startCreate}>
                     New File
-                  </IslandButton>
+                  </button>
                 )
               ) : null}
             </div>
