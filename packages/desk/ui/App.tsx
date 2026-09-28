@@ -696,7 +696,7 @@ export function App() {
       refreshInbox(),
       refreshHealth(),
     ]);
-  }, [panelTab, refreshAutomations, refreshExperts, refreshHealth, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
+  }, [refreshAutomations, refreshExperts, refreshHealth, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     if (!authed) return;
