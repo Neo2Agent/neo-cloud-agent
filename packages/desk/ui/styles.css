@@ -3,10 +3,10 @@
 @import "@neo-cloud-agent/ui/context-usage.css";
 
 :root {
-  --transcript-max: 860px;
+  --transcript-max: 768px;
   --transcript-gutter: 48px;
   --rail-w: 248px;
-  --panel-w: 560px;
+  --panel-w: 360px;
   font-family: var(--font-sans);
   font-weight: 500;
   letter-spacing: 0;
@@ -233,9 +233,9 @@ button:disabled {
 }
 
 .split-bar.panel-split {
-  flex: 0 0 0;
-  width: 4px;
-  margin: 0 -2px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
   align-self: stretch;
 }
 
@@ -1897,16 +1897,17 @@ img.avatar {
 .feed.chat-feed {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 8px 24px 36px;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 24px 28px;
 }
 
 .feed.chat-feed > *,
 .chat-feed > * {
-  width: 100%;
-  max-width: none;
-  margin-left: 0;
-  margin-right: 0;
+  width: min(var(--transcript-max), 100%);
+  max-width: min(var(--transcript-max), 100%);
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .msg-row {
@@ -1914,14 +1915,12 @@ img.avatar {
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
-  width: 100%;
-  max-width: none;
+  width: min(var(--transcript-max), 100%);
   text-align: left;
 }
 
 .msg-row.assistant {
   align-items: stretch;
-  max-width: none;
   padding-left: 0;
 }
 
@@ -1940,26 +1939,28 @@ img.avatar {
 }
 
 .msg-row.user {
-  flex-direction: row;
+  flex-direction: column;
   justify-content: flex-end;
-  align-items: flex-start;
-  gap: 10px;
-  max-width: none;
+  align-items: flex-end;
+  gap: 6px;
 }
 
 .msg-row.user .chat-col {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  max-width: min(560px, 82%);
+  max-width: min(680px, 86%);
+  min-width: 0;
 }
 
 .chat-bubble {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-radius: 18px;
   line-height: 1.55;
-  font-size: 14px;
+  font-size: 13.5px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .chat-bubble.user {
@@ -1981,12 +1982,12 @@ img.avatar {
 
 .chat-bubble.assistant {
   width: 100%;
-  padding: 12px 16px;
-  background: var(--card);
-  border: var(--ink-line);
-  border-radius: 18px;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   text-align: left;
-  box-shadow: var(--shadow-stack), inset 0 1px 0 0 rgba(255, 251, 231, 0.78);
+  box-shadow: none;
 }
 
 .chat-brand {
@@ -2021,16 +2022,27 @@ img.avatar {
 }
 
 .chat-page:not(:has(.home-wrap)) .composer-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 8px 24px 12px;
   background: transparent;
 }
 
+.chat-page:not(:has(.home-wrap)) .composer-follow,
 .chat-page:not(:has(.home-wrap)) .composer.composer-stack,
 .composer.composer-stack.follow {
-  width: 100%;
-  max-width: none;
+  width: min(var(--transcript-max), calc(100% - var(--transcript-gutter)));
+  max-width: 100%;
   min-width: 0;
   margin: 0;
+}
+
+.chat-page:not(:has(.home-wrap)) .chips,
+.chat-page:not(:has(.home-wrap)) .toast-inline,
+.chat-page:not(:has(.home-wrap)) .composer-wrap > .error {
+  width: min(var(--transcript-max), calc(100% - var(--transcript-gutter)));
+  max-width: 100%;
 }
 
 .chat-page:not(:has(.home-wrap)) .chips {
@@ -2144,7 +2156,7 @@ img.avatar {
 }
 
 .feed.chat-feed {
-  padding: 8px 24px 20px;
+  padding: 12px 24px 20px;
 }
 
 .feed::-webkit-scrollbar {
@@ -2160,10 +2172,10 @@ img.avatar {
 }
 
 .feed.chat-feed > * {
-  width: 100%;
-  max-width: none;
-  margin-left: 0;
-  margin-right: 0;
+  width: min(var(--transcript-max), 100%);
+  max-width: min(var(--transcript-max), 100%);
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .empty-copy {
@@ -2200,12 +2212,16 @@ img.avatar {
 
 .assistant-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   line-height: 1.6;
   font-size: 14.5px;
 }
 
 .chat-bubble.assistant .md {
   white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .work-fold,
@@ -2533,11 +2549,13 @@ img.avatar {
 .home-composer .context-bar,
 .composer-follow .context-bar {
   justify-content: flex-start;
+  flex-wrap: wrap;
   width: 100%;
   max-width: none;
+  min-width: 0;
   margin: 0 0 8px;
   padding: 0 2px;
-  gap: 8px;
+  gap: 6px 8px;
   border-bottom: 0;
 }
 
@@ -2554,18 +2572,29 @@ img.avatar {
 
 .context-item-wrap {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .context-item {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 220px;
+  min-width: 0;
   padding: 4px 8px;
   border: 0;
   border-radius: 8px;
   background: none;
   color: var(--muted);
   font-size: 13.5px;
+}
+
+.context-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .home-composer .context-item {
@@ -3376,7 +3405,13 @@ img.avatar {
 }
 
 .chat-page.with-panel {
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6px minmax(260px, min(var(--panel-w), 36%));
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.chat-page.with-panel:has(.side-panel.is-max) {
+  grid-template-columns: minmax(0, 1fr) minmax(var(--panel-w), 1fr);
 }
 
 .chat-stage {
@@ -3400,8 +3435,8 @@ img.avatar {
 .side-panel {
   display: flex;
   flex-direction: column;
-  flex: 0 0 var(--panel-w);
-  width: var(--panel-w);
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   height: 100%;
   border-left: var(--ink-line);
@@ -3411,14 +3446,12 @@ img.avatar {
 }
 
 .side-panel.has-rail {
-  flex-basis: calc(var(--panel-w) + 200px);
-  width: calc(var(--panel-w) + 200px);
+  width: 100%;
 }
 
 .side-panel.is-max {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: var(--panel-w);
+  width: 100%;
+  min-width: 0;
 }
 
 .wb-chrome {
@@ -3820,10 +3853,18 @@ img.avatar {
   align-items: center;
   justify-content: center;
   flex: 1;
-  gap: 10px;
+  gap: 12px;
+  max-width: 280px;
+  margin: auto;
+  padding: 24px 16px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
   text-align: center;
+}
+
+.wb-empty p {
+  margin: 0;
 }
 
 .wb-new-file {
@@ -4067,9 +4108,12 @@ img.avatar {
 }
 
 @media (max-width: 900px) {
+  .chat-page.with-panel {
+    grid-template-columns: minmax(0, 1fr) 6px minmax(220px, 32%);
+  }
+
   .side-panel,
   .side-panel.is-max {
-    flex-basis: 100%;
     width: 100%;
     min-width: 0;
   }

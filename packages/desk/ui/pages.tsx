@@ -709,7 +709,7 @@ export function ContextBar({
           onClick={() => setOpen(open === "repo" ? null : "repo")}
         >
           {local ? folder ? <IconComputer size={13} /> : <IconUnbindFolder size={13} /> : null}
-          <span>{workspaceLabel}</span>
+          <span title={local ? folder || workspaceLabel : workspaceLabel}>{workspaceLabel}</span>
           {locked ? null : <IconChevronDown size={12} />}
         </button>
         {folderPickerOpen ? (

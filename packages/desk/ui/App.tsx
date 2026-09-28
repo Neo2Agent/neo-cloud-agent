@@ -53,6 +53,7 @@ import {
 import { remoteControlSendLock, type DeskAssignment } from "@neo-cloud-agent/contracts/desk";
 import { DEFAULT_MAX_LOCAL_RUNS, normalizeMaxLocalRuns } from "../src/admission";
 import { resolveChatModel } from "../src/format";
+import { shouldRestoreDeskPanel } from "../src/panel-open";
 import { isLoopbackOrigin } from "../src/ports";
 import { groupRailSessions } from "../src/rail";
 import {
@@ -316,7 +317,7 @@ export function App() {
   const [railSpacesOpen, setRailSpacesOpen] = useState(true);
   const [railInboxExpanded, setRailInboxExpanded] = useState(false);
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
-  const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem("neo.desk.panel") === "1");
+  const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<SidePanelTab>(
     () => (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || "home",
   );
@@ -331,6 +332,7 @@ export function App() {
   const [copied, setCopied] = useState("");
   const [trail, setTrail] = useState<{ ids: string[]; at: number }>({ ids: [], at: -1 });
   const deskIdRef = useRef("");
+  const panelHydrated = useRef(false);
   const tokenRef = useRef("");
   const sourceRef = useRef<EventSource | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
@@ -659,6 +661,7 @@ export function App() {
     setNeoAvatar(body.user?.neoAvatar ?? null);
     setAuthed(true);
     const desk = deskBridge();
+    let nextFolder = "";
     if (desk) {
       const registered = await desk.setToken(tokenRef.current).catch(() => undefined);
       if (registered?.deskId) deskIdRef.current = registered.deskId;
@@ -668,9 +671,21 @@ export function App() {
         const next = mergeDeskTarget(saved, deskIdRef.current || registered?.deskId);
         if (next.deskId) deskIdRef.current = next.deskId;
         setTarget(next);
-        if (next.folder) setFolder(next.folder);
+        if (next.folder) {
+          nextFolder = next.folder;
+          setFolder(next.folder);
+        }
       }
     }
+    setPanelOpen(
+      shouldRestoreDeskPanel({
+        storedOpen: localStorage.getItem("neo.desk.panel") === "1",
+        tab: (localStorage.getItem("neo.desk.panelTab") as SidePanelTab) || panelTab,
+        folder: nextFolder,
+        runId: runIdRef.current,
+      }),
+    );
+    panelHydrated.current = true;
     await Promise.all([
       refreshRuns(),
       refreshAutomations(),
@@ -681,7 +696,7 @@ export function App() {
       refreshInbox(),
       refreshHealth(),
     ]);
-  }, [refreshAutomations, refreshExperts, refreshHealth, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
+  }, [panelTab, refreshAutomations, refreshExperts, refreshHealth, refreshInbox, refreshLlm, refreshPlugins, refreshProjects, refreshRuns]);
 
   useEffect(() => {
     if (!authed) return;
@@ -1007,6 +1022,7 @@ export function App() {
   }, [applyTarget]);
 
   useEffect(() => {
+    if (!panelHydrated.current) return;
     localStorage.setItem("neo.desk.panel", panelOpen ? "1" : "0");
     localStorage.setItem("neo.desk.panelTab", panelTab);
   }, [panelOpen, panelTab]);
@@ -2272,8 +2288,6 @@ export function App() {
                 token={token}
                 userId={userId}
                 user={user}
-                userAvatar={userAvatar}
-                neoAvatar={neoAvatar}
                 toolsOpen={chatToolsOpen}
                 visible={visible}
                 activity={activity}
@@ -2331,8 +2345,6 @@ export function App() {
                 busy={busy}
                 user={user}
                 userId={userId}
-                userAvatar={userAvatar}
-                neoAvatar={neoAvatar}
                 feedRef={feedRef}
                 onCopy={(text) => void copyText(text)}
                 onOpenDiagnostics={() => {
@@ -2555,6 +2567,7 @@ export function App() {
                 tab={panelTab}
                 onTab={setPanelTab}
                 onClose={() => setPanelOpen(false)}
+                onPickFolder={() => void pickLocalFolder()}
                 folder={localFolder}
                 token={token}
                 runId={runId}

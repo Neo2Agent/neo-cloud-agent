@@ -12,8 +12,6 @@ export function PersonalChatPage({
   busy,
   user,
   userId,
-  userAvatar,
-  neoAvatar,
   feedRef,
   onCopy,
   headerMeta,
@@ -29,8 +27,6 @@ export function PersonalChatPage({
   busy?: boolean;
   user: string;
   userId?: string;
-  userAvatar?: string | null;
-  neoAvatar?: string | null;
   feedRef: Ref<HTMLDivElement>;
   onCopy: (text: string) => void;
   headerMeta?: ReactNode;
@@ -49,8 +45,6 @@ export function PersonalChatPage({
         busy={busy}
         user={user}
         userId={userId}
-        userAvatar={userAvatar}
-        neoAvatar={neoAvatar}
         feedRef={feedRef}
         onCopy={onCopy}
         thinkingHint={thinkingHint}

@@ -29,6 +29,7 @@ type Props = {
   tab: SidePanelTab;
   onTab: (tab: SidePanelTab) => void;
   onClose: () => void;
+  onPickFolder?: () => void;
   folder: string;
   token: string;
   runId: string | null;
@@ -45,6 +46,7 @@ export function SidePanel({
   tab,
   onTab,
   onClose,
+  onPickFolder,
   folder,
   token,
   runId,
@@ -263,6 +265,7 @@ export function SidePanel({
           refreshKey={refreshKey}
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((cur) => !cur)}
+          onPickFolder={onPickFolder}
         />
       ) : (
         <TerminalView
@@ -831,6 +834,7 @@ function FilesView({
   refreshKey,
   railOpen,
   onToggleRail,
+  onPickFolder,
 }: {
   folder: string;
   token: string;
@@ -839,6 +843,7 @@ function FilesView({
   refreshKey: number;
   railOpen: boolean;
   onToggleRail: () => void;
+  onPickFolder?: () => void;
 }) {
   const [tree, setTree] = useState<Record<string, FsEntry[]>>({});
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({ "": true });
@@ -929,7 +934,14 @@ function FilesView({
         <div className="wb-main">
           {error ? <p className="error">{error}</p> : null}
           {!ready ? (
-            <p className="wb-empty">{local ? "先在 composer 上选一个本机文件夹。" : "发送任务后可以浏览云端工作区。"}</p>
+            <div className="wb-empty">
+              <p>{local ? "还没有本机文件夹。选一个之后，这里会显示文件树。" : "发送任务后可以浏览云端工作区。"}</p>
+              {local && onPickFolder ? (
+                <IslandButton type="primary" onClick={onPickFolder}>
+                  选择文件夹
+                </IslandButton>
+              ) : null}
+            </div>
           ) : preview ? (
             <pre className="wb-preview">
               {preview.content}

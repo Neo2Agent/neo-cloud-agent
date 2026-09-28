@@ -26,6 +26,21 @@ test("desk composer is the Cursor / Web box: + pickers left, circular send", () 
   assert.match(css, /@import "@neo-cloud-agent\/ui\/context-usage\.css"/);
 });
 
+test("desk chat is a reading column; empty Files does not steal it", () => {
+  const transcript = readFileSync(path.join(here, "chat/transcript.tsx"), "utf8");
+  const app = readFileSync(path.join(here, "App.tsx"), "utf8");
+  const split = readFileSync(path.join(here, "split.ts"), "utf8");
+  const panel = readFileSync(path.join(here, "../src/panel-open.ts"), "utf8");
+  assert.match(css, /overflow-wrap:\s*anywhere/);
+  assert.match(css, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*6px\s*minmax\(260px,\s*min\(var\(--panel-w\),\s*36%\)\)/);
+  assert.match(css, /\.context-item span/);
+  assert.match(split, /PANEL_W_DEFAULT = 360/);
+  assert.match(panel, /shouldRestoreDeskPanel/);
+  assert.match(app, /shouldRestoreDeskPanel/);
+  assert.doesNotMatch(transcript, /<Avatar /);
+  assert.doesNotMatch(transcript, /userAvatar/);
+});
+
 test("desk expert picker sits in the context bar like Web", () => {
   const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
   const app = readFileSync(path.join(here, "App.tsx"), "utf8");
