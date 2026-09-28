@@ -1,15 +1,15 @@
 /**
- * Vite :5175 visual lab. Island chrome + the same /v1 client as Expo.
+ * Vite :5175 visual lab. Buddy chrome (same as Web phone) + the same /v1 client as Expo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { isSetupFailureMessage, transcriptBodyNeeded, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
 import type { Environment } from "@neo-cloud-agent/contracts/environment";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
-import type { Desk } from "@neo-cloud-agent/contracts/desk";
+import { displaySetupText, isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { runCloneBranch, runGitContext } from "@neo-cloud-agent/contracts/git";
 import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
 import type { MemoryItem } from "@neo-cloud-agent/contracts/memory";
@@ -30,7 +30,6 @@ import { avatarLetter, CHAT_MODELS, chatModelShort, resolveChatModel, runListTit
 import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
 import { attachUserListStream } from "../list-live";
 import { messageTimeLabel, userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
-import { runPlaceLabel } from "../place";
 import { chatStatusText, composerGate } from "../session";
 import {
   appendPendingUser,
@@ -54,23 +53,17 @@ import {
 } from "../turn";
 import { attachRunStream } from "../transcript-live";
 import { applyRunSideEvent } from "../run-events";
-import {
-  baselineContextUsage,
-  overlayContextUsage,
-  parseContextUsage,
-  resolveModelLimits,
-} from "@neo-cloud-agent/contracts/context-usage";
 import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/artifact";
 import { AutomationsPage } from "./AutomationsPage";
 import { startAppVoice } from "../start-voice";
 import { WorkFold } from "../work-fold";
 import { GitPanel } from "./GitPanel";
 import { RunInvite } from "./RunInvite";
-import { IslandComposer, IslandDrawer, IslandHome, IslandLogin } from "./chrome";
+import { InspectorSheet, IslandComposer, IslandDrawer, IslandHome, IslandLogin, WorkspaceFilesTabs } from "./chrome";
 import { ExpertsPage } from "./ExpertsPage";
 import { InvitePage, ProjectsPage } from "./ProjectsPage";
-import { IslandButton, IslandTag } from "./island";
-import { MarkdownBody } from "@neo-cloud-agent/ui";
+import { RemoteOfflineCard } from "./RemoteOfflineCard";
+import { MarkdownBody, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui";
 
 function hashScreen() {
   return parseMobileScreen(location.hash || location.href);
@@ -138,7 +131,9 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
   const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{ name: string; content: string }>>([]);
   // Sub-views of the open chat, so they stay local instead of taking a hash route.
-  const [panel, setPanel] = useState<"artifacts" | "diagnostics" | "git" | null>(null);
+  const [panel, setPanel] = useState<InspectorTab | null>(null);
+  const [filesView, setFilesView] = useState<FilesView>("artifacts");
+  const [lastPane, setLastPane] = useState<InspectorTab>("files");
   const [history, setHistory] = useState<TranscriptMessage[]>([]);
   const [older, setOlder] = useState<{ remaining: number; nextBefore: string | null }>({ remaining: 0, nextBefore: null });
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -473,25 +468,32 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     }
   };
 
-  const openArtifacts = () => {
-    if (!current) return;
-    setPageError("");
-    setPanel("artifacts");
+  const loadArtifacts = (runId: string) => {
     void client
-      .listArtifacts(current.id)
+      .listArtifacts(runId)
       .then((next) => setArtifacts(next.artifacts))
       .catch((error) => setPageError(error instanceof Error ? error.message : "读不到产物"));
   };
 
-  const openDiagnostics = () => {
-    if (!current) return;
-    setPageError("");
-    setPanel("diagnostics");
+  const loadDiagnostics = (runId: string) => {
     void client
-      .diagnostics(current.id)
+      .diagnostics(runId)
       .then((next) => setDiagnosticLogs(next.logs))
       .catch(() => setDiagnosticLogs([]));
   };
+
+  const openInspector = (tab: InspectorTab, view?: FilesView) => {
+    if (!current) return;
+    const next = tab === "git" && runGitContext(current) === "none" ? "files" : tab;
+    setPageError("");
+    if (view) setFilesView(view);
+    if (next === "files") loadArtifacts(current.id);
+    if (next === "terminal") loadDiagnostics(current.id);
+    setLastPane(next);
+    setPanel(next);
+  };
+
+  const openArtifacts = () => openInspector("files", "artifacts");
 
   /** A recipe only prefills the composer; the user still presses send. */
   const applyRecipe = (recipe: Recipe) => {
@@ -569,22 +571,6 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   const visible = withPendingUser(history.length ? [...history, ...messages] : messages, pendingTurn);
   const turnBusy = Boolean(sending || pendingTurn || (current && isActiveRunStatus(current.status)));
   const liveId = liveAssistantId(visible, turnBusy);
-  const contextUsage = useMemo(() => {
-    const reported = parseContextUsage(current?.contextUsage ?? null);
-    const base = reported ?? baselineContextUsage(model);
-    const catalogWindow = resolveModelLimits(base.model || model)?.contextWindow ?? null;
-    const contextWindow = base.contextWindow ?? catalogWindow;
-    const streaming = visible.find((message) => message.streaming)?.text ?? "";
-    return overlayContextUsage(
-      {
-        ...base,
-        model: base.model || model,
-        contextWindow,
-        percent: contextWindow ? (base.tokens / contextWindow) * 100 : null,
-      },
-      { draft: prompt, streaming },
-    );
-  }, [current?.contextUsage, model, prompt, visible]);
   const openGitContext = current ? runGitContext(current) : "none";
 
   if (!ready) return <div className="login-shell"><p>正在进入…</p></div>;
@@ -827,65 +813,84 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     );
   }
 
-  if (panel === "artifacts") {
+  if (panel && current) {
+    const hasGit = openGitContext !== "none";
+    const tab = panel === "git" && !hasGit ? "files" : panel;
     return (
-      <ArtifactsPage
-        items={artifacts}
-        saveHint={saveArtifactHint(current)}
-        error={pageError}
+      <InspectorSheet
+        tab={tab}
+        hasGit={hasGit}
+        onSelect={(id) => openInspector(id)}
         onBack={() => setPanel(null)}
-        onSave={async (item) => {
-          if (!current) return;
-          setPageError("");
-          try {
-            await client.saveArtifactToProject(current.id, item.name);
-          } catch (error) {
-            setPageError(error instanceof Error ? error.message : "保存失败");
-          }
-        }}
-      />
-    );
-  }
-
-  if (panel === "diagnostics") {
-    return (
-      <DiagnosticsPage
-        logs={diagnosticLogs}
-        errorMessage={current?.errorMessage ?? null}
-        onBack={() => setPanel(null)}
-      />
-    );
-  }
-
-  if (panel === "git" && current && openGitContext !== "none") {
-    return (
-      <div className="app git-sheet">
-        <header className="topbar">
-          <button className="icon-btn" type="button" onClick={() => setPanel(null)} aria-label="返回">
-            ←
-          </button>
-          <h1>Git</h1>
-        </header>
-        <GitPanel
-          token={token}
-          runId={current.id}
-          context={openGitContext}
-          refreshKey={`${current.status}:${current.updatedAt}`}
-          busy={isActiveRunStatus(current.status)}
-          readOnly
-        />
-      </div>
+      >
+        {tab === "git" && hasGit ? (
+          <GitPanel
+            token={token}
+            runId={current.id}
+            context={openGitContext}
+            refreshKey={`${current.status}:${current.updatedAt}`}
+            busy={isActiveRunStatus(current.status)}
+            readOnly
+          />
+        ) : tab === "terminal" ? (
+          <DiagnosticsPage logs={diagnosticLogs} errorMessage={current.errorMessage ?? null} />
+        ) : (
+          <section className="workspace-files">
+            <WorkspaceFilesTabs
+              view={filesView}
+              onView={(view) => {
+                setFilesView(view);
+                if (view === "artifacts") loadArtifacts(current.id);
+              }}
+            />
+            {filesView === "artifacts" ? (
+              <ArtifactsPage
+                items={artifacts}
+                saveHint={saveArtifactHint(current)}
+                error={pageError}
+                onSave={async (item) => {
+                  setPageError("");
+                  try {
+                    await client.saveArtifactToProject(current.id, item.name);
+                  } catch (error) {
+                    setPageError(error instanceof Error ? error.message : "保存失败");
+                  }
+                }}
+              />
+            ) : (
+              <div className="page-body">
+                <p className="empty">发送任务后可以浏览工作区文件。</p>
+              </div>
+            )}
+          </section>
+        )}
+      </InspectorSheet>
     );
   }
 
   const gate = composerGate(current, desks);
+  const continueRemoteInCloud = async () => {
+    if (!current) return;
+    try {
+      const moved = await client.handoff(current.id, { loop: "cloud", tools: "cloud" });
+      setCurrent(moved);
+      setRuns((prev) => prev.map((item) => (item.id === moved.id ? { ...item, ...moved } : item)));
+      setPageError("");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "切到云端失败");
+    }
+  };
   const composer = (
+    <>
+    {gate.cloudContinue.show ? (
+      <RemoteOfflineCard copy={gate.continueCopy} onContinue={() => void continueRemoteInCloud()} />
+    ) : null}
     <IslandComposer
       prompt={prompt}
       locked={gate.locked}
       placeholder={gate.archived ? "对话已归档。" : gate.hint || "说说你要做什么"}
       sending={sending}
-      canStop={Boolean(current) && gate.running}
+      canStop={Boolean(current) && gate.running && !gate.locked}
       model={model}
       models={chatModels}
       images={images}
@@ -903,8 +908,8 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       onQueue={current ? () => void send("follow_up") : undefined}
       onSteer={current ? () => void send("steer") : undefined}
       onStop={current ? () => void client.abort(current.id) : undefined}
-      contextUsage={contextUsage}
       repo={current?.repoUrls?.[0] || cloudRepo}
+      branch={current ? runCloneBranch(current) ?? undefined : undefined}
       repos={githubRepos}
       repoLocked={Boolean(current)}
       onRepo={setCloudRepo}
@@ -933,6 +938,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
       }}
       startVoice={(onPreview, onError, onEnded) => startAppVoice(client, onPreview, onError, onEnded)}
     />
+    </>
   );
   const drawer = (
     <IslandDrawer
@@ -966,35 +972,29 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   );
 
   const lastUserIndex = visible.map((message) => message.role).lastIndexOf("user");
-  const thinking = shouldShowThinking(turnBusy, visible)
-    ? thinkingHint({
-        status: current?.status,
-        loop: current?.executionTarget?.loop,
-        remoteControl: current?.executionTarget?.remoteControl,
-      })
-    : null;
+  const thinking =
+    !gate.locked && shouldShowThinking(turnBusy, visible)
+      ? thinkingHint({
+          status: current?.status,
+          loop: current?.executionTarget?.loop,
+          remoteControl: current?.executionTarget?.remoteControl,
+        })
+      : null;
   if (route.screen === "chat" || sending || pendingTurn || visible.length > 0) {
     return (
-      <div className="app">
+      <div className="app is-buddy">
         <header className="topbar">
-          <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
+          <button className="icon-btn buddy-menu" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
           {current ? <span className="chat-title">{runListTitle(current)}</span> : null}
-          <span className={turnBusy ? "status-pill is-busy" : "status-pill"}>{chatStatusText(current, desks)}</span>
-          {current ? <IslandTag>{runPlaceLabel(current)}</IslandTag> : null}
-          {current && runGitContext(current) !== "none" ? (
-            <button className="icon-btn" type="button" onClick={() => setPanel("git")} aria-label="Git">
-              Git
+          <span className={turnBusy && !gate.locked ? "buddy-status-pill is-busy" : "buddy-status-pill"}>{chatStatusText(current, desks)}</span>
+          {current ? (
+            <button className="icon-btn" type="button" onClick={() => openInspector(lastPane)} aria-label="打开侧栏" title="打开侧栏">
+              侧栏
             </button>
           ) : null}
           {current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         </header>
         {pageError ? <p className="page-error">{pageError}</p> : null}
-        {current ? (
-          <div className="chat-actions">
-            <IslandButton onClick={openArtifacts}>产物</IslandButton>
-            {current.status === "ERROR" ? <IslandButton onClick={openDiagnostics}>查看诊断</IslandButton> : null}
-          </div>
-        ) : null}
         <div className="transcript" ref={transcriptRef}>
           {canLoadOlder(older) ? (
             <button type="button" className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
@@ -1003,11 +1003,14 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
           ) : null}
           {visible.length === 0 ? <p className="empty">还没有消息。</p> : null}
           {visible.map((message, messageIndex) => {
-            if (isStartupWhisper(message)) {
-              if (generationStarted(visible) || thinking) return null;
+            if (message.role === "setup") {
+              if (isStartupWhisper(message) && (gate.locked || !isDeskHostedTarget(current?.executionTarget) || generationStarted(visible) || thinking)) {
+                return null;
+              }
               return (
-                <p key={message.id} className="whisper">
-                  {message.text}
+                <p key={message.id} className={isSetupFailureMessage(message) ? "setup err" : "setup"}>
+                  <span>{displaySetupText(message, current)}</span>
+                  <time className="setup-time">{messageTimeLabel(message)}</time>
                 </p>
               );
             }
@@ -1025,7 +1028,7 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
             if (!hasVisibleTranscript(message)) return null;
             const author = message.role === "user" ? userMessageAuthor(message, { id: userId, email }) : null;
             const live = message.role === "assistant" && (liveId === message.id || (turnBusy && messageIndex > lastUserIndex));
-            const when = message.role === "setup" ? null : messageTimeLabel(message, { live });
+            const when = messageTimeLabel(message, { live });
             return (
             <div key={message.id} className={`msg-row ${message.role}`} data-images={message.images?.length ? "1" : undefined}>
               {message.role === "user" && userAvatar && !author ? (
@@ -1121,9 +1124,9 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
   }
 
   return (
-    <div className="app">
+    <div className="app is-buddy">
       <header className="topbar">
-        <button className="icon-btn" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
+        <button className="icon-btn buddy-menu" type="button" aria-label="打开任务" onClick={() => setSidebarOpen(true)}>☰</button>
       </header>
       {pageError ? <p className="page-error">{pageError}</p> : null}
       <IslandHome expertName={expertName} onPickRecipe={applyRecipe} />

@@ -1866,7 +1866,8 @@ button.tool-file-more:hover {
 
   .transcript-col,
   .chat-column .composer,
-  .chat-column .proj-chip-bar {
+  .chat-column .proj-chip-bar,
+  .chat-column .remote-offline-card {
     box-sizing: border-box;
     width: min(var(--session-w), calc(100% - 48px));
     max-width: none;
@@ -2579,6 +2580,7 @@ button.send:disabled {
   .transcript-col,
   .chat-column .composer,
   .chat-column .proj-chip-bar,
+  .chat-column .remote-offline-card,
   .work-fold-body,
   .work-chevron {
     transition: none;
@@ -2681,7 +2683,8 @@ button.send:disabled {
 }
 
 .chat-column .composer,
-.chat-column .proj-chip-bar {
+.chat-column .proj-chip-bar,
+.chat-column .remote-offline-card {
   grid-area: auto;
 }
 
@@ -5048,6 +5051,88 @@ a.git-check-name:hover {
   background: color-mix(in srgb, var(--accent) 6%, #ffffff);
 }
 
+.remote-offline-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  justify-content: flex-start;
+  gap: 12px 16px;
+  width: min(768px, calc(100% - 32px));
+  margin: 0 auto 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  height: auto;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.remote-offline-copy {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.remote-offline-card h2 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.remote-offline-body,
+.remote-offline-meta,
+.remote-offline-warn,
+.remote-offline-err {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.remote-offline-body {
+  color: var(--text);
+}
+
+.remote-offline-meta {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.remote-offline-warn,
+.remote-offline-err {
+  margin: 0;
+  color: var(--muted);
+}
+
+.remote-offline-err {
+  flex-basis: 100%;
+  color: var(--err);
+}
+
+.remote-offline-actions {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.remote-offline-go {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--text);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.remote-offline-go:hover {
+  opacity: 0.92;
+}
+
 .proj-chip {
   font-size: 13px;
   font-weight: 600;
@@ -6027,6 +6112,34 @@ button.composer-mic.is-listening,
     overflow-x: hidden;
     overflow-y: auto;
     border-radius: 20px;
+  }
+
+  .remote-offline-card {
+    width: auto;
+    max-width: none;
+    margin: 0 8px 8px;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: stretch;
+    align-content: flex-start;
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+  }
+
+  .remote-offline-copy {
+    flex: 0 0 auto;
+    min-height: 0;
+    height: auto;
+  }
+
+  .remote-offline-actions {
+    align-self: stretch;
+  }
+
+  .remote-offline-go {
+    width: 100%;
   }
 
   .composer textarea,
@@ -7632,6 +7745,23 @@ html.is-narrow,
 
 .app.is-buddy .buddy-home {
   height: 100%;
+}
+
+.app.is-buddy .remote-offline-card {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: stretch;
+  align-content: flex-start;
+  height: auto;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.app.is-buddy .remote-offline-copy {
+  flex: 0 0 auto;
+  min-height: 0;
+  height: auto;
 }
 
 .app.is-buddy .composer.buddy-composer {

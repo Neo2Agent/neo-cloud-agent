@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { isSetupFailureMessage, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
+import { displaySetupText } from "@neo-cloud-agent/contracts/desk";
 import { setupDiagToggleLabel, setupFailLogText, setupFailureTitle } from "@neo-cloud-agent/contracts/setup-fail";
 import { currentTurnMessages, liveAssistantId } from "@neo-cloud-agent/contracts/turn-state";
 import type { TranscriptMessage, TranscriptTool } from "@neo-cloud-agent/contracts/events";
@@ -45,6 +46,12 @@ type Props = {
   onPickRecipe?: (recipe: Recipe) => void;
   /** Signed-in user; shared runs label everyone else's messages. */
   viewer?: { id?: string; email?: string };
+  setupRun?: {
+    remoteUrl?: string | null;
+    repoUrls?: string[] | null;
+    baseBranch?: string | null;
+    branchName?: string | null;
+  } | null;
 };
 
 function ToolStatus({ tool }: { tool: TranscriptTool }) {
@@ -444,6 +451,7 @@ export function Transcript({
   onOpenArtifact,
   onPickRecipe,
   viewer = {},
+  setupRun = null,
 }: Props) {
   const scroller = useRef<HTMLElement>(null);
   const stick = useRef(true);
@@ -544,7 +552,7 @@ export function Transcript({
                   className="setup"
                   data-highlight={highlightId === message.id ? "true" : undefined}
                 >
-                  <span>{message.text}</span>
+                  <span>{displaySetupText(message, setupRun)}</span>
                   <time className="bubble-time setup-time" dateTime={message.createdAt}>
                     {formatWhen(message.createdAt)}
                   </time>

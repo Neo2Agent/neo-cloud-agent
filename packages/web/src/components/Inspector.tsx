@@ -1,20 +1,10 @@
 import type { ReactNode } from "react";
+import { inspectorTabs, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { IconExpand, IconPanelRight } from "../icons";
 import { PANE_MIN } from "../pane-size";
 import { ResizeHandle } from "./ResizeHandle";
 
-export type InspectorTab = "git" | "terminal" | "files";
-
-const INSPECTOR_TABS: ReadonlyArray<{ id: InspectorTab; label: string }> = [
-  { id: "git", label: "Git" },
-  { id: "terminal", label: "终端" },
-  { id: "files", label: "文件" },
-];
-
-/** A plain chat has no repo, so it has no Git tab. */
-export function inspectorTabs(hasGit: boolean): ReadonlyArray<{ id: InspectorTab; label: string }> {
-  return hasGit ? INSPECTOR_TABS : INSPECTOR_TABS.filter((item) => item.id !== "git");
-}
+export type { InspectorTab };
 
 type Props = {
   tab: InspectorTab;

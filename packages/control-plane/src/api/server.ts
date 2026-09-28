@@ -820,12 +820,28 @@ export function createApiServer() {
               send(res, 201, bindDeskWorkspace(deskId, body));
               return;
             }
-            const body = (await readJson(req)) as { runId?: string; workspaceDir?: string; pid?: number };
+            const body = (await readJson(req)) as {
+              runId?: string;
+              workspaceDir?: string;
+              pid?: number;
+              remoteUrl?: string;
+              branch?: string;
+            };
             if (!body.runId || !body.workspaceDir) {
               send(res, 400, { error: "runId and workspaceDir are required" });
               return;
             }
-            send(res, 200, await claimDeskRun(deskId, { runId: body.runId, workspaceDir: body.workspaceDir, pid: body.pid }));
+            send(
+              res,
+              200,
+              await claimDeskRun(deskId, {
+                runId: body.runId,
+                workspaceDir: body.workspaceDir,
+                pid: body.pid,
+                remoteUrl: body.remoteUrl,
+                branch: body.branch,
+              }),
+            );
           } catch (error) {
             send(res, 400, { error: error instanceof Error ? error.message : "desk_action_failed" });
           }

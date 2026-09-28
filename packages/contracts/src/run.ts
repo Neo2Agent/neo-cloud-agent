@@ -240,6 +240,12 @@ export interface Run {
   title?: string | null;
   branchName: string | null;
   baseBranch: string | null;
+  /**
+   * Cloneable `origin` recorded from Desk (https / git@).
+   * Remote Control keeps the laptop path in `repoUrls`; this is what cloud
+   * can fetch after that machine goes offline.
+   */
+  remoteUrl?: string | null;
   repoUrls: string[];
   pullRequests: PullRequestRef[];
   /** Commits made through `/commit`, newest last. Capped; the workspace log is authoritative while it exists. */

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Automation } from "@neo-cloud-agent/contracts/automation";
-import type { Desk } from "@neo-cloud-agent/contracts/desk";
+import { isDeskHostedTarget, type Desk } from "@neo-cloud-agent/contracts/desk";
 import { decodeExpertPick, encodeExpertPick, expertPickerLabel, type Expert, type ExpertPick, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { TranscriptMessage } from "@neo-cloud-agent/contracts/events";
 import type { Project } from "@neo-cloud-agent/contracts/project";
-import { runGitContext } from "@neo-cloud-agent/contracts/git";
+import { runCloneBranch, runGitContext } from "@neo-cloud-agent/contracts/git";
 import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
 import { attachUserListStream } from "../list-live";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
@@ -16,7 +16,7 @@ import type { InboxItem } from "@neo-cloud-agent/contracts/project-message";
 import type { Recipe } from "@neo-cloud-agent/contracts/recipe";
 import { MobileApiError, MobileClient, type RunArtifact } from "../api/client";
 import { canLoadOlder, inboxTarget, saveArtifactHint, unreadBadge } from "../cloud";
-import { ArtifactsScreen, DiagnosticsScreen, InboxScreen, MemoriesScreen, SkillsScreen } from "./CloudScreens";
+import { ArtifactsScreen, DiagnosticsScreen, InboxScreen, InspectorScreen, MemoriesScreen, SkillsScreen } from "./CloudScreens";
 import type { CredentialStore } from "../api/credentials";
 import { nextEnvId } from "../api/shell";
 import { detectMobileSource } from "../api/source";
@@ -29,6 +29,7 @@ import { listenNeoDeepLinks } from "../native/linking";
 import { attachForegroundPushPolicy, listenNotificationOpen, registerExpoPushDevice } from "../native/push";
 import { DEFAULT_API_URL } from "../place";
 import { chatStatusText, composerGate } from "../session";
+import { RemoteOfflineCard } from "./RemoteOfflineCard";
 import {
   appendPendingUser,
   isActiveRunStatus,
@@ -54,6 +55,7 @@ import {
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
 import { formatContextPercent } from "@neo-cloud-agent/contracts/context-usage";
+import type { FilesView, InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { ChatScreen } from "./ChatScreen";
 import { GitScreen } from "./GitScreen";
 import { RunInvite } from "./RunInvite";
@@ -78,9 +80,7 @@ type Screen =
   | "memories"
   | "inbox"
   | "skills"
-  | "artifacts"
-  | "diagnostics"
-  | "git";
+  | "inspector";
 
 export function NativeApp({ store }: { store: CredentialStore }) {
   const [ready, setReady] = useState(false);
@@ -120,6 +120,9 @@ export function NativeApp({ store }: { store: CredentialStore }) {
   const [unread, setUnread] = useState(0);
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
   const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{ name: string; content: string }>>([]);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("files");
+  const [filesView, setFilesView] = useState<FilesView>("artifacts");
+  const [lastPane, setLastPane] = useState<InspectorTab>("files");
   const [pluginIds, setPluginIds] = useState<string[]>([]);
   const [images, setImages] = useState<ImageRef[]>([]);
   const [history, setHistory] = useState<TranscriptMessage[]>([]);
@@ -768,55 +771,93 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     );
   }
 
-  if (screen === "artifacts") {
+  if (screen === "inspector" && current) {
+    const hasGit = runGitContext(current) !== "none";
+    const tab = inspectorTab === "git" && !hasGit ? "files" : inspectorTab;
     return (
-      <ArtifactsScreen
-        items={artifacts}
-        saveHint={saveArtifactHint(current)}
-        error={pageError}
-        onBack={() => setScreen("chat")}
-        onSave={async (item) => {
-          if (!current) return;
-          setPageError("");
-          try {
-            await client.saveArtifactToProject(current.id, item.name);
-          } catch (error) {
-            setPageError(error instanceof Error ? error.message : "保存失败");
+      <InspectorScreen
+        tab={tab}
+        hasGit={hasGit}
+        filesView={filesView}
+        onTab={(next) => {
+          const resolved = next === "git" && runGitContext(current) === "none" ? "files" : next;
+          setInspectorTab(resolved);
+          setLastPane(resolved);
+          if (resolved === "files") {
+            void client
+              .listArtifacts(current.id)
+              .then((listed) => setArtifacts(listed.artifacts))
+              .catch((error) => setPageError(error instanceof Error ? error.message : "读不到产物"));
+          }
+          if (resolved === "terminal") {
+            void client
+              .diagnostics(current.id)
+              .then((next) => setDiagnosticLogs(next.logs))
+              .catch(() => setDiagnosticLogs([]));
           }
         }}
-      />
-    );
-  }
-
-  if (screen === "git" && current) {
-    return <GitScreen client={client} runId={current.id} busy={isActiveRunStatus(current.status)} onBack={() => setScreen("chat")} />;
-  }
-
-  if (screen === "diagnostics") {
-    return (
-      <DiagnosticsScreen
-        logs={diagnosticLogs}
-        errorMessage={current?.errorMessage ?? null}
+        onFilesView={(view) => {
+          setFilesView(view);
+          if (view === "artifacts") {
+            void client
+              .listArtifacts(current.id)
+              .then((listed) => setArtifacts(listed.artifacts))
+              .catch((error) => setPageError(error instanceof Error ? error.message : "读不到产物"));
+          }
+        }}
         onBack={() => setScreen("chat")}
+        git={<GitScreen client={client} runId={current.id} busy={isActiveRunStatus(current.status)} />}
+        terminal={<DiagnosticsScreen logs={diagnosticLogs} errorMessage={current.errorMessage ?? null} />}
+        artifacts={
+          <ArtifactsScreen
+            items={artifacts}
+            saveHint={saveArtifactHint(current)}
+            error={pageError}
+            onSave={async (item) => {
+              setPageError("");
+              try {
+                await client.saveArtifactToProject(current.id, item.name);
+              } catch (error) {
+                setPageError(error instanceof Error ? error.message : "保存失败");
+              }
+            }}
+          />
+        }
       />
     );
   }
 
   const gate = composerGate(current, desks);
-  const thinking = shouldShowThinking(turnBusy, visible)
-    ? thinkingHint({
-        status: current?.status,
-        loop: current?.executionTarget?.loop,
-        remoteControl: current?.executionTarget?.remoteControl,
-      })
-    : null;
+  const thinking =
+    !gate.locked && shouldShowThinking(turnBusy, visible)
+      ? thinkingHint({
+          status: current?.status,
+          loop: current?.executionTarget?.loop,
+          remoteControl: current?.executionTarget?.remoteControl,
+        })
+      : null;
+  const continueRemoteInCloud = async () => {
+    if (!current) return;
+    try {
+      const moved = await client.handoff(current.id, { loop: "cloud", tools: "cloud" });
+      setCurrent(moved);
+      setRuns((prev) => prev.map((item) => (item.id === moved.id ? { ...item, ...moved } : item)));
+      setPageError("");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "切到云端失败");
+    }
+  };
   const composer = (
+    <View>
+    {gate.cloudContinue.show ? (
+      <RemoteOfflineCard copy={gate.continueCopy} onContinue={() => void continueRemoteInCloud()} />
+    ) : null}
     <Composer
       prompt={prompt}
       locked={gate.locked}
       placeholder={gate.archived ? "对话已归档。" : gate.hint || "说说你要做什么"}
       sending={sending}
-      canStop={Boolean(current) && gate.running}
+      canStop={Boolean(current) && gate.running && !gate.locked}
       model={model}
       models={chatModels}
       images={images}
@@ -837,6 +878,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       onStop={current ? () => void client.abort(current.id) : undefined}
       usageLabel={formatContextPercent(contextUsage.percent) ?? "用量"}
       repo={current?.repoUrls?.[0] || cloudRepo}
+      branch={current ? runCloneBranch(current) ?? undefined : undefined}
       repos={githubRepos}
       repoLocked={Boolean(current)}
       onRepo={setCloudRepo}
@@ -865,6 +907,7 @@ export function NativeApp({ store }: { store: CredentialStore }) {
       }}
       startVoice={(onPreview, onError, onEnded) => startNativeVoice(client, onPreview, onError, onEnded)}
     />
+    </View>
   );
 
   return (
@@ -873,9 +916,10 @@ export function NativeApp({ store }: { store: CredentialStore }) {
         <ChatScreen
           run={current}
           status={chatStatusText(current, desks)}
-          running={turnBusy}
+          running={turnBusy && !gate.locked}
           messages={visible}
           thinking={thinking}
+          hideHandshake={gate.locked || !isDeskHostedTarget(current?.executionTarget)}
           canLoadOlder={canLoadOlder(older)}
           loadingOlder={loadingOlder}
           onLoadOlder={() => void loadOlder()}
@@ -883,25 +927,37 @@ export function NativeApp({ store }: { store: CredentialStore }) {
           userAvatar={userAvatar}
           neoAvatar={neoAvatar}
           onOpenDrawer={() => setDrawerOpen(true)}
+          onOpenInspector={() => {
+            if (!current) return;
+            setPageError("");
+            const next = lastPane === "git" && runGitContext(current) === "none" ? "files" : lastPane;
+            setInspectorTab(next);
+            setScreen("inspector");
+            if (next === "files") {
+              void client
+                .listArtifacts(current.id)
+                .then((listed) => setArtifacts(listed.artifacts))
+                .catch((error) => setPageError(error instanceof Error ? error.message : "读不到产物"));
+            }
+            if (next === "terminal") {
+              void client
+                .diagnostics(current.id)
+                .then((listed) => setDiagnosticLogs(listed.logs))
+                .catch(() => setDiagnosticLogs([]));
+            }
+          }}
           onOpenArtifacts={() => {
             if (!current) return;
             setPageError("");
-            setScreen("artifacts");
+            setInspectorTab("files");
+            setFilesView("artifacts");
+            setLastPane("files");
+            setScreen("inspector");
             void client
               .listArtifacts(current.id)
-              .then((next) => setArtifacts(next.artifacts))
+              .then((listed) => setArtifacts(listed.artifacts))
               .catch((error) => setPageError(error instanceof Error ? error.message : "读不到产物"));
           }}
-          onOpenDiagnostics={() => {
-            if (!current) return;
-            setPageError("");
-            setScreen("diagnostics");
-            void client
-              .diagnostics(current.id)
-              .then((next) => setDiagnosticLogs(next.logs))
-              .catch(() => setDiagnosticLogs([]));
-          }}
-          onOpenGit={current && runGitContext(current) !== "none" ? () => setScreen("git") : undefined}
           userId={userId}
           invite={current ? <RunInvite client={client} run={current} userId={userId} /> : null}
         />

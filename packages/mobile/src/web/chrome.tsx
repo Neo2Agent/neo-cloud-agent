@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { inspectorTabs, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
-import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
 import { composerKeyAction } from "@neo-cloud-agent/contracts/composer-keys";
-import { ContextUsageControl } from "@neo-cloud-agent/ui";
+import { Select, modelShortLabel } from "@neo-cloud-agent/ui";
 import type { ImageRef, Run } from "@neo-cloud-agent/contracts/run";
-import { CHAT_MODELS, chatModelLabel, resolveChatModel, runListTitle } from "../format";
+import { CHAT_MODELS, chatModelShort, resolveChatModel, runListTitle } from "../format";
 import { dayGreeting } from "../island-theme";
 import type { StartVoiceResult } from "../speech-cloud";
 import { finishHoldVoice, isVoiceHoldTap, mergeSpokenText } from "../voice";
@@ -25,6 +25,70 @@ export function Page({ title, onBack, action, children }: { title: string; onBac
         {action}
       </header>
       <div className="page-body">{children}</div>
+    </div>
+  );
+}
+
+export function InspectorSheet({
+  tab,
+  hasGit,
+  onSelect,
+  onBack,
+  children,
+}: {
+  tab: InspectorTab;
+  hasGit: boolean;
+  onSelect: (id: InspectorTab) => void;
+  onBack: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="app inspector-sheet">
+      <header className="topbar inspector-topbar">
+        <button className="icon-btn" type="button" onClick={onBack} aria-label="返回">
+          ←
+        </button>
+        <div className="inspector-tabs" role="tablist" aria-label="对话侧栏">
+          {inspectorTabs(hasGit).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              className={tab === item.id ? "is-on" : ""}
+              aria-selected={tab === item.id}
+              onClick={() => onSelect(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </header>
+      <div className="inspector-body">{children}</div>
+    </div>
+  );
+}
+
+export function WorkspaceFilesTabs({
+  view,
+  onView,
+}: {
+  view: "tree" | "artifacts";
+  onView: (view: "tree" | "artifacts") => void;
+}) {
+  return (
+    <div className="workspace-files-tabs" role="tablist" aria-label="工作区">
+      <button type="button" role="tab" aria-selected={view === "tree"} className={view === "tree" ? "is-on" : ""} onClick={() => onView("tree")}>
+        文件
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view === "artifacts"}
+        className={view === "artifacts" ? "is-on" : ""}
+        onClick={() => onView("artifacts")}
+      >
+        产物
+      </button>
     </div>
   );
 }
@@ -313,8 +377,8 @@ export function IslandComposer(props: {
   /** While a turn runs, Cmd/Ctrl+Enter hands it to the agent at its next tool call. */
   onSteer?: () => void;
   onStop?: () => void;
-  contextUsage?: ContextUsageSnapshot | null;
   repo?: string;
+  branch?: string;
   repos?: Array<{ fullName: string; url: string }>;
   repoLocked?: boolean;
   onRepo?: (url: string) => void;
@@ -329,8 +393,6 @@ export function IslandComposer(props: {
     onEnded?: () => void,
   ) => Promise<StartVoiceResult>;
 }) {
-  const [usageOpen, setUsageOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceHint, setVoiceHint] = useState("");
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -345,17 +407,6 @@ export function IslandComposer(props: {
   useEffect(() => () => {
     void voiceRef.current?.stop();
   }, []);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const close = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest(".composer-model-wrap")) return;
-      setMenuOpen(false);
-    };
-    window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
-  }, [menuOpen]);
 
   const applyHoldResult = (heldMs: number, spoken: string) => {
     const kept = finishHoldVoice({ heldMs, spoken });
@@ -376,7 +427,6 @@ export function IslandComposer(props: {
     holdStarted.current = Date.now();
     const startedAt = holdStarted.current;
     setVoiceHint("");
-    setMenuOpen(false);
     basePrompt.current = promptRef.current;
     const started = await props.startVoice(
       (text) => props.onPrompt(mergeSpokenText(basePrompt.current, text)),
@@ -434,52 +484,7 @@ export function IslandComposer(props: {
 
   return (
     <div className="composer-dock">
-      <div className="composer-context">
-        <span>云端</span>
-        {props.onRepo && !props.repoLocked ? (
-          <label className="composer-repo">
-            <span className="sr-only">仓库</span>
-            <select
-              aria-label="绑定仓库"
-              value={props.repo ?? ""}
-              onChange={(event) => props.onRepo?.(event.target.value)}
-            >
-              <option value="">无仓库</option>
-              {(props.repos ?? []).map((item) => (
-                <option key={item.url} value={item.url}>
-                  {item.fullName}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <span>{props.repo ? props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/") : "无仓库"}</span>
-        )}
-        {props.onExpert ? (
-          <label className="composer-repo">
-            <span className="sr-only">专家</span>
-            <select
-              aria-label="专家"
-              value={expertValue}
-              disabled={props.expertLocked || props.locked}
-              onChange={(event) => props.onExpert?.(event.target.value)}
-            >
-              <option value={encodeExpertPick({})}>Neo</option>
-              {(props.experts ?? []).map((item) => (
-                <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
-                  {expertPickerLabel(item)}
-                </option>
-              ))}
-              {(props.teams ?? []).map((item) => (
-                <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
-      <div className="composer-box composer-bar">
+      <div className="composer-box composer-bar buddy-composer">
         {images.length > 0 ? (
           <div className="composer-thumbs">
             {images.map((image, index) => (
@@ -525,10 +530,10 @@ export function IslandComposer(props: {
             else if (!props.sending) props.onSend();
           }}
         />
-        <div className="composer-tools composer-bar-inner">
-          <div className="composer-pickers">
+        <div className="buddy-composer-bar">
+          <div className="buddy-composer-bar-start">
             {props.onPickImages ? (
-              <label className="composer-attach" title="添加图片">
+              <label className="buddy-plus" title="添加">
                 <input
                   type="file"
                   accept="image/*"
@@ -540,77 +545,109 @@ export function IslandComposer(props: {
                     event.target.value = "";
                   }}
                 />
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                   <path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" />
                 </svg>
               </label>
             ) : null}
-            <div className="composer-model-wrap">
+            {!props.locked ? (
               <button
                 type="button"
-                className="composer-model"
-                aria-haspopup="listbox"
-                aria-expanded={menuOpen}
-                aria-label="选择模型"
-                onClick={() => setMenuOpen((open) => !open)}
+                className={listening ? "buddy-icon-btn is-listening" : "buddy-icon-btn"}
+                aria-label={listening ? "松手出字" : "按住说话"}
+                aria-pressed={listening}
+                disabled={props.sending}
+                title={listening ? "松手出字" : "按住说话"}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  void beginHold();
+                }}
+                onPointerUp={() => void endHold()}
+                onPointerCancel={() => void endHold()}
+                onContextMenu={(event) => event.preventDefault()}
               >
-                {chatModelLabel(props.model)}
-                <span aria-hidden="true">▴</span>
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"
+                  />
+                </svg>
               </button>
-              {menuOpen ? (
-                <div className="composer-model-menu" role="listbox" aria-label="模型">
-                  {(props.models?.length ? props.models : CHAT_MODELS).map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      role="option"
-                      aria-selected={item.id === selected}
-                      className={item.id === selected ? "on" : undefined}
-                      onClick={() => {
-                        props.onModel(item.id);
-                        setMenuOpen(false);
-                      }}
-                    >
-                      {item.label}
-                    </button>
+            ) : null}
+            {props.onRepo && !props.repoLocked ? (
+              <label className="composer-repo">
+                <span className="sr-only">仓库</span>
+                <select
+                  aria-label="绑定仓库"
+                  value={props.repo ?? ""}
+                  onChange={(event) => props.onRepo?.(event.target.value)}
+                >
+                  <option value="">无仓库</option>
+                  {(props.repos ?? []).map((item) => (
+                    <option key={item.url} value={item.url}>
+                      {item.fullName}
+                    </option>
                   ))}
-                </div>
-              ) : null}
+                </select>
+              </label>
+            ) : props.branch ? (
+              <span className="repo-bind-lock" id="run-branch" title={props.branch}>
+                <span className="repo-bind-row-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="14" height="14">
+                    <path
+                      fill="currentColor"
+                      d="M7 4a3 3 0 0 1 2.83 2H12a3 3 0 0 1 3 3v1.17A3.001 3.001 0 1 1 13 16.83V14a1 1 0 0 0-1-1H9.83A3.001 3.001 0 1 1 7 4Zm0 2a1 1 0 1 0 .001 2.001A1 1 0 0 0 7 6Zm10 10a1 1 0 1 0 .001 2.001A1 1 0 0 0 17 16ZM7 14a1 1 0 1 0 .001 2.001A1 1 0 0 0 7 14Z"
+                    />
+                  </svg>
+                </span>
+                <span className="repo-bind-label">{props.branch}</span>
+              </span>
+            ) : props.repo && /^(https?:\/\/|git@|github\.com\/)/i.test(props.repo) ? (
+              <span className="repo-bind-lock" title={props.repo}>
+                <span className="repo-bind-label">{props.repo.replace(/\.git$/, "").split("/").slice(-2).join("/")}</span>
+              </span>
+            ) : null}
+            {props.onExpert && !props.expertLocked ? (
+              <label className="composer-repo">
+                <span className="sr-only">专家</span>
+                <select
+                  aria-label="专家"
+                  value={expertValue}
+                  disabled={props.expertLocked || props.locked}
+                  onChange={(event) => props.onExpert?.(event.target.value)}
+                >
+                  <option value={encodeExpertPick({})}>Neo</option>
+                  {(props.experts ?? []).map((item) => (
+                    <option key={item.id} value={encodeExpertPick({ expertId: item.id })}>
+                      {expertPickerLabel(item)}
+                    </option>
+                  ))}
+                  {(props.teams ?? []).map((item) => (
+                    <option key={item.id} value={encodeExpertPick({ expertTeamId: item.id })}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div className="buddy-model">
+              <Select
+                id="agent-model"
+                size="pill"
+                aria-label="模型"
+                value={selected}
+                onValueChange={props.onModel}
+                options={(props.models?.length ? props.models : CHAT_MODELS).map((item) => ({
+                  value: item.id,
+                  label: modelShortLabel(item.id) || chatModelShort(item.id),
+                }))}
+              />
             </div>
           </div>
-          <div className="composer-send-group">
-            {props.contextUsage ? (
-              <ContextUsageControl
-                usage={props.contextUsage}
-                open={usageOpen}
-                onToggle={() => setUsageOpen((open) => !open)}
-              />
-            ) : null}
-            <button
-              type="button"
-              className={listening ? "composer-mic is-on" : "composer-mic"}
-              aria-label={listening ? "松手出字" : "按住说话"}
-              aria-pressed={listening}
-              disabled={props.locked || props.sending}
-              title={listening ? "松手出字" : "按住说话"}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.currentTarget.setPointerCapture(event.pointerId);
-                void beginHold();
-              }}
-              onPointerUp={() => void endHold()}
-              onPointerCancel={() => void endHold()}
-              onContextMenu={(event) => event.preventDefault()}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"
-                />
-              </svg>
-            </button>
+          <div className="buddy-composer-bar-end">
             {props.canStop && props.onQueue && canSend && !props.locked ? (
-              <button type="button" className="composer-send" aria-label="排队发送" title="这轮结束后再发" onClick={props.onQueue}>
+              <button type="button" className="send" aria-label="排队发送" title="这轮结束后再发" onClick={props.onQueue}>
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                   <path
                     fill="none"
@@ -624,7 +661,7 @@ export function IslandComposer(props: {
               </button>
             ) : null}
             {props.canStop ? (
-              <button type="button" className="composer-send is-stop" aria-label="停止" onClick={props.onStop}>
+              <button type="button" className="stop" aria-label="停止" onClick={props.onStop}>
                 <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                   <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
                 </svg>
@@ -632,7 +669,7 @@ export function IslandComposer(props: {
             ) : (
               <button
                 type="button"
-                className="composer-send"
+                className="send"
                 aria-label="发送"
                 disabled={props.locked || props.sending || !canSend}
                 onClick={props.onSend}
@@ -652,7 +689,7 @@ export function IslandComposer(props: {
           </div>
         </div>
       </div>
-      {voiceHint ? <p className="composer-legal">{voiceHint}</p> : <p className="composer-legal">内容由 AI 生成</p>}
+      {voiceHint ? <p className="buddy-footer">{voiceHint}</p> : <p className="buddy-footer">内容由 AI 生成</p>}
     </div>
   );
 }

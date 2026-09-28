@@ -231,12 +231,12 @@ export function ArtifactsPage(props: {
   items: RunArtifact[];
   saveHint: string;
   error: string;
-  onBack: () => void;
+  onBack?: () => void;
   onSave: (item: RunArtifact) => Promise<void>;
 }) {
   const [busy, setBusy] = useState("");
-  return (
-    <Page title="产物" onBack={props.onBack}>
+  const body = (
+    <>
       {props.saveHint ? <p className="hint">{props.saveHint}</p> : null}
       {props.items.length === 0 ? <p className="empty">还没有产物。</p> : null}
       {props.items.map((item) => (
@@ -262,6 +262,12 @@ export function ArtifactsPage(props: {
         </div>
       ))}
       {props.error ? <p className="error">{props.error}</p> : null}
+    </>
+  );
+  if (!props.onBack) return <div className="page-body">{body}</div>;
+  return (
+    <Page title="产物" onBack={props.onBack}>
+      {body}
     </Page>
   );
 }
@@ -269,10 +275,10 @@ export function ArtifactsPage(props: {
 export function DiagnosticsPage(props: {
   logs: Array<{ name: string; content: string }>;
   errorMessage: string | null;
-  onBack: () => void;
+  onBack?: () => void;
 }) {
-  return (
-    <Page title="诊断" onBack={props.onBack}>
+  const body = (
+    <>
       {props.errorMessage ? <p className="error">{props.errorMessage}</p> : null}
       {props.logs.length === 0 ? <p className="empty">还没有日志。</p> : null}
       {props.logs.map((item) => (
@@ -283,6 +289,12 @@ export function DiagnosticsPage(props: {
           </div>
         </div>
       ))}
+    </>
+  );
+  if (!props.onBack) return <div className="page-body">{body}</div>;
+  return (
+    <Page title="终端" onBack={props.onBack}>
+      {body}
     </Page>
   );
 }

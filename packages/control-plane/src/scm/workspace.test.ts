@@ -231,6 +231,17 @@ test("transient GitHub peer resets get a retry title and HTTP/1.1 clone args", (
     "https://github.com/acme/app.git",
     "/tmp/app",
   ]);
+  assert.deepEqual(gitCloneArgs("https://github.com/acme/app.git", "/tmp/app", "feat/login"), [
+    "-c",
+    `http.version=${GIT_CLONE_HTTP_VERSION}`,
+    "clone",
+    "--depth",
+    "1",
+    "--branch",
+    "feat/login",
+    "https://github.com/acme/app.git",
+    "/tmp/app",
+  ]);
 });
 
 test("gitClone retries a hung remote once before timing out", async () => {

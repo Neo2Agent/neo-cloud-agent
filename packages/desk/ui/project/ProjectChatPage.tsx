@@ -14,8 +14,6 @@ export function ProjectChatPage({
   token,
   userId,
   user,
-  userAvatar,
-  neoAvatar,
   toolsOpen,
   visible,
   activity,
@@ -43,8 +41,6 @@ export function ProjectChatPage({
   token: string;
   userId: string;
   user: string;
-  userAvatar?: string | null;
-  neoAvatar?: string | null;
   toolsOpen: boolean;
   visible: TranscriptMessage[];
   activity: string | null;
@@ -101,8 +97,6 @@ export function ProjectChatPage({
         busy={busy}
         user={user}
         userId={userId}
-        userAvatar={userAvatar}
-        neoAvatar={neoAvatar}
         feedRef={feedRef}
         onCopy={onCopy}
         thinkingHint={thinkingHint}

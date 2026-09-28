@@ -8,7 +8,6 @@ import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/
 import { MarkdownBody } from "@neo-cloud-agent/ui";
 import type { Ref } from "react";
 import { shouldShowAssistantActions } from "../../src/stream";
-import { Avatar } from "../Avatar";
 import { IconCopy } from "../icons";
 import { IslandCollapse } from "../island";
 import { WorkFold } from "./WorkFold";
@@ -36,8 +35,6 @@ export function ChatTranscript({
   busy,
   user,
   userId,
-  userAvatar,
-  neoAvatar,
   feedRef,
   onCopy,
   thinkingHint,
@@ -50,8 +47,6 @@ export function ChatTranscript({
   busy?: boolean;
   user: string;
   userId?: string;
-  userAvatar?: string | null;
-  neoAvatar?: string | null;
   feedRef: Ref<HTMLDivElement>;
   onCopy: (text: string) => void;
   thinkingHint?: string;
@@ -70,7 +65,6 @@ export function ChatTranscript({
           <div className="chat-col">
             <div className="chat-bubble user">{current.prompt}</div>
           </div>
-          <Avatar src={userAvatar} label={user} />
         </article>
       ) : null}
       {visible.map((message, messageIndex) => {
@@ -102,7 +96,6 @@ export function ChatTranscript({
                   </div>
                 ) : null}
               </div>
-              <Avatar src={author ? null : userAvatar} label={author ?? user} />
             </article>
           );
         }
@@ -144,13 +137,6 @@ export function ChatTranscript({
         ) : null;
         return (
           <div id={`msg-${message.id}`} key={message.id} className="msg-row assistant">
-            <div className="chat-brand">
-              <Avatar src={neoAvatar} label="Neo" fallback="N" className="neo-avatar" />
-              <div className="chat-brand-copy">
-                <strong>Neo</strong>
-                <span>{live ? activity || "进行中" : "已完成"}</span>
-              </div>
-            </div>
             <WorkFold turn={turn} live={live} createdAt={message.createdAt} updatedAt={message.updatedAt} />
             {turn.answer.trim() ? (
               <article className="chat-bubble assistant">

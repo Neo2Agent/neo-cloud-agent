@@ -14,14 +14,29 @@ import {
   subscribeWorkspaceTerm,
   writeWorkspaceTerm,
 } from "./workspace-term";
+import { inspectorTabs, type FilesView, type InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { FileGlyph } from "./FileGlyph";
 import { GitPanel } from "./GitPanel";
-import { IconArtifacts, IconClose, IconExpand, IconFile, IconGit, IconPanelRight, IconPlus, IconRailDock, IconSync, IconTerminal } from "./icons";
-import { IslandButton, IslandCard, IslandInput } from "./island";
+import { IconChevronDown, IconClose, IconExpand, IconPanelRight, IconPlus, IconSync, IconTerminal } from "./icons";
 import type { RunGitContext } from "@neo-cloud-agent/contracts/git";
 import type { PullRequestRef } from "@neo-cloud-agent/contracts/run";
 
 export type SidePanelTab = "home" | "files" | "terminal" | "artifacts" | "git";
+export type { FilesView, InspectorTab };
+
+function resolveSidePanelPage(tab: SidePanelTab): Exclude<SidePanelTab, "home"> {
+  return tab === "home" ? "files" : tab;
+}
+
+function inspectorTabOf(tab: SidePanelTab): InspectorTab {
+  if (tab === "git") return "git";
+  if (tab === "terminal") return "terminal";
+  return "files";
+}
+
+function filesViewOf(tab: SidePanelTab): FilesView {
+  return tab === "artifacts" ? "artifacts" : "tree";
+}
 
 type FsEntry = { name: string; path: string; type: "file" | "dir" };
 
@@ -29,6 +44,7 @@ type Props = {
   tab: SidePanelTab;
   onTab: (tab: SidePanelTab) => void;
   onClose: () => void;
+  onPickFolder?: () => void;
   folder: string;
   token: string;
   runId: string | null;
@@ -45,6 +61,7 @@ export function SidePanel({
   tab,
   onTab,
   onClose,
+  onPickFolder,
   folder,
   token,
   runId,
@@ -57,225 +74,111 @@ export function SidePanel({
   onPullRequests,
 }: Props) {
   const [maxed, setMaxed] = useState(false);
-  const [railOpen, setRailOpen] = useState(false);
-  const [filesTab, setFilesTab] = useState(tab === "files");
-  const [artifactsTab, setArtifactsTab] = useState(tab === "artifacts");
-  const [gitTab, setGitTab] = useState(tab === "git");
   const term = useTerminalSessions({ folder, token, runId, local });
-  const page =
-    tab === "git" && gitContext !== "none"
-      ? "git"
-      : tab === "artifacts"
-      ? "artifacts"
-      : tab === "files" && filesTab
-        ? "files"
-        : tab === "terminal"
-          ? "terminal"
-          : filesTab
-            ? "files"
-            : artifactsTab
-              ? "artifacts"
-              : gitTab && gitContext !== "none"
-                ? "git"
-                : "home";
-  const showRail = page !== "home" && railOpen;
+  const hasGit = gitContext !== "none";
+  const page = resolveSidePanelPage(tab);
+  const inspectorTab = inspectorTabOf(page === "git" && !hasGit ? "files" : page);
+  const filesView = filesViewOf(page);
 
-  const openTerminal = () => {
-    void term.ensure();
-    onTab("terminal");
-  };
-
-  const openFiles = () => {
-    setFilesTab(true);
-    setArtifactsTab(false);
-    setGitTab(false);
-    onTab("files");
-  };
-
-  const openArtifacts = () => {
-    setArtifactsTab(true);
-    setFilesTab(false);
-    setGitTab(false);
-    onTab("artifacts");
-  };
-
-  const openGit = () => {
-    if (gitContext === "none") return;
-    setGitTab(true);
-    setFilesTab(false);
-    setArtifactsTab(false);
-    onTab("git");
-  };
-
-  const closeFiles = () => {
-    setFilesTab(false);
-    if (artifactsTab) {
-      onTab("artifacts");
+  const selectInspector = (id: InspectorTab) => {
+    if (id === "files") {
+      onTab(filesView === "artifacts" ? "artifacts" : "files");
       return;
     }
-    if (term.activeId || term.sessions[0]) {
-      if (!term.activeId && term.sessions[0]) term.setActiveId(term.sessions[0].id);
-      onTab("terminal");
-      return;
-    }
-    onTab("home");
-  };
-
-  const closeArtifacts = () => {
-    setArtifactsTab(false);
-    if (filesTab) {
-      onTab("files");
-      return;
-    }
-    if (term.activeId || term.sessions[0]) {
-      if (!term.activeId && term.sessions[0]) term.setActiveId(term.sessions[0].id);
-      onTab("terminal");
-      return;
-    }
-    onTab("home");
+    onTab(id);
   };
 
   const closeSession = (id: string) => {
     const last = term.sessions.length <= 1 && term.sessions.some((item) => item.id === id);
     term.close(id);
-    if (last) onTab(filesTab ? "files" : "home");
+    if (last) onTab("files");
   };
 
   return (
-    <aside className={`side-panel workbench${maxed ? " is-max" : ""}${showRail ? " has-rail" : ""}`}>
-      <header className="wb-chrome">
-        <WorkbenchTabs
-          sessions={term.sessions}
-          activeId={page === "terminal" ? term.activeId : ""}
-          filesOn={page === "files"}
-          filesTab={filesTab}
-          artifactsOn={page === "artifacts"}
-          artifactsTab={artifactsTab}
-          gitOn={page === "git"}
-          gitTab={gitTab && gitContext !== "none"}
-          onGit={gitContext === "none" ? undefined : openGit}
-          onCloseGit={() => {
-            setGitTab(false);
-            onTab(filesTab ? "files" : artifactsTab ? "artifacts" : "home");
-          }}
-          onSelectSession={(id) => {
-            term.setActiveId(id);
-            onTab("terminal");
-          }}
-          onCloseSession={closeSession}
-          onFiles={openFiles}
-          onCloseFiles={closeFiles}
-          onArtifacts={openArtifacts}
-          onCloseArtifacts={closeArtifacts}
-          onNew={() => {
-            void term.open();
-            onTab("terminal");
-          }}
-        />
-        <ChromeTools onMax={() => setMaxed((cur) => !cur)} onStow={onClose} />
-      </header>
-      {page === "home" ? (
-        <div className="wb-home">
-          <IslandCard
-            hoverable
-            className="wb-tile"
-            role="button"
-            tabIndex={0}
-            onClick={openTerminal}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openTerminal();
-              }
-            }}
+    <aside className={`side-panel inspector-panel${maxed ? " is-max" : ""}`}>
+      <div className="inspector-tabs" role="tablist" aria-label="对话侧栏">
+        {inspectorTabs(hasGit).map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            className={inspectorTab === item.id ? "is-on" : ""}
+            aria-selected={inspectorTab === item.id}
+            onClick={() => selectInspector(item.id)}
           >
-            <IconTerminal size={22} />
-            <span>Terminal</span>
-          </IslandCard>
-          <IslandCard
-            hoverable
-            className="wb-tile"
-            role="button"
-            tabIndex={0}
-            onClick={openFiles}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openFiles();
-              }
-            }}
-          >
-            <IconFile size={22} />
-            <span>File</span>
-          </IslandCard>
-          {gitContext !== "none" && runId ? (
-            <IslandCard
-              hoverable
-              className="wb-tile"
-              role="button"
-              tabIndex={0}
-              onClick={openGit}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  openGit();
-                }
-              }}
-            >
-              <IconGit size={22} />
-              <span>Git</span>
-            </IslandCard>
-          ) : null}
-          <IslandCard
-            hoverable
-            className="wb-tile"
-            role="button"
-            tabIndex={0}
-            onClick={openArtifacts}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openArtifacts();
-              }
-            }}
-          >
-            <IconArtifacts size={22} />
-            <span>产物</span>
-          </IslandCard>
-        </div>
-      ) : page === "git" && runId && gitContext !== "none" ? (
-        <GitPanel
-          token={token}
-          runId={runId}
-          context={gitContext}
-          refreshKey={String(refreshKey)}
-          busy={busy}
-          onPullRequests={onPullRequests}
+            {item.label}
+          </button>
+        ))}
+        <ChromeTools
+          maxed={maxed}
+          onMax={() => setMaxed((cur) => !cur)}
+          onStow={onClose}
         />
-      ) : page === "artifacts" ? (
-        <ArtifactsPane token={token} runId={runId} projectId={projectId} refreshKey={refreshKey} onSaved={onSaved} />
-      ) : page === "files" ? (
-        <FilesView
-          folder={folder}
-          token={token}
-          runId={runId}
-          local={local}
-          refreshKey={refreshKey}
-          railOpen={railOpen}
-          onToggleRail={() => setRailOpen((cur) => !cur)}
-        />
-      ) : (
-        <TerminalView
-          term={term}
-          local={local}
-          token={token}
-          runId={runId}
-          refreshKey={refreshKey}
-          railOpen={railOpen}
-          onToggleRail={() => setRailOpen((cur) => !cur)}
-          onCloseSession={closeSession}
-        />
-      )}
+      </div>
+      <div className="inspector-body">
+        {inspectorTab === "git" ? (
+          runId && hasGit ? (
+            <GitPanel
+              token={token}
+              runId={runId}
+              context={gitContext as Exclude<RunGitContext, "none">}
+              refreshKey={String(refreshKey)}
+              busy={busy}
+              onPullRequests={onPullRequests}
+            />
+          ) : (
+            <div className="wb-empty">
+              <p>{runId ? "这条对话没有 Git 变更。" : "发送任务后可以查看 Git。"}</p>
+            </div>
+          )
+        ) : inspectorTab === "terminal" ? (
+          <TerminalView
+            term={term}
+            local={local}
+            token={token}
+            runId={runId}
+            refreshKey={refreshKey}
+            onCloseSession={closeSession}
+          />
+        ) : (
+          <section className="workspace-files">
+            <div className="workspace-files-tabs" role="tablist" aria-label="工作区">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={filesView === "tree"}
+                className={filesView === "tree" ? "is-on" : ""}
+                onClick={() => onTab("files")}
+              >
+                文件
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={filesView === "artifacts"}
+                className={filesView === "artifacts" ? "is-on" : ""}
+                onClick={() => onTab("artifacts")}
+              >
+                产物
+              </button>
+            </div>
+            <div className="workspace-files-body">
+              {filesView === "artifacts" ? (
+                <ArtifactsPane token={token} runId={runId} projectId={projectId} refreshKey={refreshKey} onSaved={onSaved} />
+              ) : (
+                <FilesView
+                  folder={folder}
+                  token={token}
+                  runId={runId}
+                  local={local}
+                  refreshKey={refreshKey}
+                  onPickFolder={onPickFolder}
+                />
+              )}
+            </div>
+          </section>
+        )}
+      </div>
     </aside>
   );
 }
@@ -480,148 +383,22 @@ function defaultTermLabel(): string {
   return /windows/i.test(navigator.userAgent) ? "cmd" : "bash";
 }
 
-function ChromeTools({ onMax, onStow }: { onMax: () => void; onStow: () => void }) {
+function ChromeTools({ maxed, onMax, onStow }: { maxed: boolean; onMax: () => void; onStow: () => void }) {
   return (
-    <div className="wb-chrome-end">
-      <button type="button" className="icon-btn" aria-label="加宽工作区" title="加宽工作区" onClick={onMax}>
-        <IconExpand size={14} />
-      </button>
-      <button type="button" className="icon-btn" aria-label="收起右侧栏" title="收起右侧栏" onClick={onStow}>
-        <IconPanelRight size={14} />
-      </button>
-    </div>
-  );
-}
-
-function PaneBar({ title, railOpen, onToggle }: { title: string; railOpen: boolean; onToggle: () => void }) {
-  return (
-    <div className="wb-pane-bar">
-      <span className="wb-pane-title">{title}</span>
+    <div className="inspector-actions">
       <button
         type="button"
-        className="wb-pane-open"
-        aria-label={railOpen ? "收起附栏" : "打开附栏"}
-        title={railOpen ? "收起附栏" : "打开附栏"}
-        onClick={onToggle}
+        className="icon-btn inspector-collapse"
+        aria-label={maxed ? "退出全屏" : "全屏"}
+        title={maxed ? "退出全屏" : "全屏"}
+        aria-pressed={maxed}
+        onClick={onMax}
       >
-        <IconRailDock size={14} />
+        <IconExpand size={16} />
       </button>
-    </div>
-  );
-}
-
-function WorkbenchTabs({
-  sessions,
-  activeId,
-  filesOn,
-  filesTab,
-  artifactsOn,
-  artifactsTab,
-  gitOn,
-  gitTab,
-  onSelectSession,
-  onCloseSession,
-  onFiles,
-  onCloseFiles,
-  onArtifacts,
-  onCloseArtifacts,
-  onGit,
-  onCloseGit,
-  onNew,
-}: {
-  sessions: Array<{ id: string; label: string }>;
-  activeId: string;
-  filesOn: boolean;
-  filesTab: boolean;
-  artifactsOn: boolean;
-  artifactsTab: boolean;
-  gitOn?: boolean;
-  gitTab?: boolean;
-  onSelectSession: (id: string) => void;
-  onCloseSession: (id: string) => void;
-  onFiles: () => void;
-  onCloseFiles: () => void;
-  onArtifacts: () => void;
-  onCloseArtifacts: () => void;
-  onGit?: () => void;
-  onCloseGit?: () => void;
-  onNew: () => void;
-}) {
-  return (
-    <div className="wb-tabs">
-      {gitTab && onGit ? (
-        <div className={`wb-tab${gitOn ? " on" : ""}`}>
-          <button type="button" className="wb-tab-main" onClick={onGit}>
-            <IconGit size={13} />
-            <span className="wb-tab-label">Git</span>
-          </button>
-          <button
-            type="button"
-            className="wb-tab-close is-shown"
-            aria-label="关闭 Git"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onCloseGit?.();
-            }}
-          >
-            <IconClose size={10} />
-          </button>
-        </div>
-      ) : null}
-      {artifactsTab ? (
-        <div className={`wb-tab${artifactsOn ? " on" : ""}`}>
-          <button type="button" className="wb-tab-main" onClick={onArtifacts}>
-            <IconArtifacts size={13} />
-            <span className="wb-tab-label">产物</span>
-          </button>
-          <button
-            type="button"
-            className="wb-tab-close is-shown"
-            aria-label="关闭产物"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onCloseArtifacts();
-            }}
-          >
-            <IconClose size={10} />
-          </button>
-        </div>
-      ) : null}
-      {filesTab ? (
-        <div className={`wb-tab${filesOn ? " on" : ""}`}>
-          <button type="button" className="wb-tab-main" onClick={onFiles}>
-            <IconFile size={13} />
-            <span className="wb-tab-label">Files</span>
-          </button>
-          <button
-            type="button"
-            className="wb-tab-close is-shown"
-            aria-label="关闭 Files"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onCloseFiles();
-            }}
-          >
-            <IconClose size={10} />
-          </button>
-        </div>
-      ) : null}
-      {sessions.map((item) => (
-        <div key={item.id} className={`wb-tab${item.id === activeId && !filesOn && !artifactsOn && !gitOn ? " on" : ""}`}>
-          <button type="button" className="wb-tab-main" onClick={() => onSelectSession(item.id)}>
-            <IconTerminal size={13} />
-            <span className="wb-tab-label">{item.label}</span>
-          </button>
-          <button type="button" className="wb-tab-close" aria-label={`关闭 ${item.label}`} onClick={() => onCloseSession(item.id)}>
-            <IconClose size={10} />
-          </button>
-        </div>
-      ))}
-      <button type="button" className="wb-tab-add icon-btn" aria-label="新终端" title="新终端" onClick={onNew}>
-        <IconPlus size={14} />
+      <button type="button" className="icon-btn pane-close" aria-label="收起侧栏" title="收起侧栏" onClick={onStow}>
+        <IconPanelRight size={16} />
+        <span className="pane-close-label">返回对话</span>
       </button>
     </div>
   );
@@ -633,8 +410,6 @@ function TerminalView({
   token,
   runId,
   refreshKey,
-  railOpen,
-  onToggleRail,
   onCloseSession,
 }: {
   term: ReturnType<typeof useTerminalSessions>;
@@ -642,8 +417,6 @@ function TerminalView({
   token: string;
   runId: string | null;
   refreshKey: number;
-  railOpen: boolean;
-  onToggleRail: () => void;
   onCloseSession: (id: string) => void;
 }) {
   const [focused, setFocused] = useState(false);
@@ -665,23 +438,47 @@ function TerminalView({
 
   const focusTerm = () => ghostRef.current?.focus();
 
+  const sessionLabel = term.sessions.find((item) => item.id === term.activeId)?.label ?? "终端";
+
   return (
-    <>
-      <div className="wb-subbar">
-        <PaneBar
-          title={term.sessions.find((item) => item.id === term.activeId)?.label ?? "Terminal"}
-          railOpen={railOpen}
-          onToggle={onToggleRail}
-        />
-      </div>
-      <div className="wb-body">
-        <div className="wb-main">
-          {term.error ? <p className="error">{term.error}</p> : null}
-          {!term.activeId ? (
-            <p className="wb-empty">{local ? "本机终端需要先选一个文件夹。" : "发送任务后可以打开沙箱终端。"}</p>
-          ) : (
+    <section className="terminal-panel" id="run-terminal">
+      <details className="term-card-head">
+        <summary>
+          {sessionLabel}
+          <IconChevronDown size={14} />
+        </summary>
+        <div className="inspector-more-pop term-menu">
+          {term.sessions.map((item) => (
+            <div key={item.id} className={`term-session-row${item.id === term.activeId ? " is-on" : ""}`}>
+              <button type="button" onClick={() => term.setActiveId(item.id)}>
+                <IconTerminal size={13} />
+                {item.label}
+              </button>
+              {term.sessions.length > 1 ? (
+                <button
+                  type="button"
+                  className="term-session-close"
+                  aria-label={`关闭 ${item.label}`}
+                  onClick={() => onCloseSession(item.id)}
+                >
+                  <IconClose size={11} />
+                </button>
+              ) : null}
+            </div>
+          ))}
+          <div className="term-menu-actions">
+            <button type="button" onClick={() => void term.open()}>
+              新建
+            </button>
+          </div>
+        </div>
+      </details>
+      {term.error ? <p className="error">{term.error}</p> : null}
+      {!term.activeId ? (
+        <p className="pane-empty">{local ? "本机终端需要先选一个文件夹。" : "发送任务后可以打开沙箱终端。"}</p>
+      ) : (
               <div
-                className={`term-out is-flat${focused ? " is-focused" : ""}`}
+                className={`term-out is-flat term-shell${focused ? " is-focused" : ""}`}
                 ref={outRef}
                 onMouseDown={(event) => {
                   if (event.target === ghostRef.current) return;
@@ -790,36 +587,9 @@ function TerminalView({
                   }}
                 />
               </div>
-          )}
-          {!local ? <SetupLogs token={token} runId={runId} refreshKey={refreshKey} /> : null}
-        </div>
-        {railOpen ? (
-          <aside className="wb-rail">
-            <div className="wb-rail-head">
-              <span>
-                {term.sessions.length} Terminal{term.sessions.length === 1 ? "" : "s"}
-              </span>
-              <button type="button" className="icon-btn" aria-label="新终端" onClick={() => void term.open()}>
-                <IconPlus size={14} />
-              </button>
-            </div>
-            <ul className="wb-rail-list">
-              {term.sessions.map((item) => (
-                <li key={item.id} className={item.id === term.activeId ? "on" : ""}>
-                  <button type="button" className="wb-rail-item" onClick={() => term.setActiveId(item.id)}>
-                    <IconTerminal size={13} />
-                    <span className="wb-rail-name">{item.label}</span>
-                  </button>
-                  <button type="button" className="wb-rail-close" aria-label={`关闭 ${item.label}`} onClick={() => onCloseSession(item.id)}>
-                    <IconClose size={11} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </aside>
-        ) : null}
-      </div>
-    </>
+      )}
+      {!local ? <SetupLogs token={token} runId={runId} refreshKey={refreshKey} /> : null}
+    </section>
   );
 }
 
@@ -829,16 +599,14 @@ function FilesView({
   runId,
   local,
   refreshKey,
-  railOpen,
-  onToggleRail,
+  onPickFolder,
 }: {
   folder: string;
   token: string;
   runId: string | null;
   local: boolean;
   refreshKey: number;
-  railOpen: boolean;
-  onToggleRail: () => void;
+  onPickFolder?: () => void;
 }) {
   const [tree, setTree] = useState<Record<string, FsEntry[]>>({});
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({ "": true });
@@ -920,69 +688,57 @@ function FilesView({
     await openFile(created.path);
   };
 
+  const fileName = preview ? (preview.path.split(/[\\/]/).pop() ?? preview.path) : "";
+
   return (
-    <>
-      <div className="wb-subbar">
-        <PaneBar title={preview?.path || rootName} railOpen={railOpen} onToggle={onToggleRail} />
-      </div>
-      <div className="wb-body">
-        <div className="wb-main">
-          {error ? <p className="error">{error}</p> : null}
-          {!ready ? (
-            <p className="wb-empty">{local ? "先在 composer 上选一个本机文件夹。" : "发送任务后可以浏览云端工作区。"}</p>
-          ) : preview ? (
-            <pre className="wb-preview">
-              {preview.content}
-              {preview.truncated ? "\n…（已截断）" : ""}
-            </pre>
-          ) : (
-            <div className="wb-empty-card">
-              <p>从右侧打开文件预览</p>
-              {local && folder ? (
-                creating ? (
-                  <form
-                    className="wb-new-file"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void createFile();
-                    }}
-                  >
-                    <IslandInput
-                      value={newName}
-                      autoFocus
-                      aria-label="文件名"
-                      onChange={(event) => setNewName(event.target.value)}
-                    />
-                    <IslandButton type="primary" htmlType="submit">
-                      创建
-                    </IslandButton>
-                    <IslandButton type="default" onClick={() => setCreating(false)}>
-                      取消
-                    </IslandButton>
-                  </form>
-                ) : (
-                  <IslandButton type="primary" onClick={startCreate}>
-                    New File
-                  </IslandButton>
-                )
-              ) : null}
-            </div>
-          )}
-        </div>
-        {railOpen ? (
-          <aside className="wb-rail">
-            <div className="wb-rail-head">
-              <span title={local ? folder : undefined}>{rootName}</span>
-              {local && folder ? (
-                <button type="button" className="icon-btn" aria-label="New File" title="New File" onClick={startCreate}>
+    <section className={`file-tree${ready ? " file-split" : ""}`} id="file-tree">
+      {ready ? (
+        <>
+          <header className="workspace-files-head">
+            {preview ? (
+              <span className="workspace-files-title" title={preview.path}>
+                <strong>{fileName}</strong>
+              </span>
+            ) : (
+              <span className="workspace-files-title" title={local ? folder : undefined}>
+                <strong>{rootName}</strong>
+              </span>
+            )}
+            {local && folder ? (
+              creating ? (
+                <form
+                  className="wb-new-file"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void createFile();
+                  }}
+                >
+                  <input
+                    value={newName}
+                    autoFocus
+                    aria-label="文件名"
+                    onChange={(event) => setNewName(event.target.value)}
+                  />
+                  <button type="submit" className="quiet-btn">
+                    创建
+                  </button>
+                  <button type="button" className="quiet-btn" onClick={() => setCreating(false)}>
+                    取消
+                  </button>
+                </form>
+              ) : (
+                <button type="button" className="icon-btn" aria-label="新建文件" title="新建文件" onClick={startCreate}>
                   <IconPlus size={14} />
                 </button>
-              ) : null}
-              <button type="button" className="icon-btn" aria-label="刷新" onClick={() => setTick((n) => n + 1)}>
-                <IconSync size={13} />
-              </button>
-            </div>
-            {ready ? (
+              )
+            ) : null}
+            <button type="button" className="icon-btn" aria-label="刷新" onClick={() => setTick((n) => n + 1)}>
+              <IconSync size={13} />
+            </button>
+          </header>
+          <div className="file-split-body">
+            <div className="file-tree-list">
+              {error ? <p className="error">{error}</p> : null}
               <FileTree
                 path=""
                 depth={0}
@@ -992,13 +748,28 @@ function FilesView({
                 onToggle={toggleDir}
                 onFile={openFile}
               />
+            </div>
+            {preview ? (
+              <pre className="file-source">
+                {preview.content}
+                {preview.truncated ? "\n…（已截断）" : ""}
+              </pre>
             ) : (
-              <p className="hint">还没有工作区。</p>
+              <div className="file-source is-empty" />
             )}
-          </aside>
-        ) : null}
-      </div>
-    </>
+          </div>
+        </>
+      ) : (
+        <div className="wb-empty">
+          <p>{local ? "还没有本机文件夹。选一个之后，这里会显示文件树。" : "发送任务后可以浏览工作区文件。"}</p>
+          {local && onPickFolder ? (
+            <button type="button" className="wb-empty-action" onClick={onPickFolder}>
+              选择文件夹
+            </button>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 

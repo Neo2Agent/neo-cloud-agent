@@ -46,7 +46,16 @@ import {
   isDeskToolsTarget,
   isLoopbackHttpUrl,
   isRemoteControlTarget,
+  looksRemoteRepo,
+  sanitizeRemoteUrl,
+  REMOTE_CLOUD_CONTINUE_NO_REMOTE,
+  REMOTE_CLOUD_CONTINUE_ONLINE,
+  remoteCloudHandoffCloneReady,
+  remoteCloudHandoffCloneStarted,
+  remoteCloudHandoffRepoLine,
   resolveRunKernel,
+  runCloneBranch,
+  runCloneRemoteUrl,
   MAX_SUBSCRIPTION_WAKES,
   mintRunToken,
   verifyRunToken,
@@ -194,6 +203,8 @@ const pendingLoopStarts = new Map<
   string,
   { delivery: FollowUpDelivery; text: string; images?: import("@neo-cloud-agent/contracts").ImageRef[]; followUpId?: string | null }
 >();
+/** In-flight neo-loop POSTs. Two claims or a follow-up must not start a second turn. */
+const startingLoopTurns = new Set<string>();
 const runEgress = new Map<string, EgressPolicy>();
 const releasingIdle = new Set<string>();
 const activeTurns = new Map<string, ActiveTurn>();
@@ -348,6 +359,7 @@ export function reloadPersistedState(): void {
   deskGitSnapshots.clear();
   prRefreshedAt.clear();
   pendingLoopStarts.clear();
+  startingLoopTurns.clear();
   preparing.clear();
   startingQueued = false;
   resetHistory();
@@ -1323,6 +1335,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
         : runIndexTitle({ prompt: input.prompt }),
     branchName: null,
     baseBranch: null,
+    remoteUrl: repoUrls.find((url) => looksRemoteRepo(url)) ?? null,
     repoUrls,
     pullRequests: [],
     workerHandle: null,
@@ -1601,17 +1614,52 @@ async function attachWorker(run: Run, title: string): Promise<void> {
   void startPendingLoopTurn(run);
 }
 
+function parkPendingLoopStart(runId: string): void {
+  const pending = pendingLoopStarts.get(runId);
+  pendingLoopStarts.delete(runId);
+  if (pending?.text?.trim()) {
+    queueLoopFollowUp(runId, {
+      text: pending.text,
+      images: pending.images,
+      followUpId: pending.followUpId ?? undefined,
+    });
+  }
+}
+
+function shouldQueueAgentscopeFollowUp(run: Run): boolean {
+  return (
+    run.status === "RUNNING" ||
+    pendingLoopStarts.has(run.id) ||
+    Boolean(run.currentTurnId) ||
+    startingLoopTurns.has(run.id)
+  );
+}
+
+function deskWaitingForFirstClaim(run: Run): boolean {
+  return isDeskToolsTarget(run.executionTarget) && run.status === "NOT_YET_STARTED";
+}
+
 async function startPendingLoopTurn(run: Run): Promise<void> {
   if ((run.kernel ?? "pi") !== "agentscope") {
     return;
   }
-  const pending = pendingLoopStarts.get(run.id) ?? { delivery: "prompt" as const, text: run.prompt };
-  pendingLoopStarts.delete(run.id);
+  if (startingLoopTurns.has(run.id) || run.currentTurnId) {
+    parkPendingLoopStart(run.id);
+    return;
+  }
+  startingLoopTurns.add(run.id);
   try {
+    const pending = pendingLoopStarts.get(run.id);
+    if (!pending?.text?.trim()) {
+      return;
+    }
+    pendingLoopStarts.delete(run.id);
     await dispatchTurn(run, usableRunJwt(run), pending);
     flushRun(run.id);
   } catch (error) {
     console.error(`neo-loop dispatch failed for ${run.id}`, error);
+  } finally {
+    startingLoopTurns.delete(run.id);
   }
 }
 
@@ -1989,7 +2037,7 @@ export async function leaseDesk(deskId: string, waitMs = 20_000): Promise<DeskLe
 
 export async function claimDeskRun(
   deskId: string,
-  input: { runId: string; workspaceDir: string; pid?: number },
+  input: { runId: string; workspaceDir: string; pid?: number; remoteUrl?: string; branch?: string },
 ): Promise<Run> {
   const run = requireRun(input.runId);
   if (!isDeskToolsTarget(run.executionTarget) || run.executionTarget?.deskId !== deskId) {
@@ -1999,6 +2047,7 @@ export async function claimDeskRun(
   if (!workspaceDir) {
     throw new Error("workspaceDir is required");
   }
+  applyRemoteGitIdentity(run, { remoteUrl: input.remoteUrl, branch: input.branch });
   deskWorkspaces.set(run.id, workspaceDir);
   touchDesk(deskId);
   const handle =
@@ -2070,13 +2119,45 @@ export function releaseDeskRun(deskId: string, runId: string, input: { code?: nu
   return run;
 }
 
-function looksRemoteRepo(url: string): boolean {
-  return /^(https?:\/\/|git@|github\.com\/)/i.test(url);
-}
-
 function looksLocalFilesystem(url: string): boolean {
   const text = url.trim();
   return text.startsWith("/") || text.startsWith("file:") || /^[A-Za-z]:[\\/]/.test(text);
+}
+
+function applyRemoteGitIdentity(
+  run: Run,
+  input: { remoteUrl?: string | null; branch?: string | null; baseBranch?: string | null },
+): void {
+  const remote = sanitizeRemoteUrl(input.remoteUrl ?? "");
+  if (looksRemoteRepo(remote)) {
+    run.remoteUrl = remote;
+  }
+  const branch = (input.branch ?? "").trim();
+  if (branch && branch !== "HEAD") {
+    run.branchName = branch;
+    run.baseBranch = (input.baseBranch ?? "").trim() || branch;
+  }
+}
+
+function isLocalGitDir(url: string): boolean {
+  const text = url.trim();
+  return Boolean(text) && existsSync(text) && existsSync(path.join(text, ".git"));
+}
+
+function cloudHandoffRepoUrls(run: Run): string[] {
+  const remote = runCloneRemoteUrl(run);
+  const recorded = sanitizeRemoteUrl(run.remoteUrl ?? "");
+  if (!remote && !isLocalGitDir(recorded)) {
+    return [];
+  }
+  const localGit = (run.repoUrls ?? []).find((url) => isLocalGitDir(url));
+  if (localGit) {
+    return [localGit];
+  }
+  if (remote) {
+    return [remote];
+  }
+  return isLocalGitDir(recorded) ? [recorded] : [];
 }
 
 export async function handoffRun(runId: string, input: HandoffRequest): Promise<Run> {
@@ -2094,6 +2175,15 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
   // quietly leave the actual changes behind.
   if (isDeskTarget(run.executionTarget) && !isDeskTarget(target)) {
     throw new Error("本机对话不能切到云端。要在云端跑就开一条新的云端对话。");
+  }
+  if (isRemoteControlTarget(run.executionTarget) && !isDeskToolsTarget(target)) {
+    const desk = getDesk(run.executionTarget.deskId);
+    if (desk && isDeskOnline(desk)) {
+      throw new Error(REMOTE_CLOUD_CONTINUE_ONLINE);
+    }
+    if (cloudHandoffRepoUrls(run).length === 0) {
+      throw new Error(REMOTE_CLOUD_CONTINUE_NO_REMOTE);
+    }
   }
   const handle = handles.get(runId);
   if (handle) {
@@ -2120,21 +2210,39 @@ export async function handoffRun(runId: string, input: HandoffRequest): Promise<
   }
   run.executionTarget = target;
   run.updatedAt = now();
-  if (!run.repoUrls.some(looksRemoteRepo)) {
-    throw new Error("切到云端需要可 clone 的远端仓库。未提交的改动不会带过去。");
+  const remotes = cloudHandoffRepoUrls(run);
+  if (remotes.length === 0) {
+    throw new Error(REMOTE_CLOUD_CONTINUE_NO_REMOTE);
   }
+  const ref = runCloneBranch(run);
+  const origin = runCloneRemoteUrl(run);
+  const repoLine = remoteCloudHandoffRepoLine({ ...run, ref });
   restoreSessionToDir(runId, path.join(workspaceFor(runId), "sessions"));
-  const remotes = run.repoUrls.filter(looksRemoteRepo);
   publish(
-    event(run.id, "scm.clone_started", "Handoff: cloning clean remote", {
-      data: { repoUrls: remotes },
+    event(run.id, "scm.clone_started", remoteCloudHandoffCloneStarted(repoLine), {
+      data: { repoUrls: remotes, ref, remoteUrl: origin ?? undefined },
     }),
   );
   await materializeRepos(remotes, workspaceFor(run.id), repoRoot(), {
     token: (await resolveScmPushToken(run.userId).catch(() => null)) ?? undefined,
+    ref,
   });
-  publish(event(run.id, "scm.clone_succeeded", "Handoff workspace ready"));
-  await attachWorker(run, "Handed off to cloud worker");
+  run.repoUrls = remotes;
+  if (origin) {
+    run.remoteUrl = origin;
+  }
+  deskWorkspaces.delete(run.id);
+  deskGitSnapshots.delete(run.id);
+  pendingLoopStarts.delete(run.id);
+  if (run.status === "RUNNING" || run.status === "NOT_YET_STARTED" || run.status === "PROVISIONING") {
+    run.status = "IDLE";
+  }
+  publish(
+    event(run.id, "scm.clone_succeeded", remoteCloudHandoffCloneReady(repoLine), {
+      data: { repoUrls: remotes, ref, remoteUrl: origin ?? undefined, branch: run.branchName, baseBranch: run.baseBranch },
+    }),
+  );
+  flushRun(run.id);
   return run;
 }
 
@@ -2329,7 +2437,7 @@ export async function enqueueFollowUp(
       void signalTurn(run, { type: "steer", text: input.text, followUpId: item.id }).catch((error) => {
         console.error(`neo-loop steer failed for ${runId}`, error);
       });
-    } else if (run.status === "RUNNING" && delivery === "follow_up") {
+    } else if (shouldQueueAgentscopeFollowUp(run)) {
       queueLoopFollowUp(runId, { text: input.text, images: input.images, followUpId: item.id });
     } else {
       pendingLoopStarts.set(runId, {
@@ -2367,10 +2475,12 @@ export async function enqueueFollowUp(
         return item;
       }
     }
-    try {
-      await resumeRun(runId);
-    } catch {
-      // follow-up stays queued; resumeRun queued or marked ERROR
+    if (!deskWaitingForFirstClaim(run)) {
+      try {
+        await resumeRun(runId);
+      } catch {
+        // follow-up stays queued; resumeRun queued or marked ERROR
+      }
     }
   } else if ((run.kernel ?? "pi") === "agentscope" && run.status !== "RUNNING") {
     // Worker is still leased after IDLE. Dispatch the turn now; do not wait for
@@ -3061,9 +3171,15 @@ export function ingestDeskGitSnapshot(deskId: string, runId: string, input: Desk
   }
   const capped = capPatch(typeof input.patch === "string" ? input.patch : "");
   const capturedAt = now();
+  applyRemoteGitIdentity(run, {
+    remoteUrl: input.remoteUrl,
+    branch: input.branch,
+    baseBranch: input.baseBranch,
+  });
   deskGitSnapshots.set(runId, {
     branch: typeof input.branch === "string" ? input.branch : null,
     baseBranch: typeof input.baseBranch === "string" ? input.baseBranch : null,
+    remoteUrl: typeof input.remoteUrl === "string" ? input.remoteUrl : null,
     stat: typeof input.stat === "string" ? input.stat.slice(0, 64 * 1024) : "",
     patch: capped.patch,
     files: Array.isArray(input.files) ? input.files.slice(0, DESK_SNAPSHOT_MAX_FILES) : [],
@@ -3072,6 +3188,7 @@ export function ingestDeskGitSnapshot(deskId: string, runId: string, input: Desk
     commits: Array.isArray(input.commits) ? input.commits.slice(0, GIT_COMMITS_MAX) : [],
     capturedAt,
   });
+  flushRun(runId);
   return { capturedAt };
 }
 

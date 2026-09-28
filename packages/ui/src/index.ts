@@ -1,4 +1,5 @@
 export { BrandMark } from "./brand-mark";
+export { INSPECTOR_TABS, inspectorTabs, type FilesView, type InspectorTab } from "./inspector-tabs";
 export { THEME, type ThemeTokens } from "./tokens";
 export { ContextUsageBar, ContextUsageControl, bucketColor, percentLabel, totalLabel } from "./context-usage";
 export { MarkdownBody } from "./markdown";
