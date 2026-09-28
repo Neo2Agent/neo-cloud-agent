@@ -21,7 +21,7 @@ export function GitScreen({
   client: MobileClient;
   runId: string;
   busy?: boolean;
-  onBack: () => void;
+  onBack?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("diff");
   const [diff, setDiff] = useState<RunDiffResponse | null>(null);
@@ -72,13 +72,17 @@ export function GitScreen({
 
   return (
     <View style={styles.page}>
-      <View style={styles.topbar}>
-        <Pressable onPress={onBack} hitSlop={8}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Git</Text>
-        <Text style={styles.muted}>{source}</Text>
-      </View>
+      {onBack ? (
+        <View style={styles.topbar}>
+          <Pressable onPress={onBack} hitSlop={8}>
+            <Text style={styles.back}>←</Text>
+          </Pressable>
+          <Text style={styles.title}>Git</Text>
+          <Text style={styles.muted}>{source}</Text>
+        </View>
+      ) : (
+        <Text style={[styles.muted, styles.embedSource]}>{source}</Text>
+      )}
       <View style={styles.tabs}>
         <Pressable onPress={() => setTab("diff")} style={[styles.tab, tab === "diff" ? styles.tabOn : null]}>
           <Text style={styles.tabText}>改动</Text>
@@ -174,6 +178,7 @@ const styles = StyleSheet.create({
   topbar: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 10 },
   back: { fontSize: 20, color: colors.ink, width: 28 },
   title: { flex: 1, fontSize: 18, fontWeight: "700", color: colors.ink },
+  embedSource: { paddingHorizontal: 16, paddingTop: 8 },
   tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   tab: { borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, paddingVertical: 5 },
   tabOn: { backgroundColor: colors.paper },

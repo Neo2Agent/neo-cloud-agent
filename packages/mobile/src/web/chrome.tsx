@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { inspectorTabs, type InspectorTab } from "@neo-cloud-agent/ui";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import { BUNDLED_RECIPES, type Recipe } from "@neo-cloud-agent/contracts/recipe";
 import type { ContextUsageSnapshot } from "@neo-cloud-agent/contracts/context-usage";
@@ -25,6 +26,70 @@ export function Page({ title, onBack, action, children }: { title: string; onBac
         {action}
       </header>
       <div className="page-body">{children}</div>
+    </div>
+  );
+}
+
+export function InspectorSheet({
+  tab,
+  hasGit,
+  onSelect,
+  onBack,
+  children,
+}: {
+  tab: InspectorTab;
+  hasGit: boolean;
+  onSelect: (id: InspectorTab) => void;
+  onBack: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="app inspector-sheet">
+      <header className="topbar inspector-topbar">
+        <button className="icon-btn" type="button" onClick={onBack} aria-label="返回">
+          ←
+        </button>
+        <div className="inspector-tabs" role="tablist" aria-label="对话侧栏">
+          {inspectorTabs(hasGit).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              className={tab === item.id ? "is-on" : ""}
+              aria-selected={tab === item.id}
+              onClick={() => onSelect(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </header>
+      <div className="inspector-body">{children}</div>
+    </div>
+  );
+}
+
+export function WorkspaceFilesTabs({
+  view,
+  onView,
+}: {
+  view: "tree" | "artifacts";
+  onView: (view: "tree" | "artifacts") => void;
+}) {
+  return (
+    <div className="workspace-files-tabs" role="tablist" aria-label="工作区">
+      <button type="button" role="tab" aria-selected={view === "tree"} className={view === "tree" ? "is-on" : ""} onClick={() => onView("tree")}>
+        文件
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view === "artifacts"}
+        className={view === "artifacts" ? "is-on" : ""}
+        onClick={() => onView("artifacts")}
+      >
+        产物
+      </button>
     </div>
   );
 }

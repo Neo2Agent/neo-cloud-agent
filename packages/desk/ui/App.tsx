@@ -135,14 +135,12 @@ import {
   IconAutomations,
   IconBack,
   IconBell,
-  IconArtifacts,
   IconChevron,
   IconExperts,
   IconMemory,
   IconSkills,
   IconForward,
   IconGear,
-  IconGit,
   IconLogOut,
   IconNewChat,
   IconPanelRight,
@@ -1700,34 +1698,12 @@ export function App() {
   const headerPanelSlot = (
     <span className="panel-toggle-slot">
       {current ? <TranscriptSearch messages={visible} onJump={jumpToTranscriptMessage} /> : null}
-      {gitContext !== "none" ? (
-        <Tooltip content="Git" side="left">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="打开 Git"
-            onClick={() => openPanel("git")}
-          >
-            <IconGit size={15} />
-          </button>
-        </Tooltip>
-      ) : null}
-      <Tooltip content="产物" side="left">
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="打开产物"
-          onClick={() => openPanel("artifacts")}
-        >
-          <IconArtifacts size={15} />
-        </button>
-      </Tooltip>
       {!panelOpen ? (
-        <Tooltip content="Files / Changes" side="left">
+        <Tooltip content="打开侧栏" side="left">
           <button
             type="button"
             className="icon-btn"
-            aria-label="打开右侧栏"
+            aria-label="打开侧栏"
             onClick={() => openPanel()}
           >
             <IconPanelRight size={15} />
@@ -1737,12 +1713,12 @@ export function App() {
     </span>
   );
   const homePanelToggle = !panelOpen ? (
-    <Tooltip content="Files / Changes" side="left">
+    <Tooltip content="打开侧栏" side="left">
       <span className="panel-toggle-wrap">
         <button
           type="button"
           className="icon-btn"
-          aria-label="打开右侧栏"
+          aria-label="打开侧栏"
           onClick={() => openPanel()}
         >
           <IconPanelRight size={15} />
@@ -2332,7 +2308,7 @@ export function App() {
                     className="chip"
                     onClick={() => openPanel("git")}
                   >
-                    Changes <em className="add">+{diff.added}</em> <em className="del">-{diff.removed}</em>
+                    Git <em className="add">+{diff.added}</em> <em className="del">-{diff.removed}</em>
                   </button>
                 </div>
               ) : null}

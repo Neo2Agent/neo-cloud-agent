@@ -501,7 +501,7 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12px;
   text-align: left;
 }
 
@@ -1708,7 +1708,7 @@ img.avatar {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1;
@@ -1720,7 +1720,7 @@ img.avatar {
   gap: 8px;
   min-width: 0;
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: 13px;
 }
 
 .chat-crumb strong {
@@ -1781,6 +1781,7 @@ img.avatar {
   align-items: center;
   gap: 18px;
   padding: 12px 24px 28px;
+  font-size: 13px;
 }
 
 .feed.chat-feed > *,
@@ -1838,7 +1839,7 @@ img.avatar {
   padding: 10px 16px;
   border-radius: 18px;
   line-height: 1.55;
-  font-size: 13.5px;
+  font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -2105,8 +2106,8 @@ img.avatar {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  line-height: 1.6;
-  font-size: 14.5px;
+  line-height: 1.55;
+  font-size: 13px;
 }
 
 .chat-bubble.assistant .md {
@@ -2479,7 +2480,7 @@ img.avatar {
   border-radius: 8px;
   background: none;
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: 13px;
 }
 
 .context-item span {
@@ -3138,7 +3139,8 @@ img.avatar {
   outline: none;
   background: transparent;
   padding: 6px 4px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.55;
   scrollbar-width: none;
 }
 
@@ -3199,7 +3201,7 @@ img.avatar {
   color: var(--muted);
 }
 
-/* Right sidebar: Files / Terminal, toggled from the top-right corner. */
+/* Right sidebar: Web inspector — Git | 终端 | 文件, 产物 under 文件. */
 
 .panel-toggle-wrap {
   position: absolute;
@@ -3363,104 +3365,112 @@ img.avatar {
   min-width: 0;
 }
 
-.wb-chrome {
+.inspector-tabs {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   min-height: 44px;
-  padding: 0 8px;
+  height: 44px;
+  padding: 0 8px 0 12px;
+  box-sizing: border-box;
   border-bottom: var(--ink-line);
   background-color: var(--stage);
   background-image: var(--paper-grain);
 }
 
-.wb-tabs {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  min-width: 0;
-  flex: 1;
-  height: 36px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.wb-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.wb-tab {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  gap: 2px;
-  height: 28px;
-  max-width: 240px;
-  padding: 0 6px 0 10px;
+.inspector-tabs button[role="tab"] {
+  margin: 0;
+  padding: 4px 10px;
+  border: 0;
   border-radius: 8px;
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: 13px;
-  line-height: 1;
-  white-space: nowrap;
+  font-weight: 450;
+  line-height: 20px;
+  cursor: pointer;
 }
 
-.wb-tab:hover {
+.inspector-tabs button[role="tab"].is-on {
+  background: #e8e8ea;
   color: var(--text);
+  font-weight: 500;
 }
 
-.wb-tab.on,
-.wb-tab.on:hover {
-  background: var(--active);
-  color: var(--ink);
-}
-
-.wb-tab-main {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: 7px;
-  height: 100%;
-  color: inherit;
-}
-
-.wb-tab-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.wb-tab-close {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  color: var(--muted);
-  opacity: 0;
-}
-
-.wb-tab.on .wb-tab-close,
-.wb-tab:hover .wb-tab-close,
-.wb-tab-close.is-shown {
-  opacity: 1;
-}
-
-.wb-tab-close:hover {
-  background: var(--card);
-  color: var(--text);
-}
-
-.wb-tab-add {
-  flex: none;
-  margin-left: 0;
-}
-
-.wb-chrome-end {
+.inspector-actions {
   display: flex;
   align-items: center;
-  flex: none;
   gap: 2px;
   margin-left: auto;
+}
+
+.inspector-tabs .icon-btn {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.pane-close-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.inspector-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-files {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.workspace-files-tabs {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 36px;
+  padding: 0 8px;
+  border-bottom: var(--ink-line);
+}
+
+.workspace-files-tabs button {
+  margin: 0;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.workspace-files-tabs button.is-on {
+  background: #e8e8ea;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.workspace-files-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
 }
 
 .wb-body {

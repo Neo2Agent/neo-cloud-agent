@@ -589,6 +589,82 @@ button:disabled { opacity: 0.4; cursor: default; }
 .dash-card p { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .dash-card.is-unread { border-color: var(--accent); border-width: 2px; }
 .chat-actions { display: flex; gap: 8px; padding: 0 16px 8px; }
+
+.inspector-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--stage);
+}
+
+.inspector-topbar {
+  gap: 8px;
+}
+
+.inspector-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.inspector-tabs button[role="tab"] {
+  margin: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.inspector-tabs button[role="tab"].is-on {
+  background: #e8e8ea;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.workspace-files {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.workspace-files-tabs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 0 16px 8px;
+}
+
+.workspace-files-tabs button {
+  margin: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 15px;
+}
+
+.workspace-files-tabs button.is-on {
+  background: #e8e8ea;
+  color: var(--text);
+  font-weight: 600;
+}
 .image-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .user-image { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); }
 .composer-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -24,6 +24,7 @@ export const frameStyles = StyleSheet.create({
   card: { backgroundColor: colors.card, borderColor: colors.line, borderWidth: 1, borderRadius: 16, padding: 14 },
   cardTitle: { color: colors.ink, fontWeight: "700" },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
+  embed: { gap: 10 },
 });
 
 const styles = StyleSheet.create({

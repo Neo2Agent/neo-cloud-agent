@@ -27,9 +27,8 @@ type Props = {
   userAvatar?: string | null;
   neoAvatar?: string | null;
   onOpenDrawer: () => void;
+  onOpenInspector?: () => void;
   onOpenArtifacts?: () => void;
-  onOpenDiagnostics?: () => void;
-  onOpenGit?: () => void;
   userId?: string;
   invite?: ReactNode;
 };
@@ -108,9 +107,8 @@ export function ChatScreen({
   userAvatar,
   neoAvatar,
   onOpenDrawer,
+  onOpenInspector,
   onOpenArtifacts,
-  onOpenDiagnostics,
-  onOpenGit,
   userId,
   invite,
 }: Props) {
@@ -133,25 +131,13 @@ export function ChatScreen({
           <Text style={styles.pillText} numberOfLines={1}>{status}</Text>
         </View>
         <Text style={styles.place}>{run ? runPlaceLabel(run) : ""}</Text>
-      </View>
-      {run && onOpenArtifacts ? (
-        <View style={styles.actions}>
-          <Pressable onPress={onOpenArtifacts} style={styles.action}>
-            <Text style={styles.actionText}>产物</Text>
+        {run && onOpenInspector ? (
+          <Pressable onPress={onOpenInspector} hitSlop={12} accessibilityLabel="打开侧栏">
+            <Text style={styles.side}>侧栏</Text>
           </Pressable>
-          {onOpenGit ? (
-            <Pressable onPress={onOpenGit} style={styles.action}>
-              <Text style={styles.actionText}>Git</Text>
-            </Pressable>
-          ) : null}
-          {invite}
-          {run.status === "ERROR" && onOpenDiagnostics ? (
-            <Pressable onPress={onOpenDiagnostics} style={[styles.action, styles.actionWarn]}>
-              <Text style={styles.actionText}>查看诊断</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
+        ) : null}
+      </View>
+      {run && invite ? <View style={styles.actions}>{invite}</View> : null}
       <ScrollView ref={scrollRef} contentContainerStyle={styles.list}>
         {canLoadOlder && onLoadOlder ? (
           <Pressable onPress={onLoadOlder} disabled={loadingOlder} style={styles.older}>
@@ -265,19 +251,10 @@ const styles = StyleSheet.create({
   when: { color: colors.muted, fontSize: 11 },
   pillText: { color: colors.ink, fontSize: 13 },
   place: { width: 56, color: colors.muted, fontSize: 12, textAlign: "right" },
+  side: { color: colors.ink, fontSize: 13, fontWeight: "600" },
   older: { alignSelf: "center", paddingHorizontal: 14, paddingVertical: 6 },
   olderText: { color: colors.muted, fontSize: 12 },
   actions: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
-  action: {
-    borderRadius: 999,
-    backgroundColor: colors.paper,
-    borderWidth: 1,
-    borderColor: colors.line,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  actionWarn: { backgroundColor: "#fdecec", borderColor: "#e8b4b4" },
-  actionText: { color: colors.ink, fontSize: 12, fontWeight: "700" },
   list: { padding: 14, gap: 12, paddingBottom: 24 },
   empty: { color: colors.muted, textAlign: "center", marginTop: 24 },
   whisper: { color: colors.muted, fontSize: 12, textAlign: "center", paddingHorizontal: 24, lineHeight: 18 },

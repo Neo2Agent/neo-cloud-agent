@@ -62,18 +62,36 @@ test("desk chrome copies Cursor Agents Window density, not Island candy", () => 
   assert.match(app, /className="rail-new-chat"/);
   assert.match(app, /className="rail-custom"/);
   assert.match(app, /个性化/);
+  assert.match(app, /打开侧栏/);
   assert.doesNotMatch(app, /Island/);
   assert.doesNotMatch(app, /rail-more-wrap/);
+  assert.doesNotMatch(app, /IconGit/);
+  assert.doesNotMatch(app, /IconArtifacts/);
   assert.match(rail, /rail-count/);
   assert.doesNotMatch(rail, /IslandTag/);
   assert.match(meta, /local-meta-pill/);
   assert.doesNotMatch(meta, /就绪/);
-  assert.match(panel, /wb-tab-label">Changes</);
+  assert.match(panel, /inspectorTabs/);
+  assert.match(panel, /aria-label="对话侧栏"/);
+  assert.match(panel, /产物/);
+  assert.match(panel, /发送任务后可以查看 Git。/);
+  assert.doesNotMatch(panel, /Changes/);
+  assert.doesNotMatch(panel, /wb-tab-label">Files</);
   assert.match(panel, /resolveSidePanelPage/);
   assert.match(panel, /const \[railOpen, setRailOpen\] = useState\(true\)/);
   assert.doesNotMatch(panel, /wb-home/);
   assert.doesNotMatch(panel, /wb-tile/);
   assert.doesNotMatch(panel, /Island/);
+});
+
+test("desk reading type matches Web 13px so a line holds the same words", () => {
+  assert.match(css, /\.chat-feed,\s*\n\.feed\.chat-feed\s*\{[^}]*font-size:\s*13px/);
+  assert.match(css, /\.chat-bubble\s*\{[^}]*font-size:\s*13px/);
+  assert.match(css, /\.assistant-text\s*\{[^}]*font-size:\s*13px/);
+  assert.match(css, /\.assistant-text\s*\{[^}]*line-height:\s*1\.55/);
+  assert.match(css, /\.composer textarea\s*\{[^}]*font-size:\s*13px/);
+  assert.match(css, /\.chat-title\s*\{[^}]*font-size:\s*12px/);
+  assert.match(css, /\.inspector-tabs button\[role="tab"\]\s*\{[^}]*font-size:\s*13px/);
 });
 
 test("desk expert picker sits in the context bar like Web", () => {
