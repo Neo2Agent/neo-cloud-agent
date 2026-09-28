@@ -55,7 +55,7 @@ import {
   resolveModelLimits,
 } from "@neo-cloud-agent/contracts/context-usage";
 import { formatContextPercent } from "@neo-cloud-agent/contracts/context-usage";
-import type { FilesView, InspectorTab } from "@neo-cloud-agent/ui";
+import type { FilesView, InspectorTab } from "@neo-cloud-agent/ui/inspector-tabs";
 import { ChatScreen } from "./ChatScreen";
 import { GitScreen } from "./GitScreen";
 import { RunInvite } from "./RunInvite";
