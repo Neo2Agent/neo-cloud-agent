@@ -122,7 +122,7 @@ test("agentscope kernel allows cloud loop + desk tools", () => {
   );
 });
 
-test("resolveRunKernel follows Cursor: This Computer stays pi, Cloud/Remote prefer agentscope", () => {
+test("resolveRunKernel keeps This Computer and Cloud on pi, and Remote on the split loop", () => {
   assert.equal(resolveRunKernel({ kernel: "pi", target: { loop: "cloud", tools: "cloud" } }), "pi");
   assert.equal(
     resolveRunKernel({
@@ -144,7 +144,7 @@ test("resolveRunKernel follows Cursor: This Computer stays pi, Cloud/Remote pref
   assert.equal(resolveRunKernel({ target: { loop: "cloud", tools: "cloud" } }), "pi");
   assert.equal(
     resolveRunKernel({ target: { loop: "cloud", tools: "cloud" } }, { NEO_LOOP_AVAILABLE: "1" }),
-    "agentscope",
+    "pi",
   );
   assert.equal(
     resolveRunKernel({ target: { loop: "cloud", tools: "cloud" } }, { AGENT_KERNEL: "agentscope" }),

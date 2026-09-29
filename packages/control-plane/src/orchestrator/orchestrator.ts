@@ -1272,6 +1272,7 @@ export async function createRun(input: CreateRunRequest, owner?: { userId?: stri
     repoUrls = [...(getEnvironment(input.envId)?.config.repos ?? [])];
   }
   const target = parseExecutionTarget(input.target);
+  // The probe is what /health reports. It does not move Cloud off pi.
   const loopAvailable = isDeskTarget(target) ? false : await isNeoLoopAvailable();
   const kernel = resolveRunKernel(
     { kernel: input.kernel, target },

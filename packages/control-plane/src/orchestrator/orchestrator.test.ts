@@ -2140,16 +2140,15 @@ test("agentscope abort signals the live turn", async () => {
 });
 });
 
-test("Cloud prefers agentscope when neo-loop is healthy; This Computer stays pi", async () => {
+test("Cloud stays pi when the loop is healthy; Remote still uses the split loop", async () => {
   const { resetNeoLoopHealthForTest, setNeoLoopHealthForTest } = await import("../loop/health.js");
   setNeoLoopHealthForTest(true);
   try {
     const cloud = await createRun({
-      prompt: "cloud loop when healthy",
+      prompt: "cloud stays colocated",
       repoUrls: ["fixtures/toy-repo"],
     });
-    assert.equal(cloud.kernel, "agentscope");
-    assert.equal(takeInbound(cloud.id).length, 0);
+    assert.equal(cloud.kernel, "pi");
 
     const registered = newDesk("still-this-computer");
     const local = await createRun({

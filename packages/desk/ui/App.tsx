@@ -889,7 +889,7 @@ export function App() {
     setAuthError("");
     const local = isLocalDeskKind(target.kind);
     if (target.kind === TARGET_REMOTE && !remoteAvailable) {
-      setAuthError("Remote Control 需要 neo-loop。控制面 /health 里 neoLoop.available=false。");
+      setAuthError("Remote Control 需要云端循环。控制面 /health 里 neoLoop.available=false。");
       return;
     }
     if (target.kind === TARGET_REMOTE && !folder) {

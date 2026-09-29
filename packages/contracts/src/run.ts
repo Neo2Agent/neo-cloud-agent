@@ -186,8 +186,8 @@ export function runMode(target?: ExecutionTarget | null): RunMode {
 
 /**
  * Cursor-shaped kernel pick. Explicit `kernel` always wins.
- * This Computer stays colocated pi. Remote needs agentscope.
- * Cloud uses agentscope when neo-loop is healthy, else AGENT_KERNEL / pi.
+ * This Computer stays colocated pi. Remote needs the split loop (`agentscope`).
+ * Cloud stays on AGENT_KERNEL / pi even when that loop process is healthy.
  */
 export function resolveRunKernel(
   input: { kernel?: unknown; target?: ExecutionTarget | null },
@@ -201,9 +201,6 @@ export function resolveRunKernel(
     return "pi";
   }
   if (isRemoteControlTarget(input.target)) {
-    return "agentscope";
-  }
-  if (env.NEO_LOOP_AVAILABLE === "1" || env.NEO_LOOP_AVAILABLE === "true") {
     return "agentscope";
   }
   return defaultAgentKernel(env);

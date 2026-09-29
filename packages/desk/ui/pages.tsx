@@ -673,7 +673,7 @@ export function ContextBar({
   open: ContextMenuId;
   setOpen: (id: ContextMenuId) => void;
   locked?: boolean;
-  /** Control-plane `/health.neoLoop.available`. Remote Control needs neo-loop. */
+  /** Control-plane `/health.neoLoop.available`. Remote Control needs the cloud loop. */
   remoteAvailable?: boolean;
   cloudRepo?: string;
   githubRepos?: Array<{ fullName: string; url: string }>;
@@ -836,7 +836,7 @@ export function ContextBar({
               {!canRunLocal
                 ? "Remote Control（需要 Desk）"
                 : !remoteAvailable
-                  ? "Remote Control（neo-loop 未就绪）"
+                  ? "Remote Control（云端循环未就绪）"
                   : "Remote Control"}
             </button>
           </div>

@@ -59,12 +59,7 @@ sudo apt-get install -y e2fsprogs iproute2 iptables caddy
 
 不要为了跑 Docker / Firecracker 去装一整套虚拟化。轻量没有 `/dev/kvm`。
 
-Java 21 **先不装**。只有以后要 `systemctl enable --now neo-loop` 时才：
-
-```bash
-sudo apt-get install -y openjdk-21-jre-headless
-java -version
-```
+不要为 `neo-loop` 装 Java。现网循环是 Node，`packages/loop`，只听 `127.0.0.1:8082`。
 
 ## 代码与依赖
 

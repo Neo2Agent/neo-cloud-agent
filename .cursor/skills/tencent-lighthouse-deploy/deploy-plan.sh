@@ -109,8 +109,14 @@ classify() {
       mark restart_admin_api
       return 0
       ;;
-    services/neo-loop/*|services/neo-loop|infra/neo-loop.service)
-      mark build_loop
+    packages/loop/*|packages/loop)
+      mark restart_loop
+      return 0
+      ;;
+    services/neo-loop/*|services/neo-loop)
+      return 0
+      ;;
+    infra/neo-loop.service)
       mark restart_loop
       return 0
       ;;
@@ -121,7 +127,6 @@ classify() {
         */neo-control-plane.service) mark restart_control_plane ;;
         */neo-admin-api.service) mark restart_admin_api ;;
         */neo-loop.service)
-          mark build_loop
           mark restart_loop
           ;;
       esac
@@ -143,9 +148,9 @@ if [[ "${1:-}" == "--full" ]]; then
   restart_gateway=1
   restart_control_plane=1
   restart_admin_api=1
-  build_loop=1
-  # Default kernel is pi; neo-loop is optional and stays disabled unless already enabled.
-  restart_loop=0
+  build_loop=0
+  # Node loop on :8082. Do not build the Java jar. Restart so Remote picks up the tree.
+  restart_loop=1
   update_units=1
   shift
 fi

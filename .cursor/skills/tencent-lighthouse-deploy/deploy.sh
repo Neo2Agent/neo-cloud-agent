@@ -32,14 +32,13 @@ Ship this git checkout to ssh host `lighthouse` (62.234.211.200).
   --full            Overlay the whole tree (still skips .env / .neo / node_modules)
   --from-rev SHA    Diff against this revision instead of the host .deploy-revision
   --restart         Restart gateway + control-plane + admin-api even if the plan
-                    says they are unchanged. neo-loop restarts only if already
-                    enabled. Default kernel is pi; neo-loop stays disabled.
-  --no-restart      Never restart units
+                    says they are unchanged. Also restarts the node loop on :8082.
+  --no-restart      Never restart units, and do not enable the loop
   --remote-build    Build web/admin on the host instead of this machine.
-                    neo-loop jar is always built on this machine (needs mvn)
   --skip-health     Do not wait for /health after restart
-  --enable-loop     Enable and start neo-loop. AGENT_KERNEL stays pi (fallback).
-                    Cloud/Remote use agentscope when :8082 /health is ok.
+  --enable-loop     Restart the node loop after enabling it. The loop is enabled
+                    by default. AGENT_KERNEL stays pi. Cloud stays pi.
+                    Remote uses :8082 when /health is ok. Do not start a JVM.
   -h, --help        Show this help
 
 Env: DEPLOY_HOST, DEPLOY_REMOTE_DIR, DEPLOY_FROM_REV
@@ -136,20 +135,11 @@ ensure_production_kernel() {
   upsert_remote_env AGENT_KERNEL pi
   upsert_remote_env NEO_LOOP_URL "http://127.0.0.1:8082"
   if [[ "$no_restart" -eq 1 ]]; then
-    log "kernel: AGENT_KERNEL=pi; --no-restart skips neo-loop enable/disable"
+    log "kernel: AGENT_KERNEL=pi; --no-restart skips neo-loop"
     return 0
   fi
-  if [[ "$enable_loop" -eq 1 ]]; then
-    log "loop: enable neo-loop (Cloud prefers agentscope when healthy; AGENT_KERNEL=pi fallback)"
-    ssh_h "sudo systemctl enable --now neo-loop"
-    return 0
-  fi
-  if ssh_h 'systemctl is-enabled neo-loop >/dev/null 2>&1 || systemctl is-active neo-loop >/dev/null 2>&1'; then
-    log "loop: disable neo-loop (default kernel is pi)"
-    ssh_h "sudo systemctl disable --now neo-loop"
-  else
-    log "loop: already disabled"
-  fi
+  log "loop: enable node neo-loop on 127.0.0.1:8082 (Remote when healthy; Cloud stays pi; no JVM)"
+  ssh_h "sudo systemctl enable --now neo-loop"
 }
 
 ensure_ssh() {
@@ -457,7 +447,7 @@ else
   log "restart: skip"
 fi
 
-if [[ "$enable_loop" -eq 1 && "$no_restart" -eq 0 ]]; then
+if [[ "$no_restart" -eq 0 && ( "$(plan_get restart_loop)" == "1" || "$enable_loop" -eq 1 || "$force_restart" -eq 1 ) ]]; then
   log "restart: neo-loop"
   ssh_h "sudo systemctl restart neo-loop"
 fi
@@ -474,7 +464,7 @@ if [[ "$skip_health" -eq 0 ]]; then
     sleep 2
   done
   [[ "$ok" -eq 1 ]] || die "health check timed out after restart"
-  log "health: default kernel is pi; neo-loop is optional"
+  log "health: kernel is pi; node loop on :8082 serves Remote Control"
 fi
 
 log "done local=$LOCAL_REV total=$((SECONDS - started_at))s"

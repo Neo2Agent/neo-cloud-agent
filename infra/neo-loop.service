@@ -1,25 +1,23 @@
 [Unit]
-Description=neo-loop (AgentScope Java turn engine)
+Description=neo-loop (TypeScript cloud loop for Remote Control)
 After=network.target
 # Generic template. Lighthouse production copy is
 # .cursor/skills/tencent-lighthouse-deploy/units/neo-loop.service
-# (WorkingDirectory=/home/ubuntu/neo-cloud-agent). Optional: production runs
-# AGENT_KERNEL=pi and deploy.sh leaves this unit disabled unless --enable-loop.
+# Cloud stays on pi. This process is the Remote Control loop.
+# Bind to localhost only. Do not reverse-proxy :8082.
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/neo
 EnvironmentFile=-/opt/neo/.env
-# Loop must never see provider keys even if they sit in the shared env file.
 UnsetEnvironment=DEEPSEEK_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY LLM_API_KEY LLM_UPSTREAM_API_KEY
 Environment=NEO_LOOP_PORT=8082
 Environment=NEO_LOOP_BIND=127.0.0.1
-Environment=NEO_LOOP_JAVA_XMX=512m
-ExecStart=/bin/bash -c 'exec /usr/bin/java -Xmx"${NEO_LOOP_JAVA_XMX:-512m}" -jar /opt/neo/services/neo-loop/target/neo-loop-0.1.0.jar'
+Environment=NODE_OPTIONS=--max-old-space-size=256
+ExecStart=/usr/bin/node --import tsx packages/loop/src/index.ts
 Restart=on-failure
 RestartSec=3
-MemoryMax=768M
-# Bind loop to localhost only; Caddy must not reverse-proxy :8082.
+MemoryMax=384M
 
 [Install]
 WantedBy=multi-user.target

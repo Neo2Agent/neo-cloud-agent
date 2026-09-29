@@ -1,14 +1,15 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type {
-  FollowUpDelivery,
-  ImageRef,
-  Run,
-  StartTurnRequest,
-  StartTurnResponse,
-  TurnCompleteRequest,
-  TurnHeartbeatRequest,
-  TurnSignalRequest,
+import {
+  isRemoteControlTarget,
+  type FollowUpDelivery,
+  type ImageRef,
+  type Run,
+  type StartTurnRequest,
+  type StartTurnResponse,
+  type TurnCompleteRequest,
+  type TurnHeartbeatRequest,
+  type TurnSignalRequest,
 } from "@neo-cloud-agent/contracts";
 import { getConfig } from "../config.js";
 import { workspaceFor } from "../worker-spawn.js";
@@ -65,7 +66,7 @@ export function buildStartTurnRequest(
     tools: {
       mode: "worker_ws",
       url: "inbound",
-      sandboxRoot: "/workspace",
+      sandboxRoot: isRemoteControlTarget(run.executionTarget) ? "." : "/workspace",
     },
     workspace: {
       agentsMd: readWorkspaceText(run.id, "AGENTS.md") ?? readWorkspaceText(run.id, "CLAUDE.md"),

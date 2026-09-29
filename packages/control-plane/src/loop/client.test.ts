@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
 import type { Run } from "@neo-cloud-agent/contracts";
-import { dispatchTurn } from "./client.js";
+import { buildStartTurnRequest, dispatchTurn } from "./client.js";
 
 function fakeRun(): Run {
   return {
@@ -31,6 +31,17 @@ function fakeRun(): Run {
   };
 }
 
+test("remote turns keep the tool root on the desk", () => {
+  const body = buildStartTurnRequest(
+    {
+      ...fakeRun(),
+      executionTarget: { loop: "cloud", tools: "desk", deskId: "desk-1", remoteControl: true },
+    },
+    { turnId: "t", delivery: "prompt", text: "hi" },
+  );
+  assert.equal(body.tools.sandboxRoot, ".");
+});
+
 test("dispatchTurn posts a start-turn payload to neo-loop", async () => {
   const seen: unknown[] = [];
   const server = createServer((req, res) => {
@@ -52,11 +63,15 @@ test("dispatchTurn posts a start-turn payload to neo-loop", async () => {
   try {
     const result = await dispatchTurn(fakeRun(), "jwt-1", { delivery: "prompt", text: "hello" });
     assert.equal(result?.accepted, true);
-    const posted = seen[0] as { url: string; body: { text: string; jwt: string; runId: string } };
+    const posted = seen[0] as {
+      url: string;
+      body: { text: string; jwt: string; runId: string; tools: { sandboxRoot: string } };
+    };
     assert.equal(posted.url, "/internal/loop/turns");
     assert.equal(posted.body.text, "hello");
     assert.equal(posted.body.jwt, "jwt-1");
     assert.equal(posted.body.runId, "run-loop-1");
+    assert.equal(posted.body.tools.sandboxRoot, "/workspace");
   } finally {
     if (previous === undefined) {
       delete process.env.NEO_LOOP_URL;
