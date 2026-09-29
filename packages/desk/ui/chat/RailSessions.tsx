@@ -1,7 +1,7 @@
 import { RUN_MODE_SHORT_LABELS, runDisplayTitle, runMode, type Run } from "@neo-cloud-agent/contracts/run";
 import { isDeskBoundRun, isRemoteControlRun } from "../desk";
 import type { RailSpaceGroup } from "../../src/rail";
-import { IconChevron, IconCloud, IconComputer, IconProjects } from "../icons";
+import { IconFolderClosed, IconFolderOpen } from "../icons";
 
 const INBOX_PREVIEW = 8;
 
@@ -13,24 +13,14 @@ function runListTitle(run: Run, n = 40): string {
   return preview(runDisplayTitle(run), n);
 }
 
-function SpaceGlyph({ kind }: { kind: RailSpaceGroup["kind"] }) {
-  if (kind === "project") return <IconProjects size={13} />;
-  if (kind === "folder") return <IconComputer size={13} />;
-  return <IconCloud size={13} />;
-}
-
 export function RailSessions({
   inbox,
   spaces,
   runId,
-  inboxOpen,
-  spacesOpen,
   inboxExpanded,
   folderOpen,
   runningLocalRunIds,
   formatRel,
-  onToggleInbox,
-  onToggleSpaces,
   onToggleInboxExpanded,
   onToggleFolder,
   onOpenRun,
@@ -38,92 +28,104 @@ export function RailSessions({
   inbox: Run[];
   spaces: Array<RailSpaceGroup<Run>>;
   runId: string | null;
-  inboxOpen: boolean;
-  spacesOpen: boolean;
   inboxExpanded: boolean;
   folderOpen: Record<string, boolean>;
   /** Local runs holding a worker, so a background one is visible from any chat. */
   runningLocalRunIds?: Set<string>;
   formatRel: (iso?: string | null) => string;
-  onToggleInbox: () => void;
-  onToggleSpaces: () => void;
   onToggleInboxExpanded: () => void;
   onToggleFolder: (key: string) => void;
   onOpenRun: (id: string) => void;
 }) {
+  const projects = spaces.filter((space) => space.kind === "project");
+  const repos = spaces.filter((space) => space.kind !== "project");
   const shownInbox = inboxExpanded || inbox.length <= INBOX_PREVIEW ? inbox : inbox.slice(0, INBOX_PREVIEW);
+  const rowProps = { runId, runningLocalRunIds, formatRel, onOpenRun };
   return (
     <div className="rail-sessions">
-      <section className="rail-block">
-        <button type="button" className="rail-block-head" onClick={onToggleInbox}>
-          <IconChevron open={inboxOpen} size={13} />
-          <span>对话</span>
-          <span className="rail-count">{inbox.length}</span>
-        </button>
-        {inboxOpen ? (
-          inbox.length === 0 ? (
-            <p className="pane-note">没有未选目录的对话。</p>
-          ) : (
-            <>
-              {shownInbox.map((run) => (
-                <ChatRow
-                  key={run.id}
-                  run={run}
-                  active={run.id === runId}
-                  localRunning={runningLocalRunIds?.has(run.id)}
-                  formatRel={formatRel}
-                  onOpen={onOpenRun}
-                />
-              ))}
-              {inbox.length > INBOX_PREVIEW ? (
-                <button type="button" className="rail-more" onClick={onToggleInboxExpanded}>
-                  {inboxExpanded ? "收起" : `展开 ${inbox.length - INBOX_PREVIEW} 条`}
-                </button>
-              ) : null}
-            </>
-          )
-        ) : null}
-      </section>
-
-      <section className="rail-block">
-        <button type="button" className="rail-block-head" onClick={onToggleSpaces}>
-          <IconChevron open={spacesOpen} size={13} />
-          <span>空间</span>
-          <span className="rail-count">{spaces.length}</span>
-        </button>
-        {spacesOpen ? (
-          spaces.length === 0 ? (
-            <p className="pane-note">选择项目、本机目录或仓库后，对话会出现在这里。</p>
-          ) : (
-            spaces.map((space) => {
-              const open = folderOpen[space.key] !== false;
-              return (
-                <div key={space.key} className="rail-space">
-                  <button type="button" className="rail-space-folder" onClick={() => onToggleFolder(space.key)}>
-                    <IconChevron open={open} size={13} />
-                    <SpaceGlyph kind={space.kind} />
-                    <span>{space.label}</span>
-                  </button>
-                  {open
-                    ? space.runs.map((run) => (
-                        <ChatRow
-                          key={run.id}
-                          run={run}
-                          active={run.id === runId}
-                          nested
-                          localRunning={runningLocalRunIds?.has(run.id)}
-                          formatRel={formatRel}
-                          onOpen={onOpenRun}
-                        />
-                      ))
-                    : null}
-                </div>
-              );
-            })
-          )
-        ) : null}
-      </section>
+      <RailFolderSection title="项目" spaces={projects} folderOpen={folderOpen} onToggleFolder={onToggleFolder} {...rowProps} />
+      <RailFolderSection title="仓库" spaces={repos} folderOpen={folderOpen} onToggleFolder={onToggleFolder} {...rowProps} />
+      {inbox.length > 0 ? (
+        <section className="rail-block" data-section="daily">
+          <div className="rail-block-head">
+            <span>日常</span>
+            <span className="rail-count">{inbox.length}</span>
+          </div>
+          {shownInbox.map((run) => (
+            <ChatRow
+              key={run.id}
+              run={run}
+              active={run.id === runId}
+              localRunning={runningLocalRunIds?.has(run.id)}
+              formatRel={formatRel}
+              onOpen={onOpenRun}
+            />
+          ))}
+          {inbox.length > INBOX_PREVIEW ? (
+            <button type="button" className="rail-more" onClick={onToggleInboxExpanded}>
+              {inboxExpanded ? "收起" : `展开 ${inbox.length - INBOX_PREVIEW} 条`}
+            </button>
+          ) : null}
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+function RailFolderSection({
+  title,
+  spaces,
+  runId,
+  folderOpen,
+  runningLocalRunIds,
+  formatRel,
+  onToggleFolder,
+  onOpenRun,
+}: {
+  title: string;
+  spaces: Array<RailSpaceGroup<Run>>;
+  runId: string | null;
+  folderOpen: Record<string, boolean>;
+  runningLocalRunIds?: Set<string>;
+  formatRel: (iso?: string | null) => string;
+  onToggleFolder: (key: string) => void;
+  onOpenRun: (id: string) => void;
+}) {
+  if (spaces.length === 0) return null;
+  return (
+    <section className="rail-block" data-section={title}>
+      <div className="rail-block-head">
+        <span>{title}</span>
+      </div>
+      {spaces.map((space) => {
+        const open = folderOpen[space.key] !== false || space.runs.some((run) => run.id === runId);
+        return (
+          <div key={space.key} className="rail-space">
+            <button type="button" className="rail-space-folder" aria-expanded={open} onClick={() => onToggleFolder(space.key)}>
+              {open ? (
+                <IconFolderOpen size={16} className="rail-folder-icon" />
+              ) : (
+                <IconFolderClosed size={16} className="rail-folder-icon" />
+              )}
+              <span>{space.label}</span>
+            </button>
+            {open
+              ? space.runs.map((run) => (
+                  <ChatRow
+                    key={run.id}
+                    run={run}
+                    active={run.id === runId}
+                    nested
+                    localRunning={runningLocalRunIds?.has(run.id)}
+                    formatRel={formatRel}
+                    onOpen={onOpenRun}
+                  />
+                ))
+              : null}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

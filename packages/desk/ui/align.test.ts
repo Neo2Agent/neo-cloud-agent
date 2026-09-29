@@ -37,9 +37,13 @@ test("desk chat is a reading column; empty Files does not steal it", () => {
   const split = readFileSync(path.join(here, "split.ts"), "utf8");
   const panel = readFileSync(path.join(here, "../src/panel-open.ts"), "utf8");
   assert.match(css, /overflow-wrap:\s*anywhere/);
-  assert.match(css, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*6px\s*minmax\(260px,\s*min\(var\(--panel-w\),\s*36%\)\)/);
+  assert.match(css, /\.chat-page\.with-panel\s*\{[^}]*display:\s*flex/);
+  assert.match(css, /\.resize-handle\.is-invert/);
+  assert.match(css, /\.pane-snap-label/);
+  assert.doesNotMatch(css, /minmax\(var\(--panel-w\),\s*36%\)/);
   assert.match(css, /\.context-item span/);
-  assert.match(split, /PANEL_W_DEFAULT = 360/);
+  assert.match(split, /RAIL_W_DEFAULT = SIDEBAR_DEFAULT/);
+  assert.match(split, /panelWidthDefault/);
   assert.match(panel, /shouldRestoreDeskPanel/);
   assert.match(app, /shouldRestoreDeskPanel/);
   assert.doesNotMatch(transcript, /<Avatar /);
@@ -65,9 +69,13 @@ test("desk chrome copies Cursor Agents Window density, not Island candy", () => 
   assert.match(css, /\.rail-nav \.rail-new-chat\s*\{[^}]*border-radius:\s*8px/);
   assert.match(css, /\.settings-card\s*\{[^}]*border-radius:\s*8px/);
   assert.match(app, /className="rail-new-chat"/);
-  assert.match(app, /className="rail-custom"/);
-  assert.match(app, /个性化/);
+  assert.match(app, /更多/);
+  assert.match(app, /className="rail-label"/);
+  assert.match(css, /\.agents-app\.is-rail-collapsed \.rail-label/);
+  assert.doesNotMatch(css, /\.is-rail-collapsed \.rail-item span \{/);
+  assert.match(app, /打开对话列表/);
   assert.match(app, /打开侧栏/);
+  assert.doesNotMatch(app, /个性化/);
   assert.doesNotMatch(app, /Island/);
   assert.doesNotMatch(app, /rail-more-wrap/);
   assert.doesNotMatch(app, /IconGit/);
@@ -104,6 +112,48 @@ test("desk reading type matches Web 13px so a line holds the same words", () => 
   assert.match(css, /\.inspector-tabs button\[role="tab"\]\s*\{[^}]*font-size:\s*13px/);
   assert.match(css, /\.workspace-files\s*\{[^}]*grid-template-columns:\s*220px/);
   assert.match(css, /\.term-card-head > summary\s*\{[^}]*font-size:\s*13px/);
+});
+
+test("desk work rows match Web and do not remount the old details cards", () => {
+  const card = readFileSync(path.join(here, "ToolCard.tsx"), "utf8");
+  const fold = readFileSync(path.join(here, "chat/WorkFold.tsx"), "utf8");
+  const disclosure = readFileSync(path.join(here, "chat/use-turn-disclosure.ts"), "utf8");
+  assert.match(card, /className="tool-sum"/);
+  assert.match(card, /toolChromeKind/);
+  assert.match(card, /useTurnDisclosure/);
+  assert.doesNotMatch(card, /<details/);
+  assert.doesNotMatch(card, /IslandTag/);
+  assert.match(fold, /work-fold-body/);
+  assert.match(fold, /autoOpen=\{liveFamily === bucket.id\}/);
+  assert.doesNotMatch(fold, /\{open \? <div className="work-fold-body">/);
+  assert.match(disclosure, /wasLive\.current && !live/);
+  assert.match(css, /\.work-fold-body\s*\{[^}]*grid-template-rows:\s*0fr/);
+  assert.match(css, /\.tool-sum/);
+  assert.doesNotMatch(css, /border-left:\s*4px solid var\(--accent\)/);
+});
+
+test("desk left rail uses folder icons and Web's more menu, and a chosen folder opens a local terminal", () => {
+  const rail = readFileSync(path.join(here, "chat/RailSessions.tsx"), "utf8");
+  const app = readFileSync(path.join(here, "App.tsx"), "utf8");
+  const panel = readFileSync(path.join(here, "SidePanel.tsx"), "utf8");
+  const transcript = readFileSync(path.join(here, "chat/transcript.tsx"), "utf8");
+  assert.match(transcript, /shouldFollowTranscript/);
+  assert.doesNotMatch(app, /scrollTo\(\{ top: feedRef/);
+  assert.match(rail, /IconFolderOpen/);
+  assert.match(rail, /IconFolderClosed/);
+  assert.match(rail, /title="项目"/);
+  assert.match(rail, /title="仓库"/);
+  const repoAt = rail.indexOf('title="仓库"');
+  const dailyAt = rail.indexOf("日常");
+  assert.ok(repoAt >= 0 && dailyAt > repoAt);
+  assert.doesNotMatch(rail, /rail-space-folder[\s\S]*IconChevron/);
+  assert.match(app, /rail-nav-more/);
+  assert.match(app, /专家/);
+  assert.match(app, /技能/);
+  assert.match(app, /记忆/);
+  assert.match(panel, /term\.ensure\(\)/);
+  assert.match(panel, /正在打开/);
+  assert.match(panel, /local && !folder/);
 });
 
 test("desk expert picker sits in the context bar like Web", () => {

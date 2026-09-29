@@ -167,7 +167,7 @@ export type NeoDeskBridge = {
   listDir?(input: { folder: string; path?: string; content?: boolean }): Promise<LocalFsListing>;
   writeFile?(input: { folder: string; path: string; content?: string }): Promise<{ path?: string; error?: string }>;
   diffStat?(folder: string): Promise<{ added: number; removed: number } | null>;
-  termOpen?(folder: string): Promise<{ id?: string; cwd?: string; error?: string }>;
+  termOpen?(folder: string): Promise<{ id?: string; cwd?: string; pty?: boolean; shell?: string; error?: string }>;
   termWrite?(id: string, data: string): Promise<boolean>;
   termClose?(id: string): Promise<boolean>;
   onRunStatus?(cb: (status: DeskRunStatus) => void): () => void;

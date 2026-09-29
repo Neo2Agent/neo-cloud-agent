@@ -74,17 +74,16 @@ import { compressAvatarFile } from "./avatar-file";
 import { ExpertsPage } from "./ExpertsPage";
 import { MemoriesPage } from "./MemoriesPage";
 import { SkillsPage } from "./SkillsPage";
-import { jumpToTranscriptMessage, TranscriptSearch } from "./chat/TranscriptSearch";
+import { ResizeHandle } from "./ResizeHandle";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import {
-  PANEL_W_DEFAULT,
-  PANEL_W_KEY,
   PANEL_W_MIN,
   RAIL_W_DEFAULT,
-  RAIL_W_KEY,
   RAIL_W_MAX,
   RAIL_W_MIN,
+  panelWidthDefault,
   panelWidthMax,
+  paneSnapPhase,
   useSplitWidth,
 } from "./split";
 import { LocalRunMeta } from "./chat/LocalRunMeta";
@@ -135,9 +134,9 @@ import {
   IconAutomations,
   IconBack,
   IconBell,
-  IconChevron,
   IconExperts,
   IconMemory,
+  IconMore,
   IconSkills,
   IconForward,
   IconGear,
@@ -146,6 +145,8 @@ import {
   IconPanelRight,
   IconProjects,
   IconSearch,
+  IconSidebarClose,
+  IconSidebarOpen,
   IconSort,
 } from "./icons";
 
@@ -252,7 +253,6 @@ export function App() {
   const [inboxConnected, setInboxConnected] = useState(true);
   const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("board");
-  const [chatToolsOpen, setChatToolsOpen] = useState(false);
   const [mentions, setMentions] = useState<ComposerMention[]>([]);
   const [todoHits, setTodoHits] = useState<Array<{ id: string; title: string; meta: string; projectId: string }>>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -310,16 +310,16 @@ export function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("basics");
   const [contextOpen, setContextOpen] = useState<ContextMenuId>(null);
   const [repoOpen, setRepoOpen] = useState<Record<string, boolean>>({});
-  const [railInboxOpen, setRailInboxOpen] = useState(true);
-  const [railSpacesOpen, setRailSpacesOpen] = useState(true);
   const [railInboxExpanded, setRailInboxExpanded] = useState(false);
   const [diff, setDiff] = useState<{ added: number; removed: number } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [panelMax, setPanelMax] = useState(false);
+  const [paneSnap, setPaneSnap] = useState<"idle" | "hint">("idle");
   const [panelTab, setPanelTab] = useState<SidePanelTab>(() => {
     const stored = localStorage.getItem("neo.desk.panelTab") as SidePanelTab | null;
     return stored && stored !== "home" ? stored : "files";
   });
-  const [railCustomOpen, setRailCustomOpen] = useState(true);
+  const [railCollapsed, setRailCollapsed] = useState(() => localStorage.getItem("neo.desk.rail") === "closed");
   const [panelEpoch, setPanelEpoch] = useState(0);
   // Keyed by runId: several local conversations can hold a worker at once, and a
   // single slot would show whichever one reported last.
@@ -605,7 +605,6 @@ export function App() {
       // optimistic bubble. Follow-ups stay off the server transcript until the
       // worker takes them.
       if (previousId !== id && !opts?.keepPending) setPendingTurn(null);
-      setChatToolsOpen(false);
       if (run.projectId) {
         const projectRes = await api(tokenRef.current, `/v1/projects/${run.projectId}`);
         if (projectRes.ok) {
@@ -1064,6 +1063,7 @@ export function App() {
         setTarget((prev) => mergeDeskTarget(prev, state.deskId));
       }
       if (state.error) setAuthError(state.error);
+      else if (state.connected) setAuthError((cur) => (cur.startsWith("本机保活失败") ? "" : cur));
     });
     return () => {
       offStatus?.();
@@ -1160,10 +1160,6 @@ export function App() {
     };
     return () => source.close();
   }, [authed, refreshRuns, token]);
-
-  useEffect(() => {
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
-  }, [messages, pendingTurn, runId]);
 
   useEffect(() => {
     if (pendingTurn && pendingUserArrived(messages, pendingTurn)) {
@@ -1652,16 +1648,17 @@ export function App() {
   const greet = homeGreeting();
   const greetLine = `${greet.hello}，${greet.ask}`;
   const railSplit = useSplitWidth({
-    key: RAIL_W_KEY,
+    key: "neo-desk-rail-w",
     fallback: RAIL_W_DEFAULT,
     min: RAIL_W_MIN,
     max: RAIL_W_MAX,
   });
+  const railForPane = railCollapsed ? 52 : railSplit.width;
   const panelSplit = useSplitWidth({
-    key: PANEL_W_KEY,
-    fallback: PANEL_W_DEFAULT,
+    key: "neo-desk-panel-w",
+    fallback: panelWidthDefault(typeof window === "undefined" ? 1440 : window.innerWidth, RAIL_W_DEFAULT),
     min: PANEL_W_MIN,
-    max: panelWidthMax,
+    max: () => panelWidthMax(window.innerWidth, railForPane),
     invert: true,
   });
   useDismissOnOutside(inboxOpen || accountOpen, () => {
@@ -1670,6 +1667,11 @@ export function App() {
   }, inboxRef);
 
   const openPanel = (tab?: SidePanelTab) => {
+    if (!panelOpen) {
+      setPanelMax(false);
+      setPaneSnap("idle");
+      panelSplit.setWidth(panelWidthDefault(window.innerWidth, railForPane));
+    }
     setPanelOpen(true);
     setPanelTab((cur) => {
       const next = tab ?? cur;
@@ -1697,7 +1699,6 @@ export function App() {
 
   const headerPanelSlot = (
     <span className="panel-toggle-slot">
-      {current ? <TranscriptSearch messages={visible} onJump={jumpToTranscriptMessage} /> : null}
       {!panelOpen ? (
         <Tooltip content="打开侧栏" side="left">
           <button
@@ -1797,56 +1798,64 @@ export function App() {
 
   return (
     <div
-      className="agents-app"
+      className={`agents-app${railCollapsed ? " is-rail-collapsed" : ""}`}
       data-nav={nav}
-      style={{ "--rail-w": `${railSplit.width}px`, "--panel-w": `${panelSplit.width}px` } as CSSProperties}
+      style={{ "--rail-w": railCollapsed ? "52px" : `${railSplit.width}px`, "--panel-w": `${panelSplit.width}px` } as CSSProperties}
     >
-      <aside className="rail">
-        <div className="rail-history">
-          <Tooltip content="后退">
-            <span>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Back"
-                disabled={trail.at <= 0}
-                onClick={() => {
-                  const at = trail.at - 1;
-                  const id = trail.ids[at];
-                  if (!id) return;
-                  setTrail((cur) => ({ ...cur, at }));
-                  void openRun(id, { record: false });
-                }}
-              >
-                <IconBack />
-              </button>
-            </span>
-          </Tooltip>
-          <Tooltip content="前进">
-            <span>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Forward"
-                disabled={trail.at < 0 || trail.at >= trail.ids.length - 1}
-                onClick={() => {
-                  const at = trail.at + 1;
-                  const id = trail.ids[at];
-                  if (!id) return;
-                  setTrail((cur) => ({ ...cur, at }));
-                  void openRun(id, { record: false });
-                }}
-              >
-                <IconForward />
-              </button>
-            </span>
-          </Tooltip>
+      <header className="desk-titlebar">
+        <div className="desk-titlebar-nav">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={railCollapsed ? "打开对话列表" : "收起侧栏"}
+            onClick={() =>
+              setRailCollapsed((cur) => {
+                const next = !cur;
+                localStorage.setItem("neo.desk.rail", next ? "closed" : "open");
+                return next;
+              })
+            }
+          >
+            {railCollapsed ? <IconSidebarOpen size={16} /> : <IconSidebarClose size={16} />}
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="后退"
+            disabled={trail.at <= 0}
+            onClick={() => {
+              const at = trail.at - 1;
+              const id = trail.ids[at];
+              if (!id) return;
+              setTrail((cur) => ({ ...cur, at }));
+              void openRun(id, { record: false });
+            }}
+          >
+            <IconBack />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="前进"
+            disabled={trail.at < 0 || trail.at >= trail.ids.length - 1}
+            onClick={() => {
+              const at = trail.at + 1;
+              const id = trail.ids[at];
+              if (!id) return;
+              setTrail((cur) => ({ ...cur, at }));
+              void openRun(id, { record: false });
+            }}
+          >
+            <IconForward />
+          </button>
         </div>
-
+        <div className="desk-titlebar-title">{current ? title : "Neo Desk"}</div>
+      </header>
+      <aside className="rail">
         <nav className="rail-nav">
           <button type="button" className="rail-new-chat" onClick={newChat}>
             <IconNewChat />
-            新对话
+            <span className="rail-label">新对话</span>
           </button>
           <button
             type="button"
@@ -1867,7 +1876,7 @@ export function App() {
             <span className="rail-icon">
               <IconSearch />
             </span>
-            搜索
+            <span className="rail-label">搜索</span>
           </button>
           <button
             type="button"
@@ -1881,7 +1890,7 @@ export function App() {
             <span className="rail-icon">
               <IconAutomations />
             </span>
-            定时任务
+            <span className="rail-label">定时任务</span>
           </button>
           <button
             type="button"
@@ -1896,8 +1905,44 @@ export function App() {
             <span className="rail-icon">
               <IconProjects />
             </span>
-            项目
+            <span className="rail-label">项目</span>
           </button>
+          <div className="rail-nav-more">
+            <button
+              type="button"
+              className={`rail-item${nav === "experts" || nav === "skills" || nav === "memories" ? " on" : ""}`}
+              aria-haspopup="menu"
+            >
+              <span className="rail-icon">
+                <IconMore />
+              </span>
+              <span className="rail-label">更多</span>
+            </button>
+            <div className="rail-nav-more-pop" role="menu" aria-label="更多">
+              <button
+                type="button"
+                role="menuitem"
+                className={nav === "experts" ? "on" : undefined}
+                onClick={() => {
+                  setSearchOpen(false);
+                  setNav("experts");
+                  clearPageHash();
+                  void refreshExperts(activeProject?.id);
+                }}
+              >
+                <IconExperts size={16} />
+                <span>专家</span>
+              </button>
+              <button type="button" role="menuitem" className={nav === "skills" ? "on" : undefined} onClick={() => openSkills()}>
+                <IconSkills size={16} />
+                <span>技能</span>
+              </button>
+              <button type="button" role="menuitem" className={nav === "memories" ? "on" : undefined} onClick={() => openMemories()}>
+                <IconMemory size={16} />
+                <span>记忆</span>
+              </button>
+            </div>
+          </div>
         </nav>
 
         <div className="repo-head">
@@ -1924,56 +1969,14 @@ export function App() {
             inbox={rail.inbox}
             spaces={rail.spaces}
             runId={runId}
-            inboxOpen={railInboxOpen}
-            spacesOpen={railSpacesOpen}
             inboxExpanded={railInboxExpanded}
             folderOpen={repoOpen}
             runningLocalRunIds={runningRunIds}
             formatRel={formatRelShort}
-            onToggleInbox={() => setRailInboxOpen((cur) => !cur)}
-            onToggleSpaces={() => setRailSpacesOpen((cur) => !cur)}
             onToggleInboxExpanded={() => setRailInboxExpanded((cur) => !cur)}
             onToggleFolder={(key) => setRepoOpen((cur) => ({ ...cur, [key]: cur[key] === false }))}
             onOpenRun={(id) => void openRun(id)}
           />
-        </div>
-
-        <div className="rail-custom">
-          <button type="button" className="rail-block-head" onClick={() => setRailCustomOpen((cur) => !cur)}>
-            <IconChevron open={railCustomOpen} size={13} />
-            <span>个性化</span>
-          </button>
-          {railCustomOpen ? (
-            <>
-              <button
-                type="button"
-                className={`rail-item${nav === "experts" ? " on" : ""}`}
-                onClick={() => {
-                  setSearchOpen(false);
-                  setNav("experts");
-                  clearPageHash();
-                  void refreshExperts(activeProject?.id);
-                }}
-              >
-                <span className="rail-icon">
-                  <IconExperts size={15} />
-                </span>
-                专家
-              </button>
-              <button type="button" className={`rail-item${nav === "skills" ? " on" : ""}`} onClick={() => openSkills()}>
-                <span className="rail-icon">
-                  <IconSkills size={15} />
-                </span>
-                技能
-              </button>
-              <button type="button" className={`rail-item${nav === "memories" ? " on" : ""}`} onClick={() => openMemories()}>
-                <span className="rail-icon">
-                  <IconMemory size={15} />
-                </span>
-                记忆
-              </button>
-            </>
-          ) : null}
         </div>
 
         <div className="rail-foot" ref={inboxRef}>
@@ -2064,13 +2067,17 @@ export function App() {
             </div>
           ) : null}
         </div>
+        {railCollapsed ? null : (
+          <ResizeHandle
+            label="调整左栏宽度"
+            value={railSplit.width}
+            min={RAIL_W_MIN}
+            max={RAIL_W_MAX}
+            onChange={railSplit.setWidth}
+            onDragEnd={railSplit.commit}
+          />
+        )}
       </aside>
-      <button
-        type="button"
-        className={`split-bar rail-split${railSplit.dragging ? " is-dragging" : ""}`}
-        aria-label="调整左侧栏宽度"
-        {...railSplit.bind}
-      />
 
       <main className="stage">
         {nav === "chats" && !current ? homePanelToggle : null}
@@ -2225,35 +2232,19 @@ export function App() {
                 token={token}
                 userId={userId}
                 user={user}
-                toolsOpen={chatToolsOpen}
                 visible={visible}
                 activity={activity}
                 busy={busy}
                 feedRef={feedRef}
                 onOpenProject={() => void openProject(current.projectId!)}
-                onSearch={() => {
-                  setSearchOpen(true);
-                  setSearchFilter("all");
-                  requestAnimationFrame(() => searchRef.current?.focus());
-                }}
                 onRefresh={() => void openRun(current.id, { record: false })}
-                onToggleTools={() => setChatToolsOpen((cur) => !cur)}
                 onRunChange={(next) => {
                   setCurrent(next);
                   setRuns((prev) => [next, ...prev.filter((item) => item.id !== next.id)]);
                 }}
-                onAbort={stopCurrentTurn}
-                onTransferred={(next) => {
-                  setCurrent(next);
-                  setRuns((prev) => [next, ...prev.filter((item) => item.id !== next.id && item.id !== current.id)]);
-                  if (next.id !== current.id) {
-                    void openRun(next.id);
-                  }
-                }}
                 onCopy={(text) => void copyText(text)}
                 onOpenDiagnostics={() => openPanel("terminal")}
                 onOpenArtifact={() => openPanel("artifacts")}
-                queueEpoch={queueEpoch}
                 thinkingHint={
                   localRun.needsRestart ? "本机进程已退出，点右上角「在这台电脑上继续」" : undefined
                 }
@@ -2476,19 +2467,54 @@ export function App() {
               {copied ? <p className="copied">Copied</p> : null}
             </footer>
             </div>
-            {panelOpen ? (
-              <button
-                type="button"
-                className={`split-bar panel-split${panelSplit.dragging ? " is-dragging" : ""}`}
-                aria-label="调整右侧栏宽度"
-                {...panelSplit.bind}
-              />
+            {paneSnap !== "idle" && panelOpen && !panelMax ? (
+              <div className="pane-snap" role="status">
+                <span className="pane-snap-label">松开进入全屏</span>
+              </div>
+            ) : null}
+            {!panelOpen && current ? (
+              <button type="button" className="pane-edge" aria-label="打开侧栏" onClick={() => openPanel(panelTab)} />
             ) : null}
             <div className={`side-panel-slot${panelOpen ? "" : " off"}`}>
               <SidePanel
                 tab={panelTab}
                 onTab={setPanelTab}
-                onClose={() => setPanelOpen(false)}
+                resize={
+                  <ResizeHandle
+                    label="调整右栏宽度"
+                    value={panelSplit.width}
+                    min={PANEL_W_MIN}
+                    max={panelWidthMax(typeof window === "undefined" ? 1440 : window.innerWidth, railForPane)}
+                    invert
+                    onChange={(next) => {
+                      panelSplit.setWidth(next);
+                      setPaneSnap(paneSnapPhase(next, window.innerWidth, railForPane));
+                    }}
+                    onDragEnd={(next) => {
+                      if (paneSnapPhase(next, window.innerWidth, railForPane) !== "idle") {
+                        setPaneSnap("idle");
+                        setPanelMax(true);
+                        return;
+                      }
+                      setPaneSnap("idle");
+                      panelSplit.commit(next);
+                    }}
+                  />
+                }
+                maxed={panelMax}
+                onMax={() => {
+                  setPaneSnap("idle");
+                  if (panelMax) {
+                    panelSplit.setWidth(panelWidthDefault(window.innerWidth, railForPane));
+                    setPanelMax(false);
+                    return;
+                  }
+                  setPanelMax(true);
+                }}
+                onClose={() => {
+                  setPanelMax(false);
+                  setPanelOpen(false);
+                }}
                 onPickFolder={() => void pickLocalFolder()}
                 folder={localFolder}
                 token={token}

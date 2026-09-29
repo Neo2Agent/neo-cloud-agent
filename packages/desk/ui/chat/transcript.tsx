@@ -5,11 +5,11 @@ import { assistantIsLive } from "@neo-cloud-agent/contracts/turn-state";
 import { messageTimeLabel, shouldShowThinking, userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
 import { partitionTurn } from "@neo-cloud-agent/contracts/work-view";
 import { artifactFileName, artifactKindLabel } from "@neo-cloud-agent/contracts/artifact";
+import { shouldFollowTranscript } from "@neo-cloud-agent/contracts/display";
 import { MarkdownBody } from "@neo-cloud-agent/ui";
-import type { Ref } from "react";
+import { useLayoutEffect, useRef, type Ref } from "react";
 import { shouldShowAssistantActions } from "../../src/stream";
 import { IconCopy } from "../icons";
-import { IslandCollapse } from "../island";
 import { WorkFold } from "./WorkFold";
 
 function isThought(message: TranscriptMessage): boolean {
@@ -54,12 +54,35 @@ export function ChatTranscript({
   onOpenArtifact?: (name: string) => void;
 }) {
   const viewer = { id: userId, email: user };
+  const stick = useRef(true);
+  const seenRun = useRef(current.id);
+  const nodeRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (seenRun.current !== current.id) {
+      seenRun.current = current.id;
+      stick.current = true;
+    }
+    const node = nodeRef.current;
+    if (!node || !stick.current) return;
+    node.scrollTop = node.scrollHeight;
+  }, [activity, busy, current.id, visible]);
   let currentTurnStart = 0;
   for (let index = 0; index < visible.length; index += 1) {
     if (visible[index]?.role === "user") currentTurnStart = index;
   }
   return (
-    <div className="feed chat-feed" ref={feedRef}>
+    <div
+      className="feed chat-feed"
+      ref={(node) => {
+        nodeRef.current = node;
+        if (typeof feedRef === "function") feedRef(node);
+        else if (feedRef) (feedRef as { current: HTMLDivElement | null }).current = node;
+      }}
+      onScroll={() => {
+        const node = nodeRef.current;
+        if (node) stick.current = shouldFollowTranscript(node);
+      }}
+    >
       {!visible.some((message) => message.role === "user") ? (
         <article className="msg-row user">
           <div className="chat-col">
@@ -101,8 +124,8 @@ export function ChatTranscript({
         }
         if (isThought(message)) {
           return (
-            <div key={message.id} className="thought">
-              <IslandCollapse question="思考过程" answer={<p>{message.text}</p>} />
+            <div key={message.id} className="work-note">
+              {message.text}
             </div>
           );
         }

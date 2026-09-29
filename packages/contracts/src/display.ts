@@ -84,3 +84,17 @@ export function toolArgPreview(args: unknown): string {
     return "";
   }
 }
+
+/** How close to the bottom still counts as following the live transcript. */
+export const TRANSCRIPT_FOLLOW_PX = 96;
+
+/**
+ * Follow new tokens only while the reader is already at the bottom.
+ * Scrolling up to reread must keep that position when the next event arrives.
+ */
+export function shouldFollowTranscript(
+  metrics: { scrollHeight: number; scrollTop: number; clientHeight: number },
+  threshold = TRANSCRIPT_FOLLOW_PX,
+): boolean {
+  return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight < threshold;
+}

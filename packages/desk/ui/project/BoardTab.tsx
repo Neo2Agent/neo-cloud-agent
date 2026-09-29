@@ -166,7 +166,7 @@ export function BoardTab({
         visible.length === 0 ? (
           <div className="workbench-empty">
             <strong>{todos.length === 0 ? "还没有任务" : "没有匹配的任务"}</strong>
-            <p>新建一张卡，或从对话里点「流转为待办」。</p>
+            <p>在这里新建一张卡。</p>
           </div>
         ) : (
           <ul className="task-list">

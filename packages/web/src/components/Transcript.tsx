@@ -26,6 +26,7 @@ import {
 } from "../format";
 import { IconCheck, IconChevronRight, IconError, IconFileKind, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "@neo-cloud-agent/ui";
+import { shouldFollowTranscript } from "@neo-cloud-agent/contracts/display";
 import { userMessageAuthor } from "@neo-cloud-agent/contracts/turn-view";
 import { shouldShowThinking } from "../turn";
 import { transcriptUserImageSrc } from "../user-image";
@@ -494,7 +495,7 @@ export function Transcript({
       onScroll={() => {
         const node = scroller.current;
         if (!node) return;
-        stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 96;
+        stick.current = shouldFollowTranscript(node);
         if (node.scrollTop < 48) loadOlder();
       }}
     >

@@ -16,8 +16,20 @@ import {
   BookOpen,
   Brain,
   File,
+  FileCode,
+  FilePen,
   FilePlus,
+  Folder,
+  FolderGit2,
   FolderMinus,
+  FolderOpen,
+  Globe,
+  Package,
+  PanelLeft,
+  PanelLeftClose,
+  Puzzle,
+  TerminalSquare,
+  Wrench,
   Images,
   Mic,
   LayoutGrid,
@@ -234,4 +246,37 @@ export function IconSpinner(props: IconProps) {
 
 export function IconGit(props: IconProps) {
   return icon(GitPullRequest, props);
+}
+
+export function IconFolderOpen(props: IconProps) {
+  return icon(FolderOpen, props);
+}
+
+export function IconFolderClosed(props: IconProps) {
+  return icon(Folder, props);
+}
+
+export function IconSidebarOpen(props: IconProps) {
+  return icon(PanelLeft, props);
+}
+
+export function IconSidebarClose(props: IconProps) {
+  return icon(PanelLeftClose, props);
+}
+
+function toolGlyph(name: string) {
+  if (name === "neo_subagent" || name.includes("subagent")) return Bot;
+  if (name.startsWith("neo_git") || name === "git" || name === "commit") return FolderGit2;
+  if (name.startsWith("neo_pr") || name.includes("pull_request")) return GitPullRequest;
+  if (name.startsWith("neo_browse") || name.includes("browse")) return Globe;
+  if (name.startsWith("neo_mcp") || name.includes("mcp")) return Puzzle;
+  if (name.startsWith("neo_artifact") || name.includes("artifact")) return Package;
+  if (name === "bash" || name === "shell" || name.startsWith("neo_diag")) return TerminalSquare;
+  if (name === "edit" || name === "write" || name === "apply_patch") return FilePen;
+  if (name === "read" || name === "cat") return FileCode;
+  return Wrench;
+}
+
+export function IconTool({ name, ...props }: IconProps & { name: string }) {
+  return icon(toolGlyph(name), props);
 }

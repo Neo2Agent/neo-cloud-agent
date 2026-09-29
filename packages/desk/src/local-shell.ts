@@ -31,22 +31,68 @@ export function shellLaunch(platform = process.platform): {
 }
 
 /**
+ * Node's pipes are socketpairs, and macOS `script` refuses those (tcgetattr).
+ * Python's pty.fork gives the shell a real tty and relays bytes across the socket.
+ */
+const PTY_RELAY = `
+import os, pty, select, sys
+os.chdir(sys.argv[1])
+shell = sys.argv[2]
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ["TERM"] = "xterm-256color"
+    os.execvp(shell, [shell, "-i"])
+stdin = sys.stdin.buffer.fileno()
+stdout = sys.stdout.buffer.fileno()
+while True:
+    ready, _, _ = select.select([fd, stdin], [], [], 0.5)
+    if fd in ready:
+        try:
+            data = os.read(fd, 4096)
+        except OSError:
+            break
+        if not data:
+            break
+        os.write(stdout, data)
+    if stdin in ready:
+        data = os.read(stdin, 4096)
+        if not data:
+            break
+        os.write(fd, data)
+os._exit(0)
+`;
+
+/**
+ * A real tty, the way Cursor's terminal is a local shell and not a pipe.
+ * Unix relays through Python's pty. Windows stays on piped cmd.
+ */
+export function interactiveShellLaunch(platform = process.platform, cwd = process.cwd()): {
+  command: string;
+  args: string[];
+  stdoutEncoding: BufferEncoding;
+} {
+  const inner = shellLaunch(platform);
+  if (platform === "win32") return inner;
+  return {
+    command: "python3",
+    args: ["-u", "-c", PTY_RELAY, cwd, inner.command],
+    stdoutEncoding: "utf8",
+  };
+}
+
+/**
  * A shell rooted at the workspace folder.
  *
- * This is a piped shell, not a pty: a real terminal device needs a native
- * module, and this repo only allows esbuild to run install scripts. Commands,
- * output, and input all work; full-screen TUIs that require a tty do not.
- * `createLocalShell` is the seam to swap in node-pty later without touching
- * callers.
+ * Unix uses `script` so the session has a pty (prompt, line editing) without a
+ * native module. Windows stays on a piped cmd. Full-screen TUIs are still weak.
  */
 export function createLocalShell(input: { cwd: string; hooks: LocalShellHooks; env?: NodeJS.ProcessEnv }): LocalShell {
   const id = `term_${randomBytes(4).toString("hex")}`;
-  const { command, args, stdoutEncoding } = shellLaunch();
+  const { command, args, stdoutEncoding } = interactiveShellLaunch(process.platform, input.cwd);
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...input.env,
-    // Programs that probe for a terminal should not emit control sequences.
-    TERM: "dumb",
+    TERM: process.platform === "win32" ? "dumb" : "xterm-256color",
     HOME: process.env.HOME || os.homedir(),
     PWD: input.cwd,
   };

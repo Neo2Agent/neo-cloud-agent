@@ -192,6 +192,7 @@ import {
   shouldLimitSse,
 } from "../security/rate-limit-http.js";
 import { rateLimitEnabled, rateLimitStoreKind } from "../security/rate-limit.js";
+import { deskActionRatePolicies } from "./desk-rate.js";
 import { GITHUB_WEBHOOK_PATH, publicGitHubWebhookInfo } from "../subscriptions/secret.js";
 import { createAutomation, deleteAutomation, listAutomations, updateAutomation } from "../automations/store.js";
 import {
@@ -780,10 +781,10 @@ export function createApiServer() {
             return;
           }
           if (
-            await rejectRateLimits(res, [
-              { policy: "api", key: `desk:${deskId}` },
-              { policy: "write", key: `desk:${deskId}` },
-            ])
+            await rejectRateLimits(
+              res,
+              deskActionRatePolicies(action ?? "").map((policy) => ({ policy, key: `desk:${deskId}` })),
+            )
           ) {
             return;
           }

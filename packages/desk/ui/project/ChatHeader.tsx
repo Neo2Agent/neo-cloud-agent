@@ -2,9 +2,10 @@ import type { Project } from "@neo-cloud-agent/contracts/project";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { isDeskBoundRun, isRemoteControlRun } from "../desk";
 import { Select } from "@neo-cloud-agent/ui";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { api, readJson } from "../api";
-import { IconPeople, IconSearch, IconSync } from "../icons";
+import { useDismissOnOutside } from "../dismiss";
+import { IconPeople, IconSync } from "../icons";
 import { IslandButton } from "../island";
 
 export function ChatHeader({
@@ -13,11 +14,8 @@ export function ChatHeader({
   run,
   token,
   userId,
-  toolsOpen,
   onOpenProject,
-  onSearch,
   onRefresh,
-  onToggleTools,
   onRunChange,
   meta,
   end,
@@ -27,11 +25,8 @@ export function ChatHeader({
   run: Run;
   token: string;
   userId: string;
-  toolsOpen: boolean;
   onOpenProject: () => void;
-  onSearch: () => void;
   onRefresh: () => void;
-  onToggleTools: () => void;
   onRunChange: (run: Run) => void;
   meta?: ReactNode;
   end?: ReactNode;
@@ -41,7 +36,9 @@ export function ChatHeader({
   const others = members.filter(
     (item) => item.userId !== userId && !(run.collaborators ?? []).some((row) => row.userId === item.userId),
   );
+  const inviteRef = useRef<HTMLDivElement>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  useDismissOnOutside(inviteOpen, () => setInviteOpen(false), inviteRef, ".neo-select-content");
   const [invitee, setInvitee] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -69,28 +66,27 @@ export function ChatHeader({
 
   return (
     <header className="chat-head">
-      <nav className="chat-crumb" aria-label="项目对话位置">
-        <button type="button" className="crumb-link" onClick={onOpenProject}>
-          项目
-        </button>
-        <span aria-hidden="true">/</span>
-        <button type="button" className="crumb-link" onClick={onOpenProject}>
-          {project?.name ?? "…"}
-        </button>
-        <span aria-hidden="true">/</span>
-        <strong>{title}</strong>
-      </nav>
+      <div className="chat-head-lead">
+        <nav className="chat-crumb" aria-label="项目对话位置">
+          <button type="button" className="crumb-link" onClick={onOpenProject}>
+            项目
+          </button>
+          <span aria-hidden="true">/</span>
+          <button type="button" className="crumb-link" onClick={onOpenProject}>
+            {project?.name ?? "…"}
+          </button>
+          <span aria-hidden="true">/</span>
+          <strong>{title}</strong>
+        </nav>
+      </div>
       <div className="chat-head-end">
         {meta}
         <div className="chat-head-actions">
-          <button type="button" className="icon-btn" aria-label="搜索" onClick={onSearch}>
-            <IconSearch />
-          </button>
           <button type="button" className="icon-btn" aria-label="刷新" onClick={onRefresh}>
             <IconSync />
           </button>
           {canInvite ? (
-            <div className="chat-head-pop">
+            <div className="chat-head-pop" ref={inviteRef}>
               <button
                 type="button"
                 className={`icon-btn${inviteOpen ? " on" : ""}`}
@@ -125,27 +121,9 @@ export function ChatHeader({
               ) : null}
             </div>
           ) : null}
-          <button
-            type="button"
-            className={`icon-btn${toolsOpen ? " on" : ""}`}
-            aria-label="对话工具"
-            aria-pressed={toolsOpen}
-            onClick={onToggleTools}
-          >
-            <SidebarGlyph />
-          </button>
         </div>
         {end}
       </div>
     </header>
-  );
-}
-
-function SidebarGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.15" aria-hidden="true">
-      <rect x="4" y="5" width="16" height="14" rx="2" />
-      <path d="M15 5v14" />
-    </svg>
   );
 }

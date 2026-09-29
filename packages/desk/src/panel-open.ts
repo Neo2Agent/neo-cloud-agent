@@ -1,18 +1,15 @@
 export type DeskPanelTab = "home" | "files" | "terminal" | "artifacts" | "git";
 
 /**
- * Chat stays the primary column. The right inspector (Git / 终端 / 文件)
- * is optional. Restoring an empty Files pane on launch steals the reading
- * width and wraps every bubble mid-word.
+ * Web opens a chat as sidebar + transcript. The right inspector stays closed
+ * until the reader asks for Git / 终端 / 文件. Restoring it on launch makes
+ * Desk a three-column app before Web is.
  */
-export function shouldRestoreDeskPanel(input: {
-  storedOpen: boolean;
+export function shouldRestoreDeskPanel(_input?: {
+  storedOpen?: boolean;
   tab?: DeskPanelTab | string | null;
   folder?: string | null;
   runId?: string | null;
 }): boolean {
-  if (!input.storedOpen) return false;
-  const tab = input.tab && input.tab !== "home" ? input.tab : "files";
-  if (tab === "git" || tab === "artifacts" || tab === "terminal") return true;
-  return Boolean(input.folder || input.runId);
+  return false;
 }

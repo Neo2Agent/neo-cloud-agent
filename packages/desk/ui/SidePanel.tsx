@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { applyTermChunk, createTermScreen, termScreenText } from "@neo-cloud-agent/ui/term-render";
 import { createTermWriteQueue } from "@neo-cloud-agent/ui/term-write";
 import { fileKind, nextUntitledName, sortFsEntries } from "../src/file-kind";
@@ -44,6 +44,9 @@ type Props = {
   tab: SidePanelTab;
   onTab: (tab: SidePanelTab) => void;
   onClose: () => void;
+  maxed?: boolean;
+  onMax?: () => void;
+  resize?: ReactNode;
   onPickFolder?: () => void;
   folder: string;
   token: string;
@@ -61,6 +64,9 @@ export function SidePanel({
   tab,
   onTab,
   onClose,
+  maxed: maxedProp,
+  onMax,
+  resize,
   onPickFolder,
   folder,
   token,
@@ -73,8 +79,11 @@ export function SidePanel({
   busy = false,
   onPullRequests,
 }: Props) {
-  const [maxed, setMaxed] = useState(false);
+  const [maxedLocal, setMaxedLocal] = useState(false);
+  const maxed = maxedProp ?? maxedLocal;
+  const toggleMax = onMax ?? (() => setMaxedLocal((cur) => !cur));
   const term = useTerminalSessions({ folder, token, runId, local });
+  const openedTerm = useRef("");
   const hasGit = gitContext !== "none";
   const page = resolveSidePanelPage(tab);
   const inspectorTab = inspectorTabOf(page === "git" && !hasGit ? "files" : page);
@@ -88,14 +97,28 @@ export function SidePanel({
     onTab(id);
   };
 
+  useEffect(() => {
+    if (inspectorTab !== "terminal") return;
+    if (local && !folder) return;
+    if (!local && !runId) return;
+    const key = local ? `local:${folder}` : `cloud:${runId}`;
+    if (openedTerm.current === key) return;
+    openedTerm.current = key;
+    void term.ensure();
+  }, [folder, inspectorTab, local, runId, term]);
+
   const closeSession = (id: string) => {
     const last = term.sessions.length <= 1 && term.sessions.some((item) => item.id === id);
     term.close(id);
-    if (last) onTab("files");
+    if (last) {
+      openedTerm.current = "";
+      onTab("files");
+    }
   };
 
   return (
     <aside className={`side-panel inspector-panel${maxed ? " is-max" : ""}`}>
+      {maxed ? null : resize}
       <div className="inspector-tabs" role="tablist" aria-label="对话侧栏">
         {inspectorTabs(hasGit).map((item) => (
           <button
@@ -111,7 +134,7 @@ export function SidePanel({
         ))}
         <ChromeTools
           maxed={maxed}
-          onMax={() => setMaxed((cur) => !cur)}
+          onMax={toggleMax}
           onStow={onClose}
         />
       </div>
@@ -135,9 +158,11 @@ export function SidePanel({
           <TerminalView
             term={term}
             local={local}
+            folder={folder}
             token={token}
             runId={runId}
             refreshKey={refreshKey}
+            onPickFolder={onPickFolder}
             onCloseSession={closeSession}
           />
         ) : (
@@ -265,7 +290,8 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
         setError(created.error || "打不开终端");
         return;
       }
-      adopt(created.id, sessions.length === 0 ? label : `${label} ${sessions.length + 1}`);
+      const sessionLabel = created.shell || label;
+      adopt(created.id, sessions.length === 0 ? sessionLabel : `${sessionLabel} ${sessions.length + 1}`, created.pty === true);
       return;
     }
     if (!input.runId) {
@@ -308,7 +334,9 @@ function useTerminalSessions(input: { folder: string; token: string; runId: stri
     const bridge = deskBridge();
     if (!input.local || !bridge?.onTermData) return;
     const offData = bridge.onTermData(({ id, chunk }) => {
-      setOutput((prev) => ({ ...prev, [id]: `${prev[id] ?? ""}${chunk}`.slice(-60_000) }));
+      const screen = applyTermChunk(screens.current.get(id) ?? createTermScreen(), chunk);
+      screens.current.set(id, screen);
+      setOutput((prev) => ({ ...prev, [id]: termScreenText(screen).slice(-60_000) }));
     });
     const offExit = bridge.onTermExit?.(({ id }) => {
       setOutput((prev) => ({ ...prev, [id]: `${prev[id] ?? ""}\n[已结束]\n` }));
@@ -407,16 +435,20 @@ function ChromeTools({ maxed, onMax, onStow }: { maxed: boolean; onMax: () => vo
 function TerminalView({
   term,
   local,
+  folder,
   token,
   runId,
   refreshKey,
+  onPickFolder,
   onCloseSession,
 }: {
   term: ReturnType<typeof useTerminalSessions>;
   local: boolean;
+  folder: string;
   token: string;
   runId: string | null;
   refreshKey: number;
+  onPickFolder?: () => void;
   onCloseSession: (id: string) => void;
 }) {
   const [focused, setFocused] = useState(false);
@@ -424,7 +456,7 @@ function TerminalView({
   const ghostRef = useRef<HTMLTextAreaElement | null>(null);
   const composing = useRef(false);
   const draft = term.drafts[term.activeId] ?? "";
-  const pty = !local && term.ptyById[term.activeId] !== false;
+  const pty = local ? term.ptyById[term.activeId] === true : term.ptyById[term.activeId] !== false;
 
   useEffect(() => {
     if (outRef.current) {
@@ -439,12 +471,14 @@ function TerminalView({
   const focusTerm = () => ghostRef.current?.focus();
 
   const sessionLabel = term.sessions.find((item) => item.id === term.activeId)?.label ?? "终端";
+  const folderName = folder.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
 
   return (
     <section className="terminal-panel" id="run-terminal">
       <details className="term-card-head">
         <summary>
           {sessionLabel}
+          {folderName ? <span className="term-cwd">{folderName}</span> : null}
           <IconChevronDown size={14} />
         </summary>
         <div className="inspector-more-pop term-menu">
@@ -475,7 +509,20 @@ function TerminalView({
       </details>
       {term.error ? <p className="error">{term.error}</p> : null}
       {!term.activeId ? (
-        <p className="pane-empty">{local ? "本机终端需要先选一个文件夹。" : "发送任务后可以打开沙箱终端。"}</p>
+        <div className="pane-empty">
+          <p>
+            {local
+              ? folder
+                ? `正在打开 ${folderName || "本机文件夹"} 的终端…`
+                : "本机终端需要先选一个文件夹。"
+              : "发送任务后可以打开沙箱终端。"}
+          </p>
+          {local && !folder && onPickFolder ? (
+            <button type="button" className="wb-empty-action" onClick={onPickFolder}>
+              选择文件夹
+            </button>
+          ) : null}
+        </div>
       ) : (
               <div
                 className={`term-out is-flat term-shell${focused ? " is-focused" : ""}`}

@@ -5,6 +5,7 @@ export function useDismissOnOutside(
   open: boolean,
   onClose: () => void,
   rootRef: RefObject<HTMLElement | null>,
+  ignoreSelector?: string,
 ): void {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -14,10 +15,12 @@ export function useDismissOnOutside(
     const onPointerDown = (event: PointerEvent) => {
       const root = rootRef.current;
       const target = event.target;
-      if (!root || !(target instanceof Node) || root.contains(target)) return;
+      if (!(target instanceof Node)) return;
+      if (root?.contains(target)) return;
+      if (ignoreSelector && target instanceof Element && target.closest(ignoreSelector)) return;
       onCloseRef.current();
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open, rootRef]);
+  }, [ignoreSelector, open, rootRef]);
 }

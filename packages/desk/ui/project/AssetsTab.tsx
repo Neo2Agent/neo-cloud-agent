@@ -84,7 +84,7 @@ export function AssetsTab({
       {items.length === 0 ? (
         <div className="workbench-empty">
           <strong>还没有项目资产</strong>
-          <p>上传文件，或从对话产物里点「保存到项目」。</p>
+          <p>上传文件。对话产物仍留在这条对话里。</p>
         </div>
       ) : (
         <ul className="task-list">

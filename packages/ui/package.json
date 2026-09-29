@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./inspector-tabs": "./src/inspector-tabs.ts",
+    "./pane-size": "./src/pane-size.ts",
     "./term": "./src/term-keys.ts",
     "./term-render": "./src/term-render.ts",
     "./term-write": "./src/term-write.ts",

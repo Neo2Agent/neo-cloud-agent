@@ -18,6 +18,7 @@ import { normalizeOutOfWorkspacePolicy, type OutOfWorkspacePolicy } from "../src
 import { createLeaseClient } from "../src/lease.js";
 import { openDeskInboxStream, type DeskInboxHandle } from "../src/inbox.js";
 import { listLocalPath, writeLocalFile } from "../src/local-fs.js";
+import { classifyLeaseFailure, leaseRetryDelayMs, leaseUserError } from "../src/lease-poll.js";
 import { createLocalShell, type LocalShell } from "../src/local-shell.js";
 import { deskLogger } from "../src/log.js";
 import {
@@ -84,9 +85,7 @@ const HEALTH_CHECK_TIMEOUT_MS = 4_000;
 const LEASE_WAIT_MS = 20_000;
 /** A short lease call used only to prove this machine is still registered. */
 const LEASE_PROBE_MS = 400;
-/** Gap before the next poll: right away after a good one, backing off after a failure. */
-const LEASE_IDLE_GAP_MS = 250;
-const LEASE_RETRY_GAP_MS = 2_000;
+/** Gap before the next poll. A good long-poll already waited; failures back off in leaseRetryDelayMs. */
 /** How long the renderer waits for an assignment it believes is already queued. */
 const TAKE_ASSIGNMENT_WAIT_MS = 8_000;
 
@@ -381,6 +380,8 @@ function createWindow(): void {
     ...(Number.isFinite(y) ? { y } : {}),
     title,
     autoHideMenuBar: true,
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 14, y: 16 },
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -932,7 +933,7 @@ async function registerThisDesk(userToken: string): Promise<void> {
 }
 
 /** Production marks a desk online from lastSeen, which lease refreshes. Inbox is newer. */
-async function heartbeatLease(waitMs: number): Promise<"ok" | "auth" | "down"> {
+async function heartbeatLease(waitMs: number): Promise<"ok" | "auth" | "limited" | "down"> {
   if (!deskId || !deskToken) {
     return "auth";
   }
@@ -946,11 +947,18 @@ async function heartbeatLease(waitMs: number): Promise<"ok" | "auth" | "down"> {
     return "ok";
   } catch (error) {
     const message = errorText(error, "desk lease failed");
-    leaseLog.error("lease poll failed", error, { deskId, waitMs });
-    if (/unauthorized|login_required|desk not found/i.test(message)) {
+    const kind = classifyLeaseFailure(message);
+    leaseLog.error("lease poll failed", error, { deskId, waitMs, kind });
+    if (kind === "auth") {
       return "auth";
     }
-    reportPresence(false, `本机保活失败：${message}`);
+    // rate_limited is a full write bucket, not a dead machine. Showing it
+    // under the composer makes a normal turn look broken.
+    if (kind === "limited") {
+      return "limited";
+    }
+    const shown = leaseUserError(message);
+    reportPresence(false, shown ?? `本机保活失败：${message}`);
     return "down";
   }
 }
@@ -960,6 +968,7 @@ function startLeaseLoop(): void {
     return;
   }
   leaseLoop = true;
+  let failures = 0;
   const tick = async () => {
     if (!leaseLoop) {
       return;
@@ -974,8 +983,9 @@ function startLeaseLoop(): void {
       void connectInbox();
       return;
     }
+    failures = result === "ok" ? 0 : failures + 1;
     if (leaseLoop) {
-      setTimeout(() => void tick(), result === "ok" ? LEASE_IDLE_GAP_MS : LEASE_RETRY_GAP_MS);
+      setTimeout(() => void tick(), leaseRetryDelayMs(result, failures));
     }
   };
   void tick();
@@ -1011,7 +1021,7 @@ async function connectInboxOnce(): Promise<void> {
     if (!deskId || !deskToken) {
       await registerThisDesk(userToken);
       const online = await heartbeatLease(LEASE_PROBE_MS);
-      if (online !== "ok") {
+      if (online === "auth" || online === "down") {
         throw new Error("本机已登记，但现网还没把它标成在线");
       }
     }
@@ -1050,7 +1060,7 @@ async function connectInboxOnce(): Promise<void> {
         const leaseOk = await heartbeatLease(LEASE_PROBE_MS);
         inbox?.close();
         inbox = null;
-        if (leaseOk === "ok") {
+        if (leaseOk === "ok" || leaseOk === "limited") {
           return;
         }
         deskId = "";
@@ -1200,7 +1210,8 @@ function wireIpc(): void {
       },
     });
     shells.set(shellSession.id, shellSession);
-    return { id: shellSession.id, cwd: shellSession.cwd };
+    const shellName = path.basename(process.platform === "win32" ? process.env.COMSPEC || "cmd.exe" : process.env.SHELL || "bash");
+    return { id: shellSession.id, cwd: shellSession.cwd, pty: process.platform !== "win32", shell: shellName };
   });
   ipcMain.handle("desk:termWrite", (_event, input: { id: string; data: string }) => {
     shells.get(input.id)?.write(input.data);

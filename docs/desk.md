@@ -44,7 +44,7 @@
 打开一条会话：
 
 - 无 `projectId` → `PersonalChatPage`
-- 有 `projectId` → `ProjectChatPage`（项目面包屑、转交、流转待办；**仅云端**可邀请加入这条对话）
+- 有 `projectId` → `ProjectChatPage`（单行项目面包屑；**仅云端**可邀请加入这条对话。不显示房主行，不做转交房主）
 
 `Cmd+W` 关当前会话。本机目标在 composer 上选 **This Computer** 或 **Remote Control**，并先授权一个文件夹。Cloud 走云端。Remote SSH 占位已经删掉。网页新开一条派到这台电脑是二期，不是 composer 上的第三项。
 
@@ -61,7 +61,7 @@
 
 两点如实说明：
 
-- 本机终端是**管道 shell，不是 pty**。真终端设备要 native 模块，而本仓库 `onlyBuiltDependencies` 只放行 esbuild。在黑色区域里直接输入（中文输入法走隐藏输入框）；需要 tty 的全屏 TUI 不行。`createLocalShell` 是留好的接缝。
+- 本机终端是工作区里的本地 shell。Unix 用 Python `pty.fork` 分配真 tty（提示符和行编辑），不靠 native 模块；Windows 仍是管道 cmd。全屏 TUI 仍然弱。对话已经选了文件夹就会直接在那个目录打开，不再要求再选一次。
 - 云端终端是控制面在工作区里起的 `script` PTY（按键直送，Tab 补全路径）。全屏 TUI / 真彩色仍弱：前端只做 `\b` / `\r` / 常见 CSI，不是 xterm.js。本机对话不能从网页打开。
 
 ## 已落地的执行面

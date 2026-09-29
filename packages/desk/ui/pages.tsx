@@ -1164,7 +1164,7 @@ export function ChatComposer({
           {token ? (
             <button
               type="button"
-              className={`icon-btn${listening ? " is-on" : ""}`}
+              className={`icon-btn composer-mic${listening ? " is-on" : ""}`}
               aria-label={listening ? "停止听写" : "语音输入"}
               disabled={locked || finishing}
               onClick={toggleVoice}

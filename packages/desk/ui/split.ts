@@ -1,12 +1,15 @@
+import { PANE_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, paneCeiling, paneDefault } from "@neo-cloud-agent/ui/pane-size";
 import { useCallback, useRef, useState, type PointerEvent } from "react";
+
+export { paneCeiling, paneDefault, paneSnapPhase, type PaneSnap } from "@neo-cloud-agent/ui/pane-size";
 
 export const RAIL_W_KEY = "neo-desk-rail-w";
 export const PANEL_W_KEY = "neo-desk-panel-w";
-export const RAIL_W_MIN = 248;
-export const RAIL_W_MAX = 360;
-export const RAIL_W_DEFAULT = 248;
-export const PANEL_W_MIN = 280;
-export const PANEL_W_DEFAULT = 360;
+/** Same rail as Web: 280 wide, draggable 220–360. */
+export const RAIL_W_MIN = SIDEBAR_MIN;
+export const RAIL_W_MAX = SIDEBAR_MAX;
+export const RAIL_W_DEFAULT = SIDEBAR_DEFAULT;
+export const PANEL_W_MIN = PANE_MIN;
 
 export function clampWidth(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -32,8 +35,12 @@ export function writeStoredWidth(key: string, width: number): void {
   }
 }
 
-export function panelWidthMax(vw = typeof window === "undefined" ? 1280 : window.innerWidth): number {
-  return Math.max(PANEL_W_MIN, Math.round(vw * 0.42));
+export function panelWidthMax(vw = typeof window === "undefined" ? 1280 : window.innerWidth, sidebar = RAIL_W_DEFAULT): number {
+  return paneCeiling(vw, sidebar);
+}
+
+export function panelWidthDefault(vw = typeof window === "undefined" ? 1280 : window.innerWidth, sidebar = RAIL_W_DEFAULT): number {
+  return paneDefault(vw, sidebar);
 }
 
 type SplitOpts = {
@@ -42,11 +49,13 @@ type SplitOpts = {
   min: number;
   max: number | (() => number);
   invert?: boolean;
+  /** Web does not restore a previous drag. Desk matches that on each launch. */
+  remember?: boolean;
 };
 
-export function useSplitWidth({ key, fallback, min, max, invert }: SplitOpts) {
+export function useSplitWidth({ key, fallback, min, max, invert, remember = false }: SplitOpts) {
   const resolveMax = useCallback(() => (typeof max === "function" ? max() : max), [max]);
-  const [width, setWidth] = useState(() => readStoredWidth(key, fallback, min, resolveMax()));
+  const [width, setWidthState] = useState(() => (remember ? readStoredWidth(key, fallback, min, resolveMax()) : fallback));
   const widthRef = useRef(width);
   widthRef.current = width;
   const drag = useRef<{ startX: number; startW: number } | null>(null);
@@ -69,7 +78,7 @@ export function useSplitWidth({ key, fallback, min, max, invert }: SplitOpts) {
       const delta = invert ? drag.current.startX - event.clientX : event.clientX - drag.current.startX;
       const next = clampWidth(Math.round(drag.current.startW + delta), min, resolveMax());
       widthRef.current = next;
-      setWidth(next);
+      setWidthState(next);
     },
     [invert, min, resolveMax],
   );
@@ -78,12 +87,31 @@ export function useSplitWidth({ key, fallback, min, max, invert }: SplitOpts) {
     if (!drag.current) return;
     drag.current = null;
     setDragging(false);
-    writeStoredWidth(key, widthRef.current);
-  }, [key]);
+    if (remember) writeStoredWidth(key, widthRef.current);
+  }, [key, remember]);
+
+  const setWidth = useCallback(
+    (next: number) => {
+      const clamped = clampWidth(Math.round(next), min, resolveMax());
+      widthRef.current = clamped;
+      setWidthState(clamped);
+    },
+    [min, resolveMax],
+  );
+
+  const commit = useCallback(
+    (next: number) => {
+      setWidth(next);
+      if (remember) writeStoredWidth(key, widthRef.current);
+    },
+    [key, remember, setWidth],
+  );
 
   return {
     width,
     dragging,
+    setWidth,
+    commit,
     bind: {
       onPointerDown,
       onPointerMove,

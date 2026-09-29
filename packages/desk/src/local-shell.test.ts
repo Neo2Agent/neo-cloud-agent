@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLocalShell, shellLaunch } from "./local-shell.js";
+import { createLocalShell, interactiveShellLaunch, shellLaunch } from "./local-shell.js";
 
 test("Windows cmd reads Unicode from stdout, not from stdin", () => {
   const launch = shellLaunch("win32");
@@ -12,6 +12,15 @@ test("unix keeps an interactive login shell", () => {
   const launch = shellLaunch("linux");
   assert.deepEqual(launch.args, ["-i"]);
   assert.equal(launch.stdoutEncoding, "utf8");
+});
+
+test("the desk terminal allocates a local pty instead of a dumb pipe", () => {
+  const mac = interactiveShellLaunch("darwin", "/tmp/animate-camera");
+  assert.equal(mac.command, "python3");
+  assert.equal(mac.args[0], "-u");
+  assert.match(mac.args[2] ?? "", /pty\.fork/);
+  assert.equal(mac.args[3], "/tmp/animate-camera");
+  assert.equal(interactiveShellLaunch("win32").command.includes("cmd") || interactiveShellLaunch("win32").args.includes("/u"), true);
 });
 
 test("a piped Windows cmd runs a line written as UTF-8", async (t) => {
