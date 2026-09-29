@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { readSubagentSteps, type SubagentTask } from "@neo-cloud-agent/contracts/subagent";
 import { isSetupFailureMessage, transcriptGroups } from "@neo-cloud-agent/contracts/transcript";
 import { displaySetupText } from "@neo-cloud-agent/contracts/desk";
@@ -15,14 +15,12 @@ import {
   formatMessageTime,
   formatWhen,
   partitionTurn,
-  previewWorkTools,
   resolveFoldOpen,
   toolArgPreview,
   toolChromeKind,
   toolDiffStat,
   toolLinkLabel,
   toolVerb,
-  workGroupLabel,
 } from "../format";
 import { IconCheck, IconChevronRight, IconError, IconFileKind, IconSpinner, IconTool } from "../icons";
 import { MarkdownBody } from "@neo-cloud-agent/ui";
@@ -266,81 +264,14 @@ function currentTurnHasWorkFold(messages: TranscriptMessage[]): boolean {
   return currentTurnMessages(messages).some((message) => {
     if (message.role !== "assistant") return false;
     const part = partitionTurn(transcriptGroups(message));
-    return part.notes.length > 0 || part.buckets.length > 0;
+    return part.steps.length > 0;
   });
-}
-
-function WorkGroup({
-  label,
-  live,
-  autoOpen = false,
-  children,
-}: {
-  label: string;
-  live: boolean;
-  autoOpen?: boolean;
-  children: ReactNode;
-}) {
-  const [open, toggle] = useTurnDisclosure(live, autoOpen);
-  return (
-    <div className={`work-group${open ? " is-open" : ""}`}>
-      <button type="button" className="work-sum" aria-expanded={open} onClick={toggle}>
-        <span>{label}</span>
-        <WorkChevron />
-      </button>
-      <div className="work-fold-body" aria-hidden={!open}>
-        <div className="work-fold-body-inner">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-/** Distance from the bottom that still counts as following the live list. */
-const WORK_LIST_STICK_PX = 24;
-
-function WorkToolList({ tools, live }: { tools: TranscriptTool[]; live: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const scroller = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-  useLayoutEffect(() => {
-    const node = scroller.current;
-    if (!live || !stick.current || !node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [live, tools]);
-  const { shown, hidden } = live || expanded ? { shown: tools, hidden: 0 } : previewWorkTools(tools);
-  const offset = tools.length - shown.length;
-  return (
-    <>
-      {hidden > 0 ? (
-        <button type="button" className="work-more" onClick={() => setExpanded(true)}>
-          还有 {hidden} 步
-        </button>
-      ) : null}
-      <div
-        ref={scroller}
-        className="work-tools"
-        onScroll={() => {
-          const node = scroller.current;
-          if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < WORK_LIST_STICK_PX;
-        }}
-      >
-        {shown.map((tool, toolIndex) => {
-          const key = tool.id ?? `${tool.name}-${offset + toolIndex}`;
-          return toolChromeKind(tool.name) === "link" ? (
-            <ToolLink key={key} tool={tool} live={live} />
-          ) : (
-            <ToolCard key={key} tool={tool} live={live} />
-          );
-        })}
-      </div>
-    </>
-  );
 }
 
 function WorkFold({ message, live }: { message: TranscriptMessage; live: boolean }) {
   const turn = partitionTurn(transcriptGroups(message));
   const [open, toggle] = useTurnDisclosure(live, live);
-  if (turn.buckets.length === 0 && turn.notes.length === 0) return null;
+  if (turn.steps.length === 0) return null;
   const duration = live ? "" : formatDuration(message.createdAt, message.updatedAt);
   const label = live ? "工作中" : duration ? `工作了 ${duration}` : "工作了";
   return (
@@ -354,23 +285,19 @@ function WorkFold({ message, live }: { message: TranscriptMessage; live: boolean
       </button>
       <div className="work-fold-body" aria-hidden={!open}>
         <div className="work-fold-body-inner">
-          {turn.notes.length > 0 ? (
-            <WorkGroup key="notes" label={duration ? `想了 ${duration}` : "想了"} live={live}>
-              {turn.notes.map((text, index) => (
-                <MarkdownBody key={`${message.id}-note-${index}`} text={text} className="work-note" />
-              ))}
-            </WorkGroup>
-          ) : null}
-          {turn.buckets.map((bucket) => (
-            <WorkGroup
-              key={bucket.id}
-              label={workGroupLabel(bucket.id, bucket.tools)}
-              live={live}
-              autoOpen={live && bucket.tools.length > 0}
-            >
-              <WorkToolList tools={bucket.tools} live={live} />
-            </WorkGroup>
-          ))}
+          <div className="work-tools">
+            {turn.steps.map((step, index) => {
+              if (step.type === "note") {
+                return <MarkdownBody key={`${message.id}-note-${index}`} text={step.text} className="work-note" />;
+              }
+              const key = step.tool.id ?? `${message.id}-${step.tool.name}-${index}`;
+              return toolChromeKind(step.tool.name) === "link" ? (
+                <ToolLink key={key} tool={step.tool} live={live} />
+              ) : (
+                <ToolCard key={key} tool={step.tool} live={live} />
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -585,7 +512,7 @@ export function Transcript({
               );
             }
             const turn = partitionTurn(transcriptGroups(message));
-            const hasFold = turn.buckets.length > 0 || turn.notes.length > 0;
+            const hasFold = turn.steps.length > 0;
             if (!hasFold && !turn.answer) {
               return null;
             }

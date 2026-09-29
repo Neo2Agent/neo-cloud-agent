@@ -3,8 +3,7 @@ import type { StartTurnRequest } from "@neo-cloud-agent/contracts";
 import type { ControlPlane, LoopEvent } from "./cloud.js";
 import type { ToolsHub } from "./hub.js";
 import { TOOL_DEFINITIONS, runTool } from "./tools.js";
-
-const MAX_ROUNDS = 32;
+import { DUPLICATE_STOP, REPEAT_NOTE, RUNAWAY_STOP, classifyRepeat, isRunaway, toolSignature, type RepeatState } from "./repeat.js";
 
 export type ModelMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -70,8 +69,11 @@ export async function runTurn(input: {
     const messages = await loadMessages(cloud, request);
     messages.push({ role: "user", content: userText(request) });
     await emit("agent.start", "Agent turn started", { replyId: request.turnId });
+    let repeat: RepeatState = { last: "", streak: 0 };
+    const prior = new Map<string, string>();
+    let toolRounds = 0;
 
-    for (let round = 0; round < MAX_ROUNDS; round += 1) {
+    while (true) {
       const steered = control.takeSteer();
       if (steered) {
         messages.push({ role: "user", content: steered });
@@ -97,6 +99,13 @@ export async function runTurn(input: {
         });
       }
       if (completion.toolCalls.length > 0) {
+        toolRounds += 1;
+        if (isRunaway(toolRounds)) {
+          input.hub.abortAll(request.runId);
+          await emit("llm.error", RUNAWAY_STOP, { error: RUNAWAY_STOP });
+          await cloud.complete(request.runId, request.turnId, "error", RUNAWAY_STOP, false, usage);
+          return;
+        }
         messages.push({
           role: "assistant",
           content: completion.content || null,
@@ -111,12 +120,30 @@ export async function runTurn(input: {
             break;
           }
           const args = parseArgs(call.function.arguments);
+          const signature = toolSignature(call.function.name, args);
+          const next = classifyRepeat(repeat, signature);
+          repeat = next.state;
+          if (next.action === "stop") {
+            input.hub.abortAll(request.runId);
+            await emit("llm.error", DUPLICATE_STOP, { error: DUPLICATE_STOP });
+            await cloud.complete(request.runId, request.turnId, "error", DUPLICATE_STOP, false, usage);
+            return;
+          }
+          if (next.action === "replay") {
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: `${REPEAT_NOTE}\n${prior.get(signature) ?? ""}`,
+            });
+            continue;
+          }
           await emit("tool.start", `Tool ${call.function.name}`, {
             toolName: call.function.name,
             toolCallId: call.id,
             args,
           });
           const output = await runTool(input.hub, request.runId, call.function.name, args);
+          prior.set(signature, output);
           await emit("tool.update", `Tool ${call.function.name}`, {
             toolName: call.function.name,
             toolCallId: call.id,
@@ -145,12 +172,7 @@ export async function runTurn(input: {
 
     input.hub.abortAll(request.runId);
     await cloud.saveSession(request.runId, { messages: messages.filter((item) => item.role !== "system") });
-    if (control.aborted()) {
-      await cloud.complete(request.runId, request.turnId, "idle", "", true, usage);
-      return;
-    }
-    await emit("llm.error", "工具回合过多", { error: "too many tool rounds" });
-    await cloud.complete(request.runId, request.turnId, "error", "too many tool rounds", false, usage);
+    await cloud.complete(request.runId, request.turnId, "idle", "", true, usage);
   } catch (error) {
     if (control.aborted()) {
       input.hub.abortAll(request.runId);

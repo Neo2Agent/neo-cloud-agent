@@ -137,7 +137,7 @@ export function ChatTranscript({
           );
         }
         const turn = partitionTurn(transcriptGroups(message));
-        const hasFold = turn.buckets.length > 0 || turn.notes.length > 0;
+        const hasFold = turn.steps.length > 0;
         if (!hasFold && !turn.answer.trim()) return null;
         const live = Boolean(busy) && messageIndex >= currentTurnStart;
         const showActions = shouldShowAssistantActions(visible, messageIndex, !busy);

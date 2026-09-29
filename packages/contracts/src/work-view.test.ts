@@ -65,6 +65,10 @@ test("partitionTurn keeps the reply outside the work fold", () => {
   assert.equal(turn.buckets.find((bucket) => bucket.id === "explore")?.label, "浏览 2 个页面");
   assert.equal(turn.buckets.find((bucket) => bucket.id === "exec")?.tools.length, 1);
   assert.equal(turn.buckets.find((bucket) => bucket.id === "other")?.tools[0]?.name, "neo_subagent");
+  assert.deepEqual(
+    turn.steps.map((step) => (step.type === "note" ? step.text : step.tool.name)),
+    ["先看一下", "neo_browse", "neo_browse", "bash", "neo_subagent"],
+  );
   assert.equal(partitionTurn([{ type: "text", text: "只有话" }]).answer, "只有话");
   assert.equal(resolveFoldOpen(true, null), true);
   assert.equal(resolveFoldOpen(false, null), false);

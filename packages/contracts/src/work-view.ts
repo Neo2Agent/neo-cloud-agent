@@ -232,9 +232,15 @@ export type WorkBucket = {
   tools: TranscriptTool[];
 };
 
+export type WorkStep =
+  | { type: "note"; text: string }
+  | { type: "tool"; tool: TranscriptTool };
+
 export type PartitionedTurn = {
   notes: string[];
   buckets: WorkBucket[];
+  /** Notes and tools in the order the model produced them. */
+  steps: WorkStep[];
   answer: string;
 };
 
@@ -251,6 +257,7 @@ export function partitionTurn(groups: TranscriptGroup[]): PartitionedTurn {
     return {
       notes: [],
       buckets: [],
+      steps: [],
       answer: groups.filter((group) => group.type === "text").map((group) => group.text).join(""),
     };
   }
@@ -264,13 +271,16 @@ export function partitionTurn(groups: TranscriptGroup[]): PartitionedTurn {
   const answer = answerGroup?.type === "text" ? answerGroup.text : "";
   const head = answerAt >= 0 ? groups.slice(0, answerAt) : groups;
   const notes: string[] = [];
+  const steps: WorkStep[] = [];
   const grouped = new Map<string, TranscriptTool[]>();
   for (const group of head) {
     if (group.type === "text") {
       notes.push(group.text);
+      steps.push({ type: "note", text: group.text });
       continue;
     }
     for (const tool of group.tools) {
+      steps.push({ type: "tool", tool });
       const id = workFamily(tool);
       const list = grouped.get(id) ?? [];
       list.push(tool);
@@ -282,7 +292,7 @@ export function partitionTurn(groups: TranscriptGroup[]): PartitionedTurn {
     if (!tools || tools.length === 0) return [];
     return [{ id, label: workGroupLabel(id, tools), tools }];
   });
-  return { notes, buckets, answer };
+  return { notes, buckets, steps, answer };
 }
 
 /** The user's click wins; otherwise a live turn is open and a settled one is closed. */
