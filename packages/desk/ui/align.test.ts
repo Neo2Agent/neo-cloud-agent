@@ -124,7 +124,12 @@ test("desk work rows match Web and do not remount the old details cards", () => 
   assert.doesNotMatch(card, /<details/);
   assert.doesNotMatch(card, /IslandTag/);
   assert.match(fold, /work-fold-body/);
-  assert.match(fold, /autoOpen=\{liveFamily === bucket.id\}/);
+  assert.match(fold, /autoOpen=\{live && bucket\.tools\.length > 0\}/);
+  assert.doesNotMatch(fold, /liveFamily/);
+  assert.doesNotMatch(card, /执行中…/);
+  const web = readFileSync(path.join(here, "../../web/src/components/Transcript.tsx"), "utf8");
+  assert.match(web, /autoOpen=\{live && bucket\.tools\.length > 0\}/);
+  assert.doesNotMatch(web, /执行中…/);
   assert.doesNotMatch(fold, /\{open \? <div className="work-fold-body">/);
   assert.match(disclosure, /wasLive\.current && !live/);
   assert.match(css, /\.work-fold-body\s*\{[^}]*grid-template-rows:\s*0fr/);

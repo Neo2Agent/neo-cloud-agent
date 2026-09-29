@@ -2,26 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { resolveFoldOpen } from "@neo-cloud-agent/contracts/work-view";
 
 /**
- * A click sticks for the whole turn. A section that auto-opened stays open
- * while the turn is live, and both clear once, when the turn settles.
- *
- * `live` flickering for a single event must not collapse the row: that is the
- * open/close flash during a tool stream.
+ * A click wins until the turn ends. Otherwise only the caller's auto-open
+ * flag is open, so a finished tool or group collapses as soon as it stops
+ * running. The body stays mounted; closing does not remount the row.
  */
 export function useTurnDisclosure(live: boolean, autoOpen = false): [boolean, () => void] {
   const [choice, setChoice] = useState<boolean | null>(null);
-  const [latched, setLatched] = useState(autoOpen);
   const wasLive = useRef(live);
   useEffect(() => {
-    if (autoOpen) setLatched(true);
-  }, [autoOpen]);
-  useEffect(() => {
-    if (wasLive.current && !live) {
-      setChoice(null);
-      setLatched(false);
-    }
+    if (wasLive.current && !live) setChoice(null);
     wasLive.current = live;
   }, [live]);
-  const open = resolveFoldOpen(autoOpen || latched, choice);
+  const open = resolveFoldOpen(live && autoOpen, choice);
   return [open, () => setChoice(!open)];
 }

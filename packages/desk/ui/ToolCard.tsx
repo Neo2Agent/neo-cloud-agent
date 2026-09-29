@@ -43,7 +43,7 @@ function ToolFileBody({ tool }: { tool: TranscriptTool }) {
     return (
       <div className="tool-file">
         {path ? <div className="tool-file-bar">{path}</div> : null}
-        <p className="tool-file-more">{tool.status === "running" ? "执行中…" : "没有可预览的改动"}</p>
+        {tool.status === "running" ? null : <p className="tool-file-more">没有可预览的改动</p>}
       </div>
     );
   }
@@ -69,7 +69,7 @@ function ToolFileBody({ tool }: { tool: TranscriptTool }) {
 function ToolTermBody({ tool }: { tool: TranscriptTool }) {
   const running = tool.status === "running";
   const command = toolArgPreview(tool.args);
-  const output = tool.output || (running ? "执行中…" : "");
+  const output = tool.output ?? "";
   const preRef = useRef<HTMLPreElement>(null);
   useLayoutEffect(() => {
     if (!running || !preRef.current) return;
@@ -86,8 +86,8 @@ function ToolTermBody({ tool }: { tool: TranscriptTool }) {
 export function ToolLink({ tool, live }: { tool: TranscriptTool; live: boolean }) {
   const running = tool.status === "running";
   const label = toolLinkLabel(tool);
-  const [open, toggle] = useTurnDisclosure(live);
-  const output = tool.output || (running ? "执行中…" : "");
+  const [open, toggle] = useTurnDisclosure(live, running && Boolean(tool.output));
+  const output = tool.output ?? "";
   return (
     <div className={`tool-link-row${open ? " is-open" : ""}${tool.isError ? " err" : running ? " run" : ""}`}>
       <button type="button" className="tool-link" aria-expanded={open} onClick={toggle}>
@@ -112,7 +112,7 @@ export function ToolCard({ tool, live }: { tool: TranscriptTool; live: boolean }
   const steps = parentSubagent ? readSubagentSteps(tool.details) : [];
   const tasks = parentSubagent ? readSubagentTasks(tool.details) : [];
   const omitted = parentSubagent ? Number(tool.details?.omittedSteps ?? 0) : 0;
-  const [open, toggle] = useTurnDisclosure(live, live && kind === "term" && running);
+  const [open, toggle] = useTurnDisclosure(live, running && Boolean(tool.output));
 
   return (
     <div className={`${tool.isError ? "tool err" : running ? "tool run" : "tool"}${subagent ? " subagent" : ""}${open ? " is-open" : ""}`}>
@@ -164,8 +164,6 @@ export function ToolCard({ tool, live }: { tool: TranscriptTool; live: boolean }
               <ToolTermBody tool={tool} />
             ) : tool.output ? (
               <pre>{tool.output}</pre>
-            ) : running && steps.length === 0 ? (
-              <pre>执行中…</pre>
             ) : null}
           </div>
         </div>

@@ -1360,11 +1360,12 @@ h1 {
 .work-fold-body {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 180ms ease;
 }
 
 .work-fold.is-open > .work-fold-body,
-.work-group.is-open > .work-fold-body {
+.work-group.is-open > .work-fold-body,
+.tool.is-open > .work-fold-body,
+.tool-link-row.is-open > .work-fold-body {
   grid-template-rows: 1fr;
 }
 
@@ -1391,17 +1392,6 @@ h1 {
 
 .work-more:hover {
   background: #f3f3f4;
-}
-
-.work-tools.is-live {
-  max-height: 360px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-}
-
-.work-tools.is-live::-webkit-scrollbar {
-  display: none;
 }
 
 .work-note {

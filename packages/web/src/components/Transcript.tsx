@@ -89,24 +89,18 @@ function WorkChevron() {
 }
 
 /**
- * A click sticks for the whole turn, and a section that auto-opened stays open while the turn
- * is live. Both clear once, when the turn settles.
+ * A click wins until the turn ends. Otherwise only the caller's auto-open
+ * flag is open, so a finished tool or group collapses as soon as it stops
+ * running. The body stays mounted; closing does not remount the row.
  */
 function useTurnDisclosure(live: boolean, autoOpen = false): [boolean, () => void] {
   const [choice, setChoice] = useState<boolean | null>(null);
-  const [latched, setLatched] = useState(autoOpen);
   const wasLive = useRef(live);
   useEffect(() => {
-    if (autoOpen) setLatched(true);
-  }, [autoOpen]);
-  useEffect(() => {
-    if (wasLive.current && !live) {
-      setChoice(null);
-      setLatched(false);
-    }
+    if (wasLive.current && !live) setChoice(null);
     wasLive.current = live;
   }, [live]);
-  const open = resolveFoldOpen(autoOpen || latched, choice);
+  const open = resolveFoldOpen(live && autoOpen, choice);
   return [open, () => setChoice(!open)];
 }
 
@@ -118,7 +112,7 @@ function ToolFileBody({ tool }: { tool: TranscriptTool }) {
     return (
       <div className="tool-file">
         {path ? <div className="tool-file-bar">{path}</div> : null}
-        <p className="tool-file-more">{tool.status === "running" ? "执行中…" : "没有可预览的改动"}</p>
+        {tool.status === "running" ? null : <p className="tool-file-more">没有可预览的改动</p>}
       </div>
     );
   }
@@ -144,7 +138,7 @@ function ToolFileBody({ tool }: { tool: TranscriptTool }) {
 function ToolTermBody({ tool }: { tool: TranscriptTool }) {
   const running = tool.status === "running";
   const command = toolArgPreview(tool.args);
-  const output = tool.output || (running ? "执行中…" : "");
+  const output = tool.output ?? "";
   const preRef = useRef<HTMLPreElement>(null);
   useLayoutEffect(() => {
     if (!running || !preRef.current) return;
@@ -161,8 +155,8 @@ function ToolTermBody({ tool }: { tool: TranscriptTool }) {
 function ToolLink({ tool, live }: { tool: TranscriptTool; live: boolean }) {
   const running = tool.status === "running";
   const label = toolLinkLabel(tool);
-  const [open, toggle] = useTurnDisclosure(live);
-  const output = tool.output || (running ? "执行中…" : "");
+  const [open, toggle] = useTurnDisclosure(live, running && Boolean(tool.output));
+  const output = tool.output ?? "";
   return (
     <div className={`tool-link-row${open ? " is-open" : ""}${tool.isError ? " err" : running ? " run" : ""}`}>
       <button type="button" className="tool-link" aria-expanded={open} onClick={toggle}>
@@ -170,7 +164,9 @@ function ToolLink({ tool, live }: { tool: TranscriptTool; live: boolean }) {
         <ToolStatus tool={tool} />
         <span className="tool-link-text">{label}</span>
       </button>
-      {open && output ? <pre className="tool-link-out">{output}</pre> : null}
+      <div className="work-fold-body" aria-hidden={!open}>
+        <div className="work-fold-body-inner">{output ? <pre className="tool-link-out">{output}</pre> : null}</div>
+      </div>
     </div>
   );
 }
@@ -185,7 +181,7 @@ function ToolCard({ tool, live }: { tool: TranscriptTool; live: boolean }) {
   const steps = parentSubagent ? readSubagentSteps(tool.details) : [];
   const tasks = parentSubagent ? readSubagentTasks(tool.details) : [];
   const omitted = parentSubagent ? Number(tool.details?.omittedSteps ?? 0) : 0;
-  const [open, toggle] = useTurnDisclosure(live, live && kind === "term" && running);
+  const [open, toggle] = useTurnDisclosure(live, running && Boolean(tool.output));
 
   return (
     <div className={`${tool.isError ? "tool err" : running ? "tool run" : "tool"}${subagent ? " subagent" : ""}${open ? " is-open" : ""}`}>
@@ -205,7 +201,8 @@ function ToolCard({ tool, live }: { tool: TranscriptTool; live: boolean }) {
           </span>
         ) : null}
       </button>
-      {open ? (
+      <div className="work-fold-body" aria-hidden={!open}>
+        <div className="work-fold-body-inner">
         <div className="tool-body">
           {tasks.length > 0 ? (
             <ul className="subagent-tasks">
@@ -239,11 +236,10 @@ function ToolCard({ tool, live }: { tool: TranscriptTool; live: boolean }) {
             <ToolTermBody tool={tool} />
           ) : tool.output ? (
             <pre>{tool.output}</pre>
-          ) : running && steps.length === 0 ? (
-            <pre>执行中…</pre>
           ) : null}
         </div>
-      ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -322,7 +318,7 @@ function WorkToolList({ tools, live }: { tools: TranscriptTool[]; live: boolean 
       ) : null}
       <div
         ref={scroller}
-        className={live ? "work-tools is-live" : "work-tools"}
+        className="work-tools"
         onScroll={() => {
           const node = scroller.current;
           if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < WORK_LIST_STICK_PX;
@@ -347,9 +343,6 @@ function WorkFold({ message, live }: { message: TranscriptMessage; live: boolean
   if (turn.buckets.length === 0 && turn.notes.length === 0) return null;
   const duration = live ? "" : formatDuration(message.createdAt, message.updatedAt);
   const label = live ? "工作中" : duration ? `工作了 ${duration}` : "工作了";
-  const liveFamily = live
-    ? [...turn.buckets].reverse().find((bucket) => bucket.tools.some((tool) => tool.status === "running"))?.id
-    : undefined;
   return (
     <div className={`work-fold${open ? " is-open" : ""}`}>
       <button type="button" className="work-sum" aria-expanded={open} onClick={toggle}>
@@ -373,7 +366,7 @@ function WorkFold({ message, live }: { message: TranscriptMessage; live: boolean
               key={bucket.id}
               label={workGroupLabel(bucket.id, bucket.tools)}
               live={live}
-              autoOpen={liveFamily === bucket.id}
+              autoOpen={live && bucket.tools.length > 0}
             >
               <WorkToolList tools={bucket.tools} live={live} />
             </WorkGroup>

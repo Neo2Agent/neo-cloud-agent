@@ -4,7 +4,7 @@ import type { ControlPlane, LoopEvent } from "./cloud.js";
 import type { ToolsHub } from "./hub.js";
 import { TOOL_DEFINITIONS, runTool } from "./tools.js";
 
-const MAX_ROUNDS = 8;
+const MAX_ROUNDS = 32;
 
 export type ModelMessage = {
   role: "system" | "user" | "assistant" | "tool";

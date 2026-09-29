@@ -54,7 +54,7 @@ function ToolList({ tools, live }: { tools: TranscriptTool[]; live: boolean }) {
       ) : null}
       <div
         ref={scroller}
-        className={live ? "work-tools is-live" : "work-tools"}
+        className="work-tools"
         onScroll={() => {
           const node = scroller.current;
           if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < WORK_LIST_STICK_PX;
@@ -89,9 +89,6 @@ export function WorkFold({
   if (turn.buckets.length === 0 && turn.notes.length === 0) return null;
   const duration = live ? "" : formatDuration(createdAt, updatedAt);
   const label = live ? "工作中" : duration ? `工作了 ${duration}` : "工作了";
-  const liveFamily = live
-    ? [...turn.buckets].reverse().find((bucket) => bucket.tools.some((tool) => tool.status === "running"))?.id
-    : undefined;
   return (
     <div className={`work-fold${open ? " is-open" : ""}`}>
       <button type="button" className="work-sum" aria-expanded={open} onClick={toggle}>
@@ -111,7 +108,7 @@ export function WorkFold({
             </FoldGroup>
           ) : null}
           {turn.buckets.map((bucket) => (
-            <FoldGroup key={bucket.id} label={workGroupLabel(bucket.id, bucket.tools)} live={live} autoOpen={liveFamily === bucket.id}>
+            <FoldGroup key={bucket.id} label={workGroupLabel(bucket.id, bucket.tools)} live={live} autoOpen={live && bucket.tools.length > 0}>
               <ToolList tools={bucket.tools} live={live} />
             </FoldGroup>
           ))}

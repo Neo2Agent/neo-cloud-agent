@@ -2284,7 +2284,6 @@ img.avatar {
 .work-fold-body {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 180ms ease;
 }
 
 .work-fold.is-open > .work-fold-body,
@@ -2325,12 +2324,6 @@ img.avatar {
 
 .work-more:hover {
   background: #f3f3f4;
-}
-
-.work-tools.is-live {
-  max-height: 360px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .work-spinner {

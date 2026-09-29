@@ -1,3 +1,4 @@
+import { isDeskToolsProxyUrl } from "@neo-cloud-agent/contracts";
 import { isLoopbackOrigin } from "./ports.js";
 
 /**
@@ -17,6 +18,24 @@ export function publicizeWorkerUrls(
       gatewayOriginFor(assignment.llmGatewayUrl, publicCp),
     ),
   };
+}
+
+/**
+ * Remote tools frames go through the control plane, never straight to :8082.
+ * A loopback proxy path was minted for the app host and must be retargeted at
+ * the origin this Desk already uses. A bare neo-loop URL stays put.
+ */
+export function publicizeToolsChannelUrl(url: string | undefined, publicControlPlane: string): string | undefined {
+  const trimmed = (url || "").trim().replace(/\/$/, "");
+  if (!trimmed || !isDeskToolsProxyUrl(trimmed) || !isLoopbackOrigin(trimmed)) {
+    return trimmed || undefined;
+  }
+  const source = new URL(trimmed);
+  const target = new URL(publicControlPlane);
+  source.protocol = target.protocol;
+  source.hostname = target.hostname;
+  source.port = target.port;
+  return source.toString().replace(/\/$/, "");
 }
 
 function replaceLoopbackOrigin(url: string, publicOrigin: string): string {

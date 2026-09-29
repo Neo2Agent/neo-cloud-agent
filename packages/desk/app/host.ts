@@ -18,6 +18,7 @@ import { normalizeOutOfWorkspacePolicy, type OutOfWorkspacePolicy } from "../src
 import { createLeaseClient } from "../src/lease.js";
 import { openDeskInboxStream, type DeskInboxHandle } from "../src/inbox.js";
 import { listLocalPath, writeLocalFile } from "../src/local-fs.js";
+import { savedDeskOwnedBy } from "../src/desk-owner.js";
 import { classifyLeaseFailure, leaseRetryDelayMs, leaseUserError } from "../src/lease-poll.js";
 import { createLocalShell, type LocalShell } from "../src/local-shell.js";
 import { deskLogger } from "../src/log.js";
@@ -32,7 +33,7 @@ import { hashForInvite, hashForRun, inviteTokenFromDeepLink, runIdFromDeepLink }
 import { deskRepoRoot, spawnDeskWorker } from "../src/spawn.js";
 import { deskAssignmentAlert } from "../src/notify-assignment.js";
 import { isActiveRunStatus } from "@neo-cloud-agent/contracts/turn-state";
-import { publicizeWorkerUrls } from "../src/worker-urls.js";
+import { publicizeToolsChannelUrl, publicizeWorkerUrls } from "../src/worker-urls.js";
 import {
   ignoreNeoDir,
   localGitSnapshot,
@@ -144,6 +145,7 @@ let deskId = "";
 let deskToken = "";
 let inbox: DeskInboxHandle | null = null;
 let leaseLoop = false;
+let leaseEpoch = 0;
 const shells = new Map<string, LocalShell>();
 
 /** One local conversation this process owns. `child` is absent while it spawns. */
@@ -679,6 +681,7 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
     if (!sleepBlocker) {
       sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
     }
+    const loopUrl = publicizeToolsChannelUrl(assignment.toolsChannelUrl ?? assignment.neoLoopUrl, controlPlaneUrl);
     child = spawnDeskWorker({
       runId,
       jwt: assignment.jwt,
@@ -689,10 +692,8 @@ async function startAssignment(assignment: DeskAssignment, folderHint?: string):
       scratchDir: launch.scratchDir,
       model: assignment.model,
       workerRole: assignment.kernel === "agentscope" ? "tools" : "all",
-      neoLoopUrl: assignment.toolsChannelUrl ?? assignment.neoLoopUrl,
-      neoLoopToken: isDeskToolsProxyUrl(assignment.toolsChannelUrl ?? assignment.neoLoopUrl)
-        ? deskToken
-        : assignment.neoLoopToken,
+      neoLoopUrl: loopUrl,
+      neoLoopToken: isDeskToolsProxyUrl(loopUrl) ? deskToken : assignment.neoLoopToken,
     });
     localRuns.set(runId, { folder: workspaceDir, child });
     runLog.info("worker spawned", { runId, pid: child.pid, folder: workspaceDir });
@@ -900,6 +901,42 @@ async function persistRegisteredDesk(registered: { deskId: string; token: string
   toRenderer("desk:target", { ...saved, deskId });
 }
 
+/** Drop the saved machine registration without deleting it on the server. */
+function forgetSavedDesk(): void {
+  stopLeaseLoop();
+  inbox?.close();
+  inbox = null;
+  deskId = "";
+  deskToken = "";
+  writeJson(stateFile(DESK_STATE_FILE), { deskId: "", token: "" });
+  const saved = readJson<DeskTarget>(stateFile(TARGET_STATE_FILE), { kind: "cloud" });
+  delete saved.deskId;
+  writeJson(stateFile(TARGET_STATE_FILE), saved);
+  toRenderer("desk:target", currentTarget());
+}
+
+/**
+ * The saved desk token can keep leasing after the person at the keyboard changes.
+ * If this account's desk list does not include it, forget it so the next register
+ * binds the machine to them. A failed list leaves the saved desk alone.
+ */
+async function dropUnownedDesk(userToken: string): Promise<void> {
+  if (!deskId) return;
+  let listed: Array<{ id: string }> | null = null;
+  try {
+    listed = await leaseClient().listDesks(userToken);
+  } catch (error) {
+    deskLog.warn("could not check desk ownership, keeping the saved machine", {
+      deskId,
+      detail: errorText(error),
+    });
+  }
+  if (savedDeskOwnedBy(listed, deskId) !== false) return;
+  const previous = deskId;
+  forgetSavedDesk();
+  deskLog.warn("saved desk belongs to another account, registering again", { deskId: previous });
+}
+
 async function pruneOfflineDesks(userToken: string): Promise<void> {
   const desks = await leaseClient().listDesks(userToken);
   const stale = desks
@@ -968,23 +1005,23 @@ function startLeaseLoop(): void {
     return;
   }
   leaseLoop = true;
+  const epoch = ++leaseEpoch;
   let failures = 0;
   const tick = async () => {
-    if (!leaseLoop) {
+    if (!leaseLoop || epoch !== leaseEpoch) {
       return;
     }
     const result = await heartbeatLease(LEASE_WAIT_MS);
+    if (epoch !== leaseEpoch) {
+      return;
+    }
     if (result === "auth") {
-      leaseLoop = false;
-      deskId = "";
-      deskToken = "";
-      inbox?.close();
-      inbox = null;
+      forgetSavedDesk();
       void connectInbox();
       return;
     }
     failures = result === "ok" ? 0 : failures + 1;
-    if (leaseLoop) {
+    if (leaseLoop && epoch === leaseEpoch) {
       setTimeout(() => void tick(), leaseRetryDelayMs(result, failures));
     }
   };
@@ -993,6 +1030,7 @@ function startLeaseLoop(): void {
 
 function stopLeaseLoop(): void {
   leaseLoop = false;
+  leaseEpoch += 1;
 }
 
 async function connectInbox(): Promise<void> {
@@ -1011,11 +1049,11 @@ async function connectInboxOnce(): Promise<void> {
     return;
   }
   try {
+    await dropUnownedDesk(userToken);
     if (deskId && deskToken) {
       const stillValid = await heartbeatLease(LEASE_PROBE_MS);
       if (stillValid === "auth") {
-        deskId = "";
-        deskToken = "";
+        forgetSavedDesk();
       }
     }
     if (!deskId || !deskToken) {
@@ -1083,9 +1121,7 @@ function wireIpc(): void {
   });
   ipcMain.handle("desk:clearToken", () => {
     setToken("");
-    stopLeaseLoop();
-    inbox?.close();
-    inbox = null;
+    forgetSavedDesk();
   });
   ipcMain.handle("desk:pickFolder", async () => {
     const picked = await dialog.showOpenDialog({ properties: ["openDirectory"] });
