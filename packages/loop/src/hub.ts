@@ -11,6 +11,7 @@ type Pending = {
   resolve: (result: ToolCallResult) => void;
   stdout: string[];
   timer: NodeJS.Timeout;
+  onChunk?: (text: string) => void;
 };
 
 type Connection = {
@@ -77,7 +78,12 @@ export class ToolsHub {
     throw new Error("tools worker not connected");
   }
 
-  call(runId: string, frame: ToolsChannelFrame, timeoutMs = CALL_TIMEOUT_MS): Promise<ToolCallResult> {
+  call(
+    runId: string,
+    frame: ToolsChannelFrame,
+    timeoutMs = CALL_TIMEOUT_MS,
+    onChunk?: (text: string) => void,
+  ): Promise<ToolCallResult> {
     const connection = this.connections.get(runId);
     if (!connection || connection.socket.readyState !== WebSocket.OPEN) {
       return Promise.resolve({ ok: false, text: "tools worker not connected", stdout: "" });
@@ -88,7 +94,7 @@ export class ToolsHub {
         connection.pending.delete(callId);
         resolve({ ok: false, text: `tool timed out after ${timeoutMs}ms`, stdout: "" });
       }, timeoutMs);
-      connection.pending.set(callId, { resolve, stdout: [], timer });
+      connection.pending.set(callId, { resolve, stdout: [], timer, onChunk });
       connection.socket.send(JSON.stringify(frame));
     });
   }
@@ -124,6 +130,7 @@ export class ToolsHub {
     }
     if (frame.type === "exec.stdout" || frame.type === "exec.stderr") {
       pending.stdout.push(frame.text);
+      pending.onChunk?.(pending.stdout.join(""));
       return;
     }
     if (frame.type === "exec.end") {

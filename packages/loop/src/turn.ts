@@ -2,8 +2,19 @@ import { randomUUID } from "node:crypto";
 import type { StartTurnRequest } from "@neo-cloud-agent/contracts";
 import type { ControlPlane, LoopEvent } from "./cloud.js";
 import type { ToolsHub } from "./hub.js";
-import { TOOL_DEFINITIONS, runTool } from "./tools.js";
-import { DUPLICATE_STOP, REPEAT_NOTE, RUNAWAY_STOP, classifyRepeat, isRunaway, toolSignature, type RepeatState } from "./repeat.js";
+import {
+  DUPLICATE_STOP,
+  REPEAT_NOTE,
+  RUNAWAY_STOP,
+  SLEEP_POLL_NOTE,
+  WRAP_STEER,
+  classifyRepeat,
+  isSleepPoll,
+  needsWrap,
+  toolSignature,
+  type RepeatState,
+} from "./repeat.js";
+import { TOOL_DEFINITIONS, clipToolOutput, runTool } from "./tools.js";
 
 export type ModelMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -72,6 +83,7 @@ export async function runTurn(input: {
     let repeat: RepeatState = { last: "", streak: 0 };
     const prior = new Map<string, string>();
     let toolRounds = 0;
+    let wrapArmed = false;
 
     while (true) {
       const steered = control.takeSteer();
@@ -99,13 +111,16 @@ export async function runTurn(input: {
         });
       }
       if (completion.toolCalls.length > 0) {
-        toolRounds += 1;
-        if (isRunaway(toolRounds)) {
+        if (wrapArmed) {
           input.hub.abortAll(request.runId);
+          if (completion.content) {
+            await emitText(emit, request.turnId, completion.content);
+          }
           await emit("llm.error", RUNAWAY_STOP, { error: RUNAWAY_STOP });
           await cloud.complete(request.runId, request.turnId, "error", RUNAWAY_STOP, false, usage);
           return;
         }
+        toolRounds += 1;
         messages.push({
           role: "assistant",
           content: completion.content || null,
@@ -115,47 +130,26 @@ export async function runTurn(input: {
           await emitText(emit, request.turnId, completion.content);
         }
         await cloud.heartbeat(request.runId, request.turnId, "tool");
-        for (const call of completion.toolCalls) {
-          if (control.aborted()) {
-            break;
-          }
-          const args = parseArgs(call.function.arguments);
-          const signature = toolSignature(call.function.name, args);
-          const next = classifyRepeat(repeat, signature);
-          repeat = next.state;
-          if (next.action === "stop") {
-            input.hub.abortAll(request.runId);
-            await emit("llm.error", DUPLICATE_STOP, { error: DUPLICATE_STOP });
-            await cloud.complete(request.runId, request.turnId, "error", DUPLICATE_STOP, false, usage);
-            return;
-          }
-          if (next.action === "replay") {
-            messages.push({
-              role: "tool",
-              tool_call_id: call.id,
-              content: `${REPEAT_NOTE}\n${prior.get(signature) ?? ""}`,
-            });
-            continue;
-          }
-          await emit("tool.start", `Tool ${call.function.name}`, {
-            toolName: call.function.name,
-            toolCallId: call.id,
-            args,
-          });
-          const output = await runTool(input.hub, request.runId, call.function.name, args);
-          prior.set(signature, output);
-          await emit("tool.update", `Tool ${call.function.name}`, {
-            toolName: call.function.name,
-            toolCallId: call.id,
-            output,
-          });
-          await emit("tool.end", `Tool ${call.function.name} finished`, {
-            toolName: call.function.name,
-            toolCallId: call.id,
-            output,
-            isError: false,
-          });
-          messages.push({ role: "tool", tool_call_id: call.id, content: output });
+        const stopped = await runToolBatch({
+          calls: completion.toolCalls,
+          repeat,
+          prior,
+          messages,
+          emit,
+          hub: input.hub,
+          runId: request.runId,
+          aborted: control.aborted,
+        });
+        repeat = stopped.repeat;
+        if (stopped.halt) {
+          input.hub.abortAll(request.runId);
+          await emit("llm.error", DUPLICATE_STOP, { error: DUPLICATE_STOP });
+          await cloud.complete(request.runId, request.turnId, "error", DUPLICATE_STOP, false, usage);
+          return;
+        }
+        if (needsWrap(toolRounds)) {
+          messages.push({ role: "user", content: WRAP_STEER });
+          wrapArmed = true;
         }
         continue;
       }
@@ -223,9 +217,211 @@ export async function inferChat(input: {
   };
 }
 
+const PARALLEL_TOOLS = new Set(["read", "grep", "find", "ls"]);
+const OUTPUT_FLUSH_MS = 100;
+
+type Emitter = (kind: string, title: string, data: Record<string, unknown>) => Promise<void>;
+
+type PlannedCall = {
+  call: ToolCall;
+  args: Record<string, unknown>;
+  signature: string;
+  action: "run" | "replay" | "stop";
+  parallel: boolean;
+};
+
+async function runToolBatch(input: {
+  calls: ToolCall[];
+  repeat: RepeatState;
+  prior: Map<string, string>;
+  messages: ModelMessage[];
+  emit: Emitter;
+  hub: ToolsHub;
+  runId: string;
+  aborted: () => boolean;
+}): Promise<{ repeat: RepeatState; halt: boolean }> {
+  let repeat = input.repeat;
+  const planned: PlannedCall[] = [];
+  for (const call of input.calls) {
+    const args = parseArgs(call.function.arguments);
+    const signature = toolSignature(call.function.name, args);
+    const next = classifyRepeat(repeat, signature);
+    repeat = next.state;
+    planned.push({
+      call,
+      args,
+      signature,
+      action: next.action,
+      parallel: next.action === "run" && PARALLEL_TOOLS.has(call.function.name),
+    });
+    if (next.action === "stop") {
+      break;
+    }
+  }
+
+  let index = 0;
+  while (index < planned.length) {
+    if (input.aborted()) {
+      break;
+    }
+    const step = planned[index];
+    if (!step) {
+      break;
+    }
+    if (step.action === "stop") {
+      return { repeat, halt: true };
+    }
+    if (step.action === "replay") {
+      input.messages.push({
+        role: "tool",
+        tool_call_id: step.call.id,
+        content: `${REPEAT_NOTE}\n${input.prior.get(step.signature) ?? ""}`,
+      });
+      index += 1;
+      continue;
+    }
+    if (step.parallel) {
+      const batch: PlannedCall[] = [];
+      while (index < planned.length && planned[index]?.action === "run" && planned[index]?.parallel) {
+        const item = planned[index];
+        if (!item) {
+          break;
+        }
+        batch.push(item);
+        index += 1;
+      }
+      await runParallelReads(input, batch);
+      continue;
+    }
+    await runOneTool(input, step);
+    index += 1;
+  }
+  return { repeat, halt: false };
+}
+
+async function runParallelReads(
+  input: {
+    prior: Map<string, string>;
+    messages: ModelMessage[];
+    emit: Emitter;
+    hub: ToolsHub;
+    runId: string;
+  },
+  batch: PlannedCall[],
+): Promise<void> {
+  for (const step of batch) {
+    await emitToolStart(input.emit, step);
+  }
+  const outputs = await Promise.all(
+    batch.map((step) => runTool(input.hub, input.runId, step.call.function.name, step.args)),
+  );
+  for (let item = 0; item < batch.length; item += 1) {
+    const step = batch[item];
+    const output = outputs[item] ?? "";
+    if (!step) {
+      continue;
+    }
+    input.prior.set(step.signature, output);
+    await emitToolFinish(input.emit, step, output);
+    input.messages.push({ role: "tool", tool_call_id: step.call.id, content: output });
+  }
+}
+
+async function runOneTool(
+  input: {
+    prior: Map<string, string>;
+    messages: ModelMessage[];
+    emit: Emitter;
+    hub: ToolsHub;
+    runId: string;
+  },
+  step: PlannedCall,
+): Promise<void> {
+  await emitToolStart(input.emit, step);
+  const command = typeof step.args.command === "string" ? step.args.command : "";
+  const blocked = step.call.function.name === "bash" && isSleepPoll(command);
+  const pump = !blocked && step.call.function.name === "bash"
+    ? createOutputPump(async (text) => {
+        await input.emit("tool.update", `Tool ${step.call.function.name}`, {
+          toolName: step.call.function.name,
+          toolCallId: step.call.id,
+          output: text,
+        });
+      })
+    : undefined;
+  const output = blocked
+    ? SLEEP_POLL_NOTE
+    : await runTool(input.hub, input.runId, step.call.function.name, step.args, pump ? (text) => pump.push(clipToolOutput(text)) : undefined);
+  await pump?.flush();
+  input.prior.set(step.signature, output);
+  await emitToolFinish(input.emit, step, output);
+  input.messages.push({ role: "tool", tool_call_id: step.call.id, content: output });
+}
+
+function createOutputPump(publish: (text: string) => Promise<void>): { push: (text: string) => void; flush: () => Promise<void> } {
+  let latest = "";
+  let sent = "";
+  let timer: NodeJS.Timeout | undefined;
+  let chain = Promise.resolve();
+  const enqueue = () => {
+    if (latest === sent) {
+      return;
+    }
+    const text = latest;
+    sent = text;
+    chain = chain.then(() => publish(text));
+  };
+  return {
+    push(text: string) {
+      latest = text;
+      if (timer) {
+        return;
+      }
+      enqueue();
+      timer = setTimeout(() => {
+        timer = undefined;
+        enqueue();
+      }, OUTPUT_FLUSH_MS);
+    },
+    async flush() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      enqueue();
+      await chain;
+    },
+  };
+}
+
+async function emitToolStart(emit: Emitter, step: PlannedCall): Promise<void> {
+  await emit("tool.start", `Tool ${step.call.function.name}`, {
+    toolName: step.call.function.name,
+    toolCallId: step.call.id,
+    args: step.args,
+  });
+}
+
+async function emitToolFinish(emit: Emitter, step: PlannedCall, output: string): Promise<void> {
+  await emit("tool.update", `Tool ${step.call.function.name}`, {
+    toolName: step.call.function.name,
+    toolCallId: step.call.id,
+    output,
+  });
+  await emit("tool.end", `Tool ${step.call.function.name} finished`, {
+    toolName: step.call.function.name,
+    toolCallId: step.call.id,
+    output,
+    isError: false,
+  });
+}
+
 function systemMessage(request: StartTurnRequest): ModelMessage {
   const parts = [
     "You are Neo. File and shell tools run on the user's computer. Paths are relative to that folder.",
+    "Put independent read-only tools (read, grep, find, ls) in the same reply. Keep bash, edit, and write in order.",
+    "Do not use sleep to poll for builds, installs, or emulators. Run the command itself, or read the log after it finishes.",
+    "When the task is done, write the result and stop calling tools.",
   ];
   if (request.workspace?.agentsMd) {
     parts.push(request.workspace.agentsMd);

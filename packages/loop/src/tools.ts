@@ -112,6 +112,7 @@ export async function runTool(
   runId: string,
   name: string,
   args: Record<string, unknown>,
+  onOutput?: (text: string) => void,
 ): Promise<string> {
   const pathArg = stringArg(args, "path") || ".";
   switch (name) {
@@ -126,7 +127,9 @@ export async function runTool(
     case "edit":
       return clipToolOutput(await editFile(hub, runId, pathArg, stringArg(args, "old_string"), stringArg(args, "new_string")));
     case "bash":
-      return clipToolOutput((await hub.call(runId, execFrame(stringArg(args, "command")))).text);
+      return clipToolOutput(
+        (await hub.call(runId, execFrame(stringArg(args, "command")), undefined, onOutput)).text,
+      );
     case "grep":
       return clipToolOutput(
         (
