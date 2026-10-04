@@ -63,6 +63,20 @@ test("web shell uses the quiet monochrome workspace", () => {
   assert.match(css, /\.palette-backdrop\s*\{/);
 });
 
+test("micro motion stays on existing controls and can be reduced", () => {
+  assert.match(css, /@keyframes send-ink/);
+  assert.match(css, /@keyframes stop-square/);
+  assert.match(css, /@keyframes status-draw/);
+  assert.match(css, /@keyframes tool-fill/);
+  assert.match(css, /@keyframes work-label-in/);
+  assert.match(css, /@keyframes toast-rise/);
+  assert.match(css, /\.status-mark\.is-run/);
+  assert.match(css, /\.inbox-btn:active/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*button\.send:not\(:disabled\)/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*\.tool\.run/);
+  assert.doesNotMatch(css, /#4d6bfe/);
+});
+
 test("welcome cluster fits a 14-inch laptop viewport without a page scroll", () => {
   assert.match(css, /\.transcript\s*\{[^}]*container-name:\s*transcript/);
   assert.match(css, /\.empty h2\s*\{[^}]*margin:\s*0 0 8px/);

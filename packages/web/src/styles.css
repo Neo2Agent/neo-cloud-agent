@@ -1449,6 +1449,53 @@ h1 {
   color: var(--run);
 }
 
+.status-mark {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.status-mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.status-mark-check,
+.status-mark-cross {
+  opacity: 0;
+}
+
+.status-mark.is-run {
+  color: var(--run);
+}
+
+.status-mark.is-run .status-mark-ring {
+  stroke-dasharray: 3 2;
+  transform-origin: center;
+  animation: spin 0.9s linear infinite;
+}
+
+.status-mark.is-ok .status-mark-check,
+.status-mark.is-err .status-mark-cross {
+  opacity: 1;
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  animation: status-draw 220ms ease forwards;
+}
+
+.status-mark.is-err {
+  color: var(--err);
+}
+
+@keyframes status-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 .spin {
   animation: spin 0.9s linear infinite;
 }
@@ -1494,6 +1541,10 @@ h1 {
 
 .tool.run {
   color: var(--text);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 72%);
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  animation: tool-fill 1.6s ease-in-out infinite;
 }
 
 .tool.subagent {
@@ -1657,6 +1708,40 @@ button.tool-file-more:hover {
 
 .tool-link-row.run {
   color: var(--text);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 72%);
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  animation: tool-fill 1.6s ease-in-out infinite;
+}
+
+@keyframes tool-fill {
+  0% {
+    background-size: 0% 100%;
+    background-position: 0 0;
+  }
+  55% {
+    background-size: 100% 100%;
+    background-position: 0 0;
+  }
+  100% {
+    background-size: 100% 100%;
+    background-position: 100% 0;
+  }
+}
+
+.work-sum-fade {
+  animation: work-label-in 220ms ease;
+}
+
+@keyframes work-label-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
 }
 
 .tool-link {
@@ -2354,11 +2439,38 @@ button.send:disabled {
   color: #ffffff;
 }
 
+button.send:not(:disabled) {
+  animation: send-ink 200ms ease;
+}
+
+@keyframes send-ink {
+  from {
+    background: #e5e7eb;
+    color: #9ca3af;
+  }
+  to {
+    background: var(--accent);
+    color: #ffffff;
+  }
+}
+
 .stop-icon {
   width: 10px;
   height: 10px;
   border-radius: 2px;
   background: #ffffff;
+  animation: stop-square 180ms ease;
+}
+
+@keyframes stop-square {
+  from {
+    transform: scale(0.35);
+    border-radius: 999px;
+  }
+  to {
+    transform: scale(1);
+    border-radius: 2px;
+  }
 }
 
 .buddy-composer button.send,
@@ -2572,9 +2684,24 @@ button.send:disabled {
   .chat-column .proj-chip-bar,
   .chat-column .remote-offline-card,
   .work-fold-body,
-  .work-chevron {
+  .work-chevron,
+  .status-mark.is-run .status-mark-ring,
+  .status-mark.is-ok .status-mark-check,
+  .status-mark.is-err .status-mark-cross,
+  .tool.run,
+  .tool-link-row.run,
+  .work-sum-fade,
+  .toast,
+  .context-usage-pop,
+  button.send:not(:disabled),
+  .stop-icon,
+  .inbox-btn {
     transition: none;
     animation: none;
+  }
+
+  .inbox-btn:active {
+    transform: none;
   }
 }
 
@@ -4623,6 +4750,18 @@ a.git-check-name:hover {
   color: var(--text);
   font-size: 13px;
   line-height: 1.45;
+  animation: toast-rise 220ms ease;
+}
+
+@keyframes toast-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .toast.is-ok {
@@ -6917,6 +7056,15 @@ a.quiet-btn[aria-disabled="true"] {
 
 .inbox-btn {
   position: relative;
+  transition: transform 140ms ease;
+}
+
+.inbox-btn:active {
+  transform: scale(0.92);
+}
+
+.context-usage-pop {
+  animation: toast-rise 180ms ease;
 }
 
 .inbox-dot {
