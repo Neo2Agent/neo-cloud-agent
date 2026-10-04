@@ -70,6 +70,30 @@ test("mobile conversion card and chat shell match Web phone buddy chrome", () =>
   assert.match(webCss, /\.app\.is-buddy \.remote-offline-copy\s*\{[^}]*flex:\s*0 0 auto/);
 });
 
+test("mobile lab ports chat micro motion without the Web stylesheet", () => {
+  const fold = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "work-fold.tsx"), "utf8");
+  const chrome = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "web/chrome.tsx"), "utf8");
+  const composer = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "screens/Composer.tsx"), "utf8");
+  const drawer = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "screens/Drawer.tsx"), "utf8");
+  const nativeFold = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "screens/WorkFold.tsx"), "utf8");
+  assert.match(css, /@keyframes send-ink/);
+  assert.match(css, /@keyframes stop-square/);
+  assert.match(css, /@keyframes tool-fill/);
+  assert.match(css, /@keyframes work-label-in/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*think-dots i/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*work-spin/);
+  assert.doesNotMatch(css, /backdrop-filter/);
+  assert.doesNotMatch(css, /@import "[^"]*web\/src\/styles\.css"/);
+  assert.match(fold, /work-sum-fade/);
+  assert.match(fold, /key=\{label\}/);
+  assert.match(chrome, /className="stop-icon"/);
+  assert.match(composer, /useReducedMotion/);
+  assert.doesNotMatch(composer, /tool-fill/);
+  assert.match(drawer, /useReducedMotion/);
+  assert.match(nativeFold, /useReducedMotion/);
+  assert.doesNotMatch(nativeFold, /tool-fill/);
+});
+
 test("mobile web App keeps hooks before login returns", () => {
   const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "web/App.tsx"), "utf8");
   const body = src.slice(src.indexOf("export function App"));

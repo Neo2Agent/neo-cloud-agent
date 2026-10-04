@@ -1185,7 +1185,7 @@ export function ChatComposer({
           ) : null}
           {onStop && waitingNow ? (
             <button type="button" className="send-btn stop" aria-label="停止" onClick={onStop}>
-              <IconStop size={14} />
+              <IconStop size={14} className="stop-icon" />
             </button>
           ) : (
             <button type="button" className="send-btn" aria-label="发送" disabled={locked || sending || empty || listening} onClick={onSubmit}>

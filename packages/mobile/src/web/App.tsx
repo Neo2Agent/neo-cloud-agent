@@ -26,6 +26,7 @@ import { schedulePreset, type ScheduleKind } from "../automations";
 import { cloudFollowUp, cloudRunRequest } from "../create-run";
 import { acceptImages, imageHint, overImageBudget } from "../images";
 import { filesToImageRefs } from "./pick-images";
+import { StatusMark } from "../status-mark";
 import { avatarLetter, CHAT_MODELS, chatModelShort, resolveChatModel, runListTitle, toolArgPreview, toolBodyText, toolDisplayName } from "../format";
 import { RUN_LIST_REFRESH_MS, runsNewestFirst } from "@neo-cloud-agent/contracts/client-stream";
 import { attachUserListStream } from "../list-live";
@@ -85,7 +86,10 @@ function ToolRow({ tool }: { tool: TranscriptTool }) {
       onClick={() => setOpen((value) => !value)}
     >
       <span className="tool-head">
-        <b>{running ? "…" : tool.isError ? "✗" : "✓"} {toolDisplayName(tool)}</b>
+        <b>
+          <StatusMark state={running ? "run" : tool.isError ? "err" : "ok"} />
+          {toolDisplayName(tool)}
+        </b>
         <small>{open ? "收起" : "展开"}</small>
       </span>
       {preview ? <span className="cmd">{preview}</span> : null}

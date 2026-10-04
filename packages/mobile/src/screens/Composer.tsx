@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Animated, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useReducedMotion } from "./use-reduced-motion";
 import { encodeExpertPick, expertPickerLabel, type Expert, type ExpertTeam } from "@neo-cloud-agent/contracts/expert";
 import type { ImageRef } from "@neo-cloud-agent/contracts/run";
 import { CHAT_MODELS, chatModelShort, resolveChatModel } from "../format";
@@ -48,6 +49,9 @@ type Props = {
 export function Composer(props: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [listening, setListening] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const sendMotion = useRef(new Animated.Value(1)).current;
+  const stopMotion = useRef(new Animated.Value(1)).current;
   const fieldRef = useRef<TextInput>(null);
   const voiceRef = useRef<{ stop: () => Promise<string> } | null>(null);
   const basePrompt = useRef(props.prompt);
@@ -62,6 +66,29 @@ export function Composer(props: Props) {
   useEffect(() => () => {
     void voiceRef.current?.stop();
   }, []);
+
+  useEffect(() => {
+    if (reducedMotion || props.canStop || !canSend) {
+      sendMotion.setValue(1);
+      return;
+    }
+    sendMotion.setValue(0.88);
+    const anim = Animated.timing(sendMotion, { toValue: 1, duration: 200, useNativeDriver: true });
+    anim.start();
+    return () => anim.stop();
+  }, [canSend, props.canStop, reducedMotion, sendMotion]);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      stopMotion.setValue(1);
+      return;
+    }
+    if (!props.canStop) return;
+    stopMotion.setValue(0.35);
+    const anim = Animated.timing(stopMotion, { toValue: 1, duration: 180, useNativeDriver: true });
+    anim.start();
+    return () => anim.stop();
+  }, [props.canStop, reducedMotion, stopMotion]);
 
   const applyHoldResult = (heldMs: number, spoken: string) => {
     const kept = finishHoldVoice({ heldMs, spoken });
@@ -274,18 +301,25 @@ export function Composer(props: Props) {
                 <Text style={styles.steerText}>插话</Text>
               </Pressable>
             ) : null}
-            <Pressable
-              disabled={!props.canStop && !canSend}
-              onPress={props.canStop ? props.onStop : props.onSend}
-              style={[styles.send, props.canStop ? styles.sendStop : !canSend ? styles.sendOff : null]}
-              accessibilityLabel={props.canStop ? "停止" : "发送"}
+            <Animated.View
+              style={{
+                transform: [{ scale: props.canStop ? stopMotion : sendMotion }],
+                opacity: props.canStop ? 1 : sendMotion,
+              }}
             >
-              {props.canStop ? (
-                <View style={styles.stopIcon} />
-              ) : (
-                <SendIcon color={canSend ? colors.cream : colors.muted} />
-              )}
-            </Pressable>
+              <Pressable
+                disabled={!props.canStop && !canSend}
+                onPress={props.canStop ? props.onStop : props.onSend}
+                style={[styles.send, props.canStop ? styles.sendStop : !canSend ? styles.sendOff : null]}
+                accessibilityLabel={props.canStop ? "停止" : "发送"}
+              >
+                {props.canStop ? (
+                  <View style={styles.stopIcon} />
+                ) : (
+                  <SendIcon color={canSend ? colors.cream : colors.muted} />
+                )}
+              </Pressable>
+            </Animated.View>
           </View>
         </View>
       </View>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useReducedMotion } from "./use-reduced-motion";
 import type { Run } from "@neo-cloud-agent/contracts/run";
 import { runListTitle } from "../format";
 import { runRowMeta } from "../session";
@@ -33,6 +34,7 @@ const OPEN_MS = 360;
 const CLOSE_MS = 280;
 
 export function Drawer(props: Props) {
+  const reducedMotion = useReducedMotion();
   const progress = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(props.open);
   const [selecting, setSelecting] = useState(false);
@@ -49,11 +51,12 @@ export function Drawer(props: Props) {
     : shelved;
 
   useEffect(() => {
+    const duration = reducedMotion ? 0 : props.open ? OPEN_MS : CLOSE_MS;
     if (props.open) {
       setMounted(true);
       Animated.timing(progress, {
         toValue: 1,
-        duration: OPEN_MS,
+        duration,
         easing: Easing.bezier(0.22, 1, 0.36, 1),
         useNativeDriver: true,
       }).start();
@@ -62,7 +65,7 @@ export function Drawer(props: Props) {
     if (!mounted) return;
     const anim = Animated.timing(progress, {
       toValue: 0,
-      duration: CLOSE_MS,
+      duration,
       easing: Easing.bezier(0.4, 0, 1, 1),
       useNativeDriver: true,
     });
@@ -70,7 +73,7 @@ export function Drawer(props: Props) {
       if (finished) setMounted(false);
     });
     return () => anim.stop();
-  }, [mounted, progress, props.open]);
+  }, [mounted, progress, props.open, reducedMotion]);
 
   return (
     <Modal visible={mounted} transparent animationType="none" onRequestClose={props.onClose}>

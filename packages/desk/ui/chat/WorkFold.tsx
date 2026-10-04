@@ -2,8 +2,8 @@ import { formatDuration } from "@neo-cloud-agent/contracts/display";
 import { toolChromeKind, type PartitionedTurn } from "@neo-cloud-agent/contracts/work-view";
 import { MarkdownBody } from "@neo-cloud-agent/ui";
 import { useLayoutEffect, useRef } from "react";
-import { IconChevron, IconSpinner } from "../icons";
-import { ToolCard, ToolLink } from "../ToolCard";
+import { IconChevron } from "../icons";
+import { StatusMark, ToolCard, ToolLink } from "../ToolCard";
 import { useTurnDisclosure } from "./use-turn-disclosure";
 
 const WORK_LIST_STICK_PX = 24;
@@ -35,8 +35,10 @@ export function WorkFold({
     <div className={`work-fold${open ? " is-open" : ""}`}>
       <button type="button" className="work-sum" aria-expanded={open} onClick={toggle}>
         <span className="work-sum-label">
-          {label}
-          {live ? <IconSpinner size={12} className="spin" /> : null}
+          <span key={label} className="work-sum-fade">
+            {label}
+          </span>
+          {live ? <StatusMark state="run" /> : null}
         </span>
         <IconChevron size={12} className="work-chevron" />
       </button>

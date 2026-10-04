@@ -43,11 +43,14 @@ export function WorkFold({
   const [open, toggle] = useFoldOpen(live);
   if (turn.buckets.length === 0 && turn.notes.length === 0) return null;
   const duration = live ? "" : formatDuration(createdAt, updatedAt);
+  const label = live ? "工作中" : duration ? `工作了 ${duration}` : "工作了";
   return (
     <div className={`work-fold${open ? " is-open" : ""}`}>
       <button type="button" className="work-sum" aria-expanded={open} onClick={toggle}>
         <span className="work-sum-label">
-          {live ? "工作中" : duration ? `工作了 ${duration}` : "工作了"}
+          <span key={label} className="work-sum-fade">
+            {label}
+          </span>
           {live ? <span className="work-spinner" aria-hidden="true" /> : null}
         </span>
         <span className="work-chevron" aria-hidden="true">
