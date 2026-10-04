@@ -501,8 +501,38 @@ button:disabled { opacity: 0.4; cursor: default; }
   opacity: 1;
 }
 
+.app.is-buddy .buddy-composer button.send:not(:disabled) {
+  animation: send-ink 200ms ease;
+}
+
+@keyframes send-ink {
+  from {
+    background: #e5e7eb;
+    color: #9ca3af;
+  }
+  to {
+    background: var(--accent);
+    color: #fff;
+  }
+}
+
 .app.is-buddy .buddy-composer button.stop {
   background: var(--err, #b3261e);
+}
+
+.app.is-buddy .buddy-composer button.stop .stop-icon {
+  animation: stop-square 180ms ease;
+}
+
+@keyframes stop-square {
+  from {
+    transform: scale(0.35);
+    border-radius: 999px;
+  }
+  to {
+    transform: scale(1);
+    border-radius: 2px;
+  }
 }
 
 .composer-model-menu {
@@ -732,7 +762,78 @@ button:disabled { opacity: 0.4; cursor: default; }
 .tool-head small { color: var(--muted); font-size: 12px; }
 .tool .cmd { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; }
 .tool:not(.is-open) .cmd { white-space: nowrap; }
-.tool.run { background: #e6f9f6; border-color: #9ad9d2; }
+.tool.run {
+  background-color: #e6f9f6;
+  border-color: #9ad9d2;
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 72%);
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  animation: tool-fill 1.6s ease-in-out infinite;
+}
+
+@keyframes tool-fill {
+  0% {
+    background-size: 0% 100%;
+    background-position: 0 0;
+  }
+  55% {
+    background-size: 100% 100%;
+    background-position: 0 0;
+  }
+  100% {
+    background-size: 100% 100%;
+    background-position: 100% 0;
+  }
+}
+
+.status-mark {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  margin-right: 4px;
+  color: var(--accent);
+}
+
+.status-mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.status-mark-check,
+.status-mark-cross {
+  opacity: 0;
+}
+
+.status-mark.is-run {
+  color: var(--run, #1c1c1c);
+}
+
+.status-mark.is-run .status-mark-ring {
+  stroke-dasharray: 3 2;
+  transform-origin: center;
+  animation: work-spin 0.9s linear infinite;
+}
+
+.status-mark.is-ok .status-mark-check,
+.status-mark.is-err .status-mark-cross {
+  opacity: 1;
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  animation: status-draw 220ms ease forwards;
+}
+
+.status-mark.is-err {
+  color: var(--err, #b3261e);
+}
+
+@keyframes status-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
 .tool.err { color: var(--red); background: #fdecec; border-color: #e8b4b4; border-left-color: var(--red); }
 .tool-out {
   margin: 8px 0 0;
@@ -786,7 +887,33 @@ button:disabled { opacity: 0.4; cursor: default; }
   transform: translate3d(0, 0, 0);
 }
 @media (prefers-reduced-motion: reduce) {
-  .drawer-backdrop, .drawer { transition-duration: 0.01ms; }
+  .drawer-backdrop,
+  .drawer {
+    transition-duration: 0.01ms;
+  }
+
+  .think-dots i,
+  .work-spinner,
+  .work-sum-fade,
+  .work-chevron,
+  .app.is-buddy .buddy-composer button.send:not(:disabled),
+  .app.is-buddy .buddy-composer button.stop .stop-icon,
+  .tool.run,
+  .status-mark.is-run .status-mark-ring,
+  .status-mark.is-ok .status-mark-check,
+  .status-mark.is-err .status-mark-cross {
+    animation: none;
+    transition: none;
+  }
+
+  .status-mark.is-ok .status-mark-check,
+  .status-mark.is-err .status-mark-cross {
+    stroke-dashoffset: 0;
+  }
+
+  .tool.run {
+    background-size: 100% 100%;
+  }
 }
 .drawer-brand { font-size: 20px; font-weight: 800; color: var(--ink); margin-bottom: 12px; }
 .drawer button.nav {
@@ -1035,7 +1162,23 @@ button:disabled { opacity: 0.4; cursor: default; }
   gap: 6px;
 }
 
-.work-chevron { transform: rotate(0deg); }
+.work-sum-fade {
+  animation: work-label-in 220ms ease;
+}
+
+@keyframes work-label-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.work-chevron {
+  transform: rotate(0deg);
+  transition: transform 160ms ease;
+}
 .work-fold.is-open > .work-sum .work-chevron,
 .work-group.is-open > .work-sum .work-chevron { transform: rotate(90deg); }
 

@@ -662,7 +662,7 @@ export function IslandComposer(props: {
             ) : null}
             {props.canStop ? (
               <button type="button" className="stop" aria-label="停止" onClick={props.onStop}>
-                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                <svg className="stop-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                   <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
                 </svg>
               </button>

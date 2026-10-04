@@ -163,6 +163,28 @@ test("desk left rail uses folder icons and Web's more menu, and a chosen folder 
   assert.match(panel, /local && !folder/);
 });
 
+test("desk chat micro motion retargets Web moments onto existing hooks", () => {
+  const card = readFileSync(path.join(here, "ToolCard.tsx"), "utf8");
+  const fold = readFileSync(path.join(here, "chat/WorkFold.tsx"), "utf8");
+  const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
+  assert.match(css, /@keyframes send-ink/);
+  assert.match(css, /@keyframes stop-square/);
+  assert.match(css, /@keyframes status-draw/);
+  assert.match(css, /@keyframes tool-fill/);
+  assert.match(css, /@keyframes work-label-in/);
+  assert.match(css, /\.send-btn:not\(:disabled\):not\(\.stop\)/);
+  assert.match(css, /\.send-btn\.stop \.stop-icon/);
+  assert.match(css, /\.work-sum-fade/);
+  assert.match(css, /\.inbox-avatar:active/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*\.is-spin/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*stroke-dashoffset:\s*0/);
+  assert.doesNotMatch(css, /@import "[^"]*web\/src\/styles\.css"/);
+  assert.match(card, /function StatusMark/);
+  assert.match(fold, /key=\{label\}/);
+  assert.match(fold, /work-sum-fade/);
+  assert.match(pages, /className="stop-icon"/);
+});
+
 test("desk expert picker sits in the context bar like Web", () => {
   const pages = readFileSync(path.join(here, "pages.tsx"), "utf8");
   const app = readFileSync(path.join(here, "App.tsx"), "utf8");
