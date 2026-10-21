@@ -243,6 +243,31 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     });
   }, [ready, token, refreshList]);
 
+  // The list snapshot is from the last full refresh. Web and Desk refetch when
+  // the memory page opens; without this, a memory the agent just saved stays
+  // missing until the next login refresh.
+  useEffect(() => {
+    if (!token || route.screen !== "memories") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [next, pref] = await Promise.all([
+          client.listMemories(),
+          client.memorySettings().catch(() => ({ enabled: true, configured: false as const })),
+        ]);
+        if (cancelled) return;
+        setMemories(next.memories);
+        setMemoryConfigured(next.configured);
+        setMemorySettings(pref);
+      } catch {
+        // Keep the last board. A hard failure still shows on the next full refresh.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, route.screen, client]);
+
   useEffect(() => {
     if (!token) return;
     const pull = () => {

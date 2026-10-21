@@ -236,6 +236,29 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     };
   }, [ready, token, refreshList, client]);
 
+  // Opening 记忆 should show what the agent just saved, not the last full refresh.
+  useEffect(() => {
+    if (!token || screen !== "memories") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [next, pref] = await Promise.all([
+          client.listMemories(),
+          client.memorySettings().catch(() => ({ enabled: true, configured: false as const })),
+        ]);
+        if (cancelled) return;
+        setMemories(next.memories);
+        setMemoryConfigured(next.configured);
+        setMemorySettings(pref);
+      } catch {
+        // Keep the last board.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, screen, client]);
+
   const closeStream = useCallback(() => {
     stopStream.current?.();
     stopStream.current = null;
