@@ -734,6 +734,17 @@ export function App() {
     return () => window.removeEventListener("hashchange", applyHash);
   }, [authed, openProject, openRun]);
 
+  // The project list is taken at login. Opening 项目 has to pick up a project
+  // created on another client, the same way the web project page refetches.
+  useEffect(() => {
+    if (!authed || nav !== "projects") return;
+    void refreshProjects();
+    const timer = window.setInterval(() => {
+      void refreshProjects();
+    }, RUN_LIST_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [authed, nav, refreshProjects]);
+
   useEffect(() => {
     void (async () => {
       const saved = (await deskBridge()?.getToken().catch(() => "")) || "";

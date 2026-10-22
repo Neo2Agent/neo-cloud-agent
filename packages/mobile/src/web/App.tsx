@@ -268,6 +268,27 @@ export function App({ store = sharedWebCredentials() }: { store?: CredentialStor
     };
   }, [token, route.screen, client]);
 
+  // A project created on Web or Desk stays invisible here until the next login
+  // refresh. Opening 项目 should read the shared list immediately.
+  useEffect(() => {
+    if (!token || route.screen !== "projects") return;
+    let cancelled = false;
+    const pull = () => {
+      void client
+        .listProjects()
+        .then((next) => {
+          if (!cancelled) setProjects(next.projects);
+        })
+        .catch(() => undefined);
+    };
+    pull();
+    const timer = window.setInterval(pull, RUN_LIST_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [token, route.screen, client]);
+
   useEffect(() => {
     if (!token) return;
     const pull = () => {
