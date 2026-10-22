@@ -259,6 +259,26 @@ export function NativeApp({ store }: { store: CredentialStore }) {
     };
   }, [token, screen, client]);
 
+  // Opening 项目 should show a project another client just created.
+  useEffect(() => {
+    if (!token || screen !== "projects") return;
+    let cancelled = false;
+    const pull = () => {
+      void client
+        .listProjects()
+        .then((next) => {
+          if (!cancelled) setProjects(next.projects);
+        })
+        .catch(() => undefined);
+    };
+    pull();
+    const timer = setInterval(pull, RUN_LIST_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [token, screen, client]);
+
   const closeStream = useCallback(() => {
     stopStream.current?.();
     stopStream.current = null;
