@@ -10,7 +10,9 @@ import { gunzipSync } from "node:zlib";
 import {
   acceptsGzip,
   isHashedWebAsset,
+  parseSingleByteRange,
   resolveArchitectureFile,
+  resolveSampleVideoFile,
   resolveWebFile,
   serveWebFile,
   WEB_ROOT,
@@ -220,13 +222,13 @@ test("hashed assets are cached; html stays no-cache", () => {
   assert.equal(acceptsGzip({ headers: {} } as never), false);
 });
 
-function rawGet(url: string, headers: Record<string, string>): Promise<{
+function rawGet(url: string, headers: Record<string, string>, method = "GET"): Promise<{
   status: number;
   headers: IncomingHttpHeaders;
   body: Buffer;
 }> {
   return new Promise((resolve, reject) => {
-    const req = httpRequest(url, { headers }, (res) => {
+    const req = httpRequest(url, { method, headers }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (chunk) => chunks.push(chunk as Buffer));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
@@ -289,6 +291,61 @@ test("serves the architecture poster at /architecture without a web build", asyn
     assert.equal(page.status, 200);
     assert.match(String(page.headers["content-type"]), /text\/html/);
     assert.match(page.body.toString("utf8"), /控制面/);
+    assert.match(page.body.toString("utf8"), /\/architecture\/samplevideo/);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test("serves the sample video page and a single mp4 byte range", async () => {
+  const pageFile = resolveSampleVideoFile("/architecture/samplevideo");
+  assert.ok(pageFile);
+  assert.equal(path.basename(pageFile), "samplevideo.html");
+  assert.equal(resolveSampleVideoFile("/architecture/samplevideo/"), pageFile);
+  const video = resolveSampleVideoFile("/architecture/samplevideo.mp4");
+  assert.ok(video);
+  assert.equal(path.basename(video), "samplevideo.mp4");
+  assert.equal(resolveSampleVideoFile("/architecture"), null);
+  assert.equal(parseSingleByteRange("bytes=0-1,2-3", 100), null);
+  assert.equal(parseSingleByteRange("bytes=80-79", 100), "unsatisfiable");
+  assert.deepEqual(parseSingleByteRange("bytes=-4", 10), { start: 6, end: 9 });
+
+  const server = createServer((req, res) => {
+    if (!serveWebFile(req, res)) {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  const origin = `http://127.0.0.1:${port}`;
+  try {
+    const page = await rawGet(`${origin}/architecture/samplevideo`, {});
+    assert.equal(page.status, 200);
+    assert.match(String(page.headers["content-type"]), /text\/html/);
+    assert.match(page.body.toString("utf8"), /src="\/architecture\/samplevideo\.mp4"/);
+    assert.match(page.body.toString("utf8"), /功能演示/);
+
+    const head = await rawGet(`${origin}/architecture/samplevideo.mp4`, { range: "bytes=0-7" }, "HEAD");
+    assert.equal(head.status, 206);
+    assert.equal(head.headers["content-type"], "video/mp4");
+    assert.equal(head.headers["accept-ranges"], "bytes");
+    assert.equal(head.headers["content-length"], "8");
+    assert.equal(head.body.length, 0);
+    assert.equal(head.headers["content-encoding"], undefined);
+
+    const clip = await rawGet(`${origin}/architecture/samplevideo.mp4`, {
+      range: "bytes=0-7",
+      "accept-encoding": "gzip",
+    });
+    assert.equal(clip.status, 206);
+    assert.equal(clip.headers["content-encoding"], undefined);
+    assert.equal(clip.body.length, 8);
+    assert.equal(clip.body.subarray(4, 8).toString("ascii"), "ftyp");
+
+    const missing = await rawGet(`${origin}/architecture/samplevideo.mp4`, { range: "bytes=999999999-" });
+    assert.equal(missing.status, 416);
+    assert.match(String(missing.headers["content-range"]), /^bytes \*\//);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }

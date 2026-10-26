@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neo Cloud Agent 功能演示</title>
+  <style>
+    :root {
+      --ink: #122033;
+      --muted: #5b6b7c;
+      --line: #c5d0dc;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      color: var(--ink);
+      background: #f8fafc;
+      padding: 28px 32px 48px;
+    }
+    header { margin-bottom: 18px; }
+    h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -0.02em; }
+    .sub { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; max-width: 1100px; }
+    .links { margin: 12px 0 0; font-size: 14px; }
+    .links a { color: #1d4ed8; margin-right: 16px; }
+    .stage {
+      max-width: 1100px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    video {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 8px;
+      background: #0f172a;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Neo Cloud Agent 功能演示</h1>
+    <p class="sub">记忆、技能、定时任务、项目协同、Desk 本机工作区。约 78 秒。</p>
+    <p class="links">
+      <a href="/architecture">架构图</a>
+      <a href="/">打开对话</a>
+    </p>
+  </header>
+  <div class="stage">
+    <video controls playsinline preload="metadata" src="/architecture/samplevideo.mp4">
+      浏览器不能内嵌播放时，直接打开视频文件。
+    </video>
+  </div>
+</body>
+</html>
