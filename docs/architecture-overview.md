@@ -23,8 +23,9 @@
 一张图把客户端、入口、控制面、执行面、推理、存储和外部依赖摊开。现网不用登录：
 
 - https://neorun.cloud/architecture
+- https://neorun.cloud/architecture/samplevideo （功能演示，约 78 秒）
 
-源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）。
+源文件：[diagrams/architecture-complete.html](./diagrams/architecture-complete.html)（分层海报）、[diagrams/architecture-complete.mmd](./diagrams/architecture-complete.mmd)（带箭头的 mermaid）、[diagrams/samplevideo.html](./diagrams/samplevideo.html)（演示页）。
 
 ![Neo Cloud Agent 完整架构图](./diagrams/architecture-complete.png)
 
@@ -764,6 +765,8 @@ Desk UI 是 Agents Window：transcript + composer，右上角可开 Files / Term
 ```
 GET    /health
 GET    /architecture  /architecture.html  /architecture-complete.html
+GET    /architecture/samplevideo
+GET    /architecture/samplevideo.mp4
 POST   /webhooks/github
 POST   /webhooks/telegram
 GET|POST /webhooks/wechat
@@ -909,7 +912,7 @@ pnpm test:loop           # mvn test + agentscope toy-repo e2e
 
 ## 21. 现在有、明确没有
 
-**已经落地、文档必须对得上的：** P0 主路径（创建 Run → 默认 pi worker → Gateway → SSE → IDLE → 跟进；也可显式 `kernel=agentscope`）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer（本机 pi）与 Remote（云 loop + 本机工具 WSS）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报；库机 New API 作为 Gateway 上游；Gateway `X-Neo-Step-Id` 非流式回放；**默认 `kernel=pi`（现网 `neo-loop` disabled，Caddy 仍不反代 `:8082`，只反代 `/v1/desks/*/tools/*` 到 `:8080`）**。
+**已经落地、文档必须对得上的：** P0 主路径（创建 Run → 默认 pi worker → Gateway → SSE → IDLE → 跟进；也可显式 `kernel=agentscope`）；账号；MySQL / Redis 回退（Redis 先于 MySQL hydrate）；Environment Builds / warm pool；`vm` loop 槽与空闲写回；受控 git / PR；云工具；多端 SSE；Desk This Computer（本机 pi）与 Remote（云 loop + 本机工具 WSS）；项目协作骨架；专家 / 专家团（含后管下发）；内置插件物化进 `.neo/skills`；Web 配方 / 模板 / `@` / 目录页（客户端预填）；产物保存到项目；自动化；IM 入口；管理台；CLI；Mobile P0；共享 `packages/ui`；限流与配额打点；公开 `/architecture` 海报与 `/architecture/samplevideo` 功能演示；库机 New API 作为 Gateway 上游；Gateway `X-Neo-Step-Id` 非流式回放；**默认 `kernel=pi`（现网 `neo-loop` disabled，Caddy 仍不反代 `:8082`，只反代 `/v1/desks/*/tools/*` 到 `:8080`）**。
 
 **代码在仓库、现网故意关掉的：** `neo-loop.service`、Caddy / 防火墙放行 `:8082`。操作见 [tencent-lighthouse-deploy SKILL](../.cursor/skills/tencent-lighthouse-deploy/SKILL.md)。生产 Remote 要本机 `neo-loop` 在跑；日常 `deploy.sh` 会再关掉。
 
